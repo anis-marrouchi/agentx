@@ -214,6 +214,37 @@ describe("a job handed to another node", () => {
     expect(jobs.get("job-dlg-abc-12")!.note).toBe("no answer for 2 hours")
   })
 
+  it("follows that node's end once the hand-off's answer is back: done there is done here, blocked or stalled there is stalled here", async () => {
+    let out = true
+    const m = new JobMesh({ jobs, log: () => {}, now: () => NOW, handOffOut: () => out, fetchJob: async (_p, id) => {
+      const reply = handleJobsApi("GET", `/jobs/${id}`, { store: far, now: NOW })
+      return { status: reply.status, body: reply.body }
+    } })
+    const pair = (id: string) => {
+      jobs.open({ id, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:${id}`, text: "t", peer: "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW })
+      far.open({ id, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:${id}`, text: "t", now: NOW })
+    }
+    pair("job-done"); pair("job-stalled"); pair("job-blocked"); pair("job-working")
+    far.declare("job-done", { state: "done", proof: "https://x.test/deploy/1" }, { now: NOW })
+    far.markStalled("job-stalled", "run ended 3 h ago with no state", NOW)
+    far.declare("job-blocked", { state: "blocked", why: "no access to the server" }, { now: NOW })
+    // The hand-off is still out: its answer closes the job here itself.
+    await m.refresh()
+    expect(jobs.get("job-done")!.state).toBe("waiting")
+    expect(jobs.get("job-stalled")!.state).toBe("waiting")
+    // Its answer came back (or will not come): that node's end is the job's end.
+    out = false
+    await m.refresh()
+    expect(jobs.get("job-done")).toMatchObject({ state: "done", proof: "on clawd: done: https://x.test/deploy/1" })
+    expect(jobs.get("job-stalled")).toMatchObject({ state: "stalled", note: "on clawd: stalled, run ended 3 h ago with no state" })
+    expect(jobs.get("job-blocked")).toMatchObject({ state: "stalled", note: "on clawd: blocked: no access to the server" })
+    // Still going there: it keeps waiting, quoting that node.
+    expect(jobs.get("job-working")).toMatchObject({ state: "waiting" })
+    // The one who asked here is told, once, by the stalled check.
+    expect(jobs.stalledUntold().map((j) => j.id).sort()).toEqual(["job-blocked", "job-stalled"])
+    expect(jobs.openOnPeers(500).map((j) => j.id)).toEqual(["job-working"])
+  })
+
   it("stops being read once it is closed here", async () => {
     handOff()
     jobs.declare("job-dlg-abc-12", { state: "done", proof: "p" }, { now: NOW })

@@ -39,6 +39,10 @@ export interface JobMeshDeps {
   jobs: JobStore
   /** GET /jobs/<id> on the peer, with this node's mesh token. */
   fetchJob: (peer: string, id: string) => Promise<{ status: number; body: unknown }>
+  /** Is the hand-off of this job still out (its answer not back yet)?
+   *  While it is, its answer ends the job here (doors.delegationDone).
+   *  Unset: always out, so the other node's end is only quoted. */
+  handOffOut?: (job: JobRecord) => boolean
   log: (msg: string) => void
   now?: () => number
 }
@@ -104,9 +108,11 @@ export class JobMesh {
         if (remote?.down) down.add(job.peer!)
         if (remote?.unknown) this.stallUnknown(job)
         if (!remote?.job) continue
-        const line = `${REMOTE_NOTE}${String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)}`
-        if (job.note !== line || job.remoteId !== remote.job.id) this.deps.jobs.setRemote(job.id, remote.job.id, line)
+        const said = String(remote.job.status ?? remote.job.state).replace(/\s+/g, " ").trim().slice(0, LINE_MAX)
         read++
+        if (this.followEnd(job, remote.job.state, said)) continue
+        const line = `${REMOTE_NOTE}${said}`
+        if (job.note !== line || job.remoteId !== remote.job.id) this.deps.jobs.setRemote(job.id, remote.job.id, line)
       }
     } catch (e: any) {
       this.deps.log(`[jobs] reading other nodes failed: ${e?.message ?? e}`)
@@ -114,6 +120,25 @@ export class JobMesh {
       this.busy = false
     }
     return read
+  }
+
+  /** The job ended on the other node, and its hand-off's answer is back
+   *  (or will never come): nothing else ends it here. Done there is done
+   *  here, with that node's line as the proof. Blocked, stalled or
+   *  dropped there is stalled here, so the one who asked here is told
+   *  (#1861: every open job has a run, a wake or a waiter with a due
+   *  time; one that waits on a node whose job ended has none). True when
+   *  it ended the job here. */
+  private followEnd(job: JobRecord, state: string | undefined, said: string): boolean {
+    if (!state || !["done", "dropped", "blocked", "stalled"].includes(state)) return false
+    if (this.deps.handOffOut?.(job) ?? true) return false
+    const now = this.deps.now?.() ?? Date.now()
+    const line = `on ${job.peer}: ${said}`
+    const ended = state === "done"
+      ? this.deps.jobs.declare(job.id, { state: "done", proof: line }, { now })
+      : this.deps.jobs.markStalled(job.id, line, now)
+    if (ended) this.deps.log(`[jobs] ${job.id} ${state === "done" ? "done" : "stalled"}: ${line}`)
+    return ended
   }
 
   private stallUnknown(job: JobRecord): void {

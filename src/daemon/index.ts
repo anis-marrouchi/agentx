@@ -827,6 +827,9 @@ export class AgentXDaemon {
               })
               return { status: r.status, body: await r.json().catch(() => null) }
             },
+            // While the hand-off is out, its answer ends the job here; once
+            // it is back, the other node's end is the job's end.
+            handOffOut: (job) => job.id.startsWith("job-dlg-") && !!this.delegations?.isPending(job.id.slice("job-".length)),
             log: this.log,
           })
           requests.doors.setLeftBackground((job, end) => jobWake.runLeftBackground(
