@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.231.4](https://github.com/anis-marrouchi/agentx/compare/v0.231.3...v0.231.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **requests:** critical priority only on the owner's requests ([#1919](https://github.com/anis-marrouchi/agentx/issues/1919)) ([#1934](https://github.com/anis-marrouchi/agentx/issues/1934)) ([7dac833](https://github.com/anis-marrouchi/agentx/commit/7dac83352a500f357e26245f56ad03c020cfa628))
+
 ## [0.231.3](https://github.com/anis-marrouchi/agentx/compare/v0.231.2...v0.231.3) (2026-11-18)
 
 
