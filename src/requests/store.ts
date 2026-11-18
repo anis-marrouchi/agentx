@@ -265,6 +265,11 @@ export function ensureRequestTables(db: Database.Database): void {
   // When the requests check pushed a promise that fell due (#1908): once
   // per due time, so one the owner hands on afterwards gets the quiet time.
   ensureColumns(db, "requests", [["due_pushed_at", "INTEGER"]])
+  // The due time that push was for (#1912). Code from before the push does
+  // not clear `due_pushed_at` when it sets a new due time, so the mark alone
+  // would hide that due time after a rollback; a due time that differs from
+  // this one is not pushed yet.
+  ensureColumns(db, "requests", [["due_pushed_for", "INTEGER"]])
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
@@ -288,6 +293,10 @@ export function ensureRequestTables(db: Database.Database): void {
       if (!/duplicate column name/i.test(String(e?.message))) throw e
     }
   }
+  // A push made by code that wrote only `due_pushed_at`: it was for the due
+  // time on the row, unless that one is later than the push (a push is never
+  // ahead of its due time), which is a due time set since by older code.
+  db.exec("UPDATE requests SET due_pushed_for = due_at WHERE due_pushed_at IS NOT NULL AND due_pushed_for IS NULL AND due_at IS NOT NULL AND due_at <= due_pushed_at")
 }
 
 /** For readers: a database without the table has no requests, and reading
@@ -479,14 +488,15 @@ export class RequestStore {
   duePromises(now: number): RequestRecord[] {
     return this.db.prepare(
       `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN ('in_progress', 'waiting_other')
-         AND due_at IS NOT NULL AND due_at <= ? AND due_pushed_at IS NULL ORDER BY due_at, rowid`,
+         AND due_at IS NOT NULL AND due_at <= ? AND (due_pushed_for IS NULL OR due_pushed_for != due_at) ORDER BY due_at, rowid`,
     ).all(OWED_TO_OWNER, now).map(toRecord)
   }
 
-  /** The promise was pushed for its due time. A new due time (`setLoop`)
-   *  clears the mark. */
+  /** The promise was pushed for the due time it has now. The mark holds
+   *  that due time (#1912): a different one, whichever version set it, is
+   *  not pushed yet. */
   markDuePushed(id: string, now: number): void {
-    this.db.prepare("UPDATE requests SET due_pushed_at = ? WHERE id = ?").run(now, id)
+    this.db.prepare("UPDATE requests SET due_pushed_at = ?, due_pushed_for = due_at WHERE id = ?").run(now, id)
   }
 
   /** Seen once: the job store's columns are on the table. */
