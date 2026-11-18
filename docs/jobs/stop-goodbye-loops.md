@@ -76,15 +76,17 @@ Each chat's record is also called its **situation**: what kind of talk it is (fo
 
 Only you, the owner, can use these buttons. A person in the chat cannot end or reopen a talk by writing to it, and a real message still reaches your agent after you click **End**.
 
+Like `agentx situation release`, ending or reopening a talk is open to any program on the same machine, without a token. That includes an agent that can run terminal commands there. From another machine it needs the mesh token.
+
 **In the terminal:**
 
 1. **Terminal:** list the talks: `agentx situation list`. Add `--agent <id>` for one agent's chats.
 2. Each row starts with a short id, for example `3f2a9c1b`.
 3. **Terminal:** end a talk: `agentx situation end 3f2a9c1b`. Or keep it going: `agentx situation not-this 3f2a9c1b`.
 
-**What your agent sees:** in **active** mode, your agent's prompt carries one line that names the phase, for example `[Situation] Conversation, phase: ending (...). If a goodbye is due, say one short goodbye, then stop; do not open a new topic.` A new session gets the line whatever the phase. A session that goes on gets it only while the talk is ending or ended, to keep each turn small. Shadow mode adds no line.
+**What your agent sees:** in **active** mode, your agent's prompt carries one line that names the phase, for example `[Situation] Conversation, phase: ending (...). If a goodbye is due, say one short goodbye, then stop; do not open a new topic.` A new session gets the line whatever the phase. A session that goes on gets it only in the first 30 minutes after the talk moved to ending or ended, to keep each turn small. When you are busy (Focus or a call), the line adds "The owner is busy now; do not promise an immediate answer from them." It never says why you are busy, since the chat may be with a customer. Shadow mode adds no line.
 
-**For other tools:** each change of phase is published once as the event `situation:phase` (kind `situation`), with who made it: a rule or a person. Agents can subscribe to it like to any event.
+**For other tools:** each change of phase is published once as the event `situation:phase` (kind `situation`), with who made it: a rule or a person. Agents can subscribe to it like to any event. Like other message events, the event names the channel and the chat id (on WhatsApp, a phone number). The reason the phase changed, which can name a sender, stays on this machine and is not sent to mesh peers.
 
 ## Commands
 
@@ -123,6 +125,7 @@ To check ending a talk by hand:
 - **`agentx situation log --node <url>` answers HTTP 401:** reading the gate log from another machine needs the mesh token. Pass it with `--token`, or run the command on the machine itself.
 - **An old held message is missing from the log:** rows older than 30 days are removed.
 - **The Conversations panel says "not available" or is empty:** the panel asks the daemon on the same machine. Check that the daemon runs, and that the chat has had a message since the update. A chat appears under the agent that answered it.
+- **The panel says "situations need the daemon on the same machine as the dashboard":** `dashboard.daemonUrl` points to another machine. Set it to the daemon on this machine (for example `http://127.0.0.1:18800`), or use `agentx situation` commands with `--node` and `--token` instead.
 - **End answers "this talk has already ended" or "changed meanwhile":** the phase moved while the page was open. Click **Refresh** and try again.
 - **`agentx situation end` answers HTTP 401 with `--node`:** ending a talk on another machine needs the mesh token (`--token`).
 - **Your agent's prompt has no `[Situation]` line:** the line is added only in **active** mode, and on a session that goes on only while the talk is ending or ended.

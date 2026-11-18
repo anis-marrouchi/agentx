@@ -162,7 +162,7 @@ export function clipGateMessage(json: string): string {
 }
 
 type StatementName =
-  | "get" | "getById" | "byPrefix" | "list" | "listByAgent" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
+  | "get" | "getById" | "byPrefix" | "list" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
   | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
 
 export class SituationStore {
@@ -177,8 +177,9 @@ export class SituationStore {
       getById: db.prepare(`SELECT ${COLS} FROM situations WHERE id = ?`),
       // Ids are UUIDs: a prefix of hex digits and dashes needs no escaping.
       byPrefix: db.prepare(`SELECT ${COLS} FROM situations WHERE substr(id, 1, ?) = ? LIMIT 2`),
-      list: db.prepare(`SELECT ${COLS} FROM situations ORDER BY phase_changed_at DESC LIMIT ?`),
-      listByAgent: db.prepare(`SELECT ${COLS} FROM situations WHERE owner_agent = ? ORDER BY phase_changed_at DESC LIMIT ?`),
+      // NULL filters match every row.
+      list: db.prepare(`SELECT ${COLS} FROM situations WHERE (@agent IS NULL OR owner_agent = @agent) AND (@phase IS NULL OR phase = @phase)
+        ORDER BY phase_changed_at DESC LIMIT @limit`),
       remove: db.prepare("DELETE FROM situations WHERE key = ? AND phase_changed_at = ?"),
       create: db.prepare(
         `INSERT OR IGNORE INTO situations (id, key, phase, end_reason, entered_at, phase_changed_at, why, slot)
@@ -231,7 +232,7 @@ export class SituationStore {
   }
 
   /** The one emit point (3.3): after a committed write, one bus event.
-   *  The envelope (ring buffer, mesh peers) names the phase only; `cause`,
+   *  The envelope (ring buffer, mesh peers) names the channel, chat id and phase, like message:matched; `cause`,
    *  which may name a sender, reaches in-process listeners only. Never
    *  throws. */
   private emitChange(key: string, from: Phase | null, cause: string, cleared?: SituationRow): void {
@@ -270,9 +271,9 @@ export class SituationStore {
   }
 
   /** Newest change first. */
-  list(opts: { agent?: string; limit?: number } = {}): SituationRow[] {
+  list(opts: { agent?: string; phase?: Phase; limit?: number } = {}): SituationRow[] {
     const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
-    return (opts.agent ? this.q.listByAgent.all(opts.agent, limit) : this.q.list.all(limit)) as SituationRow[]
+    return this.q.list.all({ agent: opts.agent ?? null, phase: opts.phase ?? null, limit }) as SituationRow[]
   }
 
   /** A person's override (design 8, "How a person overrides"), from the

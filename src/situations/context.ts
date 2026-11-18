@@ -13,7 +13,13 @@ import type { SituationRow, SituationStore } from "./store"
 // Per-turn cost rule: like the other new layers, it goes on FRESH sessions
 // only. The one exception is the end of a talk (`ending`, `ended`): a
 // resumed session would otherwise never learn that the talk is closing,
-// which is the moment the line is for. It is one line, about 30 tokens.
+// which is the moment the line is for. That exception is bounded: only
+// within RESUMED_WINDOW_MS of the phase change (`ended` has no max age,
+// and an "ok" does not reopen it). It is one line, about 30 tokens.
+//
+// Privacy: the owner's busy state is named generically. The hold's own
+// reason ("in a call with …", a macOS Focus or sleep assertion) never
+// goes into the prompt: the chat may be a customer's.
 //
 // Only in `active` mode: shadow mode changes nothing, so the agent is not
 // told either. Any error gives no layer (fail open): the turn runs as
@@ -34,10 +40,17 @@ export function setSituationContextSource(s: SituationContextSource | null): voi
 }
 
 const WHY_MAX = 120
+/** A resumed session gets the line only this long after the phase changed
+ *  to `ending` or `ended`; after that, fresh sessions only. */
+export const RESUMED_WINDOW_MS = 30 * 60_000
+export const OWNER_BUSY_LINE = "The owner is busy now; do not promise an immediate answer from them."
 
 /** The layer text for one record, or undefined when it adds nothing. */
-export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: string }): string | undefined {
-  if (!opts.fresh && row.phase === "during") return undefined
+export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: boolean; now?: number }): string | undefined {
+  if (!opts.fresh) {
+    if (row.phase === "during") return undefined
+    if ((opts.now ?? Date.now()) - row.phaseChangedAt > RESUMED_WINDOW_MS) return undefined
+  }
   const name = row.template.charAt(0).toUpperCase() + row.template.slice(1)
   const why = row.why ? row.why.replace(/\s+/g, " ").slice(0, WHY_MAX) : ""
   const byPerson = row.setBy === "person" ? " It was set by a person." : ""
@@ -49,7 +62,7 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   } else {
     line = `[Situation] ${name}, phase: during.${row.override === "not-this" ? " A person said this talk is not ending." : ""}`
   }
-  if (opts.ownerBusy) line += ` The owner is busy (${opts.ownerBusy}).`
+  if (opts.ownerBusy) line += ` ${OWNER_BUSY_LINE}`
   return line
 }
 
@@ -60,13 +73,13 @@ export function situationContextFor(key: string | undefined, opts: { fresh: bool
     if (source.settings().mode !== "active") return undefined
     const row = source.store.get(key)
     if (!row) return undefined
-    if (!opts.fresh && row.phase === "during") return undefined
-    let ownerBusy: string | undefined
+    const now = Date.now()
+    if (!opts.fresh && (row.phase === "during" || now - row.phaseChangedAt > RESUMED_WINDOW_MS)) return undefined
+    let ownerBusy = false
     try {
-      const h = (source.hold ?? readHold)()
-      if (h.active) ownerBusy = h.reason.slice(0, 60)
+      ownerBusy = (source.hold ?? readHold)().active === true
     } catch { /* unknown means not busy, as the hold reads it */ }
-    return renderSituationLayer(row, { fresh: opts.fresh, ownerBusy })
+    return renderSituationLayer(row, { fresh: opts.fresh, ownerBusy, now })
   } catch {
     return undefined
   }

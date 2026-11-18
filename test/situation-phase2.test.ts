@@ -139,18 +139,37 @@ describe("[Situation] layer: short, fresh sessions only except at the end", () =
   it("ending and ended: shown on a resumed session too, one line", () => {
     const ending = { ...base, phase: "ending", endReason: null, setBy: "rule", why: "a closer from person C" } as const
     const ended = { ...base, phase: "ended", endReason: "person", setBy: "person", why: "ended by owner (dashboard)" } as const
+    const now = 10 * 60_000 // 10 min after the phase changed
     for (const row of [ending, ended]) {
-      const line = renderSituationLayer(row as any, { fresh: false })!
+      const line = renderSituationLayer(row as any, { fresh: false, now })!
       expect(line).toMatch(/^\[Situation\] Conversation, phase: (ending|ended)/)
       expect(line.split("\n")).toHaveLength(1)
       expect(line.length).toBeLessThan(400)
     }
-    expect(renderSituationLayer(ended as any, { fresh: false })).toMatch(/set by a person/)
+    expect(renderSituationLayer(ended as any, { fresh: false, now })).toMatch(/set by a person/)
   })
 
-  it("names a busy owner, read live", () => {
+  it("the resumed-session exception is bounded: only soon after the phase changed", () => {
+    const ended = { ...base, phase: "ended", endReason: "closed", setBy: "rule", why: "the goodbye was sent" } as const
+    expect(renderSituationLayer(ended as any, { fresh: false, now: 29 * 60_000 })).toMatch(/phase: ended/)
+    // Hours later an "ok" that does not reopen: fresh-only again.
+    expect(renderSituationLayer(ended as any, { fresh: false, now: 3 * 3600_000 })).toBeUndefined()
+    expect(renderSituationLayer(ended as any, { fresh: true, now: 3 * 3600_000 })).toMatch(/phase: ended/)
+  })
+
+  it("a busy owner is named generically, never with the hold's reason", () => {
     const row = { ...base, phase: "during", endReason: null, setBy: "rule", why: "" } as const
-    expect(renderSituationLayer(row as any, { fresh: true, ownerBusy: "in Focus" })).toMatch(/The owner is busy \(in Focus\)/)
+    expect(renderSituationLayer(row as any, { fresh: true, ownerBusy: true })).toMatch(/The owner is busy now; do not promise an immediate answer from them\.$/)
+    // A customer chat while the owner's Mac reports sleep mode.
+    const store = new SituationStore(new Database(":memory:"))
+    store.create(KEY, "during", "first message on this chat")
+    setSituationContextSource({
+      store, settings: () => ({ ...DEFAULT_SITUATIONS_CONFIG, mode: "active" }),
+      hold: () => ({ active: true, mode: "focus" as any, reason: "Focus assertion present (com.apple.sleep.sleep-mode)" }),
+    })
+    const line = situationContextFor(KEY, { fresh: true })!
+    expect(line).toMatch(/owner is busy now/)
+    expect(line).not.toMatch(/sleep|Focus|assertion|apple/i)
   })
 
   it("nothing in shadow or off mode, for an unknown chat, or when reading fails (fail open)", () => {
@@ -185,7 +204,7 @@ describe("situation:phase bus event (one emit point: the store)", () => {
         [null, "during", "rule"], ["during", "ending", "rule"], ["ending", "ended", "person"],
       ])
       expect(events[2]).toMatchObject({ situationId: row.id, key: KEY, channel: "whatsapp", chatId: GROUP_N, endReason: "person" })
-      // The envelope peers see names the phase only, never the why.
+      // The envelope peers see names the chat and phase, never the why.
       const env = getEventBus().recent({ kind: "situation" }).at(-1)!
       expect(env.type).toBe("situation:phase")
       expect(env.summary).not.toMatch(/CLI/)
@@ -315,6 +334,18 @@ describe("dashboard proxy", () => {
     expect(calls[0].url).toBe("http://127.0.0.1:1/situations/override")
     expect(calls[0].init.headers.Authorization).toBe("Bearer t")
     expect(JSON.parse(calls[0].init.body)).toEqual({ id: "abc123", action: "end", by: "owner (dashboard)" })
+  })
+
+  it("a daemon that is not on this machine gets a clear error, and no token is sent to it", async () => {
+    let called = 0
+    const { out, res } = fakeRes()
+    await handleSituationsPanel({ method: "GET" } as any, res, "/api/admin/situations", new URLSearchParams(), {
+      daemonUrl: "http://10.0.0.5:18800", token: "t", owner: true, readBody: async () => ({}),
+      fetch: (async () => { called++; return new Response("{}") }) as any,
+    })
+    expect(called).toBe(0)
+    expect(out.status).toBe(503)
+    expect(JSON.parse(out.body!).error).toMatch(/same machine/)
   })
 
   it("other paths are not handled", async () => {

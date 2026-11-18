@@ -5,8 +5,9 @@ import type { IncomingMessage, ServerResponse } from "http"
 //   GET  /api/admin/situations?agent=<id>     → daemon GET /situations
 //   POST /api/admin/situations/override       → daemon POST /situations/override
 //
-// The dashboard runs beside the daemon and calls it over loopback with the
-// node's own token, so only the owner may use these routes: the caller must
+// The dashboard runs beside the daemon and calls it over loopback (the
+// daemon's mesh gate lets this machine in; dashboard.daemonUrl must be
+// loopback, else a clear 503), so only the owner may use these routes: the caller must
 // pass the dashboard's owner check (token, signed-in session, or a caller
 // on this machine). The override is labelled as the owner's from the
 // dashboard; a label the browser sends is ignored.
@@ -25,6 +26,16 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
   res.end(JSON.stringify(body))
 }
 
+/** The daemon URL names this machine (127.0.0.0/8, ::1, localhost). */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.replace(/^\[|\]$/g, "")
+    return h === "localhost" || h === "::1" || /^127(\.\d{1,3}){3}$/.test(h)
+  } catch {
+    return false
+  }
+}
+
 /** True when the path was one of these routes (answered here). */
 export async function handleSituationsPanel(
   req: IncomingMessage, res: ServerResponse, path: string, query: URLSearchParams, ctx: SituationsPanelCtx,
@@ -34,6 +45,14 @@ export async function handleSituationsPanel(
   const override = method === "POST" && path === "/api/admin/situations/override"
   if (!list && !override) return false
   if (!ctx.owner) { send(res, 401, { error: "unauthorized" }); return true }
+  // The daemon's /situations routes are mesh-gated: it lets this machine
+  // in, and it does not take dashboard.token as a mesh token. So these
+  // routes work only when dashboard.daemonUrl is this machine; say so
+  // instead of failing with a 401, and send no token off the box.
+  if (!isLoopbackUrl(ctx.daemonUrl)) {
+    send(res, 503, { error: `situations need the daemon on the same machine as the dashboard; dashboard.daemonUrl is ${ctx.daemonUrl}` })
+    return true
+  }
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (ctx.token) headers.Authorization = `Bearer ${ctx.token}`
   const base = ctx.daemonUrl.replace(/\/+$/, "")

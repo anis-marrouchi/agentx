@@ -1,4 +1,4 @@
-import type { OverrideAction, SituationRow, SituationStore } from "./store"
+import type { OverrideAction, Phase, SituationRow, SituationStore } from "./store"
 
 // --- The daemon's situation routes (#1892, phase 2) ---
 //
@@ -32,8 +32,7 @@ export function situationsList(store: SituationStore, q: URLSearchParams, mode: 
   const phase = q.get("phase")?.trim() || undefined
   if (phase && !PHASES.has(phase)) return { status: 400, body: { error: "phase must be during, ending or ended" } }
   const limit = Math.max(1, Math.min(Number(q.get("limit")) || 50, 200))
-  // Filter by phase after the read: at most 500 rows, newest first.
-  const rows = store.list({ agent, limit: phase ? 500 : limit }).filter((r) => !phase || r.phase === phase).slice(0, limit)
+  const rows = store.list({ agent, phase: phase as Phase | undefined, limit })
   return { status: 200, body: { mode, rows: rows.map(situationView) } }
 }
 
