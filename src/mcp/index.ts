@@ -1184,7 +1184,7 @@ const TOOLS = [
           },
         },
         work: { type: "string", description: "accept: what kind of work it is, one short word: code, research, writing, ops… Needed on an accept without steps. Code work needs steps." },
-        estimateMinutes: { type: "number", description: "accept: how many minutes you expect the work to take. Over the configured limit it needs steps." },
+        estimateMinutes: { type: "number", description: "accept, promise: how many minutes you expect the work to take. Over the configured limit an accept needs steps. Where the node gives due times, the daemon places it in your queue and answers with the due time." },
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
         note: { type: "string", description: "step: what is happening, or why it is blocked. qa: why, in a sentence; needed for block and risk." },
@@ -1205,7 +1205,13 @@ const TOOLS = [
         reason: { type: "string", description: "decline: why you will not do it." },
         owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
         text: { type: "string", description: "promise: what you promised, in one sentence." },
-        due: { type: "string", description: "promise, accept, wait, optional: when it is due, as an ISO date. Past it, the owner sees it as stalled." },
+        due: { type: "string", description: "promise, accept, wait, optional: when it is due, as an ISO date. Past it, the owner sees it as stalled. Where the node gives due times from the queue, leave it out on promise and accept (send estimateMinutes and priority instead) unless the requester named the time or an outside fact sets it: then give dueSource too." },
+        priority: { type: "string", enum: ["critical", "high", "normal", "low"], description: "promise, accept, optional: how urgent the work is against the rest of the queue. Default normal. Critical goes ahead of everything and moves later due times." },
+        dueSource: {
+          type: "object",
+          description: "promise, accept, with due: where the time comes from, as {kind:'requester', text:'<their words>'} (the human owner or the agent that asked named it) or {kind:'fact', text:'<the posting slot, the meeting>'}. A due with no source is refused where the node gives due times.",
+        },
+        makeRoom: { type: "boolean", description: "promise, accept, with due and dueSource: the requester chose to move other work so their time holds. Send it only after they chose." },
         closeWhen: {
           type: "object",
           description: "promise, accept, wait, optional: what proves it is finished; the daemon checks it and closes the loop when it is met, and refuses your done while it is not. " +
