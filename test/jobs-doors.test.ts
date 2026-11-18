@@ -247,6 +247,13 @@ describe("the owner's turn", () => {
     start("w1", { agentId: "coder", channel: "requests", chatId: "req-o1", sender: { name: "operator" }, pickup: true, jobId: "req-o1", humanRoot: false })
     expect(jobs.get("req-o1")).toMatchObject({ state: "working", wakeAt: null })
     expect(jobs.unheldCandidates().map((j) => j.id)).toContain("req-o1")
+    // Its next due time arms a wake too.
+    expect(requests.armDueWake("req-o1", clock + 5000, "It is due now", clock)).toBe(true)
+    expect(jobs.get("req-o1")).toMatchObject({ state: "continue", wakeAt: clock + 5000 })
+    // A state a run declared that is not "working" is not written over.
+    jobs.declare("req-o1", { state: "waiting", on: "devops", until: clock + 9000 }, { now: clock })
+    expect(requests.armDueWake("req-o1", clock + 7000, "It is due now", clock)).toBe(false)
+    expect(jobs.get("req-o1")).toMatchObject({ state: "waiting", waitingOn: "devops" })
   })
 
   it("a new turn on an owner's request keeps a wake still armed for later", () => {

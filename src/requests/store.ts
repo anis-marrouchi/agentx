@@ -515,15 +515,16 @@ export class RequestStore {
 
   /** Give an open request a due time or a checker, from accept or wait. */
   /** A promise's due time wakes the agent that owes it (noqta#858): the
-   *  job wake (`dueWakes`) starts its run at `at`. Only a loop no run has
-   *  put a job state on and with no wake set: a declared state or a wake
-   *  already armed stands. True when the wake is armed. */
+   *  job wake (`dueWakes`) starts its run at `at`. Only a loop with no
+   *  wake set, and no job state or "working" (a spent wake, #1861): any
+   *  other declared state, or a wake already armed, stands. True when
+   *  the wake is armed. */
   armDueWake(id: string, at: number, note: string, now: number): boolean {
     // The job columns come with the job store; without it there is no wake.
     if (!this.hasJobColumns()) return false
     return this.db.prepare(
       `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?
-       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND job_state IS NULL AND wake_at IS NULL`,
+       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND COALESCE(job_state, 'working') = 'working' AND wake_at IS NULL`,
     ).run(at, note.slice(0, 1000), now, id).changes > 0
   }
 
@@ -1183,7 +1184,9 @@ export class RequestStore {
            ${opts.resend ? ", resent_at = ?" : ""}
          WHERE id = ? AND state = 'needs_attention'${opts.resend ? " AND resent_at IS NULL" : ""}`,
       ).run(now, now, now, ...(opts.resend ? [now] : []), id).changes > 0
-      if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
+      if (moved) this.supersedeHandBacks(id)
+      // Only the owner's word lifts a hold a run declared, not the resend.
+      if (moved && !opts.resend) this.liftJobHold(id)
       return moved
     })()
   }

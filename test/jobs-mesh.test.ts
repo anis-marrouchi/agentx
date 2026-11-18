@@ -214,35 +214,114 @@ describe("a job handed to another node", () => {
     expect(jobs.get("job-dlg-abc-12")!.note).toBe("no answer for 2 hours")
   })
 
-  it("follows that node's end once the hand-off's answer is back: done there is done here, blocked or stalled there is stalled here", async () => {
-    let out = true
-    const m = new JobMesh({ jobs, log: () => {}, now: () => NOW, handOffOut: () => out, fetchJob: async (_p, id) => {
-      const reply = handleJobsApi("GET", `/jobs/${id}`, { store: far, now: NOW })
-      return { status: reply.status, body: reply.body }
-    } })
+  describe("once the hand-off's answer is back, it follows that node's end", () => {
+    let out: boolean
+    let told: Array<{ to: string; id: string; text: string }>
+    let m: JobMesh
     const pair = (id: string) => {
       jobs.open({ id, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:${id}`, text: "t", peer: "clawd", state: "waiting", waitingOn: "pm@clawd", now: NOW })
       far.open({ id, door: "a2a", requester: "coder", assignee: "pm", channel: "a2a", chatId: `a2a:coder:pm:${id}`, text: "t", now: NOW })
     }
-    pair("job-done"); pair("job-stalled"); pair("job-blocked"); pair("job-working")
-    far.declare("job-done", { state: "done", proof: "https://x.test/deploy/1" }, { now: NOW })
-    far.markStalled("job-stalled", "run ended 3 h ago with no state", NOW)
-    far.declare("job-blocked", { state: "blocked", why: "no access to the server" }, { now: NOW })
-    // The hand-off is still out: its answer closes the job here itself.
-    await m.refresh()
-    expect(jobs.get("job-done")!.state).toBe("waiting")
-    expect(jobs.get("job-stalled")!.state).toBe("waiting")
-    // Its answer came back (or will not come): that node's end is the job's end.
-    out = false
-    await m.refresh()
-    expect(jobs.get("job-done")).toMatchObject({ state: "done", proof: "on clawd: done: https://x.test/deploy/1" })
-    expect(jobs.get("job-stalled")).toMatchObject({ state: "stalled", note: "on clawd: stalled, run ended 3 h ago with no state" })
-    expect(jobs.get("job-blocked")).toMatchObject({ state: "stalled", note: "on clawd: blocked: no access to the server" })
-    // Still going there: it keeps waiting, quoting that node.
-    expect(jobs.get("job-working")).toMatchObject({ state: "waiting" })
-    // The one who asked here is told, once, by the stalled check.
-    expect(jobs.stalledUntold().map((j) => j.id).sort()).toEqual(["job-blocked", "job-stalled"])
-    expect(jobs.openOnPeers(500).map((j) => j.id)).toEqual(["job-working"])
+    beforeEach(() => {
+      out = false
+      told = []
+      m = new JobMesh({
+        jobs, log: () => {}, now: () => NOW, handOffOut: () => out,
+        hasAgent: (id) => id === "coder",
+        tell: (to, text, job) => { told.push({ to, id: job.id, text }); return true },
+        fetchJob: async (_p, id) => {
+          const reply = handleJobsApi("GET", `/jobs/${id}`, { store: far, now: NOW })
+          return { status: reply.status, body: reply.body }
+        },
+      })
+    })
+
+    it("not while the hand-off is out: its answer closes the job here itself", async () => {
+      out = true
+      pair("job-done"); pair("job-stalled")
+      far.declare("job-done", { state: "done", proof: "https://x.test/deploy/1" }, { now: NOW })
+      far.markStalled("job-stalled", "run ended 3 h ago with no state", NOW)
+      await m.refresh()
+      expect(jobs.get("job-done")!.state).toBe("waiting")
+      expect(jobs.get("job-stalled")!.state).toBe("waiting")
+    })
+
+    it("done there is done here; dropped there is dropped here; still going there keeps waiting", async () => {
+      pair("job-done"); pair("job-dropped"); pair("job-working")
+      far.declare("job-done", { state: "done", proof: "https://x.test/deploy/1" }, { now: NOW })
+      there.prepare("UPDATE requests SET job_state = 'dropped' WHERE id = 'job-dropped'").run()
+      await m.refresh()
+      expect(jobs.get("job-done")).toMatchObject({ state: "done", proof: "on clawd: done: https://x.test/deploy/1" })
+      expect(jobs.get("job-dropped")).toMatchObject({ state: "dropped", note: "on clawd: dropped" })
+      expect(jobs.get("job-working")).toMatchObject({ state: "waiting" })
+      expect(jobs.openOnPeers(500).map((j) => j.id)).toEqual(["job-working"])
+      expect(told).toEqual([])
+    })
+
+    it("blocked there keeps it waiting here, quoting why, and tells the one who asked once", async () => {
+      pair("job-blocked")
+      far.declare("job-blocked", { state: "blocked", why: "no access to the server" }, { now: NOW })
+      await m.refresh()
+      await m.refresh()
+      expect(jobs.get("job-blocked")).toMatchObject({ state: "waiting", note: "there: blocked: no access to the server" })
+      expect(statusLine(jobs.get("job-blocked")!, {}, NOW)).toBe("waiting on pm@clawd (there: blocked: no access to the server)")
+      expect(told.map((t) => [t.to, t.id])).toEqual([["coder", "job-blocked"]])
+      expect(told[0].text).toContain("blocked on clawd")
+      expect(told[0].text).toContain("no access to the server")
+      // Done there later: done here.
+      far.declare("job-blocked", { state: "done", proof: "https://x.test/fixed" }, { now: NOW })
+      await m.refresh()
+      expect(jobs.get("job-blocked")).toMatchObject({ state: "done", proof: "on clawd: done: https://x.test/fixed" })
+      expect(told).toHaveLength(1)
+    })
+
+    it("blocked again after it moved on there is told again", async () => {
+      pair("job-b")
+      far.declare("job-b", { state: "blocked", why: "no key" }, { now: NOW })
+      await m.refresh()
+      far.working("job-b", NOW)
+      await m.refresh()
+      far.declare("job-b", { state: "blocked", why: "no key again" }, { now: NOW })
+      await m.refresh()
+      expect(told.map((t) => t.id)).toEqual(["job-b", "job-b"])
+    })
+
+    it("stalled there is stalled here, still read, and closed by a later done there with no second notice", async () => {
+      pair("job-stalled")
+      far.markStalled("job-stalled", "run ended 3 h ago with no state", NOW)
+      await m.refresh()
+      const stalled = jobs.get("job-stalled")!
+      expect(stalled).toMatchObject({ state: "stalled", note: "on clawd: stalled, run ended 3 h ago with no state" })
+      expect(jobs.stalledUntold().map((j) => j.id)).toEqual(["job-stalled"])
+      jobs.markRequesterTold("job-stalled", NOW)
+      // Read again, nothing changes while it stays stalled there.
+      await m.refresh()
+      expect(jobs.get("job-stalled")).toMatchObject({ state: "stalled", stalledAt: stalled.stalledAt, requesterToldAt: NOW })
+      expect(jobs.stalledUntold()).toEqual([])
+      // Done there: done here.
+      far.declare("job-stalled", { state: "done", proof: "https://x.test/late" }, { now: NOW })
+      await m.refresh()
+      expect(jobs.get("job-stalled")).toMatchObject({ state: "done", proof: "on clawd: done: https://x.test/late" })
+      expect(told).toEqual([])
+    })
+
+    it("stalled there, then picked up again there: waiting here again", async () => {
+      pair("job-s")
+      far.markStalled("job-s", "nobody on it", NOW)
+      await m.refresh()
+      expect(jobs.get("job-s")!.state).toBe("stalled")
+      far.working("job-s", NOW)
+      await m.refresh()
+      expect(jobs.get("job-s")).toMatchObject({ state: "waiting", waitingOn: "pm@clawd" })
+      expect(jobs.get("job-s")!.note).toMatch(/^there: /)
+      expect(jobs.get("job-s")!.stalledAt).toBeNull()
+    })
+
+    it("a job stalled here for another reason is still never read", async () => {
+      pair("job-x")
+      jobs.markStalled("job-x", "no answer for 2 hours", NOW)
+      expect(jobs.openOnPeers(500)).toEqual([])
+    })
   })
 
   it("stops being read once it is closed here", async () => {

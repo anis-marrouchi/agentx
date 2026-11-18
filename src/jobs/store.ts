@@ -129,12 +129,19 @@ export function ensureJobColumns(db: Database.Database): void {
 /** Task watchers were a second ledger of handed-out work, removed in
  *  #1900: nothing reads `task_watchers` any more. An empty one is
  *  dropped; one that still holds rows is left as it is, so no record is
- *  lost (export it, empty it, and the next start drops it). */
+ *  lost (export it, empty it, and the next start drops it). The check
+ *  and the drop are one transaction. Never throws: a database it cannot
+ *  write (read-only, locked) keeps the table until a later start. */
 export function retireWatcherTable(db: Database.Database): void {
-  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_watchers'").get()
-  if (!has) return
-  if (db.prepare("SELECT 1 FROM task_watchers LIMIT 1").get()) return
-  db.exec("DROP TABLE task_watchers")
+  try {
+    db.transaction(() => {
+      const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_watchers'").get()
+      if (!has || db.prepare("SELECT 1 FROM task_watchers LIMIT 1").get()) return
+      db.exec("DROP TABLE task_watchers")
+    })()
+  } catch {
+    // Left for a later start.
+  }
 }
 
 /** The job state of any row of `requests`, in SQL. A closed owner request
@@ -180,9 +187,13 @@ const placeholders = (n: number) => Array(n).fill("?").join(",")
 const clip = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n)
 
 /** WHERE clause of a row that is not closed, as a job or as a request. */
-const OPEN_ROW = "state NOT IN ('done', 'declined', 'dropped') AND COALESCE(job_state, '') != 'done'"
+const OPEN_ROW = "state NOT IN ('done', 'declined', 'dropped') AND COALESCE(job_state, '') NOT IN ('done', 'dropped')"
 /** A blocked or stalled job: its note is the reason, never written over. */
 const NOT_FAILED = "COALESCE(job_state, '') NOT IN ('blocked', 'stalled')"
+/** How the note of a job here starts when it stalled because its job on
+ *  the other node stalled (mesh.ts): that node is still read for it. */
+export const peerNotePrefix = (peer: string) => `on ${peer}: `
+const STALLED_BY_PEER = "job_state = 'stalled' AND substr(COALESCE(job_note, ''), 1, length(peer) + 5) = 'on ' || peer || ': '"
 
 export interface JobQuery {
   /** Only these states. Unset: every state. */
@@ -499,11 +510,12 @@ export class JobStore {
   /** One page of them in a fixed order (the order they were recorded),
    *  after the row `after`. `last` is the row to pass for the next page.
    *  A caller that walks the pages reads every one of them, however many
-   *  there are and however old (#1888). */
+   *  there are and however old (#1888). A job stalled here because it
+   *  stalled there is read too: that node may still finish it. */
   openOnPeersPage(after: number, limit = 30): { jobs: JobRecord[]; last: number } {
     const rows = this.db.prepare(
       `SELECT *, rowid AS page_row, ${JOB_STATE_SQL} AS derived_state FROM requests
-       WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED} AND rowid > ?
+       WHERE state = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND (${NOT_FAILED} OR (${STALLED_BY_PEER})) AND rowid > ?
        ORDER BY rowid LIMIT ?`,
     ).all(JOB_ROW_STATE, after, limit) as Array<{ page_row: number }>
     return { jobs: rows.map(toJob), last: rows.length ? rows[rows.length - 1].page_row : after }
@@ -515,6 +527,31 @@ export class JobStore {
   setRemote(id: string, remoteId: string, note: string): boolean {
     return this.db.prepare(`UPDATE requests SET remote_id = ?, job_note = ? WHERE id = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED}`)
       .run(remoteId, clip(note, JOB_NOTE_MAX), id).changes > 0
+  }
+
+  /** The other node dropped the job: it is dropped here too, with why. */
+  dropPeer(id: string, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET job_state = 'dropped', job_note = ?, updated_at = ?, state_changed_at = ?, closed_at = ?, wake_at = NULL, waiting_on = NULL
+       WHERE id = ? AND state = '${JOB_ROW_STATE}' AND peer IS NOT NULL AND ${OPEN_ROW}`,
+    ).run(clip(note, JOB_NOTE_MAX), now, now, now, id).changes > 0
+  }
+
+  /** A job stalled here because it stalled on the other node, which has
+   *  picked it up again: it waits on that node again, quoting it. */
+  peerResumed(id: string, waitingOn: string, note: string): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET job_state = 'waiting', waiting_on = COALESCE(waiting_on, ?), job_note = ?, stalled_at = NULL, requester_told_at = NULL
+       WHERE id = ? AND state = '${JOB_ROW_STATE}' AND peer IS NOT NULL AND ${OPEN_ROW} AND ${STALLED_BY_PEER}`,
+    ).run(clip(waitingOn, WHO_MAX), clip(note, JOB_NOTE_MAX), id).changes > 0
+  }
+
+  /** A job waiting on another node is no longer blocked there: the next
+   *  block there is told again. */
+  clearPeerTold(id: string): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET requester_told_at = NULL WHERE id = ? AND peer IS NOT NULL AND job_state = 'waiting' AND requester_told_at IS NOT NULL`,
+    ).run(id).changes > 0
   }
 
   /** Every open job, oldest first: what the minute check walks. */
@@ -586,7 +623,7 @@ export class JobStore {
    *  requests age out with the request store's own pruning. */
   pruneDone(before: number): number {
     return this.db.prepare(
-      `DELETE FROM requests WHERE state = ? AND ((job_state = 'done' AND closed_at < ?) OR (job_state IN ('working', 'blocked', 'stalled') AND updated_at < ?))`,
+      `DELETE FROM requests WHERE state = ? AND ((job_state IN ('done', 'dropped') AND closed_at < ?) OR (job_state IN ('working', 'blocked', 'stalled') AND updated_at < ?))`,
     ).run(JOB_ROW_STATE, before, before).changes
   }
 }

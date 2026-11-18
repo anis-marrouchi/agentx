@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore, OPEN_STATES } from "../src/requests/store"
-import { JobStore, JOB_COLUMNS, JOB_ROW_STATE, ensureJobColumns } from "../src/jobs/store"
+import { JobStore, JOB_COLUMNS, JOB_ROW_STATE, ensureJobColumns, retireWatcherTable } from "../src/jobs/store"
 import { isOwned, statusLine, stallReason, ago } from "../src/jobs/status"
 import { handleJobsApi } from "../src/jobs/api"
 
@@ -358,5 +358,17 @@ describe("the retired watcher ledger (#1861 phase 4)", () => {
 
     // A database that never had it: nothing to do.
     expect(table(db)).toBeUndefined()
+  })
+
+  it("never throws on a database it cannot write, and leaves the table", () => {
+    const file = path.join(tmp, "ro.sqlite")
+    const w = new Database(file)
+    new JobStore(w)
+    w.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    w.close()
+    const ro = new Database(file, { readonly: true })
+    expect(() => retireWatcherTable(ro)).not.toThrow()
+    expect(table(ro)).toBeDefined()
+    ro.close()
   })
 })

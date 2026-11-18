@@ -742,6 +742,14 @@ describe("other paths wake the job (#1861 box 4)", () => {
       expect(jobs.get(id)).toMatchObject({ state: "working", note: null })
       expect(wake.wakeFor(id, "picked up")).toBe(true)
     }
+    // The daemon's own resend after a usage limit is not the owner's word:
+    // the block the agent declared stands.
+    requests.addCandidate({ id: "req-r", runId: "o-req-r", channel: "telegram", chatId: "c1", sender: "owner", agentId: "coder", text: "ship it", now: clock })
+    requests.progress("req-r", clock)
+    jobs.declare("req-r", { state: "blocked", why: "needs the client's key" }, { runId: "o-req-r", now: clock })
+    requests.needsAttention("req-r", "coder failed: You've hit your usage limit", clock)
+    expect(requests.requestPickup("req-r", clock, { resend: true })).toBe(true)
+    expect(jobs.get("req-r")).toMatchObject({ state: "blocked", note: "needs the client's key" })
     // Any other request keeps what a run declared on it.
     open("job-b")
     jobs.declare("job-b", { state: "blocked", why: "needs the client's key" }, { now: clock })
