@@ -11,6 +11,7 @@ import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
 import { JobStore } from "@/jobs/store"
 import { JobDoors, jobsOn, type JobDoorsDeps } from "@/jobs/doors"
+import { SlotStore } from "./slot-store"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -32,6 +33,8 @@ export interface AttachedRequests {
   jobs: JobStore
   /** Opens a job for every run that is not the owner's turn (#1861). */
   doors: JobDoors
+  /** Work registered in the queue, with its computed due time (#1909). */
+  slots: SlotStore
   detach: () => void
 }
 
@@ -116,6 +119,7 @@ export function attachRequests(
     drift: new DriftStore(db),
     jobs,
     doors,
+    slots: new SlotStore(db),
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)

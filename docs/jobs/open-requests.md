@@ -324,6 +324,81 @@ To turn one off:
 
 To turn it on again, set it to `true` or remove the line, then restart AgentX.
 
+### Due times the daemon gives: the queue
+
+An agent that picks its own due time ("I deliver at noon") is guessing. It cannot see the other work waiting for it, the work other agents and you will hand it, how many runs this computer can hold at once, or how long its work really takes. With this setting, the agent no longer picks the time. It says how long the work takes and how urgent it is, and AgentX answers with the due time.
+
+Three words used below:
+
+- **The queue:** every piece of open work on this computer that an agent still has to do. It is the same list as [Jobs](/dashboard/jobs). Work that waits on someone else, or is blocked, is not in it.
+- **Priority:** `critical`, `high`, `normal` (the default) or `low`. Critical work goes first; then work you asked to make room for; then high, normal and low. Same priority: the older work first.
+- **Correction factor:** how long an agent's work really took against the minutes it said, read from its own finished work of the last 30 days. Only work whose runs AgentX kept counts, and the time is the time those runs took: the hours between asking and closing hold nights and waits, so they are not used. A factor of 1.5 means its work takes half again as long as it says. With fewer than 3 such pieces of work, the factor is 1.
+
+How the due time is worked out:
+
+1. The agent sends `estimateMinutes` and `priority` with `promise` or `accept`, and no `due`.
+2. AgentX multiplies the estimate by the agent's correction factor. With no estimate, it uses the agent's usual time for that kind of `work`, or 30 minutes.
+3. AgentX puts every piece of open work in priority order, and runs it on this computer's capacity: how many runs it holds at once, and how many runs each agent holds at once (its `maxConcurrent`). Work running now goes first and counts only what is left of its estimate (never under 5 minutes). Work that waits for a wake later on starts no earlier than that wake. Open work nobody touched for longer than `requests.staleAfterHours` (24 hours by default), with no wake ahead of it, is left out. An estimate counts at most a week (10080 minutes).
+4. The due time is when this work would end. The agent's reply says the time and what it came from: how many jobs of its own are ahead, their minutes, the priority, the estimate and the factor.
+
+When you name the time yourself, your time comes first:
+
+- The agent sends your time as `due`, with `dueSource: {kind: "requester", text: "<your words>"}`. A time set by an outside fact, such as a posting slot or a meeting, uses `kind: "fact"`.
+- **It fits the queue:** it replaces the time AgentX would have given.
+- **It does not fit:** nothing is accepted yet. The agent gets an answer at once with the earliest time that holds with nothing moved, and what would have to move to meet yours, for example `"Draft the report" moves from 10:00 to 10:30`. The agent asks you which you want. If you choose to move the other work, the agent sends your time again with `makeRoom: true`. If you take the later time, it sends that time.
+
+When work goes ahead of other work (a critical job, or room you asked for), the due times AgentX gave behind it move later, by the time that work costs them. A move of less than 15 minutes is not made. Each person or agent waiting on moved work is told with the old time, the new time and the reason, at most once an hour for the same work: a second move within the hour is told in one later message, from the first old time to the latest. A wake armed for the old time moves with it, and its note gives the new time. A time you named, or one set by an outside fact, is never moved this way.
+
+There are three modes. Start with `shadow`:
+
+| `requests.dueTimes.mode` | What happens |
+|---|---|
+| `off` (the default) | Nothing changes. |
+| `shadow` | Nothing changes for the agents: they get the same replies as with `off`, and nothing is written but one row per promise or accept. That row holds the due time AgentX would have given next to the one the agent wrote, and whether `on` would have refused it, including fields the agent got wrong (an unknown `priority`, a `dueSource` that is not `{kind, text}`, an estimate over a week). |
+| `on` | A promise or accept with no `due` gets the time from the queue. A `due` with no `dueSource` is refused with: `Not recorded: you wrote a due time with no source. Register the work instead…`. A time you named that does not fit is answered at once, as above. |
+
+To turn it on:
+
+1. Open `agentx.json` and find the `requests` block.
+2. Add the setting in shadow mode. Merge this in; it isn't a complete file:
+   ```json
+   "requests": {
+     "enabled": true,
+     "dueTimes": { "mode": "shadow" }
+   }
+   ```
+3. **Terminal:** restart AgentX:
+   ```bash
+   agentx daemon restart
+   ```
+4. Leave it in shadow mode for three days.
+5. **Terminal:** read the report:
+   ```bash
+   agentx requests contract --since 3d
+   ```
+   The **Due times** table has one line per agent: its correction factor, how many promises and accepts were recorded, the middle difference in minutes between the time the agent wrote and the time AgentX would have given (`agent − daemon`), and how many calls the refusal would have stopped (`no source`, `does not fit`, `wrong fields`).
+6. When the times AgentX gives look right, change `"mode": "shadow"` to `"mode": "on"` and restart AgentX again.
+
+**Browser:** while the mode is `shadow` or `on`, the Hub's **Jobs** page shows a **Queue** block above the list: one line per agent, with its open jobs, their minutes of work, when the next one ends, when its queue is clear, and its correction factor when it is not 1.
+
+Other settings, under `requests.dueTimes`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `capacity` | `0` | Runs this computer holds at once. `0`: the admission queue's `maxSessions` when it is set, else 2. |
+| `defaultEstimateMinutes` | `30` | Minutes counted for work with no estimate and no usual time. |
+| `factorDays` | `30` | Days of finished work the correction factor is read from. |
+| `factorMinRows` | `3` | Fewer finished pieces of work with an estimate than this: the factor is 1. |
+
+What it does not do yet, to weigh before you switch to `on`:
+
+- A step report on a plan (`action: "step"`) is not placed in the queue; a plan gets its due time once, at its accept.
+- The budget an agent has left is not counted.
+- Work that closes early does not bring the due times behind it forward.
+- Work waiting on someone else is left out of the queue, not placed at the time it is expected back.
+- A move told later (the once-an-hour rule) goes out with the next promise or accept on this computer, not on a timer.
+- Work that waits for a wake later on is placed after the work that is ready now, not between it.
+
 ## Close on evidence, not on a claim
 
 A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:
@@ -643,6 +718,10 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 28. **Terminal:** ask an agent to promise you something due in five minutes. Six minutes later, the daemon log has a `fell due` line for the promise that says the agent was woken, and you receive **Promise not kept** unless the agent kept it first.
 29. **Terminal:** with the owner-words check on, let a plan of steps finish on a request it does not fulfil. Within two minutes, the daemon log has the line `its plan closed without doing what was asked; <agent> woken`.
 30. **Terminal:** with `requests.promises.duePush` set to `false` and AgentX restarted, ask an agent to promise you something due in five minutes. Six minutes later, the daemon log has no `fell due` line for the promise.
+31. **Terminal:** with `requests.dueTimes.mode` set to `"shadow"` and AgentX restarted, ask an agent to promise you something with a due time. The daemon log has a `[due-times] shadow` line for the promise that says `would give <time>`.
+32. **Terminal:** run `agentx requests contract --since 1d`. It prints a **Due times** table with a line for that agent.
+33. **Browser:** open the Hub's **Jobs** page. A **Queue** block shows one line for each agent with open work.
+34. **Terminal:** with the mode set to `"on"`, ask an agent to accept a request with an estimate and no due time. Its reply gives a line starting `Due time given by the daemon:`, and `agentx requests show <id>` shows that due time.
 
 ## If something is wrong
 
@@ -661,6 +740,12 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A promise fell due and nothing happened that minute:** check `requests.promises.duePush` in `agentx.json`. With `false`, the push is off and the promise comes back to you later as **needs attention**. Remove the line or set it to `true`, then restart AgentX.
 - **An agent accepted a due time and was not woken at that time:** check `requests.promises.acceptWake` in `agentx.json`. With `false`, the due time is only stored.
 - **A plan's close was reopened and its agent was not woken:** check `requests.ownerCheck.wakeOnPlanMismatch` in `agentx.json`. With `false`, only you are told.
+- **No `[due-times]` line in the daemon log, and no Due times rows:** check that `requests.dueTimes.mode` is `"shadow"` or `"on"` in `agentx.json`, that `requests.enabled` is `true`, and that AgentX was restarted. Only `promise` and `accept` are recorded.
+- **An agent's promise is refused with `Not recorded: you wrote a due time with no source`:** the mode is `"on"` and the agent wrote its own time. It sends `estimateMinutes` and `priority` instead, or your words as `dueSource`. To go back to recording only, set the mode to `"shadow"` and restart AgentX.
+- **An accept is refused with `does not fit the queue`:** the time you named cannot be met with the work already waiting. The message gives the earliest time and what would have to move. Tell the agent which you want.
+- **Every due time is far away:** many open requests are counted with the default 30 minutes, or recently touched work that is finished is still open. Close the ones that are finished, or lower `requests.dueTimes.defaultEstimateMinutes`. A computer that holds more runs at once can set `requests.dueTimes.capacity`.
+- **The correction factor stays at ×1:** the agent has fewer than `factorMinRows` finished pieces of work with an estimate and kept runs in the last `factorDays` days. It counts once the agent gives `estimateMinutes` on work it runs. A promise kept without a run of its own does not count.
+- **No Queue block on the Jobs page:** the mode is `"off"`, or no agent has open work. The dashboard reads `agentx.json` again after the file changes.
 - **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 

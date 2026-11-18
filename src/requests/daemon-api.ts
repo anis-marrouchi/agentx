@@ -12,6 +12,8 @@ import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
 import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
 import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./flow"
+import { ESTIMATE_TOO_LONG, planDue, readDueFields, type DueGiven, type DuePlan, type DueTimesCtx } from "./due-times"
+import { MAX_ESTIMATE_MINUTES } from "./slots"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -97,6 +99,9 @@ export interface RequestsApiDeps {
   /** Proof per deliverable and reopen once (close-proof.ts, #692).
    *  Unset: as before. */
   closeProof?: CloseProofCtx
+  /** Due times from the queue (due-times.ts, #1909). Unset or mode off:
+   *  as before. */
+  dueTimes?: DueTimesCtx
   now?: number
 }
 
@@ -187,6 +192,65 @@ function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: n
     closeWhen = spec
   }
   return { ...(due !== undefined ? { dueAt: due } : {}), ...(closeWhen ? { closeWhen } : {}) }
+}
+
+/** The slot of a promise or an accept (#1909): what the daemon decides
+ *  about its due time, and the work declaration it read. Off: a plan that
+ *  changes nothing. */
+function dueSlot(
+  deps: RequestsApiDeps,
+  input: Record<string, unknown>,
+  ask: {
+    agentId: string; requestId: string | null; due: number | null; requester: string | null; words: string; createdAt?: number
+    kept?: { work: string | null; estimateMinutes: number | null }
+  },
+  now: number,
+): { refuse: ApiReply } | { plan: DuePlan; work: { work?: string; estimateMinutes?: number } | null } {
+  const pass = { plan: { kind: "pass", finish: () => {} } as DuePlan, work: null }
+  const ctx = deps.dueTimes
+  if (!ctx || ctx.settings.mode === "off") return pass
+  // Shadow never changes a reply and writes nothing but its slot row: a
+  // field the agent got wrong is noted on the row, never refused, and a
+  // slot that fails to compute leaves the call as it was.
+  const shadow = ctx.settings.mode === "shadow"
+  try {
+    const { fields, problems } = readDueFields(input)
+    if (!shadow && problems.length) return { refuse: { status: 400, body: { error: problems[0] } } }
+    let work = parseWork(input)
+    if (typeof work === "string") {
+      if (!shadow) return { refuse: { status: 400, body: { error: work } } }
+      problems.push(work)
+      work = {}
+    }
+    if (work.estimateMinutes !== undefined && work.estimateMinutes > MAX_ESTIMATE_MINUTES) {
+      if (!shadow) return { refuse: { status: 400, body: { error: ESTIMATE_TOO_LONG } } }
+      problems.push(ESTIMATE_TOO_LONG)
+      work = { ...work, estimateMinutes: undefined }
+    }
+    const plan = planDue(ctx, {
+      ...ask, fields, problems: shadow ? problems : undefined,
+      estimateMinutes: work.estimateMinutes ?? ask.kept?.estimateMinutes ?? null,
+      work: work.work ?? ask.kept?.work ?? null,
+    }, now)
+    if (plan.kind === "refuse") return shadow ? pass : { refuse: { status: plan.status, body: plan.body } }
+    // Only "on" writes the work declaration on a promise.
+    return { plan, work: !shadow && (work.work !== undefined || work.estimateMinutes !== undefined) ? work : null }
+  } catch (e: any) {
+    deps.dueTimes?.log?.(`[due-times] slot not computed: ${e?.message ?? e}`)
+    return pass
+  }
+}
+
+/** Due times are on (#1909): the daemon refuses what it cannot place. */
+const dueTimesOn = (deps: RequestsApiDeps) => deps.dueTimes?.settings.mode === "on"
+
+/** Keeps the slot once the request has its id. Never fails the call. */
+function finishSlot(plan: DuePlan, requestId: string, now: number): DueGiven | null {
+  try {
+    if (plan.kind === "set") return plan.finish(requestId, now)
+    if (plan.kind === "pass") plan.finish(requestId, now)
+  } catch { /* the call went through; its slot row is not worth failing it */ }
+  return null
 }
 
 /** The handler with its checker: a done on a loop with a closeWhen runs
@@ -420,10 +484,16 @@ export function handleRequestsApi(
       if (store.openPromises(agentId) >= MAX_OPEN_PROMISES) {
         return { status: 409, body: { error: `${agentId} already has ${MAX_OPEN_PROMISES} open promises: close some with done or decline first` } }
       }
+      // The daemon gives the due time (#1909): off by default.
+      const slot = dueSlot(deps, input, { agentId, requestId: null, due: loop.dueAt ?? null, requester: owedTo, words: described.headline ?? text }, now)
+      if ("refuse" in slot) return slot.refuse
+      if (slot.plan.kind === "set") loop.dueAt = slot.plan.dueAt
       const { id } = openPromise(store, { channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
       store.setHeadline(id, described, "agent")
+      if (slot.work) store.setWork(id, slot.work)
       if (needsQa !== undefined) store.setNeedsQa(id, needsQa, now)
-      return { status: 200, body: { request: store.get(id) } }
+      const due = finishSlot(slot.plan, id, now)
+      return { status: 200, body: { request: store.get(id), ...(due ? { due } : {}) } }
     }
 
     // Without an id it is the request of the turn that is speaking, never
@@ -567,6 +637,11 @@ export function handleRequestsApi(
     // even when refused, so a later bare accept is gated on it too.
     const declared = action === "accept" ? parseWork(input) : {}
     if (typeof declared === "string") return { status: 400, body: { error: declared } }
+    // An estimate over a week is refused before it is kept, while due
+    // times are on (#1909); off and shadow keep it as before.
+    if (dueTimesOn(deps) && declared.estimateMinutes !== undefined && declared.estimateMinutes > MAX_ESTIMATE_MINUTES) {
+      return { status: 400, body: { error: ESTIMATE_TOO_LONG } }
+    }
     if (action === "accept") {
       store.setWork(request.id, declared)
       if (goal) {
@@ -600,6 +675,22 @@ export function handleRequestsApi(
       }
     }
 
+    // The daemon gives the due time of an accept (#1909): off by default.
+    // A requester's time the queue cannot hold is answered before anything
+    // is accepted.
+    const slot = action === "accept"
+      ? dueSlot(deps, input, {
+        agentId, requestId: request.id, due: loop.dueAt ?? null, requester: request.owedTo ?? request.sender ?? "owner",
+        // It queues from its accept, not from when it was asked: an old
+        // request accepted now does not go ahead of work accepted before.
+        words: described.headline ?? request.headline ?? request.text,
+        kept: { work: request.work, estimateMinutes: request.estimateMinutes },
+      }, now)
+      : null
+    if (slot && "refuse" in slot) return slot.refuse
+    if (slot?.plan.kind === "set") loop.dueAt = slot.plan.dueAt
+    const slotDone = () => (slot && "plan" in slot ? finishSlot(slot.plan, request!.id, now) : null)
+
     if (action === "accept" && input.steps != null) {
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
       if (!deps.plans) return { status: 409, body: { error: "This node has no plans: accept without steps." } }
@@ -615,7 +706,8 @@ export function handleRequestsApi(
       deps.plans.create(request.id, agentId, parsed.steps, now)
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
       deps.onPlanChange?.()
-      return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id) } }
+      const due = slotDone()
+      return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id), ...(due ? { due } : {}) } }
     }
 
     try {
@@ -637,7 +729,8 @@ export function handleRequestsApi(
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }
-    return { status: 200, body: { request: store.get(request.id) } }
+    const due = slotDone()
+    return { status: 200, body: { request: store.get(request.id), ...(due ? { due } : {}) } }
   }
 
   if (m !== "GET" && m !== "HEAD") return { status: 405, body: { error: "Method not allowed" } }

@@ -5,6 +5,7 @@ import type { GoalSummary } from "./goals"
 import { describeGoalCheck, type GoalRecord } from "./goal-store"
 import { describeFlow } from "./flow"
 import { waitsText } from "./plan-store"
+import { describeDue } from "./due-times"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -213,6 +214,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, proofs: args.proofs, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, waitUntil: args.waitUntil, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
+        priority: args.priority, dueSource: args.dueSource, makeRoom: args.makeRoom,
         headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict, goal: args.goal,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
@@ -221,12 +223,14 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
     const r = data.request
     const serves = r.goal ? ` It serves the goal "${r.goal.title}" (${r.goal.id}).` : ""
+    // The due time the daemon gave from the queue (#1909).
+    const due = data.due ? `\n${describeDue(data.due)} Tell the requester this time.` : ""
     if (action === "accept" && data.plan) {
       return [
         `Request ${r.id} is open with a plan of ${data.steps.length} steps.${serves} The daemon hands each step to its agent in order, nudges a step that goes quiet, and tells the owner when it is finished or blocked.`,
         ...describeSteps(data.steps),
         `Steps the owner approves get a decision card now; an approved message is sent by the daemon itself. Report your own steps with {action:"step", id:"${r.id}", step:<n>, status:"progress"|"done"|"blocked"}.`,
-      ].join("\n")
+      ].join("\n") + due
     }
     if (action === "step" && typeof data.proofsAdded === "number") {
       return `${data.proofsAdded} proof link${data.proofsAdded === 1 ? "" : "s"} kept on ${r.id}.${describeDeliverables(r)}`
@@ -234,11 +238,11 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "qa") return `Verdict recorded on ${r.id}: ${describeQa(r.qa)}. It shows on the request's card; nobody is told.`
     if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
-    if (action === "accept") return `Request ${r.id} is open and in progress.${serves} Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
+    if (action === "accept") return `Request ${r.id} is open and in progress.${serves} Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.${due}`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
     if (action === "promise") {
       return `Promise ${r.id} is open, owed to ${r.owedTo}${r.dueAt ? `, due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
-        (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}", evidence:"<link>"} when it is kept.`)
+        (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}", evidence:"<link>"} when it is kept.`) + due
     }
     if (action === "done" && data.verify === "reading") {
       return `Request ${r.id} stays open: ${data.detail}. Say done again in a minute.`

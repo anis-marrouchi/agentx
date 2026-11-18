@@ -1719,6 +1719,24 @@ export const requestsConfigSchema = z.object({
     /** Agents told per requests check which items need a link. */
     askPerCheck: z.number().int().min(1).max(20).default(3),
   }).default({}),
+  /** Due times from the queue (src/requests/due-times.ts, #1909): a
+   *  promise or an accept registers the work (estimateMinutes, priority)
+   *  and the daemon gives the due time from the queue, the priorities, the
+   *  node's capacity and the agent's correction factor. "shadow" changes
+   *  nothing and records the time the daemon would give next to the one
+   *  the agent wrote; "on" gives the time, refuses a `due` with no source,
+   *  and answers a requester's time the queue cannot hold at once. */
+  dueTimes: z.object({
+    mode: z.enum(["off", "shadow", "on"]).default("off"),
+    /** Runs the node holds at once. 0: admission.maxSessions when set, else 2. */
+    capacity: z.number().int().min(0).max(100).default(0),
+    /** Minutes counted for work with no estimate and no usual length. */
+    defaultEstimateMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+    /** Days of closed work the correction factor is read from. */
+    factorDays: z.number().int().min(1).max(365).default(30),
+    /** Fewer closed rows with an estimate than this: the factor is 1. */
+    factorMinRows: z.number().int().min(1).max(100).default(3),
+  }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** The job ledger (src/jobs, #1861): one record for every run that is

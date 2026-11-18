@@ -775,7 +775,7 @@ Drop a request you no longer want.
 
 ### `agentx requests contract`
 
-Measure what agents owe you when they deliver or go quiet: five numbers per agent and for this node. Read only. See [Measure what agents tell you](../jobs/open-requests.md#measure-what-agents-tell-you).
+Measure what agents owe you when they deliver or go quiet: five numbers per agent and for this node. Read only. See [Measure what agents tell you](../jobs/open-requests.md#measure-what-agents-tell-you). It ends with a **Due times** table: each agent's correction factor (how long its work really took against its estimates), and, from the rows `requests.dueTimes` recorded, the middle gap between the due times the agent wrote and the ones AgentX would give. See [Due times the daemon gives](../jobs/open-requests.md#due-times-the-daemon-gives-the-queue). With `--json`, the same is under `dueTimes`.
 
 | Flag | Default | What it does |
 |---|---|---|

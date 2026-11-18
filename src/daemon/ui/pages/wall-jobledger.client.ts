@@ -17,7 +17,7 @@
 // refresh; the nav count (jobs stalled or blocked) shows once it has read.
 
 export const WALL_JOBLEDGER_SCRIPT = String.raw`
-  var JL = { key: '', loading: '', list: null, counts: null, total: 0, failed: [], error: '', state: 'open', door: '', open: '', node: '', detail: null, detailFor: '', detailErr: '', detailLoading: '' };
+  var JL = { key: '', loading: '', list: null, counts: null, total: 0, queue: [], failed: [], error: '', state: 'open', door: '', open: '', node: '', detail: null, detailFor: '', detailErr: '', detailLoading: '' };
   function jlRead(q) {
     var st = q.get('j-state') || 'open', door = q.get('j-door') || '';
     JL.state = jlStates().some(function (s) { return s[0] === st; }) ? st : 'open';
@@ -47,15 +47,18 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
     // A newer read (another state or door, or the machines changed) wins.
     if (JL.loading !== key) return;
     JL.loading = ''; JL.key = key;
-    var ok = replies.filter(function (r) { return r.d; }), list = [], counts = {}, total = 0;
+    var ok = replies.filter(function (r) { return r.d; }), list = [], counts = {}, total = 0, queue = [];
     ok.forEach(function (r) {
       r.d.jobs.forEach(function (j) { list.push(Object.assign({}, j, { node: r.m.peer ? r.m.name : '', nodeName: r.m.name })); });
+      // The queue with its computed times (#1909): sent where due times are on or in shadow.
+      (Array.isArray(r.d.queue) ? r.d.queue : []).forEach(function (q) { queue.push(Object.assign({}, q, { nodeName: r.m.name })); });
       Object.keys(r.d.counts || {}).forEach(function (k) { counts[k] = (counts[k] || 0) + (r.d.counts[k] || 0); });
       total += r.d.total || 0;
     });
     // Most recently active first, across machines.
     list.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
     JL.list = list; JL.counts = counts; JL.total = total;
+    JL.queue = queue.sort(function (a, b) { return (b.clearsAt || 0) - (a.clearsAt || 0); });
     JL.failed = replies.filter(function (r) { return !r.d; }).map(function (r) { return { name: r.m.name, why: r.err }; });
     JL.error = ok.length ? '' : JL.failed.map(function (f) { return f.name + ' ' + f.why; }).join('; ');
     render();
@@ -127,7 +130,7 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
     $('wall-jobledger').innerHTML = jobLedgerPageHtml({
       list: JL.list, counts: JL.counts, total: JL.total, state: JL.state, door: JL.door, open: JL.open, node: JL.node,
       detail: shown ? JL.detail : null, detailErr: shown ? JL.detailErr : '',
-      missed: costMachines().missed.concat(JL.failed), error: JL.error, multi: costMachines().read.length > 1, now: Date.now(),
+      missed: costMachines().missed.concat(JL.failed), error: JL.error, multi: costMachines().read.length > 1, now: Date.now(), queue: JL.queue,
     });
   }
   document.addEventListener('click', function (ev) {
@@ -165,6 +168,11 @@ export const WALL_JOBLEDGER_CSS = `
 .wjl__by { font-size: var(--ax-fs-xs); color: var(--ax-muted); display: inline-flex; gap: 6px; align-items: center; }
 .wjl__by select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 5px 8px; }
 .wjl__warn { margin: 0 16px 8px; padding: 6px 10px; border-radius: var(--ax-radius-sm); background: color-mix(in oklch, var(--ax-amber) 14%, transparent); font-size: var(--ax-fs-sm); }
+.wjl__queue { margin: 0 16px 10px; padding: 8px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); font-size: var(--ax-fs-sm); }
+.wjl__queue ul { list-style: none; margin: 0; padding: 0; }
+.wjl__queue li { padding: 2px 0; overflow-wrap: anywhere; }
+.wjl__queue .k, .wjl__qh .k { color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
+.wjl__qh { margin: 0 0 4px; font-weight: 600; }
 .wjl__list { border-top: 1px solid var(--ax-border); }
 .wjl__top { margin-bottom: 12px; border-bottom: 2px solid var(--ax-border-2); }
 .wjl { border-bottom: 1px solid var(--ax-border); border-left: 3px solid transparent; }

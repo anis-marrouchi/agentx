@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { handleJobsApi } from "./api"
 import { dbFacts } from "./facts"
 import { JobStore } from "./store"
+import { queueLines } from "@/requests/due-report"
 
 // --- The Hub's read of the job ledger (#1861) ---
 //
@@ -33,8 +34,18 @@ export function isJobsHubPath(path: string): boolean {
   return path === JOBS_HUB_PATH || path.startsWith(JOBS_HUB_PATH + "/")
 }
 
-export function jobsHubReply(db: Database.Database | null, path: string, query: URLSearchParams, now: number): { status: number; body: unknown } {
+/** How the queue is computed (#1909): passed while due times are not off. */
+export type QueueOptions = Omit<Parameters<typeof queueLines>[1], "now">
+
+export function jobsHubReply(db: Database.Database | null, path: string, query: URLSearchParams, now: number, queue?: QueueOptions): { status: number; body: unknown } {
   if (!isJobsHubPath(path)) return { status: 404, body: { error: "not found" } }
   if (!db) return { status: 503, body: { error: "the database is not open" } }
-  return handleJobsApi("GET", "/jobs" + path.slice(JOBS_HUB_PATH.length), { store: storeOf(db), facts: dbFacts(db), query, now })
+  const reply = handleJobsApi("GET", "/jobs" + path.slice(JOBS_HUB_PATH.length), { store: storeOf(db), facts: dbFacts(db), query, now })
+  // The list carries the queue, one line per agent, with its computed times.
+  if (queue && path === JOBS_HUB_PATH && reply.status === 200 && reply.body && typeof reply.body === "object") {
+    try {
+      (reply.body as Record<string, unknown>).queue = queueLines(db, { ...queue, now })
+    } catch { /* the list is still worth sending */ }
+  }
+  return reply
 }

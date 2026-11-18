@@ -144,6 +144,7 @@ import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { capacityOf, dueTimeSettingsOf, dueTimesCtx, type DueTimesCtx } from "@/requests/due-times"
 import { handleJobsApi, type JobView } from "@/jobs/api"
 import { JobMesh } from "@/jobs/mesh"
 import { jobsOn } from "@/jobs/doors"
@@ -3361,6 +3362,28 @@ export class AgentXDaemon {
     })
   }
 
+  /** Due times from the queue (#1909). Undefined while the mode is off. A
+   *  requester whose work moved is told once: an agent of this node at the
+   *  head of its next run, the owner or a person through the owner notice. */
+  private dueTimes(requests: AttachedRequests): DueTimesCtx | undefined {
+    const settings = dueTimeSettingsOf(this.config.requests)
+    if (settings.mode === "off" || !this.db) return undefined
+    return dueTimesCtx(this.db, settings, {
+      capacity: capacityOf(settings, this.config.admission?.maxSessions),
+      lanes: (id) => this.registry.getAgent(id)?.maxConcurrent ?? 1,
+      staleAfterHours: this.config.requests?.staleAfterHours,
+      tell: (to, text, id) => {
+        if (this.registry.getAgent(to)) {
+          if (this.registry.notices.count(to) < MAX_NOTICES) this.registry.notices.add(to, "the queue", text)
+          return
+        }
+        const r = requests.store.get(id)
+        if (r) void this.notifyRequestOwner("Due time moved", text, r, "notice").catch(() => {})
+      },
+      log: this.log,
+    }, requests.slots)
+  }
+
   /** Starts a turn on `agentId` for request `r`, in the request's own
    *  pick-up chat, so the run is linked to it and a failure brings it
    *  back. Fire and forget: the check never waits on a model. */
@@ -5776,6 +5799,7 @@ export class AgentXDaemon {
             ...this.closeProofDeps(requests),
             log: this.log,
           },
+          dueTimes: this.dueTimes(requests),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return
