@@ -60,14 +60,46 @@ The gate starts in **shadow** mode, so you can see what it would do before it do
 2. **Terminal:** send that message on: `agentx situation release 42`.
 3. The message reaches your agent once, and the talk is open again (**during**).
 
+## See each talk and end it by hand
+
+Each chat's record is also called its **situation**: what kind of talk it is (for now always a **conversation**) and its phase. You can see it, and change it, on the agent's page or in the terminal.
+
+![The agent page's Activity tab, panel "Conversations now": three chats, each with a chip such as "Conversation · ending", the reason the phase changed, and End and Not this buttons.](/screenshots/agents/situation-chip.png)
+
+**On the dashboard:**
+
+1. **Browser:** open **Settings**, then **Agents**, then the agent.
+2. **Browser:** click **Activity** in the left column.
+3. Under **Conversations now**, each chat has a chip with its phase, for example **Conversation · ending**, and the reason the phase changed.
+4. **Browser:** click **End** to end a talk now. Click **End** again in the box that opens to confirm. More thanks and goodbyes in that chat are now held, as after a goodbye.
+5. **Browser:** or click **Not this** when a talk is not ending. It goes back to **during**, and thanks or goodbyes no longer end it, until the talk is ended another way (by you, the safety limit or the age limit).
+
+Only you, the owner, can use these buttons. A person in the chat cannot end or reopen a talk by writing to it, and a real message still reaches your agent after you click **End**.
+
+Like `agentx situation release`, ending or reopening a talk is open to any program on the same machine, without a token. That includes an agent that can run terminal commands there. From another machine it needs the mesh token.
+
+**In the terminal:**
+
+1. **Terminal:** list the talks: `agentx situation list`. Add `--agent <id>` for one agent's chats.
+2. Each row starts with a short id, for example `3f2a9c1b`.
+3. **Terminal:** end a talk: `agentx situation end 3f2a9c1b`. Or keep it going: `agentx situation not-this 3f2a9c1b`.
+
+**What your agent sees:** in **active** mode, your agent's prompt carries one line that names the phase, for example `[Situation] Conversation, phase: ending (...). If a goodbye is due, say one short goodbye, then stop; do not open a new topic.` A new session gets the line whatever the phase. A session that goes on gets it only in the first 30 minutes after the talk moved to ending or ended, to keep each turn small. When you are busy (Focus or a call), the line adds "The owner is busy now; do not promise an immediate answer from them." It never says why you are busy, since the chat may be with a customer. Shadow mode adds no line.
+
+**For other tools:** each change of phase is published once as the event `situation:phase` (kind `situation`), with who made it: a rule or a person. Agents can subscribe to it like to any event. Like other message events, the event names the channel and the chat id (on WhatsApp, a phone number). The reason the phase changed, which can name a sender, stays on this machine and is not sent to mesh peers.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `agentx situation log` | Lists the newest gate log rows. `--limit <n>` sets how many (50 by default), `--dropped` shows only held messages, `--would-drop` only shadow-mode rows, `--json` prints JSON. |
 | `agentx situation release <id>` | Sends a held message on to your agent, once, and opens the talk again. Only rows with outcome **dropped** can be released, and each only once. |
+| `agentx situation list` | Lists each chat's talk and phase, newest change first. `--agent <id>`, `--phase during\|ending\|ended`, `--limit <n>`, `--json`. |
+| `agentx situation end <id>` | Ends a talk by hand. `<id>` is the first column of `situation list`. |
+| `agentx situation not-this <id>` | Says a talk is not ending: back to **during**, and thanks or goodbyes no longer end it. |
+| `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
 
-Both commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
+All these commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
 
 The gate log and each chat's record are kept for 30 days. A held message is stored for release with its text cut to the first 4,000 characters if it is longer.
 
@@ -78,6 +110,13 @@ The gate log and each chat's record are kept for 30 days. A held message is stor
 3. Send "Thanks again, bye!".
 4. **Terminal:** run `agentx situation log`. The last message is listed, as **would drop** in shadow mode or **dropped** in active mode.
 
+To check ending a talk by hand:
+
+1. In a test chat, send your agent a question and let it answer.
+2. **Browser:** on the agent's page, open **Activity**. The chat shows **Conversation · during**.
+3. **Browser:** click **End**, then confirm. The chip shows **Conversation · ended (person)**.
+4. In the test chat, send "Thanks, bye!". In active mode your agent does not answer, and `agentx situation log` lists the message as **dropped**.
+
 ## If something is wrong
 
 - **The log stays empty:** check that `situations.mode` is not `off` and that the chat is on Telegram, WhatsApp, Discord or Slack. Shadow and active modes only list messages after a talk has ended.
@@ -85,4 +124,9 @@ The gate log and each chat's record are kept for 30 days. A held message is stor
 - **Your agent never ends the talk:** the talk only ends when your agent's reply goes out while the talk is **ending**. If your agent answered with nothing, the talk stays in **ending** and is treated as over after `situations.maxAge.endingMinutes`.
 - **`agentx situation log --node <url>` answers HTTP 401:** reading the gate log from another machine needs the mesh token. Pass it with `--token`, or run the command on the machine itself.
 - **An old held message is missing from the log:** rows older than 30 days are removed.
+- **The Conversations panel says "not available" or is empty:** the panel asks the daemon on the same machine. Check that the daemon runs, and that the chat has had a message since the update. A chat appears under the agent that answered it.
+- **The panel says "situations need the daemon on the same machine as the dashboard":** `dashboard.daemonUrl` points to another machine. Set it to the daemon on this machine (for example `http://127.0.0.1:18800`), or use `agentx situation` commands with `--node` and `--token` instead.
+- **End answers "this talk has already ended" or "changed meanwhile":** the phase moved while the page was open. Click **Refresh** and try again.
+- **`agentx situation end` answers HTTP 401 with `--node`:** ending a talk on another machine needs the mesh token (`--token`).
+- **Your agent's prompt has no `[Situation]` line:** the line is added only in **active** mode, and on a session that goes on only while the talk is ending or ended.
 - **`release` answers "was already released" or "was not dropped":** the row was sent on before, or it is a shadow-mode row, which was never held.

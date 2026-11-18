@@ -3690,6 +3690,29 @@ Messages the gate held (active mode) or would have held (shadow mode), newest fi
 
 Send a held message on to the agent, once, and open the talk again. Only a held row (not a shadow-mode row) can be released, and only once.
 
+### `agentx situation list`
+
+List each chat's situation and phase (**during**, **ending**, **ended**), newest change first, with why the phase moved and which agent answers the chat.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-a, --agent <id>` | — | Only chats this agent answers. |
+| `-p, --phase <phase>` | — | Only `during`, `ending` or `ended`. |
+| `-n, --limit <n>` | `50` | How many rows. |
+| `--json` | — | Print JSON. |
+
+### `agentx situation end <id>`
+
+End a talk by hand. More thanks and goodbyes in that chat are held, as after a goodbye. A real message still reaches the agent and opens the talk again. `<id>` is the first column of `situation list`.
+
+### `agentx situation not-this <id>`
+
+Say a talk is not ending: it goes back to **during**, and thanks or goodbyes no longer end it, until the talk is ended another way.
+
+### `agentx situation clear <id>`
+
+Forget a chat's record. Its next message starts a new one.
+
 ## watch (advanced)
 
 `agentx watch`: Stream live daemon events — workflow runs, user tasks, signals, mesh health. **Advanced.**

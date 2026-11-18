@@ -12,6 +12,8 @@
 // place); this file owns ONLY the HTML/CSS/client JS.
 
 import { renderShell, esc, type TopbarPeer } from ".."
+import { injectFns } from "../inject"
+import { situationRowsHtml } from "./situation-chip"
 
 export interface AgentPageOpts {
   agentId: string
@@ -43,7 +45,7 @@ export function renderAgentPage(opts: AgentPageOpts): string {
     body,
     css: AGENT_PAGE_CSS,
     headExtras: `<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">`,
-    scripts: `${agentIdScript}${tokenScript}<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script><script>${AGENT_PAGE_SCRIPT}</script>`,
+    scripts: `${agentIdScript}${tokenScript}<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script><script>${injectFns({ situationRowsHtml })}${AGENT_PAGE_SCRIPT}</script>`,
   })
 }
 
@@ -568,6 +570,16 @@ const AGENT_PAGE_BODY = `
         </div>
         <div id="activity"></div>
       </div>
+      <div class="ax-panel">
+        <div class="ax-panel__head">
+          <div>
+            <h2>Conversations now</h2>
+            <p class="ax-lead" style="margin:0">The phase of each chat this agent answers. <b>End</b> closes a talk, so more thanks and goodbyes are held. <b>Not this</b> keeps a talk going.</p>
+          </div>
+          <button type="button" class="ax-btn ax-btn--ghost" id="btn-sit-reload" aria-label="Refresh conversations">Refresh</button>
+        </div>
+        <div id="situations" aria-live="polite"></div>
+      </div>
     </section>
 
     <!-- Danger zone -->
@@ -662,6 +674,24 @@ const AGENT_PAGE_CSS = `
 /* Agent-specific layout + legacy styles for bits the migration left in
  * place (EasyMDE theming, skills tree, plain-editor). Shared chrome + tab
  * primitives live in components.css.ts. */
+
+/* Conversations now (#1892): one row per chat, a phase chip and two buttons */
+.ax-sit { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ax-sit__row {
+  display: grid; grid-template-columns: auto minmax(0, 14rem) minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); background: var(--ax-bg-elev);
+}
+.ax-sit__chip { justify-self: start; }
+.ax-sit__chat { font-size: 12px; color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-sit__why { font-size: 12.5px; color: var(--ax-text-2); min-width: 0; overflow-wrap: anywhere; }
+.ax-sit__acts { display: flex; gap: 6px; justify-content: flex-end; }
+.ax-sit__btn { min-height: 32px; }
+.ax-sit__btn:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.ax-sit__empty, .ax-sit__mode { font-size: 12.5px; color: var(--ax-text-2); padding: 6px 0 10px; }
+@media (max-width: 720px) {
+  .ax-sit__row { grid-template-columns: 1fr; gap: 6px; }
+  .ax-sit__acts { justify-content: flex-start; }
+}
 
 /* Personality tab — vertical file list on the left, MD editor on the right */
 .ax-identity {
@@ -815,7 +845,7 @@ function switchTab(name) {
   if (name === 'identity' && !state.identityLoaded) { loadIdentity(); state.identityLoaded = true; }
   if (name === 'channels') loadChannels();
   if (name === 'handovers') loadHandovers();
-  if (name === 'activity') loadActivity();
+  if (name === 'activity') { loadActivity(); loadSituations(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 document.querySelectorAll('.ax-rail a[data-tab]').forEach(a => {
@@ -1508,6 +1538,38 @@ async function loadActivity(){
     const sHand = $('stat-handling'); if (sHand) sHand.textContent = String(r.activeTasks ?? 0);
   } catch (e) { showMsg('err', e.message); }
 }
+
+/* ===== Situations (#1892): the chip, End and Not this ===== */
+async function loadSituations(){
+  const host = $('situations');
+  if (!host) return;
+  try {
+    const r = await req('GET', '/api/admin/situations?agent=' + encodeURIComponent(AGENT_ID) + '&limit=30');
+    host.innerHTML = (r.mode && r.mode !== 'active'
+      ? '<div class="ax-sit__mode">The courtesy gate is in <b>' + esc(r.mode) + '</b> mode: phases are tracked, nothing is held.</div>'
+      : '') + situationRowsHtml(r.rows || [], Date.now());
+  } catch (e) {
+    host.innerHTML = '<div class="ax-sit__empty">Conversations are not available: ' + esc(e.message) + '</div>';
+  }
+}
+function overrideSituation(id, action){
+  const what = action === 'end'
+    ? ['End this talk?', 'Further thanks and goodbyes in this chat are held. A real message still reaches the agent and opens the talk again.']
+    : ['Keep this talk going?', 'The talk goes back to during, and thanks or goodbyes no longer end it. You can still end it here.'];
+  confirmAction(what[0], what[1], async () => {
+    try {
+      await req('POST', '/api/admin/situations/override', { id: id, action: action });
+      showMsg('ok', action === 'end' ? 'Talk ended.' : 'Talk kept open.');
+    } catch (e) { showMsg('err', e.message); }
+    loadSituations();
+  });
+}
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest ? e.target.closest('[data-sit-act]') : null;
+  if (b) overrideSituation(b.getAttribute('data-sit-id'), b.getAttribute('data-sit-act'));
+});
+const __sitReload = $('btn-sit-reload');
+if (__sitReload) __sitReload.addEventListener('click', loadSituations);
 
 /* ===== Test drive (sandbox chat) ===== */
 let __tdBusy = false;

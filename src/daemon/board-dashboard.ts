@@ -37,6 +37,7 @@ import { createWikiHandler } from "@/wiki/serve"
 import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
+import { handleSituationsPanel } from "./situations-panel"
 import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
@@ -858,6 +859,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     sendJson(res, 200, ctx.token ? { ticket: streamTicket(ctx.token), expiresInS: STREAM_TICKET_TTL_S } : { ticket: "" })
     return
   }
+  // Each chat's situation and a person's override (#1892 phase 2): the
+  // chip on the agent page. Owner only; past the admin gate above.
+  if (await handleSituationsPanel(req, res, path, url.searchParams, {
+    daemonUrl: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token || "",
+    owner: isDashboardOwner(req, ctx), readBody: readJson,
+  })) return
   // /api/admin/logs/stream — SSE tail of the daemon's stdout. Mirrors
   // `agentx daemon logs -f`. On systemd-managed nodes this calls
   // journalctl; on others it falls back to /tmp/agentx-daemon.log.

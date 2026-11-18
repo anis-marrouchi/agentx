@@ -9,12 +9,16 @@ import { loadDaemonConfig } from "@/daemon/config"
 //   agentx situation release <id>
 //       re-deliver a dropped message: the talk goes back to "during" and
 //       the message reaches the agent once, past the gate
+//   agentx situation list [--agent <id>] [--phase during|ending|ended]
+//       each chat's situation and phase (phase 2)
+//   agentx situation end | not-this | clear <id>
+//       a person's override (phase 2)
 //
 // Settings: `agentx config set situations.mode shadow|active|off`.
 
 export const situationCmd = new Command()
   .name("situation")
-  .description("see and undo what the courtesy-close gate dropped (goodbye loops)")
+  .description("see each chat's situation, end or reopen it, and undo what the courtesy-close gate dropped (goodbye loops)")
 
 interface Opts { node?: string; token?: string; config?: string }
 
@@ -79,6 +83,47 @@ common(situationCmd
       console.log(chalk.dim(`        "${String(r.text).slice(0, 100)}"  — ${r.reason}`))
     }
   })
+
+// Phase 2: see each chat's situation and override it (#1892).
+common(situationCmd
+  .command("list")
+  .description("list each chat's situation and phase, newest change first")
+  .option("-a, --agent <id>", "only chats this agent answers")
+  .option("-p, --phase <phase>", "only this phase: during, ending or ended")
+  .option("-n, --limit <n>", "how many rows", "50")
+  .option("--json", "print JSON"))
+  .action(async (opts) => {
+    const q = new URLSearchParams({ limit: String(Number(opts.limit) || 50) })
+    if (opts.agent) q.set("agent", String(opts.agent))
+    if (opts.phase) q.set("phase", String(opts.phase))
+    const data = await call(opts, "GET", `/situations?${q}`)
+    if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+    console.log(chalk.bold(`  Courtesy gate: ${data.mode}`))
+    if (!data.rows?.length) { console.log("  No conversations yet."); return }
+    for (const r of data.rows) {
+      const when = new Date(r.phaseChangedAt).toISOString().slice(0, 16).replace("T", " ")
+      const tone = r.phase === "during" ? chalk.green : r.phase === "ending" ? chalk.yellow : chalk.dim
+      const phase = tone(`${r.template} · ${r.phase}${r.phase === "ended" && r.endReason ? ` (${r.endReason})` : ""}`)
+      const who = r.setBy === "person" ? chalk.cyan(" set by a person") : ""
+      console.log(`  ${String(r.id).slice(0, 8)}  ${when}  ${phase}${who}  ${r.channel} ${r.chatId}${r.ownerAgent ? `  → ${r.ownerAgent}` : ""}`)
+      if (r.why) console.log(chalk.dim(`            ${String(r.why).slice(0, 120)}`))
+    }
+  })
+
+const OVERRIDES: Array<[string, string, string]> = [
+  ["end", "end a talk: further thanks and goodbyes in that chat are held", "ended"],
+  ["not-this", "the talk is not ending: back to during, and thanks or goodbyes no longer end it", "kept open"],
+  ["clear", "forget a chat's record: its next message starts a new one", "cleared"],
+]
+for (const [action, description, done] of OVERRIDES) {
+  common(situationCmd
+    .command(`${action} <id>`)
+    .description(`${description} (id: from \`situation list\`, its first 8 characters are enough)`))
+    .action(async (id: string, opts) => {
+      await call(opts, "POST", "/situations/override", { id, action, by: "operator (CLI)" })
+      console.log(chalk.green(`  Situation ${id} ${done}.`))
+    })
+}
 
 common(situationCmd
   .command("release <id>")

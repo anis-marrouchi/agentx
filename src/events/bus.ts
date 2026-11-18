@@ -280,6 +280,31 @@ export interface AgentXEvents {
     lastTurnInputTokens?: number
     at: string
   }
+
+  /** A chat's situation changed phase (#1892 phase 2). Emitted once per
+   *  committed change, only by SituationStore, after the row is written.
+   *  A person's override is a change with `setBy: "person"`. `cause` may
+   *  name a sender: it reaches in-process listeners only, never the
+   *  envelope that peers and the ring buffer keep. */
+  "situation:phase": {
+    situationId: string
+    /** situationKey: `<channel>|<account>|<chat>`. */
+    key: string
+    channel: string
+    chatId: string
+    template: string
+    endGeneration: number
+    /** null: the record was just made. */
+    from: "during" | "ending" | "ended" | null
+    /** "cleared": a person removed the record. */
+    to: "during" | "ending" | "ended" | "cleared"
+    cause: string
+    setBy: "rule" | "person"
+    endReason?: string
+    /** The chat's owner agent, when known. */
+    agentId?: string
+    at: string
+  }
 }
 
 type EventName = keyof AgentXEvents
@@ -480,6 +505,11 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
       }
     case "session:rotated":
       return { ...base, kind: "agent", summary: `session rotated (${p.reason})` }
+    case "situation:phase":
+      return {
+        ...base, kind: "situation", ref: p.situationId,
+        summary: `${p.template} on ${p.channel} ${p.chatId}: ${p.from ?? "new"} → ${p.to}${p.endReason ? ` (${p.endReason})` : ""}, set by ${p.setBy}`,
+      }
     default:
       return { ...base, kind: "agent", summary: String(event) }
   }

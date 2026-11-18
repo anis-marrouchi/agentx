@@ -21,6 +21,13 @@ import { normalizeChat } from "@/situations/normalize-chat"
  *  of them (design B2d): its turns do not pass the router. */
 export const SITUATION_CHANNELS: ReadonlySet<string> = new Set(["telegram", "whatsapp", "discord", "slack"])
 
+/** The key of an inbound message's chat, or undefined for a channel the
+ *  record does not cover. The chat is the group, else the sender, as the
+ *  gate reads it. */
+export function situationKeyOf(msg: { channel: string; accountId?: string; group?: { id: string }; sender: { id: string } }): string | undefined {
+  return SITUATION_CHANNELS.has(msg.channel) ? situationKey(msg.channel, msg.accountId, msg.group?.id || msg.sender.id) : undefined
+}
+
 export function situationKey(channel: string, account: string | undefined, chat: string): string {
   const acct = channel === "telegram" && String(chat).startsWith("-") ? "*" : (account || "default")
   return `${channel}|${acct}|${normalizeChat(`${channel}-message`, chat)}`

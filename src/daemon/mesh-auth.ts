@@ -73,6 +73,10 @@ export function isMeshGatedPath(path: string): boolean {
     // The courtesy gate's log (#1921): the text of held chat messages and
     // who sent them. Its release (POST) is in MESH_PROTECTED_PATHS.
     path === "/situations/gate-log" ||
+    // Each chat's situation (#1892 phase 2): chat ids and why the phase
+    // moved, which can name a sender. Its override (POST) is in
+    // MESH_PROTECTED_PATHS.
+    path === "/situations" ||
     // Past voice exchanges: what was asked and answered out loud. A
     // replay under it makes this host speak.
     path === "/voice/history" || path.startsWith("/voice/history/") ||
