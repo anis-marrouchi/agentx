@@ -29,7 +29,10 @@ export interface CheckResult {
 
 export interface UrlSpec { kind: "url"; url: string; contains?: string }
 export type IssueState = "open" | "closed" | "merged"
-export interface IssueSpec { kind: "issue"; provider: "github" | "gitlab"; ref: string; state?: IssueState; notePattern?: string }
+/** `after` (epoch ms, with `notePattern` only): a note counts only when
+ *  it was written at or after this time, by default when the loop opened
+ *  (#1925). A spec stored without it (older rows) counts every note. */
+export interface IssueSpec { kind: "issue"; provider: "github" | "gitlab"; ref: string; state?: IssueState; notePattern?: string; after?: number }
 export interface GitAncestorSpec { kind: "git-ancestor"; repo: string; commit: string; ref?: string }
 export interface ReplySpec { kind: "reply"; channel: string; chatId: string; from: string; after?: number }
 export type CloseWhen = UrlSpec | IssueSpec | GitAncestorSpec | ReplySpec
@@ -67,8 +70,9 @@ export interface CheckContext {
 export const SPEC_MAX = 2000
 
 /** Check what an agent sent as `closeWhen`. A spec, or the reason it is
- *  refused. `now` is the default `after` of a reply check: a reply only
- *  counts once the loop is open. */
+ *  refused. `now` is the default `after` of a reply check and of an issue
+ *  check with a note pattern: a reply or a note only counts once the loop
+ *  is open. */
 export function parseCloseWhen(v: unknown, settings: CheckerSettings = DEFAULT_CHECKER_SETTINGS, now = Date.now()): CloseWhen | string {
   if (!v || typeof v !== "object" || Array.isArray(v)) return "closeWhen must be an object with a kind: url, issue, git-ancestor or reply"
   const raw = v as Record<string, unknown>
@@ -76,7 +80,7 @@ export function parseCloseWhen(v: unknown, settings: CheckerSettings = DEFAULT_C
   if (!(CHECK_KINDS as readonly string[]).includes(kind)) return `closeWhen.kind must be one of ${CHECK_KINDS.join(", ")}`
   if (!settings.enabled.includes(kind as CheckKind)) return `the ${kind} check is turned off on this node (requests.checkers.enabled)`
   const spec = kind === "url" ? parseUrlSpec(raw)
-    : kind === "issue" ? parseIssueSpec(raw)
+    : kind === "issue" ? parseIssueSpec(raw, now)
     : kind === "git-ancestor" ? parseGitAncestorSpec(raw, settings)
     : parseReplySpec(raw, now)
   if (typeof spec === "string") return `closeWhen: ${spec}`

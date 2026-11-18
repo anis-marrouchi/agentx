@@ -93,14 +93,37 @@ describe("issue", () => {
     const merged = spec({ kind: "issue", provider: "gitlab", ref: "g/app!3", state: "merged" })
     expect((await runCheck(merged, ctx({ forge: reader({ state: "merged", url: "u" }) }))).verdict).toBe("met")
     const note = spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "deployed to prod" })
-    expect(await runCheck(note, ctx({ forge: reader({ state: "open", url: "u", notes: ["working", "Deployed to PROD at 10:00"] }) }))).toEqual({ verdict: "met", detail: 'u has a note with "deployed to prod"' })
+    expect(await runCheck(note, ctx({ forge: reader({ state: "open", url: "u", notes: ["working", "Deployed to PROD at 10:00"], noteTimes: [NOW - 60_000, NOW + 60_000] }) }))).toEqual({ verdict: "met", detail: 'u has a note with "deployed to prod"' })
+  })
+
+  // #1925: a word already on the issue must not close the loop at once.
+  it("a note pattern counts only notes written once the loop is open", async () => {
+    const note = spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "shadow" })
+    expect(note).toMatchObject({ notePattern: "shadow", after: NOW })
+    const old = reader({ state: "open", url: "u", notes: ["shadow mode is on"], noteTimes: [NOW - 3_600_000] })
+    expect(await runCheck(note, ctx({ forge: old }))).toEqual({ verdict: "not_met", detail: 'u is open, no note since 2030-03-01T12:00:00.000Z has "shadow"' })
+    const fresh = reader({ state: "open", url: "u", notes: ["shadow mode is on", "SHADOW review: done"], noteTimes: [NOW - 3_600_000, NOW + 3_600_000] })
+    expect((await runCheck(note, ctx({ forge: fresh }))).verdict).toBe("met")
+    // A note the forge gave no time for cannot be told new: not counted.
+    const untimed = reader({ state: "open", url: "u", notes: ["shadow review done"] })
+    expect((await runCheck(note, ctx({ forge: untimed }))).verdict).toBe("not_met")
+    // An explicit start, and a bad one.
+    expect(spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "x", after: "2030-01-01T00:00:00Z" })).toMatchObject({ after: Date.parse("2030-01-01T00:00:00Z") })
+    expect(parseCloseWhen({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "x", after: "soon" }, settings(), NOW)).toMatch(/after must be/)
+    // No pattern, no start: a state check is not about notes.
+    expect(spec({ kind: "issue", provider: "github", ref: "acme/app#12" })).not.toHaveProperty("after")
+  })
+
+  it("a spec stored before #1925 (no after) still counts every note", async () => {
+    const stored = readCloseWhen(JSON.stringify({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "shipped" }))!
+    expect((await runCheck(stored, ctx({ forge: reader({ state: "open", url: "u", notes: ["shipped"] }) }))).verdict).toBe("met")
   })
 
   it("matches notePattern as plain text: a regular expression is never run", async () => {
     const risky = spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "(a+)+$" })
     const notes = ["a".repeat(9_000) + "!", "see (a+)+$ above"]
     const started = Date.now()
-    expect(await runCheck(risky, ctx({ forge: reader({ state: "open", url: "u", notes }) }))).toEqual({ verdict: "met", detail: 'u has a note with "(a+)+$"' })
+    expect(await runCheck(risky, ctx({ forge: reader({ state: "open", url: "u", notes, noteTimes: [NOW, NOW] }) }))).toEqual({ verdict: "met", detail: 'u has a note with "(a+)+$"' })
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 
@@ -123,13 +146,18 @@ describe("issue", () => {
       asked.push(`${url} ${init.headers.Authorization ?? init.headers["PRIVATE-TOKEN"] ?? "-"}`)
       if (url.endsWith("/issues/12")) return Response.json({ state: "closed", pull_request: {}, html_url: "https://github.com/acme/app/pull/12", labels: [{ name: "Review" }] })
       if (url.endsWith("/pulls/12")) return Response.json({ merged: true })
-      if (url.includes("/merge_requests/3/notes")) return Response.json([{ body: "newest" }, { body: "oldest" }])
+      if (url.includes("/merge_requests/3/notes")) return Response.json([{ body: "newest", created_at: "2030-03-01T12:00:00Z" }, { body: "oldest" }])
+      if (url.includes("/issues/5/comments")) return Response.json([{ body: "a note", created_at: "2030-03-01T13:00:00Z" }])
+      if (url.endsWith("/issues/5")) return Response.json({ state: "open", html_url: "https://github.com/acme/app/issues/5" })
       if (url.endsWith("/merge_requests/3")) return Response.json({ state: "opened", web_url: "https://gitlab.example.com/g/app/-/merge_requests/3", labels: ["Doing"] })
       return new Response("", { status: 404 })
     }) as unknown as typeof fetch
     const read = forgeReader({ github: { apiUrl: "https://api.github.com", token: "t1" }, gitlab: { url: "https://gitlab.example.com", token: "t2" } }, fake)
     expect(await read("github", { project: "acme/app", number: 12, mr: true }, { notes: false })).toEqual({ state: "merged", url: "https://github.com/acme/app/pull/12", labels: ["Review"], closedBy: null, closedAt: null, milestone: null, assignees: [] })
-    expect(await read("gitlab", { project: "g/app", number: 3, mr: true }, { notes: true })).toEqual({ state: "open", url: "https://gitlab.example.com/g/app/-/merge_requests/3", labels: ["Doing"], closedBy: null, closedAt: null, milestone: null, assignees: [], notes: ["oldest", "newest"] })
+    expect(await read("gitlab", { project: "g/app", number: 3, mr: true }, { notes: true })).toEqual({ state: "open", url: "https://gitlab.example.com/g/app/-/merge_requests/3", labels: ["Doing"], closedBy: null, closedAt: null, milestone: null, assignees: [], notes: ["oldest", "newest"], noteTimes: [null, NOW] })
+    // GitHub: only the notes that can count are asked for, each with its time (#1925).
+    expect(await read("github", { project: "acme/app", number: 5, mr: false }, { notes: true, notesSince: NOW })).toMatchObject({ notes: ["a note"], noteTimes: [NOW + 3_600_000] })
+    expect(asked).toContain(`https://api.github.com/repos/acme/app/issues/5/comments?per_page=100&since=${encodeURIComponent("2030-03-01T12:00:00.000Z")} Bearer t1`)
     expect(await read("github", { project: "acme/app", number: 99, mr: false }, { notes: false })).toEqual({ error: "not found (or not visible to the connector)" })
     expect(asked[0]).toBe("https://api.github.com/repos/acme/app/issues/12 Bearer t1")
     expect(asked).toContain("https://gitlab.example.com/api/v4/projects/g%2Fapp/merge_requests/3 t2")
