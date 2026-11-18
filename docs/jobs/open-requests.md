@@ -141,6 +141,7 @@ An agent can close your request in a way that does not do what you asked. It may
 - **How:** within a minute or two of the close, AgentX makes one short call to the model you set (Sonnet by default, through the provider you already use). It sends your words, your latest note on the request, and how the request was closed. The model answers **match**, **mismatch** or **unclear**.
 - **On a mismatch:** the request opens again as **needs attention**, with the reason starting `Closed without doing what you asked`. You are told once, like any request that needs attention. How it was closed stays in its record.
 - **On a mismatch after a plan finished:** a plan of steps closes its request when its last step finishes. If that close is a mismatch, the agent that owns the request is also woken with a new run. The run gets your words and the reason, and is told to do what is still missing. Before, the request only showed **needs attention** and no agent was woken. To only be told, with no agent woken, set `"wakeOnPlanMismatch": false` beside `"enabled"`: see [Turn one of these wake-ups off](#turn-one-of-these-wake-ups-off).
+- **On a mismatch after any other close:** an agent's own done, decline or drop wakes that agent; a check or a settle wakes the agent that owns the request. The run gets your words, the reason and each thing you asked for that still has no proof link. Your notice then says the next step is that agent's and nothing is needed from you. To only be told, set `"wakeOnMismatch": false` beside `"enabled"`.
 - **On a match or unclear:** nothing happens. `agentx requests show <id>` shows the result.
 - Closes older than 48 hours are not read. A call that fails is tried again at the next check; after three failures the close is marked unclear.
 
@@ -306,6 +307,7 @@ Each of the three wake-ups that came with the due-time check has its own switch.
 | `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
 | `promises.acceptWake` | `true` | A due time an agent accepts on your request is stored and shown, but no run is started at that time. |
 | `ownerCheck.wakeOnPlanMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request that a plan closed, you are told and no agent is woken. |
+| `ownerCheck.wakeOnMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request an agent, a check or a settle closed, you are told and no agent is woken. |
 
 To turn one off:
 

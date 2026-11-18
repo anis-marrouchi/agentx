@@ -193,7 +193,7 @@ describe("the home closes the request (#1522)", () => {
     expect(store.get(other)?.state).toBe("in_progress")
   })
 
-  it("never closes a request waiting on the owner, a promise, or one with its own checker", async () => {
+  it("never closes a request waiting on the owner or one with its own checker; a promise closes with its home (noqta#876)", async () => {
     const waiting = homed(PR, "a")
     store.waitOnOwner(waiting, "Send the client the release note?", clock)
     const checked = homed(PR, "b")
@@ -204,7 +204,7 @@ describe("the home closes the request (#1522)", () => {
     await sweep({ check: async () => ({ verdict: "not_met", detail: "not yet" }) })
     expect(store.get(waiting)?.state).toBe("waiting_owner")
     expect(store.get(checked)?.state).not.toBe("done")
-    expect(store.get(promised)?.state).not.toBe("done")
+    expect(store.get(promised)?.state).toBe("done")
   })
 
   it("leaves a home on another forge host, a short ref, and a home that is not an issue", () => {

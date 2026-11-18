@@ -1705,6 +1705,10 @@ export const requestsConfigSchema = z.object({
      *  owns the request (#1908). Off: the request is reopened and the
      *  owner is told, and no agent is woken. */
     wakeOnPlanMismatch: z.boolean().default(true),
+    /** Any other close judged a mismatch wakes the agent that closed it
+     *  (or the request's agent, for a check or a settle) once, with what
+     *  is missing (noqta#876). Off: reopened and the owner told only. */
+    wakeOnMismatch: z.boolean().default(true),
   }).default({}),
   /** Proof per deliverable before a close by check (src/requests/close-proof.ts),
    *  retro:01M70Z38BBZYRBBCZW2T1S3T3K. When the mode is not "off", the

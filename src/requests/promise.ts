@@ -2,6 +2,7 @@ import { randomBytes } from "crypto"
 import { parseEvidence, type Evidence } from "@/requests/evidence"
 import type { FactInput, WriteResult } from "@/wiki/facts/ledger"
 import type { CloseWhen } from "./checkers"
+import { parseRef } from "./checkers/issue"
 import { OPEN_STATES, OWED_TO_OWNER, type LinkKind, type RequestHome, type RequestRecord, type RequestStore } from "./store"
 
 // --- One Promise, proof that leaves a Fact (#1138 step D) ---
@@ -164,6 +165,23 @@ export interface OpenPromiseInput {
   /** False: its due time does not wake the agent (an escalation). */
   wake?: boolean
   now: number
+}
+
+const ITEM_LINK = /https?:\/\/[^\s<>()"'`]+?\/(?:-\/(?:issues|merge_requests)|issues|pull)\/\d+(?![\w/])/
+
+/** A checker for a promise whose words link an issue or merge request
+ *  (noqta#876 cause 4): it closes when the item closes, or when a note
+ *  written after the promise opened carries the promise's id. Null when
+ *  the words link none, or the link is not one the checker reads. */
+export function issueCloseWhen(text: string, id: string, now: number): CloseWhen | null {
+  const m = text.match(ITEM_LINK)
+  if (!m) return null
+  const link = m[0].replace(/[.,;:]+$/, "")
+  let host: string
+  try { host = new URL(link).hostname.toLowerCase() } catch { return null }
+  const provider = host === "github.com" ? "github" : "gitlab"
+  if (!parseRef(provider, link)) return null
+  return { kind: "issue", provider, ref: link, state: "closed", notePattern: id, after: now }
 }
 
 /** Opens a promise and returns it. The one way to open one (#1138 D):

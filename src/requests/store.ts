@@ -499,6 +499,11 @@ export class RequestStore {
     this.db.prepare("UPDATE requests SET due_pushed_at = ?, due_pushed_for = due_at WHERE id = ?").run(now, id)
   }
 
+  /** It was already pushed for the due time it has now (noqta#876). */
+  duePushedNow(id: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM requests WHERE id = ? AND due_at IS NOT NULL AND due_pushed_for = due_at").get(id)
+  }
+
   /** Seen once: the job store's columns are on the table. */
   private hasJobColumns(): boolean {
     if (!this.jobColumns) {
@@ -744,14 +749,14 @@ export class RequestStore {
 
   /** Open requests whose home is an issue or merge request and that have
    *  no checker of their own, last looked at before `before` (#1522). A
-   *  request waiting on the owner keeps its question, a promise is the
-   *  agent's word to someone, and a pick-up not told yet is the owner's:
-   *  all three are left. `since`: when it was asked, or last sent back by
+   *  request waiting on the owner keeps its question and a pick-up not
+   *  told yet is the owner's: both are left. A promise is read too
+   *  (noqta#876 cause 4): its home closed is its work done. `since`: when it was asked, or last sent back by
    *  the owner; only a home closed after that closes it. */
   homesDue(before: number, limit = 50): Array<{ request: RequestRecord; since: number }> {
     return (this.db.prepare(
       `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other', 'needs_attention') AND close_when IS NULL
-         AND home_kind = 'issue' AND home_link IS NOT NULL AND COALESCE(promise, 0) = 0 AND pickup_at IS NULL
+         AND home_kind = 'issue' AND home_link IS NOT NULL AND pickup_at IS NULL
          AND (checked_at IS NULL OR checked_at < ?) ORDER BY COALESCE(checked_at, 0), created_at LIMIT ?`,
     ).all(before, limit) as any[]).map((row) => ({ request: toRecord(row), since: Math.max(row.created_at, row.sent_back_at ?? 0) }))
   }
@@ -762,14 +767,16 @@ export class RequestStore {
     this.db.prepare("UPDATE requests SET checked_at = ? WHERE id = ?").run(now, id)
   }
 
-  /** Open loops past their due time with nothing done since it passed,
-   *  or quiet since `quietBefore` (the owner handed one on after it fell
-   *  due: it gets the usual quiet time). A loop waiting on the owner is
-   *  left alone: its question reminds them. */
+  /** Open loops past their due time not raised for that due time yet, or
+   *  quiet since `quietBefore` (the owner handed one on after it was
+   *  raised: it gets the usual quiet time). A touch after the due time no
+   *  longer hides it (noqta#876 cause 3): the mark is per due time
+   *  (`markDuePushed`), and a new due time is raised again. A loop
+   *  waiting on the owner is left alone: its question reminds them. */
   overdue(now: number, quietBefore: number): RequestRecord[] {
     return this.db.prepare(
       `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other') AND due_at IS NOT NULL AND due_at < ?
-         AND (updated_at <= due_at OR updated_at < ?)
+         AND (due_pushed_for IS NULL OR due_pushed_for != due_at OR updated_at < ?)
        ORDER BY due_at, rowid`,
     ).all(now, quietBefore).map(toRecord)
   }

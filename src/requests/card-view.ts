@@ -4,6 +4,7 @@ import type { PlanState, PlanStore, StepState } from "./plan-store"
 import { describeCloseWhen } from "./checkers"
 import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops"
 import { awaitingQa } from "./qa"
+import { wokenAgent } from "./owner-check"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -27,11 +28,14 @@ export const NOTHING_NEEDED = "Nothing, just so you know."
  *  follows where it stands: a request that needs attention or waits on
  *  the owner's answer says so, whatever the agent wrote earlier. */
 export function cardWords(
-  r: Pick<RequestRecord, "text" | "headline" | "need" | "state" | "question" | "agentId">,
+  r: Pick<RequestRecord, "text" | "headline" | "need" | "state" | "question" | "agentId"> & Partial<Pick<RequestRecord, "ownerCheck" | "attentionReason">>,
   max = SUMMARY_MAX,
 ): { headline: string; need: string; said: string } {
   const headline = r.headline ? (r.headline.length > max ? `${r.headline.slice(0, max - 1)}…` : r.headline) : summarize(r.text, max)
-  const need = r.state === "needs_attention" ? `Hand it back to ${r.agentId}, or drop it.`
+  // Reopened with its agent woken (noqta#876): the next step is not yours.
+  const woken = wokenAgent(r)
+  const need = woken ? `Nothing: ${woken} is woken to finish it.`
+    : r.state === "needs_attention" ? `Hand it back to ${r.agentId}, or drop it.`
     : r.state === "waiting_owner" ? (r.need ?? (r.question ? `Answer: ${summarize(r.question, 150)}` : "Your answer."))
     : r.state === "candidate" || r.state === "in_progress" || r.state === "waiting_other" ? (r.need ?? NOTHING_NEEDED)
     : NOTHING_NEEDED

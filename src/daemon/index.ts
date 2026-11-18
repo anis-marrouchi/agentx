@@ -3246,8 +3246,10 @@ export class AgentXDaemon {
       store: requests.store,
       settings,
       plan,
-      // A plan's close judged a mismatch wakes the request's agent (#1908).
-      wake: (r, text) => this.tellRequestAgent(requests, r.agentId, text, r),
+      // A close judged a mismatch wakes the agent that closed it, or the
+      // request's agent (#1908, noqta#876).
+      wake: (r, text, agentId) => this.tellRequestAgent(requests, agentId ?? r.agentId, text, r),
+      hasAgent: (id) => !!this.registry.getAgent(id),
       generate: async (prompt, signal) => {
         const s = settings()
         if (!provider || providerName !== s.provider) {
