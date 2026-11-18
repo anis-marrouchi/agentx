@@ -1183,9 +1183,21 @@ export class RequestStore {
            ${opts.resend ? ", resent_at = ?" : ""}
          WHERE id = ? AND state = 'needs_attention'${opts.resend ? " AND resent_at IS NULL" : ""}`,
       ).run(now, now, now, ...(opts.resend ? [now] : []), id).changes > 0
-      if (moved) this.supersedeHandBacks(id)
+      if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
       return moved
     })()
+  }
+
+  /** The owner picked the request up again or handed it on: a block or a
+   *  stall a run's job state put on it is lifted, so its job reads the
+   *  request's own state and the job's wake takes the pick-up (#1861),
+   *  under the job's caps, instead of a turn outside them. */
+  private liftJobHold(id: string): void {
+    if (!this.hasJobColumns()) return
+    this.db.prepare(
+      `UPDATE requests SET job_state = NULL, job_note = NULL, stalled_at = NULL, requester_told_at = NULL
+       WHERE id = ? AND state != 'job' AND job_state IN ('blocked', 'stalled')`,
+    ).run(id)
   }
 
   /** Takes back a pick-up mark another path took over (the job's wake,
@@ -1205,7 +1217,7 @@ export class RequestStore {
            question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
       ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
-      if (moved) this.supersedeHandBacks(id)
+      if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
       return moved
     })()
   }

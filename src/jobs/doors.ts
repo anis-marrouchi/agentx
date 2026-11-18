@@ -138,9 +138,15 @@ export class JobDoors {
       const on = (jobId: string) => this.live.set(key, { jobId, runId })
 
       // The tracker linked it: the owner's turn, its resume or its pick-up.
+      // A run on an owner's request the daemon woke spends that wake
+      // (#1861): the request's own checks follow it again.
+      const spent = (job: JobRecord) => { if (job.state === "continue" && job.wakeAt === null) jobs.ownerWakeSpent(job.id) }
       const owned = jobs.byRun(runId)
       if (owned) {
-        if (owned.ownerRequest) jobs.tagOwnerRow(owned.id, {})
+        if (owned.ownerRequest) {
+          jobs.tagOwnerRow(owned.id, {})
+          spent(owned)
+        }
         on(owned.id)
         return
       }
@@ -149,6 +155,7 @@ export class JobDoors {
       if (woken) {
         jobs.linkRun(woken.id, runId, now)
         if (!woken.ownerRequest) jobs.working(woken.id, now)
+        else spent(woken)
         on(woken.id)
         return
       }
@@ -159,6 +166,7 @@ export class JobDoors {
         // The turn that asks for the job's state is not the work starting
         // again: the job keeps its ask mark (state_asked_at).
         if (!earlier.ownerRequest && !p.jobStateAsk) jobs.working(earlier.id, now)
+        else if (earlier.ownerRequest) spent(earlier)
         on(earlier.id)
         return
       }

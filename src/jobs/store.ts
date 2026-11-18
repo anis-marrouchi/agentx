@@ -123,6 +123,18 @@ export function ensureJobColumns(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_requests_wake ON requests(wake_at) WHERE wake_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_requests_job_home ON requests(agent_id, home_link) WHERE state = 'job' AND home_link IS NOT NULL;
   `)
+  retireWatcherTable(db)
+}
+
+/** Task watchers were a second ledger of handed-out work, removed in
+ *  #1900: nothing reads `task_watchers` any more. An empty one is
+ *  dropped; one that still holds rows is left as it is, so no record is
+ *  lost (export it, empty it, and the next start drops it). */
+export function retireWatcherTable(db: Database.Database): void {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_watchers'").get()
+  if (!has) return
+  if (db.prepare("SELECT 1 FROM task_watchers LIMIT 1").get()) return
+  db.exec("DROP TABLE task_watchers")
 }
 
 /** The job state of any row of `requests`, in SQL. A closed owner request
@@ -276,6 +288,31 @@ export class JobStore {
          requester_told_at = NULL, state_asked_at = NULL
        WHERE id = ? AND ${OPEN_ROW}`,
     ).run(now, id).changes > 0
+  }
+
+  /** A run started on an owner's request whose wake the daemon took: the
+   *  wake is spent. Its job state goes back to the request's own, which
+   *  the request's checks follow (and a later due time can arm a wake
+   *  again); once a run declared a job state on it, it is working, and
+   *  the minute check follows it. A wake still armed for later stays.
+   *  Not a touch: the request's quiet check still counts from its last
+   *  move. False when there was no spent wake on it. */
+  ownerWakeSpent(id: string): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET job_state = CASE WHEN declared_at IS NULL THEN NULL ELSE 'working' END,
+         job_note = CASE WHEN declared_at IS NULL THEN NULL ELSE job_note END, stalled_at = NULL, requester_told_at = NULL
+       WHERE id = ? AND state != '${JOB_ROW_STATE}' AND job_state = 'continue' AND wake_at IS NULL AND ${OPEN_ROW}`,
+    ).run(id).changes > 0
+  }
+
+  /** Owner's requests left in "continue" with no wake set and no run ever
+   *  declared on them, last moved before `before`: a wake that fired and
+   *  whose run never handed the request back (#1861). */
+  spentOwnerWakes(before: number, limit = 200): JobRecord[] {
+    return this.db.prepare(
+      `${SELECT} WHERE state != '${JOB_ROW_STATE}' AND job_state = 'continue' AND wake_at IS NULL AND declared_at IS NULL
+         AND updated_at < ? AND ${OPEN_ROW} ORDER BY updated_at, rowid LIMIT ?`,
+    ).all(before, limit).map(toJob)
   }
 
   /** What the run said about the job as it ended. False when the job is

@@ -281,6 +281,14 @@ export class JobWake {
     const { jobs, log } = this.deps
     const now = this.now()
     for (const [id, at] of this.startedAt) if (now - at >= START_WAIT_MS) this.startedAt.delete(id)
+    // An owner's request whose wake fired and whose run never handed it
+    // back (a run before this was fixed, a start a restart cut): its
+    // request's own checks follow it again, and a later due time can arm
+    // a wake. Not while its wake's run may still be waiting for a slot.
+    for (const job of jobs.spentOwnerWakes(now - settings.graceMinutes * MIN)) {
+      if (this.startedAt.has(job.id) || this.factsOf(job).liveRun || this.deps.held?.(job)) continue
+      if (jobs.ownerWakeSpent(job.id)) log(`[jobs] ${job.id}: its wake was spent, back to its request's own checks`)
+    }
     // Only the jobs the check can stall: not the owner's requests no run
     // declared on (their own checks hold them), not a job on another node
     // (that node's to check), not one blocked, stalled or with a wake set.

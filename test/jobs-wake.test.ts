@@ -376,6 +376,44 @@ describe("the invariant, each minute", () => {
     expect(jobs.get("req-1")!.state).toBe("stalled")
     expect(requests.get("req-1")!.state).toBe("in_progress")
   })
+
+  it("hands an owner's request whose wake fired and was never spent back to its own checks", async () => {
+    const ownerRow = (id: string) => {
+      requests.addCandidate({ id, runId: `o-${id}`, channel: "telegram", chatId: "c1", sender: "owner", agentId: "coder", text: "ship it", now: clock })
+      requests.progress(id, clock)
+      expect(requests.armDueWake(id, clock, "It is due now", clock)).toBe(true)
+    }
+    ownerRow("req-1")
+    ownerRow("req-3")
+    // The wakes fire; req-3's run is on it now.
+    expect(wake.tick().woken).toBe(2)
+    await flush()
+    live.add("req-3")
+    // req-2's wake fires too, and its run waits for a slot.
+    ownerRow("req-2")
+    startError = "__queued__:collect:1"
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(jobs.get("req-1")).toMatchObject({ state: "continue", wakeAt: null })
+    // Within the grace time nothing moves.
+    expect(wake.tick().stalled).toBe(0)
+    expect(jobs.get("req-1")!.state).toBe("continue")
+    clock += 11 * MIN
+    wake.tick()
+    // Back to the request's own state, its next due time can arm a wake.
+    expect(db.prepare("SELECT job_state FROM requests WHERE id = 'req-1'").pluck().get()).toBeNull()
+    expect(jobs.get("req-1")).toMatchObject({ state: "working", note: null })
+    expect(requests.armDueWake("req-1", clock + HOUR, "It is due now", clock)).toBe(true)
+    // A wake whose run is still waiting for its slot, or a run on it: left.
+    expect(jobs.get("req-2")!.state).toBe("continue")
+    expect(jobs.get("req-3")!.state).toBe("continue")
+    // A request that needs attention reads as blocked again, as its notice says.
+    requests.needsAttention("req-3", "No activity for 24 h", clock)
+    live.clear()
+    clock += 11 * MIN
+    wake.tick()
+    expect(jobs.get("req-3")!.state).toBe("blocked")
+  })
 })
 
 describe("a stalled job is told to the one who asked", () => {
@@ -691,6 +729,24 @@ describe("other paths wake the job (#1861 box 4)", () => {
     await flush()
     expect(started[0].text).toContain("watcher w-1 fired")
     expect(started[0].text).toContain("check the build")
+  })
+
+  it("the owner's pick-up or hand-over lifts a block a run declared on the request, so the wake takes it", () => {
+    for (const [id, how] of [["req-p", "pickup"], ["req-h", "handover"]] as const) {
+      requests.addCandidate({ id, runId: `o-${id}`, channel: "telegram", chatId: "c1", sender: "owner", agentId: "coder", text: "ship it", now: clock })
+      requests.progress(id, clock)
+      jobs.declare(id, { state: "blocked", why: "needs the client's key" }, { runId: `o-${id}`, now: clock })
+      requests.needsAttention(id, "No activity for 24 h", clock)
+      expect(wake.wakeFor(id, "picked up")).toBe(false)
+      expect(how === "pickup" ? requests.requestPickup(id, clock) : requests.handOff(id, "coder", "go on", clock)).toBe(true)
+      expect(jobs.get(id)).toMatchObject({ state: "working", note: null })
+      expect(wake.wakeFor(id, "picked up")).toBe(true)
+    }
+    // Any other request keeps what a run declared on it.
+    open("job-b")
+    jobs.declare("job-b", { state: "blocked", why: "needs the client's key" }, { now: clock })
+    expect(requests.requestPickup("job-b", clock)).toBe(false)
+    expect(jobs.get("job-b")!.state).toBe("blocked")
   })
 
   it("wakeFor leaves the caller its old path: wake off, closed, missing, a schedule's or another node's job", () => {

@@ -338,3 +338,25 @@ describe("GET /jobs", () => {
     expect((reply.body as any).jobs[0].status).toBe("working, last tool call 40 s ago")
   })
 })
+
+describe("the retired watcher ledger (#1861 phase 4)", () => {
+  const table = (d: Database.Database) => d.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_watchers'").get()
+
+  it("is dropped when empty, and kept with its rows when not", () => {
+    const empty = new Database(path.join(tmp, "empty.sqlite"))
+    empty.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    new JobStore(empty)
+    expect(table(empty)).toBeUndefined()
+    empty.close()
+
+    const kept = new Database(path.join(tmp, "kept.sqlite"))
+    kept.exec("CREATE TABLE task_watchers (id TEXT PRIMARY KEY, summary TEXT NOT NULL)")
+    kept.prepare("INSERT INTO task_watchers VALUES ('w-1', 'old watcher')").run()
+    new JobStore(kept)
+    expect(kept.prepare("SELECT summary FROM task_watchers").pluck().all()).toEqual(["old watcher"])
+    kept.close()
+
+    // A database that never had it: nothing to do.
+    expect(table(db)).toBeUndefined()
+  })
+})
