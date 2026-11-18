@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.231.0](https://github.com/anis-marrouchi/agentx/compare/v0.230.0...v0.231.0) (2026-11-18)
+
+
+### Features
+
+* **channels:** courtesy-close gate stops goodbye loops ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892)) ([#1918](https://github.com/anis-marrouchi/agentx/issues/1918)) ([855c6cc](https://github.com/anis-marrouchi/agentx/commit/855c6ccbc8855b8fd1bd84e8c9c25b73e6b04df3))
+* **requests:** due times computed from queue, priority and capacity, shadow first ([#1909](https://github.com/anis-marrouchi/agentx/issues/1909)) ([#1917](https://github.com/anis-marrouchi/agentx/issues/1917)) ([229dd5d](https://github.com/anis-marrouchi/agentx/commit/229dd5d2e47d827355f9b785b13f8a9c5b2587cf))
+
 ## [0.230.0](https://github.com/anis-marrouchi/agentx/compare/v0.229.0...v0.230.0) (2026-11-18)
 
 
