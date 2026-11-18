@@ -6,11 +6,13 @@
 // Pure functions: the queue comes in as a list, the clock as a number.
 //
 // The model, kept small on purpose:
-//   - Every open job of the node is one item with an estimate in minutes.
-//     An item counts its whole estimate until it closes.
-//   - Items run in priority order: critical, then work the requester asked
-//     to make room for, then high, normal and low. Same priority: oldest
-//     first.
+//   - Every open job of the node is one item with an estimate in minutes
+//     (at most a week). A job running now counts what is left of it (its
+//     estimate less the time it has run, never under a few minutes).
+//   - Jobs running now come first. Then the rest in priority order:
+//     critical, then work the requester asked to make room for, then high,
+//     normal and low; same priority, oldest first. A job that waits for a
+//     wake later on starts no earlier than that wake, after the others.
 //   - The node runs at most `capacity` items at once, and each agent at
 //     most its own `lanes` (its maxConcurrent).
 //   - An estimate is multiplied by the agent's correction factor: how long
@@ -21,6 +23,13 @@ export const PRIORITIES = ["critical", "high", "normal", "low"] as const
 export type Priority = (typeof PRIORITIES)[number]
 
 const MIN = 60_000
+
+/** An estimate is not counted over a week (#1909 review). */
+export const MAX_ESTIMATE_MINUTES = 7 * 24 * 60
+/** What is left of a running job is never counted under this. */
+export const MIN_REMAINING_MINUTES = 5
+/** A due time moves, and its requester hears of it, only for this much. */
+export const MOVE_THRESHOLD_MINUTES = 15
 
 /** Order of a priority: lower runs first. Room made for a requester's
  *  time sits after critical work and before everything else. */
@@ -49,6 +58,10 @@ export interface QueueItem {
   source?: string | null
   /** A few words for a message about it. */
   words?: string
+  /** Running now, since this time: only what is left of it counts. */
+  runningSince?: number | null
+  /** Waits for a wake at this time: it starts no earlier. */
+  notBefore?: number | null
 }
 
 export interface SlotOptions {
@@ -72,15 +85,28 @@ export interface Placed {
   minutes: number
 }
 
-/** Minutes an item is counted for. */
+/** Minutes an item is counted for, the factor applied; a running item
+ *  counts what is left of it at `opts.now`. */
 export function minutesOf(item: QueueItem, opts: SlotOptions): number {
-  const est = item.estimateMinutes ?? opts.defaultMinutes(item)
-  return Math.max(1, Math.round(est * Math.max(0.01, opts.factor(item.agentId))))
+  const raw = item.estimateMinutes ?? opts.defaultMinutes(item)
+  const est = Math.min(MAX_ESTIMATE_MINUTES, Number.isFinite(raw) && raw > 0 ? raw : 1)
+  const whole = Math.max(1, Math.round(est * Math.max(0.01, opts.factor(item.agentId))))
+  if (item.runningSince == null) return whole
+  const ran = Math.max(0, (opts.now - item.runningSince) / MIN)
+  return Math.max(MIN_REMAINING_MINUTES, Math.round(whole - ran))
 }
 
-/** The order the queue runs in. */
-export function ordered(items: QueueItem[]): QueueItem[] {
+/** Running now (0), ready (1), waiting for a later wake (2). */
+function tier(item: QueueItem, now: number | undefined): number {
+  if (item.runningSince != null) return 0
+  if (item.notBefore != null && now !== undefined && item.notBefore > now) return 2
+  return 1
+}
+
+/** The order the queue runs in at `now`. */
+export function ordered(items: QueueItem[], now?: number): QueueItem[] {
   return [...items].sort((a, b) =>
+    tier(a, now) - tier(b, now) || (tier(a, now) === 2 ? a.notBefore! - b.notBefore! : 0) ||
     rank(a.priority, !!a.ahead) - rank(b.priority, !!b.ahead) || a.createdAt - b.createdAt || a.id.localeCompare(b.id))
 }
 
@@ -89,12 +115,12 @@ export function schedule(items: QueueItem[], opts: SlotOptions): Map<string, Pla
   const node = Array(Math.max(1, Math.floor(opts.capacity))).fill(opts.now) as number[]
   const agents = new Map<string, number[]>()
   const out = new Map<string, Placed>()
-  for (const item of ordered(items)) {
+  for (const item of ordered(items, opts.now)) {
     let lanes = agents.get(item.agentId)
     if (!lanes) agents.set(item.agentId, (lanes = Array(Math.max(1, Math.floor(opts.lanes(item.agentId)))).fill(opts.now) as number[]))
     const n = node.indexOf(Math.min(...node))
     const a = lanes.indexOf(Math.min(...lanes))
-    const startAt = Math.max(node[n], lanes[a])
+    const startAt = Math.max(node[n], lanes[a], item.notBefore != null && item.notBefore > opts.now ? item.notBefore : opts.now)
     const minutes = minutesOf(item, opts)
     const endAt = startAt + minutes * MIN
     node[n] = endAt
@@ -132,7 +158,7 @@ export function place(queue: QueueItem[], job: QueueItem, opts: SlotOptions, est
   const all = [...queue.filter((q) => q.id !== job.id), job]
   const plan = schedule(all, opts)
   const mine = plan.get(job.id)!
-  const order = ordered(all)
+  const order = ordered(all, opts.now)
   const before = order.slice(0, order.findIndex((q) => q.id === job.id)).filter((q) => q.agentId === job.agentId)
   return {
     dueAt: mine.endAt,
@@ -161,10 +187,13 @@ export interface Move {
   to: number
 }
 
-/** Items of `queue` that end later once `job` is in it. Only due times
- *  the daemon gave move (source "daemon"). The old time is the due time
- *  the item has, else where it ended before. */
-export function movesBy(queue: QueueItem[], job: QueueItem, opts: SlotOptions, toleranceMinutes = 1): Move[] {
+/** Items of `queue` whose due time `job` pushes back. Only due times the
+ *  daemon gave move (source "daemon"). An item moves by what `job` itself
+ *  costs it (where it ends with `job` less where it ends without, at the
+ *  same clock), and only as far as its due time no longer holds: time the
+ *  queue lost on its own is not put on the job that went ahead. Moves
+ *  under `toleranceMinutes` are left out. */
+export function movesBy(queue: QueueItem[], job: QueueItem, opts: SlotOptions, toleranceMinutes = MOVE_THRESHOLD_MINUTES): Move[] {
   const others = queue.filter((q) => q.id !== job.id)
   const before = schedule(others, opts)
   const after = schedule([...others, job], opts)
@@ -172,11 +201,11 @@ export function movesBy(queue: QueueItem[], job: QueueItem, opts: SlotOptions, t
   for (const q of others) {
     if (q.source !== "daemon") continue
     const was = before.get(q.id)!.endAt
-    const now = after.get(q.id)!.endAt
-    if (now - was < toleranceMinutes * MIN) continue
+    const ends = after.get(q.id)!.endAt
     const from = q.dueAt ?? was
-    if (now - from < toleranceMinutes * MIN) continue
-    out.push({ id: q.id, agentId: q.agentId, requester: q.requester, words: q.words ?? q.id, from, to: now })
+    const by = Math.min(ends - was, ends - from)
+    if (by < Math.max(1, toleranceMinutes) * MIN) continue
+    out.push({ id: q.id, agentId: q.agentId, requester: q.requester, words: q.words ?? q.id, from, to: from + by })
   }
   return out
 }
@@ -201,13 +230,22 @@ export function fit(queue: QueueItem[], job: QueueItem, requestedAt: number, opt
   const answer = place(queue, roomy, opts, estimateFrom)
   // Every item that would end later, whatever set its due time: the
   // requester chooses knowing all of them.
-  const moves = movesBy(queue.map((q) => ({ ...q, source: "daemon" })), roomy, opts)
-    .filter((m) => m.to > m.from)
+  const moves = movesBy(queue.map((q) => ({ ...q, source: "daemon" })), roomy, opts, 1)
   return { fits: false, earliest: plain, withRoom: { answer, moves, meets: answer.dueAt <= requestedAt } }
 }
 
+/** An ISO time that never throws: a time out of the Date range reads
+ *  as "out of range". */
+export function isoOf(ms: number): string {
+  const d = new Date(ms)
+  return Number.isFinite(d.getTime()) ? d.toISOString() : "out of range"
+}
+
 /** "2026-11-18 12:00 UTC" */
-export const utc = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
+export const utc = (ms: number) => {
+  const iso = isoOf(ms)
+  return iso === "out of range" ? iso : iso.slice(0, 16).replace("T", " ") + " UTC"
+}
 
 /** One line per move: "job X moves from 12:00 to 16:00". */
 export function describeMoves(moves: Move[]): string {

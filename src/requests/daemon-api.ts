@@ -12,7 +12,8 @@ import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
 import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
 import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./flow"
-import { parseDueFields, planDue, type DueGiven, type DuePlan, type DueTimesCtx } from "./due-times"
+import { ESTIMATE_TOO_LONG, planDue, readDueFields, type DueGiven, type DuePlan, type DueTimesCtx } from "./due-times"
+import { MAX_ESTIMATE_MINUTES } from "./slots"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -205,20 +206,43 @@ function dueSlot(
   },
   now: number,
 ): { refuse: ApiReply } | { plan: DuePlan; work: { work?: string; estimateMinutes?: number } | null } {
+  const pass = { plan: { kind: "pass", finish: () => {} } as DuePlan, work: null }
   const ctx = deps.dueTimes
-  if (!ctx || ctx.settings.mode === "off") return { plan: { kind: "pass", finish: () => {} }, work: null }
-  const fields = parseDueFields(input)
-  if (typeof fields === "string") return { refuse: { status: 400, body: { error: fields } } }
-  const work = parseWork(input)
-  if (typeof work === "string") return { refuse: { status: 400, body: { error: work } } }
-  const plan = planDue(ctx, {
-    ...ask, fields,
-    estimateMinutes: work.estimateMinutes ?? ask.kept?.estimateMinutes ?? null,
-    work: work.work ?? ask.kept?.work ?? null,
-  }, now)
-  if (plan.kind === "refuse") return { refuse: { status: plan.status, body: plan.body } }
-  return { plan, work: work.work !== undefined || work.estimateMinutes !== undefined ? work : null }
+  if (!ctx || ctx.settings.mode === "off") return pass
+  // Shadow never changes a reply and writes nothing but its slot row: a
+  // field the agent got wrong is noted on the row, never refused, and a
+  // slot that fails to compute leaves the call as it was.
+  const shadow = ctx.settings.mode === "shadow"
+  try {
+    const { fields, problems } = readDueFields(input)
+    if (!shadow && problems.length) return { refuse: { status: 400, body: { error: problems[0] } } }
+    let work = parseWork(input)
+    if (typeof work === "string") {
+      if (!shadow) return { refuse: { status: 400, body: { error: work } } }
+      problems.push(work)
+      work = {}
+    }
+    if (work.estimateMinutes !== undefined && work.estimateMinutes > MAX_ESTIMATE_MINUTES) {
+      if (!shadow) return { refuse: { status: 400, body: { error: ESTIMATE_TOO_LONG } } }
+      problems.push(ESTIMATE_TOO_LONG)
+      work = { ...work, estimateMinutes: undefined }
+    }
+    const plan = planDue(ctx, {
+      ...ask, fields, problems: shadow ? problems : undefined,
+      estimateMinutes: work.estimateMinutes ?? ask.kept?.estimateMinutes ?? null,
+      work: work.work ?? ask.kept?.work ?? null,
+    }, now)
+    if (plan.kind === "refuse") return shadow ? pass : { refuse: { status: plan.status, body: plan.body } }
+    // Only "on" writes the work declaration on a promise.
+    return { plan, work: !shadow && (work.work !== undefined || work.estimateMinutes !== undefined) ? work : null }
+  } catch (e: any) {
+    deps.dueTimes?.log?.(`[due-times] slot not computed: ${e?.message ?? e}`)
+    return pass
+  }
 }
+
+/** Due times are on (#1909): the daemon refuses what it cannot place. */
+const dueTimesOn = (deps: RequestsApiDeps) => deps.dueTimes?.settings.mode === "on"
 
 /** Keeps the slot once the request has its id. Never fails the call. */
 function finishSlot(plan: DuePlan, requestId: string, now: number): DueGiven | null {
@@ -613,6 +637,11 @@ export function handleRequestsApi(
     // even when refused, so a later bare accept is gated on it too.
     const declared = action === "accept" ? parseWork(input) : {}
     if (typeof declared === "string") return { status: 400, body: { error: declared } }
+    // An estimate over a week is refused before it is kept, while due
+    // times are on (#1909); off and shadow keep it as before.
+    if (dueTimesOn(deps) && declared.estimateMinutes !== undefined && declared.estimateMinutes > MAX_ESTIMATE_MINUTES) {
+      return { status: 400, body: { error: ESTIMATE_TOO_LONG } }
+    }
     if (action === "accept") {
       store.setWork(request.id, declared)
       if (goal) {
@@ -652,7 +681,9 @@ export function handleRequestsApi(
     const slot = action === "accept"
       ? dueSlot(deps, input, {
         agentId, requestId: request.id, due: loop.dueAt ?? null, requester: request.owedTo ?? request.sender ?? "owner",
-        words: described.headline ?? request.headline ?? request.text, createdAt: request.createdAt,
+        // It queues from its accept, not from when it was asked: an old
+        // request accepted now does not go ahead of work accepted before.
+        words: described.headline ?? request.headline ?? request.text,
         kept: { work: request.work, estimateMinutes: request.estimateMinutes },
       }, now)
       : null

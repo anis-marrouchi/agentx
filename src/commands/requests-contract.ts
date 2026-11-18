@@ -85,13 +85,13 @@ function print(r: ContractReport, dryRun: boolean): void {
 function printDue(d: DueReport, mode: string): void {
   console.log(chalk.bold("\n  Due times") + chalk.dim(`  (requests.dueTimes.mode ${mode})`))
   if (!d.agents.length) { console.log(chalk.dim("  No closed work with an estimate, and no due-time rows yet.")); return }
-  console.log(chalk.dim("  agent                    correction  rows  written  agent − daemon  no source  does not fit"))
+  console.log(chalk.dim("  agent                    correction  rows  written  agent − daemon  no source  does not fit  wrong fields"))
   for (const a of d.agents) {
     const factor = a.factor.measured ? `×${a.factor.factor} (${a.factor.rows})` : `×1 (${a.factor.rows}, too few)`
     const gap = a.medianGapMinutes === null ? "-" : `${a.medianGapMinutes > 0 ? "+" : ""}${a.medianGapMinutes} min`
-    console.log(`  ${a.agentId.padEnd(24)} ${factor.padEnd(11)} ${String(a.rows).padStart(5)} ${String(a.written).padStart(8)} ${gap.padStart(15)} ${String(a.noSource).padStart(10)} ${String(a.doesNotFit).padStart(13)}`)
+    console.log(`  ${a.agentId.padEnd(24)} ${factor.padEnd(11)} ${String(a.rows).padStart(5)} ${String(a.written).padStart(8)} ${gap.padStart(15)} ${String(a.noSource).padStart(10)} ${String(a.doesNotFit).padStart(13)} ${String(a.invalid).padStart(13)}`)
   }
-  console.log(chalk.dim("  correction: real time over estimate, median of its closed rows (rows read). agent − daemon: median minutes between the time the agent wrote and the one the daemon would give."))
+  console.log(chalk.dim("  correction: real time over estimate, median of its closed rows with run time kept (rows read). agent − daemon: median minutes between the time the agent wrote and the one the daemon would give."))
 }
 
 export const contract = new Command("contract")

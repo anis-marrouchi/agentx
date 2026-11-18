@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
-import { correctionFor, usualMinutes, type AgentFactor } from "./estimates"
+import { estimateRows, factorOf, usualOf, type AgentFactor, type EstimateRow } from "./estimates"
 import { SlotStore, type DueSource } from "./slot-store"
-import { describeMoves, fit, movesBy, place, PRIORITIES, utc, type Move, type Priority, type QueueItem, type SlotAnswer, type SlotInputs, type SlotOptions } from "./slots"
+import { describeMoves, fit, isoOf, MAX_ESTIMATE_MINUTES, movesBy, place, PRIORITIES, utc, type Move, type Priority, type QueueItem, type SlotAnswer, type SlotInputs, type SlotOptions } from "./slots"
 
 // --- The daemon gives the due time (#1909) ---
 //
@@ -13,8 +13,10 @@ import { describeMoves, fit, movesBy, place, PRIORITIES, utc, type Move, type Pr
 //
 // Three modes (requests.dueTimes.mode):
 //   off      nothing changes (the default)
-//   shadow   nothing changes for the agent; the daemon records the time it
-//            would have given next to the time the agent wrote
+//   shadow   nothing changes for the agent: the same reply as off, and
+//            nothing written but the due_slots row with the time the
+//            daemon would have given next to the time the agent wrote.
+//            Fields the agent got wrong are noted there, never refused.
 //   on       a call without `due` gets the computed time; a `due` with no
 //            source is refused; a requester's time that does not fit is
 //            answered at once, and nothing is accepted until they choose;
@@ -52,6 +54,8 @@ export interface DueTimesCtx {
   settings: DueTimeSettings
   slots: SlotStore
   capacity: number
+  /** An open row untouched this long, with no wake ahead, is not queued. */
+  staleAfterMs: number
   /** Items one agent runs at once (its maxConcurrent). */
   lanes: (agentId: string) => number
   factor: (agentId: string) => AgentFactor
@@ -62,18 +66,38 @@ export interface DueTimesCtx {
   log?: (msg: string) => void
 }
 
-/** The context the daemon passes, read from its database. */
+/** How long an agent's past rows are kept in memory between calls. */
+const ESTIMATES_TTL_MS = 60_000
+
+/** The context the daemon passes, read from its database. An agent's
+ *  past rows are read once and kept for a minute: its factor and its
+ *  usual minutes both come from that one bounded read. */
 export function dueTimesCtx(
   db: Database.Database,
   settings: DueTimeSettings,
-  deps: { capacity: number; lanes: (agentId: string) => number; tell?: DueTimesCtx["tell"]; log?: (msg: string) => void; now?: () => number },
+  deps: {
+    capacity: number; lanes: (agentId: string) => number; tell?: DueTimesCtx["tell"]; log?: (msg: string) => void; now?: () => number
+    /** requests.staleAfterHours; unset, 24. */
+    staleAfterHours?: number
+  },
   slots: SlotStore = new SlotStore(db),
 ): DueTimesCtx {
   const opts = () => ({ now: deps.now?.() ?? Date.now(), days: settings.factorDays, minRows: settings.factorMinRows })
+  const kept = new Map<string, { at: number; rows: EstimateRow[] }>()
+  const rowsOf = (agentId: string): EstimateRow[] => {
+    const o = opts()
+    const k = kept.get(agentId)
+    if (k && o.now - k.at >= 0 && o.now - k.at < ESTIMATES_TTL_MS) return k.rows
+    const rows = estimateRows(db, { ...o, agentId })
+    if (kept.size > 500) kept.clear()
+    kept.set(agentId, { at: o.now, rows })
+    return rows
+  }
   return {
     settings, slots, capacity: deps.capacity, lanes: deps.lanes, tell: deps.tell, log: deps.log,
-    factor: (agentId) => correctionFor(db, agentId, opts()),
-    usual: (agentId, work) => usualMinutes(db, agentId, work, opts()),
+    staleAfterMs: (deps.staleAfterHours ?? 24) * 60 * 60_000,
+    factor: (agentId) => factorOf(agentId, rowsOf(agentId), opts()),
+    usual: (agentId, work) => usualOf(rowsOf(agentId), work, opts()),
   }
 }
 
@@ -87,22 +111,40 @@ export interface DueFields {
 
 const SOURCE_TEXT_MAX = 500
 
-/** `priority`, `dueSource` and `makeRoom` of promise and accept. */
-export function parseDueFields(input: Record<string, unknown>): DueFields | string {
-  const p = typeof input.priority === "string" ? input.priority.trim().toLowerCase() : ""
-  if (p && !(PRIORITIES as readonly string[]).includes(p)) return `priority must be one of ${PRIORITIES.join(", ")}`
+/** `priority`, `dueSource` and `makeRoom` of promise and accept, read
+ *  leniently: what is wrong is left at its default and named in
+ *  `problems` (shadow records them; on refuses the first). */
+export function readDueFields(input: Record<string, unknown>): { fields: DueFields; problems: string[] } {
+  const problems: string[] = []
+  let p = typeof input.priority === "string" ? input.priority.trim().toLowerCase() : ""
+  if (input.priority !== undefined && input.priority !== null && typeof input.priority !== "string") p = "?"
+  if (p && !(PRIORITIES as readonly string[]).includes(p)) {
+    problems.push(`priority must be one of ${PRIORITIES.join(", ")}`)
+    p = ""
+  }
   let source: DueFields["source"] = null
   const raw = input.dueSource
   if (raw !== undefined && raw !== null && raw !== "") {
-    const kind = String((raw as any)?.kind ?? "").trim().toLowerCase()
-    const text = String((raw as any)?.text ?? "").trim()
-    if (kind !== "requester" && kind !== "fact") return 'dueSource.kind must be "requester" (the words of the one who asked) or "fact" (a posting slot, a meeting)'
-    if (!text) return "dueSource.text is required: the requester's words, or the fact that sets the time"
-    source = { kind, text: text.slice(0, SOURCE_TEXT_MAX) }
+    const obj = typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+    const kind = String(obj.kind ?? "").trim().toLowerCase()
+    const text = String(obj.text ?? "").trim()
+    if (kind !== "requester" && kind !== "fact") problems.push('dueSource.kind must be "requester" (the words of the one who asked) or "fact" (a posting slot, a meeting)')
+    else if (!text) problems.push("dueSource.text is required: the requester's words, or the fact that sets the time")
+    else source = { kind, text: text.slice(0, SOURCE_TEXT_MAX) }
   }
-  if (input.makeRoom !== undefined && input.makeRoom !== null && typeof input.makeRoom !== "boolean") return "makeRoom must be true or false"
-  return { priority: (p || "normal") as Priority, source, makeRoom: input.makeRoom === true }
+  let makeRoom = false
+  if (input.makeRoom !== undefined && input.makeRoom !== null && typeof input.makeRoom !== "boolean") problems.push("makeRoom must be true or false")
+  else makeRoom = input.makeRoom === true
+  return { fields: { priority: (p || "normal") as Priority, source, makeRoom }, problems }
 }
+
+/** The same, strictly: the first problem, or the fields. */
+export function parseDueFields(input: Record<string, unknown>): DueFields | string {
+  const r = readDueFields(input)
+  return r.problems.length ? r.problems[0] : r.fields
+}
+
+export const ESTIMATE_TOO_LONG = `estimateMinutes must be at most ${MAX_ESTIMATE_MINUTES} (a week): split longer work into steps`
 
 // ── Deciding ──────────────────────────────────────────────────────────────
 
@@ -117,8 +159,10 @@ export interface DueAsk {
   fields: DueFields
   requester: string | null
   words: string
-  /** When the work came in: the request's own time; unset, now. */
+  /** When the work came in; unset, now. */
   createdAt?: number
+  /** What was wrong with the call's fields, in shadow: noted, not refused. */
+  problems?: string[]
 }
 
 /** What the daemon gave, in the reply to the agent. */
@@ -148,6 +192,8 @@ export const NO_SOURCE_REFUSAL =
 export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number): DuePlan {
   if (!ctx || ctx.settings.mode === "off") return NOTHING
   const mode = ctx.settings.mode
+  // Notices held back by the hour window, now due (on only).
+  if (mode === "on") flushNotices(ctx, now)
   const factor = ctx.factor(ask.agentId)
   // Where the estimate comes from: the agent's, else its usual real time
   // for this kind of work (already real, so the factor is taken out), else
@@ -168,7 +214,7 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
     defaultMinutes: () => ctx.settings.defaultEstimateMinutes,
   }
   const id = ask.requestId ?? "(new)"
-  const queue = ctx.slots.queue().filter((q) => q.id !== id)
+  const queue = ctx.slots.queue({ now, staleAfterMs: ctx.staleAfterMs }).filter((q) => q.id !== id)
   const job: QueueItem = {
     id, agentId: ask.agentId, priority: ask.fields.priority, ahead: false, estimateMinutes: estimate,
     // New work queues behind what came in up to now, same priority.
@@ -178,7 +224,8 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
   const source: DueSource = ask.due === null ? "daemon" : ask.fields.source?.kind ?? "agent"
   const fitted = ask.due !== null && ask.fields.source ? fit(queue, job, ask.due, opts, from) : null
   const wouldRefuse = ask.due !== null && !ask.fields.source ? "no source"
-    : fitted && !fitted.fits && !(ask.fields.makeRoom && fitted.withRoom.meets) ? "does not fit" : null
+    : fitted && !fitted.fits && !(ask.fields.makeRoom && fitted.withRoom.meets) ? "does not fit"
+    : ask.problems?.length ? `invalid: ${ask.problems.join("; ")}`.slice(0, 300) : null
 
   const row = (requestId: string, given: number | null, ahead: boolean, inputs: SlotInputs) => ({
     requestId, agentId: ask.agentId, priority: ask.fields.priority, ahead, source, sourceText: ask.fields.source?.text ?? null,
@@ -201,6 +248,7 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
   }
 
   // on
+  if (ask.problems?.length) return { kind: "refuse", status: 400, body: { error: ask.problems[0] } }
   if (wouldRefuse === "no source") return { kind: "refuse", status: 400, body: { error: NO_SOURCE_REFUSAL, dueSourceRequired: true, wouldGive: iso(computed) } }
   if (fitted && !fitted.fits && wouldRefuse) return { kind: "refuse", status: 409, body: doesNotFit(ask.due!, fitted.earliest, fitted.withRoom) }
 
@@ -216,15 +264,30 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
       ctx.slots.put(row(requestId, dueAt, ahead, answer.inputs), at)
       for (const m of moves) {
         ctx.slots.moveDue(m.id, m.from, m.to, at)
-        if (m.requester) ctx.tell?.(m.requester, moveText(m, ask, requestId), m.id)
-        ctx.log?.(`[due-times] ${m.id}: moved from ${utc(m.from)} to ${utc(m.to)}: ${requestId} went ahead${m.requester ? `; ${m.requester} told` : ""}`)
+        // One notice per request per hour: a later move in the hour is
+        // told with the next notice, from the oldest time.
+        const note = m.requester ? ctx.slots.noteMove(m.id, m.from, at) : { tell: false, from: m.from }
+        if (m.requester && note.tell) ctx.tell?.(m.requester, moveText({ ...m, from: note.from }, ask, requestId), m.id)
+        ctx.log?.(`[due-times] ${m.id}: moved from ${utc(m.from)} to ${utc(m.to)}: ${requestId} went ahead${m.requester ? (note.tell ? `; ${m.requester} told` : `; ${m.requester} told within the hour`) : ""}`)
       }
-      return { at: new Date(dueAt).toISOString(), dueAt, source, inputs: answer.inputs, moved: moves.length }
+      return { at: isoOf(dueAt), dueAt, source, inputs: answer.inputs, moved: moves.length }
     },
   }
 }
 
-const iso = (a: SlotAnswer) => new Date(a.dueAt).toISOString()
+const iso = (a: SlotAnswer) => isoOf(a.dueAt)
+
+/** Tells the requesters of moves held back by the hour window. */
+function flushNotices(ctx: DueTimesCtx, now: number): void {
+  try {
+    for (const n of ctx.slots.dueNotices(now)) {
+      if (!n.requester) continue
+      ctx.tell?.(n.requester, `Due time moved: "${n.words}" (${n.requestId}) is now due ${utc(n.to)}, not ${utc(n.from)}. Reason: other work went ahead of it in the queue.`, n.requestId)
+    }
+  } catch (e: any) {
+    ctx.log?.(`[due-times] held notices not sent: ${e?.message ?? e}`)
+  }
+}
 
 /** The answer to a requester's time the queue cannot hold (point 3a). */
 function doesNotFit(requested: number, earliest: SlotAnswer, withRoom: { answer: SlotAnswer; moves: Move[]; meets: boolean }): Record<string, unknown> {
@@ -237,9 +300,9 @@ function doesNotFit(requested: number, earliest: SlotAnswer, withRoom: { answer:
   return {
     error: `Not accepted: ${utc(requested)} does not fit the queue. The earliest with nothing moved is ${utc(earliest.dueAt)}. ${room} ${choice} Nothing is recorded until they choose.`.replace(/\s+/g, " ").trim(),
     fits: false,
-    requested: new Date(requested).toISOString(),
+    requested: isoOf(requested),
     earliest: iso(earliest),
-    withRoom: { dueAt: iso(withRoom.answer), meets: withRoom.meets, moves: withRoom.moves.map((m) => ({ id: m.id, agentId: m.agentId, from: new Date(m.from).toISOString(), to: new Date(m.to).toISOString() })) },
+    withRoom: { dueAt: iso(withRoom.answer), meets: withRoom.meets, moves: withRoom.moves.map((m) => ({ id: m.id, agentId: m.agentId, from: isoOf(m.from), to: isoOf(m.to) })) },
     inputs: earliest.inputs,
   }
 }

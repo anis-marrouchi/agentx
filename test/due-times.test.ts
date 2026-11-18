@@ -153,7 +153,7 @@ describe("a due time with a source", () => {
 
   it("a time that does not fit is answered at once, and nothing is accepted until the requester chooses", () => {
     expect(promise("on", { estimateMinutes: 120, text: "Draft the report" }).status).toBe(200)
-    const first = slots.queue()[0]
+    const first = slots.queue({ now: T0, staleAfterMs: 24 * HOUR })[0]
     const id = ownerRequest("t1")
     const due = new Date(T0 + HOUR).toISOString()
     const res = accept("on", id, { work: "writing", estimateMinutes: 30, due, dueSource: { kind: "requester", text: "within the hour" } })
@@ -234,8 +234,8 @@ describe("a critical job entering the queue", () => {
     const b = promise("on", { estimateMinutes: 60, owedTo: "owner", text: "Write the summary" }, T0 + MIN)
     const aId = (a.body as any).request.id
     const bId = (b.body as any).request.id
-    // Open work counts its whole estimate until it closes: b, a minute
-    // later, is due two hours from then.
+    // Work not running yet counts its whole estimate: b, a minute later,
+    // is due two hours from then.
     expect(store.get(aId)!.dueAt).toBe(T0 + HOUR)
     expect(store.get(bId)!.dueAt).toBe(T0 + MIN + 2 * HOUR)
     // A requester's own time does not move on its own.
@@ -245,17 +245,21 @@ describe("a critical job entering the queue", () => {
     const crit = promise("on", { estimateMinutes: 30, priority: "critical", owedTo: "owner", text: "Fix the outage" }, T0 + 5 * MIN)
     expect(crit.status).toBe(200)
     expect((crit.body as any).due).toMatchObject({ dueAt: T0 + 35 * MIN, moved: 2 })
-    expect(store.get(aId)!.dueAt).toBe(T0 + 95 * MIN)
-    expect(store.get(bId)!.dueAt).toBe(T0 + 155 * MIN)
+    // Each moves by the 30 minutes the critical job costs it, not by the
+    // 5 minutes the clock moved since its time was given.
+    expect(store.get(aId)!.dueAt).toBe(T0 + 90 * MIN)
+    expect(store.get(bId)!.dueAt).toBe(T0 + 151 * MIN)
     expect(store.get(pinnedId)!.dueAt).toBe(T0 + 8 * HOUR)
-    // The wake armed for the old time follows it.
-    expect(jobs.get(aId)!.wakeAt).toBe(T0 + 95 * MIN)
+    // The wake armed for the old time follows it, and its note says the new time.
+    expect(jobs.get(aId)!.wakeAt).toBe(T0 + 90 * MIN)
+    expect(jobs.get(aId)!.note).toContain(new Date(T0 + 90 * MIN).toISOString())
+    expect(jobs.get(aId)!.note).not.toContain(new Date(T0 + HOUR).toISOString())
 
     expect(told.map((t) => t.to).sort()).toEqual(["owner", "pm"])
     const toPm = told.find((t) => t.to === "pm")!
     expect(toPm.id).toBe(aId)
-    expect(toPm.text).toContain("now due 2030-01-14 09:35 UTC, not 2030-01-14 09:00 UTC")
-    expect(told.find((t) => t.to === "owner")!.text).toContain("now due 2030-01-14 10:35 UTC, not 2030-01-14 10:01 UTC")
+    expect(toPm.text).toContain("now due 2030-01-14 09:30 UTC, not 2030-01-14 09:00 UTC")
+    expect(told.find((t) => t.to === "owner")!.text).toContain("now due 2030-01-14 10:31 UTC, not 2030-01-14 10:01 UTC")
     expect(toPm.text).toContain('Reason: "Fix the outage"')
     expect(toPm.text).toContain("critical")
   })
@@ -269,20 +273,26 @@ describe("a critical job entering the queue", () => {
 })
 
 describe("the correction factor", () => {
-  /** A closed row: estimated `est` minutes, really `real` minutes. */
-  function closed(agent: string, est: number, real: number, i: number) {
+  /** A closed row: estimated `est` minutes, open `open` minutes from ask
+   *  to close, and a linked run of `run` minutes when given. */
+  function closed(agent: string, est: number, open: number, i: number, run?: number) {
     const id = `done-${agent}-${i}`
     db.prepare(
       `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, closed_at, estimate_minutes, first_estimate_minutes, work)
        VALUES (?, 'done', 'telegram', 'c', ?, 'x', ?, ?, ?, ?, ?, 'writing')`,
-    ).run(id, agent, T0 - 2 * HOUR - real * MIN, T0 - 2 * HOUR, T0 - 2 * HOUR, est, est)
+    ).run(id, agent, T0 - 2 * HOUR - open * MIN, T0 - 2 * HOUR, T0 - 2 * HOUR, est, est)
+    if (run !== undefined) {
+      db.exec("CREATE TABLE IF NOT EXISTS task_traces (task_id TEXT PRIMARY KEY, started_at INTEGER, finished_at INTEGER)")
+      store.link(id, "run", `run-${id}`, T0)
+      db.prepare("INSERT INTO task_traces VALUES (?, ?, ?)").run(`run-${id}`, T0 - 3 * HOUR, T0 - 3 * HOUR + run * MIN)
+    }
   }
 
   it("comes from the agent's own past rows, estimate against real time", () => {
-    closed("writer", 20, 30, 1)
-    closed("writer", 10, 15, 2)
-    closed("writer", 40, 60, 3)
-    closed("coder", 30, 30, 1)
+    closed("writer", 20, 30, 1, 30)
+    closed("writer", 10, 15, 2, 15)
+    closed("writer", 40, 60, 3, 60)
+    closed("coder", 30, 30, 1, 30)
     const all = correctionFactors(db, { now: T0, days: 30, minRows: 3 })
     expect(all).toEqual([
       { agentId: "coder", factor: 1, rows: 1, measured: false },
@@ -294,13 +304,191 @@ describe("the correction factor", () => {
   })
 
   it("a run's real time is the time its linked runs took", () => {
-    db.exec("CREATE TABLE task_traces (task_id TEXT PRIMARY KEY, started_at INTEGER, finished_at INTEGER)")
-    for (const i of [1, 2, 3]) {
-      closed("writer", 10, 600, i)
-      store.link(`done-writer-${i}`, "run", `run-${i}`, T0)
-      db.prepare("INSERT INTO task_traces VALUES (?, ?, ?)").run(`run-${i}`, T0 - 3 * HOUR, T0 - 3 * HOUR + 20 * MIN)
-    }
+    for (const i of [1, 2, 3]) closed("writer", 10, 600, i, 20)
     expect(correctionFactors(db, { now: T0, days: 30, minRows: 3 })[0]).toMatchObject({ agentId: "writer", factor: 2, rows: 3 })
+  })
+
+  it("rows with no run time kept do not count: ask-to-close time (nights, waits) would pin the agent at the cap", () => {
+    // Ten rows open for a day each, estimated 30 minutes, no run kept:
+    // start to close would read as x48, clamped to x8.
+    for (let i = 1; i <= 10; i++) closed("writer", 30, 24 * 60, i)
+    closed("writer", 30, 24 * 60, 11, 30)
+    const ctx = dueTimesCtx(db, { ...DEFAULT_DUE_TIME_SETTINGS, mode: "on" }, { capacity: 4, lanes: () => 1, now: () => T0 }, slots)
+    expect(ctx.factor("writer")).toEqual({ agentId: "writer", factor: 1, rows: 1, measured: false })
+    // Nor do they make the usual minutes of the work.
+    expect(ctx.usual("writer", "writing")).toBeNull()
+    expect((promise("on", { estimateMinutes: 20 }).body as any).due.dueAt).toBe(T0 + 20 * MIN)
+  })
+})
+
+describe("a queue that reads like the node's real work", () => {
+  /** An open job row of the ledger, last touched `touched` ms ago. */
+  function openJob(id: string, minutes: number, touched: number, extra: { jobState?: string; wakeAt?: number } = {}) {
+    db.prepare(
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, estimate_minutes, job_state, wake_at)
+       VALUES (?, 'in_progress', 'telegram', 'c', 'writer', 'old work', ?, ?, ?, ?, ?)`,
+    ).run(id, T0 - touched - HOUR, T0 - touched, minutes, extra.jobState ?? null, extra.wakeAt ?? null)
+  }
+
+  it("100 rows nobody touched for days do not push a fresh 20-minute job hours out", () => {
+    for (let i = 0; i < 100; i++) openJob(`stale-${i}`, 60, 3 * 24 * HOUR)
+    const res = promise("on", { estimateMinutes: 20 })
+    expect((res.body as any).due).toMatchObject({ dueAt: T0 + 20 * MIN, inputs: { queueLength: 0 } })
+  })
+
+  it("a stale row with a wake ahead still counts, from that wake", () => {
+    openJob("later", 60, 3 * 24 * HOUR, { jobState: "continue", wakeAt: T0 + 2 * HOUR })
+    expect(slots.queue({ now: T0, staleAfterMs: 24 * HOUR })).toEqual([expect.objectContaining({ id: "later", notBefore: T0 + 2 * HOUR })])
+    // It waits for its wake, so a job ready now is not put behind it.
+    expect((promise("on", { estimateMinutes: 20 }).body as any).due.dueAt).toBe(T0 + 20 * MIN)
+    const plan = schedule([
+      { id: "later", agentId: "writer", priority: "normal", estimateMinutes: 60, createdAt: T0 - HOUR, dueAt: null, requester: null, notBefore: T0 + 2 * HOUR },
+    ], { now: T0, capacity: 4, lanes: () => 1, factor: () => 1, defaultMinutes: () => 30 })
+    expect(plan.get("later")).toMatchObject({ startAt: T0 + 2 * HOUR, endAt: T0 + 3 * HOUR })
+  })
+
+  it("a running job counts what is left of it, never under 5 minutes", () => {
+    openJob("running", 60, 0, { jobState: "working" })
+    store.link("running", "run", "run-now", T0 - 45 * MIN)
+    expect((promise("on", { estimateMinutes: 20 }).body as any).due).toMatchObject({ dueAt: T0 + 35 * MIN, inputs: { queueMinutes: 15 } })
+    // Past its estimate: 5 minutes left, not a negative time.
+    db.prepare("UPDATE request_links SET at = ? WHERE ref = 'run-now'").run(T0 - 3 * HOUR)
+    expect(schedule(slots.queue({ now: T0, staleAfterMs: 24 * HOUR }).filter((q) => q.id === "running"), {
+      now: T0, capacity: 4, lanes: () => 1, factor: () => 1, defaultMinutes: () => 30,
+    }).get("running")).toMatchObject({ minutes: 5, endAt: T0 + 5 * MIN })
+  })
+
+  it("an old request accepted now queues from its accept, behind work accepted before it", () => {
+    const old = ownerRequest("old-ask")
+    db.prepare("UPDATE requests SET created_at = ? WHERE id = ?").run(T0 - 6 * HOUR, old)
+    const first = promise("on", { estimateMinutes: 60, owedTo: "pm", text: "Review the plan" })
+    told = []
+    const res = accept("on", old, { work: "writing", estimateMinutes: 20 }, T0 + MIN)
+    expect((res.body as any).due).toMatchObject({ dueAt: T0 + MIN + 80 * MIN, moved: 0 })
+    expect(store.get((first.body as any).request.id)!.dueAt).toBe(T0 + HOUR)
+    expect(told).toEqual([])
+  })
+})
+
+describe("telling a requester that their due time moved", () => {
+  it("skips moves under 15 minutes", () => {
+    const a = promise("on", { estimateMinutes: 60, owedTo: "pm", text: "Review the plan" })
+    told = []
+    promise("on", { estimateMinutes: 10, priority: "critical", text: "Small fix" }, T0 + MIN)
+    expect(store.get((a.body as any).request.id)!.dueAt).toBe(T0 + HOUR)
+    expect(told).toEqual([])
+  })
+
+  it("tells at most once an hour, and the held move is told later from the oldest time", () => {
+    const a = promise("on", { estimateMinutes: 60, owedTo: "pm", text: "Review the plan" })
+    const aId = (a.body as any).request.id
+    told = []
+    promise("on", { estimateMinutes: 30, priority: "critical", text: "Fix one" }, T0 + MIN)
+    promise("on", { estimateMinutes: 30, priority: "critical", text: "Fix two" }, T0 + 10 * MIN)
+    expect(told.filter((t) => t.id === aId)).toHaveLength(1)
+    expect(told[0].text).toContain("now due 2030-01-14 09:30 UTC, not 2030-01-14 09:00 UTC")
+    expect(store.get(aId)!.dueAt).toBe(T0 + 2 * HOUR)
+    // An hour on, the next call tells the held move: from the oldest time
+    // not told yet to the latest.
+    told = []
+    promise("on", { estimateMinutes: 5, priority: "low", text: "Later" }, T0 + 2 * HOUR)
+    expect(told).toEqual([expect.objectContaining({ to: "pm", id: aId })])
+    expect(told[0].text).toContain("now due 2030-01-14 10:00 UTC, not 2030-01-14 09:30 UTC")
+  })
+})
+
+describe("shadow never changes a reply (#1909 review)", () => {
+  /** Runs `call` on a fresh database in `mode`: its reply and every
+   *  requests row, with ids made stable. */
+  function run(mode: DueTimeMode, call: (d: RequestsApiDeps, t: RequestTracker) => { status: number; body: unknown }) {
+    const dir = mkdtempSync(path.join(tmpdir(), "agentx-due-shadow-"))
+    const d = new Database(path.join(dir, "db.sqlite"))
+    try {
+      const st = new RequestStore(d)
+      new JobStore(d)
+      const tr = new RequestTracker(st, () => settings, () => {}, () => T0)
+      const deps: RequestsApiDeps = {
+        store: st, tracker: tr, enabled: true, now: T0,
+        hasAgent: (id) => ["writer", "coder", "pm"].includes(id),
+        runningTurn: (agentId) => ({ channel: "telegram", chatId: `chat-${agentId}` }),
+        dueTimes: dueTimesCtx(d, { ...DEFAULT_DUE_TIME_SETTINGS, mode }, { capacity: 4, lanes: () => 1, now: () => T0 }),
+      }
+      const reply = call(deps, tr)
+      const rows = d.prepare("SELECT * FROM requests ORDER BY created_at, id").all()
+      const hasSlots = !!d.prepare("SELECT 1 FROM sqlite_master WHERE name = 'due_slots'").get()
+      const slotRows = hasSlots ? d.prepare("SELECT * FROM due_slots").all() : []
+      const stable = (x: unknown) => JSON.parse(JSON.stringify(x).replace(/prm-[a-z0-9]+-[0-9a-f]{6}/g, "ID"))
+      return { reply: stable(reply), rows: stable(rows), slotRows: slotRows as any[], hasSlots }
+    } finally {
+      d.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  const bad: Array<Record<string, unknown>> = [
+    { priority: "urgent" },
+    { priority: 3 },
+    { dueSource: "the owner said so", due: new Date(T0 + 4 * HOUR).toISOString() },
+    { dueSource: { kind: "boss", text: "x" } },
+    { makeRoom: "yes" },
+    { work: "Big Work!" },
+    { estimateMinutes: "soon" },
+    { estimateMinutes: 50_000 },
+    { estimateMinutes: 1e20 },
+  ]
+
+  for (const fields of bad) {
+    it(`a promise with ${JSON.stringify(fields)}: the same reply and rows as off`, () => {
+      const call = (d: RequestsApiDeps) => handleRequestsApi("POST", "/requests", { agentId: "writer", action: "promise", owedTo: "owner", text: "Write the summary", ...fields }, d)
+      const off = run("off", call)
+      const shadow = run("shadow", call)
+      expect(shadow.reply).toEqual(off.reply)
+      expect(shadow.rows).toEqual(off.rows)
+      // Off never makes the table; shadow notes the call on its slot row.
+      expect(off.hasSlots).toBe(false)
+      if (off.reply.status === 200) expect(shadow.slotRows).toHaveLength(1)
+    })
+
+    it(`an accept with ${JSON.stringify(fields)}: the same reply and rows as off`, () => {
+      const call = (d: RequestsApiDeps, tr: RequestTracker) => {
+        tr.taskStarted({
+          agentId: "writer", channel: "telegram", chatId: "chat-writer", taskId: "t1", messagePreview: "Send the offer", fullMessage: "Send the offer",
+          at: "", humanRoot: true, sender: { id: "4242" },
+        } as any)
+        return handleRequestsApi("POST", "/requests", { agentId: "writer", action: "accept", id: "req-t1", work: "writing", ...fields }, d)
+      }
+      const off = run("off", call)
+      const shadow = run("shadow", call)
+      expect(shadow.reply).toEqual(off.reply)
+      expect(shadow.rows).toEqual(off.rows)
+    })
+  }
+
+  it("on refuses the same fields with a plain 400, and an estimate over a week", () => {
+    expect(promise("on", { priority: "urgent" }).status).toBe(400)
+    expect(promise("on", { dueSource: "the owner said so", due: new Date(T0 + 4 * HOUR).toISOString() }).status).toBe(400)
+    expect(promise("on", { estimateMinutes: 50_000 })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/at most 10080/) } })
+    expect(promise("on", { estimateMinutes: 1e20, due: new Date(T0 + HOUR).toISOString() }).status).toBe(400)
+    expect(store.openPromises("writer")).toBe(0)
+    const id = ownerRequest("t1")
+    expect(accept("on", id, { work: "writing", estimateMinutes: 50_000 }).status).toBe(400)
+    expect(store.get(id)).toMatchObject({ state: "candidate", estimateMinutes: null })
+  })
+
+  it("the shadow row names what on would have refused", () => {
+    const res = promise("shadow", { priority: "urgent", estimateMinutes: 20 })
+    expect(slots.get((res.body as any).request.id)).toMatchObject({ priority: "normal", wouldRefuse: expect.stringMatching(/^invalid: priority must be one of/) })
+    expect(dueReport(db, { since: T0 - HOUR, now: T0, factorDays: 30, factorMinRows: 3 }).agents[0]).toMatchObject({ invalid: 1 })
+  })
+
+  it("a huge estimate already on the ledger cannot make a time out of range", () => {
+    db.prepare(
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, estimate_minutes)
+       VALUES ('huge', 'in_progress', 'telegram', 'c', 'writer', 'x', ?, ?, 1e20)`,
+    ).run(T0 - HOUR, T0)
+    const res = promise("on", { estimateMinutes: 20, due: new Date(T0 + HOUR).toISOString() })
+    expect(res.status).toBe(400)
+    expect((res.body as any).wouldGive).toBe(new Date(T0 + 7 * 24 * HOUR + 20 * MIN).toISOString())
   })
 })
 
@@ -312,7 +500,7 @@ describe("the shadow report (agentx requests contract)", () => {
     const r = dueReport(db, { since: T0 - HOUR, now: T0, factorDays: 30, factorMinRows: 3 })
     expect(r.rows).toBe(3)
     expect(r.agents).toEqual([expect.objectContaining({
-      agentId: "writer", rows: 3, written: 2, noSource: 1, doesNotFit: 0,
+      agentId: "writer", rows: 3, written: 2, noSource: 1, doesNotFit: 0, invalid: 0,
       factor: { agentId: "writer", factor: 1, rows: 0, measured: false },
     })])
     // Gaps: 4 h against 20 min, and 2 h against 40 min (behind the first).

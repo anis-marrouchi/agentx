@@ -3371,6 +3371,7 @@ export class AgentXDaemon {
     return dueTimesCtx(this.db, settings, {
       capacity: capacityOf(settings, this.config.admission?.maxSessions),
       lanes: (id) => this.registry.getAgent(id)?.maxConcurrent ?? 1,
+      staleAfterHours: this.config.requests?.staleAfterHours,
       tell: (to, text, id) => {
         if (this.registry.getAgent(to)) {
           if (this.registry.notices.count(to) < MAX_NOTICES) this.registry.notices.add(to, "the queue", text)

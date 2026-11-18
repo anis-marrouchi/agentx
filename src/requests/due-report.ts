@@ -23,6 +23,9 @@ export interface AgentDueReport {
   /** Rows the refusal would have stopped: no source, does not fit. */
   noSource: number
   doesNotFit: number
+  /** Rows whose fields "on" would refuse as wrong (bad priority, dueSource,
+   *  work or estimate). */
+  invalid: number
 }
 
 export interface DueReport {
@@ -54,8 +57,10 @@ export interface QueueLine {
  *  busiest first. Read only. */
 export function queueLines(db: Database.Database, opts: {
   now: number; capacity: number; lanes: (agentId: string) => number; defaultMinutes: number; factorDays: number; factorMinRows: number
+  /** requests.staleAfterHours; unset, 24. */
+  staleAfterHours?: number
 }): QueueLine[] {
-  const items = readQueue(db)
+  const items = readQueue(db, { now: opts.now, staleAfterMs: (opts.staleAfterHours ?? 24) * 60 * 60_000 })
   if (!items.length) return []
   const factors = new Map(correctionFactors(db, { now: opts.now, days: opts.factorDays, minRows: opts.factorMinRows }).map((f) => [f.agentId, f.factor]))
   const factor = (a: string) => factors.get(a) ?? 1
@@ -88,6 +93,7 @@ export function dueReport(db: Database.Database, opts: { since: number; now: num
       medianGapMinutes: m === null ? null : Math.round(m),
       noSource: mine.filter((r) => r.wouldRefuse === "no source").length,
       doesNotFit: mine.filter((r) => r.wouldRefuse === "does not fit").length,
+      invalid: mine.filter((r) => r.wouldRefuse?.startsWith("invalid") ?? false).length,
     }
   })
   return { agents, rows: rows.length }

@@ -8,9 +8,11 @@ import { hasRequestTables } from "./store"
 // its work takes half again as long as it says; the daemon multiplies the
 // next estimate by it before it places the work in the queue.
 //
-// The real time of a row is the time its linked runs took, when the runs
-// are kept here; else the time from the row's start to its close (a
-// promise has no run of its own). Read only: nothing here writes.
+// The real time of a row is the time its linked runs took. A row with no
+// run kept here does not count: the time from its start to its close
+// holds nights, waits and the owner's replies, and would pin every agent
+// at the top of the range. Fewer such rows than `minRows`: the factor is
+// 1. Read only: nothing here writes.
 
 const MIN = 60_000
 const DAY = 24 * 60 * MIN
@@ -27,6 +29,9 @@ export interface EstimateOptions {
   minRows: number
   /** At most this many of the latest rows count. */
   maxRows?: number
+  /** At most this many of the latest closed rows are read (the query runs
+   *  on the daemon's main loop). */
+  scanRows?: number
 }
 
 export const DEFAULT_ESTIMATE_OPTIONS: Omit<EstimateOptions, "now"> = { days: 30, minRows: 3, maxRows: 20 }
@@ -54,26 +59,24 @@ function hasTable(db: Database.Database, name: string): boolean {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
 }
 
-/** Closed rows with an estimate, newest first, with their real time. */
+/** Closed rows with an estimate and run time kept, newest first, with
+ *  their real time. Reads at most `scanRows` of the latest closed rows. */
 export function estimateRows(db: Database.Database, opts: EstimateOptions & { agentId?: string }): EstimateRow[] {
-  if (!hasRequestTables(db)) return []
+  if (!hasRequestTables(db) || !hasTable(db, "task_traces")) return []
   const since = opts.now - opts.days * DAY
-  const traces = hasTable(db, "task_traces")
-  const runMs = traces
-    ? `(SELECT SUM(t.finished_at - t.started_at) FROM request_links l JOIN task_traces t ON t.task_id = l.ref
-         WHERE l.request_id = r.id AND l.kind IN ('run', 'step_run') AND t.finished_at IS NOT NULL AND t.started_at IS NOT NULL AND t.finished_at > t.started_at)`
-    : "NULL"
   const rows = db.prepare(
-    `SELECT r.id, r.agent_id, r.work, COALESCE(r.first_estimate_minutes, r.estimate_minutes) AS est, r.created_at, r.closed_at, ${runMs} AS run_ms
-       FROM requests r
-      WHERE r.state = 'done' AND r.closed_at IS NOT NULL AND r.closed_at >= ? AND COALESCE(r.first_estimate_minutes, r.estimate_minutes) > 0
-        ${opts.agentId ? "AND r.agent_id = ?" : ""}
-      ORDER BY r.closed_at DESC LIMIT 2000`,
-  ).all(...(opts.agentId ? [since, opts.agentId] : [since])) as any[]
-  return rows.map((r) => {
-    const ms = typeof r.run_ms === "number" && r.run_ms > 0 ? r.run_ms : Math.max(0, r.closed_at - r.created_at)
-    return { id: r.id, agentId: r.agent_id, work: r.work ?? null, estimateMinutes: r.est, realMinutes: ms / MIN, closedAt: r.closed_at }
-  }).filter((r) => r.realMinutes > 0)
+    `SELECT * FROM (
+       SELECT r.id, r.agent_id, r.work, COALESCE(r.first_estimate_minutes, r.estimate_minutes) AS est, r.closed_at,
+              (SELECT SUM(t.finished_at - t.started_at) FROM request_links l JOIN task_traces t ON t.task_id = l.ref
+                WHERE l.request_id = r.id AND l.kind IN ('run', 'step_run') AND t.finished_at IS NOT NULL AND t.started_at IS NOT NULL
+                  AND t.finished_at > t.started_at) AS run_ms
+         FROM requests r
+        WHERE r.state = 'done' AND r.closed_at IS NOT NULL AND r.closed_at >= ? AND COALESCE(r.first_estimate_minutes, r.estimate_minutes) > 0
+          ${opts.agentId ? "AND r.agent_id = ?" : ""}
+        ORDER BY r.closed_at DESC LIMIT ?
+     ) WHERE run_ms > 0`,
+  ).all(...(opts.agentId ? [since, opts.agentId] : [since]), opts.scanRows ?? (opts.agentId ? 200 : 2000)) as any[]
+  return rows.map((r) => ({ id: r.id, agentId: r.agent_id, work: r.work ?? null, estimateMinutes: r.est, realMinutes: r.run_ms / MIN, closedAt: r.closed_at }))
 }
 
 function median(xs: number[]): number {
@@ -104,11 +107,18 @@ export function correctionFor(db: Database.Database, agentId: string, opts: Esti
   return factorOf(agentId, estimateRows(db, { ...opts, agentId }), opts)
 }
 
+/** The usual real minutes of work of this kind in one agent's rows, or
+ *  null when there are fewer rows than `minRows`. */
+export function usualOf(rows: EstimateRow[], work: string | null, opts: Pick<EstimateOptions, "minRows" | "maxRows">): number | null {
+  if (!work) return null
+  const mine = rows.filter((r) => r.work === work).slice(0, opts.maxRows ?? DEFAULT_ESTIMATE_OPTIONS.maxRows)
+  if (mine.length < Math.max(1, opts.minRows)) return null
+  return Math.max(1, Math.round(median(mine.map((r) => r.realMinutes))))
+}
+
 /** The usual real minutes of this agent's work of this kind, or null
  *  when there are fewer rows than `minRows`. */
 export function usualMinutes(db: Database.Database, agentId: string, work: string | null, opts: EstimateOptions): number | null {
   if (!work) return null
-  const rows = estimateRows(db, { ...opts, agentId }).filter((r) => r.work === work).slice(0, opts.maxRows ?? 20)
-  if (rows.length < Math.max(1, opts.minRows)) return null
-  return Math.max(1, Math.round(median(rows.map((r) => r.realMinutes))))
+  return usualOf(estimateRows(db, { ...opts, agentId }), work, opts)
 }

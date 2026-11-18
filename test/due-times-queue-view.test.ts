@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
-import { SlotStore } from "../src/requests/slot-store"
+import { JobStore } from "../src/jobs/store"
 import { openPromise } from "../src/requests/promise"
 import { queueLines } from "../src/requests/due-report"
 import { JOBS_HUB_PATH, jobsHubReply } from "../src/jobs/hub-api"
@@ -24,7 +24,7 @@ beforeEach(() => {
   tmp = mkdtempSync(path.join(tmpdir(), "agentx-queue-view-"))
   db = new Database(path.join(tmp, "db.sqlite"))
   store = new RequestStore(db)
-  new SlotStore(db)
+  new JobStore(db)
 })
 afterEach(() => { db.close(); rmSync(tmp, { recursive: true, force: true }) })
 
