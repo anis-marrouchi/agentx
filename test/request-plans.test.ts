@@ -620,6 +620,40 @@ describe("the end of a plan", () => {
     expect(notices).toEqual([])
   })
 
+  it("takes a new plan, step reports and proofs after a request is reopened over its closed plan", async () => {
+    makePlan()
+    requests.close("req-1", "dropped", "not needed", clock)
+    await sweep()
+    expect(plans.get("req-1")?.state).toBe("closed")
+    expect(requests.reopen("req-1", "still needed", clock)).toBe(true)
+    // The old closed plan no longer refuses a step report without a way on.
+    const old = api({ action: "step", agentId: "coder", id: "req-1", step: 1, status: "done", evidence: "https://example.com/a" })
+    expect(old.status).not.toBe(200)
+    expect((old.body as any).error).toMatch(/accept it with new steps/)
+    // 1. accept with new steps replaces the closed plan.
+    const res = api({ action: "accept", agentId: "coder", id: "req-1", steps: [{ name: "Model", done: "upload link" }, { name: "Render", done: "clip link" }] })
+    expect(res.status).toBe(200)
+    expect((res.body as any).plan).toMatchObject({ state: "active", finishedAt: null })
+    expect(plans.steps("req-1").map((s) => [s.idx, s.name, s.state])).toEqual([[1, "Model", "active"], [2, "Render", "pending"]])
+    expect(plans.events("req-1").map((e) => e.kind)).toEqual(expect.arrayContaining(["created", "replaced"]))
+    // 2. step reports go through.
+    expect(api({ action: "step", agentId: "coder", id: "req-1", step: 1, status: "done", evidence: "https://example.com/a" }).status).toBe(200)
+    expect(plans.step("req-1", 1)?.state).toBe("done")
+    // An active plan is still one per request.
+    expect(api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
+  })
+
+  it("takes proofs on a reopened request whose plan is closed (#692 path)", async () => {
+    makePlan()
+    requests.close("req-1", "dropped", "not needed", clock)
+    await sweep()
+    requests.reopen("req-1", "still needed", clock)
+    // 3. proofs are not refused because of the closed plan.
+    const res = api({ action: "step", agentId: "coder", id: "req-1", text: "first part", proofs: [{ deliverable: "model", link: "https://example.com/a" }] })
+    expect(res.status).toBe(200)
+    expect((res.body as any).proofsAdded).toBeGreaterThan(0)
+  })
+
   it("lets the owner skip or finish a step", () => {
     makePlan()
     expect(ownerStepAction(requests, plans, { requestId: "req-1", step: 2, action: "skip", detail: "deployed by hand" }, clock)).toBeNull()

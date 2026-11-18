@@ -528,7 +528,7 @@ export function handleRequestsApi(
     }
 
     // Proof links per deliverable (close-proof.ts, #692), in every mode.
-    const proofs = action === "step" || action === "done" ? parseProofs(input.proofs, request, !!deps.plans?.get(request.id)) : []
+    const proofs = action === "step" || action === "done" ? parseProofs(input.proofs, request, deps.plans?.get(request.id)?.state === "active") : []
     if (typeof proofs === "string") return { status: 400, body: { error: proofs } }
     if (action === "step" && (input.step === undefined || input.step === null) && proofs.length) {
       if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
@@ -649,7 +649,7 @@ export function handleRequestsApi(
         deps.goals?.ensure(goal, agentId, now)
       }
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
-      if (input.steps == null && deps.plans && !deps.plans.get(request.id) && planGateOn(settings, agentId)) {
+      if (input.steps == null && deps.plans && deps.plans.get(request.id)?.state !== "active" && planGateOn(settings, agentId)) {
         const kept = store.get(request.id)
         const work = { work: kept?.work ?? undefined, estimateMinutes: kept?.estimateMinutes ?? undefined }
         const why = planRequiredFor(settings, agentId, work)
@@ -696,7 +696,7 @@ export function handleRequestsApi(
       if (!deps.plans) return { status: 409, body: { error: "This node has no plans: accept without steps." } }
       const off = plansOffFor(settings, agentId)
       if (off) return { status: 409, body: { error: `${off} Accept without steps.` } }
-      if (deps.plans.get(request.id)) return { status: 409, body: { error: `request "${request.id}" already has a plan: report on its steps with action step` } }
+      if (deps.plans.get(request.id)?.state === "active") return { status: 409, body: { error: `request "${request.id}" already has a plan: report on its steps with action step` } }
       const parsed = parseSteps(input.steps, { createdBy: agentId, hasAgent: deps.hasAgent, settings })
       if (!parsed.ok) return { status: 400, body: { error: parsed.error } }
       store.progress(request.id, now)
