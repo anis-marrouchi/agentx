@@ -18,8 +18,8 @@
 // A call that fails is tried again at the next check; after MAX_TRIES the
 // close is marked unclear. Closes older than `maxAgeHours` are left alone.
 
-import type { RequestRecord, RequestStore } from "./store"
-import { deliverablesOf, proofBlock, type Deliverables } from "./close-proof"
+import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
+import { deliverablesOf, missingProofs, proofBlock, type Deliverables } from "./close-proof"
 
 export interface OwnerCheckSettings {
   enabled: boolean
@@ -33,9 +33,14 @@ export interface OwnerCheckSettings {
   /** A plan's close judged a mismatch also wakes the request's agent
    *  (#1908). Off: reopened and the owner told, nobody woken. */
   wakeOnPlanMismatch: boolean
+  /** Any other close judged a mismatch (an agent's done, decline or drop,
+   *  a check, a settle) wakes the agent that closed it, or the request's
+   *  agent, once, with what is missing (noqta#876). Off: reopened and the
+   *  owner told, nobody woken. */
+  wakeOnMismatch: boolean
 }
 
-export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true }
+export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true }
 
 export const OWNER_CHECK_SYSTEM =
   "You check whether work closed by an assistant did what its owner asked. You are strict about the owner's words and fair to the assistant. " +
@@ -64,6 +69,41 @@ export function planMismatchText(r: RequestRecord, why: string): string {
     `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link to the proof>"}. ` +
       `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
       "The owner is told it is open again.",
+  ].join("\n")
+}
+
+/** Ends the reopen reason when an agent is woken for it (noqta#876): the
+ *  owner's notice then says the next step is that agent's, not theirs. */
+export const WOKEN_MARK = " Next step:"
+export const wokenTail = (agentId: string) => `${WOKEN_MARK} ${agentId}, woken to finish it.`
+
+/** The agent woken for a request that needs attention, read back from
+ *  its reason (an owner-words mismatch, a due time); null: none. */
+export function wokenAgent(r: { state: string; attentionReason?: string | null }): string | null {
+  if (r.state !== "needs_attention" || !r.attentionReason) return null
+  const m = r.attentionReason.match(/ Next step: (\S+), woken to finish it\.$/)
+  return m ? m[1] : null
+}
+
+/** What the closing agent is told when its close was reopened (noqta#876):
+ *  the owner's words, why, and each deliverable still without a proof. */
+export function mismatchText(r: RequestRecord, why: string, d: Deliverables | null): string {
+  const missing = d ? missingProofs(r, d) : []
+  const how = r.state === "done" ? "closed it as done" : `closed it as ${r.state}`
+  return [
+    `[agentx:request-reopened id=${r.id}] You ${how}, but the close does not do what the owner asked, so the request is open again.`,
+    "",
+    "What the owner asked:",
+    clip(r.text),
+    ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
+    "",
+    `Why the close does not match: ${why || "the close does not match the owner's words"}`,
+    ...(missing.length ? ["", "Still without a proof link:", ...missing.map((m) => `- ${m}`)] : []),
+    "",
+    "Do what is still missing now. Do not repeat an outside action you already took: check first.",
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
+      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
+      `If it cannot be done, decline it with the reason in the owner's terms. The owner is told it is open again and that it is yours.`,
   ].join("\n")
 }
 
@@ -118,7 +158,10 @@ export interface OwnerCheckDeps {
   /** Starts a turn on the request's agent with `text` (#1908): a plan's
    *  close judged a mismatch wakes it. Fire and forget. Unset: only the
    *  owner is told. */
-  wake?: (r: RequestRecord, text: string) => void
+  wake?: (r: RequestRecord, text: string, agentId?: string) => void
+  /** The id is an agent of this node: a close made by one wakes it
+   *  (noqta#876). Unset: every id is taken for one. */
+  hasAgent?: (id: string) => boolean
 }
 
 export class OwnerWordsCheck {
@@ -150,20 +193,31 @@ export class OwnerWordsCheck {
         }
         this.tries.delete(r.id)
         if (v.verdict === "mismatch") {
+          const d = deliverablesOf(r, this.deps.plan?.(r.id) ?? null)
+          const target = this.wakeTarget(r, s)
           const reason = `${MISMATCH_PREFIX} (closed as ${r.state} by ${r.closedBy}): ${v.why || "the close does not match your words"}`
-          if (this.deps.store.reopenForOwnerCheck(r.id, reason, at)) {
+          // Before, only a plan's close woke anyone (#1908); a held close
+          // by an agent sat until the owner acted (noqta#876 cause 1). The
+          // wake only starts a turn (fire and forget), so it goes first:
+          // the reason then says "woken" only when it was.
+          let woken: string | null = null
+          if (target) {
+            try {
+              const text = r.closedBy === PLAN_BY ? planMismatchText(r, v.why) : mismatchText(r, v.why, d)
+              this.deps.wake!(r, text, target)
+              woken = target
+            } catch (e: any) {
+              this.deps.log?.(`[requests] ${r.id}: could not wake ${target} for its reopened close: ${e?.message ?? e}`)
+            }
+          }
+          // The store keeps 500 characters: the tail must survive the cut.
+          const kept = woken ? `${reason.replace(/\s+/g, " ").trim().slice(0, 490 - wokenTail(woken).length)}${wokenTail(woken)}` : reason
+          if (this.deps.store.reopenForOwnerCheck(r.id, kept, at)) {
             out.reopened.push(r.id)
             this.deps.log?.(`[requests] ${r.id}: owner-words check reopened it (${r.state} by ${r.closedBy}): ${v.why}`)
-            // A plan that closed too early (#1908): the flag alone woke
-            // nobody. The agent that owns the request is woken with why.
-            if (r.closedBy === PLAN_BY && this.deps.wake && s.wakeOnPlanMismatch !== false) {
-              try {
-                this.deps.wake(r, planMismatchText(r, v.why))
-                out.woken.push(r.id)
-                this.deps.log?.(`[requests] ${r.id}: its plan closed without doing what was asked; ${r.agentId} woken`)
-              } catch (e: any) {
-                this.deps.log?.(`[requests] ${r.id}: could not wake ${r.agentId} after its plan's close was reopened: ${e?.message ?? e}`)
-              }
+            if (woken) {
+              out.woken.push(r.id)
+              this.deps.log?.(`[requests] ${r.id}: its close does not do what was asked; ${woken} woken`)
             }
           }
         } else {
@@ -176,6 +230,18 @@ export class OwnerWordsCheck {
       this.running = false
     }
     return out
+  }
+
+  /** Who is woken for a close judged a mismatch, or null. A plan's
+   *  close: the request's agent. An agent's own close: that agent. A
+   *  check or a settle: the request's agent. Never the owner. */
+  private wakeTarget(r: RequestRecord, s: OwnerCheckSettings): string | null {
+    if (!this.deps.wake) return null
+    const has = (id: string) => this.deps.hasAgent ? this.deps.hasAgent(id) : true
+    if (r.closedBy === PLAN_BY) return s.wakeOnPlanMismatch !== false ? r.agentId : null
+    if (s.wakeOnMismatch === false) return null
+    const target = r.closedBy && r.closedBy !== OWNER_BY && this.deps.hasAgent?.(r.closedBy) ? r.closedBy : r.agentId
+    return has(target) ? target : null
   }
 
   private async judge(r: RequestRecord, s: OwnerCheckSettings): Promise<ReturnType<typeof readVerdict>> {

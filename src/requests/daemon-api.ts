@@ -1,7 +1,7 @@
 import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
-import { closeByCheckNow, isRefusedLink, PROOF_OFF, type CloseProofCtx } from "./close-proof"
+import { closeByCheckNow, deliverablesOf, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
@@ -251,6 +251,39 @@ function finishSlot(plan: DuePlan, requestId: string, now: number): DueGiven | n
     if (plan.kind === "pass") plan.finish(requestId, now)
   } catch { /* the call went through; its slot row is not worth failing it */ }
   return null
+}
+
+/** An agent's done on a request with no checker, read against what the
+ *  owner asked (noqta#876 cause 2). Null: it may close. Off: always null.
+ *  Unread words are read first: block answers 202 and the agent says
+ *  done again; warn closes and signals. One deliverable closes as before. */
+export function agentDoneGate(store: RequestStore, id: string, now: number, ctx: CloseProofCtx): ApiReply | null {
+  if (ctx.mode === "off") return null
+  const r = store.get(id)
+  if (!r) return null
+  const d = deliverablesOf(r, ctx.plan?.(r.id) ?? null)
+  if (!d) {
+    if (!ctx.read) return null
+    void ctx.read(r).catch((e: any) => ctx.log?.(`[requests] ${r.id}: reading its deliverables failed: ${e?.message ?? e}`))
+    if (ctx.mode !== "block") return null
+    return { status: 202, body: { request: r, verify: "reading", detail: "Not closed yet: reading what the owner's words ask for. Say done again in a minute, with one proof link per item." } }
+  }
+  const missing = missingProofs(r, d)
+  if (!missing.length) return null
+  const text = missingText(missing)
+  if (ctx.mode === "warn") {
+    if (store.signalProofMissing(r.id, text, now)) ctx.log?.(`[requests] ${r.id} closed by its agent with ${text}`)
+    return null
+  }
+  store.markChecked(r.id, "proof_missing", text, now)
+  return {
+    status: 409,
+    body: {
+      error: `Not closed: the owner asked for ${d.names.length} things and there is ${text}. Give one link per item with proofs: [{deliverable, link}] on step or done.`,
+      proofRequired: true,
+      missing,
+    },
+  }
 }
 
 /** The handler with its checker: a done on a loop with a closeWhen runs
@@ -596,6 +629,14 @@ export function handleRequestsApi(
     }
     const unproven = action === "done" && !request.closeWhen ? proofRefusal(request, proof, deps.promiseSettings ?? DEFAULT_PROMISE_SETTINGS) : null
     if (unproven) return { status: 409, body: { error: unproven, proofRequired: true } }
+
+    // Proof per deliverable on the agent's own done (noqta#876 cause 2):
+    // the same gate a close by check passes. One link no longer closes a
+    // request that asked for several things.
+    if (action === "done" && !request.closeWhen) {
+      const gate = agentDoneGate(store, request.id, now, deps.closeProof ?? PROOF_OFF)
+      if (gate) return gate
+    }
 
     // A loop with a checker closes on evidence, not on the agent's word.
     if (action === "done" && request.closeWhen) {

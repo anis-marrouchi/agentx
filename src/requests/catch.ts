@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3"
 import { MAX_OPEN_PROMISES } from "./daemon-api"
 import { HEADLINE_MAX } from "./headline"
-import { armPromiseWake, openPromise } from "./promise"
+import { armPromiseWake, issueCloseWhen, openPromise } from "./promise"
 import { OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type RequestRecord, type RequestStore } from "./store"
 
 // --- Catch "I'll do X" as a promise (#1138 step E) ---
@@ -368,6 +368,11 @@ export class PromiseCatcher {
       ...(v.what!.length <= HEADLINE_MAX ? { headline: v.what! } : {}),
       now,
     })
+    // Its words link an issue or merge request (noqta#876 cause 4): it
+    // closes when that item closes or a later note names it, not only by
+    // hand. Before, 52 of 67 open promises had no check at all.
+    const cw = issueCloseWhen(v.what!, p.id, now)
+    if (cw) store.setLoop(p.id, { closeWhen: cw }, now)
     log.settle(t.runId, "promise", v.what, p.id, true)
     this.deps.say(`[requests] ${p.id}: promise caught in ${r.agentId}'s reply: ${v.what}${v.dueAt ? ` (due ${new Date(v.dueAt).toISOString()})` : ""}`)
     return "promise"

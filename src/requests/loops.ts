@@ -1,6 +1,7 @@
 import { OPEN_STATES, OWED_TO_OWNER, type RequestRecord, type RequestStore } from "./store"
 import { runCheck, type CheckContext, type CheckResult, type CloseWhen } from "./checkers"
 import { closeByCheck, PROOF_OFF, type CloseProofCtx } from "./close-proof"
+import { wokenAgent } from "./owner-check"
 
 // --- Open loops: who each one waits on, and when it is stalled (#1039) ---
 //
@@ -51,6 +52,10 @@ export function activeStepAgentOf(plans: { get(id: string): { state: string } | 
 export function waitsOn(r: RequestRecord, look: LoopLookups): { group: StallGroup; who: string } {
   if (r.state === "waiting_owner") return { group: "owner", who: OWED_TO_OWNER }
   if (r.promise && r.owedTo && r.owedTo !== OWED_TO_OWNER && !look.isAgent(r.owedTo)) return { group: "person", who: r.owedTo }
+  // Reopened by the owner-words check with its agent woken (noqta#876):
+  // the next step is that agent's, not the owner's.
+  const woken = wokenAgent(r)
+  if (woken) return { group: "agent", who: woken }
   if (r.state === "needs_attention") return { group: "owner", who: OWED_TO_OWNER }
   const step = look.activeStepAgent?.(r.id)
   return { group: "agent", who: step ?? r.agentId }

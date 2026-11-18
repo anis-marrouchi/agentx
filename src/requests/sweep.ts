@@ -6,6 +6,7 @@ import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
 import { DEFAULT_CLOSE_PROOF, type CloseProofCtx } from "./close-proof"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
+import { wokenAgent, wokenTail } from "./owner-check"
 import { goalLine } from "./goals"
 import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./resend"
 import { HUB_NAME } from "@/daemon/ui/hub-name"
@@ -196,6 +197,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
   const words = r.text.replace(/\s+/g, " ").trim()
   const said = words.length > 240 ? `${words.slice(0, 239)}…` : words
   const on = waitsOn(r, { isAgent })
+  const woken = wokenAgent(r)
   return [
     r.promise
       ? `A promise ${r.agentId} made to ${r.owedTo} is not kept yet.`
@@ -206,12 +208,31 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
     // Met but not closed (#692 S3): held after a mismatch, or refused for proof.
     ...((r.verifyState === "held" || r.verifyState === "proof_missing") && r.verifyDetail ? [`Its check is met, but it stays open: ${r.verifyDetail}`] : []),
     r.resentAt !== null ? `Resent once at ${new Date(r.resentAt).toISOString().slice(0, 16).replace("T", " ")} UTC, stopped again.` : "Nothing is retrying it.",
-    r.closeWhen
+    woken
+      ? `Nothing needed from you: ${woken} is woken to finish it. Drop it only if you no longer want it.`
+      : r.closeWhen
       ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
       : `Needed from you: ${cardWords(r).need}`,
     // The owner's own words last, under the headline the title carries.
     r.promise ? `It promised: ${said}` : `You said: ${said}`,
   ].join("\n")
+}
+
+/** What the agent of an owner's request reads when it falls due (noqta#876). */
+export function overdueText(r: RequestRecord): string {
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  return `[agentx:request-overdue id=${r.id}] It fell due (${when(r.dueAt!)}) and is not finished: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}. ` +
+    `Finish it now and close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"}, or give a new due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} and the reason. The owner is told it is late and that it is yours.`
+}
+
+/** Wakes the agent of an overdue request: its job's wake when it takes
+ *  it, else a turn of its own. What woke it, or null when nothing could. */
+function wakeOverdue(deps: RequestSweepDeps, r: RequestRecord): string | null {
+  const text = overdueText(r)
+  if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
+  if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
+  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its due time: ${e?.message ?? e}`))
+  return "turn"
 }
 
 /** What an agent that waits on a promise reads when it falls due (#1908). */
@@ -372,7 +393,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
       const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
       store.markDuePushed(r.id, now)
-      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) {
+      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})${woken ? `.${wokenTail(r.agentId)}` : ""}`, now)) {
         result.quiet++
         result.duePushed++
         log(`[requests] ${r.id} fell due: ${r.agentId} ${woken ? "woken" : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`)
@@ -395,7 +416,26 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       // Back done, and settled once quiet: no "Not finished" before that (#1214).
       // One whose last reply asks the owner is not settled, so it is raised.
       if (settling && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue
-      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
+      // Its agent is woken at the due time, once per due time (noqta#876
+      // cause 3): before, only the owner was told. A tracked plan wakes its
+      // own steps; a promise was pushed above.
+      // A promise is pushed above; with that push off (#1912) it keeps the
+      // old rule: a touch after its due time holds it until quiet.
+      if (r.promise) {
+        if (r.updatedAt > r.dueAt! && r.updatedAt >= now - hours * HOUR) continue
+        if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
+        continue
+      }
+      const pushed = store.duePushedNow(r.id)
+      const woken = !pushed && !deps.inPlan?.(r.id) ? wakeOverdue(deps, r) : null
+      if (!pushed) store.markDuePushed(r.id, now)
+      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})${woken ? `.${wokenTail(r.agentId)}` : ""}`, now)) {
+        result.quiet++
+        if (woken) {
+          result.duePushed++
+          log(`[requests] ${r.id} fell due: ${r.agentId} woken (${woken})`)
+        }
+      }
     }
   } catch (e: any) {
     log(`[requests] quiet check failed: ${e?.message ?? e}`)
