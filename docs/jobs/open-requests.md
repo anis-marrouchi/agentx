@@ -413,7 +413,7 @@ The checks:
 | Kind | Fields | Finished when |
 |---|---|---|
 | `url` | `url`, `contains` (optional) | The address answers with success, and holds the text when `contains` is given. |
-| `issue` | `provider` (`github` or `gitlab`), `ref`, `state` (optional), `notePattern` (optional) | The issue or merge request is in that state (default `closed`; a merged one counts as closed), or one of its comments contains the text `notePattern` (plain text, upper or lower case does not matter). `ref` is `owner/repo#12`, `group/project!12` for a GitLab merge request, or the item's web address. |
+| `issue` | `provider` (`github` or `gitlab`), `ref`, `state` (optional), `notePattern` (optional) | The issue or merge request is in that state (default `closed`; a merged one counts as closed), or one of its comments contains the text `notePattern` (plain text, upper or lower case does not matter). Only comments written after the request was opened count, so a word that is already on the issue does not close it at once. `ref` is `owner/repo#12`, `group/project!12` for a GitLab merge request, or the item's web address. |
 | `git-ancestor` | `repo`, `commit`, `ref` (optional, default `HEAD`) | The commit is part of that branch in a local copy of the repository. `repo` is a name you set up in `requests.checkers.repos`; the agent never gives a folder. |
 | `reply` | `channel`, `chatId`, `from` | The person `from` (an id from [people](./people.md)) wrote in that chat after the request was opened. |
 
@@ -747,6 +747,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **The correction factor stays at ×1:** the agent has fewer than `factorMinRows` finished pieces of work with an estimate and kept runs in the last `factorDays` days. It counts once the agent gives `estimateMinutes` on work it runs. A promise kept without a run of its own does not count.
 - **No Queue block on the Jobs page:** the mode is `"off"`, or no agent has open work. The dashboard reads `agentx.json` again after the file changes.
 - **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
+- **A request with an `issue` check and a `notePattern` stays open although the comment is there:** only comments written after the request was opened count. A comment from before does not close it. Post a new comment with the text, or close the request yourself. A request opened before this rule still counts every comment.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.

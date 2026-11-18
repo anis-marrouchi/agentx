@@ -1215,7 +1215,7 @@ const TOOLS = [
         closeWhen: {
           type: "object",
           description: "promise, accept, wait, optional: what proves it is finished; the daemon checks it and closes the loop when it is met, and refuses your done while it is not. " +
-            "One of {kind:'url', url, contains?}, {kind:'issue', provider:'github'|'gitlab', ref:'owner/repo#12', state?:'closed'|'merged'|'open', notePattern?:<plain text a comment contains>}, " +
+            "One of {kind:'url', url, contains?}, {kind:'issue', provider:'github'|'gitlab', ref:'owner/repo#12', state?:'closed'|'merged'|'open', notePattern?:<plain text a comment written after now contains>}, " +
             "{kind:'git-ancestor', repo:<name>, commit, ref?}, {kind:'reply', channel, chatId, from:<person id>}.",
         },
         home: {

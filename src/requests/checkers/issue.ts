@@ -14,6 +14,9 @@ export interface ForgeItem {
   state: IssueState
   /** The bodies of its notes, oldest first. Only read when asked for. */
   notes?: string[]
+  /** When each of `notes` was written (epoch ms), same order; null when
+   *  the forge did not say (#1925). */
+  noteTimes?: Array<number | null>
   url: string
   /** Its label names (status drift, #1138 step F). */
   labels?: string[]
@@ -29,7 +32,7 @@ export interface ForgeItem {
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
-export type ForgeReader = (provider: "github" | "gitlab", ref: ParsedRef, opts: { notes: boolean }) => Promise<ForgeItem | { error: string }>
+export type ForgeReader = (provider: "github" | "gitlab", ref: ParsedRef, opts: { notes: boolean; notesSince?: number }) => Promise<ForgeItem | { error: string }>
 
 export interface ParsedRef { project: string; number: number; mr: boolean }
 
@@ -64,7 +67,7 @@ function parseRefParts(provider: "github" | "gitlab", ref: string): ParsedRef | 
   return m ? { project: m[1], number: Number(m[3]), mr: m[2] === "merge_requests" } : null
 }
 
-export function parseIssueSpec(raw: Record<string, unknown>): IssueSpec | string {
+export function parseIssueSpec(raw: Record<string, unknown>, now = Date.now()): IssueSpec | string {
   const provider = str(raw.provider).toLowerCase()
   if (provider !== "github" && provider !== "gitlab") return "provider must be github or gitlab"
   const ref = str(raw.ref)
@@ -77,7 +80,33 @@ export function parseIssueSpec(raw: Record<string, unknown>): IssueSpec | string
   if (state && !(STATES as readonly string[]).includes(state)) return `state must be one of ${STATES.join(", ")}`
   const notePattern = str(raw.notePattern)
   if (notePattern.length > PATTERN_MAX) return `notePattern is longer than ${PATTERN_MAX} characters`
-  return { kind: "issue", provider, ref, ...(state ? { state: state as IssueState } : {}), ...(notePattern ? { notePattern } : {}) }
+  // A note pattern looks only at notes written once the loop is open
+  // (#1925): a word already on the issue must not close it at once.
+  let after = now
+  if (notePattern && raw.after !== undefined) {
+    const at = typeof raw.after === "number" ? raw.after : Date.parse(str(raw.after))
+    if (!Number.isFinite(at) || at < 0) return "after must be epoch milliseconds or an ISO date"
+    after = at
+  }
+  return { kind: "issue", provider, ref, ...(state ? { state: state as IssueState } : {}), ...(notePattern ? { notePattern, after } : {}) }
+}
+
+/** The notes a pattern may match: all of them for a spec stored without
+ *  `after`, else only those written at or after it. A note without a time
+ *  is left out: the check cannot tell it is new. */
+function notesToMatch(spec: IssueSpec, item: ForgeItem): string[] {
+  const notes = item.notes ?? []
+  if (spec.after === undefined) return notes
+  return notes.filter((_, i) => {
+    const at = item.noteTimes?.[i]
+    return typeof at === "number" && at >= spec.after!
+  })
+}
+
+/** A forge time string as epoch ms; null when absent or unreadable. */
+const timeOf = (v: unknown): number | null => {
+  const at = typeof v === "string" ? Date.parse(v) : NaN
+  return Number.isFinite(at) ? at : null
 }
 
 /** A closed check is met by a merged one too: merged is closed. */
@@ -87,7 +116,7 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
   if (!ctx.forge) return { verdict: "unverifiable", detail: `no ${spec.provider} connector on this node` }
   const ref = parseRef(spec.provider, spec.ref)
   if (!ref) return { verdict: "unverifiable", detail: `${spec.ref} is not an issue reference` }
-  const item = await ctx.forge(spec.provider, ref, { notes: !!spec.notePattern })
+  const item = await ctx.forge(spec.provider, ref, { notes: !!spec.notePattern, ...(spec.notePattern && spec.after !== undefined ? { notesSince: spec.after } : {}) })
   if ("error" in item) return { verdict: "unverifiable", detail: `${spec.ref}: ${item.error}` }
   // No state and no pattern: closed is what finished means.
   const want = spec.state ?? (spec.notePattern ? null : "closed")
@@ -96,9 +125,10 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
     // Plain text, any case: an agent's pattern never runs as a regular
     // expression on the daemon's thread, so it cannot stall it.
     const want = spec.notePattern.toLowerCase()
-    if ((item.notes ?? []).some((n) => n.slice(0, NOTE_MAX).toLowerCase().includes(want))) return { verdict: "met", detail: `${item.url} has a note with "${spec.notePattern}"` }
+    if (notesToMatch(spec, item).some((n) => n.slice(0, NOTE_MAX).toLowerCase().includes(want))) return { verdict: "met", detail: `${item.url} has a note with "${spec.notePattern}"` }
   }
-  return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note has "${spec.notePattern}"` : ""}` }
+  const since = spec.notePattern && spec.after !== undefined ? ` since ${new Date(spec.after).toISOString()}` : ""
+  return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note${since} has "${spec.notePattern}"` : ""}` }
 }
 
 /** A forge user name or time string; null when absent. */
@@ -171,9 +201,13 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const reason = state === "closed" ? login(issue.body?.state_reason) : null
       const stateReason = reason ? { stateReason: reason } : {}
       if (!opts.notes) return { state, url, labels, ...closer, ...plan, ...stateReason }
-      const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
+      // `since` (updated at or after) keeps the page to the notes that can
+      // count, so a long thread's new notes are not past the first 100.
+      const since = opts.notesSince !== undefined ? `&since=${encodeURIComponent(new Date(opts.notesSince).toISOString())}` : ""
+      const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100${since}`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, labels, ...closer, ...plan, ...stateReason, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      const list: any[] = Array.isArray(notes.body) ? notes.body : []
+      return { state, url, labels, ...closer, ...plan, ...stateReason, notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
@@ -193,6 +227,7 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     if (!opts.notes) return { state, url, labels, ...closer, ...plan }
     const notes = await get(`${base}/notes?per_page=100&sort=desc&order_by=created_at`, headers)
     if (!notes.ok) return { error: `its notes: ${notes.error}` }
-    return { state, url, labels, ...closer, ...plan, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
+    const list: any[] = (Array.isArray(notes.body) ? notes.body : []).slice().reverse()
+    return { state, url, labels, ...closer, ...plan, notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)) }
   }
 }
