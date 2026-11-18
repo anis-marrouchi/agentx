@@ -37,6 +37,7 @@ import { DEFAULT_ADMISSION_SETTINGS } from "@/admission/queue"
 import { planHoldText, waitNoticeText } from "@/admission/wait-notice"
 import { sendToChat, type SendToChatOpts, type SituationTag } from "@/situations/send-to-chat"
 import type { GateDecision, SituationGate } from "@/situations/gate"
+import { situationKeyOf } from "@/situations/key"
 
 /** A send refused because its channel is down (#1138 step B). */
 export class ChannelDownError extends Error {
@@ -1065,6 +1066,11 @@ export class MessageRouter {
     // runs is dropped as "goodbye in flight". Freed when the turn ends
     // with nothing sent; a counted send marks it used instead.
     const slotTaken = this.situationSlot(sit, msg.id, "take")
+    // The routed agent owns the chat's record (#1892 phase 2): the chip on
+    // its page lists the chat. First match only; never throws.
+    if (sit?.active && this.situationGate) {
+      try { this.situationGate.store.claimOwner(sit.key, agentId) } catch { /* best-effort */ }
+    }
     try { return await this.processResolvedMessage(adapter, msg, agentId, chatId) }
     finally {
       if (slotTaken) this.situationSlot(sit, msg.id, "free")
@@ -1244,6 +1250,8 @@ export class MessageRouter {
           senderUsername: msg.sender.username,
           group: msg.group?.name,
           chatId,  // stable ID for session keying (issue path for GitLab, group ID for Telegram)
+          // The [Situation] layer reads the chat's record by this (#1892).
+          ...(this.situationGate ? { situationKey: situationKeyOf(msg) } : {}),
           mediaPath: msg.media?.path,
           mediaType: msg.media?.type,
           replyToText: msg.replyToText,

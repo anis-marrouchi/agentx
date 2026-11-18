@@ -235,6 +235,9 @@ export interface AgentTask {
     group?: string
     /** Stable chat ID for session keying (e.g. "project:issue:123" for GitLab) */
     chatId?: string
+    /** The chat's situation record key (#1892 phase 2), set by the router
+     *  for chats the courtesy gate covers. The [Situation] layer reads it. */
+    situationKey?: string
     /** Attached media file (image, audio, video, document) */
     mediaPath?: string
     mediaType?: string

@@ -185,6 +185,11 @@ export interface ContextInput {
   // already has it from its first turn.
   attachHint?: string
 
+  // The chat's situation and phase, one line (#1892 phase 2). From
+  // situations/context.ts: FRESH sessions only, except when the talk is
+  // ending or ended, which a resumed session must also see.
+  situation?: string
+
 
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
@@ -571,6 +576,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("attachments", 250),
       content: input.attachHint,
       tags: ["channel", "attachments"],
+    })
+  }
+
+  // 7g. Situation — after the stable layers, so the cached prefix holds.
+  if (input.situation) {
+    layers.push({
+      name: "situation",
+      priority: 7.8,
+      maxTokens: budget("situation", 120),
+      content: input.situation,
+      tags: ["situation"],
     })
   }
 

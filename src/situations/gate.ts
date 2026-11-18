@@ -147,7 +147,9 @@ export class SituationGate {
         ? { kind: "create", phase: "ending", why: "the first message is a closer" }
         : { kind: "create", phase: "during", why: "first message on this chat" })
     } else if (phase === "during") {
-      if (courtesy === "courtesy") d.changes.push({ kind: "move", from: "during", to: "ending", why: `a closer from ${senderKind} ${msg.sender.name || msg.sender.id}` })
+      // A person said "not this" (phase 2 override): the word list does
+      // not undo it. Max age, the backstop and a person still can.
+      if (courtesy === "courtesy" && row.override !== "not-this") d.changes.push({ kind: "move", from: "during", to: "ending", why: `a closer from ${senderKind} ${msg.sender.name || msg.sender.id}` })
     } else if (phase === "ending") {
       if (courtesy === "courtesy" && row.slot === "taken") {
         d.unclaimed = "drop"

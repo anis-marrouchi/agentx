@@ -38,6 +38,8 @@ import { setSendToChatRecorder, setSendToChatStore, situationTagOf } from "@/sit
 import { localNumber, numberLine, peerNumbers, yesterday, type NodeNumber } from "@/notify/unanswered"
 import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
+import { setSituationContextSource } from "@/situations/context"
+import { situationsList, situationsOverride } from "@/situations/api"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -861,6 +863,8 @@ export class AgentXDaemon {
           })
           this.router.setSituationGate(this.situationGate)
           setSendToChatStore(situations)
+          // The [Situation] prompt layer reads the same record (phase 2).
+          setSituationContextSource({ store: situations, settings: () => this.config.situations })
           this.log(`  Courtesy gate: ${this.config.situations.mode}`)
         } catch (e: any) {
           this.log(`  Courtesy gate: not available (${e?.message ?? e})`)
@@ -5292,6 +5296,10 @@ export class AgentXDaemon {
     "/github/send-comment",
     // Re-delivers a dropped chat message to an agent (#1892).
     "/situations/release",
+    // A person ends or reopens a chat's situation (#1892 phase 2): the
+    // CLI or the same-host dashboard (owner-checked) over loopback, or a
+    // mesh token. Never a chat participant.
+    "/situations/override",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8315,6 +8323,24 @@ export class AgentXDaemon {
           }
           this.log(`[situation] gate log row ${id} released: message ${String(r.message.id)} routed again`)
           this.json(res, 200, { ok: true, id, messageId: r.message.id ?? null })
+          break
+        }
+
+        // Each chat's situation and a person's override (#1892 phase 2):
+        // `agentx situation list | end | not-this | clear` and the chip on
+        // the agent page. GET is mesh-gated, POST mesh-protected.
+        case "GET /situations": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const r = situationsList(this.situationGate.store, new URL(req.url || "/", "http://localhost").searchParams, this.config.situations.mode)
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "POST /situations/override": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const body = await readBody(req)
+          const r = situationsOverride(this.situationGate.store, body)
+          if (r.status === 200) this.log(`[situation] ${String(body.action)} on ${String(body.id).slice(0, 80)} by ${String(body.by || "a person").slice(0, 80)}`)
+          this.json(res, r.status, r.body)
           break
         }
 

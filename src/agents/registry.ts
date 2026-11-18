@@ -71,6 +71,7 @@ import { holdMessage, holdsRoot } from "./holds"
 import { budgetProjectResolver } from "./budget-projects"
 import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
+import { situationContextFor } from "@/situations/context"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
@@ -3288,6 +3289,9 @@ export class AgentRegistry {
         const hint = appAttachHint(channel, !resumeSessionId, state.def.richMessages)
         return hint ? withOutbox(state.def.workspace, hint) : undefined
       })(),
+      // The chat's situation (#1892): fresh sessions, or a talk that is
+      // ending or ended. Never throws; no record, no line.
+      situation: situationContextFor(task.context?.situationKey, { fresh: !resumeSessionId }),
       intent: intent
         ? {
             path: intent.path,
@@ -3306,6 +3310,7 @@ export class AgentRegistry {
         references: undefined, skillInjection: undefined, sessionHistory: undefined, memoryContext: undefined,
         crossChatContext: undefined, longMemoryRecall: undefined, contextOnDemand: undefined, wikiContext: undefined,
         handoverNote: undefined, rotationMemo: undefined, ownerDecisions: undefined, eventDigest: undefined, attachHint: undefined,
+        situation: undefined,
       } satisfies Partial<ContextInput>)
     }
 
