@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { correctionFactors, EstimateCache, factorsOf, type AgentFactor } from "./estimates"
 import { readQueue, readSlots } from "./slot-store"
 import { schedule } from "./slots"
+import { CRITICAL_LOWERED } from "./due-times"
 
 // --- Due times, measured (#1909) ---
 //
@@ -26,6 +27,9 @@ export interface AgentDueReport {
   /** Rows whose fields "on" would refuse as wrong (bad priority, dueSource,
    *  work or estimate). */
   invalid: number
+  /** Rows where the agent asked for critical on its own work and shadow
+   *  counted it as high (#1919); on refuses them. */
+  criticalLowered: number
 }
 
 export interface DueReport {
@@ -102,9 +106,11 @@ export function dueReport(db: Database.Database, opts: { since: number; now: num
       rows: mine.length,
       written: gaps.length,
       medianGapMinutes: m === null ? null : Math.round(m),
-      noSource: mine.filter((r) => r.wouldRefuse === "no source").length,
-      doesNotFit: mine.filter((r) => r.wouldRefuse === "does not fit").length,
+      // A lowered critical is noted after the refusal: "no source; critical ...".
+      noSource: mine.filter((r) => r.wouldRefuse?.split("; ")[0] === "no source").length,
+      doesNotFit: mine.filter((r) => r.wouldRefuse?.split("; ")[0] === "does not fit").length,
       invalid: mine.filter((r) => r.wouldRefuse?.startsWith("invalid") ?? false).length,
+      criticalLowered: mine.filter((r) => r.wouldRefuse?.includes(CRITICAL_LOWERED) ?? false).length,
     }
   })
   return { agents, rows: rows.length }

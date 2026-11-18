@@ -333,7 +333,7 @@ An agent that picks its own due time ("I deliver at noon") is guessing. It canno
 Three words used below:
 
 - **The queue:** every piece of open work on this computer that an agent still has to do. It is the same list as [Jobs](/dashboard/jobs). Work that waits on someone else, or is blocked, is not in it.
-- **Priority:** `critical`, `high`, `normal` (the default) or `low`. Critical work goes first; then work you asked to make room for; then high, normal and low. Same priority: the older work first.
+- **Priority:** `critical`, `high`, `normal` (the default) or `low`. Critical work goes first; then work you asked to make room for; then high, normal and low. Same priority: the older work first. Only your own requests can be critical: see [Who may set critical](#who-may-set-critical).
 - **Correction factor:** how long an agent's work really took against the minutes it said, read from its own finished work of the last 30 days. Only work whose runs AgentX kept counts, and the time is the time those runs took: the hours between asking and closing hold nights and waits, so they are not used. A factor of 1.5 means its work takes half again as long as it says. With fewer than 3 such pieces of work, the factor is 1.
 
 How the due time is worked out:
@@ -351,13 +351,21 @@ When you name the time yourself, your time comes first:
 
 When work goes ahead of other work (a critical job, or room you asked for), the due times AgentX gave behind it move later, by the time that work costs them. A move of less than 15 minutes is not made. Each person or agent waiting on moved work is told with the old time, the new time and the reason, at most once an hour for the same work: a second move within the hour is told in one later message, from the first old time to the latest. A wake armed for the old time moves with it, and its note gives the new time. A time you named, or one set by an outside fact, is never moved this way.
 
+#### Who may set critical
+
+Critical work goes ahead of every agent's work and moves their due times, so only you can make work critical. An agent keeps `priority: "critical"` only when it accepts a request you made: a message you sent it, recorded as one of your requests. An agent's own promise, or its accept of its own promise, cannot be critical:
+
+- **`shadow`:** the agent gets the same reply as before. AgentX counts the work as `high`, and its row says `critical asked, lowered to high: not the owner's request`. The report counts it under `own critical`.
+- **`on`:** the call is refused with `Not recorded: priority critical is only for the owner's requests…`. The agent sends it again with `priority: "high"`, and nobody else's due time moves.
+- **`off`:** nothing changes.
+
 There are three modes. Start with `shadow`:
 
 | `requests.dueTimes.mode` | What happens |
 |---|---|
 | `off` (the default) | Nothing changes. |
-| `shadow` | Nothing changes for the agents: they get the same replies as with `off`, and nothing is written but one row per promise or accept. That row holds the due time AgentX would have given next to the one the agent wrote, and whether `on` would have refused it, including fields the agent got wrong (an unknown `priority`, a `dueSource` that is not `{kind, text}`, an estimate over a week). |
-| `on` | A promise or accept with no `due` gets the time from the queue. A `due` with no `dueSource` is refused with: `Not recorded: you wrote a due time with no source. Register the work instead…`. A time you named that does not fit is answered at once, as above. |
+| `shadow` | Nothing changes for the agents: they get the same replies as with `off`, and nothing is written but one row per promise or accept. That row holds the due time AgentX would have given next to the one the agent wrote, and whether `on` would have refused it, including fields the agent got wrong (an unknown `priority`, a `dueSource` that is not `{kind, text}`, an estimate over a week) and a `critical` it asked for on its own work. |
+| `on` | A promise or accept with no `due` gets the time from the queue. A `due` with no `dueSource` is refused with: `Not recorded: you wrote a due time with no source. Register the work instead…`. A time you named that does not fit is answered at once, as above. An agent's own `critical` is refused (see [Who may set critical](#who-may-set-critical)). |
 
 To turn it on:
 
@@ -378,7 +386,7 @@ To turn it on:
    ```bash
    agentx requests contract --since 3d
    ```
-   The **Due times** table has one line per agent: its correction factor, how many promises and accepts were recorded, the middle difference in minutes between the time the agent wrote and the time AgentX would have given (`agent − daemon`), and how many calls the refusal would have stopped (`no source`, `does not fit`, `wrong fields`).
+   The **Due times** table has one line per agent: its correction factor, how many promises and accepts were recorded, the middle difference in minutes between the time the agent wrote and the time AgentX would have given (`agent − daemon`), and how many calls the refusal would have stopped (`no source`, `does not fit`, `wrong fields`, and `own critical`: calls that asked for critical on work you did not ask for).
 6. When the times AgentX gives look right, change `"mode": "shadow"` to `"mode": "on"` and restart AgentX again.
 
 **Browser:** while the mode is `shadow` or `on`, the Hub's **Jobs** page shows a **Queue** block above the list: one line per agent, with its open jobs, their minutes of work, when the next one ends, when its queue is clear, and its correction factor when it is not 1.
@@ -724,6 +732,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 32. **Terminal:** run `agentx requests contract --since 1d`. It prints a **Due times** table with a line for that agent.
 33. **Browser:** open the Hub's **Jobs** page. A **Queue** block shows one line for each agent with open work.
 34. **Terminal:** with the mode set to `"on"`, ask an agent to accept a request with an estimate and no due time. Its reply gives a line starting `Due time given by the daemon:`, and `agentx requests show <id>` shows that due time.
+35. **Terminal:** with the mode set to `"on"`, ask an agent to promise something of its own with `priority: "critical"`. The call is refused with `Not recorded: priority critical is only for the owner's requests`, and `agentx requests list` shows no new promise.
 
 ## If something is wrong
 
@@ -744,6 +753,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A plan's close was reopened and its agent was not woken:** check `requests.ownerCheck.wakeOnPlanMismatch` in `agentx.json`. With `false`, only you are told.
 - **No `[due-times]` line in the daemon log, and no Due times rows:** check that `requests.dueTimes.mode` is `"shadow"` or `"on"` in `agentx.json`, that `requests.enabled` is `true`, and that AgentX was restarted. Only `promise` and `accept` are recorded.
 - **An agent's promise is refused with `Not recorded: you wrote a due time with no source`:** the mode is `"on"` and the agent wrote its own time. It sends `estimateMinutes` and `priority` instead, or your words as `dueSource`. To go back to recording only, set the mode to `"shadow"` and restart AgentX.
+- **An agent's call is refused with `priority critical is only for the owner's requests`:** the mode is `"on"` and the agent asked for critical on its own promise. It sends `priority: "high"` instead. If you asked for the work, send it to the agent as a message: your request can be accepted as critical.
+- **The report counts `own critical` for an agent:** in shadow mode it asked for critical on its own work and was counted as high. Once the mode is `"on"`, those calls are refused.
 - **An accept is refused with `does not fit the queue`:** the time you named cannot be met with the work already waiting. The message gives the earliest time and what would have to move. Tell the agent which you want.
 - **Every due time is far away:** many open requests are counted with the default 30 minutes, or recently touched work that is finished is still open. Close the ones that are finished, or lower `requests.dueTimes.defaultEstimateMinutes`. A computer that holds more runs at once can set `requests.dueTimes.capacity`.
 - **The correction factor stays at ×1:** the agent has fewer than `factorMinRows` finished pieces of work with an estimate and kept runs in the last `factorDays` days. It counts once the agent gives `estimateMinutes` on work it runs. A promise kept without a run of its own does not count.
