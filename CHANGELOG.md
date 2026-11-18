@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.231.3](https://github.com/anis-marrouchi/agentx/compare/v0.231.2...v0.231.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **requests:** a promise linking a closed item stays open (noqta[#876](https://github.com/anis-marrouchi/agentx/issues/876)) ([#1933](https://github.com/anis-marrouchi/agentx/issues/1933)) ([e9fb5f5](https://github.com/anis-marrouchi/agentx/commit/e9fb5f5acbb7137d437a0c49fb689c2ead2947b3))
+* **requests:** close three due-time gaps before mode on ([#1920](https://github.com/anis-marrouchi/agentx/issues/1920)) ([#1930](https://github.com/anis-marrouchi/agentx/issues/1930)) ([a1f95f2](https://github.com/anis-marrouchi/agentx/commit/a1f95f2319dbc327803bf5d6d088c2f39bc42ada))
+* **situations:** courtesy gate clean-ups after phase 1 ([#1921](https://github.com/anis-marrouchi/agentx/issues/1921)) ([#1931](https://github.com/anis-marrouchi/agentx/issues/1931)) ([34713cf](https://github.com/anis-marrouchi/agentx/commit/34713cf7e99cae50ea463f81c4108d1dad4d28ac))
+
 ## [0.231.2](https://github.com/anis-marrouchi/agentx/compare/v0.231.1...v0.231.2) (2026-11-18)
 
 
