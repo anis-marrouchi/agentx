@@ -25,6 +25,26 @@ export interface SendToChatOpts {
   /** A send that belongs to one end of a talk (a close step): refused
    *  when the talk was reopened since (S7). */
   situation?: SituationTag
+  /** The send answers a message just written in this chat (the router's
+   *  reply path). Unset: false. Read only by the told record (#1936). */
+  reply?: boolean
+}
+
+/** What the told record hears about each send that went out (#1936). */
+export interface SentToChat {
+  channel: string
+  chatId: string
+  agentId?: string
+  text: string
+  reply: boolean
+}
+
+let recorder: ((sent: SentToChat) => void) | null = null
+
+/** Attach the told record's hook (daemon start). Null detaches it. It
+ *  only writes rows: it cannot stop or change a send. */
+export function setSendToChatRecorder(fn: ((sent: SentToChat) => void) | null): void {
+  recorder = fn
 }
 
 /** A situation tag read from a JSON body (a peer's /channel/send), or
@@ -81,5 +101,10 @@ export async function sendToChat(
   // The Telegram adapter reads `accountId` off the message to pick the bot.
   const id = await adapter.send(msg)
   if (opts.countsAsReply) noteCountedSend(keyed)
+  if (recorder) {
+    try {
+      recorder({ channel: msg.channel, chatId: msg.chatId, agentId: msg.agentId, text: String(msg.text ?? ""), reply: opts.reply === true })
+    } catch { /* the send went out; the record is best-effort */ }
+  }
   return id
 }

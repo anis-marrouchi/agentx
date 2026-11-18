@@ -61,6 +61,9 @@ export interface SweepDeps {
   /** The nags kept back for the digest (#1126): their one line, and how
    *  to clear them once the digest went out. */
   nags?: { line(): { line: string; ids: number[] } | null; done(ids: number[]): void }
+  /** The number's line for the morning digest (#1936, notify/unanswered.ts).
+   *  Read only once a digest is going out: it never makes one go out. */
+  numberLine?: () => Promise<string | null>
   log: (msg: string) => void
 }
 
@@ -88,7 +91,7 @@ export function digestDue(settings: ApprovalSettings["digest"], lastDigest: stri
   return { due: lastDigest !== date && minutes >= h * 60 + m, date }
 }
 
-export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, dashboardUrl?: string, nagLine?: string): string {
+export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, dashboardUrl?: string, nagLine?: string, numberLine?: string): string {
   const top = list.items[0]
   const later = list.later ? ` (and ${list.later} you put off for later)` : ""
   // A digest of nags alone does not open with "0 waiting".
@@ -100,6 +103,8 @@ export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, d
   }
   // System nags kept back for this digest instead of a push each (#1126).
   if (nagLine) lines.push(nagLine)
+  // Yesterday's number and its guards (#1936): only measured, one line.
+  if (numberLine) lines.push(numberLine)
   lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}${HUB_NEEDS_YOU}, or run: agentx approvals list` : `Open Needs you on the ${HUB_NAME}, or run: agentx approvals list`)
   return lines.join("\n")
 }
@@ -194,8 +199,10 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
     try { nags = deps.nags?.line() ?? null } catch (e: any) { log(`[approvals] digest: nags not read: ${e?.message ?? e}`) }
     if (list.count === 0 && list.later === 0 && !nags) { result.digest = "empty"; return result }
     recordDigest(ctx.root, date)
+    let number: string | null = null
+    try { number = (await deps.numberLine?.()) ?? null } catch (e: any) { log(`[approvals] digest: the number not read: ${e?.message ?? e}`) }
     try {
-      await deps.sendDigest(dest, digestText(list, deps.dashboardUrl, nags?.line))
+      await deps.sendDigest(dest, digestText(list, deps.dashboardUrl, nags?.line, number ?? undefined))
       if (nags) deps.nags!.done(nags.ids)
       result.digest = "sent"
       log(`[approvals] digest sent: ${list.count} waiting, ${list.later} later${nags ? `, ${nags.ids.length} nags` : ""}`)

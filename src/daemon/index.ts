@@ -34,7 +34,8 @@ import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
 import { DecisionStore } from "@/decisions/store"
 import { MessageRouter } from "@/channels/router"
-import { setSendToChatStore, situationTagOf } from "@/situations/send-to-chat"
+import { setSendToChatRecorder, setSendToChatStore, situationTagOf } from "@/situations/send-to-chat"
+import { localNumber, numberLine, peerNumbers, yesterday, type NodeNumber } from "@/notify/unanswered"
 import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { setMessageRouter } from "@/channels/router-instance"
@@ -878,6 +879,16 @@ export class AgentXDaemon {
             }
           })
           this.router.setOwnerGate(this.ownerGate)
+          this.toldLedger = ledger
+          // The owner's chats with agents (notifications.told.record, #1936):
+          // each send that went out there is a row for the number. Only a
+          // row: the send already happened, nothing is decided here.
+          const gate = this.ownerGate
+          setSendToChatRecorder((m) => {
+            if (!gate.isRecordAddress(m.channel, m.chatId)) return
+            const { title, body } = splitTitle(m.text)
+            gate.record({ channel: m.channel, chatId: m.chatId, title, text: body }, { from: m.agentId, reply: m.reply })
+          })
           this.reach = this.attachReach(db, ledger)
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
@@ -2505,6 +2516,7 @@ export class AgentXDaemon {
   private requests: AttachedRequests | null = null
   /** The told-the-owner gate (#1126). Null without a database. */
   private ownerGate: OwnerGate | null = null
+  private toldLedger: ToldLedger | null = null
   /** Where the owner is and did it land (#1138 step B). Null without a database. */
   private reach: AttachedReach | null = null
   private reachTimer?: ReturnType<typeof setInterval>
@@ -2714,6 +2726,10 @@ export class AgentXDaemon {
               done: (ids: number[]) => this.ownerGate!.markDigested(ids),
             },
           } : {}),
+          // Yesterday's number, this node and its peers (#1936): one line.
+          ...(this.toldLedger ? {
+            numberLine: async () => numberLine(await this.ownerNumber(2, true), yesterday(Date.now(), this.config.approvals.digest.timezone)),
+          } : {}),
           log: this.log,
         })
         // Beside the sweep, never inside it: a notice that hangs must not
@@ -2778,6 +2794,21 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  /** The number (#1936, notify/unanswered.ts) for the last `days` days:
+   *  this node first, then each mesh peer when `peers` (a peer that does
+   *  not answer is shown unreachable, never 0). */
+  private async ownerNumber(days: number, peers: boolean): Promise<NodeNumber[]> {
+    if (!this.toldLedger) throw new Error("The told-the-owner record needs the database.")
+    const now = Date.now()
+    const local = localNumber(this.toldLedger, {
+      node: this.config.node.name, days, now, timezone: this.config.approvals.digest.timezone,
+      desk: readOwnerList({ root: process.cwd(), now }, { url: "", name: this.config.node.name }),
+    })
+    if (!peers || !this.mesh) return [local]
+    const mesh = this.mesh
+    return [local, ...await peerNumbers(mesh.directory(), { days, headers: (p) => mesh.authHeaders(p) })]
   }
 
   /** notifications.desk with its defaults worked out (desk/route.ts). */
@@ -8363,7 +8394,27 @@ export class AgentXDaemon {
           if (!this.ownerGate) { this.json(res, 409, { error: "The told-the-owner record needs the database." }); break }
           const since = Number(url.searchParams.get("since") ?? Date.now() - 24 * 3_600_000)
           if (!Number.isFinite(since)) { this.json(res, 400, { error: "since must be epoch milliseconds" }); break }
-          this.json(res, 200, { since, ...this.ownerGate.report(since, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50)) })
+          // The number per day (#1936), this node and its peers; ?peers=0: this node only.
+          const days = Math.min(30, Math.max(1, Number(url.searchParams.get("days") ?? 7) || 7))
+          const number = await this.ownerNumber(days, url.searchParams.get("peers") !== "0").catch((e: any): NodeNumber[] => [
+            { node: this.config.node.name, reachable: false, error: String(e?.message ?? e) },
+          ])
+          this.json(res, 200, {
+            since, ...this.ownerGate.report(since, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50)),
+            number: { days, line: numberLine(number, yesterday(Date.now(), this.config.approvals.digest.timezone)), nodes: number },
+          })
+          break
+        }
+
+        // This node's number alone (#1936): what a peer's GET /owner/told reads.
+        case "GET /owner/told/number": {
+          if (!this.toldLedger) { this.json(res, 409, { error: "The told-the-owner record needs the database." }); break }
+          const days = Math.min(30, Math.max(1, Number(url.searchParams.get("days") ?? 7) || 7))
+          try {
+            this.json(res, 200, (await this.ownerNumber(days, false))[0])
+          } catch (e: any) {
+            this.json(res, 500, { error: String(e?.message ?? e) })
+          }
           break
         }
 

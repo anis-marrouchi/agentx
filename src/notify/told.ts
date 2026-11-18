@@ -25,9 +25,16 @@ import type Database from "better-sqlite3"
 // (#1138 step B, notify/reach.ts): a row that went out moves from sent to
 // seen (the phone app's read mark, the Desk showing its request) and to
 // answered (a reply in its request's chat, its card decided).
+//
+// Record only (#1936, owner mediator phase 0): the owner's chats with
+// agents listed in notifications.told.record get a row for each message
+// that went out, outcome `recorded`, so the number (notify/unanswered.ts)
+// sees them. Those rows never pass the gate: no repeat check, no digest,
+// never urgent, never on the reach ladder. A row's `reply` flag says the
+// daemon knows it answered the owner's own message; old rows read false.
 
 export type TellKind = "notice" | "nag"
-export type TellOutcome = "sent" | "held" | "digest" | "repeat" | "failed"
+export type TellOutcome = "sent" | "held" | "digest" | "repeat" | "failed" | "recorded"
 /** Where a row that went out stands: sent, seen by the owner, answered. */
 export type TellState = "sent" | "seen" | "answered"
 
@@ -47,6 +54,9 @@ export interface TellMeta {
    *  own, `agentx notify`), never for an agent's answer, which may well
    *  say the same thing twice on purpose. */
   textKey?: boolean
+  /** Daemon-set: the message answers the owner's own message. A reply is
+   *  not an interruption (#1936). Never taken from a caller's body. */
+  reply?: boolean
 }
 
 export interface ToldRow {
@@ -76,6 +86,8 @@ export interface ToldRow {
   escalationOf: number | null
   /** sent → seen → answered, for a row that went out. */
   state: TellState
+  /** It answered the owner's own message (#1936). Old rows: false. */
+  reply: boolean
 }
 
 export interface TellSettings {
@@ -84,13 +96,16 @@ export interface TellSettings {
   channels: string[]
   addresses: string[]
   digestNags: boolean
+  /** The owner's chats with agents, "channel:chatId": each message that
+   *  goes out there is recorded, never gated (#1936). Unset: none. */
+  record?: string[]
   /** A daily digest can go out (on, with a destination). False: a nag is
    *  sent at once, or it would never reach anyone. Unset: true. */
   digestAvailable?: boolean
 }
 
 export const DEFAULT_TELL_SETTINGS: TellSettings = {
-  enabled: true, repeatWindowHours: 24, channels: ["push", "ntfy"], addresses: [], digestNags: true,
+  enabled: true, repeatWindowHours: 24, channels: ["push", "ntfy"], addresses: [], digestNags: true, record: [],
 }
 
 /** A text shorter than this is not its own key: "Done." twice in a day is
@@ -160,6 +175,8 @@ const REACH_COLUMNS: Array<[string, string]> = [
   ["seen_at", "INTEGER"], ["seen_via", "TEXT"],
   ["answered_at", "INTEGER"], ["answered_via", "TEXT"],
   ["escalated_at", "INTEGER"], ["escalation_of", "INTEGER"],
+  // #1936: a send that answers the owner. Old rows read as not a reply.
+  ["reply", "INTEGER NOT NULL DEFAULT 0"],
 ]
 
 function toRow(r: any): ToldRow {
@@ -170,12 +187,13 @@ function toRow(r: any): ToldRow {
     answeredAt: r.answered_at ?? null, answeredVia: r.answered_via ?? null,
     escalatedAt: r.escalated_at ?? null, escalationOf: r.escalation_of ?? null,
     state: r.answered_at != null ? "answered" : r.seen_at != null ? "seen" : "sent",
+    reply: r.reply === 1,
   }
 }
 
 /** The fields a new row is written with. */
-export type NewToldRow = Omit<ToldRow, "id" | "digestedAt" | "urgent" | "seenAt" | "seenVia" | "answeredAt" | "answeredVia" | "escalatedAt" | "escalationOf" | "state">
-  & { urgent?: boolean; escalationOf?: number | null }
+export type NewToldRow = Omit<ToldRow, "id" | "digestedAt" | "urgent" | "seenAt" | "seenVia" | "answeredAt" | "answeredVia" | "escalatedAt" | "escalationOf" | "state" | "reply">
+  & { urgent?: boolean; escalationOf?: number | null; reply?: boolean }
 
 export class ToldLedger {
   constructor(private db: Database.Database) {
@@ -184,11 +202,11 @@ export class ToldLedger {
 
   add(row: NewToldRow): number {
     return Number(this.db.prepare(
-      `INSERT INTO owner_told (at, item_key, request_id, kind, channel, chat_id, sender, title, text, outcome, urgent, escalation_of)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO owner_told (at, item_key, request_id, kind, channel, chat_id, sender, title, text, outcome, urgent, escalation_of, reply)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       row.at, row.key, row.requestId, row.kind, row.channel, row.chatId, row.from, row.title.slice(0, 300), row.text.slice(0, TEXT_MAX), row.outcome,
-      row.urgent ? 1 : 0, row.escalationOf ?? null,
+      row.urgent ? 1 : 0, row.escalationOf ?? null, row.reply ? 1 : 0,
     ).lastInsertRowid)
   }
 
@@ -232,7 +250,7 @@ export class ToldLedger {
 
   /** How many of each outcome since `since`: the before/after figure. */
   counts(since: number): Record<TellOutcome, number> {
-    const out: Record<TellOutcome, number> = { sent: 0, held: 0, digest: 0, repeat: 0, failed: 0 }
+    const out: Record<TellOutcome, number> = { sent: 0, held: 0, digest: 0, repeat: 0, failed: 0, recorded: 0 }
     for (const r of this.db.prepare("SELECT outcome, COUNT(*) AS n FROM owner_told WHERE at >= ? GROUP BY outcome").all(since) as Array<{ outcome: TellOutcome; n: number }>) {
       out[r.outcome] = r.n
     }
@@ -249,6 +267,14 @@ export class ToldLedger {
        FROM owner_told WHERE at >= ? AND outcome IN ('sent', 'held')`,
     ).get(since) as { sent: number | null; seen: number | null; answered: number | null }
     return { sent: r.sent ?? 0, seen: r.seen ?? 0, answered: r.answered ?? 0 }
+  }
+
+  /** The rows the number reads (#1936): what went out since `since`,
+   *  oldest first. Kept-back and failed rows never reached him. */
+  wentOut(since: number): ToldRow[] {
+    return this.db.prepare(
+      "SELECT * FROM owner_told WHERE at >= ? AND outcome IN ('sent', 'held', 'recorded') ORDER BY at, id",
+    ).all(since).map(toRow)
   }
 
   /** Delete rows older than `before`. */
@@ -298,10 +324,33 @@ export class OwnerGate {
     const rowId = this.ledger.add({
       at: now, key: key ?? `once:${now}`, requestId: meta.requestId ?? null,
       kind, channel: msg.channel, chatId: msg.chatId, from: meta.from ?? null, title: msg.title, text: msg.text,
-      outcome: verdict === "send" ? "sent" : verdict, urgent: meta.urgent === true,
+      outcome: verdict === "send" ? "sent" : verdict, urgent: meta.urgent === true, reply: meta.reply === true,
     })
     return { verdict, key, rowId }
   }
+
+  /** Is this one of the owner's chats with agents that is only recorded?
+   *  An owner address is gated instead, so it is never both. */
+  isRecordAddress(channel: string, chatId: string): boolean {
+    const s = this.settings()
+    if (!s.enabled || this.isOwnerAddress(channel, chatId)) return false
+    return (s.record ?? []).includes(`${channel}:${chatId}`)
+  }
+
+  /** Record a message that went out to a record-only chat (#1936): one
+   *  row, its own item, outcome `recorded`. Nothing is decided: no repeat
+   *  check, no digest, never urgent. Null when the chat is not listed. */
+  record(msg: { channel: string; chatId: string; title: string; text: string }, meta: { from?: string; reply?: boolean } = {}): number | null {
+    if (!this.isRecordAddress(msg.channel, msg.chatId)) return null
+    const now = this.now()
+    return this.ledger.add({
+      at: now, key: `record:${now}:${++this.recordedCount}`, requestId: null, kind: "notice",
+      channel: msg.channel, chatId: msg.chatId, from: meta.from ?? null, title: msg.title, text: msg.text,
+      outcome: "recorded", urgent: false, reply: meta.reply === true,
+    })
+  }
+
+  private recordedCount = 0
 
   outcome(rowId: number, outcome: TellOutcome): void {
     this.ledger.setOutcome(rowId, outcome)

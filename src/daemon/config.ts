@@ -1439,6 +1439,11 @@ const notificationsSchema = z.object({
     addresses: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
     /** Nags wait for the daily digest. Off: each is sent like any notice. */
     digestNags: z.boolean().default(true),
+    /** The owner's chats with agents, as "channel:chatId" (#1936): each
+     *  message that goes out there is recorded for the number, never
+     *  gated, never on the urgent ladder, never checked for a repeat. An
+     *  address also in `addresses` is gated as before instead. */
+    record: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
   }).default({}),
   /** Reach (src/notify/reach.ts, #1138 step B): an urgent item goes to
    *  where the owner was last seen and, unseen after

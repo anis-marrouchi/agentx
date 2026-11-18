@@ -626,7 +626,8 @@ export class MessageRouter {
     // A failed send gets its own line, so the log never reads as if a push
     // went out when it did not (#930).
     let messageId: string | void
-    const sendOpts: SendToChatOpts = { countsAsReply: opts?.countsAsReply === true, ...(opts?.situation ? { situation: opts.situation } : {}) }
+    // Never the reply path: the told record counts what it carries (#1936).
+    const sendOpts: SendToChatOpts = { countsAsReply: opts?.countsAsReply === true, reply: false, ...(opts?.situation ? { situation: opts.situation } : {}) }
     try {
       if (adapter.name === "telegram" && accountId) {
         messageId = await this.adapterSend(adapter, { ...msg, accountId }, sendOpts)
@@ -1697,7 +1698,9 @@ export class MessageRouter {
     msg: Omit<OutgoingMessage, "parseMode"> & { parseMode?: string; accountId?: string },
     opts: SendToChatOpts,
   ): Promise<string> {
-    return ((await sendToChat(adapter, msg as OutgoingMessage, opts)) || "") as string
+    // The router's reply path: a counted reply answers the message just
+    // written in this chat (#1936), unless the caller says otherwise.
+    return ((await sendToChat(adapter, msg as OutgoingMessage, { ...opts, reply: opts.reply ?? opts.countsAsReply })) || "") as string
   }
 
   /** Whether an agent may emit rich `agentx:ui` messages on this channel.

@@ -111,6 +111,8 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/api/review-gate/reviews" ||
     // What the owner was told (#1126): the words of every notice.
     path === "/owner/told" ||
+    // Its number per day (#1936): counts only, but read from the same record.
+    path === "/owner/told/number" ||
     // Where the owner is and was last seen (#1138 step B).
     path === "/owner/presence" ||
     // What each agent is on and what it finished (agentx_lookup).
