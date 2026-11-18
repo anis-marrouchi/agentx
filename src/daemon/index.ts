@@ -8247,6 +8247,7 @@ export class AgentXDaemon {
 
         // The courtesy gate's log (#1892): what it dropped, or in shadow
         // mode would have dropped. Text is kept on this node only.
+        // Gated by isMeshGatedPath before this point (#1921).
         case "GET /situations/gate-log": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
           const q = new URL(req.url || "/", "http://localhost").searchParams
