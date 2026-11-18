@@ -683,6 +683,23 @@ export function handleRequestsApi(
     if (dueTimesOn(deps) && declared.estimateMinutes !== undefined && declared.estimateMinutes > MAX_ESTIMATE_MINUTES) {
       return { status: 400, body: { error: ESTIMATE_TOO_LONG } }
     }
+    // The daemon gives the due time of an accept (#1909): off by default.
+    // A requester's time the queue cannot hold is answered before anything
+    // is accepted or written (#1920): no work, goal or goal record is left
+    // behind by a refused accept. The slot itself is kept only by slotDone.
+    const slot = action === "accept"
+      ? dueSlot(deps, input, {
+        agentId, requestId: request.id, due: loop.dueAt ?? null, requester: request.owedTo ?? request.sender ?? "owner",
+        // It queues from its accept, not from when it was asked: an old
+        // request accepted now does not go ahead of work accepted before.
+        words: described.headline ?? request.headline ?? request.text,
+        kept: { work: request.work, estimateMinutes: request.estimateMinutes },
+      }, now)
+      : null
+    if (slot && "refuse" in slot) return slot.refuse
+    if (slot?.plan.kind === "set") loop.dueAt = slot.plan.dueAt
+    const slotDone = () => (slot && "plan" in slot ? finishSlot(slot.plan, request!.id, now) : null)
+
     if (action === "accept") {
       store.setWork(request.id, declared)
       if (goal) {
@@ -715,22 +732,6 @@ export function handleRequestsApi(
         }
       }
     }
-
-    // The daemon gives the due time of an accept (#1909): off by default.
-    // A requester's time the queue cannot hold is answered before anything
-    // is accepted.
-    const slot = action === "accept"
-      ? dueSlot(deps, input, {
-        agentId, requestId: request.id, due: loop.dueAt ?? null, requester: request.owedTo ?? request.sender ?? "owner",
-        // It queues from its accept, not from when it was asked: an old
-        // request accepted now does not go ahead of work accepted before.
-        words: described.headline ?? request.headline ?? request.text,
-        kept: { work: request.work, estimateMinutes: request.estimateMinutes },
-      }, now)
-      : null
-    if (slot && "refuse" in slot) return slot.refuse
-    if (slot?.plan.kind === "set") loop.dueAt = slot.plan.dueAt
-    const slotDone = () => (slot && "plan" in slot ? finishSlot(slot.plan, request!.id, now) : null)
 
     if (action === "accept" && input.steps != null) {
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS

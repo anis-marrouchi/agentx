@@ -179,6 +179,20 @@ describe("a due time with a source", () => {
     expect(told[0]).toMatchObject({ to: "owner", id: first.id })
   })
 
+  it("an accept the queue refuses writes nothing: no work, no goal, no goal record (#1920)", () => {
+    expect(promise("on", { estimateMinutes: 120, text: "Draft the report" }).status).toBe(200)
+    const id = ownerRequest("t1")
+    const ensured: string[] = []
+    const d = { ...deps("on"), goals: { ensure: (goal: string) => { ensured.push(goal) } } as any }
+    const res = handleRequestsApi("POST", "/requests", {
+      agentId: "writer", action: "accept", id, work: "writing", estimateMinutes: 30, goal: "launch",
+      due: new Date(T0 + HOUR).toISOString(), dueSource: { kind: "requester", text: "within the hour" },
+    }, d)
+    expect(res.status).toBe(409)
+    expect(store.get(id)).toMatchObject({ state: "candidate", work: null, estimateMinutes: null, goal: null })
+    expect(ensured).toEqual([])
+  })
+
   it("a requester's time even room cannot meet names both choices", () => {
     expect(promise("on", { estimateMinutes: 60 }).status).toBe(200)
     const id = ownerRequest("t1")
