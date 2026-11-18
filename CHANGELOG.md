@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.231.1](https://github.com/anis-marrouchi/agentx/compare/v0.231.0...v0.231.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **requests:** a reopened request can take a new plan over its closed one ([#1923](https://github.com/anis-marrouchi/agentx/issues/1923)) ([60ebe66](https://github.com/anis-marrouchi/agentx/commit/60ebe66d186f5d01399cbe179e1edb0b1229e987))
+* **requests:** an issue-note check counts only notes written after the request opened ([#1926](https://github.com/anis-marrouchi/agentx/issues/1926)) ([c804656](https://github.com/anis-marrouchi/agentx/commit/c804656d61a73d4eb9c0a69d8ebf06e8e1e5c41d))
+
 ## [0.231.0](https://github.com/anis-marrouchi/agentx/compare/v0.230.0...v0.231.0) (2026-11-18)
 
 
