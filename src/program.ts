@@ -31,6 +31,7 @@ import { voice as voiceCmd } from "@/commands/voice"
 import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
 import { signalCmd } from "@/commands/signal"
+import { situationCmd } from "@/commands/situation"
 import { queue } from "@/commands/queue"
 import { node as nodeCmd } from "@/commands/node"
 import { reviewGateCmd } from "@/commands/review-gate"
@@ -180,7 +181,7 @@ const ADVANCED = [
   // Tracked numbers and their readings
   numbers,
   // Observability + forensics
-  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, reviewGateCmd, cloudSessionsCmd, watch, eventsCmd, dbCmd, quality,
+  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, situationCmd, reviewGateCmd, cloudSessionsCmd, watch, eventsCmd, dbCmd, quality,
   // Fleet + extension
   mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)
