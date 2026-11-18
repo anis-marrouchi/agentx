@@ -10,7 +10,11 @@ The **courtesy gate** stops this. It keeps a small record for each chat and note
 - **ending**: the other side said thanks or goodbye. Your agent may answer once.
 - **ended**: your agent's answer went out. More "thanks" and "goodbye" messages no longer start a run.
 
-A message with real content (a question, a request, a photo, a longer text) always reaches your agent and opens the talk again. A short message the gate is unsure about ("ok", "yes", 👍) always passes too: it may be an answer to a question.
+A message with real content (a question, a request such as "thanks, please send it", a photo, a longer text) always reaches your agent and opens the talk again. A short message the gate is unsure about always passes too: "ok", "yes", 👍, and a thanks with an approval word such as "perfect, thanks" or "parfait merci", because it may be the answer to a question your agent asked.
+
+If your agent's goodbye itself asks something ("Goodbye! Shall I send the contract?"), the talk does not end, so the answer reaches your agent.
+
+On Telegram, each bot's private chat with a person is its own talk. In a group, one talk covers every bot in the group, and a message that several of your bots receive is judged once.
 
 It applies to Telegram, WhatsApp, Discord and Slack chats. It does not apply to agent-to-agent (A2A) calls inside your own mesh.
 
@@ -23,7 +27,9 @@ It applies to Telegram, WhatsApp, Discord and Slack chats. It does not apply to 
 5. If the sender is a person, not a bot, the gate adds a thanks reaction (🙏 by default) to their message instead. No text is sent and no run starts.
 6. In **shadow** mode, step 4 and step 5 do not happen: the message reaches your agent as always, and the gate log shows that it **would** have been held.
 
-A safety limit also applies: when a bot sends many messages in a short time (6 in 10 minutes by default), the talk is ended even if the messages are not thanks. People are never held by this limit.
+A safety limit also applies: when a bot sends many messages in a short time (6 in 10 minutes by default), the talk is ended even if the messages are not thanks. People are never held by this limit, and neither are hand-offs between your own agents (one agent @-mentioning another in the chat).
+
+If the gate itself fails (for example the database is busy), the message goes through as if there were no gate, and the daemon log says `[situation] gate error`.
 
 ## Settings
 

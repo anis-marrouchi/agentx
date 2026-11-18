@@ -52,6 +52,13 @@ export interface GateDecision {
   phase: Phase | null
   record: SituationRow | null
   changes: GateChange[]
+  /** A bot-to-bot hop between our own agents (S10): judged for courtesy,
+   *  never counted by the backstop. */
+  hop?: boolean
+  /** Another copy of a message already decided (one Telegram group
+   *  message reaches every bot account in the group): same answer, no
+   *  writes, no log row, no reaction. */
+  duplicate?: boolean
   messageId: string
   chatId: string
 }
@@ -66,6 +73,9 @@ export interface SituationGateDeps {
 
 const chatOf = (msg: IncomingMessage) => msg.group?.id || msg.sender.id
 
+/** How long a message id's decision is reused for its other copies. */
+const DECIDED_TTL_MS = 10 * 60_000
+
 export function senderKindOf(msg: IncomingMessage): SenderKind {
   if (msg.sender.id.startsWith("agent:")) return "agent"
   return msg.sender.isBot ? "bot" : "person"
@@ -75,6 +85,9 @@ export class SituationGate {
   private readonly window = new FireWindow(5000)
   /** Message ids already counted by the backstop (S8: count once). */
   private readonly counted = new Map<string, true>()
+  /** Decisions by `key|message id`, so each logical message is decided
+   *  once even when several bot accounts receive it. */
+  private readonly decided = new Map<string, { at: number; d: GateDecision }>()
 
   constructor(private readonly deps: SituationGateDeps) {}
 
@@ -99,8 +112,13 @@ export class SituationGate {
     // accepted once already: never dropped on its way back.
     if (s.mode === "off" || !SITUATION_CHANNELS.has(msg.channel) || opts.replay || msg.resume) return d
     d.active = true
+    d.hop = !!opts.hop
 
     const now = this.deps.now?.() ?? Date.now()
+    const seen = this.decided.get(`${key}|${msg.id}`)
+    if (seen && now - seen.at < DECIDED_TTL_MS) {
+      return { ...seen.d, changes: [], react: false, duplicate: true, claimed: seen.d.claimed }
+    }
     const row = this.deps.store.get(key)
     d.record = row
     let phase: Phase | null = row?.phase ?? null
@@ -117,7 +135,9 @@ export class SituationGate {
     }
 
     const windowMs = s.backstop.windowMinutes * 60_000
-    if (senderKind !== "person" && this.window.peek(key, windowMs, now) >= s.backstop.count && !this.counted.has(`${key}|${msg.id}`)) {
+    // The backstop is for outside bots. Hops between our own agents are
+    // bounded by the router's chain depth and are real hand-off work.
+    if (!opts.hop && senderKind !== "person" && this.window.peek(key, windowMs, now) >= s.backstop.count && !this.counted.has(`${key}|${msg.id}`)) {
       d.unclaimed = "drop"
       d.reason = `backstop: ${s.backstop.count} messages from bots or agents in ${s.backstop.windowMinutes} min`
       if (!row) d.changes.push({ kind: "create", phase: "ended", why: d.reason, endReason: "courtesy loop" })
@@ -161,8 +181,16 @@ export class SituationGate {
    *  message that goes on from a bot or an agent, one backstop count per
    *  message id (S8). Never throws: the gate must not stop routing. */
   commit(d: GateDecision): void {
-    if (!d.active) return
+    if (!d.active || d.duplicate) return
     try {
+      const now = this.deps.now?.() ?? Date.now()
+      this.decided.set(`${d.key}|${d.messageId}`, { at: now, d })
+      // Oldest first (Map keeps insertion order): drop the expired ones,
+      // and never keep more than 2000.
+      for (const [k, v] of this.decided) {
+        if (now - v.at < DECIDED_TTL_MS && this.decided.size <= 2000) break
+        this.decided.delete(k)
+      }
       const store = this.deps.store
       let since = d.record?.phaseChangedAt ?? 0
       for (const c of d.changes) {
@@ -174,7 +202,7 @@ export class SituationGate {
         since = store.get(d.key)?.phaseChangedAt ?? since
       }
       const id = `${d.key}|${d.messageId}`
-      if (d.answer !== "drop" && d.senderKind !== "person" && !this.counted.has(id)) {
+      if (d.answer !== "drop" && !d.hop && d.senderKind !== "person" && !this.counted.has(id)) {
         this.counted.set(id, true)
         if (this.counted.size > 5000) this.counted.delete(this.counted.keys().next().value!)
         const s = this.settings()
@@ -186,6 +214,7 @@ export class SituationGate {
   /** Record a drop (or, in shadow mode, a would-drop) in the gate log.
    *  Returns the row id, the one `agentx situation release` takes. */
   logDrop(msg: IncomingMessage, d: GateDecision, messageJson: string, stage: "gate" | "after-hook" | "hop"): number | null {
+    if (d.duplicate) return null
     try {
       return this.deps.store.logGate({
         key: d.key,

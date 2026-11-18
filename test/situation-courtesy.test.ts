@@ -15,8 +15,8 @@ describe("courtesy word list — English", () => {
     "Many thanks, have a nice day",
     "Bye bye",
     "You're welcome! Take care.",
-    "no problem, all the best",
-    "Great, thanks again!",
+    "all the best",
+    "Thanks again, take care",
     "Cheers",
     "Goodbye 👋",
   ])("%s → courtesy", (t) => expect(classifyCourtesy(t)).toBe("courtesy"))
@@ -29,6 +29,18 @@ describe("courtesy word list — English", () => {
     ["Thanks 👍", "unsure"],
     ["hi", "unsure"],
     ["thanks John", "unsure"],
+    // Approval next to a thanks can answer the agent's question.
+    ["Great, thanks again!", "unsure"],
+    ["great thanks", "unsure"],
+    ["good, thanks", "unsure"],
+    ["Perfect, thanks!", "unsure"],
+    ["no problem, all the best", "unsure"],
+    ["anytime", "unsure"],
+    ["ok thanks bye", "unsure"],
+    // A request after the thanks.
+    ["thanks, help me", "real"],
+    ["thanks, please send it", "real"],
+    ["Thanks, can you call me", "real"],
   ])("%s → %s", (t, want) => expect(classifyCourtesy(t)).toBe(want))
 
   it.each([
@@ -49,12 +61,18 @@ describe("courtesy word list — French", () => {
     "De rien, bonne soirée !",
     "Je vous en prie",
     "Avec plaisir, bonne continuation",
-    "Parfait, merci encore",
+    "Merci encore, bonne soirée",
   ])("%s → courtesy", (t) => expect(classifyCourtesy(t)).toBe("courtesy"))
 
   it.each([
     ["d'accord", "unsure"],
     ["oui", "unsure"],
+    ["Parfait, merci encore", "unsure"],
+    ["parfait merci", "unsure"],
+    ["Top, merci !", "unsure"],
+    ["Très bien, merci", "unsure"],
+    ["Merci, envoyez le devis", "real"],
+    ["merci, aidez-moi", "real"],
     ["Merci ! Quelle est la date de début ?", "real"],
     ["Merci, pouvez-vous envoyer le contrat signé à la comptabilité demain matin", "real"],
   ])("%s → %s", (t, want) => expect(classifyCourtesy(t)).toBe(want))
@@ -70,7 +88,7 @@ describe("courtesy word list — Arabic", () => {
     "عفوا",
     "لا شكر على واجب",
     "وشكرا",
-    "يعيشك برشا",
+    "شكرا برشا",
     "بالسلامة",
     "جزاك الله خيرا",
   ])("%s → courtesy", (t) => expect(classifyCourtesy(t)).toBe("courtesy"))
@@ -78,6 +96,12 @@ describe("courtesy word list — Arabic", () => {
   it.each([
     ["تمام", "unsure"],
     ["نعم", "unsure"],
+    ["تمام شكرا", "unsure"],
+    ["باهي، يعطيك العافية", "unsure"],
+    // Tunisian "يعيشك" often means "please": never a closer.
+    ["يعيشك", "real"],
+    ["شكرا، يعيشك", "real"],
+    ["شكرا، ابعثلي الفاتورة", "real"],
     ["شكرا، متى يبدأ العمل؟", "real"],
     ["شكرا، أرسل لي العقد الجديد والفاتورة قبل يوم الجمعة من فضلك", "real"],
   ])("%s → %s", (t, want) => expect(classifyCourtesy(t)).toBe(want))

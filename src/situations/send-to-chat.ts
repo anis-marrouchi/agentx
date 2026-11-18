@@ -51,9 +51,12 @@ export function staleSituationSend(msg: Pick<OutgoingMessage, "channel" | "chatI
 }
 
 /** Tell the record a counted reply left for this chat. Never throws. */
-export function noteCountedSend(msg: Pick<OutgoingMessage, "channel" | "chatId" | "agentId"> & { accountId?: string }): void {
+export function noteCountedSend(msg: Pick<OutgoingMessage, "channel" | "chatId" | "agentId"> & { accountId?: string; text?: string }): void {
   if (!store || !SITUATION_CHANNELS.has(msg.channel)) return
-  try { store.noteSent(situationKey(msg.channel, msg.accountId, msg.chatId), msg.agentId) } catch { /* the send went out; the mark is best-effort */ }
+  // A question near the end of the reply ("Goodbye! Shall I send the
+  // contract?") keeps the talk open.
+  const asked = /[?؟]/.test(String(msg.text ?? "").slice(-200))
+  try { store.noteSent(situationKey(msg.channel, msg.accountId, msg.chatId), msg.agentId, { asked }) } catch { /* the send went out; the mark is best-effort */ }
 }
 
 export async function sendToChat(

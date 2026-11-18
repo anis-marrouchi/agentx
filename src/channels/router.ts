@@ -16,7 +16,7 @@ import type { ServiceMatcher } from "@/services/matcher"
 import type { BusinessLayer } from "@/business"
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "fs"
 import { resolve, dirname } from "path"
-import { createHash } from "crypto"
+import { createHash, randomUUID } from "crypto"
 import { fromIncoming, type InboundEnvelope } from "./inbound/envelope"
 import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
@@ -241,9 +241,32 @@ export class MessageRouter {
    *  and the message goes on (false). Active: the message goes to the
    *  group log, a person's lone "thanks" gets a reaction where the channel
    *  has one, one ledger row says why, and routing stops (true). */
+  private situationGateFailed = false
+
+  /** decide + commit, failing open: an error (the database, the claim
+   *  rule) is logged once and the message goes on as if there were no
+   *  gate. Shadow or active, the gate must never lose a message. */
+  private situationDecide(msg: IncomingMessage, opts: { replay?: boolean; hop?: boolean; chatId?: string }): GateDecision | null {
+    const gate = this.situationGate
+    if (!gate) return null
+    try {
+      const d = gate.decide(msg, opts)
+      gate.commit(d)
+      this.situationGateFailed = false
+      return d
+    } catch (e: any) {
+      if (!this.situationGateFailed) this.log(`[situation] gate error, message passed unchanged: ${e?.message ?? e}`)
+      this.situationGateFailed = true
+      return null
+    }
+  }
+
   private applySituationDrop(adapter: ChannelAdapter, msg: IncomingMessage, d: GateDecision, stage: "gate" | "after-hook"): boolean {
     const gate = this.situationGate
     if (!gate) return false
+    // Another bot account's copy of a message already decided: same
+    // answer, but no second log row, reaction or ledger line.
+    if (d.duplicate) return d.enforce
     const row = gate.logDrop(msg, d, JSON.stringify(serializeIncoming(msg)), stage)
     const what = `${msg.channel}/${msg.accountId || "default"}/${msg.id} from ${d.senderKind} (${d.reason}${stage === "gate" ? "" : `, ${stage}`})`
     if (!d.enforce) {
@@ -877,12 +900,10 @@ export class MessageRouter {
     // Courtesy-close gate (#1892): after dedup, BEFORE the pre-hook, so a
     // "thank you, goodbye" after the talk ended reaches no workflow, no run
     // and no agent. A run that already takes the message wins (claimed).
+    // Fails open: any error in the gate lets the message through unchanged.
     const gate = this.situationGate
-    const sit = gate ? gate.decide(msg, { replay: opts.replay }) : null
-    if (gate && sit) {
-      gate.commit(sit)
-      if (sit.unclaimed === "drop" && !sit.claimed && this.applySituationDrop(adapter, msg, sit, "gate")) return
-    }
+    const sit = gate ? this.situationDecide(msg, { replay: opts.replay }) : null
+    if (gate && sit && sit.unclaimed === "drop" && !sit.claimed && this.applySituationDrop(adapter, msg, sit, "gate")) return
     // Shadow mode: a claimed message whose run ended before the hook, so
     // the hook started a new run for it, is a would-drop too (M1).
     let gatedStart = false
@@ -1511,6 +1532,10 @@ export class MessageRouter {
     // Track who's been in this chain
     visited.add(sourceAgentId)
 
+    // The gate's id for this hop (#1892). A send that returned no id still
+    // gets a unique one, so the hop is decided and logged on its own.
+    const hopId = `hop:${responseMessageId || `${originalMsg.id}:${sourceAgentId}:${depth}:${randomUUID()}`}`
+
     for (const [id, def] of Object.entries(this.config.agents)) {
       if (id === sourceAgentId) continue
 
@@ -1534,13 +1559,12 @@ export class MessageRouter {
       // is the message, the source agent the sender, the chat the same.
       if (this.situationGate) {
         const hopMsg: IncomingMessage = {
-          id: `hop:${responseMessageId}`, channel: originalMsg.channel, accountId: originalMsg.accountId,
+          id: hopId, channel: originalMsg.channel, accountId: originalMsg.accountId,
           sender: { id: `agent:${sourceAgentId}`, name: sourceAgentId }, group: originalMsg.group,
           text: responseText, timestamp: new Date(),
         }
-        const d = this.situationGate.decide(hopMsg, { hop: true, chatId })
-        this.situationGate.commit(d)
-        if (d.unclaimed === "drop") {
+        const d = this.situationDecide(hopMsg, { hop: true, chatId })
+        if (d && d.unclaimed === "drop") {
           const row = this.situationGate.logDrop(hopMsg, d, JSON.stringify(serializeIncoming(hopMsg)), "hop")
           if (d.enforce) {
             this.log(`Bot-to-bot [${depth + 1}]: "${sourceAgentId}" -> "${id}" skipped by the courtesy gate (${d.reason}); gate log row ${row ?? "?"}`)

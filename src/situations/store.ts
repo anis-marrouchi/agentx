@@ -141,10 +141,13 @@ export class SituationStore {
 
   /** A send that counts as a reply left for this chat. In `ending` it is
    *  the one goodbye: the slot is used and the talk is ended (closed). */
-  noteSent(key: string, agentId?: string): boolean {
+  noteSent(key: string, agentId?: string, opts: { asked?: boolean } = {}): boolean {
     const row = this.get(key)
     if (agentId && row && !row.ownerAgent) this.db.prepare("UPDATE situations SET owner_agent = ? WHERE key = ? AND owner_agent IS NULL").run(agentId, key)
     if (!row || row.phase !== "ending") return false
+    // A reply that asks something is not a goodbye: the answer to it must
+    // reach the agent, so the talk goes on.
+    if (opts.asked) return this.move(key, { phase: "ending", since: row.phaseChangedAt }, "during", { why: "our reply asked a question" })
     return this.move(key, { phase: "ending", since: row.phaseChangedAt }, "ended", { why: "the goodbye was sent", endReason: "closed" })
   }
 

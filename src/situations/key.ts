@@ -8,9 +8,12 @@ import { normalizeChat } from "@/situations/normalize-chat"
 //
 // - account: empty or missing → "default" (as the WhatsApp adapter sets it
 //   on inbound, while channel.reply often passes none).
-// - Telegram: no account at all. One group message reaches every bot
-//   account in the group, and the reply leaves from the replying agent's
-//   account, so a per-account key would split one talk in two (S15).
+// - Telegram groups (chat ids start with "-"): no account. One group
+//   message reaches every bot account in the group, and the reply leaves
+//   from the replying agent's account, so a per-account key would split
+//   one talk in two (S15). Telegram private chats keep the account: the
+//   chat id is the person's own id, the same for every bot they write to,
+//   and each bot is a separate talk.
 // - chat: normalizeChat with the trigger source form ("whatsapp-message"),
 //   the same call the dispatcher makes.
 
@@ -19,6 +22,6 @@ import { normalizeChat } from "@/situations/normalize-chat"
 export const SITUATION_CHANNELS: ReadonlySet<string> = new Set(["telegram", "whatsapp", "discord", "slack"])
 
 export function situationKey(channel: string, account: string | undefined, chat: string): string {
-  const acct = channel === "telegram" ? "*" : (account || "default")
+  const acct = channel === "telegram" && String(chat).startsWith("-") ? "*" : (account || "default")
   return `${channel}|${acct}|${normalizeChat(`${channel}-message`, chat)}`
 }

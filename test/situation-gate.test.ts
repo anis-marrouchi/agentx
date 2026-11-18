@@ -90,6 +90,7 @@ function world(opts: {
     start: async () => {}, stop: async () => {}, onMessage: () => {},
     send: async (m: OutgoingMessage) => { w.sent.push(m); return `out-${w.sent.length}` },
     react: async (chatId: string, messageId: string, emoji?: string) => { w.reacts.push({ chatId, messageId, emoji }) },
+    sendTyping: async () => {},
   } as unknown as ChannelAdapter
   router.addChannel(adapter)
   setMessageRouter(router)
@@ -492,6 +493,91 @@ describe("bot-to-bot hops pass the gate (S10)", () => {
     await (w.router as any).handleBotToBotChain(w.adapter, orig, "recruiter", "Thanks @scheduler, goodbye!", "out-9", 0)
     expect(w.turns).toHaveLength(0)
     expect(w.store.gateLog()[0]?.reason).toBe("ended (closed), courtesy (hop)")
+  })
+
+  const agents = { recruiter: { mentions: ["@recruiter"] }, scheduler: { name: "Scheduler", mentions: ["@scheduler"] } }
+  const orig = { id: "o1", channel: "discord", accountId: "default", sender: P, group: { id: GROUP, name: "I" }, text: "hi", timestamp: new Date() }
+
+  it("hand-offs between our own agents never trip the backstop", async () => {
+    const w = world({ channel: "discord", reply: () => "On it." })
+    ;(w.router as any).config.agents = agents
+    w.cfg = { ...w.cfg, backstop: { count: 3, windowMinutes: 10 } }
+    for (let i = 0; i < 6; i++) {
+      await (w.router as any).handleBotToBotChain(w.adapter, { ...orig, id: `o${i}` }, "recruiter", `@scheduler please book slot ${i} for the interview panel`, `out-${i}`, 0)
+    }
+    expect(w.turns).toHaveLength(6)
+    expect(w.store.gateLog()).toHaveLength(0)
+    expect(w.phase()).toBe("during")
+  })
+
+  it("a hop whose send returned no id still gets its own id", async () => {
+    const w = world({ channel: "discord" })
+    ;(w.router as any).config.agents = agents
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    for (let i = 0; i < 2; i++) await (w.router as any).handleBotToBotChain(w.adapter, orig, "recruiter", "Thanks @scheduler, goodbye!", undefined, 0)
+    const rows = w.store.gateLog()
+    expect(rows).toHaveLength(2)
+    expect(rows[0].messageId).not.toBe(rows[1].messageId)
+    expect(rows.every((r) => r.messageId.startsWith("hop:") && !r.messageId.includes("undefined"))).toBe(true)
+  })
+})
+
+describe("review fixes (#1918)", () => {
+  it("fails open: a store that throws lets the message through, in active mode too", async () => {
+    const w = world({ channel: "discord", reply: () => "Hi." })
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    ;(w.store as any).get = () => { throw new Error("SQLITE_BUSY") }
+    await w.say({ ...C, isBot: true }, "Thank you, goodbye!")
+    expect(w.turns).toHaveLength(1)
+  })
+
+  it("fails open when the claim rule throws", async () => {
+    const w = world({ channel: "discord", reply: () => "Hi.", claimant: () => { throw new Error("runs dir unreadable") } })
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    await w.say({ ...C, isBot: true }, "Thank you, goodbye!")
+    expect(w.turns).toHaveLength(1)
+  })
+
+  it("Telegram private chats: ending a talk with bot A does not affect a thanks to bot B", async () => {
+    const w = world({ channel: "telegram", reply: () => "Hi." })
+    const dm = (accountId: string): Partial<IncomingMessage> => ({ group: undefined, accountId })
+    expect(situationKey("telegram", "bot-a", "5550001")).not.toBe(situationKey("telegram", "bot-b", "5550001"))
+    w.store.create(situationKey("telegram", "bot-a", "5550001"), "ended", "test setup", "closed")
+    const person = { id: "5550001", name: "Pat" }
+    await w.say(person, "Thanks, bye!", dm("bot-b"))
+    expect(w.turns).toHaveLength(1)
+    expect(w.store.gateLog()).toHaveLength(0)
+    await w.say(person, "Thanks, bye!", dm("bot-a"))
+    expect(w.turns).toHaveLength(1)
+    expect(w.store.gateLog()).toHaveLength(1)
+  })
+
+  it("a Telegram group message reaching two bot accounts is decided and logged once", async () => {
+    const w = world({ channel: "telegram" })
+    const grp = { id: "-1001", name: "G" }
+    w.store.create(situationKey("telegram", "bot-a", "-1001"), "ended", "test setup", "closed")
+    for (const accountId of ["bot-a", "bot-b", "bot-c"]) await w.say(P, "Thank you, goodbye!", { id: "tg-7", group: grp, accountId })
+    expect(w.store.gateLog()).toHaveLength(1)
+    expect(w.reacts.filter((r) => r.emoji === "🙏")).toHaveLength(1)
+    expect(w.turns).toHaveLength(0)
+  })
+
+  it("the same in shadow mode: one would-drop row", async () => {
+    const w = world({ channel: "telegram", mode: "shadow" })
+    const grp = { id: "-1001", name: "G" }
+    w.store.create(situationKey("telegram", "bot-a", "-1001"), "ended", "test setup", "closed")
+    for (const accountId of ["bot-a", "bot-b"]) await w.say(P, "Thank you, goodbye!", { id: "tg-8", group: grp, accountId })
+    expect(w.store.gateLog().map((r) => r.outcome)).toEqual(["would-drop"])
+  })
+
+  it("a goodbye that asks a question does not end the talk; the answer reaches the agent", async () => {
+    const w = world({ channel: "discord", reply: (t) => (/bye/i.test(t) ? "Goodbye! Shall I send you the contract?" : "Sure.") })
+    const bot = { ...C, isBot: true }
+    await w.say(bot, "Hello")
+    await w.say(bot, "Thanks, bye!")
+    expect(w.phase()).toBe("during")
+    await w.say(bot, "Thank you!")
+    expect(w.turns).toHaveLength(3)
   })
 })
 
