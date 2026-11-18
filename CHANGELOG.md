@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.231.2](https://github.com/anis-marrouchi/agentx/compare/v0.231.1...v0.231.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **requests:** held and overdue requests wake their agent (noqta[#876](https://github.com/anis-marrouchi/agentx/issues/876)) ([#1928](https://github.com/anis-marrouchi/agentx/issues/1928)) ([99ddf94](https://github.com/anis-marrouchi/agentx/commit/99ddf949abcdce7ce84786c9c494dce17151c169))
+
 ## [0.231.1](https://github.com/anis-marrouchi/agentx/compare/v0.231.0...v0.231.1) (2026-11-18)
 
 
