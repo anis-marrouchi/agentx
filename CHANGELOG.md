@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.233.0](https://github.com/anis-marrouchi/agentx/compare/v0.232.0...v0.233.0) (2026-11-18)
+
+
+### Features
+
+* **jobs:** close the last invariant gaps, retire the watcher table ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1941](https://github.com/anis-marrouchi/agentx/issues/1941)) ([2a7eb1d](https://github.com/anis-marrouchi/agentx/commit/2a7eb1dd47a4d580bf46f7cdd96f7c3ed05e2d61))
+* **situations:** see a chat's situation and override it ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 2) ([#1942](https://github.com/anis-marrouchi/agentx/issues/1942)) ([a9073aa](https://github.com/anis-marrouchi/agentx/commit/a9073aafb5218ff2ef83e85a1249f0d2807d43d0))
+
+
+### Bug Fixes
+
+* **routing:** log the edge model a job runs on when a downgrade is dropped ([#1939](https://github.com/anis-marrouchi/agentx/issues/1939)) ([1cb45f1](https://github.com/anis-marrouchi/agentx/commit/1cb45f108089f07715e584c7bcd3d6ab9ce94278)), closes [#1864](https://github.com/anis-marrouchi/agentx/issues/1864)
+
 ## [0.232.0](https://github.com/anis-marrouchi/agentx/compare/v0.231.4...v0.232.0) (2026-11-18)
 
 
