@@ -256,7 +256,8 @@ describe("a critical job entering the queue", () => {
     const pinned = promise("on", { estimateMinutes: 10, owedTo: "coder", text: "Send the link", due: new Date(T0 + 8 * HOUR).toISOString(), dueSource: { kind: "requester", text: "by 16:00" } }, T0 + 2 * MIN)
     const pinnedId = (pinned.body as any).request.id
 
-    const crit = promise("on", { estimateMinutes: 30, priority: "critical", owedTo: "owner", text: "Fix the outage" }, T0 + 5 * MIN)
+    // Critical is the owner's word (#1919): the owner's request, accepted.
+    const crit = accept("on", ownerRequest("t-crit", "writer", "Fix the outage"), { work: "fixing", estimateMinutes: 30, priority: "critical" }, T0 + 5 * MIN)
     expect(crit.status).toBe(200)
     expect((crit.body as any).due).toMatchObject({ dueAt: T0 + 35 * MIN, moved: 2 })
     // Each moves by the 30 minutes the critical job costs it, not by the
@@ -283,6 +284,72 @@ describe("a critical job entering the queue", () => {
     told = []
     expect((promise("on", { estimateMinutes: 60 }, T0 + MIN).body as any).due.moved).toBe(0)
     expect(told).toEqual([])
+  })
+})
+
+describe("who may ask for critical (#1919): the owner's words only", () => {
+  /** Another agent's work, due from the daemon, on a node that runs one item at a time. */
+  function coderWork(mode: DueTimeMode) {
+    const res = handleRequestsApi("POST", "/requests", { agentId: "coder", action: "promise", owedTo: "pm", text: "Review the plan", estimateMinutes: 60 }, deps(mode, T0, 1))
+    expect(res.status).toBe(200)
+    told = []
+    return (res.body as any).request.id as string
+  }
+  const call = (mode: DueTimeMode, body: Record<string, unknown>, now = T0 + MIN) =>
+    handleRequestsApi("POST", "/requests", { agentId: "writer", ...body }, deps(mode, now, 1))
+
+  it("on: an agent's own critical promise is refused, and another agent's due time does not move", () => {
+    const coderId = coderWork("on")
+    expect(store.get(coderId)!.dueAt).toBe(T0 + HOUR)
+    const res = call("on", { action: "promise", owedTo: "owner", text: "Fix my thing", estimateMinutes: 30, priority: "critical" })
+    expect(res.status).toBe(403)
+    expect((res.body as any).error).toMatch(/critical is only for the owner's requests/)
+    expect((res.body as any).error).toMatch(/high/)
+    expect(store.openPromises("writer")).toBe(0)
+    expect(store.get(coderId)!.dueAt).toBe(T0 + HOUR)
+    expect(slots.get(coderId)).toMatchObject({ givenDue: T0 + HOUR })
+    expect(told).toEqual([])
+  })
+
+  it("on: critical on an accept of the agent's own promise is refused too", () => {
+    const coderId = coderWork("on")
+    const own = call("on", { action: "promise", owedTo: "owner", text: "Fix my thing", estimateMinutes: 30 })
+    expect(own.status).toBe(200)
+    const res = call("on", { action: "accept", id: (own.body as any).request.id, priority: "critical" })
+    expect(res.status).toBe(403)
+    expect(store.get(coderId)!.dueAt).toBe(T0 + HOUR)
+    expect(told).toEqual([])
+  })
+
+  it("on: the owner's request accepted as critical still goes ahead and moves the other agent's due time", () => {
+    const coderId = coderWork("on")
+    const id = ownerRequest("t-crit", "writer", "Fix the outage")
+    const res = call("on", { action: "accept", id, work: "fixing", estimateMinutes: 30, priority: "critical" })
+    expect(res.status).toBe(200)
+    expect((res.body as any).due).toMatchObject({ dueAt: T0 + 31 * MIN, moved: 1, inputs: { priority: "critical" } })
+    expect(store.get(coderId)!.dueAt).toBe(T0 + 90 * MIN)
+    expect(told).toEqual([expect.objectContaining({ to: "pm", id: coderId })])
+  })
+
+  it("shadow: an agent's own critical counts as high, and the row and log say critical was asked and lowered", () => {
+    const res = call("shadow", { action: "promise", owedTo: "owner", text: "Fix my thing", estimateMinutes: 30, priority: "critical" })
+    expect(res.status).toBe(200)
+    const id = (res.body as any).request.id
+    expect(slots.get(id)).toMatchObject({ priority: "high", wouldRefuse: expect.stringMatching(/critical asked, lowered to high/) })
+    expect(logs.some((l) => l.includes(id) && /critical asked, lowered to high/.test(l))).toBe(true)
+    expect(dueReport(db, { since: T0 - HOUR, now: T0 + MIN, factorDays: 30, factorMinRows: 3 }).agents[0]).toMatchObject({ criticalLowered: 1, invalid: 0 })
+  })
+
+  it("shadow: the owner's request keeps critical, with no note", () => {
+    const id = ownerRequest("t-crit", "writer", "Fix the outage")
+    expect(call("shadow", { action: "accept", id, work: "fixing", estimateMinutes: 30, priority: "critical" }).status).toBe(200)
+    expect(slots.get(id)).toMatchObject({ priority: "critical", wouldRefuse: null })
+  })
+
+  it("off: an agent's critical goes through as before, nothing recorded", () => {
+    const res = call("off", { action: "promise", owedTo: "owner", text: "Fix my thing", estimateMinutes: 30, priority: "critical" })
+    expect(res.status).toBe(200)
+    expect(slots.get((res.body as any).request.id)).toBeNull()
   })
 })
 
@@ -403,7 +470,7 @@ describe("telling a requester that their due time moved", () => {
   it("skips moves under 15 minutes", () => {
     const a = promise("on", { estimateMinutes: 60, owedTo: "pm", text: "Review the plan" })
     told = []
-    promise("on", { estimateMinutes: 10, priority: "critical", text: "Small fix" }, T0 + MIN)
+    expect(accept("on", ownerRequest("t-small", "writer", "Small fix"), { work: "fixing", estimateMinutes: 10, priority: "critical" }, T0 + MIN).status).toBe(200)
     expect(store.get((a.body as any).request.id)!.dueAt).toBe(T0 + HOUR)
     expect(told).toEqual([])
   })
@@ -412,8 +479,8 @@ describe("telling a requester that their due time moved", () => {
     const a = promise("on", { estimateMinutes: 60, owedTo: "pm", text: "Review the plan" })
     const aId = (a.body as any).request.id
     told = []
-    promise("on", { estimateMinutes: 30, priority: "critical", text: "Fix one" }, T0 + MIN)
-    promise("on", { estimateMinutes: 30, priority: "critical", text: "Fix two" }, T0 + 10 * MIN)
+    expect(accept("on", ownerRequest("t-one", "writer", "Fix one"), { work: "fixing", estimateMinutes: 30, priority: "critical" }, T0 + MIN).status).toBe(200)
+    expect(accept("on", ownerRequest("t-two", "writer", "Fix two"), { work: "fixing", estimateMinutes: 30, priority: "critical" }, T0 + 10 * MIN).status).toBe(200)
     expect(told.filter((t) => t.id === aId)).toHaveLength(1)
     expect(told[0].text).toContain("now due 2030-01-14 09:30 UTC, not 2030-01-14 09:00 UTC")
     expect(store.get(aId)!.dueAt).toBe(T0 + 2 * HOUR)
@@ -457,6 +524,7 @@ describe("shadow never changes a reply (#1909 review)", () => {
   const bad: Array<Record<string, unknown>> = [
     { priority: "urgent" },
     { priority: 3 },
+    { priority: "critical" },
     { dueSource: "the owner said so", due: new Date(T0 + 4 * HOUR).toISOString() },
     { dueSource: { kind: "boss", text: "x" } },
     { makeRoom: "yes" },

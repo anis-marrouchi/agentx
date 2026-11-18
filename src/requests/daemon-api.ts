@@ -203,6 +203,8 @@ function dueSlot(
   ask: {
     agentId: string; requestId: string | null; due: number | null; requester: string | null; words: string; createdAt?: number
     kept?: { work: string | null; estimateMinutes: number | null }
+    /** May be critical (#1919): see ownerSourced. */
+    ownerSourced: boolean
   },
   now: number,
 ): { refuse: ApiReply } | { plan: DuePlan; work: { work?: string; estimateMinutes?: number } | null } {
@@ -240,6 +242,14 @@ function dueSlot(
     return pass
   }
 }
+
+/** The request came from the owner, in their own words (#1919): the only
+ *  work that may be critical. A request that is not a promise is recorded
+ *  only from an owner's turn (RequestTracker.taskStarted: isOwnerTurn, or a
+ *  person listed with the owner role), so the record itself says so; the
+ *  agent's call cannot. A promise is the agent's own words (or a card it
+ *  raised), never the owner's. */
+export const ownerSourced = (r: Pick<RequestRecord, "promise">): boolean => !r.promise
 
 /** Due times are on (#1909): the daemon refuses what it cannot place. */
 const dueTimesOn = (deps: RequestsApiDeps) => deps.dueTimes?.settings.mode === "on"
@@ -518,7 +528,7 @@ export function handleRequestsApi(
         return { status: 409, body: { error: `${agentId} already has ${MAX_OPEN_PROMISES} open promises: close some with done or decline first` } }
       }
       // The daemon gives the due time (#1909): off by default.
-      const slot = dueSlot(deps, input, { agentId, requestId: null, due: loop.dueAt ?? null, requester: owedTo, words: described.headline ?? text }, now)
+      const slot = dueSlot(deps, input, { agentId, requestId: null, due: loop.dueAt ?? null, requester: owedTo, words: described.headline ?? text, ownerSourced: false }, now)
       if ("refuse" in slot) return slot.refuse
       if (slot.plan.kind === "set") loop.dueAt = slot.plan.dueAt
       const { id } = openPromise(store, { channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
@@ -694,6 +704,7 @@ export function handleRequestsApi(
         // request accepted now does not go ahead of work accepted before.
         words: described.headline ?? request.headline ?? request.text,
         kept: { work: request.work, estimateMinutes: request.estimateMinutes },
+        ownerSourced: ownerSourced(request),
       }, now)
       : null
     if (slot && "refuse" in slot) return slot.refuse

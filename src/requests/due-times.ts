@@ -22,6 +22,12 @@ import { describeMoves, fit, isoOf, MAX_ESTIMATE_MINUTES, movesBy, place, PRIORI
 //            answered at once, and nothing is accepted until they choose;
 //            work that goes ahead moves the daemon's due times behind it,
 //            and each requester is told once
+//
+// Critical is the owner's word (#1919): it goes ahead of every agent's
+// queue and moves their due times, so an agent may not give it to its own
+// work. It is kept only on an accept of a request the owner made (the
+// caller says so with `ownerSourced`). Otherwise shadow counts it as high
+// and notes that on the slot row; on refuses it.
 
 export const DUE_TIME_MODES = ["off", "shadow", "on"] as const
 export type DueTimeMode = (typeof DUE_TIME_MODES)[number]
@@ -156,6 +162,9 @@ export interface DueAsk {
   createdAt?: number
   /** What was wrong with the call's fields, in shadow: noted, not refused. */
   problems?: string[]
+  /** The work is a request the owner made, in their own words (#1919):
+   *  only then may it be critical. Unset: not the owner's. */
+  ownerSourced?: boolean
 }
 
 /** What the daemon gave, in the reply to the agent. */
@@ -182,9 +191,21 @@ export const NO_SOURCE_REFUSAL =
   "and the daemon gives the time from your queue. If the requester named the time, or an outside fact sets it (a posting slot, a meeting), " +
   'send due with dueSource {kind:"requester"|"fact", text:"<their words, or the fact>"}.'
 
+/** On refuses an agent's own critical (#1919). */
+export const CRITICAL_OWNER_ONLY =
+  "Not recorded: priority critical is only for the owner's requests (it moves every other agent's due times). " +
+  'Use priority "high" for urgent work of your own. If the owner asked for it, accept their request with its id.'
+
+/** The note on a shadow row whose critical was lowered (#1919). */
+export const CRITICAL_LOWERED = "critical asked, lowered to high: not the owner's request"
+
 export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number): DuePlan {
   if (!ctx || ctx.settings.mode === "off") return NOTHING
   const mode = ctx.settings.mode
+  // Critical is the owner's word (#1919).
+  const lowered = ask.fields.priority === "critical" && !ask.ownerSourced
+  if (lowered && mode === "on") return { kind: "refuse", status: 403, body: { error: CRITICAL_OWNER_ONLY, priorityRefused: "critical" } }
+  if (lowered) ask = { ...ask, fields: { ...ask.fields, priority: "high" } }
   // Notices held back by the hour window, now due (on only).
   if (mode === "on") flushNotices(ctx, now)
   const factor = ctx.factor(ask.agentId)
@@ -216,9 +237,11 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
   const computed = place(queue, job, opts, from)
   const source: DueSource = ask.due === null ? "daemon" : ask.fields.source?.kind ?? "agent"
   const fitted = ask.due !== null && ask.fields.source ? fit(queue, job, ask.due, opts, from) : null
-  const wouldRefuse = ask.due !== null && !ask.fields.source ? "no source"
+  const refusal = ask.due !== null && !ask.fields.source ? "no source"
     : fitted && !fitted.fits && !(ask.fields.makeRoom && fitted.withRoom.meets) ? "does not fit"
     : ask.problems?.length ? `invalid: ${ask.problems.join("; ")}`.slice(0, 300) : null
+  // A lowered critical (shadow only) is noted after any other refusal.
+  const wouldRefuse = [refusal, lowered ? CRITICAL_LOWERED : null].filter(Boolean).join("; ") || null
 
   const row = (requestId: string, given: number | null, ahead: boolean, inputs: SlotInputs) => ({
     requestId, agentId: ask.agentId, priority: ask.fields.priority, ahead, source, sourceText: ask.fields.source?.text ?? null,
@@ -242,8 +265,8 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
 
   // on
   if (ask.problems?.length) return { kind: "refuse", status: 400, body: { error: ask.problems[0] } }
-  if (wouldRefuse === "no source") return { kind: "refuse", status: 400, body: { error: NO_SOURCE_REFUSAL, dueSourceRequired: true, wouldGive: iso(computed) } }
-  if (fitted && !fitted.fits && wouldRefuse) return { kind: "refuse", status: 409, body: doesNotFit(ask.due!, fitted.earliest, fitted.withRoom) }
+  if (refusal === "no source") return { kind: "refuse", status: 400, body: { error: NO_SOURCE_REFUSAL, dueSourceRequired: true, wouldGive: iso(computed) } }
+  if (fitted && !fitted.fits && refusal) return { kind: "refuse", status: 409, body: doesNotFit(ask.due!, fitted.earliest, fitted.withRoom) }
 
   const ahead = !!fitted && !fitted.fits
   const answer: SlotAnswer = !fitted ? computed : fitted.fits ? fitted.answer : fitted.withRoom.answer
