@@ -113,6 +113,12 @@ export class FireWindow {
     return true
   }
 
+  /** How many fires landed inside the window, without recording one.
+   *  The courtesy gate (#1892) reads it in its pure decision. */
+  peek(key: string, windowMs: number, now = Date.now()): number {
+    return (this.fires.get(key) ?? []).filter((t) => now - t < windowMs).length
+  }
+
   get size(): number { return this.fires.size }
 }
 

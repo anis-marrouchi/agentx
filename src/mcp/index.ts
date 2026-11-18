@@ -1701,7 +1701,8 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, chatId, text, agentId: postingAgentId(channel, args) }),
+        // An agent's own message in the chat: it counts as its reply (#1892).
+        body: JSON.stringify({ channel, chatId, text, agentId: postingAgentId(channel, args), countsAsReply: true }),
       })
       const data = await res.json().catch(() => ({})) as any
       // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).
@@ -1799,7 +1800,7 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/send/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactName, text, channel, confirmed, agentId }),
+        body: JSON.stringify({ contactName, text, channel, confirmed, agentId, countsAsReply: true }),
       })
       const data = await res.json() as any
       if (res.status === 409) {

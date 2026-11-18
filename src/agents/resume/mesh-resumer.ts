@@ -46,13 +46,17 @@ export function createMeshResumer(deps: MeshResumerDeps): Resumer {
     if (!peer) throw new Error(`no healthy mesh peer can deliver to "${origin.channel}"`)
     return peer
   }
-  const body = (origin: MeshOrigin, text: string) => ({
+  // `countsAsReply` is set where the meaning is known (#1892): the resumed
+  // run's answer counts, the resume notice does not. The transport only
+  // posts the body it is given.
+  const body = (origin: MeshOrigin, text: string, countsAsReply: boolean) => ({
     channel: origin.channel,
     chatId: origin.chatId,
     text,
     replyTo: origin.replyTo,
     accountId: origin.accountId,
     agentId: origin.agentId,
+    countsAsReply,
   })
 
   return {
@@ -74,13 +78,13 @@ export function createMeshResumer(deps: MeshResumerDeps): Resumer {
             deps.log(`[resume] ${run.taskId} finished without an answer: ${resp.error ?? "empty"}`)
             return
           }
-          await deps.send(route(origin), body(origin, resp.content))
+          await deps.send(route(origin), body(origin, resp.content, true))
         })
         .catch((e: any) => deps.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
     },
     tell: async (origin, text) => {
       if (origin.kind !== "mesh") return
-      await deps.send(route(origin), body(origin, text))
+      await deps.send(route(origin), body(origin, text, false))
     },
   }
 }

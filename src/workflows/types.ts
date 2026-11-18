@@ -527,6 +527,10 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
       accountId: z.string().optional(),
       text: z.string(),
       to: z.string().optional(),
+      // Kept across the owner's approval (#1892, S12): the approved send
+      // still counts as the reply and is still checked against the talk.
+      countsAsReply: z.boolean().optional(),
+      situation: z.object({ id: z.string(), endGeneration: z.number() }).optional(),
     }).optional(),
   }),
   // Waiting for a person to write back on a channel, with a deadline and

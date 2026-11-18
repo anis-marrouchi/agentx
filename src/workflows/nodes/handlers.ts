@@ -5,6 +5,7 @@ import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import { wakeConfig } from "../wake"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
+import { sendToChat } from "@/situations/send-to-chat"
 
 // --- Node handlers (Phase 1 set) ---
 //
@@ -159,15 +160,16 @@ const sendHandler: NodeHandler = async (ctx) => {
 
   const accountId = resolveAccountId(ctx, rendered.accountId)
 
-  const adapter = ctx.channels[channel] as { send?: (m: { channel: string; chatId: string; text: string; accountId?: string }) => Promise<string | void> } | undefined
+  const adapter = ctx.channels[channel] as { name?: string; send?: (m: { channel: string; chatId: string; text: string; accountId?: string }) => Promise<string | void> } | undefined
 
   // Local-first: if this node hosts the channel, send through the live
   // adapter. Otherwise fall back to the mesh forwarder (the channel may live
   // on a peer — workflow on macbook, whatsapp on peer-server, etc.). Without
   // either, we hard-error rather than silently dropping.
+  // A workflow's message in the conversation counts as a reply (#1892).
   if (adapter?.send) {
     try {
-      const messageId = await adapter.send({ channel, chatId, text, ...(accountId ? { accountId } : {}) })
+      const messageId = await sendToChat({ name: adapter.name ?? channel, send: adapter.send.bind(adapter) }, { channel, chatId, text, ...(accountId ? { accountId } : {}) }, { countsAsReply: true })
       return { output: { messageId: messageId ?? null } }
     } catch (e: any) {
       return { error: `action.send failed: ${e.message}` }
@@ -176,7 +178,7 @@ const sendHandler: NodeHandler = async (ctx) => {
 
   if (ctx.forwardChannelSend) {
     try {
-      const r = await ctx.forwardChannelSend({ channel, chatId, text, accountId })
+      const r = await ctx.forwardChannelSend({ channel, chatId, text, accountId, countsAsReply: true })
       return { output: { messageId: r.messageId, viaMesh: true } }
     } catch (e: any) {
       ctx.log(`[node:${ctx.node.id}] mesh-forward of "${channel}" send failed: ${e.message}`)

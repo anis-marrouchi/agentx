@@ -35,6 +35,8 @@ import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from
 import type { Resumer } from "@/agents/resume/coordinator"
 import { DEFAULT_ADMISSION_SETTINGS } from "@/admission/queue"
 import { planHoldText, waitNoticeText } from "@/admission/wait-notice"
+import { sendToChat, type SendToChatOpts, type SituationTag } from "@/situations/send-to-chat"
+import type { GateDecision, SituationGate } from "@/situations/gate"
 
 /** A send refused because its channel is down (#1138 step B). */
 export class ChannelDownError extends Error {
@@ -226,6 +228,54 @@ export class MessageRouter {
    *  addresses is recorded, repeats and nags are kept back. */
   setOwnerGate(gate: OwnerGate | null): void {
     this.ownerGate = gate
+  }
+
+  /** The courtesy-close gate (#1892). Unset: no message is judged. */
+  private situationGate: SituationGate | null = null
+
+  setSituationGate(gate: SituationGate | null): void {
+    this.situationGate = gate
+  }
+
+  /** Act on the gate's drop answer. Shadow mode: the would-drop is logged
+   *  and the message goes on (false). Active: the message goes to the
+   *  group log, a person's lone "thanks" gets a reaction where the channel
+   *  has one, one ledger row says why, and routing stops (true). */
+  private applySituationDrop(adapter: ChannelAdapter, msg: IncomingMessage, d: GateDecision, stage: "gate" | "after-hook"): boolean {
+    const gate = this.situationGate
+    if (!gate) return false
+    const row = gate.logDrop(msg, d, JSON.stringify(serializeIncoming(msg)), stage)
+    const what = `${msg.channel}/${msg.accountId || "default"}/${msg.id} from ${d.senderKind} (${d.reason}${stage === "gate" ? "" : `, ${stage}`})`
+    if (!d.enforce) {
+      this.log(`[situation] would drop ${what}; shadow mode, gate log row ${row ?? "?"}`)
+      return false
+    }
+    // The group log line runs after the pre-hook; a dropped message would
+    // otherwise miss the group's conversation context.
+    if (msg.group) this.groupLog.add(msg.group.id, msg.sender.name, msg.text)
+    if (d.react) this.adapterReact(adapter, msg.group?.id || msg.sender.id, msg.id, gate.settings().courtesy.reaction, msg.accountId)
+    this.log(`[situation] dropped ${what}; gate log row ${row ?? "?"}`)
+    this.recordRouterDecisionInLedger(msg, { agentId: null, outcome: "halted", reason: `situation: ${d.phase ?? "none"}, ${d.reason}` })
+    return true
+  }
+
+  /** Take or free the reply slot for this message's turn. Never throws. */
+  private situationSlot(d: GateDecision | null, by: string, act: "take" | "free"): boolean {
+    if (!d?.active || !this.situationGate) return false
+    try {
+      return act === "take" ? this.situationGate.store.takeSlot(d.key, by) : this.situationGate.store.freeSlot(d.key, by)
+    } catch {
+      return false
+    }
+  }
+
+  /** Re-deliver a message the gate dropped (`agentx situation release`):
+   *  routed again as a replay, which the gate never drops. Not awaited. */
+  redeliver(stored: Record<string, unknown>): void {
+    const adapter = this.channels.get(String(stored.channel ?? ""))
+    if (!adapter) throw new Error(`channel "${String(stored.channel)}" is not running on this node`)
+    this.handleMessage(adapter, incomingFrom(stored), { replay: true })
+      .catch((e) => this.log(`[situation] release of ${String(stored.id)} failed: ${e?.message ?? e}`))
   }
   private hooks?: HookRegistry
   private mesh?: A2AMesh
@@ -462,6 +512,12 @@ export class MessageRouter {
       /** False when the text is already in the agent's session, e.g. the
        *  reply to a turn the registry just ran (A2A callbacks, #277). */
       recordInSession?: boolean
+      /** True only when the text is an agent's or a workflow's message in
+       *  the conversation itself; notices, alerts and digests leave it
+       *  false (#1892). Default false. */
+      countsAsReply?: boolean
+      /** The send belongs to one end of a talk: refused if it reopened. */
+      situation?: SituationTag
     },
   ): Promise<string | void> {
     const adapter = this.channels.get(msg.channel)
@@ -547,11 +603,12 @@ export class MessageRouter {
     // A failed send gets its own line, so the log never reads as if a push
     // went out when it did not (#930).
     let messageId: string | void
+    const sendOpts: SendToChatOpts = { countsAsReply: opts?.countsAsReply === true, ...(opts?.situation ? { situation: opts.situation } : {}) }
     try {
       if (adapter.name === "telegram" && accountId) {
-        messageId = await this.adapterSend(adapter, { ...msg, accountId })
+        messageId = await this.adapterSend(adapter, { ...msg, accountId }, sendOpts)
       } else {
-        messageId = await adapter.send(msg)
+        messageId = await sendToChat(adapter, msg, sendOpts)
       }
     } catch (e: any) {
       const code = e?.cause?.code ? ` code=${e.cause.code}` : ""
@@ -711,7 +768,7 @@ export class MessageRouter {
           accountId: msg.accountId,
           agentId: msg.resolvedAgent,
           parseMode: "plain",
-        })
+        }, { countsAsReply: false })
       },
     }
   }
@@ -817,6 +874,19 @@ export class MessageRouter {
       return
     }
 
+    // Courtesy-close gate (#1892): after dedup, BEFORE the pre-hook, so a
+    // "thank you, goodbye" after the talk ended reaches no workflow, no run
+    // and no agent. A run that already takes the message wins (claimed).
+    const gate = this.situationGate
+    const sit = gate ? gate.decide(msg, { replay: opts.replay }) : null
+    if (gate && sit) {
+      gate.commit(sit)
+      if (sit.unclaimed === "drop" && !sit.claimed && this.applySituationDrop(adapter, msg, sit, "gate")) return
+    }
+    // Shadow mode: a claimed message whose run ended before the hook, so
+    // the hook started a new run for it, is a would-drop too (M1).
+    let gatedStart = false
+
     // Pre-hook
     if (this.hooks?.has("pre:channel-message" as any)) {
       const hookResult = await this.hooks.execute("pre:channel-message" as any, {
@@ -829,9 +899,13 @@ export class MessageRouter {
         // (e.g. the workflow dispatcher). Existing subscribers read the
         // flat fields above and are unaffected by this addition.
         msg,
+        // The gate's answer if no run took the message (M1): the workflow
+        // hook starts no new run for a message the gate drops.
+        ...(sit?.active ? { gate: { unclaimed: sit.unclaimed, enforce: sit.enforce, onStart: () => { gatedStart = true } } } : {}),
       })
 
       if (hookResult.blocked) {
+        if (sit?.claimed && sit.unclaimed === "drop" && !sit.enforce && gatedStart) gate?.logDrop(msg, sit, JSON.stringify(serializeIncoming(msg)), "after-hook")
         this.log(`Message blocked by hook: ${hookResult.message}`)
         this.recordRouterDecisionInLedger(msg, {
           agentId: null, outcome: "halted",
@@ -844,6 +918,12 @@ export class MessageRouter {
         msg = { ...msg, text: hookResult.modified.text as string }
       }
     }
+
+    // After the hook (R1b, M1): the gate passed the message only because a
+    // run claimed it, and no run took it after all (it ended in between, or
+    // every claim was passthrough). Apply the gate's own answer now. Also
+    // when no pre:channel-message hook is registered.
+    if (sit?.claimed && sit.unclaimed === "drop" && this.applySituationDrop(adapter, msg, sit, "after-hook")) return
 
     // Log ALL group messages for conversation context (before agent resolution)
     if (msg.group) {
@@ -877,7 +957,7 @@ export class MessageRouter {
             clearInterval(typingTimer)
             await this.adapterSend(adapter, {
               channel: msg.channel, chatId, text, replyTo: msg.id, accountId: replyAccountId,
-            })
+            }, { countsAsReply: false })
           },
         )
         return
@@ -958,8 +1038,14 @@ export class MessageRouter {
       waitNoticeAt: this.waitNoticed.get(msg.id),
     })
 
+    // The goodbye turn (S2): in `ending`, the turn this message starts
+    // takes the reply slot, so a courtesy message that arrives while it
+    // runs is dropped as "goodbye in flight". Freed when the turn ends
+    // with nothing sent; a counted send marks it used instead.
+    const slotTaken = this.situationSlot(sit, msg.id, "take")
     try { return await this.processResolvedMessage(adapter, msg, agentId, chatId) }
     finally {
+      if (slotTaken) this.situationSlot(sit, msg.id, "free")
       if (activeKey) this.activeMessageKeys.delete(activeKey)
       this.inflight.done(msg.id)
       this.waitNoticed.delete(msg.id)
@@ -1052,9 +1138,11 @@ export class MessageRouter {
             const replyTo = anchorSends === 0 ? msg.id : undefined
             anchorSends++
             try {
+              // The streamed reply: each anchor message counts (only the
+              // first can change anything) (#1892).
               return await this.adapterSend(adapter, {
                 channel: msg.channel, chatId, text, replyTo, accountId: replyAccountId,
-              })
+              }, { countsAsReply: true })
             } catch (e: any) {
               this.log(`Stream preview send failed for ${msg.channel}:${chatId}: ${e?.message || e}`)
               return ""
@@ -1195,7 +1283,7 @@ export class MessageRouter {
           return
         }
         const text = response.errorKind === "no_room" ? response.error : planHoldText(response.retryAt)
-        await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, parseMode: "plain", accountId: replyAccountId, agentId })
+        await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, parseMode: "plain", accountId: replyAccountId, agentId }, { countsAsReply: false })
           .catch((e: any) => this.log(`[wait-notice] post failed on ${msg.channel}:${chatId}: ${e?.message ?? e}`))
         return
       }
@@ -1214,7 +1302,7 @@ export class MessageRouter {
             parseMode: "plain",
             accountId: replyAccountId,
             agentId,
-          })
+          }, { countsAsReply: false })
         }
       } else {
         await this.adapterSend(adapter, {
@@ -1225,7 +1313,7 @@ export class MessageRouter {
           parseMode: "plain",
           accountId: replyAccountId,
           agentId,
-        })
+        }, { countsAsReply: false })
       }
       return
     }
@@ -1322,7 +1410,7 @@ export class MessageRouter {
           accountId: replyAccountId,
           agentId,
           ...(ui ? uiToOutgoing(ui) : {}),
-        })
+        }, { countsAsReply: true })
         this.noteForgeComment(msg.channel, chatId, sentResponseId, agentId)
       }
     } else if (ui && streaming?.started) {
@@ -1440,9 +1528,30 @@ export class MessageRouter {
       )
       if (!mentioned) continue
 
+      const chatId = originalMsg.group?.id || originalMsg.sender.id
+
+      // Each hop passes the courtesy gate (S10): the source agent's reply
+      // is the message, the source agent the sender, the chat the same.
+      if (this.situationGate) {
+        const hopMsg: IncomingMessage = {
+          id: `hop:${responseMessageId}`, channel: originalMsg.channel, accountId: originalMsg.accountId,
+          sender: { id: `agent:${sourceAgentId}`, name: sourceAgentId }, group: originalMsg.group,
+          text: responseText, timestamp: new Date(),
+        }
+        const d = this.situationGate.decide(hopMsg, { hop: true, chatId })
+        this.situationGate.commit(d)
+        if (d.unclaimed === "drop") {
+          const row = this.situationGate.logDrop(hopMsg, d, JSON.stringify(serializeIncoming(hopMsg)), "hop")
+          if (d.enforce) {
+            this.log(`Bot-to-bot [${depth + 1}]: "${sourceAgentId}" -> "${id}" skipped by the courtesy gate (${d.reason}); gate log row ${row ?? "?"}`)
+            return
+          }
+          this.log(`Bot-to-bot [${depth + 1}]: would skip "${sourceAgentId}" -> "${id}" (${d.reason}); shadow mode`)
+        }
+      }
+
       this.log(`Bot-to-bot [${depth + 1}]: "${sourceAgentId}" -> "${id}"`)
 
-      const chatId = originalMsg.group?.id || originalMsg.sender.id
       const targetAccountId = this.getAccountForAgent(id)
       const sourceAccountId = this.getAccountForAgent(sourceAgentId)
 
@@ -1491,7 +1600,7 @@ export class MessageRouter {
             text: replyText,
             accountId: targetAccountId,
             agentId: id,
-          })
+          }, { countsAsReply: true })
 
           // Chain: check if this response also mentions another agent
           if (sentId && response.content) {
@@ -1552,19 +1661,15 @@ export class MessageRouter {
 
   // --- Adapter helpers that pass accountId for Telegram ---
 
+  /** `countsAsReply` is required: each call site says whether its text is
+   *  a reply in the conversation (true) or a notice (false) (#1892). The
+   *  Telegram adapter reads `accountId` off the message to pick the bot. */
   private async adapterSend(
     adapter: ChannelAdapter,
     msg: Omit<OutgoingMessage, "parseMode"> & { parseMode?: string; accountId?: string },
+    opts: SendToChatOpts,
   ): Promise<string> {
-    // For Telegram, pass accountId so the correct bot sends the message
-    if (adapter.name === "telegram" && msg.accountId) {
-      return (adapter as unknown as TelegramAdapter).send({
-        ...msg,
-        parseMode: msg.parseMode as any,
-        accountId: msg.accountId,
-      }) as Promise<string>
-    }
-    return (adapter.send(msg as any) || "") as Promise<string>
+    return ((await sendToChat(adapter, msg as OutgoingMessage, opts)) || "") as string
   }
 
   /** Whether an agent may emit rich `agentx:ui` messages on this channel.
@@ -1593,16 +1698,17 @@ export class MessageRouter {
         await (adapter as unknown as TelegramAdapter).setMessageButtons(chatId, lastMessageId, ui.buttons, accountId)
       } else if (ui.buttons?.length) {
         // Non-telegram or no anchor id — send buttons as their own message.
-        await this.adapterSend(adapter, { channel, chatId, text: "⌄", accountId, agentId, buttons: ui.buttons })
+        await this.adapterSend(adapter, { channel, chatId, text: "⌄", accountId, agentId, buttons: ui.buttons }, { countsAsReply: false })
       }
+      // Extras after the reply text: the text send already counted.
       if (ui.poll) {
         await this.adapterSend(adapter, {
           channel, chatId, text: "", accountId, agentId,
           poll: uiToOutgoing(ui).poll,
-        })
+        }, { countsAsReply: false })
       }
       if (ui.media) {
-        await this.adapterSend(adapter, { channel, chatId, text: ui.media.caption ?? "", accountId, agentId, media: ui.media })
+        await this.adapterSend(adapter, { channel, chatId, text: ui.media.caption ?? "", accountId, agentId, media: ui.media }, { countsAsReply: false })
       }
     } catch (e: any) {
       this.log(`attachUiExtras failed for ${channel}:${chatId}: ${e?.message || e}`)
@@ -1685,7 +1791,7 @@ export class MessageRouter {
       parseMode: "plain",
       accountId: replyAccountId,
       agentId,
-    }).catch((e: any) => this.log(`[wait-notice] post failed on ${where}: ${e?.message ?? e}`))
+    }, { countsAsReply: false }).catch((e: any) => this.log(`[wait-notice] post failed on ${where}: ${e?.message ?? e}`))
   }
 
   /** True when the plan-limit line may be posted on this thread now, and
@@ -1740,7 +1846,7 @@ export class MessageRouter {
       parseMode: "plain",
       accountId: replyAccountId,
       agentId,
-    }).catch((e: any) => this.log(`Mesh failure notice failed to post on ${key}: ${e.message}`))
+    }, { countsAsReply: false }).catch((e: any) => this.log(`Mesh failure notice failed to post on ${key}: ${e.message}`))
   }
 
   /**
@@ -1883,7 +1989,7 @@ export class MessageRouter {
     const chatId = msg.group?.id || msg.sender.id
     const refusal = this.registry.refusalFor(agentId, this.buildMeshContext(msg, chatId))
     if (!refusal) return false
-    await this.adapterSend(adapter, { channel: msg.channel, chatId, text: refusal, replyTo: msg.id, accountId: msg.accountId, agentId })
+    await this.adapterSend(adapter, { channel: msg.channel, chatId, text: refusal, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
     this.resolveIntent(msg, "completed", Date.now(), refusal)
     return true
   }
@@ -1935,7 +2041,7 @@ export class MessageRouter {
                 replyTo: msg.id,
                 accountId: replyAccountId,
                 agentId: skill.id,
-              })
+              }, { countsAsReply: true })
             }
 
             return true
@@ -2005,7 +2111,7 @@ export class MessageRouter {
             replyTo: msg.id,
             accountId: replyAccountId,
             agentId,
-          })
+          }, { countsAsReply: true })
         }
 
         return true
@@ -2206,7 +2312,7 @@ export class MessageRouter {
           replyTo: msg.id,
           accountId: replyAccountId,
           agentId,
-        })
+        }, { countsAsReply: true })
       }
 
       if (msg.channel === "gitlab" && duration) {

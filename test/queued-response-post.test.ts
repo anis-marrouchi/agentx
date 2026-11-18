@@ -26,7 +26,8 @@ describe("posting a queued turn's reply", () => {
   it("posts on a channel with an adapter", () => {
     const { r, sendOutbound } = setup()
     r.postQueuedResponseToChannel("ops", { channel: "telegram", chatId: "c1" }, { content: "done" })
-    expect(sendOutbound).toHaveBeenCalledWith(expect.objectContaining({ channel: "telegram", chatId: "c1", text: "done" }))
+    // The queued turn's answer is the agent's reply in the chat (#1892).
+    expect(sendOutbound).toHaveBeenCalledWith(expect.objectContaining({ channel: "telegram", chatId: "c1", text: "done" }), { countsAsReply: true })
   })
 
   it("skips a requests pick-up, which has no adapter", () => {

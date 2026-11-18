@@ -2,6 +2,7 @@ import type { HookContext, HookEvent, HookResult } from "@/hooks/types"
 import type { IncomingMessage } from "@/channels/types"
 import type { WorkflowDispatcher } from "./dispatcher"
 import type { EntityRef } from "./types"
+import { blocksRouter, channelDispatchArgs } from "./channel-claim"
 
 // --- Workflow hook subscribers (V2) ---
 //
@@ -45,33 +46,26 @@ export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Part
       })
       if (waiting) return { blocked: true, message: `reply taken by workflow run ${waiting}` }
 
-      const source = channelToTriggerSource(msg.channel)
-      if (!source) return {}
+      // The trigger, entity and event: one builder, shared with the
+      // courtesy gate's claimantFor (#1892), so both use the same keys.
+      const args = channelDispatchArgs(msg)
+      if (!args) return {}
 
-      const entityRef: EntityRef = { backend: msg.channel, id: `${msg.channel}:${chatId}` }
+      // The courtesy gate (#1892) would drop this message unless a run
+      // takes it. When it enforces, an existing run may still take it, but
+      // no new run starts for it.
+      const gate = ctx.gate as { unclaimed?: string; enforce?: boolean; onStart?: () => void } | undefined
+      const gated = gate?.unclaimed === "drop"
+      const noStart = gated && gate?.enforce === true
+      // Shadow mode starts the run as today; the router logs a would-drop.
+      const onGatedStart = gated && !noStart ? gate?.onStart : undefined
 
-      const { claimed } = await dispatcher.dispatch({
-        trigger: {
-          source,
-          chat: chatId,
-        },
-        entityRef,
-        event: {
-          id: `${msg.channel}:${msg.accountId}:${msg.id}`,
-          payload: buildChannelTriggerPayload(msg),
-        },
-      })
-
-      if (claimed.length === 0) return {}
+      const { claimed } = await dispatcher.dispatch({ ...args, ...(noStart ? { noStart } : {}), ...(onGatedStart ? { onGatedStart } : {}) })
 
       // Opt-out: if every matched workflow declared `passthrough: true` on its
       // trigger node, let the router's default reply run alongside. Otherwise
       // the workflow owns the conversation — block the router.
-      const allPassthrough = claimed.every((wf) => {
-        const trigger = wf.nodes.find((n) => n.type.startsWith("trigger."))
-        return (trigger?.config as { passthrough?: boolean } | undefined)?.passthrough === true
-      })
-      if (allPassthrough) return {}
+      if (!blocksRouter(claimed)) return {}
 
       return {
         blocked: true,
@@ -264,35 +258,3 @@ export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Part
   }
 }
 
-function channelToTriggerSource(channel: string): string | null {
-  switch (channel) {
-    case "telegram":    return "telegram-message"
-    case "whatsapp":    return "whatsapp-message"
-    case "discord":     return "discord-message"
-    case "slack":       return "slack-message"
-    default:            return null
-  }
-}
-
-function buildChannelTriggerPayload(msg: IncomingMessage): Record<string, unknown> {
-  const chatId = msg.group?.id ?? msg.sender.id
-  return {
-    channel: msg.channel,
-    chatId,
-    accountId: msg.accountId,
-    text: msg.text,
-    fromJid: msg.sender.id,
-    sender: {
-      id: msg.sender.id,
-      name: msg.sender.name,
-      username: msg.sender.username,
-    },
-    contact: msg.channelMeta?.facts ? { facts: msg.channelMeta.facts } : undefined,
-    group: msg.group ? { id: msg.group.id, name: msg.group.name } : undefined,
-    channelMeta: msg.channelMeta,
-    replyTo: msg.replyTo,
-    replyToText: msg.replyToText,
-    media: msg.media,
-    event: { id: msg.id, timestamp: msg.timestamp?.toISOString?.() ?? new Date().toISOString() },
-  }
-}

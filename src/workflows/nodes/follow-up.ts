@@ -1,6 +1,7 @@
 import { render, renderParams } from "../template"
 import type { WorkflowRun } from "../types"
 import { DEFAULT_FOLLOW_UP, type FollowUpDefaults, type NodeContext, type NodeHandler, type NodeResult } from "./types"
+import { sendToChat, type SituationTag } from "@/situations/send-to-chat"
 
 // --- Follow-up steps (#788) ---
 //
@@ -194,7 +195,8 @@ const personMessageHandler: NodeHandler = async (ctx) => {
   }
   // Approved with the whole run, exactly as it reads now: send it.
   if (ctx.run.meta?.approved?.[ctx.node.id] === messageKey(msg)) {
-    const sent = await deliver(ctx, msg)
+    // A workflow's message in the conversation: it counts as a reply (#1892).
+    const sent = await deliver(ctx, { ...msg, countsAsReply: true })
     if ("error" in sent) return { error: sent.error }
     return { output: { ...msg, messageId: sent.messageId, approved: "start" }, port: "sent" }
   }
@@ -208,7 +210,8 @@ const personMessageHandler: NodeHandler = async (ctx) => {
       recommend: clip(`It is step "${ctx.node.id}" of ${ctx.run.meta?.title ? `"${ctx.run.meta.title}"` : `workflow ${ctx.workflow.id}`}. Edit it if needed, then say yes.`, 300),
       draft: msg.text,
     }, ctx.run, ctx.node.id)
-    return { paused: true, pausedAt: { kind: "ownerDecision", nodeId: ctx.node.id, cardId, purpose: "send", message: msg } }
+    // The flag survives the owner's approval (S12): sent at resumeFromCard.
+    return { paused: true, pausedAt: { kind: "ownerDecision", nodeId: ctx.node.id, cardId, purpose: "send", message: { ...msg, countsAsReply: true } } }
   } catch (e: any) {
     return { error: `person.message "${ctx.node.id}": could not ask the owner: ${e?.message ?? e}` }
   }
@@ -220,23 +223,28 @@ export function messageKey(msg: { channel: string; chatId: string; text: string 
   return `${msg.channel}\n${msg.chatId}\n${msg.text}`
 }
 
-/** Send through the local adapter, or a mesh peer that hosts the channel. */
+/** Send through the local adapter, or a mesh peer that hosts the channel.
+ *  `countsAsReply`: the message is the workflow's message in the talk (a
+ *  person.message), not a reminder (#1892). `situation`: the send belongs
+ *  to one end of a talk and is refused if the talk reopened (S7). Both are
+ *  passed on explicitly: the message is rebuilt here. */
 export async function deliver(
   ctx: Pick<NodeContext, "channels" | "forwardChannelSend">,
-  msg: { channel: string; chatId: string; accountId?: string; text: string },
+  msg: { channel: string; chatId: string; accountId?: string; text: string; countsAsReply?: boolean; situation?: SituationTag },
 ): Promise<{ messageId: string | null } | { error: string }> {
-  const adapter = ctx.channels[msg.channel] as { send?: (m: { channel: string; chatId: string; text: string; accountId?: string }) => Promise<string | void> } | undefined
+  const adapter = ctx.channels[msg.channel] as { name?: string; send?: (m: { channel: string; chatId: string; text: string; accountId?: string }) => Promise<string | void> } | undefined
   const out = { channel: msg.channel, chatId: msg.chatId, text: msg.text, ...(msg.accountId ? { accountId: msg.accountId } : {}) }
+  const flags = { countsAsReply: msg.countsAsReply === true, ...(msg.situation ? { situation: msg.situation } : {}) }
   if (adapter?.send) {
     try {
-      return { messageId: (await adapter.send(out)) ?? null }
+      return { messageId: (await sendToChat({ name: adapter.name ?? msg.channel, send: adapter.send.bind(adapter) }, out, flags)) ?? null }
     } catch (e: any) {
       return { error: `send on ${msg.channel} failed: ${e?.message ?? e}` }
     }
   }
   if (ctx.forwardChannelSend) {
     try {
-      return { messageId: (await ctx.forwardChannelSend(out)).messageId }
+      return { messageId: (await ctx.forwardChannelSend({ ...out, ...flags })).messageId }
     } catch (e: any) {
       return { error: `send on ${msg.channel} via the mesh failed: ${e?.message ?? e}` }
     }
