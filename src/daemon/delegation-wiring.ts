@@ -383,6 +383,9 @@ export interface ChatDelivery {
   idempotencyKey?: string
   /** The bus event's summary for a phone reply. No reply text: it reaches the mesh feed. */
   summary?: string
+  /** An agent's answer in the conversation itself (#1892). Default false:
+   *  cron results, alerts and notices do not use up a goodbye. */
+  countsAsReply?: boolean
 }
 
 /**
@@ -429,7 +432,7 @@ export async function deliverToChat(
   if (r.channel === msg.channel) {
     await w.router.sendOutbound(
       { channel: msg.channel, chatId: msg.chatId, text: msg.text, agentId: msg.agentId, accountId: msg.accountId },
-      { recordInSession: msg.record, ...dedupe },
+      { recordInSession: msg.record, countsAsReply: msg.countsAsReply === true, ...dedupe },
     )
     return
   }

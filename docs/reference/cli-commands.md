@@ -3663,6 +3663,33 @@ Resume a stopped task from its plan, in the same chat. A step of a workflow run 
 
 Forget a stopped task and its resume plan, when it won't be resumed. It can no longer be resumed afterwards. Refused while the agent is still writing its plan or while the task is being resumed. The same people and agents that may resume a task may drop it.
 
+## situation (advanced)
+
+`agentx situation`: See and undo what the courtesy gate held after a talk ended. **Advanced.** See [Stop goodbye loops](/jobs/stop-goodbye-loops).
+
+Every subcommand takes these flags:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--token <token>` | — | Bearer token (defaults to dashboard.token). |
+
+### `agentx situation log`
+
+Messages the gate held (active mode) or would have held (shadow mode), newest first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-n, --limit <n>` | `50` | How many rows. |
+| `--dropped` | — | Only messages really held. |
+| `--would-drop` | — | Only shadow-mode rows. |
+| `--json` | — | Print JSON. |
+
+### `agentx situation release <id>`
+
+Send a held message on to the agent, once, and open the talk again. Only a held row (not a shadow-mode row) can be released, and only once.
+
 ## watch (advanced)
 
 `agentx watch`: Stream live daemon events — workflow runs, user tasks, signals, mesh health. **Advanced.**

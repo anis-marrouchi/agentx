@@ -4353,7 +4353,9 @@ export class AgentRegistry {
     }
     // Resolve account binding for shared-channel adapters (Telegram is
     // multi-account); sendOutbound auto-fills accountId from agentId.
-    router.sendOutbound({ channel, chatId, text, agentId } as any)
+    // The queued turn's answer is the agent's reply in the chat (#1892);
+    // an error text is a notice.
+    router.sendOutbound({ channel, chatId, text, agentId } as any, { countsAsReply: !resp.error })
       .catch((e: any) => this.log(`[${agentId}] queued response post failed: ${e?.message ?? e}`))
   }
 

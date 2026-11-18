@@ -212,7 +212,8 @@ describe("createDelegations wiring", () => {
       expect(w.executed[1]).toMatchObject({ agentId: "front", context: { channel: "telegram", chatId: "chat-1", delegation: { taskId } } })
       expect(w.sent).toEqual([{
         msg: { channel: "telegram", chatId: "chat-1", text: "Here is what came back.", agentId: "front", accountId: undefined },
-        opts: { recordInSession: false },
+        // The caller's answer is its reply in the chat (#1892).
+        opts: { recordInSession: false, countsAsReply: true },
       }])
     } finally { w.cleanup() }
   })

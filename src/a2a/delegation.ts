@@ -199,6 +199,8 @@ export interface DelegationDeps {
     taskId: string
     /** "error" when the reply is the plain report of a failed delegation. */
     outcome: "done" | "error"
+    /** The caller's answer in the conversation (true), or a notice (#1892). */
+    countsAsReply?: boolean
   }): Promise<void>
   log(msg: string): void
   /** Told when a delegation starts and how it ends (open requests, #356).
@@ -976,6 +978,7 @@ export class DelegationManager {
         channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId, record: !own,
         taskId: last.id,
         outcome: own || items.every((i) => ok(i.result.status)) ? "done" : "error",
+        countsAsReply: true,
       })
       this.deps.log(`[delegation ${tag}] ${rec.caller} updated ${channel}:${chatId}`)
     } catch (e: any) {
@@ -999,7 +1002,7 @@ export class DelegationManager {
     try {
       await this.deps.deliver({
         channel, chatId, text: relayFailureNotice(rec, result), agentId: rec.caller, accountId: rec.origin.accountId,
-        record: true, taskId: rec.id, outcome: "error",
+        record: true, taskId: rec.id, outcome: "error", countsAsReply: false,
       })
     } catch (e: any) {
       this.deps.log(`[delegation ${rec.id}] notice to ${channel}:${chatId} failed: ${e?.message ?? e}`)

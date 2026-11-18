@@ -100,7 +100,9 @@ export const channelReply: BuiltinAction<ChannelReplyInput, ChannelReplyOutput> 
         poll: input.poll,
         media: input.media,
       },
-      { idempotencyKey, dedupeWindowMs: 60_000 },
+      // An agent's message in the conversation: it counts as its reply,
+      // the goodbye included (#1892).
+      { idempotencyKey, dedupeWindowMs: 60_000, countsAsReply: true },
     )
     return { messageId: typeof messageId === "string" ? messageId : null }
   },

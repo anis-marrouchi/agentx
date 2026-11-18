@@ -34,6 +34,9 @@ import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
 import { DecisionStore } from "@/decisions/store"
 import { MessageRouter } from "@/channels/router"
+import { setSendToChatStore, situationTagOf } from "@/situations/send-to-chat"
+import { SituationStore } from "@/situations/store"
+import { SituationGate } from "@/situations/gate"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -383,6 +386,8 @@ export class AgentXDaemon {
   /** Agents watching the phone camera (#325); needs channels.webrtc. */
   private cameraWatch?: CameraWatchManager
   private workflowDispatcher?: WorkflowDispatcher
+  /** The courtesy-close gate (#1892); unset when SQLite is unavailable. */
+  private situationGate?: SituationGate
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
@@ -840,6 +845,23 @@ export class AgentXDaemon {
           this.attachPlanContinue(this.requests)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // The courtesy-close gate (#1892): one record per chat, judged
+        // before the pre:channel-message hook; the send path marks the
+        // goodbye. Settings are read on every message, so `agentx config
+        // set situations.mode active` needs no restart.
+        try {
+          const situations = new SituationStore(db)
+          this.situationGate = new SituationGate({
+            store: situations,
+            settings: () => this.config.situations,
+            claimant: () => this.workflowDispatcher ? (m) => this.workflowDispatcher!.claimantFor(m) : undefined,
+          })
+          this.router.setSituationGate(this.situationGate)
+          setSendToChatStore(situations)
+          this.log(`  Courtesy gate: ${this.config.situations.mode}`)
+        } catch (e: any) {
+          this.log(`  Courtesy gate: not available (${e?.message ?? e})`)
         }
         // The told-the-owner record (#1126): one gate for every send to
         // the owner's own addresses, the daemon's notices and the router's
@@ -5229,6 +5251,8 @@ export class AgentXDaemon {
     "/gitlab/log-time",
     "/channel/edit-comment",
     "/github/send-comment",
+    // Re-delivers a dropped chat message to an agent (#1892).
+    "/situations/release",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8210,12 +8234,47 @@ export class AgentXDaemon {
               text,
               agentId: body.agentId as string | undefined,
               accountId: body.accountId as string | undefined,
-            })
+            }, { countsAsReply: body.countsAsReply === true })
             const answer = sendAnswer(messageId, { channel: picked.channel, agentId: body.agentId as string | undefined, identity: this.postingIdentity(picked.channel, body.agentId as string | undefined) })
             this.json(res, answer.status, { ...answer.body, contactId: result.contact.id, channel: picked.channel })
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }
+          break
+        }
+
+        // The courtesy gate's log (#1892): what it dropped, or in shadow
+        // mode would have dropped. Text is kept on this node only.
+        case "GET /situations/gate-log": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const q = new URL(req.url || "/", "http://localhost").searchParams
+          const outcome = q.get("outcome")
+          const rows = this.situationGate.store.gateLog({
+            limit: Number(q.get("limit")) || 50,
+            ...(outcome === "drop" || outcome === "would-drop" ? { outcome } : {}),
+          }).map(({ message: _m, ...row }) => row)
+          this.json(res, 200, { mode: this.config.situations.mode, rows })
+          break
+        }
+
+        // A person re-delivers a message the gate dropped: the talk goes
+        // back to `during` and the message is routed again, once, past
+        // the gate (#1892).
+        case "POST /situations/release": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const body = await readBody(req)
+          const id = Number(body.id)
+          if (!Number.isInteger(id) || id <= 0) { this.json(res, 400, { error: "Required: id (a gate log row number)" }); break }
+          const r = this.situationGate.release(id)
+          if (!r.ok) { this.json(res, 409, { error: r.error }); break }
+          try {
+            this.router.redeliver(r.message)
+          } catch (e: any) {
+            this.json(res, 500, { error: e?.message ?? String(e) })
+            break
+          }
+          this.log(`[situation] gate log row ${id} released: message ${String(r.message.id)} routed again`)
+          this.json(res, 200, { ok: true, id, messageId: r.message.id ?? null })
           break
         }
 
@@ -8265,7 +8324,9 @@ export class AgentXDaemon {
               poll: body.poll as any,
               media: body.media as any,
               told,
-            }).catch((e) => {
+              // An agent's message in the conversation (the MCP agentx_send
+              // tool sets it); other callers' sends are notices (#1892).
+            }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
               if (row !== undefined) gate?.outcome(row, "failed")
               throw e
             })
@@ -9086,6 +9147,9 @@ export class AgentXDaemon {
             void (async () => {
               const started = Date.now()
               let text: string
+              // The answer is the agent's reply in the asking chat; the
+              // failure text is a notice (#1892).
+              let answered = false
               try {
                 text = await mesh.sendTask(peerName, body.message as string, targetAgent, {
                   vouchOwner,
@@ -9095,6 +9159,7 @@ export class AgentXDaemon {
                 this.log(
                   `[mesh/task async ${taskId}] ${peerName}/${targetAgent ?? "default"} finished in ${Date.now() - started}ms`,
                 )
+                answered = true
               } catch (e: any) {
                 // The failure is reported to the same chat that asked.
                 // Silence here is how "I'll report back" became a lie.
@@ -9108,7 +9173,7 @@ export class AgentXDaemon {
                   text,
                   agentId: (meshContext?.agentId as string | undefined) ?? meshSender,
                   accountId: meshContext?.accountId as string | undefined,
-                })
+                }, { countsAsReply: answered })
               } catch (e: any) {
                 this.log(`[mesh/task async ${taskId}] delivery failed: ${e?.message ?? e}`)
               }
@@ -9895,7 +9960,14 @@ export class AgentXDaemon {
         // The relaying node, so the host can address that node's phones:
         // the peer its token belongs to, not the name it gives (#711).
         origin,
-      } as any, { recordInSession: false })
+      } as any, {
+        recordInSession: false,
+        // The sending node said whether the text is a reply in the talk and
+        // which end of a talk it belongs to (S16). This node owns the chat,
+        // so the mark is made here. An older peer sends neither: false.
+        countsAsReply: body.countsAsReply === true,
+        ...(situationTagOf(body.situation) ? { situation: situationTagOf(body.situation) } : {}),
+      })
       this.json(res, 200, { ok: true, messageId: messageId ?? null })
     } catch (e: any) {
       this.log(`[mesh] /channel/send "${channel}" failed: ${e.message}`)

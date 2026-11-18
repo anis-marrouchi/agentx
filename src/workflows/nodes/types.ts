@@ -59,6 +59,9 @@ export interface NodeContext {
     accountId?: string
     parseMode?: string
     replyTo?: string
+    /** The peer that owns the channel marks the reply slot (#1892, S16). */
+    countsAsReply?: boolean
+    situation?: { id: string; endGeneration: number }
   }) => Promise<{ messageId: string | null }>
   /** Structured log sink. */
   log: (msg: string) => void

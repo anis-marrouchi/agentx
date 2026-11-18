@@ -557,6 +557,24 @@ Lets a teammate or a client sign in to their page with a link sent by email, ins
 
 Put this inside `wall.signIn`. In the provider's console, make an OAuth client of type **Web application** with the return address `<origin>/member/signin/oidc/done`, for example `https://your-mac.tailnet-name.ts.net/member/signin/oidc/done`. A client secret written straight into `agentx.json` is refused when the config loads.
 
+## situations
+
+The courtesy gate: after a talk in a chat has ended with a goodbye, more "thanks" and "goodbye" messages do not start a run. Telegram, WhatsApp, Discord and Slack only. Read what it held with `agentx situation log`. How it works: [Stop goodbye loops](/jobs/stop-goodbye-loops). Read for each message: no restart needed.
+
+| Key | Default | What it does |
+|---|---|---|
+| `mode` | `"shadow"` | `"shadow"` only logs what it would hold. `"active"` holds it. `"off"` turns the gate off. |
+| `courtesy.onPerson` | `"react"` | A person's thanks after the end: `"react"` adds a reaction, `"drop"` holds it silently, `"reply"` lets it through. |
+| `courtesy.reaction` | `"🙏"` | The reaction for `"react"`. |
+| `backstop.count` | `6` | Messages from a bot within the window that end the talk, thanks or not. |
+| `backstop.windowMinutes` | `10` | The window for `backstop.count`. |
+| `maxAge.duringHours` | `12` | A talk with no change this long is treated as over. |
+| `maxAge.endingMinutes` | `60` | A talk waiting for the agent's goodbye this long is treated as over. |
+
+```json
+"situations": { "mode": "active", "courtesy": { "onPerson": "react" } }
+```
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.

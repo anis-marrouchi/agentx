@@ -93,8 +93,10 @@ describe("mesh resumer", () => {
 
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ agentId: "coder-agent", origin, attempt: 1, resumedFrom: "t1" }))
     const common = { channel: "gitlab", chatId: "mtgl:mr:77", replyTo: "note-9", accountId: "noqta", agentId: "coder-agent" }
-    expect(sent[0]).toEqual({ peer: "server", body: { ...common, text: RESUMED_TEXT } })
-    expect(sent[1]).toEqual({ peer: "server", body: { ...common, text: "LGTM with one nit" } })
+    // The notice does not use up a goodbye; the resumed run's answer does
+    // (#1892, M2): the peer marks the reply slot from this flag.
+    expect(sent[0]).toEqual({ peer: "server", body: { ...common, text: RESUMED_TEXT, countsAsReply: false } })
+    expect(sent[1]).toEqual({ peer: "server", body: { ...common, text: "LGTM with one nit", countsAsReply: true } })
   })
 
   it("posts the cut-off notice to the forwarding peer when the run is only reported", async () => {

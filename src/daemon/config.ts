@@ -18,6 +18,7 @@ import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
 import { isPhoneLink } from "@/notify/phone-link"
+import { situationsConfigSchema } from "@/situations/config"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -2796,6 +2797,10 @@ export const daemonConfigSchema = z.object({
   wall: wallConfigSchema,
   graph: graphConfigSchema,
   decisions: decisionsConfigSchema,
+  /** The courtesy-close gate (#1892): stops two agents, or an agent and a
+   *  bot, thanking each other forever after a talk ended. Shadow by
+   *  default: it logs what it would drop and changes nothing. */
+  situations: situationsConfigSchema,
   /** Workflow engine — declarative state machines that bind channel events
    *  to agents. Off by default; existing installs see no change until
    *  flipped. Definitions live under `dir` (default .agentx/workflows/). */

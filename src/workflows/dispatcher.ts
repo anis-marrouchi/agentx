@@ -17,6 +17,9 @@ import { recordWorkflowDispatch } from "@/intent/sources/workflow"
 import { openDb } from "@/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "@/storage/traces"
 import { withRoot } from "@/events/envelope"
+import { normalizeChat } from "@/situations/normalize-chat"
+import type { IncomingMessage } from "@/channels/types"
+import { GATE_CLAIMS, blocksRouter, channelClaim, channelDispatchArgs, dispatchTargets, matchesResume, replyWaitMatches, type ChannelVerdict } from "./channel-claim"
 
 // --- Dispatcher (V2) ---
 //
@@ -58,6 +61,9 @@ export interface MeshForwarder {
     accountId?: string
     parseMode?: string
     replyTo?: string
+    /** Passed on to the peer's /channel/send (#1892, S16). */
+    countsAsReply?: boolean
+    situation?: { id: string; endGeneration: number }
   }): Promise<{ messageId: string | null }>
 }
 
@@ -570,18 +576,26 @@ export class WorkflowDispatcher {
      *  outbound fan-out below so a remote-origin dispatch never re-broadcasts
      *  back through the mesh (no echo loops). */
     fromRemote?: { peer: string }
+    /** The courtesy gate (#1892) would drop this message if no run took
+     *  it, and it is enforcing: an existing run still takes it (forward,
+     *  resume, running), but no new run starts and no mesh peer is asked
+     *  to start one. */
+    noStart?: boolean
+    /** Told when a new run starts for a message the gate would drop but
+     *  does not enforce (shadow mode), so the router can log it. */
+    onGatedStart?: () => void
   }): Promise<{ claimed: Workflow[]; runs: WorkflowRun[] }> {
     // Runs and mesh peers both get this event: no credential goes to either.
     const event = stripSecrets(args.event)
     const matches = this.matchByTrigger(args.trigger, args.fromRemote)
-    const willFan = matches.some((m) => m.fanOut)
-    const toRun = willFan ? matches : matches.slice(0, 1)
+    const toRun = dispatchTargets(matches)
     const claimed: Workflow[] = []
     const runs: WorkflowRun[] = []
     for (const wf of toRun) {
-      const r = await this.dispatchOne(wf, args.entityRef, event, args.trigger)
+      const r = await this.dispatchOne(wf, args.entityRef, event, args.trigger, args.noStart)
       if (r.claimed) claimed.push(wf)
       if (r.run) runs.push(r.run)
+      if (r.started) args.onGatedStart?.()
     }
 
     // Mesh trigger fan-out. Only emit on local-origin dispatches; broadcasts
@@ -589,7 +603,7 @@ export class WorkflowDispatcher {
     // forwarder decides per-peer whether to actually deliver — typically based
     // on cached peer agent-cards advertising allowRemote workflows for this
     // trigger source.
-    if (!args.fromRemote && this.forwarder?.broadcastTrigger) {
+    if (!args.fromRemote && !args.noStart && this.forwarder?.broadcastTrigger) {
       // Fire-and-forget: a slow / unhealthy peer must not delay the local
       // hook return path that the router awaits. Failures are logged inside
       // the forwarder.
@@ -654,6 +668,67 @@ export class WorkflowDispatcher {
     return out.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
   }
 
+  /** The entity's state the claim rule reads. The state is the entity's,
+   *  not the workflow's: every workflow on the entity reads the same run. */
+  private claimState(workflow: Workflow, entityRef: EntityRef): {
+    activeRunId: string | null; run: WorkflowRun | null; homeNode: string | null
+    nodeId: string; hasForwarder: boolean; hasTriggerNode: boolean
+  } {
+    const activeRunId = this.runs.getActiveByEntity(entityRef)
+    const homeNode = activeRunId ? this.runs.getHomeNodeByEntity(entityRef) : null
+    const remote = !!(activeRunId && homeNode && homeNode !== this.nodeId)
+    return {
+      activeRunId,
+      homeNode,
+      // A forwarded entity is not read locally, as dispatch never did.
+      run: activeRunId && !remote ? this.runs.get(activeRunId) : null,
+      nodeId: this.nodeId,
+      hasForwarder: !!this.forwarder,
+      hasTriggerNode: !!initialPendingFromTrigger(workflow),
+    }
+  }
+
+  /** Which run would take this channel message, read only (#1892): a run
+   *  waiting for this reply, or an existing run of a channel-triggered
+   *  workflow on the chat that blocks the router's reply. Null when no run
+   *  would (a run that would only start is no claim). The courtesy gate
+   *  asks this before the message reaches the pre:channel-message hook;
+   *  the hook's resumeFromReply and dispatch use the same rule. */
+  claimantFor(msg: IncomingMessage): { runId: string; kind: "reply-wait" | ChannelVerdict } | null {
+    const chatId = msg.group?.id ?? msg.sender.id
+    const waiting = this.replyWaitCandidates({ channel: msg.channel, chatId, accountId: msg.accountId, senderId: msg.sender.id })
+    if (waiting.length > 0) return { runId: waiting[0].id, kind: "reply-wait" }
+    const args = channelDispatchArgs(msg)
+    if (!args) return null
+    const targets = dispatchTargets(this.matchByTrigger(args.trigger))
+    if (targets.length === 0) return null
+    const state = this.claimState(targets[0], args.entityRef)
+    const verdict = channelClaim({ ...state, trigger: args.trigger, event: args.event })
+    if (!GATE_CLAIMS.has(verdict) || !blocksRouter(targets)) return null
+    return { runId: state.activeRunId ?? "", kind: verdict }
+  }
+
+  /** Runs waiting for a reply that this message answers, oldest first. */
+  private replyWaitCandidates(msg: { channel: string; chatId: string; accountId?: string; senderId?: string }): WorkflowRun[] {
+    if (!this.replyWaiters) {
+      this.replyWaiters = new Map()
+      for (const r of this.runs.list({ limit: 500 })) {
+        if (r.status === "paused" && r.pausedAt?.kind === "replyWait") this.noteReplyWaiter(r.id, r.pausedAt.channel)
+      }
+    }
+    const ids = this.replyWaiters.get(msg.channel)
+    if (!ids?.size) return []
+    return [...ids]
+      .map((id) => this.runs.get(id))
+      .filter((r): r is WorkflowRun => {
+        if (r?.status === "paused" && r.pausedAt?.kind === "replyWait") return true
+        if (r) ids.delete(r.id)
+        return false
+      })
+      .filter((r) => replyWaitMatches(r.pausedAt as Extract<PausedAt, { kind: "replyWait" }>, msg))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
   /**
    * Phase 1 commit 6.c — thin wrapper around the legacy dispatch. Calls
    * `dispatchOneLegacy` then, when `getLedgerMode("workflow") !== "off"`,
@@ -667,8 +742,9 @@ export class WorkflowDispatcher {
     entityRef: EntityRef,
     event: TriggerEvent,
     trigger: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] },
-  ): Promise<{ claimed: boolean; run: WorkflowRun | null }> {
-    const result = await this.dispatchOneLegacy(workflow, entityRef, event, trigger)
+    noStart?: boolean,
+  ): Promise<{ claimed: boolean; run: WorkflowRun | null; started?: boolean }> {
+    const result = await this.dispatchOneLegacy(workflow, entityRef, event, trigger, noStart)
     if (getLedgerMode("workflow") !== "off") {
       try {
         recordWorkflowDispatch(
@@ -698,30 +774,40 @@ export class WorkflowDispatcher {
     entityRef: EntityRef,
     event: TriggerEvent,
     trigger: { source: string; project?: string; repo?: string; chat?: string; labels?: string[] },
-  ): Promise<{ claimed: boolean; run: WorkflowRun | null }> {
-    const activeRunId = this.runs.getActiveByEntity(entityRef)
-    const homeNode = activeRunId ? this.runs.getHomeNodeByEntity(entityRef) : null
+    noStart?: boolean,
+  ): Promise<{ claimed: boolean; run: WorkflowRun | null; started?: boolean }> {
+    // The decision is the shared pure rule (channel-claim.ts), so the
+    // courtesy gate asks exactly what this method does (#1892).
+    const state = this.claimState(workflow, entityRef)
+    const verdict = channelClaim({ ...state, trigger, event })
+    const { activeRunId, homeNode } = state
 
     // Remote home node — forward via mesh and bail. The remote owns the
     // conversation, so we still claim the event locally (no default reply).
-    if (activeRunId && homeNode && homeNode !== this.nodeId) {
-      if (!this.forwarder) {
-        this.log(`[workflow:${workflow.id}] run ${activeRunId} home'd on "${homeNode}" but no forwarder — dropping`)
-        return { claimed: false, run: null }
-      }
+    if (verdict === "no-forwarder") {
+      this.log(`[workflow:${workflow.id}] run ${activeRunId} home'd on "${homeNode}" but no forwarder — dropping`)
+      return { claimed: false, run: null }
+    }
+    if (verdict === "forward") {
       try {
-        await this.forwarder.forwardTransition(homeNode, { workflowId: workflow.id, event, entityRef })
+        await this.forwarder!.forwardTransition(homeNode!, { workflowId: workflow.id, event, entityRef })
       } catch (e: any) {
         this.log(`[workflow:${workflow.id}] forward to "${homeNode}" failed: ${e.message}`)
       }
       return { claimed: true, run: null }
     }
 
-    let run = activeRunId ? this.runs.get(activeRunId) : null
-    if (!run) {
+    let run = state.run
+    if (verdict === "no-trigger") { this.log(`[workflow:${workflow.id}] no trigger node found`); return { claimed: false, run: null } }
+    if (verdict === "start" && noStart) {
+      // The courtesy gate drops this message (#1892): a courtesy message
+      // after the end of a talk must not start a run.
+      this.log(`[workflow:${workflow.id}] not started for ${entityRef.id}: the courtesy gate drops event ${event.id}`)
+      return { claimed: false, run: null }
+    }
+    if (verdict === "start") {
       // New entity → create a run, seed trigger context, enqueue trigger's successors.
-      const init = initialPendingFromTrigger(workflow)
-      if (!init) { this.log(`[workflow:${workflow.id}] no trigger node found`); return { claimed: false, run: null } }
+      const init = initialPendingFromTrigger(workflow)!
       run = this.runs.create({
         workflowId: workflow.id,
         initialPending: init.pending,
@@ -733,21 +819,19 @@ export class WorkflowDispatcher {
       // Channel-triggered: kick off the react+typing lifecycle so users see
       // the same "I'm on it" affordances they get from the router's path.
       if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
-    } else if (run.status === "paused" && run.pausedAt) {
+    } else if (verdict === "paused-other") {
       // Resume path: a matching event arrived for a paused run. Only
       // `checkpoint` pauses resume on channel events. userTask pauses on
       // form submit; subProcess on child end; signalWait on signal.emit;
       // timerWait on timer fire. Each of those has its own resume entry
       // point elsewhere — here we just drop the channel event and decline
       // to claim (so default routing handles it).
-      if (run.pausedAt.kind !== "checkpoint") {
-        this.log(`[workflow:${workflow.id}] run ${run.id} paused on ${run.pausedAt.kind} — channel event bypasses workflow`)
-        return { claimed: false, run: null }
-      }
-      if (!matchesResume(run.pausedAt.resumeMatch, trigger, event)) {
-        this.log(`[workflow:${workflow.id}] run ${run.id} paused but event doesn't match resumeMatch — dropping`)
-        return { claimed: false, run: null }
-      }
+      this.log(`[workflow:${workflow.id}] run ${run!.id} paused on ${run!.pausedAt!.kind} — channel event bypasses workflow`)
+      return { claimed: false, run: null }
+    } else if (verdict === "resume-mismatch") {
+      this.log(`[workflow:${workflow.id}] run ${run!.id} paused but event doesn't match resumeMatch — dropping`)
+      return { claimed: false, run: null }
+    } else if (verdict === "resume" && run?.pausedAt?.kind === "checkpoint") {
       const checkpointNode = findNode(workflow, run.pausedAt.nodeId)
       const successors = checkpointNode
         ? workflow.edges.filter((e) => e.from === checkpointNode.id).map((e) => e.to)
@@ -776,22 +860,23 @@ export class WorkflowDispatcher {
       if (updated) run = updated
       this.log(`[workflow:${workflow.id}] run ${run.id} resumed from checkpoint "${pausedCheckpointName}"`)
       if (trigger.source.endsWith("-message")) this.startChannelAck(run.id, event.payload)
-    } else if (run.status === "running") {
+    } else if (verdict === "running") {
       // Concurrent message on an already-running run. v1 policy: drop —
       // but still claim the event so the router doesn't ALSO reply.
-      this.log(`[workflow:${workflow.id}] run ${run.id} already running; dropping concurrent event ${event.id}`)
+      this.log(`[workflow:${workflow.id}] run ${run!.id} already running; dropping concurrent event ${event.id}`)
       return { claimed: true, run: null }
     } else {
       // completed / failed / canceled — dead run. The filter matched but
       // this conversation's workflow is over, so let default routing handle.
-      this.log(`[workflow:${workflow.id}] run ${run.id} is ${run.status}; dropping event ${event.id}`)
+      this.log(`[workflow:${workflow.id}] run ${run?.id} is ${run?.status}; dropping event ${event.id}`)
       return { claimed: false, run: null }
     }
+    if (!run) return { claimed: false, run: null }
 
     // Background walk — the dispatch call already returned 200 to the
     // webhook source. Agent calls inside the walk can take minutes.
     void this.walk(workflow, run.id, event.id)
-    return { claimed: true, run }
+    return { claimed: true, run, ...(verdict === "start" ? { started: true } : {}) }
   }
 
   /** Execute the pending queue until empty, paused, or failed. Wraps the
@@ -1271,31 +1356,9 @@ export class WorkflowDispatcher {
    *  (from this sender, in a group) takes it. Returns that run's id, or
    *  null when no run was waiting for it. */
   async resumeFromReply(msg: InboundReply): Promise<string | null> {
-    const source = `${msg.channel}-message`
-    if (!this.replyWaiters) {
-      this.replyWaiters = new Map()
-      for (const r of this.runs.list({ limit: 500 })) {
-        if (r.status === "paused" && r.pausedAt?.kind === "replyWait") this.noteReplyWaiter(r.id, r.pausedAt.channel)
-      }
-    }
-    const ids = this.replyWaiters.get(msg.channel)
-    if (!ids?.size) return null
-    const waiting = [...ids]
-      .map((id) => this.runs.get(id))
-      .filter((r): r is WorkflowRun => {
-        if (r?.status === "paused" && r.pausedAt?.kind === "replyWait") return true
-        if (r) ids.delete(r.id)
-        return false
-      })
-      .filter((r) => {
-        const p = r.pausedAt as Extract<PausedAt, { kind: "replyWait" }>
-        if (p.channel !== msg.channel) return false
-        if (normalizeChat(source, p.chatId) !== normalizeChat(source, msg.chatId)) return false
-        if (p.accountId && msg.accountId && p.accountId !== msg.accountId) return false
-        if (p.from && normalizeChat(source, p.from) !== normalizeChat(source, msg.senderId ?? "")) return false
-        return true
-      })
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    // The same filter the courtesy gate reads through claimantFor (#1892).
+    const waiting = this.replyWaitCandidates(msg)
+    const ids = this.replyWaiters?.get(msg.channel)
     for (const candidate of waiting) {
       const wf = this.store.get(candidate.workflowId)
       if (!wf) continue
@@ -1310,7 +1373,7 @@ export class WorkflowDispatcher {
         this.resumeOn(wf, fresh, p.nodeId, output, "reply", idempotencyKey(fresh.id, p.nodeId, `reply:${msg.messageId ?? output.at}`), "reply received")
       })
       if (!taken) continue
-      ids.delete(candidate.id)
+      ids?.delete(candidate.id)
       void this.walk(wf, candidate.id, `reply:${msg.messageId ?? Date.now()}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after reply failed: ${e.message}`))
       return candidate.id
     }
@@ -1760,55 +1823,6 @@ function pickChildOutput(child: WorkflowRun): Record<string, unknown> {
     }
   }
   return {}
-}
-
-/** Does the incoming event's trigger fields match the checkpoint's
- *  resumeMatch filter? Empty/missing fields are wildcards (match anything),
- *  so the default `resumeMatch: {}` accepts any event on the entity. */
-function matchesResume(
-  resumeMatch: Record<string, unknown>,
-  trigger: { source?: string; project?: string; repo?: string; chat?: string; labels?: string[] },
-  event: TriggerEvent,
-): boolean {
-  const match = (k: keyof typeof trigger): boolean => {
-    const want = resumeMatch[k]
-    if (want === undefined || want === "" || want === "*") return true
-    if (Array.isArray(want)) {
-      const have = new Set(trigger.labels ?? [])
-      return (want as string[]).some((l) => have.has(String(l)))
-    }
-    if (k === "chat") {
-      return normalizeChat(trigger.source, String(want)) === normalizeChat(trigger.source, trigger.chat)
-    }
-    return trigger[k] === want
-  }
-  // Fields supported in v1: source, project, repo, chat, labels. Additional
-  // keys in resumeMatch are ignored (won't accidentally block resume).
-  if (!match("source")) return false
-  if (!match("project")) return false
-  if (!match("repo")) return false
-  if (!match("chat")) return false
-  // `eventIdLike`: optional substring match on the event id, useful for
-  // resuming only on events that carry a specific marker.
-  const eventIdLike = resumeMatch.eventIdLike
-  if (typeof eventIdLike === "string" && eventIdLike && !event.id.includes(eventIdLike)) return false
-  return true
-}
-
-/** Normalize a chat identifier for filter comparison. Channel-aware: WhatsApp
- *  ids drift between formats (raw digits "10000000000", JID
- *  "10000000000@s.whatsapp.net", group JID "...-...@g.us", and human-formatted
- *  "+216 00 000 000") depending on whether they came from the adapter's
- *  payload, a copy-paste from the WA UI, or an editor field. We collapse all
- *  of these to the canonical bare-id form before equality so authors can write
- *  filters in whichever form is convenient. Other channels (Telegram, GitLab,
- *  ...) use stable id formats from their APIs and don't need normalization. */
-function normalizeChat(source: string | undefined, value: string | undefined): string {
-  if (value == null) return ""
-  if (source === "whatsapp-message") {
-    return value.replace(/@s\.whatsapp\.net$|@g\.us$/i, "").replace(/[\s+()]/g, "")
-  }
-  return value
 }
 
 /** The last line of a reply that is not the RESULT token. */

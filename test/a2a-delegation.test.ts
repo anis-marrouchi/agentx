@@ -165,7 +165,7 @@ describe("human-initiated delegation to a local agent", () => {
 
     // The caller's own reply goes to the person; the registry already put
     // it in the session.
-    expect(h.delivered).toEqual([{ channel: "telegram", chatId: "chat-1", text: "summary for front", agentId: "front", accountId: undefined, record: false, taskId, outcome: "done" }])
+    expect(h.delivered).toEqual([{ channel: "telegram", chatId: "chat-1", text: "summary for front", agentId: "front", accountId: undefined, record: false, taskId, outcome: "done", countsAsReply: true }])
     expect(h.mgr.isPending(taskId)).toBe(false)
   })
 
