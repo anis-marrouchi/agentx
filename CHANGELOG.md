@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.229.0](https://github.com/anis-marrouchi/agentx/compare/v0.228.2...v0.229.0) (2026-11-18)
+
+
+### Features
+
+* **requests:** due times written by agents get a wake-up ([#1908](https://github.com/anis-marrouchi/agentx/issues/1908)) ([#1910](https://github.com/anis-marrouchi/agentx/issues/1910)) ([10d7540](https://github.com/anis-marrouchi/agentx/commit/10d75407e1c37ae4d2272e47f3159d6b2189855b))
+
 ## [0.228.2](https://github.com/anis-marrouchi/agentx/compare/v0.228.1...v0.228.2) (2026-11-17)
 
 
