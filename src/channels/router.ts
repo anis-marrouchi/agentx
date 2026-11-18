@@ -1567,8 +1567,12 @@ export class MessageRouter {
         if (d && d.unclaimed === "drop") {
           const row = this.situationGate.logDrop(hopMsg, d, JSON.stringify(serializeIncoming(hopMsg)), "hop")
           if (d.enforce) {
+            // The gate judged the hop's text, not the agent it is for: the
+            // same answer holds for every agent the reply mentions (a
+            // second one would get the cached duplicate drop), and only
+            // the first mentioned agent is ever routed. So this level ends.
             this.log(`Bot-to-bot [${depth + 1}]: "${sourceAgentId}" -> "${id}" skipped by the courtesy gate (${d.reason}); gate log row ${row ?? "?"}`)
-            return
+            break
           }
           this.log(`Bot-to-bot [${depth + 1}]: would skip "${sourceAgentId}" -> "${id}" (${d.reason}); shadow mode`)
         }

@@ -510,6 +510,36 @@ describe("bot-to-bot hops pass the gate (S10)", () => {
     expect(w.phase()).toBe("during")
   })
 
+  // #1921: the gate judges the hop's text, not the agent it is for, so a
+  // drop holds for every agent the reply mentions: one log row, no turn.
+  const three = { ...agents, booker: { name: "Booker", mentions: ["@booker"] } }
+  it("active: a dropped hop that mentions two agents starts no turn and logs one row", async () => {
+    const w = world({ channel: "discord" })
+    ;(w.router as any).config.agents = three
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    await (w.router as any).handleBotToBotChain(w.adapter, orig, "recruiter", "Thanks @scheduler and @booker, goodbye!", "out-7", 0)
+    expect(w.turns).toHaveLength(0)
+    expect(w.store.gateLog()).toHaveLength(1)
+  })
+
+  it("active: a hop the gate passes still reaches the first mentioned agent", async () => {
+    const w = world({ channel: "discord", reply: () => "Booked." })
+    ;(w.router as any).config.agents = three
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    await (w.router as any).handleBotToBotChain(w.adapter, orig, "recruiter", "@scheduler @booker please book the panel room for Tuesday", "out-8", 0)
+    expect(w.turns).toHaveLength(1)
+    expect(w.store.gateLog()).toHaveLength(0)
+  })
+
+  it("shadow: a would-drop hop still goes to the first mentioned agent, one row", async () => {
+    const w = world({ channel: "discord", mode: "shadow", reply: () => "Bye." })
+    ;(w.router as any).config.agents = three
+    w.store.create(situationKey("discord", "default", GROUP), "ended", "test setup")
+    await (w.router as any).handleBotToBotChain(w.adapter, orig, "recruiter", "Thanks @scheduler and @booker, goodbye!", "out-9", 0)
+    expect(w.turns).toHaveLength(1)
+    expect(w.store.gateLog().map((r) => r.outcome)).toEqual(["would-drop"])
+  })
+
   it("a hop whose send returned no id still gets its own id", async () => {
     const w = world({ channel: "discord" })
     ;(w.router as any).config.agents = agents
