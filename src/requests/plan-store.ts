@@ -213,8 +213,22 @@ export class PlanStore {
          to_channel, to_chat, to_account, check_url, check_contains, stall_minutes, dispatched_at, updated_at, check_count)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
+    // A finished or closed plan on an open request (reopened after the
+    // plan check closed it) is replaced, not refused. Its old steps go;
+    // its event log stays, with one "replaced" line.
+    const old = this.get(requestId)
+    if (old && old.state === "active") throw new Error(`request "${requestId}" already has an active plan`)
     this.db.transaction(() => {
-      insertPlan.run(requestId, createdBy, now)
+      if (old) {
+        const count = (this.db.prepare("SELECT COUNT(*) AS n FROM request_plan_steps WHERE request_id = ?").get(requestId) as { n: number }).n
+        this.db.prepare("DELETE FROM request_plan_steps WHERE request_id = ?").run(requestId)
+        this.db.prepare(
+          "UPDATE request_plans SET created_by = ?, created_at = ?, state = 'active', finished_at = NULL, notified_at = NULL WHERE request_id = ?",
+        ).run(createdBy, now, requestId)
+        this.event(requestId, null, "replaced", `the ${old.state} plan of ${count} steps by ${old.createdBy} was replaced`, now)
+      } else {
+        insertPlan.run(requestId, createdBy, now)
+      }
       steps.forEach((s, i) => {
         const first = i === 0
         // The writer already has step 1 when it is theirs; anyone else's

@@ -177,7 +177,13 @@ export function reportStep(
 ): string | null {
   const plan = plans.get(input.requestId)
   if (!plan) return `request "${input.requestId}" has no plan`
-  if (plan.state !== "active") return `the plan of "${input.requestId}" is already ${plan.state === "done" ? "finished" : "closed"}`
+  if (plan.state !== "active") {
+    // Reopened after its plan was closed: say how to go on (a new plan).
+    const r = requests.get(input.requestId)
+    const reopened = !!r && r.state !== "candidate" && !CLOSED_STATES.includes(r.state as any)
+    return `the plan of "${input.requestId}" is already ${plan.state === "done" ? "finished" : "closed"}` +
+      (reopened ? ": the request is open again, so accept it with new steps to write a new plan" : "")
+  }
   const step = plans.step(input.requestId, input.step)
   if (!step) return `the plan of "${input.requestId}" has no step ${input.step}`
   if (step.agentId !== input.agentId && plan.createdBy !== input.agentId) return `step ${step.idx} belongs to ${step.agentId}`
