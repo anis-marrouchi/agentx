@@ -170,9 +170,11 @@ export interface OpenPromiseInput {
 const ITEM_LINK = /https?:\/\/[^\s<>()"'`]+?\/(?:-\/(?:issues|merge_requests)|issues|pull)\/\d+(?![\w/])/
 
 /** A checker for a promise whose words link an issue or merge request
- *  (noqta#876 cause 4): it closes when the item closes, or when a note
- *  written after the promise opened carries the promise's id. Null when
- *  the words link none, or the link is not one the checker reads. */
+ *  (noqta#876 cause 4): it closes when a note written after the promise
+ *  opened carries the promise's id. Not on the item's state: an item
+ *  already closed or merged would close the promise at its first check,
+ *  and a merged MR is not a later deploy. Null when the words link none,
+ *  or the link is not one the checker reads. */
 export function issueCloseWhen(text: string, id: string, now: number): CloseWhen | null {
   const m = text.match(ITEM_LINK)
   if (!m) return null
@@ -181,7 +183,7 @@ export function issueCloseWhen(text: string, id: string, now: number): CloseWhen
   try { host = new URL(link).hostname.toLowerCase() } catch { return null }
   const provider = host === "github.com" ? "github" : "gitlab"
   if (!parseRef(provider, link)) return null
-  return { kind: "issue", provider, ref: link, state: "closed", notePattern: id, after: now }
+  return { kind: "issue", provider, ref: link, notePattern: id, after: now }
 }
 
 /** Opens a promise and returns it. The one way to open one (#1138 D):

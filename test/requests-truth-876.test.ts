@@ -12,6 +12,8 @@ import { cardWords } from "../src/requests/card-view"
 import { waitsOn } from "../src/requests/loops"
 import { issueCloseWhen, openPromise } from "../src/requests/promise"
 import type { CloseProofCtx } from "../src/requests/close-proof"
+import { checkIssue, type ForgeItem } from "../src/requests/checkers/issue"
+import type { IssueSpec } from "../src/requests/checkers"
 
 // noqta#876: the owner's open-request list must say what is true. Four
 // causes kept held and overdue requests sitting with nobody woken.
@@ -197,11 +199,21 @@ describe("cause 3: an overdue request wakes its agent, and a later touch does no
 describe("cause 4: a promise that links an issue closes when the work is done", () => {
   it("reads a GitLab or GitHub issue or merge request link in its words", () => {
     expect(issueCloseWhen("I will post the list on https://gitlab.example.com/grp/proj/-/issues/849 by 16:00Z.", "prm-1", 7)).toEqual({
-      kind: "issue", provider: "gitlab", ref: "https://gitlab.example.com/grp/proj/-/issues/849", state: "closed", notePattern: "prm-1", after: 7,
+      kind: "issue", provider: "gitlab", ref: "https://gitlab.example.com/grp/proj/-/issues/849", notePattern: "prm-1", after: 7,
     })
     expect(issueCloseWhen("review https://github.com/acme/app/pull/12, then merge", "prm-2", 7)).toMatchObject({ provider: "github", ref: "https://github.com/acme/app/pull/12" })
     expect(issueCloseWhen("send the deck by noon", "prm-3", 7)).toBeNull()
     expect(issueCloseWhen("see https://example.com/blog/issues", "prm-4", 7)).toBeNull()
+  })
+
+  it("an item already closed or merged does not close it; a later note with its id does", async () => {
+    const spec = issueCloseWhen("deploy after https://github.com/acme/app/pull/12 merges", "prm-5", 1_000) as IssueSpec
+    const item = (state: ForgeItem["state"], notes: string[] = [], noteTimes: number[] = []): ForgeItem => ({ state, notes, noteTimes, url: "https://github.com/acme/app/pull/12" })
+    const check = (it: ForgeItem) => checkIssue(spec, { forge: async () => it })
+    expect((await check(item("merged"))).verdict).toBe("not_met")
+    expect((await check(item("closed"))).verdict).toBe("not_met")
+    expect((await check(item("merged", ["done prm-5"], [500]))).verdict).toBe("not_met")
+    expect((await check(item("merged", ["done prm-5"], [2_000]))).verdict).toBe("met")
   })
 
   it("a promise with an issue home is read by the home check", () => {
