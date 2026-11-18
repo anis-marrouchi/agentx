@@ -148,6 +148,7 @@ import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { capacityOf, dueTimeSettingsOf, dueTimesCtx, type DueTimesCtx } from "@/requests/due-times"
+import { EstimateCache } from "@/requests/estimates"
 import { handleJobsApi, type JobView } from "@/jobs/api"
 import { JobMesh } from "@/jobs/mesh"
 import { jobsOn } from "@/jobs/doors"
@@ -2524,6 +2525,8 @@ export class AgentXDaemon {
   private driftSweeping = false
   private readonly driftLiveCache = new Map<string, boolean>()
   private status: AttachedStatus | null = null
+  /** Estimate rows of due times, kept a minute across calls (#1920). */
+  private readonly dueEstimates = new EstimateCache()
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
   private forwardCommentEdit(channel: "gitlab" | "github") {
@@ -3393,6 +3396,9 @@ export class AgentXDaemon {
     const settings = dueTimeSettingsOf(this.config.requests)
     if (settings.mode === "off" || !this.db) return undefined
     return dueTimesCtx(this.db, settings, {
+      // Kept on the daemon: the context is built per call, the rows are
+      // read at most once a minute per agent (#1920).
+      estimates: this.dueEstimates,
       capacity: capacityOf(settings, this.config.admission?.maxSessions),
       lanes: (id) => this.registry.getAgent(id)?.maxConcurrent ?? 1,
       staleAfterHours: this.config.requests?.staleAfterHours,

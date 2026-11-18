@@ -10,7 +10,7 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { DEFAULT_DUE_TIME_SETTINGS, dueTimesCtx, NO_SOURCE_REFUSAL, type DueTimeMode } from "../src/requests/due-times"
 import { place, schedule, type QueueItem, type SlotOptions } from "../src/requests/slots"
-import { correctionFactors } from "../src/requests/estimates"
+import { correctionFactors, EstimateCache } from "../src/requests/estimates"
 import { dueReport } from "../src/requests/due-report"
 
 // Due times from the queue (#1909): the agent registers the work, the
@@ -332,6 +332,21 @@ describe("the correction factor", () => {
     // Nor do they make the usual minutes of the work.
     expect(ctx.usual("writer", "writing")).toBeNull()
     expect((promise("on", { estimateMinutes: 20 }).body as any).due.dueAt).toBe(T0 + 20 * MIN)
+  })
+
+  it("a cache shared by the daemon keeps the rows for a minute across calls (#1920)", () => {
+    // The daemon builds a context per call: the rows must outlive it.
+    let now = T0
+    const estimates = new EstimateCache()
+    const ctxOf = () => dueTimesCtx(db, { ...DEFAULT_DUE_TIME_SETTINGS, mode: "shadow" }, { capacity: 4, lanes: () => 1, now: () => now, estimates }, slots)
+    expect(ctxOf().factor("writer")).toMatchObject({ factor: 1, measured: false })
+    for (const i of [1, 2, 3]) closed("writer", 10, 30, i, 20)
+    // A new context within the minute: the kept rows, no new read.
+    now = T0 + 30_000
+    expect(ctxOf().factor("writer")).toMatchObject({ factor: 1, measured: false })
+    // After the minute: read again.
+    now = T0 + 61_000
+    expect(ctxOf().factor("writer")).toMatchObject({ factor: 2, measured: true })
   })
 })
 
