@@ -158,9 +158,13 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
     const usual = ctx.usual(ask.agentId, ask.work)
     if (usual !== null) { estimate = usual / Math.max(0.01, factor.factor); from = "usual" } else { estimate = ctx.settings.defaultEstimateMinutes; from = "default" }
   }
+  // One read per agent: the queue is placed several times below.
+  const factors = new Map<string, number>([[ask.agentId, factor.factor]])
+  const lanes = new Map<string, number>()
   const opts: SlotOptions = {
-    now, capacity: ctx.capacity, lanes: ctx.lanes,
-    factor: (a) => (a === ask.agentId ? factor.factor : ctx.factor(a).factor),
+    now, capacity: ctx.capacity,
+    lanes: (a) => lanes.get(a) ?? (lanes.set(a, ctx.lanes(a)), lanes.get(a)!),
+    factor: (a) => factors.get(a) ?? (factors.set(a, ctx.factor(a).factor), factors.get(a)!),
     defaultMinutes: () => ctx.settings.defaultEstimateMinutes,
   }
   const id = ask.requestId ?? "(new)"
