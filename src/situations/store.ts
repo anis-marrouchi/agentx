@@ -13,6 +13,9 @@ import { randomUUID } from "crypto"
 // The gate log keeps every message the gate dropped (active mode) or would
 // have dropped (shadow mode), with the message itself so a person can
 // re-deliver a wrong drop (`agentx situation release <id>`).
+//
+// Old rows go on a write, at most once an hour (#1921): gate log rows and
+// chat records untouched for 30 days. No timer of its own.
 
 export type Phase = "during" | "ending" | "ended"
 export type EndReason = "closed" | "courtesy loop" | "stale" | "person"
@@ -50,7 +53,7 @@ export interface GateLogRow {
   phase: string
   outcome: "drop" | "would-drop"
   reason: string
-  /** The inbound message, for a release. Text clipped. */
+  /** The inbound message, for a release. Kept under GATE_MESSAGE_MAX. */
   message: string
   releasedAt: number | null
 }
@@ -91,6 +94,7 @@ export function ensureSituationTables(db: Database.Database): void {
       released_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_situation_gate_log_at ON situation_gate_log(at);
+    CREATE INDEX IF NOT EXISTS idx_situations_phase_changed_at ON situations(phase_changed_at);
   `)
 }
 
@@ -104,24 +108,92 @@ const LOG_COLS = `id, at, key, situation_id AS situationId, message_id AS messag
 
 /** Gate log rows are kept this long. */
 const LOG_KEEP_MS = 30 * 24 * 3600_000
+/** A chat's record untouched this long is removed (#1921). Not shorter
+ *  than the largest `maxAge.duringHours` (30 days): such a talk is stale
+ *  anyway, and the next message on that chat starts a new record. */
+export const SITUATION_KEEP_MS = 30 * 24 * 3600_000
+/** Old rows are pruned on a write, at most this often. */
+const PRUNE_EVERY_MS = 3600_000
+/** The stored inbound message (JSON, for a release) stays under this many
+ *  characters (#1921). */
+export const GATE_MESSAGE_MAX = 16_000
+const MESSAGE_TEXT_MAX = 4_000
+
+/** Keep the stored message under GATE_MESSAGE_MAX and still JSON a release
+ *  can read: clip the text fields first, then leave out the large optional
+ *  parts, then keep only what a re-delivery needs. */
+export function clipGateMessage(json: string): string {
+  if (json.length <= GATE_MESSAGE_MAX) return json
+  let m: Record<string, unknown>
+  try { m = JSON.parse(json) as Record<string, unknown> } catch { return JSON.stringify({ clipped: true }) }
+  const clip = (v: unknown) => (typeof v === "string" && v.length > MESSAGE_TEXT_MAX ? v.slice(0, MESSAGE_TEXT_MAX) : v)
+  m = { ...m, text: clip(m.text), replyToText: clip(m.replyToText), clipped: true }
+  let out = JSON.stringify(m)
+  for (const big of ["channelMeta", "runbookFiles", "media", "replyToText"]) {
+    if (out.length <= GATE_MESSAGE_MAX) return out
+    delete m[big]
+    out = JSON.stringify(m)
+  }
+  if (out.length <= GATE_MESSAGE_MAX) return out
+  const s = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : undefined)
+  const sender = (m.sender ?? {}) as Record<string, unknown>
+  const group = m.group as Record<string, unknown> | undefined
+  return JSON.stringify({
+    id: s(m.id, 300), channel: s(m.channel, 50), accountId: s(m.accountId, 200),
+    sender: { id: s(sender.id, 300), name: s(sender.name, 120), ...(sender.isBot ? { isBot: true } : {}) },
+    ...(group ? { group: { id: s(group.id, 300), name: s(group.name, 200) } } : {}),
+    text: s(m.text, MESSAGE_TEXT_MAX) ?? "", timestamp: s(m.timestamp, 40), clipped: true,
+  })
+}
+
+type StatementName =
+  | "get" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
+  | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
 
 export class SituationStore {
+  /** Prepared once (#1921): better-sqlite3 statements are reusable. */
+  private readonly q: Record<StatementName, Database.Statement>
+  private lastPrune = 0
+
   constructor(private readonly db: Database.Database, private readonly now: () => number = Date.now) {
     ensureSituationTables(db)
+    this.q = {
+      get: db.prepare(`SELECT ${COLS} FROM situations WHERE key = ?`),
+      create: db.prepare(
+        `INSERT OR IGNORE INTO situations (id, key, phase, end_reason, entered_at, phase_changed_at, why, slot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ),
+      move: db.prepare(
+        `UPDATE situations SET phase = ?, phase_changed_at = ?, why = ?, set_by = ?, end_reason = ?,
+           end_generation = end_generation + ?, slot = ?, slot_by = NULL
+         WHERE key = ? AND phase = ? AND phase_changed_at = ?`,
+      ),
+      setOwner: db.prepare("UPDATE situations SET owner_agent = ? WHERE key = ? AND owner_agent IS NULL"),
+      takeSlot: db.prepare("UPDATE situations SET slot = 'taken', slot_by = ? WHERE key = ? AND phase = 'ending' AND slot = 'free'"),
+      freeSlot: db.prepare("UPDATE situations SET slot = 'free', slot_by = NULL WHERE key = ? AND slot = 'taken' AND slot_by = ?"),
+      logGate: db.prepare(
+        `INSERT INTO situation_gate_log (at, key, situation_id, message_id, channel, chat_id, sender_id, sender_name, sender_kind, text, phase, outcome, reason, message)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ),
+      gateRow: db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log WHERE id = ?`),
+      gateLog: db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log ORDER BY id DESC LIMIT ?`),
+      gateLogByOutcome: db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log WHERE outcome = ? ORDER BY id DESC LIMIT ?`),
+      markReleased: db.prepare("UPDATE situation_gate_log SET released_at = ? WHERE id = ? AND released_at IS NULL"),
+      pruneLog: db.prepare("DELETE FROM situation_gate_log WHERE at < ?"),
+      pruneSituations: db.prepare("DELETE FROM situations WHERE phase_changed_at < ?"),
+    }
   }
 
   get(key: string): SituationRow | null {
-    return (this.db.prepare(`SELECT ${COLS} FROM situations WHERE key = ?`).get(key) as SituationRow | undefined) ?? null
+    return (this.q.get.get(key) as SituationRow | undefined) ?? null
   }
 
   /** First message on a chat: a record in `during` (or straight to
    *  `ending` when that first message is a closer). */
   create(key: string, phase: Phase, why: string, endReason?: EndReason): boolean {
     const at = this.now()
-    const r = this.db.prepare(
-      `INSERT OR IGNORE INTO situations (id, key, phase, end_reason, entered_at, phase_changed_at, why, slot)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(randomUUID(), key, phase, phase === "ended" ? (endReason ?? "closed") : null, at, at, why, phase === "ended" ? "used" : "free")
+    this.prune(at)
+    const r = this.q.create.run(randomUUID(), key, phase, phase === "ended" ? (endReason ?? "closed") : null, at, at, why, phase === "ended" ? "used" : "free")
     return r.changes > 0
   }
 
@@ -130,11 +202,7 @@ export class SituationStore {
    *  phase starts with a free slot; an end marks it used. */
   move(key: string, from: { phase: Phase; since: number }, to: Phase, opts: { why: string; setBy?: SetBy; endReason?: EndReason }): boolean {
     const bump = from.phase === "ended" && to !== "ended" ? 1 : 0
-    const r = this.db.prepare(
-      `UPDATE situations SET phase = ?, phase_changed_at = ?, why = ?, set_by = ?, end_reason = ?,
-         end_generation = end_generation + ?, slot = ?, slot_by = NULL
-       WHERE key = ? AND phase = ? AND phase_changed_at = ?`,
-    ).run(to, Math.max(this.now(), from.since + 1), opts.why, opts.setBy ?? "rule", to === "ended" ? (opts.endReason ?? "closed") : null,
+    const r = this.q.move.run(to, Math.max(this.now(), from.since + 1), opts.why, opts.setBy ?? "rule", to === "ended" ? (opts.endReason ?? "closed") : null,
       bump, to === "ended" ? "used" : "free", key, from.phase, from.since)
     return r.changes > 0
   }
@@ -143,7 +211,7 @@ export class SituationStore {
    *  the one goodbye: the slot is used and the talk is ended (closed). */
   noteSent(key: string, agentId?: string, opts: { asked?: boolean } = {}): boolean {
     const row = this.get(key)
-    if (agentId && row && !row.ownerAgent) this.db.prepare("UPDATE situations SET owner_agent = ? WHERE key = ? AND owner_agent IS NULL").run(agentId, key)
+    if (agentId && row && !row.ownerAgent) this.q.setOwner.run(agentId, key)
     if (!row || row.phase !== "ending") return false
     // A reply that asks something is not a goodbye: the answer to it must
     // reach the agent, so the talk goes on.
@@ -154,38 +222,43 @@ export class SituationStore {
   /** The goodbye turn starts: the slot is taken by `by` (S2). One SQLite
    *  update, so two turns cannot both take it. */
   takeSlot(key: string, by: string): boolean {
-    return this.db.prepare("UPDATE situations SET slot = 'taken', slot_by = ? WHERE key = ? AND phase = 'ending' AND slot = 'free'").run(by, key).changes > 0
+    return this.q.takeSlot.run(by, key).changes > 0
   }
 
   /** The turn that took the slot ended. Nothing was sent: free it again. */
   freeSlot(key: string, by: string): boolean {
-    return this.db.prepare("UPDATE situations SET slot = 'free', slot_by = NULL WHERE key = ? AND slot = 'taken' AND slot_by = ?").run(key, by).changes > 0
+    return this.q.freeSlot.run(key, by).changes > 0
   }
 
   logGate(row: Omit<GateLogRow, "id" | "at" | "releasedAt">): number {
     const at = this.now()
-    const r = this.db.prepare(
-      `INSERT INTO situation_gate_log (at, key, situation_id, message_id, channel, chat_id, sender_id, sender_name, sender_kind, text, phase, outcome, reason, message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(at, row.key, row.situationId, row.messageId, row.channel, row.chatId, row.senderId, row.senderName.slice(0, 120),
-      row.senderKind, row.text.slice(0, 500), row.phase, row.outcome, row.reason, row.message)
-    const id = Number(r.lastInsertRowid)
-    if (id % 200 === 0) this.db.prepare("DELETE FROM situation_gate_log WHERE at < ?").run(at - LOG_KEEP_MS)
-    return id
+    this.prune(at)
+    const r = this.q.logGate.run(at, row.key, row.situationId, row.messageId, row.channel, row.chatId, row.senderId, row.senderName.slice(0, 120),
+      row.senderKind, row.text.slice(0, 500), row.phase, row.outcome, row.reason.slice(0, 500), clipGateMessage(row.message))
+    return Number(r.lastInsertRowid)
+  }
+
+  /** Remove gate log rows and chat records past their keep time. Runs on
+   *  a write, at most once an hour. */
+  private prune(at: number): void {
+    if (at - this.lastPrune < PRUNE_EVERY_MS) return
+    this.lastPrune = at
+    this.q.pruneLog.run(at - LOG_KEEP_MS)
+    this.q.pruneSituations.run(at - SITUATION_KEEP_MS)
   }
 
   gateRow(id: number): GateLogRow | null {
-    return (this.db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log WHERE id = ?`).get(id) as GateLogRow | undefined) ?? null
+    return (this.q.gateRow.get(id) as GateLogRow | undefined) ?? null
   }
 
   gateLog(opts: { limit?: number; outcome?: GateLogRow["outcome"] } = {}): GateLogRow[] {
     const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
     return opts.outcome
-      ? this.db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log WHERE outcome = ? ORDER BY id DESC LIMIT ?`).all(opts.outcome, limit) as GateLogRow[]
-      : this.db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log ORDER BY id DESC LIMIT ?`).all(limit) as GateLogRow[]
+      ? this.q.gateLogByOutcome.all(opts.outcome, limit) as GateLogRow[]
+      : this.q.gateLog.all(limit) as GateLogRow[]
   }
 
   markReleased(id: number): boolean {
-    return this.db.prepare("UPDATE situation_gate_log SET released_at = ? WHERE id = ? AND released_at IS NULL").run(this.now(), id).changes > 0
+    return this.q.markReleased.run(this.now(), id).changes > 0
   }
 }
