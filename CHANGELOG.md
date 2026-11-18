@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.228.2](https://github.com/anis-marrouchi/agentx/compare/v0.228.1...v0.228.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **workflows:** a subProcess parent hears when its child run fails ([#1906](https://github.com/anis-marrouchi/agentx/issues/1906)) ([386dbd8](https://github.com/anis-marrouchi/agentx/commit/386dbd8f0fdecc8bdab473eff175c016ee496f5f)), closes [#1905](https://github.com/anis-marrouchi/agentx/issues/1905)
+
 ## [0.228.1](https://github.com/anis-marrouchi/agentx/compare/v0.228.0...v0.228.1) (2026-11-17)
 
 
