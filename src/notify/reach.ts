@@ -145,6 +145,16 @@ export class ReachMarks {
     return this.seen(ids, via)
   }
 
+  /** The owner wrote in this chat: what was recorded there before, and
+   *  not seen yet, is seen (#1936). Only record-only rows: a gated row's
+   *  marks stay as they were, so the urgent ladder acts as before. */
+  seenInChat(channel: string, chatId: string, via = "chat", at = this.now()): number {
+    return this.db.prepare(
+      `UPDATE owner_told SET seen_at = ?, seen_via = ?
+       WHERE outcome = 'recorded' AND channel = ? AND chat_id = ? AND seen_at IS NULL AND at <= ? AND at >= ?`,
+    ).run(at, via, channel, chatId, at, at - ANSWER_LOOKBACK_MS).changes
+  }
+
   /** Marks rows seen, with the rows they carry on or that carry them on
    *  (an escalation is the same item). Returns how many changed. */
   seen(ids: number[], via: string, at = this.now()): number {

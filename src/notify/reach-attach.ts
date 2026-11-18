@@ -94,6 +94,9 @@ export function attachReach(deps: ReachDeps): AttachedReach {
       // A pickup is the daemon's own turn (plans, the requests check), never a reply.
       if (p.pickup || !p.humanRoot || !deps.isOwnerTurn(p)) return
       presence.touch(turnSurface(p.channel, p.chatId))
+      // His next message in a record-only chat says he saw what an agent
+      // wrote there (#1936, the number). Gated rows are left alone.
+      marks.seenInChat(p.channel, p.chatId)
       // A reply in the chat a request was asked in answers what he was
       // told about it.
       const ids = [...new Set(marks.openRequestRows().map((r) => r.requestId))]
