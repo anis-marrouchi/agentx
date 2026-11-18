@@ -59,17 +59,27 @@ export function noteCountedSend(msg: Pick<OutgoingMessage, "channel" | "chatId" 
   try { store.noteSent(situationKey(msg.channel, msg.accountId, msg.chatId), msg.agentId, { asked }) } catch { /* the send went out; the mark is best-effort */ }
 }
 
+/** The account the record key uses for this send. A Telegram private chat
+ *  is keyed per bot (the person's id is the same for every bot), so a
+ *  send with no accountId (channel.reply, a workflow send) takes the bot
+ *  the adapter itself will send from: the one it last saw the chat on. */
+function keyAccount(adapter: { accountForChat?: (chatId: string) => string | undefined }, msg: { channel: string; chatId: string; accountId?: string }): string | undefined {
+  if (msg.accountId || msg.channel !== "telegram" || String(msg.chatId).startsWith("-")) return msg.accountId
+  try { return adapter.accountForChat?.(msg.chatId) } catch { return undefined }
+}
+
 export async function sendToChat(
-  adapter: Pick<ChannelAdapter, "name" | "send">,
+  adapter: Pick<ChannelAdapter, "name" | "send"> & { accountForChat?: (chatId: string) => string | undefined },
   msg: OutgoingMessage & { accountId?: string },
   opts: SendToChatOpts,
 ): Promise<string | void> {
+  const keyed = { ...msg, accountId: keyAccount(adapter, msg) }
   // Checked right before the adapter call: the only place that can stop
   // a send already past a cancel (S7).
-  const stale = staleSituationSend(msg, opts.situation)
+  const stale = staleSituationSend(keyed, opts.situation)
   if (stale) throw new Error(stale)
   // The Telegram adapter reads `accountId` off the message to pick the bot.
   const id = await adapter.send(msg)
-  if (opts.countsAsReply) noteCountedSend(msg)
+  if (opts.countsAsReply) noteCountedSend(keyed)
   return id
 }

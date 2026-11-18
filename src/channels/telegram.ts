@@ -526,6 +526,13 @@ export class TelegramAdapter implements ChannelAdapter {
       : this.getDefaultToken()
   }
 
+  /** The account a send with no accountId leaves from, as resolveToken
+   *  picks it: the one this chat was last seen on, else the first. The
+   *  courtesy gate keys a private chat by it (#1921). */
+  accountForChat(chatId: string): string | undefined {
+    return this.chatAccountMap.get(String(chatId)) ?? Array.from(this.accounts.keys())[0]
+  }
+
   /** Track which account a chat was last seen on (for DMs) */
   private chatAccountMap: Map<string, string> = new Map()
   // Bot user IDs and usernames resolved at startup (accountId → { userId, username })

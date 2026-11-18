@@ -67,7 +67,9 @@ The gate starts in **shadow** mode, so you can see what it would do before it do
 | `agentx situation log` | Lists the newest gate log rows. `--limit <n>` sets how many (50 by default), `--dropped` shows only held messages, `--would-drop` only shadow-mode rows, `--json` prints JSON. |
 | `agentx situation release <id>` | Sends a held message on to your agent, once, and opens the talk again. Only rows with outcome **dropped** can be released, and each only once. |
 
-Both commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands.
+Both commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
+
+The gate log and each chat's record are kept for 30 days. A held message is stored for release with its text cut to the first 4,000 characters if it is longer.
 
 ## Check it worked
 
@@ -81,4 +83,6 @@ Both commands take `--node <url>` and `--token <token>` to reach another machine
 - **The log stays empty:** check that `situations.mode` is not `off` and that the chat is on Telegram, WhatsApp, Discord or Slack. Shadow and active modes only list messages after a talk has ended.
 - **A real message was held:** release it with `agentx situation release <id>`, then set `situations.mode` back to `shadow` and report the text, so the phrase list can be fixed.
 - **Your agent never ends the talk:** the talk only ends when your agent's reply goes out while the talk is **ending**. If your agent answered with nothing, the talk stays in **ending** and is treated as over after `situations.maxAge.endingMinutes`.
+- **`agentx situation log --node <url>` answers HTTP 401:** reading the gate log from another machine needs the mesh token. Pass it with `--token`, or run the command on the machine itself.
+- **An old held message is missing from the log:** rows older than 30 days are removed.
 - **`release` answers "was already released" or "was not dropped":** the row was sent on before, or it is a shadow-mode row, which was never held.

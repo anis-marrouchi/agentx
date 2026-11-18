@@ -70,6 +70,9 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/a2a/delegations" || path.startsWith("/a2a/delegations/") ||
     // Traces carry each task's full prompt and final answer.
     path === "/traces" || path.startsWith("/traces/") ||
+    // The courtesy gate's log (#1921): the text of held chat messages and
+    // who sent them. Its release (POST) is in MESH_PROTECTED_PATHS.
+    path === "/situations/gate-log" ||
     // Past voice exchanges: what was asked and answered out loud. A
     // replay under it makes this host speak.
     path === "/voice/history" || path.startsWith("/voice/history/") ||
