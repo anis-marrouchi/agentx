@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.230.0](https://github.com/anis-marrouchi/agentx/compare/v0.229.0...v0.230.0) (2026-11-18)
+
+
+### Features
+
+* **requests:** a switch for each wake-up [#1910](https://github.com/anis-marrouchi/agentx/issues/1910) turned on ([#1912](https://github.com/anis-marrouchi/agentx/issues/1912)) ([#1914](https://github.com/anis-marrouchi/agentx/issues/1914)) ([85b84d1](https://github.com/anis-marrouchi/agentx/commit/85b84d1e6852ae895e0c641abf7a0b9911a50aa4))
+
+
+### Bug Fixes
+
+* **requests:** a due time set after a rollback is still pushed once ([#1912](https://github.com/anis-marrouchi/agentx/issues/1912)) ([#1913](https://github.com/anis-marrouchi/agentx/issues/1913)) ([fabcc2d](https://github.com/anis-marrouchi/agentx/commit/fabcc2deb240c443f1e3ae74848f3f6f835ce7d1))
+
 ## [0.229.0](https://github.com/anis-marrouchi/agentx/compare/v0.228.2...v0.229.0) (2026-11-18)
 
 
