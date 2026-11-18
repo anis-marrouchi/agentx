@@ -61,6 +61,17 @@ A line that starts with `nobody on it` is an open job that nothing holds right n
 
 Every open job is meant to have one of three things: a live run, a set wake, or a named person or agent it waits on with a due time. A job with none of them is stalled, and that is what the page is for: to make such a job visible instead of quiet.
 
+## The Queue block
+
+When `requests.dueTimes.mode` is `"shadow"` or `"on"`, a **Queue** block sits above the list. It shows how AgentX works out due times from the open work: one line per agent, the busiest first. A line reads, for example, `@writer · 3 jobs, 2 h of work · next ends in 40 min · clear in 2 h · correction ×1.5`:
+
+- **jobs** and **of work:** the agent's open jobs that wait for its time, and their minutes, with its correction factor applied.
+- **next ends:** when the first of them would end.
+- **clear:** when the last of them would end.
+- **correction:** how long the agent's work really took against its estimates. It is not shown when it is 1.
+
+The block only reads. See [Due times the daemon gives](../jobs/open-requests.md#due-times-the-daemon-gives-the-queue) for how the times are worked out and how to turn it on.
+
 ## How long a job is kept
 
 Jobs leave the list by themselves after the number of days set in **Keep closed requests for (days)** (`requests.retentionDays`, 90 by default; see [open requests](../jobs/open-requests.md)).
@@ -146,6 +157,7 @@ When the daemon has no job with that id, `GET /jobs/<id>` answers `404` with `le
 3. Select the row. Its details list a run, and its status is **running**.
 4. When the work ends, select **Done**. The job is there, and its status line starts with `done`.
 5. **Terminal:** run `curl -s "http://127.0.0.1:18800/jobs?state=all"`. The same job is in `jobs`, with the same `status`.
+6. **Browser:** with `requests.dueTimes.mode` set to `"shadow"`, select **Refresh** on the Jobs page. The **Queue** block lists each agent that has open work.
 
 ## If something is wrong
 
@@ -155,4 +167,5 @@ When the daemon has no job with that id, `GET /jobs/<id>` answers `404` with `le
 - **A job is stalled:** open it to see its last run and its tree. Ask the agent that owes it to pick it up, or, when it is your own request, select **See it in Requests** and decide on it there.
 - **A job handed to another machine stays `waiting` for days:** that machine may keep no jobs, or run an older AgentX. Open the job: it shows **Not read from** and that machine's name. The daemon does not mark such a job stalled, because it cannot tell whether the work happened. Update AgentX on that machine, or set `requests.jobs.enabled` to `true` there.
 - **The page says "Could not read the jobs":** the machine answered with an error or refused the dashboard's key. Select **Refresh** on the Hub. If it stays, see [It's not answering](../help/its-not-answering.md).
+- **No Queue block above the list:** `requests.dueTimes.mode` is `"off"` on that machine, or no agent there has open work.
 - **You were looking for your recurring jobs:** they are under **Schedules** in the nav, under **Automation**.
