@@ -1,7 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
-import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
+import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
 import { askSeat } from "@/decisions/seat"
@@ -3501,7 +3501,7 @@ export class AgentRegistry {
     const jobModel = jobModelFor(edgeRoute, routedModel)
     const downgradeDropped = Boolean(routedModel) && jobModel !== routedModel
     if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents || downgradeDropped || (edgeRoute.impliedP ?? 0) >= IMPLIED_AT)) {
-      this.log(`[${task.agentId}] ${edgeRoute.reason}${downgradeDropped ? ` — downgrade to ${routedModel} dropped` : ""}`)
+      this.log(`[${task.agentId}] ${edgeRouteLog(edgeRoute, routedModel)}`)
     }
 
     const taskWithSystemPrompt: AgentTask = {
