@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.232.0](https://github.com/anis-marrouchi/agentx/compare/v0.231.4...v0.232.0) (2026-11-18)
+
+
+### Features
+
+* **notify:** owner mediator phase 0, the number of items not seen within 24 h ([#1937](https://github.com/anis-marrouchi/agentx/issues/1937)) ([9784347](https://github.com/anis-marrouchi/agentx/commit/9784347e44e8b1ea5cf3cd91fae6db3240f50d1b))
+
 ## [0.231.4](https://github.com/anis-marrouchi/agentx/compare/v0.231.3...v0.231.4) (2026-11-18)
 
 
