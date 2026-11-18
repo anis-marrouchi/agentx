@@ -262,6 +262,9 @@ export function ensureRequestTables(db: Database.Database): void {
   ensureColumns(db, "requests", [["sent_back_at", "INTEGER"]])
   // When the requests check resent it on its own (#1542): once, ever.
   ensureColumns(db, "requests", [["resent_at", "INTEGER"]])
+  // When the requests check pushed a promise that fell due (#1908): once
+  // per due time, so one the owner hands on afterwards gets the quiet time.
+  ensureColumns(db, "requests", [["due_pushed_at", "INTEGER"]])
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
@@ -449,6 +452,52 @@ export class RequestStore {
     ).get(agentId, channel, chatId, since)
   }
 
+  /** Did this agent record something with a time behind it since `since`
+   *  (the start of a run, #1908)? An open request, promise or job of its
+   *  own whose due time is still ahead of `since`, made or changed since;
+   *  a job of its own with a wake armed since; a plan step of its own told
+   *  to wait until a time since. */
+  dueRecordedSince(agentId: string, since: number): boolean {
+    if (this.db.prepare(
+      `SELECT 1 FROM requests WHERE agent_id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)}) AND due_at IS NOT NULL AND due_at > ?
+         AND (created_at >= ? OR updated_at >= ?) LIMIT 1`,
+    ).get(agentId, ...CLOSED_STATES, since, since, since)) return true
+    if (this.hasJobColumns() && this.db.prepare(
+      `SELECT 1 FROM requests WHERE agent_id = ? AND wake_at IS NOT NULL AND wake_at > ? AND updated_at >= ?
+         AND state NOT IN (${placeholders(CLOSED_STATES.length)}) LIMIT 1`,
+    ).get(agentId, since, since, ...CLOSED_STATES)) return true
+    const steps = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'request_plan_steps'").get()
+      && (this.db.prepare("PRAGMA table_info(request_plan_steps)").all() as Array<{ name: string }>).some((c) => c.name === "wait_until")
+    return !!steps && !!this.db.prepare(
+      "SELECT 1 FROM request_plan_steps WHERE agent_id = ? AND wait_until IS NOT NULL AND wait_until > ? AND updated_at >= ? LIMIT 1",
+    ).get(agentId, since, since)
+  }
+
+  /** Promises an agent owes that are past their due time, still open and
+   *  at work, and not pushed for that due time yet (#1908): the requests
+   *  check wakes the agent and tells whoever waits, once (`markDuePushed`). */
+  duePromises(now: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN ('in_progress', 'waiting_other')
+         AND due_at IS NOT NULL AND due_at <= ? AND due_pushed_at IS NULL ORDER BY due_at, rowid`,
+    ).all(OWED_TO_OWNER, now).map(toRecord)
+  }
+
+  /** The promise was pushed for its due time. A new due time (`setLoop`)
+   *  clears the mark. */
+  markDuePushed(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET due_pushed_at = ? WHERE id = ?").run(now, id)
+  }
+
+  /** Seen once: the job store's columns are on the table. */
+  private hasJobColumns(): boolean {
+    if (!this.jobColumns) {
+      const cols = this.db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
+      this.jobColumns = cols.some((c) => c.name === "wake_at") && cols.some((c) => c.name === "job_state")
+    }
+    return this.jobColumns
+  }
+
   /** Give an open request a due time or a checker, from accept or wait. */
   /** A promise's due time wakes the agent that owes it (noqta#858): the
    *  job wake (`dueWakes`) starts its run at `at`. Only a loop no run has
@@ -456,11 +505,7 @@ export class RequestStore {
    *  already armed stands. True when the wake is armed. */
   armDueWake(id: string, at: number, note: string, now: number): boolean {
     // The job columns come with the job store; without it there is no wake.
-    if (!this.jobColumns) {
-      const cols = this.db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-      this.jobColumns = cols.some((c) => c.name === "wake_at") && cols.some((c) => c.name === "job_state")
-      if (!this.jobColumns) return false
-    }
+    if (!this.hasJobColumns()) return false
     return this.db.prepare(
       `UPDATE requests SET job_state = 'continue', wake_at = ?, job_note = ?, updated_at = ?
        WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND job_state IS NULL AND wake_at IS NULL`,
@@ -468,7 +513,7 @@ export class RequestStore {
   }
 
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
-    if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
+    if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, due_pushed_at = NULL, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
     if (loop.closeWhen !== undefined) {
       this.db.prepare("UPDATE requests SET close_when = ?, verify_state = NULL, verify_detail = NULL, updated_at = ? WHERE id = ?")
         .run(loop.closeWhen ? JSON.stringify(loop.closeWhen) : null, now, id)

@@ -55,6 +55,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
 | `task-edge` | Is this task harder than the agent's own model does reliably, and would sub-agents help? When `active`, a sure "yes" runs that one task on the model in `decisions.routing.edgeModels` and can ask the agent to use sub-agents. See [Edge model and sub-agents](#edge-model-and-sub-agents). |
 | `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
+| `due-time` | Does this run's final reply, or a note it posted, set a due time that the agent owes, and who owes it? When `active`, a sure "yes" with nothing recorded asks the agent once to record it. See [Due times an agent writes](/jobs/open-requests#due-times-an-agent-writes-the-due-time-check). |
 | `tool-set` | Which set of built-in tools does a new Claude Code session need: read-only, change code, or everything? Shadow only: it records, the session still gets every tool. See [Tool set](#tool-set). |
 
 More seats exist in `src/decisions/seats/`; the table lists the ones this page refers to.

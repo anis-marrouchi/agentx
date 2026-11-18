@@ -114,6 +114,7 @@ import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
+import { DueTimeGate, madeSchedule, postedNotes } from "@/requests/due-gate"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, cutByRestart, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -866,6 +867,18 @@ export class AgentXDaemon {
         this.registry.setJobStateListener((runIds, ev) => {
           if (this.requests) recordRunState(this.requests.jobs, runIds, ev, Date.now())
         })
+        // A due time an agent writes gets a record, so a wake stands
+        // behind it (#1908). Does nothing while the due-time seat is off.
+        if (this.requests) {
+          const dueGate = new DueTimeGate({
+            store: this.requests.store,
+            notes: (runIds) => postedNotes(runIds.flatMap((id) => traceToolCalls(db, id))),
+            // A schedule the agent made in the run has its own firing.
+            alsoRecorded: (run) => madeSchedule(run.runIds.flatMap((id) => traceToolCalls(db, id))),
+            log: this.log,
+          })
+          this.registry.setDueTimeGate((run, askAgent) => dueGate.runEnded(run, askAgent))
+        }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
         // `requestStatus.channels`.
@@ -3210,6 +3223,8 @@ export class AgentXDaemon {
       store: requests.store,
       settings,
       plan,
+      // A plan's close judged a mismatch wakes the request's agent (#1908).
+      wake: (r, text) => this.tellRequestAgent(requests, r.agentId, text, r),
       generate: async (prompt, signal) => {
         const s = settings()
         if (!provider || providerName !== s.provider) {
@@ -3334,21 +3349,33 @@ export class AgentXDaemon {
       wakeJob: (id, note) => this.jobWake?.wakeFor(id, note) ?? false,
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
-      tellAgent: async (agentId, text, r) => {
-        // execute() does not reject: a turn that could not start comes
-        // back as { error } with no run events, so it is read here.
-        void this.registry.execute({
-          agentId,
-          message: text,
-          context: pickupContext(r.id),
-        }).then((res) => {
-          if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
-        }).catch((e: any) => {
-          pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now())
-          this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
-        })
+      tellAgent: async (agentId, text, r) => this.tellRequestAgent(requests, agentId, text, r),
+      // An agent that waits on a promise reads that it fell due as a
+      // notice, at the head of its next run (#1908).
+      tellRequester: (agentId, text) => {
+        if (this.registry.notices.count(agentId) >= MAX_NOTICES) return false
+        this.registry.notices.add(agentId, "the requests check", text)
+        return true
       },
       log: this.log,
+    })
+  }
+
+  /** Starts a turn on `agentId` for request `r`, in the request's own
+   *  pick-up chat, so the run is linked to it and a failure brings it
+   *  back. Fire and forget: the check never waits on a model. */
+  private tellRequestAgent(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord): void {
+    // execute() does not reject: a turn that could not start comes
+    // back as { error } with no run events, so it is read here.
+    void this.registry.execute({
+      agentId,
+      message: text,
+      context: pickupContext(r.id),
+    }).then((res) => {
+      if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
+    }).catch((e: any) => {
+      pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now())
+      this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
     })
   }
 

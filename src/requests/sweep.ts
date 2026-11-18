@@ -75,6 +75,10 @@ export interface RequestSweepDeps {
    *  or its pick-up then starts as the job's next run. False: not taken,
    *  the pick-up turn goes as before. Unset: always the pick-up turn. */
   wakeJob?: (requestId: string, note: string) => boolean
+  /** Gives an agent that waits on a promise the line that says it fell
+   *  due, without a run of its own (#1908). False: it could not take it
+   *  now. Unset: only the owner is told. */
+  tellRequester?: (agentId: string, text: string, request: RequestRecord) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
   /** Reads a request's issue or merge request home (#1522). Unset: homes
@@ -113,6 +117,8 @@ export interface RequestSweepResult {
   resent: number
   /** Notices held while a resend is due. */
   held: number
+  /** Promises that fell due: their agent woken, whoever waits told (#1908). */
+  duePushed: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -208,10 +214,17 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
   ].join("\n")
 }
 
+/** What an agent that waits on a promise reads when it falls due (#1908). */
+export function duePromiseText(r: RequestRecord): string {
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  return `[Promise due] ${r.id}: ${r.agentId} promised you this by ${when(r.dueAt!)} and it is not kept yet: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}\n` +
+    `${r.agentId} was woken to keep it now, and the owner is told. Nothing is needed from you unless your own work waits on it.`
+}
+
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0 }
   if (!settings.enabled) return result
 
   const proofSettings = { ...DEFAULT_CLOSE_PROOF, ...settings.closeProof }
@@ -342,6 +355,28 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     } catch (e: any) {
       log(`[requests] settle failed: ${e?.message ?? e}`)
     }
+  }
+
+  // A promise that fell due and is not kept (#1908): its agent is woken
+  // now, and whoever waits on it is told by this same check, not after
+  // the quiet time. Its checker ran above: a promise it closed is gone.
+  try {
+    for (const r of store.duePromises(now)) {
+      // Back done, and settled once quiet (#1214): left to that.
+      if (settings.settleHandedBack !== false && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue
+      const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+      const woken = deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
+      const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
+      const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
+      store.markDuePushed(r.id, now)
+      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) {
+        result.quiet++
+        result.duePushed++
+        log(`[requests] ${r.id} fell due: ${r.agentId} ${woken ? "woken" : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`)
+      }
+    }
+  } catch (e: any) {
+    log(`[requests] due promises failed: ${e?.message ?? e}`)
   }
 
   try {

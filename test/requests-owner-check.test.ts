@@ -6,7 +6,7 @@ import Database from "better-sqlite3"
 import { OWNER_BY, RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
-import { DEFAULT_OWNER_CHECK, MISMATCH_PREFIX, OwnerWordsCheck, ownerCheckPrompt, readVerdict } from "../src/requests/owner-check"
+import { DEFAULT_OWNER_CHECK, MISMATCH_PREFIX, OwnerWordsCheck, PLAN_BY, ownerCheckPrompt, planMismatchText, readVerdict } from "../src/requests/owner-check"
 
 const SAID = "yes, switch the production step on and deploy it, you have my approval, no need to wait for the tester"
 const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
@@ -129,5 +129,70 @@ describe("readVerdict / prompt", () => {
     store.progress(ID, 5_500)
     store.close(ID, "done", "https://example.com/mr/2", 6_000, null, "plan")
     expect(ownerCheckPrompt(store.get(ID)!)).toContain("Closed as DONE by plan. Evidence given: https://example.com/mr/2")
+  })
+})
+
+// A plan that closed too early wakes its agent (#1908): the flag alone woke nobody.
+describe("a plan's close judged a mismatch", () => {
+  const MISMATCH = '{"verdict":"mismatch","why":"the review you asked for by noon was never posted"}'
+
+  function withWake(answer: string) {
+    const woken: Array<{ id: string; agentId: string; text: string }> = []
+    const lines: string[] = []
+    const c = new OwnerWordsCheck({
+      store,
+      settings: () => ({ ...DEFAULT_OWNER_CHECK, enabled: true }),
+      generate: async () => answer,
+      wake: (r, text) => { woken.push({ id: r.id, agentId: r.agentId, text }) },
+      log: (l) => lines.push(l),
+      now: () => 10_000,
+    })
+    return { c, woken, lines }
+  }
+
+  it("reopens the request and wakes the agent that owns it, with why", async () => {
+    store.progress(ID, 5_500)
+    expect(store.close(ID, "done", "plan: 2 of 2 steps finished", 6_000, null, PLAN_BY)).toBe(true)
+    expect(store.get(ID)).toMatchObject({ state: "done", closedBy: "plan", ownerCheck: "pending" })
+    const { c, woken } = withWake(MISMATCH)
+    const out = await c.run()
+    expect(out).toMatchObject({ checked: 1, reopened: [ID], woken: [ID] })
+    expect(store.get(ID)).toMatchObject({ state: "needs_attention", ownerCheck: "mismatch", closedAt: null })
+    expect(woken).toHaveLength(1)
+    expect(woken[0]).toMatchObject({ id: ID, agentId: "coder" })
+    expect(woken[0].text).toContain("the review you asked for by noon was never posted")
+    expect(woken[0].text).toContain(SAID)
+    expect(woken[0].text).toContain(`id:"${ID}"`)
+    // Once: the next check has nothing left to judge.
+    expect((await c.run()).woken).toEqual([])
+    expect(woken).toHaveLength(1)
+  })
+
+  it("wakes nobody when the plan's close matches, or when an agent closed it by hand", async () => {
+    store.progress(ID, 5_500)
+    store.close(ID, "done", "plan: 2 of 2 steps finished", 6_000, null, PLAN_BY)
+    const ok = withWake('{"verdict":"match","why":"it did what was asked"}')
+    expect((await ok.c.run()).woken).toEqual([])
+    expect(ok.woken).toEqual([])
+    expect(store.get(ID)?.state).toBe("done")
+  })
+
+  it("keeps the request reopened when the wake fails", async () => {
+    store.progress(ID, 5_500)
+    store.close(ID, "done", "plan: 2 of 2 steps finished", 6_000, null, PLAN_BY)
+    const lines: string[] = []
+    const c = new OwnerWordsCheck({
+      store, settings: () => ({ ...DEFAULT_OWNER_CHECK, enabled: true }), generate: async () => MISMATCH,
+      wake: () => { throw new Error("agent gone") }, log: (l) => lines.push(l), now: () => 10_000,
+    })
+    expect(await c.run()).toMatchObject({ reopened: [ID], woken: [] })
+    expect(store.get(ID)?.state).toBe("needs_attention")
+    expect(lines.join("\n")).toContain("agent gone")
+  })
+
+  it("tells the agent what is missing and how to close it", () => {
+    const text = planMismatchText(store.get(ID)!, "only step one was done")
+    expect(text).toContain("only step one was done")
+    expect(text).toContain("agentx_request")
   })
 })

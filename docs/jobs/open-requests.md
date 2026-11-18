@@ -140,6 +140,7 @@ An agent can close your request in a way that does not do what you asked. It may
 - **What is checked:** every close you did not make yourself. That includes an agent closing it as done or declined, a plan finishing, a promise or a check closing it, handed-on work settling it, and an agent running `agentx requests` from its own run. Your own closes (the Hub, the terminal, a card or a chat answer) are never checked.
 - **How:** within a minute or two of the close, AgentX makes one short call to the model you set (Sonnet by default, through the provider you already use). It sends your words, your latest note on the request, and how the request was closed. The model answers **match**, **mismatch** or **unclear**.
 - **On a mismatch:** the request opens again as **needs attention**, with the reason starting `Closed without doing what you asked`. You are told once, like any request that needs attention. How it was closed stays in its record.
+- **On a mismatch after a plan finished:** a plan of steps closes its request when its last step finishes. If that close is a mismatch, the agent that owns the request is also woken with a new run. The run gets your words and the reason, and is told to do what is still missing. Before, the request only showed **needs attention** and no agent was woken.
 - **On a match or unclear:** nothing happens. `agentx requests show <id>` shows the result.
 - Closes older than 48 hours are not read. A call that fails is tried again at the next check; after three failures the close is marked unclear.
 
@@ -251,6 +252,51 @@ agentx requests settings --catch on
 
 To see how well the model reads replies on your own data, label a set of real replies and run `pnpm bench:catch <labelled.jsonl>`. See [bench/README.md](https://github.com/anis-marrouchi/agentx/blob/main/bench/README.md).
 
+### Due times an agent writes: the due-time check
+
+An agent can write a due time in a reply or in a note on an issue, for example "Due 12:00, set by me", and record nothing for it. Then nothing wakes the agent when the time comes, and you find out by asking. The due-time check closes that gap. It uses a *decision seat* named `due-time`: a small typed question that a separate decision service answers with yes or no (see [Jev](/architecture/jev#what-is-a-decision-seat)).
+
+At the end of each agent run, the seat reads the run's final reply and the notes the agent posted during the run. It answers two questions: does the text set a due time that this agent owes, and who owes it. What happens next depends on the seat's mode:
+
+| Mode | What happens |
+|---|---|
+| `off` (the default) | Nothing. |
+| `shadow` | One row is recorded for each finished run, with what the check would have done. Nothing else changes. |
+| `active` | When the seat says yes and the agent recorded nothing with a time in that run, the agent is asked once, in the same session, to record it. |
+
+In `active` mode, these count as a record made in the run: a promise or a request with a due time, a job state with a time (`continue` or `waiting … until`), a plan step told to wait until a time, or a schedule the agent made. The question asks the agent to open a promise with `agentx_request` (`due` and `closeWhen`), or to answer `Due: none`. If it does neither, the run's request moves to **needs attention** with a reason starting `Set a due time and recorded none`, and you are told once. A run with no open request gets a promise of its own, raised the same way.
+
+The seat only answers yes or no. AgentX does not read a time out of the agent's text: the time comes from the record the agent makes.
+
+To turn it on:
+
+1. Set up the decision service by following [Enable observation before changing behavior](/architecture/jev#enable-observation-before-changing-behavior).
+2. Add the seat in shadow mode. Merge this into `agentx.json`; it isn't a complete file:
+   ```json
+   {
+     "decisions": {
+       "enabled": true,
+       "seats": { "due-time": { "mode": "shadow" } }
+     }
+   }
+   ```
+3. **Terminal:** restart AgentX:
+   ```bash
+   agentx daemon restart
+   ```
+4. Leave it in shadow mode for three days.
+5. **Terminal:** read what it recorded:
+   ```bash
+   agentx decisions stats --since 3d
+   agentx decisions calls --seat due-time --since 3d
+   ```
+6. When its answers match what the agents really wrote, change `"mode": "shadow"` to `"mode": "active"` and restart AgentX again.
+
+Two more things now happen without the seat, wherever requests are on:
+
+- **A due time an agent accepts wakes it.** When an agent accepts your request with a due time (`agentx_request` with `action: "accept"` and `due`), AgentX starts a run of that agent at that time, as it already does for a promise.
+- **A promise that falls due is pushed the same minute.** The requests check wakes the agent that owes it, even when no wake-up was set for it, and tells whoever waits on it: you get **Promise not kept**, and an agent that waits on it reads a `[Promise due]` line at the start of its next run. It no longer waits for a day of silence first.
+
 ## Close on evidence, not on a claim
 
 A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:
@@ -306,7 +352,7 @@ To see them:
 
 An opened post also lists who a promise is owed to (**Promised to**), when it is due (**Due**), and what check closes it (**Closes when**), with what the check last said. A check that could not tell, or was not met, is shown in amber, with the reason.
 
-A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on.
+A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on. This happens at the first requests check after the due time, and the agent that owes it is woken by the same check (see [Due times an agent writes](#due-times-an-agent-writes-the-due-time-check)).
 
 ## QA sign-off
 
@@ -565,6 +611,10 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 23. **Terminal:** run `agentx requests settings`. The line `Resend once` says `on: after a usage limit resets or a restart, 5 minute(s) on; …`. After an agent stops on its usage limit, the daemon log has a `resent once` line for the request once the limit resets, and you are told nothing unless it stops again.
 24. **Terminal:** with `requests.closeProof.mode` set to `"warn"`, ask an agent for three separate things on one issue, and give the request a check on the issue's state. Close the issue with no notes on it. The request closes, and `agentx improve signals` lists one `close_proof_missing` signal that names the three items.
 25. **Terminal:** with the owner-words check on and the request above reopened, wait 30 minutes. The daemon log has one `owner-words check reopened it` line for the request and no second `closed by its check` line.
+26. **Terminal:** with the `due-time` seat in shadow mode, let an agent finish a few runs, then run `agentx decisions stats --since 1d`. The `due-time` seat is listed in `shadow` mode with one call for each finished run.
+27. **Terminal:** with the `due-time` seat in `active` mode, ask an agent to answer "I will post the review by 15:00" and record nothing. The daemon log has a `[due-time]` line ending in `asking once`, then one of `recorded when asked`, `said there is none when asked` or `nothing recorded when asked`.
+28. **Terminal:** ask an agent to promise you something due in five minutes. Six minutes later, the daemon log has a `fell due` line for the promise that says the agent was woken, and you receive **Promise not kept** unless the agent kept it first.
+29. **Terminal:** with the owner-words check on, let a plan of steps finish on a request it does not fulfil. Within two minutes, the daemon log has the line `its plan closed without doing what was asked; <agent> woken`.
 
 ## If something is wrong
 
@@ -576,6 +626,10 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request reopened with `Closed without doing what you asked`, but the close was right:** the owner-words check read it as a mismatch. Close it yourself (`agentx requests done <id> --reason "…"`); your own closes are never checked. If it happens often, set a stronger `requests.ownerCheck.model`.
 - **A request with several items stays open with `proof_missing`:** `requests.closeProof.mode` is `"block"`. Ask the agent to give a link for each item it lists, or close the request yourself.
 - **A request shows its check as `held`:** the owner-words check found that result did not match your words. Reply with what is missing, and the agent gives the proof links, or close it yourself.
+- **The `due-time` seat records nothing:** check that `decisions.enabled` is `true`, that the seat is spelled `due-time` under `decisions.seats`, and that AgentX was restarted. Run `agentx decisions backends` to see that the decision service answers. A run that failed, or ended with an empty reply, is not read.
+- **An agent is asked `[Due time]` when it set no due time:** the seat read the reply wrongly. The agent answers `Due: none` and nothing else happens. If it happens often, set the seat back to `shadow` and review its rows with `agentx decisions calls --seat due-time`.
+- **A request needs attention with `Set a due time and recorded none`:** the agent wrote a due time, was asked to record it, and did not. Reply on the request with the time you expect, or hand it back to the agent.
+- **A promise fell due and its agent was not woken:** the log line says `not woken`. A run of that agent is already on it, the agent is not on this computer, or the job reached its wake-up limit (`requests.jobs.wake.maxWakes`). You are told in every case.
 - **The owner-words check never reopens anything:** check that `requests.ownerCheck.enabled` is `true` in `agentx.json` and that AgentX was restarted. Search the daemon log for `owner-words check`: a `call failed` line means the provider or model could not be reached.
 - **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 

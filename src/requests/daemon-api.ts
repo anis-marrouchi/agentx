@@ -7,7 +7,7 @@ import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
-import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
+import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
 import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
@@ -630,6 +630,9 @@ export function handleRequestsApi(
       else store.close(request.id, "declined", str(input.reason), now, null, agentId)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
+      // A due time the agent accepts wakes it when it comes (#1908), like
+      // a promise's: before, it only fed the overdue notice to the owner.
+      if (action === "accept" && typeof loop.dueAt === "number") armPromiseWake(store, request.id, loop.dueAt, now)
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }
