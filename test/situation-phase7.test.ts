@@ -12,7 +12,7 @@ import { cardConsent, consentMinutes, consentState, quotedWhy } from "../src/sit
 import { sourcesAsk, sourcesRead, sourcesReads, sourcesTurnFrom, type SourcesTurn } from "../src/situations/sources/request-api"
 import { bareAddress, feedHeadlines, newsSource, type RunCommand } from "../src/situations/sources/per-request"
 import { browserTabsSource, openAppsSource } from "../src/native/macos/screen-sources"
-import { clearPopupYes } from "../src/situations/sources/popup-yes"
+import { clearPopupYes, recordAnswerTurn } from "../src/situations/sources/popup-yes"
 import { popNext } from "../src/approvals/popup-runner"
 import { taskSecret } from "../src/agents/turn-secret"
 import { isUnknown, type Signal } from "../src/situations/sources/types"
@@ -112,7 +112,7 @@ describe("settings: new features default off", () => {
     expect(d.browserTabs).toEqual({ includePaths: false })
     expect(d.news).toEqual({ feeds: [], maxItems: 10, timeoutMs: 8000 })
     expect(sourcesToolOn(d.sources)).toBe(false)
-    expect(sourcesToolOn({ "browser-tabs": { enabled: true } })).toBe(true)
+    expect(sourcesToolOn({ "browser-tabs": { enabled: true } })).toBe(false) // never loads without a separate reader
     // Only http(s) feeds.
     expect(() => situationsConfigSchema.parse({ news: { feeds: ["file:///etc/passwd"] } })).toThrow()
   })
@@ -233,7 +233,7 @@ describe("the ask is a popup-only decision card: the card is the consent record"
     // Per request: the asking task, or the turn that tells the answer. Not the same chat.
     expect(consentState(base, "browser-tabs", AGENT, now, { taskId: TASK }, { yes }).granted).toBe(true)
     expect(consentState(base, "browser-tabs", AGENT, now, { chat: "telegram:100", taskId: "task-later" }, { yes }).granted).toBe(false)
-    expect(consentState(base, "browser-tabs", AGENT, now, { chat: `approvals:${base.id}`, taskId: "task-answer" }, { yes }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: `approvals:${base.id}`, taskId: "task-answer" }, { yes, answerTaskId: "task-answer" }).granted).toBe(true)
     expect(consentState(base, "browser-tabs", AGENT, now, { chat: "whatsapp:120363000000000000@g.us", taskId: "task-other" }, { yes })).toEqual({ granted: false, why: "asked from another turn" })
     expect(consentState(base, "browser-tabs", AGENT, now, {}, { yes }).granted).toBe(false)
     // A click after the ask ran out does not count.
@@ -325,7 +325,8 @@ describe("proof of done (design 9, phase 7)", () => {
     r = await read(a.sources, { source: "browser-tabs", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0009", chat: "whatsapp:120363000000000000@g.us" } })
     expect(r.body.consent).toBe("asked from another turn")
     expect(log.list()).toHaveLength(3)
-    // The turn that tells the agent the answer may read.
+    // The turn the daemon started to tell the agent the answer may read.
+    recordAnswerTurn(yesId, "task-0010")
     r = await read(a.sources, { source: "open-apps", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0010", chat: `approvals:${yesId}` } })
     expect((r.body.answers as Array<{ value: unknown }>)[0].value).toBe("Notes")
     expect(log.list()).toHaveLength(4)

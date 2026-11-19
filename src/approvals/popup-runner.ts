@@ -1,5 +1,5 @@
 import { focusLabel, type FocusState } from "@/notify/focus"
-import { recordPopupYes } from "@/situations/sources/popup-yes"
+import { askedCard, recordPopupYes } from "@/situations/sources/popup-yes"
 import { readHold } from "@/notify/hold"
 import { cardWords } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
@@ -152,13 +152,18 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   if (!settings.enabled || (deps.platform ?? process.platform) !== "darwin") return "off"
   if (showing) return "busy"
   const request = nextCardToPop(ctx, deps.reaches) ? null : nextRequestToPop(ctx, deps.reaches)
-  const card = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx, deps.reaches)
-  if (!card) return "none"
+  const next = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx, deps.reaches)
+  if (!next) return "none"
+  // A screen read's card (#1892 phase 7) is shown as the daemon asked it,
+  // never as its file says now: the asking agent can write that file.
+  const asked = !request && next.origin?.kind === "source-consent" ? askedCard(next) : null
+  const card = asked && "card" in asked ? asked.card : next
   const focus = (deps.focus ?? readHold)()
   if (focus.active) return "held"
 
   const key = `${request ? "request" : "card"}:${card.id}`
-  const broken = (readInboxState(ctx.root).wanted ?? []).includes(key) ? null : cardRuleBreak(card)
+  const broken = asked && "refused" in asked ? asked.refused
+    : (readInboxState(ctx.root).wanted ?? []).includes(key) ? null : cardRuleBreak(card)
   if (broken) {
     if (request) refusedTitles.set(request.id, card.title)
     else {
@@ -200,7 +205,8 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     log(r.ok ? `[approvals] popup: ${r.message}` : `[approvals] popup: ${key} not recorded: ${r.error}`)
     // A screen read's yes (#1892 phase 7) lives in this process's memory,
     // with what the card showed: the card file alone never grants it.
-    if (r.ok && !request && r.verdict === "yes") recordPopupYes(card as DecisionCard, ctx.now ?? Date.now())
+    // Recorded only if the file still matches what was asked and shown.
+    if (r.ok && !request && r.verdict === "yes") recordPopupYes(readCard(ctx.root, card.id), ctx.now ?? Date.now())
     return "shown"
   } catch (e: any) {
     log(`[approvals] popup failed for ${key}: ${e?.message ?? e}`)

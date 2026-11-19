@@ -47,6 +47,7 @@ import { ensureSituationWorkflows } from "@/situations/workflows"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
+import { recordAnswerTurn } from "@/situations/sources/popup-yes"
 import { cardConsent } from "@/situations/sources/consent"
 import { SourceReadLog } from "@/situations/sources/read-log"
 import { sourcesAsk, sourcesRead, sourcesReads, sourcesTurnFrom } from "@/situations/sources/request-api"
@@ -940,6 +941,7 @@ export class AgentXDaemon {
             // (popup-yes.ts), and one yes allows situations.consent.maxReads reads.
             consent: cardConsent(process.cwd(), {
               maxReads: () => this.config.situations.consent.maxReads,
+              maxMinutes: () => this.config.situations.consent.maxMinutes,
               readsSoFar: (id) => this.sourceReadLog?.list({ requestId: id, limit: 500 }).length ?? 0,
             }),
             readLog: this.sourceReadLog,
@@ -2958,6 +2960,9 @@ export class AgentXDaemon {
       agentId: card.raised_by,
       message: text,
       context: { channel: "approvals", chatId: card.id, sender: "operator" },
+      // A screen read's yes holds in this turn only (#1892 phase 7), not in
+      // another turn started with the same chat name.
+      ...(card.origin?.kind === "source-consent" ? { onStart: (taskId: string) => recordAnswerTurn(card.id, taskId) } : {}),
     }).catch((e: any) => this.log(`[approvals] ${card.id}: turn on ${card.raised_by} failed: ${e?.message ?? e}`))
   }
 

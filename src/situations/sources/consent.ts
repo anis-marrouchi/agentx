@@ -1,7 +1,7 @@
 import { createCard, isValidCardId, listCards, readCard, type CardSettings, type DecisionCard, type ReplyTarget } from "@/approvals/cards"
 import type { SourceConsentOrigin } from "@/approvals/origin"
 import type { ConsentCheck } from "./registry"
-import { popupYesFor, type PopupYes } from "./popup-yes"
+import { answerTurnFor, popupYesFor, rememberAsk, type PopupYes } from "./popup-yes"
 import type { PER_REQUEST_SOURCE_IDS } from "../context"
 
 // --- The person's yes for a per-request source (#1892 phase 7, design 2.3) ---
@@ -128,6 +128,8 @@ export function askSourceConsent(
     ...(input.reply ? { reply: input.reply } : {}),
   }, { now, ...(opts.cardSettings ? { settings: opts.cardSettings } : {}), origin, popupOnly: true })
   if (!r.ok) return r
+  // The popup shows, and a yes grants, only this card as written now.
+  rememberAsk(r.card, now)
   return { ok: true, card: r.card, minutes }
 }
 
@@ -146,7 +148,7 @@ export const NO_POPUP_YES = "no yes was clicked in the popup for this request si
 export function consentState(
   card: DecisionCard | null, sourceId: string, agentId: string | undefined, now: number,
   turn: { chat?: string; taskId?: string } = {},
-  extra: { yes?: PopupYes | null; reads?: number; maxReads?: number } = {},
+  extra: { yes?: PopupYes | null; reads?: number; maxReads?: number; maxMinutes?: number; answerTaskId?: string | null } = {},
 ): ConsentState {
   if (!card) return { granted: false, why: "no such request" }
   const o = card.origin
@@ -162,13 +164,17 @@ export function consentState(
   // agent the answer (chat "approvals:<card>"). Not other turns in its chat.
   const askingTask = yes ? yes.taskId : o.taskId
   const sameTask = !!askingTask && turn.taskId === askingTask
-  const answerTurn = turn.chat === `approvals:${card.id}`
+  // The answer turn is the one the daemon started (recordAnswerTurn), not
+  // any turn given that chat name.
+  const answerTask = extra.answerTaskId !== undefined ? extra.answerTaskId : answerTurnFor(card.id)
+  const answerTurn = turn.chat === `approvals:${card.id}` && !!answerTask && turn.taskId === answerTask
   if (!sameTask && !answerTurn) return { granted: false, why: "asked from another turn" }
   if (card.status === "pending") return { granted: false, why: "waiting for the person's answer" }
   if (card.status !== "decided" || card.verdict !== "yes") return { granted: false, why: "the person did not say yes" }
   if (card.decided_from !== "popup") return { granted: false, why: "the yes did not come from the popup" }
   if (!yes) return { granted: false, why: NO_POPUP_YES }
-  const minutes = Number.isFinite(yes.minutes) ? Math.min(MAX_MINUTES, yes.minutes) : 0
+  const cap = extra.maxMinutes !== undefined && Number.isFinite(extra.maxMinutes) ? Math.min(MAX_MINUTES, extra.maxMinutes) : MAX_MINUTES
+  const minutes = Number.isFinite(yes.minutes) ? Math.min(cap, yes.minutes) : 0
   if (minutes <= 0) return { granted: false, why: "the yes has no time" }
   // A click that came after the ask had run out does not count.
   if (!Number.isFinite(yes.expires) || yes.clickedAt > yes.expires) return { granted: false, why: "the yes came after the ask had run out" }
@@ -181,11 +187,12 @@ export function consentState(
 
 /** The registry's consent callback: reads the card the request names and
  *  the popup's yes for it, and counts the reads already made. */
-export function cardConsent(root: string, opts: { maxReads?: () => number; readsSoFar?: (requestId: string) => number } = {}): ConsentCheck {
+export function cardConsent(root: string, opts: { maxReads?: () => number; maxMinutes?: () => number; readsSoFar?: (requestId: string) => number } = {}): ConsentCheck {
   return (sourceId, scope, now) => {
     const id = scope.requestId ?? ""
     if (!isValidCardId(id)) return { why: "no such request" }
-    const state = consentState(readCard(root, id), sourceId, scope.agentId, now, { chat: scope.chat, taskId: scope.taskId }, readCap(id, opts))
+    const state = consentState(readCard(root, id), sourceId, scope.agentId, now, { chat: scope.chat, taskId: scope.taskId },
+      { ...readCap(id, opts), ...(opts.maxMinutes ? { maxMinutes: opts.maxMinutes() } : {}) })
     return state.granted ? true : { why: state.why }
   }
 }
