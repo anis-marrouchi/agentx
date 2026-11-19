@@ -282,7 +282,7 @@ describe("the node's wiring (daemon start)", () => {
       cfg = { ...cfg, mode: "off" }
       expect(wantsSignal(key)).toBe(false)
       // The view: a push source has no answer; the calls source, with no store, answers unknown.
-      const view = sourcesView(node.sources)
+      const view = sourcesView(node.sources, { local: true })
       expect(view.loaded.find((s) => s.id === "whatsapp-groups")).toEqual({ id: "whatsapp-groups", kind: "left", sensitivity: "open", mode: "push" })
       expect(view.loaded.find((s) => s.id === "calls")).toMatchObject({ value: "unknown", reason: "source down: no call store on this node" })
       expect(isMeshGatedPath("/situations/sources")).toBe(true)
@@ -290,6 +290,27 @@ describe("the node's wiring (daemon start)", () => {
       node.detach()
     }
     expect(wantsSignal(key)).toBe(false)
+  })
+
+  it("GET /situations/sources: reasons (a name, the Focus mode) only for a caller on this machine", async () => {
+    const { sourcesView } = await import("../src/situations/sources/node")
+    const reg = new SignalSources({ now: () => 1 })
+    const busy: SignalSource = {
+      id: "demo-busy", kind: "busy", sensitivity: "personal", platforms: ["any"], mode: "read",
+      read: () => [{ source: "demo-busy", kind: "busy", subject: "owner", value: true, checkedAt: 1, expiresAt: null, reason: "in a call: on a call with Sam" }],
+    }
+    const down: SignalSource = {
+      id: "demo-down", kind: "busy", sensitivity: "personal", platforms: ["any"], mode: "read",
+      read: () => [unknownSignal("demo-down", "busy", "owner", "Focus file says Work", 1)],
+    }
+    reg.register(busy)
+    reg.register(down)
+    const local = sourcesView(reg, { local: true })
+    expect(local.loaded.find((s) => s.id === "demo-busy")).toMatchObject({ value: true, reason: "in a call: on a call with Sam" })
+    const remote = sourcesView(reg, { local: false })
+    expect(remote.loaded.find((s) => s.id === "demo-busy")).toEqual({ id: "demo-busy", kind: "busy", sensitivity: "personal", mode: "read", state: "known" })
+    expect(remote.loaded.find((s) => s.id === "demo-down")).toEqual({ id: "demo-down", kind: "busy", sensitivity: "personal", mode: "read", state: "unknown" })
+    expect(JSON.stringify(remote)).not.toMatch(/Sam|Work/)
   })
 
   it("a push source limited to some agents applies a leave only for a talk those agents own (#1945)", async () => {

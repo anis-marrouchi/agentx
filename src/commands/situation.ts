@@ -122,7 +122,8 @@ common(situationCmd
     if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
     console.log(chalk.bold(`  Signal sources on this node (${data.platform})`))
     for (const s of data.loaded ?? []) {
-      const answer = s.value === undefined ? chalk.dim("reports when it happens")
+      const answer = s.state !== undefined ? (s.state === "unknown" ? chalk.yellow("unknown") : "known") + chalk.dim(" (details only on that machine)")
+        : s.value === undefined ? chalk.dim("reports when it happens")
         : s.value === "unknown" ? chalk.yellow(`unknown: ${s.reason}`) : `${String(s.value)} ${chalk.dim(`(${s.reason})`)}`
       console.log(`  ${chalk.green("●")} ${s.id.padEnd(17)} ${s.kind.padEnd(8)} ${answer}`)
     }

@@ -8364,10 +8364,13 @@ export class AgentXDaemon {
           break
         }
         // Which signal sources run on this node and what each answers now
-        // (#1892 phase 3): `agentx situation sources`. Mesh-gated.
+        // (#1892 phase 3): `agentx situation sources`. Mesh-gated; the
+        // answers' values and reasons (a name, the Focus mode) only for a
+        // caller on this machine.
         case "GET /situations/sources": {
           if (!this.signalSources) { this.json(res, 503, { error: "signal sources are not available on this node" }); break }
-          this.json(res, 200, { platform: process.platform, ...sourcesView(this.signalSources.sources) })
+          const local = isLoopback(req.socket?.remoteAddress || "")
+          this.json(res, 200, { platform: process.platform, ...sourcesView(this.signalSources.sources, { local }) })
           break
         }
         case "POST /situations/override": {
