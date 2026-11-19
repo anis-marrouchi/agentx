@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
-import { RequestStore } from "../src/requests/store"
+import { CHECK_EVIDENCE_MAX, RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsCall } from "../src/requests/daemon-api"
 import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, mismatchText, ownerCheckPrompt } from "../src/requests/owner-check"
@@ -167,11 +167,11 @@ describe("the agent's words cannot pose as the close check (#1943 review)", () =
     expect(many.join("\n").length).toBeLessThan(1_500)
   })
 
-  it("near the 500-character cut the agent's words are kept and the hold still knows the detail", () => {
-    const long = `${MR} is merged; ${"x".repeat(470)}`
+  it("near the evidence cut (CHECK_EVIDENCE_MAX) the agent's words are kept and the hold still knows the detail", () => {
+    const long = `${MR} is merged; ${"x".repeat(CHECK_EVIDENCE_MAX - 30)}`
     const said = `live: ${LIVE}`
     const ev = checkEvidence(long, said)
-    expect(ev.length).toBeLessThanOrEqual(500)
+    expect(ev.length).toBeLessThanOrEqual(CHECK_EVIDENCE_MAX)
     expect(splitCheckEvidence(ev).agent).toBe(said)
     expect(sameCheckDetail(ev, long)).toBe(true)
     expect(sameCheckDetail(ev, `${MR} is merged; a different result`)).toBe(false)
