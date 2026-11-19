@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.234.1](https://github.com/anis-marrouchi/agentx/compare/v0.234.0...v0.234.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **situations:** phase 3 review fixes for Telegram leaves and the sources view ([#1953](https://github.com/anis-marrouchi/agentx/issues/1953)) ([ed8de6e](https://github.com/anis-marrouchi/agentx/commit/ed8de6ec3bff87d062cd9f3c7f058ad34fa64220))
+* **workflows:** recover runs stuck after a stop or an old child failure ([#1948](https://github.com/anis-marrouchi/agentx/issues/1948)) ([d81a3d1](https://github.com/anis-marrouchi/agentx/commit/d81a3d1577b4ba97241b06b66501773978df6e00))
+
 ## [0.234.0](https://github.com/anis-marrouchi/agentx/compare/v0.233.0...v0.234.0) (2026-11-19)
 
 
