@@ -98,6 +98,10 @@ function runHook(
     let stdout = ""
     child.stdout.on("data", (d) => (stdout += d))
     child.on("close", (code) => done({ stdout, code, ms: Date.now() - start }))
+    // A command that exits before reading its stdin (e.g. cli.js is gone,
+    // exit 127) closes the pipe; the write then fails with EPIPE. That is
+    // the case under test, not an error, so ignore it here.
+    child.stdin.on("error", () => {})
     child.stdin.end(payload)
   })
 }
