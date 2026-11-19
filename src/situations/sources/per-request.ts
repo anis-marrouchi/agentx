@@ -66,41 +66,40 @@ export const TABS_NEED_READER = "needs a separate reader app that alone holds th
 
 // --- News: public feeds only, small ---
 
-/** An IPv6 address (already valid) as its eight 16-bit groups. */
-function v6Groups(ip: string): number[] {
-  let s = ip.toLowerCase()
-  const dotted = s.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
-  if (dotted) {
-    const [a, b, c, d] = dotted.slice(1).map(Number)
-    s = `${s.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`
-  }
+/** The eight 16-bit words of an IPv6 address (isIP already said 6). */
+function v6Words(ip: string): number[] {
+  const quad = ip.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  const s = quad ? `${ip.slice(0, quad.index)}${((+quad[1] << 8) | +quad[2]).toString(16)}:${((+quad[3] << 8) | +quad[4]).toString(16)}` : ip
   const [head, tail] = s.split("::")
-  const part = (p?: string) => (p ? p.split(":").map((g) => parseInt(g, 16)) : [])
-  const h = part(head), t = part(tail)
-  return tail === undefined ? h : [...h, ...Array(8 - h.length - t.length).fill(0), ...t]
+  const h = head ? head.split(":") : []
+  const t = tail ? tail.split(":") : []
+  const fill = tail === undefined ? [] : Array(8 - h.length - t.length).fill("0")
+  return [...h, ...fill, ...t].map((x) => parseInt(x, 16))
 }
 
-/** Loopback, private, link-local, carrier-grade NAT, unspecified and
- *  unique-local addresses: never fetched for a feed. An IPv6 address that
- *  carries an IPv4 one (compatible, mapped, NAT64, 6to4) is judged by it. */
+const v4Of = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`
+
+/** Loopback, private, link-local, carrier-grade NAT, unspecified,
+ *  IETF-reserved and unique-local addresses, and IPv6 forms that carry
+ *  one of them inside: never fetched for a feed. */
 export function isPrivateAddress(ip: string): boolean {
   const v = isIP(ip)
   if (v === 4) {
     const [a, b, c] = ip.split(".").map(Number)
     return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) || (a === 192 && b === 0 && c === 0) || (a === 100 && b >= 64 && b <= 127) ||
-      (a === 198 && (b === 18 || b === 19)) || a >= 224
+      (a === 192 && b === 0 && c === 0) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19)) || a >= 224
   }
   if (v === 6) {
-    const g = v6Groups(ip)
-    const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`
-    const zeros = (n: number) => g.slice(0, n).every((x) => x === 0)
-    if (zeros(8) || (zeros(7) && g[7] === 1)) return true // :: and ::1
-    if (zeros(5) && (g[5] === 0 || g[5] === 0xffff)) return isPrivateAddress(v4(g[6], g[7])) // ::a.b.c.d, ::ffff:a.b.c.d
-    if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return isPrivateAddress(v4(g[6], g[7])) // NAT64
-    if (g[0] === 0x2002) return isPrivateAddress(v4(g[1], g[2])) // 6to4
-    // ULA, link-local, multicast.
-    return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00
+    const s = ip.toLowerCase()
+    const w = v6Words(s)
+    // ::/96 IPv4-compatible (deprecated; also :: and ::1): refused outright.
+    if (w.slice(0, 6).every((x) => x === 0)) return true
+    // ::ffff:a.b.c.d IPv4-mapped and 2002::/16 6to4 carry an IPv4 address.
+    if (w.slice(0, 5).every((x) => x === 0) && w[5] === 0xffff) return isPrivateAddress(v4Of(w[6], w[7]))
+    if (w[0] === 0x2002) return isPrivateAddress(v4Of(w[1], w[2]))
+    // ULA, link-local, multicast, and NAT64 (64:ff9b::/96 reaches IPv4 inside).
+    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("64:ff9b:")
   }
   return true
 }

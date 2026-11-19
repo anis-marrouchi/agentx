@@ -168,6 +168,15 @@ describe("small: feeds", () => {
     expect(isPrivateAddress("198.20.0.1")).toBe(false)
   })
 
+  it("IPv4-compatible, 6to4 and 192.0.0.0/24 addresses are private too (#1987)", () => {
+    for (const ip of ["::127.0.0.1", "::10.0.0.1", "::7f00:1", "0:0:0:0:0:0:a00:1", "::8.8.8.8", "2002:7f00:1::", "2002:a00:1::1", "2002:c0a8:101::", "::ffff:127.0.0.1", "::ffff:7f00:1", "192.0.0.1", "192.0.0.170"]) {
+      expect(isPrivateAddress(ip), ip).toBe(true)
+    }
+    for (const ip of ["2002:5db8:d822::1", "::ffff:93.184.216.34", "192.0.1.1", "192.1.0.1", "2606:2800:220:1:248:1893:25c8:1946"]) {
+      expect(isPrivateAddress(ip), ip).toBe(false)
+    }
+  })
+
   it("the connection goes to the address that was checked (no second DNS answer)", async () => {
     const lookup = vi.fn(async () => ["93.184.216.34"])
     const fetch = vi.fn(async (_u: string, init: RequestInit & { dispatcher?: unknown }) => {
