@@ -44,6 +44,9 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.backstop.windowMinutes` | `10` | The window for the count above, in minutes. |
 | `situations.maxAge.duringHours` | `12` | A talk with no change for this long is treated as over. |
 | `situations.maxAge.endingMinutes` | `60` | A talk left in **ending** this long (your agent never said goodbye) is treated as over. |
+| `situations.sources.<id>.enabled` | on | `false` switches one signal source off (see [Signals: who left, who is busy](#signals-who-left-who-is-busy)). |
+| `situations.sources.<id>.agents` | all agents | A list of agent ids: the source is read only for these agents. |
+| `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
 
 ## Turn it on
 
@@ -88,6 +91,38 @@ Like `agentx situation release`, ending or reopening a talk is open to any progr
 
 **For other tools:** each change of phase is published once as the event `situation:phase` (kind `situation`), with who made it: a rule or a person. Agents can subscribe to it like to any event. Like other message events, the event names the channel and the chat id (on WhatsApp, a phone number). The reason the phase changed, which can name a sender, stays on this machine and is not sent to mesh peers.
 
+## Signals: who left, who is busy
+
+A **signal** is a small fact AgentX reads from somewhere else, such as "you are in Focus" or "a person left the group". Each place it reads from is a **signal source**. Every source answers in the same way, and when it cannot tell (the app is not running, the file is missing, the machine has no such feature), it answers **unknown** with the reason. Unknown counts as "nothing known": it never holds a message and never ends a talk.
+
+| Source | What it tells | Where it works |
+|---|---|---|
+| `widget-hold` | You switched on the hold in AgentX Voice. | Every machine |
+| `macos-focus` | macOS Focus or Do Not Disturb is on. | Mac only. On other machines it is not loaded, and its file is never read. |
+| `call-hold` | You are on a call (an AgentX call, or another tool that writes the call file). | Every machine |
+| `calls` | You are on a call with a given agent now; a call ended. | Every machine |
+| `whatsapp-groups` | Someone left, or was removed from, a WhatsApp group. | Every machine with WhatsApp |
+| `telegram-members` | Someone left a Telegram group. | Every machine with Telegram |
+
+The first three are your **hold**: while one of them says you are busy, notices wait and are delivered when it ends. This works as before; only the Mac Focus check is now skipped on machines that are not Macs.
+
+**When someone leaves a group:** if the talk in that group is **during** and nobody is left in the group except your own agents, the talk moves to **ending**. Your agent then says one short goodbye at most, as when the other side says goodbye. If other people are still in the group, nothing changes. If AgentX cannot count who is left (WhatsApp limits reads, Telegram refuses the count), nothing changes either.
+
+On Telegram, AgentX now also asks for member changes (`chat_member`). Telegram sends those only to bots that are admins of the group. Your bot does not need to be an admin: without it, AgentX still sees the "left the group" message Telegram posts in the chat, and otherwise who is present stays unknown.
+
+These facts stay on the machine that runs the chat. Mesh peers only see the phase change (the `situation:phase` event), never who left.
+
+**See the sources on a machine:**
+
+1. **Terminal:** run `agentx situation sources`.
+2. Each loaded source shows what it answers now. A source that only reports events (a leave) shows "reports when it happens".
+3. Sources that do not fit this machine are listed as **not loaded**, with the reason, for example `macos-focus  not loaded: needs darwin, this node is linux`.
+
+**Switch a source off:**
+
+1. **Terminal:** `agentx config set situations.sources.whatsapp-groups.enabled false`.
+2. Leaves in WhatsApp groups no longer move a talk. Turn it back on with `true`.
+
 ## Commands
 
 | Command | What it does |
@@ -98,6 +133,7 @@ Like `agentx situation release`, ending or reopening a talk is open to any progr
 | `agentx situation end <id>` | Ends a talk by hand. `<id>` is the first column of `situation list`. |
 | `agentx situation not-this <id>` | Says a talk is not ending: back to **during**, and thanks or goodbyes no longer end it. |
 | `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
+| `agentx situation sources` | Lists the signal sources on this machine, what each answers now, and those not loaded here with the reason. `--json` prints JSON. |
 
 All these commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
 
@@ -117,6 +153,14 @@ To check ending a talk by hand:
 3. **Browser:** click **End**, then confirm. The chip shows **Conversation · ended (person)**.
 4. In the test chat, send "Thanks, bye!". In active mode your agent does not answer, and `agentx situation log` lists the message as **dropped**.
 
+To check the signal sources:
+
+1. **Terminal:** run `agentx daemon logs` and look for the line `Signal sources:` after a start. On a machine that is not a Mac it ends with `(not loaded: macos-focus)`.
+2. **Terminal:** run `agentx situation sources`. `widget-hold` and `call-hold` answer `false` when you are not busy.
+3. Make a WhatsApp test group with your agent's number and one test phone. Send a question there and let your agent answer.
+4. On the test phone, leave the group.
+5. **Terminal:** run `agentx situation list`. The group's talk shows **ending**, with the reason "the last other party left (whatsapp-groups)".
+
 ## If something is wrong
 
 - **The log stays empty:** check that `situations.mode` is not `off` and that the chat is on Telegram, WhatsApp, Discord or Slack. Shadow and active modes only list messages after a talk has ended.
@@ -130,3 +174,7 @@ To check ending a talk by hand:
 - **`agentx situation end` answers HTTP 401 with `--node`:** ending a talk on another machine needs the mesh token (`--token`).
 - **Your agent's prompt has no `[Situation]` line:** the line is added only in **active** mode, and on a session that goes on only while the talk is ending or ended.
 - **`release` answers "was already released" or "was not dropped":** the row was sent on before, or it is a shadow-mode row, which was never held.
+- **A person left the group but the talk stayed in during:** someone else is still in the group, the count could not be read (the daemon log says `group read after a leave failed` or `member count after a leave failed`), or the talk was not in **during**. Also check that `situations.sources.whatsapp-groups.enabled` (or `telegram-members`) is not `false`, and that `situations.mode` is not `off`.
+- **Telegram leaves are never seen:** the bot sees the "left the group" message only when Telegram posts one in the chat. To get every member change, make the bot an admin of the group.
+- **`agentx situation sources` shows `macos-focus` as unknown on a Mac:** the daemon may not read the Focus file. Give the app that runs AgentX **Full Disk Access** in System Settings. Until then, Focus does not hold your notices.
+- **`agentx situation sources --node <url>` answers HTTP 401:** the list says whether you are busy and with whom, so from another machine it needs the mesh token (`--token`).

@@ -35,7 +35,10 @@
 // opens only then, and the share ends the ask (see camera-api.ts).
 
 import { randomUUID } from "crypto"
-import { focusLabel, readFocus, type FocusState } from "@/notify/focus"
+import { focusLabel, type FocusState } from "@/notify/focus"
+import { ownerFocus } from "@/situations/sources/owner-busy"
+import { callEndedSignal } from "@/situations/sources/calls"
+import { publishSignal } from "@/situations/sources/hub"
 import type { CallsConfig } from "@/daemon/config"
 import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency, type Waiting } from "./store"
 
@@ -256,7 +259,7 @@ export class CallService {
   /** Ring now, wait for a busy widget, or hold as missed in Focus.
    *  Returns how it rang. */
   private async ring(call: Call): Promise<Rang> {
-    const focus = (this.deps.focus ?? readFocus)()
+    const focus = (this.deps.focus ?? ownerFocus)()
     if (focus.active && call.urgency !== "urgent" && call.placedBy !== "owner") {
       if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
       await this.notice(call, this.missedTitle(call))
@@ -433,7 +436,9 @@ export class CallService {
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
         await this.notice(call, this.missedTitle(call), undefined, call.kind === "voice" ? { callId: call.id, state: "missed", since: now } : undefined)
       } else if (call.status === "answered" && call.answeredAt !== null && now - call.answeredAt >= talkFor) {
-        if (!this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })) continue
+        const over = this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })
+        if (!over) continue
+        this.left(over)
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
         const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
@@ -485,6 +490,7 @@ export class CallService {
     const session = where && call.kind === "voice" ? { channel: where.channel, chatId: where.chatId } : {}
     const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now(), ...session })
     if (!ended) return { ok: false, status: 409, error: `call is ${call.status}, not answered` }
+    this.left(ended)
     this.deps.log?.(`[calls] ${id} ended (${call.agentId})`)
     const summarize = this.deps.summarize
     // What the agent saw is already its answer; only a voice call is summarised.
@@ -508,8 +514,20 @@ export class CallService {
     const call = this.deps.store.get(id)
     if (!call || call.kind !== "camera") return false
     const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now(), note: note ?? null })
-    if (ended) this.deps.log?.(`[calls] ${id} ended (${call.agentId}): ${note ?? "share over"}`)
+    if (ended) {
+      this.left(ended)
+      this.deps.log?.(`[calls] ${id} ended (${call.agentId}): ${note ?? "share over"}`)
+    }
     return !!ended
+  }
+
+  /** An answered call ended: the `calls` signal source says so on this
+   *  node's signal hub (#1892 phase 3). Never throws. */
+  private left(call: Call): void {
+    try {
+      const s = callEndedSignal(call, this.now())
+      if (s) publishSignal(s)
+    } catch { /* a signal never breaks a call */ }
   }
 
   get(id: string): Call | undefined { return this.deps.store.get(id) }

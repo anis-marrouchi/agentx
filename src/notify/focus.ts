@@ -34,10 +34,12 @@ export interface FocusState {
   reason: string
 }
 
-const ASSERTIONS = join(homedir(), "Library", "DoNotDisturb", "DB", "Assertions.json")
+/** macOS's private Focus database. Read only by the `macos-focus` signal
+ *  source (situations/sources/owner-busy.ts), loaded on macOS only. */
+export const ASSERTIONS = join(homedir(), "Library", "DoNotDisturb", "DB", "Assertions.json")
 
 /** Where the widget records a hold the person switched on themselves. */
-const WIDGET_HOLD = join(homedir(), ".agentx", "focus.json")
+export const WIDGET_HOLD = join(homedir(), ".agentx", "focus.json")
 
 /**
  * Focus, from either source: the widget's own toggle or the system's.

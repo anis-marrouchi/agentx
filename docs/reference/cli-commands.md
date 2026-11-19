@@ -3713,6 +3713,14 @@ Say a talk is not ending: it goes back to **during**, and thanks or goodbyes no 
 
 Forget a chat's record. Its next message starts a new one.
 
+### `agentx situation sources`
+
+List the signal sources on this machine: the owner's Focus, call and widget hold, calls, and who left a WhatsApp or Telegram group. Shows what each answers now (**unknown** with a reason when it cannot tell), and which sources are not loaded here and why (for example, macOS Focus on a Linux machine).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--json` | — | Print JSON. |
+
 ## watch (advanced)
 
 `agentx watch`: Stream live daemon events — workflow runs, user tasks, signals, mesh health. **Advanced.**

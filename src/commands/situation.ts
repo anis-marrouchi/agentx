@@ -13,6 +13,8 @@ import { loadDaemonConfig } from "@/daemon/config"
 //       each chat's situation and phase (phase 2)
 //   agentx situation end | not-this | clear <id>
 //       a person's override (phase 2)
+//   agentx situation sources
+//       the signal sources on this node and what each answers (phase 3)
 //
 // Settings: `agentx config set situations.mode shadow|active|off`.
 
@@ -108,6 +110,23 @@ common(situationCmd
       console.log(`  ${String(r.id).slice(0, 8)}  ${when}  ${phase}${who}  ${r.channel} ${r.chatId}${r.ownerAgent ? `  → ${r.ownerAgent}` : ""}`)
       if (r.why) console.log(chalk.dim(`            ${String(r.why).slice(0, 120)}`))
     }
+  })
+
+// Phase 3: which signal sources run on this node (#1892).
+common(situationCmd
+  .command("sources")
+  .description("list the signal sources on this node (Focus, call and widget hold, calls, who left a group), which are not loaded and why")
+  .option("--json", "print JSON"))
+  .action(async (opts) => {
+    const data = await call(opts, "GET", "/situations/sources")
+    if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+    console.log(chalk.bold(`  Signal sources on this node (${data.platform})`))
+    for (const s of data.loaded ?? []) {
+      const answer = s.value === undefined ? chalk.dim("reports when it happens")
+        : s.value === "unknown" ? chalk.yellow(`unknown: ${s.reason}`) : `${String(s.value)} ${chalk.dim(`(${s.reason})`)}`
+      console.log(`  ${chalk.green("●")} ${s.id.padEnd(17)} ${s.kind.padEnd(8)} ${answer}`)
+    }
+    for (const s of data.notLoaded ?? []) console.log(`  ${chalk.dim("○")} ${s.id.padEnd(17)} ${chalk.dim(`not loaded: ${s.reason}`)}`)
   })
 
 const OVERRIDES: Array<[string, string, string]> = [
