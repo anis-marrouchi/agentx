@@ -93,6 +93,25 @@ export const CATALOG_RULES: GuardRule[] = [
     preconditions: [],
   },
 
+  // ---- The operator key (#1979) ------------------------------------------
+  // `.agentx/operator.key` proves a call to the daemon is the owner's (the
+  // CLI shows it on owner-only routes such as POST /situations/closing).
+  // An agent that read it could pass as the owner, so this rule blocks in
+  // every mode but `off`. It judges the files a call reads or writes
+  // (guard/file-access.ts), not the words in it: `git commit -m` or
+  // `grep -rn operator.key src` that only name the file are left alone.
+  // A shell has more ways to read a file than any list, so this is a
+  // second lock, not a wall.
+  {
+    id: "operator-key-read",
+    match: { file_access_regex: "(^|/)\\.agentx/operator\\.key$" },
+    action: "deny",
+    mode: "enforce",
+    severity: "critical",
+    message: "The operator key proves a call is the owner's; agents may not read or change it.",
+    preconditions: [],
+  },
+
   // ---- Containers / volumes ---------------------------------------------
   {
     id: "container-volume-destroy",

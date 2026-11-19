@@ -40,7 +40,7 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
-import { agentProofShown, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
+import { closingCallerRefusal, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
@@ -150,7 +150,7 @@ import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_CONTINUE_SETTINGS, DEFAULT_PLAN_SETTINGS, MESSAGE_KIND } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { isOwnerTurn, OPERATOR_CHANNELS, PICKUP_CHANNEL, pickupContext } from "@/requests/tracker"
-import { isOperatorTurn, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
+import { isOperatorTurn, isThisMachine, loadOperatorKey, OPERATOR_HEADER, operatorContext, operatorKeyMatches, operatorVouch, ownerProven } from "@/requests/operator"
 import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
@@ -5396,7 +5396,8 @@ export class AgentXDaemon {
     // CLI or the same-host dashboard (owner-checked) over loopback, or a
     // mesh token. Never a chat participant.
     "/situations/override",
-    // Gives a talk closing steps (#1892 phase 4): same callers as above.
+    // Gives a talk closing steps (#1892 phase 4): a mesh token from another
+    // machine; from this one, the operator key too (#1979, in the route).
     "/situations/closing",
     // The chat's agent names its own talk (#1892 phase 6): loopback (the
     // agent's MCP tool) with the running turn's proof headers, checked in
@@ -8479,9 +8480,14 @@ export class AgentXDaemon {
 
         case "POST /situations/closing": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
-          // A person's route (phase 6): a call made with an agent turn's
-          // headers is an agent's tool; it names its talk with /situations/fill.
-          if (agentProofShown(this.callerProof(req))) { this.json(res, 403, { error: "closing steps are set by a person; an agent names its talk with agentx_situation" }); break }
+          // The owner's route: no agent turn's headers (phase 6), and from
+          // this machine the operator key (#1979); from another machine the
+          // mesh token, checked before this point.
+          const refused = closingCallerRefusal(this.callerProof(req), {
+            thisMachine: isThisMachine(req.socket?.remoteAddress),
+            keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+          })
+          if (refused) { this.json(res, refused.status, refused.body); break }
           const body = await readBody(req)
           const sit = this.config.situations
           const r = situationsClosing(this.situationGate.store, body, {

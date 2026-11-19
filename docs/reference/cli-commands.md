@@ -924,6 +924,18 @@ Report one finished run of a registered session; sends the last 90 KB of its tra
 
 `agentx guard`: Destructive-action guardrails — policy, checks, audit.
 
+The guard checks each agent's Bash, Write and Edit calls, and its Read and Grep calls. Read and Grep change nothing, so when the guard cannot answer they still run, and the guard waits at most 5 seconds for them.
+
+A policy in `warn` mode only records what it would block. A rule can carry its own `mode: enforce`: that rule blocks even while the rest of the policy warns. `enforce` is the only mode a rule can carry, so a rule can never weaken a policy that enforces. The policy's `mode: off` still turns every rule off.
+
+A policy file with an invalid rule is skipped whole, with a line on the guard's error output. So a rule with any other `mode` (for example `mode: warn`) also turns off the other rules in the same file. Run `agentx guard policy` after editing a policy file to check that its rules are listed.
+
+A rule can match the files a call reads or writes with `match.file_access_regex`. The guard works them out from the command: the files given to tools that read or copy content (`cat`, `cp`, `tar`, `curl -d @file`, code run with `node -e` or `python -c`...) and the files after `<` or `>`. It removes quotes, follows `cd`, expands `*` and `?`, and follows symlinks. A command that only names a file, such as `git commit -m` or `grep -rn operator.key src`, reads nothing. For `tar`, the files are read from the folder given with `-C`, and the archive named with `-f` is not read. For `cp`, `scp` and `rsync`, the destination is checked but its folder is not searched. Listing folders for `*` patterns and for copied folders stops after about 100 ms; the guard then judges the files it found so far.
+
+The built-in rule `operator-key-read` uses both: it keeps agents from reading or changing `.agentx/operator.key`, the secret that proves a call is yours (see [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends)). It is a second lock, not a wall: a shell has more ways to read a file than any list, for example `grep -r` over a whole folder.
+
+To check it worked: **Terminal:** `agentx guard test "cat .agentx/operator.key"` shows `deny` with the rule `operator-key-read`.
+
 ### `agentx guard check`
 
 PreToolUse hook entrypoint: read a tool-call payload on stdin, emit a Claude Code decision.
@@ -3721,6 +3733,8 @@ Forget a chat's record. Its next message starts a new one.
 ### `agentx situation closing [id]`
 
 Give a talk closing steps: when it ends, its agent drafts one note (read only) that is posted at its home, each follow-up becomes an open promise with an owner, and you get one message. Needs `situations.closing.enabled` (otherwise it answers HTTP 409). See [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends).
+
+Only you may set closing steps. Run the command from the AgentX folder (or give `--config`): it sends the daemon your operator key, read from `.agentx/operator.key`. The key is sent only to a daemon on this machine (loopback, or this machine's own address such as its Tailscale IP). Without it, the daemon answers HTTP 403. With `--node` on another machine, the command needs a mesh token (`--token`) instead.
 
 | Flag | Default | Meaning |
 |---|---|---|

@@ -226,3 +226,23 @@ export function fillTurnFrom(
 export function agentProofShown(proof: TurnProof): boolean {
   return !!(proof.taskId || (proof.channel && proof.chatId))
 }
+
+/** Who may set closing steps (#1979): the owner. A call made with an
+ *  agent turn's headers is an agent's tool and is refused. A caller on
+ *  this machine must show the operator key (`.agentx/operator.key`, which
+ *  `agentx situation closing` sends and the guard keeps agents from
+ *  reading): loopback alone is not an identity. A caller on another
+ *  machine got here with a mesh token (the route is mesh-protected).
+ *  Null: go on. */
+export function closingCallerRefusal(proof: TurnProof, caller: { thisMachine: boolean; keyShown: boolean }): Reply | null {
+  if (agentProofShown(proof)) {
+    return { status: 403, body: { error: "closing steps are set by a person; an agent names its talk with agentx_situation" } }
+  }
+  if (caller.thisMachine && !caller.keyShown) {
+    return {
+      status: 403,
+      body: { error: "closing steps are set by the owner: run `agentx situation closing` from the AgentX folder (it sends the operator key in .agentx/operator.key)" },
+    }
+  }
+  return null
+}

@@ -43,6 +43,12 @@ export const ruleMatchSchema = z.object({
   command_regex: z.string().optional(),
   /** JS regex source, tested against a Write/Edit file_path. */
   path_regex: z.string().optional(),
+  /** JS regex source, tested against each file the call reads or writes
+   *  the content of (#1979): for Bash, the files of content tools (cat,
+   *  cp, curl, an interpreter's code...) and of redirections, resolved
+   *  against the working folder, globs expanded, symlinks followed; for
+   *  Read/Write/Edit/Grep, the tool's path. See guard/file-access.ts. */
+  file_access_regex: z.string().optional(),
   /** Dotted reference into protected_resources, e.g. "production" or
    *  "protected_resources.production". Matches when the command resolves to
    *  any resource in that set. */
@@ -61,6 +67,11 @@ export const guardRuleSchema = z.object({
   /** Phase 3: gates that must hold before an `allow`/`escalate` proceeds,
    *  e.g. "fresh_backup(production)". Carried but NOT evaluated in Phase 1. */
   preconditions: z.array(z.string()).default([]),
+  /** `enforce`: this rule blocks even while the policy only warns (#1979).
+   *  Only `enforce` is accepted, so a rule can make itself stricter but
+   *  never weaken an enforcing policy. The policy's `off` still turns
+   *  every rule off. */
+  mode: z.literal("enforce").optional(),
   /** Free-form labels. A rule a retro asked for carries `retro:<taskId>`,
    *  so its monthly review can find it (src/retro/checks.ts). */
   tags: z.array(z.string()).optional(),
@@ -152,6 +163,9 @@ export interface Verdict {
   message: string | null
   /** The protected resource the command resolved to, if a target matched. */
   resolvedTarget: string | null
+  /** The mode the verdict was judged in: the winning rule's own `enforce`,
+   *  else the policy's. The audit row records this one. */
+  mode?: GuardMode
   /** True when the verdict came from the fail-closed error path. */
   failClosed?: boolean
 }
