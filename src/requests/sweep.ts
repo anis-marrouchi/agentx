@@ -3,7 +3,7 @@ import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } f
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { checkHomes, type HomeChecker, type PlanStepLeft } from "./home-check"
-import { DEFAULT_CLOSE_PROOF, type CloseProofCtx } from "./close-proof"
+import { DEFAULT_CLOSE_PROOF, deliverablesOf, type CloseProofCtx } from "./close-proof"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 import { cardWords } from "./card-view"
 import { wokenAgent, wokenTail } from "./owner-check"
@@ -22,8 +22,10 @@ import { JOB_NOTE_MAX } from "@/jobs/store"
 //      `homeCloses: false` turns that off.
 //   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
 //      whose handed work all came back done, closes as done with the link
-//      its delegate gave, or marked unproven without one. The owner is not
-//      told: the work came back, and its record leaves their list.
+//      its delegate gave. The owner is not told: the work came back, and
+//      its record leaves their list. Without a link it stays open
+//      (noqta#884): its agent is woken once per hand-back to bring the
+//      proof, and it comes back as quiet if none follows.
 //      A due time does not keep it open: the agent set it, from its own
 //      estimate or wait (#1214). One already raised for being overdue
 //      settles the same way once its work has been back that long.
@@ -235,6 +237,29 @@ function wakeOverdue(deps: RequestSweepDeps, r: RequestRecord): string | null {
   return "turn"
 }
 
+/** What the agent reads when its handed work came back done with no
+ *  proof link (noqta#884): the request stays open until it brings one. */
+export function noProofText(r: RequestRecord): string {
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  const names = deliverablesOf(r, null)?.names ?? []
+  return [
+    `[agentx:request-no-proof id=${r.id}] ${words.length > 300 ? `${words.slice(0, 299)}…` : words}`,
+    `It is not closed: the hand-off came back with no proof: bring the link for each thing asked.`,
+    ...(names.length ? ["Asked:", ...names.map((n, i) => `${i + 1}. ${n}`)] : []),
+    `Close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"}${names.length > 1 ? `, with proofs: [{deliverable: <number>, link: "<url>"}] for each` : ""}.`,
+  ].join("\n")
+}
+
+/** Wakes the agent of a hand-back with no proof, as wakeOverdue does.
+ *  What woke it, or null when nothing could. */
+function wakeNoProof(deps: RequestSweepDeps, r: RequestRecord): string | null {
+  const text = noProofText(r)
+  if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
+  if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
+  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its missing proof: ${e?.message ?? e}`))
+  return "turn"
+}
+
 /** What an agent that waits on a promise reads when it falls due (#1908). */
 export function duePromiseText(r: RequestRecord): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
@@ -365,12 +390,18 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           continue
         }
         const back = store.handBackProof(r.id)
-        const detail = back
-          ? `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`
-          : `The work it handed on came back done without a link to proof; nobody closed it in ${settings.staleAfterHours} h.`
-        if (store.settle(r.id, back?.proof ?? null, detail, now)) {
+        if (!back) {
+          // No proof, no close (noqta#884): its agent is asked once.
+          if (!store.markHandBackAsked(r.id)) continue
+          const woken = wakeNoProof(deps, r)
+          if (woken) store.touch(r.id, now)
+          log(`[requests] ${r.id} not settled: handed work came back with no proof; ${woken ? `${r.agentId} woken (${woken})` : `${r.agentId} could not be woken`}`)
+          continue
+        }
+        const detail = `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`
+        if (store.settle(r.id, back.proof, detail, now)) {
           result.settled++
-          log(`[requests] ${r.id} settled: ${back ? `handed work came back with ${back.proof}` : "handed work came back, unproven"}`)
+          log(`[requests] ${r.id} settled: handed work came back with ${back.proof}`)
         }
       }
     } catch (e: any) {

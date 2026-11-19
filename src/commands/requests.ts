@@ -402,7 +402,7 @@ requests
     console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
     const caught = s.catchPromises
     console.log(`  Catch promises          ${caught?.enabled ? `on: each of your turns' reply is read, up to ${caught.dailyCap} call(s) a day` : "off"}`)
-    console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
+    console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet with its link; asks for one without"}`)
     console.log(`  Home closed             ${s.homeCloses === false ? "left open" : "closes the request: merged, or closed as completed"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)
