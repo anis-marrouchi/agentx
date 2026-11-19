@@ -6,7 +6,8 @@ import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep } from "../src/requests/sweep"
-import { delegationAgents, fillLinkAgents } from "../src/requests/attach"
+import { fillLinkAgents } from "../src/requests/attach"
+import { HandoffStore } from "../src/a2a/handoff-store"
 import { homeChecker, homeRefOf, type HomeChecker } from "../src/requests/home-check"
 import type { ForgeItem, ForgeReader } from "../src/requests/checkers/issue"
 
@@ -409,18 +410,8 @@ describe("the owner writing again releases a wait the agent set (#1520)", () => 
   })
 })
 
-describe("hand-off agents from the delegation log (#1520)", () => {
-  it("reads each start's callee, with its peer, and skips broken lines", () => {
-    const log = [
-      JSON.stringify({ type: "start", ts: 1, id: "dlg-a", caller: "coder", callee: "devops", request: "x" }),
-      JSON.stringify({ type: "done", id: "dlg-a", status: "done", ts: 2 }),
-      JSON.stringify({ type: "start", ts: 3, id: "dlg-b", caller: "pm", callee: "pm-ksi", peer: "clawd", request: "y" }),
-      '{"type":"start","id":"dlg-c","cal',
-    ].join("\n")
-    expect([...delegationAgents(log)]).toEqual([["dlg-a", "devops"], ["dlg-b", "pm-ksi@clawd"]])
-  })
-
-  it("fills from the callee's runs when the compacted log kept only done lines", () => {
+describe("hand-off agents from the handoffs table (#1520, #1861)", () => {
+  it("fills from the table, with a peer's node, and from the callee's runs for older ids", () => {
     db.exec("CREATE TABLE task_history (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, chat_id TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL)")
     const run = db.prepare("INSERT INTO task_history (id, agent_id, chat_id, status, started_at, finished_at) VALUES (?, ?, ?, 'ok', '', '')")
     // The run's agent differs from the chat's callee: the chat wins.
@@ -431,17 +422,30 @@ describe("hand-off agents from the delegation log (#1520)", () => {
     tracker.delegationStarted(dlg("dlg-1"))
     tracker.delegationStarted(dlg("dlg-2", "pm"))
     tracker.delegationStarted(dlg("dlg-3", "qa"))
+    tracker.delegationStarted(dlg("dlg-4", "builder"))
     end("t1")
     db.prepare("UPDATE request_links SET agent = NULL").run()
-    const logPath = path.join(tmp, "delegations.jsonl")
-    writeFileSync(logPath, [
-      JSON.stringify({ type: "done", id: "dlg-1", status: "done", ts: 2 }),
-      JSON.stringify({ type: "done", id: "dlg-2", status: "done", ts: 3 }),
-      JSON.stringify({ type: "start", ts: 4, id: "dlg-3", caller: "coder", callee: "qa", request: "z" }),
-    ].join("\n"))
-    fillLinkAgents(store, db, logPath, (m) => logs.push(m))
+    const handoffs = new HandoffStore(db)
+    const rec = (id: string, callee: string, peer?: string) => ({
+      id, caller: "coder", callee, ...(peer ? { peer } : {}), request: "z",
+      origin: { channel: "telegram", chatId: "chat-1" }, root: { kind: "human" } as any, startedAt: 4,
+    })
+    handoffs.insert(rec("dlg-3", "qa"), 4)
+    handoffs.insert(rec("dlg-4", "builder", "node-b"), 4)
+    fillLinkAgents(store, db, (m) => logs.push(m))
     const agents = db.prepare("SELECT ref, agent FROM request_links WHERE kind = 'delegation' ORDER BY ref").all()
-    expect(agents).toEqual([{ ref: "dlg-1", agent: "devops" }, { ref: "dlg-2", agent: "pm" }, { ref: "dlg-3", agent: "qa" }])
-    expect(logs.join("\n")).toContain("3 hand-off links given their agent")
+    expect(agents).toEqual([{ ref: "dlg-1", agent: "devops" }, { ref: "dlg-2", agent: "pm" }, { ref: "dlg-3", agent: "qa" }, { ref: "dlg-4", agent: "builder@node-b" }])
+    expect(logs.join("\n")).toContain("4 hand-off links given their agent")
+  })
+
+  it("fills from the callee's runs alone when there is no handoffs table yet", () => {
+    db.exec("CREATE TABLE task_history (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, chat_id TEXT, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT NOT NULL)")
+    db.prepare("INSERT INTO task_history (id, agent_id, chat_id, status, started_at, finished_at) VALUES ('r1', 'devops', 'a2a:coder:devops:dlg-1', 'ok', '', '')").run()
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    end("t1")
+    db.prepare("UPDATE request_links SET agent = NULL").run()
+    fillLinkAgents(store, db, (m) => logs.push(m))
+    expect(db.prepare("SELECT agent FROM request_links WHERE ref = 'dlg-1'").get()).toEqual({ agent: "devops" })
   })
 })

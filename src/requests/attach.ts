@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3"
-import { existsSync, readFileSync } from "fs"
 import { getEventBus } from "@/events/bus"
+import { HandoffStore } from "@/a2a/handoff-store"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
 import { GoalStore } from "./goal-store"
@@ -38,24 +38,6 @@ export interface AttachedRequests {
   detach: () => void
 }
 
-/** Who each delegation in the log went to: id → callee, `callee@peer` for
- *  a peer's, as the tracker links them. */
-export function delegationAgents(logText: string): Map<string, string> {
-  const agents = new Map<string, string>()
-  for (const line of logText.split("\n")) {
-    if (!line.includes('"type":"start"')) continue
-    try {
-      const e = JSON.parse(line)
-      if (e.type === "start" && typeof e.id === "string" && typeof e.callee === "string") {
-        agents.set(e.id, e.peer ? `${e.callee}@${e.peer}` : e.callee)
-      }
-    } catch {
-      // A line cut off by a crash: the rest of the log still reads.
-    }
-  }
-  return agents
-}
-
 /** Who each delegation the callee ran here went to, from its runs: their
  *  chat is `a2a:<caller>:<callee>:<delegation id>`. The callee is read
  *  from the chat, not the run's agent, which can differ. A hand-off to
@@ -70,17 +52,24 @@ export function delegationAgentsFromRuns(db: Database.Database): Map<string, str
   return agents
 }
 
+/** Who each hand-off in the handoffs table went to (#1861): id → callee,
+ *  `callee@peer` for a peer's, as the tracker links them. Empty before the
+ *  table is made. */
+export function handoffAgents(db: Database.Database): Map<string, string> {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'handoffs'").get()
+  return has ? new HandoffStore(db).agents() : new Map()
+}
+
 /** Delegation links kept before their agent was (#1520), filled once at
- *  start, so a retry can be told from its failure. Compacting the
- *  delegation log keeps the starts of running ones only, so finished ones
- *  come from the callee's runs; the log adds those still running, and a
- *  peer's. */
-export function fillLinkAgents(store: RequestStore, db: Database.Database, logPath: string, log: (msg: string) => void): void {
+ *  start, so a retry can be told from its failure. The handoffs table
+ *  (with the old log imported into it) names them, a peer's too; the
+ *  callee's runs name older ones the old log's compaction dropped. */
+export function fillLinkAgents(store: RequestStore, db: Database.Database, log: (msg: string) => void): void {
   try {
-    const agents = existsSync(logPath) ? delegationAgents(readFileSync(logPath, "utf-8")) : new Map<string, string>()
+    const agents = handoffAgents(db)
     for (const [id, agent] of delegationAgentsFromRuns(db)) agents.set(id, agent)
     const n = store.fillLinkAgents(agents)
-    if (n) log(`  Requests: ${n} hand-off link${n === 1 ? "" : "s"} given their agent from the delegation log`)
+    if (n) log(`  Requests: ${n} hand-off link${n === 1 ? "" : "s"} given their agent from the hand-offs`)
   } catch (e: any) {
     log(`  Requests: hand-off agents not filled (${e?.message ?? e})`)
   }

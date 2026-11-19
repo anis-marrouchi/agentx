@@ -722,31 +722,6 @@ export class AgentXDaemon {
       })
     }
 
-    // A2A callbacks (#277): a delegation a person started runs in the
-    // background and its answer comes back to the asking agent's chat.
-    this.delegations = createDelegations({
-      config: this.config,
-      registry: this.registry,
-      router: this.router,
-      mesh: () => this.mesh,
-      log: this.log,
-      replies: this.callbackReplies,
-      recordDispatch: (agentId, context, message, senderAgentId) =>
-        this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => {
-        this.requests?.tracker.delegationStarted(rec)
-        this.requests?.doors.delegationStarted(rec)
-        this.status?.board.delegationStarted(rec)
-      },
-      onDone: (rec, result) => {
-        this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
-        this.requests?.doors.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
-        this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
-      },
-      callbackNote: (rec) => this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
-      onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
-    })
-
     // Initialize webhook handler (after mesh so mesh-forwarding works)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks, this.hooks)
 
@@ -787,7 +762,6 @@ export class AgentXDaemon {
           // closed as done: the registry asks it once, then marks it
           // stalled (#1861 phase 2, agents/run-state.ts).
           this.requests = attachRequests(db, () => this.config.requests, this.log, (_job, end) => needsJobState(this.config.jobState, end.channel))
-          fillLinkAgents(this.requests.store, db, resolve(process.cwd(), ".agentx/a2a/delegations.jsonl"), this.log)
           // Jobs (#1861): a hand-off still out ends with its delegation.
           this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))
           // The daemon owns the wake-up of a job (#1861, phase 3).
@@ -988,6 +962,38 @@ export class AgentXDaemon {
     } catch (e: any) {
       this.log(`  SQLite: skipped (${e.message})`)
     }
+
+    // A2A callbacks (#277): a delegation a person started runs in the
+    // background and its answer comes back to the asking agent's chat.
+    // After the database opens: the hand-off journal is its `handoffs`
+    // table (#1861). Still in the constructor, before the HTTP server and
+    // the channels start, so no hand-off can start before it.
+    this.delegations = createDelegations({
+      config: this.config,
+      registry: this.registry,
+      router: this.router,
+      mesh: () => this.mesh,
+      log: this.log,
+      replies: this.callbackReplies,
+      db: this.db,
+      recordDispatch: (agentId, context, message, senderAgentId) =>
+        this.recordInboundDispatch(agentId, context, message, senderAgentId),
+      onStarted: (rec) => {
+        this.requests?.tracker.delegationStarted(rec)
+        this.requests?.doors.delegationStarted(rec)
+        this.status?.board.delegationStarted(rec)
+      },
+      onDone: (rec, result) => {
+        this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
+        this.requests?.doors.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
+        this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
+      },
+      callbackNote: (rec) => this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
+      onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
+    })
+    // Delegation links without their agent (#1520): from the table, which
+    // now holds the old log too.
+    if (this.requests && this.db) fillLinkAgents(this.requests.store, this.db, this.log)
 
     this.startBudgets()
 
@@ -3414,6 +3420,8 @@ export class AgentXDaemon {
     } catch (e: any) {
       this.log(`[jobs] retention failed: ${e?.message ?? e}`)
     }
+    // Ended hand-offs too, on the same clock; held answers stay (#1861).
+    this.delegations.prune(Date.now() - this.config.requests.retentionDays * 86_400_000)
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
@@ -4258,6 +4266,15 @@ export class AgentXDaemon {
     void this.delegations.recover()
       .then((n) => { if (n) this.log(`[delegation] ${n} delegation(s) lost in the restart were reported to their callers`) })
       .catch((e) => this.log(`[delegation] recovery failed: ${e?.message ?? e}`))
+    // No database: the start-up warning is in the log; the owner is told
+    // too, once per cause (the notice key), on the channels now up (#1861).
+    if (this.delegations.journalMode() === "memory-only") {
+      void this.notifyOwner(
+        "Hand-offs kept in memory only",
+        `AgentX on ${this.config.node.name || this.config.node.id || "this machine"} could not open its database, so work one agent hands to another is not written down. A restart forgets every hand-off still out, and nobody is told it was lost. The daemon log line starting "[storage/sqlite]" says why; usually \`pnpm install\` fixes it.`,
+        "delegation", 4, { key: "handoffs:memory-only" },
+      ).catch((e: any) => this.log(`[delegation] could not tell the owner hand-offs are memory-only: ${e?.message ?? e}`))
+    }
   }
 
   /** Wires the workflow dispatcher + hook subscribers against the running
@@ -7649,6 +7666,9 @@ export class AgentXDaemon {
             // down and its mentions are queued rather than lost.
             deferredMesh: this.router.getDeferredMeshCounts(),
             projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
+            // "memory-only": no database, so a restart forgets every
+            // hand-off still out (#1861).
+            handoffs: this.delegations.journalMode(),
             usage: this.resolveTodayUsage(),
             // What a restart would cut off, and whether one is waiting for
             // that to reach zero (agentx daemon restart --when-idle, the

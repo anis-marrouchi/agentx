@@ -19,7 +19,9 @@
 
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
+import type Database from "better-sqlite3"
 import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
+import { handoffStoreFor } from "@/a2a/handoff-store"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { SessionStore } from "@/agents/sessions"
@@ -341,6 +343,9 @@ export interface DelegationWiring {
   log: (msg: string) => void
   /** Phone-app replies waiting for the dashboard (GET /a2a/delegations/<id>/reply). */
   replies: CallbackReplies
+  /** The jobs database, opened before the manager is built: the hand-off
+   *  journal lives there (#1861). Null: memory only, with a loud warning. */
+  db: Database.Database | null
   baseDir?: string
   /** Put a callback turn in the intent ledger, so the activity map can
    *  draw it as the answer returning to the caller (#267). */
@@ -482,6 +487,9 @@ export function pushPreview(text: string): string {
   return `${chars.slice(0, PUSH_PREVIEW_MAX).join("").trimEnd()}… (shortened; ask the agent for the full answer)`
 }
 
+/** The old delegation log, under the daemon's folder (#1861: written, not read). */
+export const DELEGATION_LOG = ".agentx/a2a/delegations.jsonl"
+
 export function createDelegations(w: DelegationWiring): DelegationManager {
   const cfg = w.config.mesh.delegation
   return new DelegationManager({
@@ -489,7 +497,10 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
     coalesceMs: cfg.coalesceSeconds * 1000,
-    logPath: resolve(w.baseDir ?? process.cwd(), ".agentx/a2a/delegations.jsonl"),
+    // Read from the table; the file is still written for one release so a
+    // rolled-back daemon finds it agreeing (#1861).
+    store: handoffStoreFor(w.db, w.log),
+    logPath: resolve(w.baseDir ?? process.cwd(), DELEGATION_LOG),
     log: w.log,
     onStarted: w.onStarted,
     onDone: w.onDone,
