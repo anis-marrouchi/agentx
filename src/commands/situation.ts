@@ -2,7 +2,8 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { loadDaemonConfig } from "@/daemon/config"
 import { SITUATION_TEMPLATES } from "@/situations/templates"
-import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
+import { isThisMachine, loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
+import { isIP } from "net"
 import { isLoopbackUrl } from "@/daemon/situations-panel"
 import { basename, dirname, resolve } from "path"
 
@@ -62,10 +63,15 @@ export function operatorKeyRoots(configPath: string | undefined, cwd: string = p
 }
 
 /** The operator key header (#1979), for owner-only routes such as
- *  POST /situations/closing. Sent only to a daemon on this machine: the
- *  key is this node's secret and never leaves it. */
-export function ownerKeyHeaders(baseUrl: string, roots: string[]): Record<string, string> {
-  if (!isLoopbackUrl(baseUrl)) return {}
+ *  POST /situations/closing. Sent only to a daemon on this machine
+ *  (loopback, or one of this machine's own addresses, such as its
+ *  Tailscale IP in dashboard.daemonUrl): the key never leaves it. */
+export function ownerKeyHeaders(baseUrl: string, roots: string[], own?: Iterable<string>): Record<string, string> {
+  if (!isLoopbackUrl(baseUrl)) {
+    let host = ""
+    try { host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, "") } catch { return {} }
+    if (!isIP(host) || !isThisMachine(host, own)) return {}
+  }
   for (const root of roots) {
     const key = loadOperatorKey(root)
     if (key) return { [OPERATOR_HEADER]: key }

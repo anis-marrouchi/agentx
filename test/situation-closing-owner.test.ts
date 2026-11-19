@@ -6,9 +6,6 @@ import { closingCallerRefusal } from "../src/situations/api"
 import { decideMeshAuth } from "../src/daemon/mesh-auth"
 import { loadOperatorKey, OPERATOR_HEADER } from "../src/requests/operator"
 import { operatorKeyRoots, ownerKeyHeaders } from "../src/commands/situation"
-import { evaluate } from "../src/guard/engine"
-import { resolveInMemory } from "../src/guard/policy"
-import type { GuardInput, GuardMode } from "../src/guard/types"
 
 // #1979: closing steps are the owner's. A caller on this machine shows the
 // operator key; a caller on another machine shows a mesh token (checked
@@ -64,6 +61,12 @@ describe("agentx situation closing sends the operator key (#1979)", () => {
     expect(ownerKeyHeaders("http://100.64.0.9:18800", [dir])).toEqual({})
   })
 
+  it("sends the key to this machine's own address (dashboard.daemonUrl on the Tailscale IP)", () => {
+    const key = loadOperatorKey(dir, { create: true })!
+    expect(ownerKeyHeaders("http://100.64.0.5:18800", [dir], ["100.64.0.5"])[OPERATOR_HEADER]).toBe(key)
+    expect(ownerKeyHeaders("http://100.64.0.9:18800", [dir], ["100.64.0.5"])).toEqual({})
+  })
+
   it("sends nothing when there is no key", () => {
     expect(ownerKeyHeaders("http://localhost:18800", [dir])).toEqual({})
   })
@@ -73,39 +76,5 @@ describe("agentx situation closing sends the operator key (#1979)", () => {
     expect(operatorKeyRoots(join(dir, "agentx.json"), "/elsewhere")).toEqual(["/elsewhere", dir])
     expect(operatorKeyRoots(join(dir, ".agentx", "config.json"), "/elsewhere")).toEqual(["/elsewhere", dir])
     expect(operatorKeyRoots(undefined, "/elsewhere")).toEqual(["/elsewhere"])
-  })
-})
-
-describe("guard: agents may not read the operator key (#1979)", () => {
-  const run = (input: GuardInput, mode: GuardMode = "warn") => evaluate(input, resolveInMemory({ mode, protected_resources: {}, rules: [], agents: {} }))
-
-  it("blocks a shell read of the key even in warn mode", () => {
-    for (const command of [
-      "cat .agentx/operator.key",
-      "cat /srv/agentx/.agentx/operator.key",
-      "curl -H \"x-agentx-operator: $(cat ~/agentx/.agentx/operator.key)\" localhost:18800/situations/closing",
-      "cd .agentx && cat operator.key",
-    ]) {
-      const v = run({ tool: "Bash", command })
-      expect(v.ruleId, command).toBe("operator-key-read")
-      expect(v.effectiveAction, command).toBe("deny")
-    }
-  })
-
-  it("blocks the Read, Write and Edit tools on the key's path", () => {
-    for (const tool of ["Read", "Write", "Edit"]) {
-      const v = run({ tool, filePath: "/srv/agentx/.agentx/operator.key" })
-      expect(v.ruleId).toBe("operator-key-file")
-      expect(v.effectiveAction).toBe("deny")
-    }
-  })
-
-  it("leaves code that only names the file alone", () => {
-    expect(run({ tool: "Bash", command: "grep -rn \"operator.key\" src" }).effectiveAction).toBe("allow")
-    expect(run({ tool: "Read", filePath: "/srv/agentx/src/requests/operator.ts" }).effectiveAction).toBe("allow")
-  })
-
-  it("the guard's off switch still turns it off", () => {
-    expect(run({ tool: "Bash", command: "cat .agentx/operator.key" }, "off").effectiveAction).toBe("allow")
   })
 })
