@@ -50,15 +50,20 @@ export function attachSignalSources(opts: {
 
 /** For `GET /situations/sources` and `agentx situation sources`: what is
  *  loaded on this node, what is not and why, and each read source's
- *  answer now (unknown with its reason when it cannot tell). */
-export function sourcesView(sources: SignalSources) {
+ *  answer now (unknown with its reason when it cannot tell).
+ *
+ *  A read answer's value and reason can be personal (the Focus mode, "on
+ *  a call with <name>"), so only a caller on this machine (`local`, the
+ *  daemon checks loopback) gets them. A mesh caller gets each source's
+ *  state, known or unknown, and no value or reason. */
+export function sourcesView(sources: SignalSources, opts: { local: boolean }) {
   return {
     loaded: sources.loaded().map((s) => {
       const answer = s.mode === "read" ? sources.read(s.id, {})[0] : undefined
-      return {
-        id: s.id, kind: s.kind, sensitivity: s.sensitivity, mode: s.mode,
-        ...(answer ? { value: isUnknown(answer) ? "unknown" : answer.value, reason: answer.reason } : {}),
-      }
+      const base = { id: s.id, kind: s.kind, sensitivity: s.sensitivity, mode: s.mode }
+      if (!answer) return base
+      if (!opts.local) return { ...base, state: isUnknown(answer) ? "unknown" : "known" }
+      return { ...base, value: isUnknown(answer) ? "unknown" : answer.value, reason: answer.reason }
     }),
     notLoaded: sources.skipped(),
   }

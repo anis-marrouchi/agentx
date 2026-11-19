@@ -206,6 +206,99 @@ describe("Telegram: chat_member updates and the leave service message", () => {
     expect(signals).toEqual([])
   })
 
+  // Review fixes for PR #1944: our other bots, a stale bot list, repeat counts.
+  function twoBots(api: (method: string, params: any) => Promise<any>, recorded = ["main", "second"]) {
+    const tg = new TelegramAdapter({ main: { token: "t", agentBinding: "main" }, second: { token: "t2", agentBinding: "second" } }, {}, () => {})
+    const apiCall = vi.fn(async (_token: string, method: string, params: any) => api(method, params))
+    ;(tg as any).apiCall = apiCall
+    ;(tg as any).botInfo.set("main", { userId: 7, username: "demo_bot" })
+    ;(tg as any).botInfo.set("second", { userId: 8, username: "other_bot" })
+    // Never touch the groups file on disk: a stub store with the recorded bots.
+    ;(tg as any).groupStore = { getGroupBots: () => recorded.map((accountId) => ({ accountId, agentId: accountId, username: accountId })) }
+    return { tg, apiCall }
+  }
+  const demoChat = { id: -100123, type: "supergroup", title: "Demo" }
+  const leaveOf = (id: number, isBot = false) => {
+    const user = { id, first_name: "U", is_bot: isBot }
+    return { update_id: 1, chat_member: { chat: demoChat, from: user, old_chat_member: { user, status: "member" }, new_chat_member: { user, status: "left" } } } as any
+  }
+  const leaveMsgOf = (id: number) => ({ update_id: 2, message: { message_id: 3, chat: demoChat, from: { id, first_name: "U" }, date: 1, left_chat_member: { id, first_name: "U" } } }) as any
+
+  it("telegramLeaveOf ignores any of our bot accounts leaving, not only this account's", () => {
+    expect(telegramLeaveOf(leaveOf(8, true), new Set([7, 8]))).toBeNull()
+    expect(telegramLeaveOf(leaveMsgOf(8), new Set([7, 8]))).toBeNull()
+    // A bot that is not ours is a party (another company's agent): its leave counts.
+    expect(telegramLeaveOf(leaveOf(99, true), new Set([7, 8]))).toEqual({ chatId: "-100123", userId: "99" })
+  })
+
+  it("one of our other bots leaving is not a party leaving: no count, no signal", async () => {
+    setSignalInterest(() => true)
+    const { tg, apiCall } = twoBots(async () => ({ result: 2 }))
+    await tg.handleMemberUpdate("main", "t", leaveOf(8, true))
+    expect(apiCall).not.toHaveBeenCalled()
+    expect(signals).toEqual([])
+  })
+
+  it("a stale bot list never drives the count to 0: a recorded bot that is no longer there makes it unknown", async () => {
+    setSignalInterest(() => true)
+    // Recorded: main + second. In fact second was removed (its record not updated yet);
+    // the group is main + a candidate, so the count is 2 and 2 - 2 would wrongly be 0.
+    const { tg } = twoBots(async (method, params) => {
+      if (method === "getChatMemberCount") return { result: 2 }
+      if (method === "getChatMember") return { result: { status: params.user_id === 8 ? "left" : "member" } }
+      return {}
+    })
+    await tg.handleMemberUpdate("main", "t", leaveOf(42))
+    expect(signals).toHaveLength(1)
+    expect(signals[0]).toMatchObject({ kind: "left", remaining: null })
+  })
+
+  it("the recorded bots all confirmed present: the count of 0 stands", async () => {
+    setSignalInterest(() => true)
+    const { tg } = twoBots(async (method) => {
+      if (method === "getChatMemberCount") return { result: 2 }
+      if (method === "getChatMember") return { result: { status: "administrator" } }
+      return {}
+    })
+    await tg.handleMemberUpdate("main", "t", leaveOf(42))
+    expect(signals[0]).toMatchObject({ kind: "left", remaining: 0 })
+  })
+
+  it("a recorded bot whose presence cannot be checked: unknown, not 0", async () => {
+    setSignalInterest(() => true)
+    const { tg } = twoBots(async (method) => {
+      if (method === "getChatMemberCount") return { result: 2 }
+      throw new Error("Bad Request: user not found")
+    })
+    await tg.handleMemberUpdate("main", "t", leaveOf(42))
+    expect(signals[0]).toMatchObject({ remaining: null })
+  })
+
+  it("the same leave seen by every bot, as chat_member and as the service message: counted once in 60 s", async () => {
+    setSignalInterest(() => true)
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000)
+    try {
+      const { tg, apiCall } = twoBots(async () => ({ result: 1 }), ["main"])
+      await Promise.all([
+        tg.handleMemberUpdate("main", "t", leaveOf(42)),
+        tg.handleMemberUpdate("main", "t", leaveMsgOf(42)),
+        tg.handleMemberUpdate("second", "t2", leaveOf(42)),
+        tg.handleMemberUpdate("second", "t2", leaveMsgOf(42)),
+      ])
+      expect(apiCall.mock.calls.filter((c) => c[1] === "getChatMemberCount")).toHaveLength(1)
+      expect(signals).toHaveLength(1)
+      // Another person's leave in the same chat is its own event.
+      await tg.handleMemberUpdate("second", "t2", leaveOf(43))
+      expect(signals).toHaveLength(2)
+      // After the window, the same person leaving again (they rejoined) counts again.
+      now.mockReturnValue(1_000_000 + 61_000)
+      await tg.handleMemberUpdate("second", "t2", leaveMsgOf(42))
+      expect(signals).toHaveLength(3)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
   it("presence on Telegram is unknown when no leave was reported (chat_member needs an admin bot)", () => {
     const reg = new SignalSources({ now: () => 1 })
     reg.register(TELEGRAM_MEMBERS_SOURCE)
