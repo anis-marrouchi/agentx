@@ -3729,9 +3729,18 @@ Give a talk closing steps: when it ends, its agent drafts one note (read only) t
 | `--agent <id>` | the chat's agent | The agent that drafts the note and owns the follow-ups. Must be an agent of this node. |
 | `--agents <ids>` | none | Other agents of this node that may own a follow-up, comma-separated. A follow-up named to anyone else is kept by the talk's agent. |
 | `--message <text>` | — | A closing message to the other side. You are always asked before it is sent. |
+| `--template <id>` | `meeting` | The kind of talk. With `situations.templates.enabled`, one of `agentx situation templates` (for example `meeting.external`); otherwise only a label. |
 | `--channel <name>`, `--chat <id>` | — | For a talk with no record yet, instead of `[id]`. `--chat` is also needed with `--message` on WhatsApp (the id ending in `@g.us`). |
 | `--account <id>` | — | The channel account, when it has several. |
 | `--clear` | — | Remove the closing steps. |
+
+### `agentx situation templates`
+
+List the situation templates: what each adds to the agent's `[Situation]` line in each phase, what its closing note must hold, and whether the chat's agent may pick it. Read from this AgentX version; no daemon is needed. See [Templates](/jobs/stop-goodbye-loops#templates-what-kind-of-talk-it-is).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--json` | — | Print JSON. |
 
 ### `agentx situation seat`
 
