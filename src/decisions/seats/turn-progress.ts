@@ -1,4 +1,5 @@
 import { choice } from "../questions"
+import { redactSourcesRead } from "@/situations/sources/redact"
 import type { AnswersFor, ChoiceAnswer, StateValue } from "../types"
 
 // The turn-progress seat: is a long agent turn getting somewhere?
@@ -67,7 +68,7 @@ export function turnProgressState(input: TurnProgressInput): StateValue {
     recentSteps: input.steps.map(s => ({
       tool: s.tool,
       input: clip(s.input, 300),
-      ...(s.result !== undefined ? { result: clip(s.result, 300) } : {}),
+      ...(s.result !== undefined ? { result: clip(redactSourcesRead(s.result), 300) } : {}),
       ...(s.error ? { failed: true } : {}),
     })),
     ...(input.repeated ? { mostRepeatedCall: input.repeated } : {}),

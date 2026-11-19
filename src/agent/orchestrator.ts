@@ -1,5 +1,6 @@
 // --- Agentic Orchestrator: tool_result feedback loop ---
 
+import { redactSourcesRead } from "@/situations/sources/redact"
 import type {
   AgentProvider,
   GenerationMessage,
@@ -305,7 +306,7 @@ export async function runAgenticLoop(options: AgenticLoopOptions): Promise<Agent
           type: "tool_result",
           name: toolBlock.name,
           id: toolBlock.id,
-          content: toolResult.content.slice(0, 200),
+          content: redactSourcesRead(toolResult.content).slice(0, 200),
           is_error: toolResult.is_error,
         })
 

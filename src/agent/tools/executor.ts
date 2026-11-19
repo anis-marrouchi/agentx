@@ -1,6 +1,7 @@
 // --- Tool Executor: runs tool calls with permission and hook integration ---
 
 import { promises as fs } from "fs"
+import { redactSourcesRead } from "@/situations/sources/redact"
 import path from "path"
 import { execa } from "execa"
 import fg from "fast-glob"
@@ -141,7 +142,8 @@ export class ToolExecutor {
         event: "post:tool-call" as any,
         toolName: call.name,
         toolInput: call.input,
-        toolResult: result.content,
+        // A per-request source read stays out of hooks (#1892 phase 7).
+        toolResult: redactSourcesRead(result.content),
         cwd: this.cwd,
       })
     }

@@ -1,4 +1,5 @@
 import { askSeat, decisionsRuntime, getSeatMode } from "@/decisions/seat"
+import { redactSourcesRead } from "@/situations/sources/redact"
 import { TURN_PROGRESS_SEAT, turnProgressQuestions, turnProgressState, type TurnStep } from "@/decisions/seats/turn-progress"
 import {
   APPROVAL_BINDING_SEAT,
@@ -31,6 +32,12 @@ export interface TurnWatch {
 }
 
 const NOOP_WATCH: TurnWatch = { observe() {}, stop() {} }
+
+/** A tool result as the turn-progress seat may see it: what a
+ *  per-request source read gave never goes to the seat (#1892 phase 7). */
+export function redactedToolResult(text: string): string {
+  return redactSourcesRead(text)
+}
 
 export function startTurnWatch(opts: {
   agent: string
@@ -103,9 +110,9 @@ export function startTurnWatch(opts: {
           if (block?.type !== "tool_result") continue
           const step = byToolUseId.get(block.tool_use_id)
           if (!step) continue
-          step.result = Array.isArray(block.content)
+          step.result = redactedToolResult(Array.isArray(block.content)
             ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
-            : typeof block.content === "string" ? block.content : ""
+            : typeof block.content === "string" ? block.content : "")
           if (block.is_error) step.error = true
         }
       }
