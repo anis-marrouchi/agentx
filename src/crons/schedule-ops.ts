@@ -104,6 +104,29 @@ export function buildScheduleJob(input: ScheduleJobInput): Record<string, unknow
   return job
 }
 
+/** Channels whose chat ids never hold ":", so a third segment is the account (#2005). */
+const ACCOUNT_SUFFIX_CHANNELS = new Set(["telegram", "whatsapp"])
+
+/** Parse `--notify channel:chatId[:accountId]`. The first segment is the
+ *  channel; other channels' chat ids can hold ":" ("app:<id>", gitlab
+ *  "org/repo:issue:1"), so for them the whole rest is the chat id (#2005). */
+export function parseNotifyFlag(flag: string): NotifyTarget | null {
+  const i = flag.indexOf(":")
+  if (i <= 0 || i === flag.length - 1) return null
+  const channel = flag.slice(0, i)
+  const rest = flag.slice(i + 1)
+  if (!ACCOUNT_SUFFIX_CHANNELS.has(channel)) return { channel, chatId: rest }
+  const [chatId, accountId] = rest.split(":")
+  if (!chatId) return null
+  return accountId ? { channel, chatId, accountId } : { channel, chatId }
+}
+
+/** True for a saved notify target in the shape the old parser wrote for
+ *  app chats: chatId "app" with the id moved into accountId (#2005). */
+export function isBrokenAppNotify(notify: { channel?: string; chatId?: string } | undefined): boolean {
+  return notify?.channel === "app" && !String(notify.chatId ?? "").startsWith("app:")
+}
+
 /** What a job's `notify` destination receives, as `schedule list` prints it. */
 export function notifyScope(job: { deliverResult?: boolean; report?: string }): string {
   if (job.deliverResult === false) return "(failures only)"
