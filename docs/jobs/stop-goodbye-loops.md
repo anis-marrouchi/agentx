@@ -45,7 +45,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.maxAge.duringHours` | `12` | A talk with no change for this long is treated as over. |
 | `situations.maxAge.endingMinutes` | `60` | A talk left in **ending** this long (your agent never said goodbye) is treated as over. |
 | `situations.closing.enabled` | `false` | `true` runs the closing steps of talks you gave closing steps (see [Closing steps](#closing-steps-after-a-talk-ends)). Other talks are not changed. |
-| `situations.sources.<id>.enabled` | on | `false` switches one signal source off (see [Signals: who left, who is busy](#signals-who-left-who-is-busy)). |
+| `situations.sources.<id>.enabled` | on (per-request sources: off) | `false` switches one signal source off (see [Signals: who left, who is busy](#signals-who-left-who-is-busy)). |
 | `situations.sources.<id>.agents` | all agents | A list of agent ids: the source is used only for these agents. For `whatsapp-groups` and `telegram-members`, a leave counts only in a talk one of these agents has answered in; in other talks it is ignored. |
 | `situations.seat.maxFalseNoReply` | not set | The highest false "no reply" rate you accept from the decision seat, for example `0.02` (2 in 100). Not set: the seat never holds a message. See [Let a decision seat judge the unsure messages](#let-a-decision-seat-judge-the-unsure-messages). |
 | `situations.seat.noReplyBelow` | `0.2` | The seat says "no reply needed" when its chance that the message needs a reply is at or under this. |
@@ -57,6 +57,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.templates.enabled` | `false` | `true` adds each talk's template rules to your agent's `[Situation]` line and to its closing note, and accepts only templates from `agentx situation templates` (see [Templates](#templates-what-kind-of-talk-it-is)). |
 | `situations.templates.agentFill` | `false` | `true` lets the chat's own agent name its talk with `agentx_situation`, within the limits in [Templates](#templates-what-kind-of-talk-it-is). Needs `situations.templates.enabled`. |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
+| `situations.sources.open-apps` / `browser-tabs` / `news` | off | Per-request sources: read only when an agent asks for one request, and for open apps and tabs only after your yes in the popup. See [Let an agent see your open apps and tabs for one request](/jobs/screen-for-a-request), which also lists `situations.consent.*` and `situations.news.*`. |
 
 ## Turn it on
 

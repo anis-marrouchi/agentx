@@ -103,6 +103,7 @@ const groups = [
     { text: "Say where the work stands when a run ends", link: "/jobs/end-of-run-state" },
     { text: "Talk to an agent while it works", link: "/jobs/talk-while-it-works" },
     { text: "Stop goodbye loops", link: "/jobs/stop-goodbye-loops" },
+    { text: "Let an agent see your open apps and tabs", link: "/jobs/screen-for-a-request" },
     { text: "Tell agents who is who", link: "/jobs/people" },
     { text: "Give agents and people a picture", link: "/jobs/profile-pictures" },
     { text: "Invite a teammate to their work page", link: "/jobs/members" },

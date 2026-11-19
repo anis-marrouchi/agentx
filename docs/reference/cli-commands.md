@@ -3752,10 +3752,20 @@ Show the decision seat `situation-phase`: its mode, whether it holds messages no
 
 ### `agentx situation sources`
 
-List the signal sources on this machine: the owner's Focus, call and widget hold, calls, and who left a WhatsApp or Telegram group. Shows what each answers now (**unknown** with a reason when it cannot tell), and which sources are not loaded here and why (for example, macOS Focus on a Linux machine).
+List the signal sources on this machine: the owner's Focus, call and widget hold, calls, and who left a WhatsApp or Telegram group. Shows what each answers now (**unknown** with a reason when it cannot tell), and which sources are not loaded here and why (for example, macOS Focus on a Linux machine). The per-request sources (`open-apps`, `browser-tabs`, `news`) are listed as "per request" and never read for this list.
 
 | Flag | Default | Meaning |
 |---|---|---|
+| `--json` | — | Print JSON. |
+
+### `agentx situation reads`
+
+List each read of a per-request source (`open-apps`, `browser-tabs`, `news`), newest first: when, which source, which agent, how it went and for which request (the consent card's id). Never what was read. Works only on the machine itself. See [Let an agent see your open apps and tabs for one request](/jobs/screen-for-a-request).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--request <id>` | — | Only the reads for this request. |
+| `--limit <n>` | `50` | How many rows. |
 | `--json` | — | Print JSON. |
 
 ## watch (advanced)
