@@ -170,3 +170,22 @@ describe("isControlPost — daemon control routes need a mesh token off-box", ()
     expect(decideMeshAuth({ remoteAddress: "100.64.0.9", authorizationHeader: "Bearer mesh-secret", acceptedTokens: tokens }).allowed).toBe(true)
   })
 })
+
+describe("GET /situations/sources needs the mesh token (#1945)", () => {
+  // The answer can say whether the owner is in Focus or on a call, and with whom.
+  it("is a gated path", () => {
+    expect(isMeshGatedPath("/situations/sources")).toBe(true)
+  })
+
+  it("refuses an off-box caller without the token, or with a wrong one", () => {
+    for (const authorizationHeader of ["", "Bearer not-a-mesh-token"]) {
+      expect(isMeshGatedPath("/situations/sources") && decideMeshAuth({ remoteAddress: "100.64.0.11", authorizationHeader, acceptedTokens: TOKENS }))
+        .toEqual({ allowed: false, reason: "missing-or-invalid-token" })
+    }
+  })
+
+  it("lets an off-box caller with the token through", () => {
+    expect(decideMeshAuth({ remoteAddress: "100.64.0.11", authorizationHeader: "Bearer shared-mesh-token", acceptedTokens: TOKENS }))
+      .toEqual({ allowed: true, reason: "token" })
+  })
+})
