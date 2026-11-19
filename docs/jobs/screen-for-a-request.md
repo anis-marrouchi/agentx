@@ -17,8 +17,12 @@ The rules:
 - All three are **off** until you switch them on.
 - `open-apps` and `browser-tabs` are read only after **you** say yes, for that one request. Your yes counts only in the popup on your Mac. A message in a chat, another agent, another machine or the command line can say no, never yes.
 - Your yes lasts a few minutes (15 unless the agent asks for another time; never more than 60 unless you change it), and then ends by itself. After that a read is refused.
-- Each read is written in a log: when, which source, which agent, for which request. What was read is not kept; it goes only to the agent that asked, and from there to its model, which the card tells you.
+- A yes is for one request: the agent can use it only in the chat or task it asked from, and in the turn where it is told your answer. The same agent in another chat cannot use it.
+- Each read is written in a log: when, which source, which agent, for which request. What was read is not kept: it goes only to the agent that asked, and from there to its model, which the card tells you. It is left out of the agent's run history (traces) and the live view of its work.
 - The answer never leaves the machine: other machines in your mesh cannot ask for it.
+- What the agent then writes back to you is its reply, kept like any other reply.
+
+Limits: a yes counts only from the popup, but a program already running on your Mac with your rights (for example, one that can write AgentX's own files or click on screen for you) could still fake one. Give such tools only to agents you trust.
 
 ## Settings
 
@@ -56,8 +60,9 @@ The first time AgentX reads your browser tabs, macOS asks whether AgentX may con
 
 1. You ask an agent something that needs your screen, for example "which of my open tabs is the booking page?".
 2. The agent asks you. A popup opens on your Mac: "helper asks to read your browser tabs (titles and addresses)", with how many minutes, its reason in quotes, and that what it reads goes to its model.
+   ![The popup: "helper asks to read your browser tabs (titles and addresses)", for 15 minutes from your yes, with the agent's reason in quotes, and the buttons Not now, No and Yes.](/screenshots/screen-for-a-request/consent-card.png)
 3. **Popup:** click **Yes** to let it read, or **No**. If you do nothing, the card expires after `askMinutes` and nothing is read.
-4. After a yes, the agent reads and answers you. It can read again for the same request until the yes ends.
+4. After a yes, the agent reads and answers you. It can read again for the same request until the yes ends. In the plain-dialog popup style, the Return key picks **Not now**, never **Yes**.
 
 A yes is for one agent, the sources named on the card, and the time on the card. Another agent cannot use it.
 
