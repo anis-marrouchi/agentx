@@ -65,6 +65,10 @@ export interface SituationRow {
   /** The `situation-close` run, and the end generation it belongs to. */
   closeRunId: string | null
   closeGeneration: number | null
+  /** How much the talk matters (phase 5, `situations.importance`), and
+   *  why. Null: not judged. */
+  importance: "low" | "normal" | "high" | null
+  importanceWhy: string | null
 }
 
 /** What the closing steps of a talk need (design 3.1 slots, phase 4). Set
@@ -109,6 +113,9 @@ export interface GateLogRow {
   /** The inbound message, for a release. Kept under GATE_MESSAGE_MAX. */
   message: string
   releasedAt: number | null
+  /** The situation-phase seat's call behind this row (phase 5), for its
+   *  label: a release says the message did need a reply. */
+  seatCallId: string | null
 }
 
 export function ensureSituationTables(db: Database.Database): void {
@@ -156,16 +163,23 @@ export function ensureSituationTables(db: Database.Database): void {
   for (const [name, type] of [["closing", "TEXT"], ["expiry_run_id", "TEXT"], ["close_run_id", "TEXT"], ["close_generation", "INTEGER"], ["note_at", "TEXT"], ["note_generation", "INTEGER"]]) {
     if (!cols.some((c) => c.name === name)) db.exec(`ALTER TABLE situations ADD COLUMN ${name} ${type}`)
   }
+  // Phase 5: importance, and the seat call behind a gate log row.
+  for (const name of ["importance", "importance_why"]) {
+    if (!cols.some((c) => c.name === name)) db.exec(`ALTER TABLE situations ADD COLUMN ${name} TEXT`)
+  }
+  const logCols = db.prepare("PRAGMA table_info(situation_gate_log)").all() as Array<{ name: string }>
+  if (!logCols.some((c) => c.name === "seat_call_id")) db.exec("ALTER TABLE situation_gate_log ADD COLUMN seat_call_id TEXT")
 }
 
 const COLS = `id, key, template, phase, end_reason AS endReason, end_generation AS endGeneration,
   entered_at AS enteredAt, phase_changed_at AS phaseChangedAt, set_by AS setBy, why, slot,
   slot_by AS slotBy, owner_agent AS ownerAgent, override, closing,
-  expiry_run_id AS expiryRunId, close_run_id AS closeRunId, close_generation AS closeGeneration`
+  expiry_run_id AS expiryRunId, close_run_id AS closeRunId, close_generation AS closeGeneration,
+  importance, importance_why AS importanceWhy`
 
 const LOG_COLS = `id, at, key, situation_id AS situationId, message_id AS messageId, channel,
   chat_id AS chatId, sender_id AS senderId, sender_name AS senderName, sender_kind AS senderKind,
-  text, phase, outcome, reason, message, released_at AS releasedAt`
+  text, phase, outcome, reason, message, released_at AS releasedAt, seat_call_id AS seatCallId`
 
 /** Gate log rows are kept this long. */
 const LOG_KEEP_MS = 30 * 24 * 3600_000
@@ -210,7 +224,7 @@ export function clipGateMessage(json: string): string {
 type StatementName =
   | "get" | "getById" | "byPrefix" | "list" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
   | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
-  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing" | "noteFor" | "setNote"
+  | "setClosing" | "setImportance" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing" | "noteFor" | "setNote"
 
 /** A row as SQLite returns it: `closing` is JSON text. */
 type RawRow = Omit<SituationRow, "closing"> & { closing: string | null }
@@ -261,8 +275,8 @@ export class SituationStore {
       takeSlot: db.prepare("UPDATE situations SET slot = 'taken', slot_by = ? WHERE key = ? AND phase = 'ending' AND slot = 'free'"),
       freeSlot: db.prepare("UPDATE situations SET slot = 'free', slot_by = NULL WHERE key = ? AND slot = 'taken' AND slot_by = ?"),
       logGate: db.prepare(
-        `INSERT INTO situation_gate_log (at, key, situation_id, message_id, channel, chat_id, sender_id, sender_name, sender_kind, text, phase, outcome, reason, message)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO situation_gate_log (at, key, situation_id, message_id, channel, chat_id, sender_id, sender_name, sender_kind, text, phase, outcome, reason, message, seat_call_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       gateRow: db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log WHERE id = ?`),
       gateLog: db.prepare(`SELECT ${LOG_COLS} FROM situation_gate_log ORDER BY id DESC LIMIT ?`),
@@ -274,6 +288,8 @@ export class SituationStore {
       // handled, so no close starts for it, not even after a restart.
       setClosing: db.prepare(`UPDATE situations SET closing = ?, template = ?,
         close_generation = CASE WHEN phase = 'ended' AND ? = 1 THEN end_generation ELSE close_generation END WHERE id = ?`),
+      setImportance: db.prepare(`UPDATE situations SET importance = ?, importance_why = ?
+        WHERE key = ? AND (importance IS NOT ? OR importance_why IS NOT ?)`),
       noteFor: db.prepare("SELECT note_at AS noteAt FROM situations WHERE id = ? AND note_generation = ?"),
       setNote: db.prepare("UPDATE situations SET note_at = ?, note_generation = ? WHERE id = ?"),
       // S9: only for the phase it was started for.
@@ -490,11 +506,18 @@ export class SituationStore {
     return this.q.freeSlot.run(key, by).changes > 0
   }
 
-  logGate(row: Omit<GateLogRow, "id" | "at" | "releasedAt">): number {
+  /** Set the talk's importance (phase 5). Not a phase change: no event.
+   *  False: no record, or nothing changed. */
+  setImportance(key: string, level: "low" | "normal" | "high", why: string): boolean {
+    const w = why.slice(0, 200)
+    return this.q.setImportance.run(level, w, key, level, w).changes > 0
+  }
+
+  logGate(row: Omit<GateLogRow, "id" | "at" | "releasedAt" | "seatCallId"> & { seatCallId?: string | null }): number {
     const at = this.now()
     this.prune(at)
     const r = this.q.logGate.run(at, row.key, row.situationId, row.messageId, row.channel, row.chatId, row.senderId, row.senderName.slice(0, 120),
-      row.senderKind, row.text.slice(0, 500), row.phase, row.outcome, row.reason.slice(0, 500), clipGateMessage(row.message))
+      row.senderKind, row.text.slice(0, 500), row.phase, row.outcome, row.reason.slice(0, 500), clipGateMessage(row.message), row.seatCallId ?? null)
     return Number(r.lastInsertRowid)
   }
 

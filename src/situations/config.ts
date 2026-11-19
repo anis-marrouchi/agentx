@@ -10,6 +10,8 @@ import { z } from "zod"
 //     backstop: { count: 6, windowMinutes: 10 }
 //     maxAge: { duringHours: 12, endingMinutes: 60 }
 //     closing: { enabled: false }   # phase 4: closing steps
+//     seat: { noReplyBelow: 0.2, minLabeled: 50 }   # phase 5 (maxFalseNoReply unset)
+//     importance: { enabled: false }                # phase 5
 //
 // `shadow` (the default) keeps the record of each chat and writes every
 // message the gate WOULD drop to the gate log, but drops nothing and sends
@@ -59,6 +61,28 @@ export const situationsConfigSchema = z.object({
    *  promise, one message to the owner). A talk without closing steps is
    *  unchanged: no run starts for it. */
   closing: z.object({
+    enabled: z.boolean().default(false),
+  }).default({}),
+  /** The `situation-phase` decision seat (phase 5). Its mode is the seat's
+   *  own setting, `decisions.seats.situation-phase.mode`: unset, it runs in
+   *  shadow (asks and records, changes nothing) once `decisions.enabled`.
+   *  It is asked only about a message the word list is unsure of, after
+   *  the talk is ending or has ended. In active mode it holds such a
+   *  message only when it says no reply is needed AND its calibration
+   *  report is under the limit below. */
+  seat: z.object({
+    /** At or under this P(needs a reply), the seat says "no reply needed". */
+    noReplyBelow: z.number().min(0).max(0.5).default(0.2),
+    /** The false "no reply" rate the owner accepts (0.02 = 2 in 100),
+     *  checked against the 95% upper bound. Unset: the seat never acts. */
+    maxFalseNoReply: z.number().min(0).max(1).optional(),
+    /** Labelled "no reply" answers needed before the report can pass. */
+    minLabeled: z.number().int().min(1).max(100_000).default(50),
+  }).default({}),
+  /** Importance of each talk (phase 5): from the sender's role in
+   *  `people` and an open promise on the chat, shown on the record and,
+   *  when high, in the [Situation] prompt line. Off by default. */
+  importance: z.object({
     enabled: z.boolean().default(false),
   }).default({}),
 }).default({})

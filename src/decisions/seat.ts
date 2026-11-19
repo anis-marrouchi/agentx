@@ -167,7 +167,7 @@ export function seatEnvVar(seat: string): string {
  * Read every call, never cached, so an operator can flip a seat off without
  * restarting the daemon.
  */
-export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env): SeatMode {
+export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env, fallback: SeatMode = "off"): SeatMode {
   // Configure FIRST, even when the env var will decide the answer.
   //
   // This used to return on the env override before touching the config,
@@ -185,7 +185,12 @@ export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env):
   const fromEnv = parseSeatMode(env[seatEnvVar(seat)])
   if (fromEnv) return fromEnv
   if (!runtime.enabled) return "off"
-  return parseSeatMode(runtime.seats[seat]?.mode) ?? "off"
+  // `fallback` is for a seat the operator has not named at all: a seat
+  // that ships in shadow (situation-phase) records from day one once
+  // decisions are on. A named seat's mode, even "off", always wins.
+  const named = runtime.seats[seat]
+  if (!named) return fallback
+  return parseSeatMode(named.mode) ?? "off"
 }
 
 export interface AskSeatOptions<Q extends Questions> {
@@ -200,6 +205,8 @@ export interface AskSeatOptions<Q extends Questions> {
   timeoutMs?: number
   backend?: string
   model?: string
+  /** The mode of a seat the operator has not named (see getSeatMode). */
+  defaultMode?: SeatMode
 }
 
 export interface SeatResult<Q extends Questions> {
@@ -251,7 +258,7 @@ export async function askSeat<Q extends Questions>(
   questions: Q,
   opts: AskSeatOptions<Q> = {},
 ): Promise<SeatResult<Q> | null> {
-  const mode = getSeatMode(seat)
+  const mode = getSeatMode(seat, process.env, opts.defaultMode)
   if (mode === "off") return null
 
   const settings = runtime.seats[seat] ?? { mode }

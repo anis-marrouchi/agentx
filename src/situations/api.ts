@@ -27,6 +27,7 @@ export function situationView(r: SituationRow) {
     endReason: r.endReason, endGeneration: r.endGeneration, enteredAt: r.enteredAt, phaseChangedAt: r.phaseChangedAt,
     setBy: r.setBy, why: r.why, ownerAgent: r.ownerAgent, override: r.override,
     closing: r.closing, expiryRunId: r.expiryRunId, closeRunId: r.closeRunId, closeGeneration: r.closeGeneration,
+    importance: r.importance, importanceWhy: r.importanceWhy,
   }
 }
 

@@ -184,6 +184,7 @@ describe("GET /situations/sources needs the mesh token (#1945)", () => {
   // The answer can say whether the owner is in Focus or on a call, and with whom.
   it("is a gated path", () => {
     expect(isMeshGatedPath("/situations/sources")).toBe(true)
+    expect(isMeshGatedPath("/situations/seat")).toBe(true)
   })
 
   it("refuses an off-box caller without the token, or with a wrong one", () => {

@@ -262,6 +262,26 @@ export class MessageRouter {
     }
   }
 
+  /** The same as situationDecide, with the situation-phase seat asked
+   *  between decide and commit (phase 5) for a message the word list is
+   *  unsure of. Only the inbound path uses it; hops stay synchronous. A
+   *  seat that is off, in shadow, or not calibrated adds no wait. */
+  private async situationDecideWithSeat(msg: IncomingMessage, opts: { replay?: boolean }): Promise<GateDecision | null> {
+    const gate = this.situationGate
+    if (!gate) return null
+    try {
+      let d = gate.decide(msg, opts)
+      d = await gate.consult(msg, d, opts, () => JSON.stringify(serializeIncoming(msg)))
+      gate.commit(d, msg)
+      this.situationGateFailed = false
+      return d
+    } catch (e: any) {
+      if (!this.situationGateFailed) this.log(`[situation] gate error, message passed unchanged: ${e?.message ?? e}`)
+      this.situationGateFailed = true
+      return null
+    }
+  }
+
   private applySituationDrop(adapter: ChannelAdapter, msg: IncomingMessage, d: GateDecision, stage: "gate" | "after-hook"): boolean {
     const gate = this.situationGate
     if (!gate) return false
@@ -910,7 +930,7 @@ export class MessageRouter {
     // and no agent. A run that already takes the message wins (claimed).
     // Fails open: any error in the gate lets the message through unchanged.
     const gate = this.situationGate
-    const sit = gate ? this.situationDecide(msg, { replay: opts.replay }) : null
+    const sit = gate ? await this.situationDecideWithSeat(msg, { replay: opts.replay }) : null
     if (gate && sit && sit.unclaimed === "drop" && !sit.claimed && this.applySituationDrop(adapter, msg, sit, "gate")) return
     // Shadow mode: a claimed message whose run ended before the hook, so
     // the hook started a new run for it, is a would-drop too (M1).

@@ -17,6 +17,8 @@ import { loadDaemonConfig } from "@/daemon/config"
 //       the signal sources on this node and what each answers (phase 3)
 //   agentx situation closing <id> --purpose <text> --home <link> [--message <text>]
 //       closing steps for a talk: a note, promises, one owner message (phase 4)
+//   agentx situation seat
+//       the situation-phase seat's mode and calibration report (phase 5)
 //
 // Settings: `agentx config set situations.mode shadow|active|off`.
 
@@ -85,6 +87,7 @@ common(situationCmd
       const done = r.releasedAt ? chalk.green(" (released)") : ""
       console.log(`  #${r.id}  ${when}  ${tag}${done}  ${r.channel} ${r.chatId}  ${r.senderKind} ${r.senderName || r.senderId}`)
       console.log(chalk.dim(`        "${String(r.text).slice(0, 100)}"  — ${r.reason}`))
+      if (r.seatCallId) console.log(chalk.dim(`        seat call ${r.seatCallId}: label it with \`agentx decisions label ${r.seatCallId} needsReply yes|no\``))
     }
   })
 
@@ -111,7 +114,21 @@ common(situationCmd
       const who = r.setBy === "person" ? chalk.cyan(" set by a person") : ""
       console.log(`  ${String(r.id).slice(0, 8)}  ${when}  ${phase}${who}  ${r.channel} ${r.chatId}${r.ownerAgent ? `  → ${r.ownerAgent}` : ""}`)
       if (r.why) console.log(chalk.dim(`            ${String(r.why).slice(0, 120)}`))
+      if (r.importance) console.log(chalk.dim(`            importance: ${r.importance}${r.importanceWhy ? ` (${String(r.importanceWhy).slice(0, 100)})` : ""}`))
     }
+  })
+
+// Phase 5: the situation-phase seat and its calibration report (#1892).
+common(situationCmd
+  .command("seat")
+  .description("show the situation-phase decision seat: its mode, whether it may hold messages, and its false \"no reply\" rate")
+  .option("--json", "print JSON"))
+  .action(async (opts) => {
+    const data = await call(opts, "GET", "/situations/seat")
+    if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+    console.log(chalk.bold(`  Seat situation-phase: ${data.mode}${data.plan?.act ? chalk.green(" (holds messages)") : ""}`))
+    for (const line of data.lines ?? []) console.log(`  ${line}`)
+    if (data.mode === "active" && !data.plan?.act) console.log(chalk.yellow(`  Active, but not holding messages: ${data.plan?.why}`))
   })
 
 // Phase 3: which signal sources run on this node (#1892).
