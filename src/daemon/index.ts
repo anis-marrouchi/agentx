@@ -6467,6 +6467,15 @@ export class AgentXDaemon {
         this.json(res, ok ? 200 : 404, ok ? { ok: true } : { error: "no such run, or it has already ended" })
         return
       }
+      // The owner resumes a run (#876): it is walked, or its stopped
+      // sub-workflow step runs again, not just marked running.
+      const resumeRun = req.method === "POST" && path.match(/^\/workflow-runs\/([^/]+)\/resume$/)
+      if (resumeRun) {
+        if (!this.workflowDispatcher) { this.json(res, 503, { error: "workflow engine not enabled on this node" }); return }
+        const r = await this.workflowDispatcher.resumeRun(decodeURIComponent(resumeRun[1]))
+        this.json(res, r.ok ? 200 : 409, r.ok ? { ok: true, action: r.action } : { error: r.action })
+        return
+      }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))

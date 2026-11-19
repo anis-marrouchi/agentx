@@ -123,6 +123,17 @@ export interface InboundReply {
 
 const TERMINAL = new Set(["completed", "failed", "canceled"])
 
+/** Node types the start-up recovery (#876) may run again by itself after a
+ *  restart cut a walk off: they read or decide, and running one twice
+ *  changes nothing outside the run. Every other type (agent, action.*
+ *  that writes, subProcess, signal.emit) may already have acted, so a run
+ *  with one of them pending is held for the owner instead. */
+const REPEAT_SAFE_NODE_TYPES = new Set([
+  "trigger.channel", "trigger.manual", "trigger.cron", "trigger.hook", "trigger.form", "trigger.poll",
+  "transform", "classify", "branch", "gateway.parallel", "rule",
+  "action.readLabel", "signal.wait", "timer.boundary", "checkpoint", "end",
+])
+
 /** Subset of channel adapter API used for the auto-acknowledge lifecycle on
  *  channel-triggered runs. Duck-typed so any adapter implementing react +
  *  sendTyping (telegram today, future whatsapp/discord) gets the UX for free.
@@ -164,6 +175,14 @@ export class WorkflowDispatcher {
    *  one full scan on the first sweep, then kept up as runs pause, so a
    *  sweep reads only these run files, not every run on disk. */
   private timerWaitRuns?: Set<string>
+  /** When this dispatcher started. The start-up recovery (#876) only
+   *  touches runs last written before it, so a run that started after
+   *  boot is never walked twice. */
+  private readonly bootAt = new Date().toISOString()
+  private startRecoveryDone = false
+  /** Walk loops going on now, per run. Recovery and an owner's resume
+   *  (#876) walk a run only when nothing walks it already. */
+  private readonly walking = new Map<string, number>()
   /** Runs paused on person.wait, by channel. Read on every inbound
    *  message, so it is kept in memory: built from disk once, then kept up
    *  to date as runs pause. A stale entry costs one read; the run's own
@@ -209,7 +228,14 @@ export class WorkflowDispatcher {
     // dispatcher also is, so this is safe.
     this.timers.onFire((t) => this.resumeFromTimer(t))
     // Resume paused timer runs whose timer was lost (#1816).
-    this.timers.onSweep(() => this.recoverOverdueTimers())
+    // On the first sweep, also pick up runs a daemon stop left behind (#876).
+    this.timers.onSweep(async () => {
+      if (!this.startRecoveryDone) {
+        this.startRecoveryDone = true
+        await this.recoverStuckRuns().catch((e: any) => this.log(`[workflows] start-up recovery failed: ${e?.message ?? e}`))
+      }
+      return this.recoverOverdueTimers()
+    })
     // Resume any paused signalWait runs whose filter matches a published
     // signal. Running a full scan of paused runs per emission is cheap in
     // v1 (runs are fs-backed and typically numbered in the hundreds).
@@ -477,6 +503,180 @@ export class WorkflowDispatcher {
         .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-timer-recovery failed: ${e.message}`))
     }
     return recovered
+  }
+
+  /** Start-up recovery (#876). Runs once, on the first timer sweep, over
+   *  runs last written before this dispatcher started. One rule, the same
+   *  as the owner's `resume`: recovery only moves a run on by itself when
+   *  doing so cannot repeat or lose anything; the rest is held and logged
+   *  for the owner, who moves it with `agentx workflow resume`.
+   *  - a run left `running` with steps pending (the daemon stopped in the
+   *    middle of a step) is walked again from its pending steps, only when
+   *    every pending step is repeat-safe (REPEAT_SAFE_NODE_TYPES). Steps
+   *    already done left `pending` when they were recorded, so they do not
+   *    run twice. A pending step that may have acted (an agent, a send, a
+   *    merge or deploy action, a child run) is not run again: the run is
+   *    set to paused and logged, and the owner's resume walks it, so the
+   *    step runs again at most once and only when the owner asks;
+   *  - a parent waiting on a subProcess child that has already ended: a
+   *    completed child moves the parent on (its `done` port). A failed or
+   *    canceled child is held: the parent is left paused and logged, so
+   *    the owner's resume runs the step again with a new child, exactly as
+   *    `resumeRun` does. Recovery never fails a parent by itself.
+   *  Children are walked before their parents are checked, so a child
+   *  that ends on this walk resumes its parent the normal way.
+   *  Task runs (#883) are left out on purpose: `list` excludes them, and
+   *  they are not walked by this engine (their agent task owns them). */
+  async recoverStuckRuns(): Promise<{ walked: number; parents: number; held: number }> {
+    const stale = this.runs.list({ active: true }).filter((r) => r.updatedAt < this.bootAt)
+    let walked = 0
+    let parents = 0
+    let held = 0
+    for (const run of stale) {
+      try {
+        if (run.status !== "running" || run.pending.length === 0 || run.pausedAt) continue
+        if (this.walking.has(run.id)) continue
+        const wf = this.store.list().find((w) => w.id === run.workflowId)
+        if (!wf) { this.log(`[workflows] run ${run.id} was cut off with steps pending but workflow "${run.workflowId}" is not loaded — left as it is`); continue }
+        const unsafe = run.pending.filter((id) => !REPEAT_SAFE_NODE_TYPES.has(findNode(wf, id)?.type ?? ""))
+        if (unsafe.length > 0) {
+          let paused = false
+          await this.commit(run.id, () => {
+            const fresh = this.runs.get(run.id)
+            if (!fresh || fresh.status !== "running" || fresh.pausedAt || this.walking.has(fresh.id)) return
+            this.runs.setStatus(fresh.id, "paused")
+            paused = true
+          })
+          if (paused) {
+            held++
+            this.log(`[workflow:${wf.id}] run ${run.id} was cut off by a stop at ${unsafe.join(", ")}, which may already have acted — held for the owner (paused). Run it again with: agentx workflow resume ${run.id}`)
+          }
+          continue
+        }
+        this.log(`[workflow:${wf.id}] run ${run.id} recovered at start: walking again from ${run.pending.join(", ")}`)
+        walked++
+        void this.walk(wf, run.id, `recovered:${this.bootAt}`)
+          .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-recovery failed: ${e?.message ?? e}`))
+      } catch (e: any) {
+        this.log(`[workflows] start-up recovery of run ${run.id} failed: ${e?.message ?? e}`)
+      }
+    }
+    for (const run of stale) {
+      try {
+        const r = await this.resumeEndedChild(run.id)
+        if (r === "moved") parents++
+        else if (r === "held") held++
+      } catch (e: any) {
+        this.log(`[workflows] start-up recovery of parent ${run.id} failed: ${e?.message ?? e}`)
+      }
+    }
+    if (walked || parents || held) this.log(`[workflows] start-up recovery: ${walked} run(s) walked again, ${parents} parent(s) moved on from a completed child, ${held} run(s) held for the owner`)
+    return { walked, parents, held }
+  }
+
+  /** A parent still waiting on a subProcess child that has ended. A
+   *  completed child: the parent gets its result ("moved"). A failed or
+   *  canceled child: the parent is left paused for the owner ("held"). */
+  private async resumeEndedChild(runId: string): Promise<"moved" | "held" | "none"> {
+    const run = this.runs.get(runId)
+    const p = run?.pausedAt
+    if (!run || p?.kind !== "subProcess") return "none"
+    if (run.status !== "paused" && !(run.status === "running" && run.pending.length === 0)) return "none"
+    const child = this.runs.get(p.childRunId)
+    if (!child) {
+      this.log(`[workflow:${run.workflowId}] run ${run.id} waits on child ${p.childRunId} at "${p.nodeId}", but that run is gone — held for the owner. Run the step again with: agentx workflow resume ${run.id}`)
+      return "held"
+    }
+    if (!TERMINAL.has(child.status)) return "none"
+    if (child.status === "completed") {
+      await this.resumeParent({ parentRunId: run.id, parentNodeId: p.nodeId, childRunId: child.id })
+      return "moved"
+    }
+    // Failed or canceled: never fail the parent here. A parent an old CLI
+    // resume set to `running` goes back to paused, so it reads as waiting.
+    await this.commit(run.id, () => {
+      const fresh = this.runs.get(run.id)
+      if (fresh?.status === "running" && fresh.pending.length === 0 && !this.walking.has(fresh.id)) this.runs.setStatus(fresh.id, "paused")
+    })
+    this.log(`[workflow:${run.workflowId}] run ${run.id} waits at "${p.nodeId}" on child ${child.id}, which ${child.status} — held for the owner. Run the step again with: agentx workflow resume ${run.id}`)
+    return "held"
+  }
+
+  /** The owner resumes a run (#876, `agentx workflow resume`). It does
+   *  what the run needs to move, not only change its status:
+   *  - paused by `workflow pause` (no pause reason): walked again;
+   *  - left `running` with steps pending and no walk: walked again;
+   *  - waiting on a subProcess child that completed: the parent takes the
+   *    `done` port. The child failed or was canceled: the node runs again
+   *    and starts a new child. The child is still going: the child is
+   *    resumed the same way;
+   *  - paused on anything else (a timer, a reply, an agent step, a stop):
+   *    refused, with what it waits for. */
+  async resumeRun(runId: string): Promise<{ ok: boolean; action: string }> {
+    const run = this.runs.get(runId)
+    if (!run) return { ok: false, action: `no such run: ${runId}` }
+    if (TERMINAL.has(run.status)) return { ok: false, action: `run ${runId} has already ended (${run.status})` }
+    const wf = this.store.list().find((w) => w.id === run.workflowId)
+    if (!wf) return { ok: false, action: `workflow "${run.workflowId}" is not loaded` }
+    const p = run.pausedAt
+
+    if (p?.kind === "subProcess" && (run.status === "paused" || run.pending.length === 0)) {
+      const child = this.runs.get(p.childRunId)
+      if (child && !TERMINAL.has(child.status)) {
+        const inner = await this.resumeRun(child.id)
+        return { ok: inner.ok, action: `waits on child ${child.id}: ${inner.action}` }
+      }
+      if (child?.status === "completed") {
+        await this.resumeParent({ parentRunId: run.id, parentNodeId: p.nodeId, childRunId: child.id })
+        return { ok: true, action: `child ${child.id} had completed: moved on from "${p.nodeId}"` }
+      }
+      // The child failed, was canceled or is gone: run the node again.
+      const why = child ? `child ${child.id} ${child.status}` : `child ${p.childRunId} is gone`
+      let rerun = false
+      await this.commit(run.id, () => {
+        const fresh = this.runs.get(run.id)
+        if (!fresh || fresh.pausedAt?.kind !== "subProcess" || fresh.pausedAt.childRunId !== p.childRunId) return
+        this.timers.cancel({ cancelKey: `${fresh.id}:${p.nodeId}` })
+        this.runs.recordExecution({
+          runId: fresh.id,
+          entry: { at: new Date().toISOString(), nodeId: p.nodeId, inputKeys: [], status: "resumed", idempotencyKey: idempotencyKey(fresh.id, p.nodeId, `rerun:${Date.now()}`), note: `resumed by the owner: "${p.nodeId}" runs again (${why})`.slice(0, 200) },
+          nextPending: [p.nodeId, ...fresh.pending.filter((x) => x !== p.nodeId)],
+          status: "running",
+          pausedAt: null,
+        })
+        rerun = true
+      })
+      if (!rerun) return { ok: false, action: `run ${runId} changed while resuming; try again` }
+      this.log(`[workflow:${wf.id}] run ${run.id} resumed by the owner: "${p.nodeId}" runs again (${why})`)
+      void this.walk(wf, run.id, `resume:${Date.now()}`)
+        .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-resume failed: ${e?.message ?? e}`))
+      return { ok: true, action: `"${p.nodeId}" runs again with a new child (${why})` }
+    }
+
+    if (run.status === "paused" && p) {
+      const hint = p.kind === "agentStop" ? ` Resume it with: agentx signal resume ${p.taskId ?? "<taskId>"}` : ""
+      return { ok: false, action: `run ${runId} waits on ${p.kind} at "${p.nodeId}"; it moves on when that comes.${hint}` }
+    }
+    if (this.walking.has(run.id)) {
+      // Paused while its walk finishes the step it is on: that walk stops
+      // after the step and would leave the run paused, so say so rather
+      // than report it moving.
+      if (run.status === "paused") return { ok: false, action: `run ${runId} is finishing the step it is on; resume it again when that step ends` }
+      return { ok: true, action: `run ${runId} is already moving` }
+    }
+    if (run.pending.length === 0) return { ok: false, action: `run ${runId} has no step pending` }
+    let go = false
+    await this.commit(run.id, () => {
+      const fresh = this.runs.get(run.id)
+      if (!fresh || TERMINAL.has(fresh.status) || fresh.pausedAt || this.walking.has(fresh.id) || fresh.pending.length === 0) return
+      if (fresh.status === "paused") this.runs.setStatus(fresh.id, "running")
+      go = true
+    })
+    if (!go) return { ok: false, action: `run ${runId} changed while resuming; try again` }
+    this.log(`[workflow:${wf.id}] run ${run.id} resumed by the owner: walking ${run.pending.join(", ")}`)
+    void this.walk(wf, run.id, `resume:${Date.now()}`)
+      .catch((e: any) => this.log(`[workflow:${wf.id}] walk-after-resume failed: ${e?.message ?? e}`))
+    return { ok: true, action: `walking ${run.pending.join(", ")}` }
   }
 
   /** Fire a specific workflow by id, bypassing matchByTrigger. Used by
@@ -889,8 +1089,11 @@ export class WorkflowDispatcher {
     // belongs to the run's root, whatever resumed it.
     const rootId = this.runs.get(runId)?.eventRootId
     const inner = () => this.walkInner(workflow, runId, triggeringEventId)
+    this.walking.set(runId, (this.walking.get(runId) ?? 0) + 1)
     try { await (rootId ? withRoot({ rootId }, inner) : inner()) }
     finally {
+      const n = (this.walking.get(runId) ?? 1) - 1
+      if (n > 0) this.walking.set(runId, n); else this.walking.delete(runId)
       this.stopChannelAck(runId)
       await this.settle(runId)
     }
@@ -1752,7 +1955,12 @@ export class WorkflowDispatcher {
     let walk: boolean | undefined
     await this.commit(args.parentRunId, () => {
       const parent = this.runs.get(args.parentRunId)
-      if (!parent || parent.status !== "paused") return
+      if (!parent) return
+      // A parent set to `running` by hand while still waiting here, with
+      // nothing pending and no walk (#876, an old CLI resume), still waits.
+      const waiting = parent.status === "paused"
+        || (parent.status === "running" && parent.pending.length === 0 && !this.walking.has(parent.id))
+      if (!waiting) return
       const p = parent.pausedAt
       if (!p || p.kind !== "subProcess") return
       if (p.nodeId !== args.parentNodeId) return

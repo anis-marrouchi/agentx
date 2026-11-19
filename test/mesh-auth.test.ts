@@ -157,8 +157,17 @@ describe("isControlPost — daemon control routes need a mesh token off-box", ()
     }
   })
 
+  it("gates cancelling and resuming a workflow run (#876)", () => {
+    for (const p of ["/workflow-runs/r-1/cancel", "/workflow-runs/r-1/resume"]) {
+      expect(isControlPost(p)).toBe(true)
+    }
+    for (const p of ["/workflow-runs/r-1", "/workflow-runs//resume", "/workflow-runs/r-1/resume/x"]) {
+      expect(isControlPost(p)).toBe(false)
+    }
+  })
+
   it("does not gate look-alike or read paths", () => {
-    for (const p of ["/api/tasks", "/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health", "/crons", "/crons/a/enabled/x", "/crons//enabled"]) {
+    for (const p of ["/api/tasks","/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health", "/crons", "/crons/a/enabled/x", "/crons//enabled"]) {
       expect(isControlPost(p)).toBe(false)
     }
   })

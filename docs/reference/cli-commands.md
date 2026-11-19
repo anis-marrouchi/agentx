@@ -2704,11 +2704,24 @@ Pause an active run.
 
 ### `agentx workflow resume <runId>`
 
-Resume a paused run. A run that a pause signal stopped at an agent's step is refused here: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
+Resume a stopped run through the daemon, so the run moves and not only its status changes:
+
+- A run paused with `agentx workflow pause`, or left running with steps pending and nothing walking it, is walked again from its pending steps.
+- A run waiting on a sub-workflow step whose child run completed moves on. If the child failed or was canceled, the step runs again and starts a new child. If the child is still going, the child is resumed the same way.
+- A run waiting on something else (a timer, a reply, an agent's step) is refused, with what it waits for. A run that a pause signal stopped at an agent's step is refused too: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
+
+Without a running daemon it refuses and says why.
+
+When the daemon starts, it also picks up runs a stop left behind, by one rule: it moves a run on by itself only when nothing can be repeated or lost; the rest it holds, paused and logged, for this command.
+
+- A run left running with steps pending is walked again only when every pending step is one that changes nothing outside the run (a trigger, `transform`, `classify`, `branch`, `gateway.parallel`, `rule`, `action.readLabel`, `signal.wait`, `timer.boundary`, `checkpoint`, `end`). If a pending step may already have acted (an `agent` step, a send, `action.run`, `action.callHTTP`, a merge or deploy, a sub-workflow), the run is set to paused and logged with the command to resume it. The step then runs again only when you resume the run: at least once, never by itself.
+- A run waiting on a child run that completed moves on. A run waiting on a child that failed or was canceled is never failed by the restart: it stays paused and is logged, and resuming it runs the step again with a new child.
+
+The dashboard's resume (`POST /api/workflows/runs/<id>/status` with `running`) goes the same way. Off this host, `POST /workflow-runs/<id>/resume` needs the mesh token.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--node <id>` | — | Home-node id. |
+| `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
 
 ### `agentx workflow cancel <runId>`
 

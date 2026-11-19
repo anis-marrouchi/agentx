@@ -651,20 +651,22 @@ workflow
 
 workflow
   .command("resume <runId>")
-  .description("resume a paused run")
-  .option("--node <id>", "home-node id")
-  .action((runId: string, opts) => {
-    const nodeId = opts.node || process.env.WF_NODE_ID || "local"
-    const runs = new RunStore({ nodeId })
-    // Paused by a stop signal (#870): only a resume signal re-enters the step.
-    const current = runs.get(runId)
-    if (current?.status === "paused" && current.pausedAt?.kind === "agentStop") {
-      console.log(chalk.yellow(`  ${runId} was paused by a stop signal at step ${current.pausedAt.nodeId}. Resume it with: agentx signal resume ${current.pausedAt.taskId ?? "<taskId>"}`))
+  .description("resume a stopped run through the daemon: walk it again, or re-run a failed sub-workflow step")
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .action(async (runId: string, opts) => {
+    // Only the daemon can walk a run. Changing the status on disk alone
+    // left runs `running` with nothing moving (#876), so off the daemon
+    // this refuses.
+    let res: Response
+    try {
+      res = await fetch(`${String(opts.daemon).replace(/\/$/, "")}/workflow-runs/${encodeURIComponent(runId)}/resume`, { method: "POST", signal: AbortSignal.timeout(10_000) })
+    } catch (e: any) {
+      console.log(chalk.yellow(`  not resumed: the daemon at ${opts.daemon} did not answer (${e?.message ?? e}). Only the daemon can walk a run; start it and try again.`))
       process.exit(1)
     }
-    const updated = runs.setStatus(runId, "running")
-    if (!updated) { console.log(chalk.yellow(`  no such run: ${runId}`)); process.exit(1) }
-    console.log(chalk.green(`  ✓ resumed ${runId}`))
+    const body = await res.json().catch(() => ({})) as { action?: string; error?: string }
+    if (!res.ok) { console.log(chalk.yellow(`  not resumed: ${body.error ?? `HTTP ${res.status}`}`)); process.exit(1) }
+    console.log(chalk.green(`  ✓ resumed ${runId}: ${body.action ?? "walking"}`))
   })
 
 workflow
