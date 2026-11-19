@@ -145,8 +145,9 @@ export function isControlPost(path: string): boolean {
     /^\/crons\/[^/]+\/enabled$/.test(path) ||
     // Switching a channel off or on (#1138 step B).
     /^\/channels\/[^/]+\/switch$/.test(path) ||
-    // Stopping a workflow run (#788).
-    /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
+    // Stopping a workflow run (#788), or resuming one (#876): resume walks
+    // the run and can re-run a sub-workflow step.
+    /^\/workflow-runs\/[^/]+\/(cancel|resume)$/.test(path) ||
     // Stop and resume signals (#857).
     path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
     // Stopping every task on this node, ahead of a restart (#1271).

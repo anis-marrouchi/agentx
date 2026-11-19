@@ -2,6 +2,10 @@
 // A: a parent waits on a child that ended before resumeParent existed.
 // B: a run left `running` with steps pending when the daemon stopped.
 // C: `workflow resume` only set status=running, so nothing moved.
+// One rule (review n154007): start-up recovery only moves a run on when it
+// cannot repeat or lose anything (a completed child, repeat-safe steps);
+// a failed child or a cut-off step that may have acted is held, paused,
+// for the owner's resume.
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { rmSync } from "fs"
 import { resolve } from "path"
@@ -104,7 +108,7 @@ describe("stuck workflow runs (#876)", () => {
   beforeEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }) })
   afterEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }) })
 
-  it("A: on start, a parent waiting on a child that already failed takes the error path", async () => {
+  it("A: on start, a parent waiting on a child that already failed is held for the owner, not failed", async () => {
     const sends: string[] = []
     const { first, parentId, childId } = await parentWaitingOnChild(sends)
     failChildSilently(first.runs, childId)
@@ -115,28 +119,55 @@ describe("stuck workflow runs (#876)", () => {
     const second = boot(sends, logs)
     // The started timer service runs the recovery on its first sweep.
     second.timers.start()
-    await until(() => second.runs.get(parentId)?.status === "completed")
+    await until(() => logs.some((l) => l.includes("start-up recovery:")))
     second.timers.stop()
 
     const parent = second.runs.get(parentId)!
-    expect(parent.status).toBe("completed")
-    expect(parent.pausedAt ?? null).toBeNull()
-    expect(sends).toEqual(["child failed"])
-    expect(logs.some((l) => l.includes("start-up recovery"))).toBe(true)
+    expect(parent.status).toBe("paused")
+    expect(parent.pausedAt?.kind).toBe("subProcess")
+    // No error port taken, no "workflow failed" message.
+    expect(sends).toEqual([])
+    expect(logs.some((l) => l.includes("held for the owner") && l.includes(`agentx workflow resume ${parentId}`))).toBe(true)
+
+    // The owner's resume runs the step again with a new child.
+    const r = await second.dispatcher.resumeRun(parentId)
+    expect(r.ok).toBe(true)
+    expect(r.action).toContain("runs again")
   })
 
-  it("B: on start, a child cut off with a step pending walks on, and the parent hears", async () => {
+  it("A: on start, a parent waiting on a child that already completed moves on", async () => {
     const sends: string[] = []
     const { first, parentId, childId } = await parentWaitingOnChild(sends)
-    // The signal came, `wait` was recorded, then the daemon stopped before
-    // `notify` ran.
     first.runs.recordExecution({
       runId: childId,
-      entry: { at: new Date().toISOString(), nodeId: "wait", inputKeys: [], status: "resumed", idempotencyKey: idempotencyKey(childId, "wait", "signal"), note: "signal:never" },
-      nextPending: ["notify"],
-      status: "running",
+      entry: { at: new Date().toISOString(), nodeId: "done", inputKeys: [], status: "ok", idempotencyKey: idempotencyKey(childId, "done", "old-done") },
+      nextPending: [],
+      status: "completed",
       pausedAt: null,
     })
+    await sleep(5)
+
+    const second = boot(sends)
+    const r = await second.dispatcher.recoverStuckRuns()
+    expect(r).toEqual({ walked: 0, parents: 1, held: 0 })
+    await until(() => second.runs.get(parentId)?.status === "completed")
+    expect(sends).toEqual(["child ok"])
+  })
+
+  it("B: on start, a child cut off with only repeat-safe steps pending walks on, and the parent hears", async () => {
+    const sends: string[] = []
+    const { first, parentId, childId } = await parentWaitingOnChild(sends)
+    // `wait` and `notify` were recorded, then the daemon stopped before
+    // `done` (an end step) ran.
+    for (const [nodeId, next] of [["wait", ["notify"]], ["notify", ["done"]]] as const) {
+      first.runs.recordExecution({
+        runId: childId,
+        entry: { at: new Date().toISOString(), nodeId, inputKeys: [], status: nodeId === "wait" ? "resumed" : "ok", idempotencyKey: idempotencyKey(childId, nodeId, "before-stop") },
+        nextPending: [...next],
+        status: "running",
+        pausedAt: null,
+      })
+    }
     await sleep(5)
 
     const second = boot(sends)
@@ -146,12 +177,50 @@ describe("stuck workflow runs (#876)", () => {
 
     const child = second.runs.get(childId)!
     expect(child.status).toBe("completed")
-    // The step done before the stop did not run again.
-    expect(child.history.filter((h) => h.nodeId === "wait" && h.status !== "paused")).toHaveLength(1)
+    // The steps done before the stop did not run again.
+    expect(child.history.filter((h) => h.nodeId === "notify")).toHaveLength(1)
     expect(second.runs.get(parentId)?.status).toBe("completed")
-    expect(sends).toEqual(["child sent", "child ok"])
+    expect(sends).toEqual(["child ok"])
     // A second pass finds nothing left.
-    expect(await second.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0 })
+    expect(await second.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0, held: 0 })
+  })
+
+  it("B: on start, a run cut off at a step that may have acted is held, not run again; the owner's resume runs it once", async () => {
+    const sends: string[] = []
+    const { first, parentId, childId } = await parentWaitingOnChild(sends)
+    // The signal came, `wait` was recorded, then the daemon stopped while
+    // `notify` (a send) may already have gone out.
+    first.runs.recordExecution({
+      runId: childId,
+      entry: { at: new Date().toISOString(), nodeId: "wait", inputKeys: [], status: "resumed", idempotencyKey: idempotencyKey(childId, "wait", "signal"), note: "signal:never" },
+      nextPending: ["notify"],
+      status: "running",
+      pausedAt: null,
+    })
+    await sleep(5)
+
+    const logs: string[] = []
+    const second = boot(sends, logs)
+    expect(await second.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0, held: 1 })
+    await sleep(60)
+    expect(sends).toEqual([])
+    const held = second.runs.get(childId)!
+    expect(held.status).toBe("paused")
+    expect(held.pending).toEqual(["notify"])
+    expect(logs.some((l) => l.includes("may already have acted") && l.includes(`agentx workflow resume ${childId}`))).toBe(true)
+
+    // Another restart does not run it either.
+    await sleep(5)
+    const third = boot(sends)
+    expect(await third.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0, held: 0 })
+    await sleep(60)
+    expect(sends).toEqual([])
+
+    // The owner resumes it: the send runs once, and the parent hears.
+    const r = await third.dispatcher.resumeRun(childId)
+    expect(r.ok).toBe(true)
+    await until(() => third.runs.get(parentId)?.status === "completed")
+    expect(sends).toEqual(["child sent", "child ok"])
   })
 
   it("B: a run started after boot is not walked by the recovery", async () => {
@@ -161,11 +230,11 @@ describe("stuck workflow runs (#876)", () => {
     await sleep(5)
     const run = second.runs.create({ workflowId: "child-two", initialPending: ["notify"], entityRef: { backend: "manual", id: "e-new" } })
     expect(run.status).toBe("running")
-    expect(await second.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0 })
+    expect(await second.dispatcher.recoverStuckRuns()).toEqual({ walked: 0, parents: 0, held: 0 })
     expect(sends).toEqual([])
   })
 
-  it("C: a parent set to running by the old CLI, still waiting on a failed child, is recovered on start", async () => {
+  it("C: a parent set to running by the old CLI, still waiting on a failed child, goes back to paused on start and is held", async () => {
     const sends: string[] = []
     const { first, parentId, childId } = await parentWaitingOnChild(sends)
     failChildSilently(first.runs, childId)
@@ -174,9 +243,36 @@ describe("stuck workflow runs (#876)", () => {
 
     const second = boot(sends)
     const r = await second.dispatcher.recoverStuckRuns()
-    expect(r.parents).toBe(1)
-    await until(() => second.runs.get(parentId)?.status === "completed")
-    expect(sends).toEqual(["child failed"])
+    expect(r).toEqual({ walked: 0, parents: 0, held: 1 })
+    await sleep(60)
+    const parent = second.runs.get(parentId)!
+    expect(parent.status).toBe("paused")
+    expect(parent.pausedAt?.kind).toBe("subProcess")
+    expect(sends).toEqual([])
+  })
+
+  it("C: resume on a run paused while its walk ends the step it is on says so, and does not report it moving", async () => {
+    const sends: string[] = []
+    const { first, childId } = await parentWaitingOnChild(sends)
+    first.runs.recordExecution({
+      runId: childId,
+      entry: { at: new Date().toISOString(), nodeId: "wait", inputKeys: [], status: "resumed", idempotencyKey: idempotencyKey(childId, "wait", "signal") },
+      nextPending: ["notify"],
+      status: "paused",
+      pausedAt: null,
+    })
+    const second = boot(sends)
+    // A walk is still finishing its batch on this run.
+    ;(second.dispatcher as any).walking.set(childId, 1)
+    const r = await second.dispatcher.resumeRun(childId)
+    expect(r.ok).toBe(false)
+    expect(r.action).toContain("finishing the step")
+    expect(second.runs.get(childId)?.status).toBe("paused")
+    // Once that walk ends, resume walks it.
+    ;(second.dispatcher as any).walking.delete(childId)
+    expect((await second.dispatcher.resumeRun(childId)).ok).toBe(true)
+    await until(() => sends.includes("child sent"))
+    expect(sends[0]).toBe("child sent")
   })
 
   it("C: resume on a parent stopped at a failed child runs the step again with a new child", async () => {

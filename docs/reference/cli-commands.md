@@ -2710,7 +2710,12 @@ Resume a stopped run through the daemon, so the run moves and not only its statu
 
 Without a running daemon it refuses and says why.
 
-When the daemon starts, it also picks up runs a stop left behind: runs left running with steps pending are walked again, and a run waiting on a child run that has already ended gets that child's result.
+When the daemon starts, it also picks up runs a stop left behind, by one rule: it moves a run on by itself only when nothing can be repeated or lost; the rest it holds, paused and logged, for this command.
+
+- A run left running with steps pending is walked again only when every pending step is one that changes nothing outside the run (a trigger, `transform`, `classify`, `branch`, `gateway.parallel`, `rule`, `action.readLabel`, `signal.wait`, `timer.boundary`, `checkpoint`, `end`). If a pending step may already have acted (an `agent` step, a send, `action.run`, `action.callHTTP`, a merge or deploy, a sub-workflow), the run is set to paused and logged with the command to resume it. The step then runs again only when you resume the run: at least once, never by itself.
+- A run waiting on a child run that completed moves on. A run waiting on a child that failed or was canceled is never failed by the restart: it stays paused and is logged, and resuming it runs the step again with a new child.
+
+The dashboard's resume (`POST /api/workflows/runs/<id>/status` with `running`) goes the same way. Off this host, `POST /workflow-runs/<id>/resume` needs the mesh token.
 
 | Flag | Default | What it does |
 |---|---|---|

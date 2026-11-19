@@ -384,7 +384,9 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
     return sendJson(res, 200, { runs: slim })
   }
   // POST /api/workflows/runs/<id>/status  body: { status: "paused"|"running"|"canceled" }
-  // Mirrors `agentx workflow pause/resume/cancel <runId>`.
+  // Mirrors `agentx workflow pause/resume/cancel <runId>`. `running` goes
+  // through the dispatcher's resumeRun (#876), so the run moves and not
+  // only its status changes.
   const statusMatch = trail.match(/^\/([^\/?]+)\/status$/)
   if (statusMatch) {
     if ((req.method || "GET").toUpperCase() !== "POST") return sendJson(res, 405, { error: "method not allowed" })
@@ -394,6 +396,12 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
       const status = (body as any)?.status
       if (status !== "paused" && status !== "running" && status !== "canceled") {
         return sendJson(res, 400, { error: "status must be paused|running|canceled" })
+      }
+      if (status === "running") {
+        if (!deps.dispatcher) return sendJson(res, 501, { error: "dispatcher not enabled" })
+        if (!deps.runs.get(runId)) return sendJson(res, 404, { error: "run not found" })
+        return deps.dispatcher.resumeRun(runId).then((r) =>
+          sendJson(res, r.ok ? 200 : 409, r.ok ? { ok: true, runId, status, action: r.action } : { error: r.action }))
       }
       const updated = deps.runs.setStatus(runId, status)
       if (!updated) return sendJson(res, 404, { error: "run not found" })
