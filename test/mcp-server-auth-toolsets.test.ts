@@ -112,7 +112,7 @@ describe("protocol version", () => {
 
 describe("tool sets", () => {
   it("full lists every tool, as before", () => {
-    expect(listedTools({ AGENTX_SITUATION_TOOL: "1" }, "full").map((t) => t.name)).toEqual([...AGENTX_TOOL_NAMES])
+    expect(listedTools({ AGENTX_SITUATION_TOOL: "1", AGENTX_SOURCES_TOOL: "1" }, "full").map((t) => t.name)).toEqual([...AGENTX_TOOL_NAMES])
   })
 
   it("read lists only the read tools, all of which exist", () => {

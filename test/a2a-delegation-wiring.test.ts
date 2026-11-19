@@ -6,6 +6,7 @@ import { dirname, join } from "path"
 import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, DELEGATION_LOG, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, waitingBody, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
+import { chatSecret, taskSecret } from "../src/agents/turn-secret"
 import { withCallerEnv } from "../src/agents/runtime"
 import { callerFields } from "../src/mcp/index"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -282,7 +283,12 @@ describe("createDelegations wiring", () => {
 describe("caller identity for the tools an agent launches", () => {
   it("gives a warm process the agent and chat it serves, never a stale task id", () => {
     const env = persistentCallerEnv({ AGENTX_TASK_ID: "old" }, { agentId: "front", channel: "telegram", chatId: "chat-1" })
-    expect(env).toEqual({ AGENTX_AGENT_ID: "front", AGENTX_GUARD: "required", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1", AGENTX_QUEUE_CHANNEL: "telegram", AGENTX_QUEUE_CHAT: "chat-1" })
+    expect(env).toEqual({ AGENTX_AGENT_ID: "front", AGENTX_GUARD: "required", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1", AGENTX_QUEUE_CHANNEL: "telegram", AGENTX_QUEUE_CHAT: "chat-1", AGENTX_TURN_SECRET: chatSecret("front", "telegram", "chat-1") })
+  })
+
+  it("gives each run its turn secret, never another's (#1892 phase 7)", () => {
+    expect(withCallerEnv({}, { agentId: "front", runningTaskId: "task-1" } as any).AGENTX_TURN_SECRET).toBe(taskSecret("task-1"))
+    expect(withCallerEnv({ AGENTX_TURN_SECRET: "stale" }, { agentId: "front" } as any).AGENTX_TURN_SECRET).toBeUndefined()
   })
 
   it("marks a spawned turn as daemon-started for the guard hook (#1710)", () => {

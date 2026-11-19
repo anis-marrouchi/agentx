@@ -96,6 +96,26 @@ export function situationToolOn(): boolean {
   } catch { return false }
 }
 
+/** Set to "1" in an agent process's environment while a per-request
+ *  source is switched on here (phase 7); the agentx MCP server lists
+ *  `agentx_sources` only then. */
+export const SOURCES_TOOL_ENV = "AGENTX_SOURCES_TOOL"
+
+export const PER_REQUEST_SOURCE_IDS = ["open-apps", "browser-tabs", "news"] as const
+
+/** Is any per-request source switched on in these settings? */
+export function sourcesToolOn(sources: Record<string, { enabled?: boolean }> | undefined): boolean {
+  // browser-tabs never loads without a separate reader (none yet), so it
+  // alone does not list the tool.
+  return PER_REQUEST_SOURCE_IDS.some((id) => id !== "browser-tabs" && sources?.[id]?.enabled === true)
+}
+
+/** Do agents on this node get `agentx_sources` now (phase 7)? Only while
+ *  a per-request source is switched on. */
+export function sourcesToolEnvOn(): boolean {
+  try { return sourcesToolOn(source?.settings().sources) } catch { return false }
+}
+
 /** The layer for the chat whose record has this key. */
 export function situationContextFor(key: string | undefined, opts: { fresh: boolean }): string | undefined {
   if (!key || !source) return undefined

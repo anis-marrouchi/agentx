@@ -1,4 +1,5 @@
 import { withAgentGitlabEnv } from "@/channels/gitlab-token"
+import { TURN_SECRET_ENV, taskSecret } from "./turn-secret"
 import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
@@ -39,7 +40,7 @@ import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonom
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
 import type { PersonLimits } from "@/people/people"
-import { SITUATION_TOOL_ENV, situationToolOn } from "@/situations/context"
+import { SITUATION_TOOL_ENV, SOURCES_TOOL_ENV, situationToolOn, sourcesToolEnvOn } from "@/situations/context"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -601,6 +602,9 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   // The running task, so a daemon endpoint the agent calls (agent memory)
   // can check the caller really is this agent, mid-run.
   if (task.runningTaskId) env.AGENTX_TASK_ID = task.runningTaskId
+  // This turn's secret (turn-secret.ts): the task id alone is public.
+  if (task.runningTaskId) env[TURN_SECRET_ENV] = taskSecret(task.runningTaskId)
+  else delete env[TURN_SECRET_ENV]
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
   // The chat as the run queue keys it, for the mid-turn hook (mid-turn.ts).
@@ -610,6 +614,9 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   // agentx_situation is listed only while agents may name their talk (#1892).
   if (situationToolOn()) env[SITUATION_TOOL_ENV] = "1"
   else delete env[SITUATION_TOOL_ENV]
+  // agentx_sources only while a per-request source is switched on (phase 7).
+  if (sourcesToolEnvOn()) env[SOURCES_TOOL_ENV] = "1"
+  else delete env[SOURCES_TOOL_ENV]
   return env
 }
 

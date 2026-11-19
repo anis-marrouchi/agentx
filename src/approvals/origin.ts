@@ -142,7 +142,38 @@ export function numberReviewerMessage(card: { id: string; title: string; status:
   return { agentId: origin.reviewer, text: lines.join("\n") }
 }
 
-export type CardOrigin = NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+/** An agent asks the person to let it read their open apps, browser
+ *  tabs (or another per-request signal source) for one request (#1892
+ *  phase 7). The card IS the consent record: a yes from the popup on this
+ *  machine lets that agent read those sources, with this card's id as the
+ *  request, for `minutes` from the yes (situations/sources/consent.ts).
+ *  The agent is told the answer. */
+export interface SourceConsentOrigin {
+  kind: "source-consent"
+  agentId: string
+  sources: string[]
+  minutes: number
+  /** The asking turn's chat ("channel:chatId") and task: the yes holds
+   *  only there, and in the turn that tells the agent the answer. */
+  chat?: string
+  taskId?: string
+}
+
+/** Lines added to the result the agent is told about its source-consent
+ *  card (approvals verdictMessage). Only a yes from the popup lets it read. */
+export function sourceConsentLines(origin: SourceConsentOrigin, card: { id: string; status: string; verdict?: string; decided_from?: string; decided_at?: string }): string[] {
+  const yes = card.status === "decided" && card.verdict === "yes" && card.decided_from === "popup"
+  if (!yes) return ["Nothing will be read for this request. Do not read it another way and do not ask again unless the person asks you to."]
+  const at = Date.parse(card.decided_at ?? "")
+  if (!Number.isFinite(at)) return ["The answer has no time, so nothing will be read for this request."]
+  const until = new Date(at + origin.minutes * 60_000).toISOString()
+  return [
+    `You may read ${origin.sources.join(", ")} for this request until ${until}, from this turn (not a later one), a few reads at most: call agentx_sources with action "read", request "${card.id}" and the source. Each read is logged.`,
+    "Use what you read for this request only. After that time a read is refused.",
+  ]
+}
+
+export type CardOrigin = SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

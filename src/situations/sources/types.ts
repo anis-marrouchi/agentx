@@ -26,6 +26,10 @@ export interface SignalScope {
   agentId?: string
   /** The request the read is for (per-request sources, consent). */
   requestId?: string
+  /** The running turn's chat ("channel:chatId") and task: a yes holds
+   *  only for the turn or chat it was asked from (phase 7). */
+  chat?: string
+  taskId?: string
 }
 
 export interface Signal {
@@ -62,6 +66,13 @@ export interface SignalSource {
    *  nor for one switched off. May throw: the registry turns that into
    *  unknown with the error as the reason. */
   read?(scope: SignalScope): Signal[]
+  /** A per-request source (phase 7: open apps, browser tabs, news). Off
+   *  unless its settings switch it on, read only for a named request
+   *  (`SignalSources.readForRequest`), never by the sync `read` path and
+   *  never by the sources view. Each read is logged before it runs. */
+  perRequest?: true
+  /** The per-request read, when it has to wait (a script, a fetch). */
+  readAsync?(scope: SignalScope): Promise<Signal[]>
 }
 
 export function unknownSignal(source: string, kind: string, subject: string, reason: string, now = Date.now(), scope?: string): Signal {

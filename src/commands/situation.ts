@@ -20,6 +20,8 @@ import { basename, dirname, resolve } from "path"
 //       a person's override (phase 2)
 //   agentx situation sources
 //       the signal sources on this node and what each answers (phase 3)
+//   agentx situation reads [--request <id>]
+//       each read of a per-request source: open apps, browser tabs, news (phase 7)
 //   agentx situation closing <id> --purpose <text> --home <link> [--message <text>]
 //       closing steps for a talk: a note, promises, one owner message (phase 4)
 //   agentx situation seat
@@ -179,12 +181,31 @@ common(situationCmd
     if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
     console.log(chalk.bold(`  Signal sources on this node (${data.platform})`))
     for (const s of data.loaded ?? []) {
-      const answer = s.state !== undefined ? (s.state === "unknown" ? chalk.yellow("unknown") : "known") + chalk.dim(" (details only on that machine)")
+      const answer = s.perRequest ? chalk.dim(s.sensitivity === "sensitive" ? "per request, with the person's yes" : "per request")
+        : s.state !== undefined ? (s.state === "unknown" ? chalk.yellow("unknown") : "known") + chalk.dim(" (details only on that machine)")
         : s.value === undefined ? chalk.dim("reports when it happens")
         : s.value === "unknown" ? chalk.yellow(`unknown: ${s.reason}`) : `${String(s.value)} ${chalk.dim(`(${s.reason})`)}`
       console.log(`  ${chalk.green("●")} ${s.id.padEnd(17)} ${s.kind.padEnd(8)} ${answer}`)
     }
     for (const s of data.notLoaded ?? []) console.log(`  ${chalk.dim("○")} ${s.id.padEnd(17)} ${chalk.dim(`not loaded: ${s.reason}`)}`)
+  })
+
+// Phase 7: each read of a per-request source (#1892). This machine only.
+common(situationCmd
+  .command("reads")
+  .description("list each read of a per-request source (open apps, browser tabs, news): when, which agent, for which request; never what was read")
+  .option("--request <id>", "only the reads for this request (the consent card's id)")
+  .option("--limit <n>", "how many rows, newest first", "50")
+  .option("--json", "print JSON"))
+  .action(async (opts) => {
+    const q = new URLSearchParams({ limit: String(opts.limit ?? 50), ...(opts.request ? { request: String(opts.request) } : {}) })
+    const data = await call(opts, "GET", `/situations/sources/reads?${q}`)
+    if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+    const rows = (data.reads ?? []) as Array<{ at: number; source: string; agentId: string; requestId: string; outcome: string; count: number }>
+    if (!rows.length) { console.log(chalk.dim("  No reads: nothing was read from a per-request source.")); return }
+    for (const r of rows) {
+      console.log(`  ${new Date(r.at).toISOString().replace("T", " ").slice(0, 19)}  ${r.source.padEnd(13)} ${r.agentId.padEnd(16)} ${r.outcome.padEnd(7)} ${chalk.dim(r.requestId)}`)
+    }
   })
 
 const OVERRIDES: Array<[string, string, string]> = [

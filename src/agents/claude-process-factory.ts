@@ -1,4 +1,5 @@
 import { withAgentGitlabEnv } from "@/channels/gitlab-token"
+import { TURN_SECRET_ENV, chatSecret } from "./turn-secret"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { randomUUID } from "crypto"
 import { existsSync, readFileSync } from "fs"
@@ -18,7 +19,7 @@ import {
 import { BackgroundTasks } from "./background-tasks"
 import { readManagedHash } from "./workspace-setup"
 import { claudeBillingEnv } from "@/utils/workspace-env"
-import { SITUATION_TOOL_ENV, situationToolOn } from "@/situations/context"
+import { SITUATION_TOOL_ENV, SOURCES_TOOL_ENV, situationToolOn, sourcesToolEnvOn } from "@/situations/context"
 
 // --- Real subprocess factory for `claude` ---
 //
@@ -109,9 +110,14 @@ export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): No
   env.AGENTX_QUEUE_CHANNEL = key.channel
   env.AGENTX_QUEUE_CHAT = key.chatId
   delete env.AGENTX_TASK_ID
+  // The warm process's secret (turn-secret.ts), for its agent and chat.
+  env[TURN_SECRET_ENV] = chatSecret(key.agentId, key.channel, key.chatId)
   // agentx_situation is listed only while agents may name their talk (#1892).
   if (situationToolOn()) env[SITUATION_TOOL_ENV] = "1"
   else delete env[SITUATION_TOOL_ENV]
+  // agentx_sources only while a per-request source is switched on (phase 7).
+  if (sourcesToolEnvOn()) env[SOURCES_TOOL_ENV] = "1"
+  else delete env[SOURCES_TOOL_ENV]
   return env
 }
 
