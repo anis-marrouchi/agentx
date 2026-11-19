@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.238.0](https://github.com/anis-marrouchi/agentx/compare/v0.237.0...v0.238.0) (2026-11-19)
+
+
+### Features
+
+* **situations:** learned templates with Hakim's approval ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 8) ([#1989](https://github.com/anis-marrouchi/agentx/issues/1989)) ([bea3b13](https://github.com/anis-marrouchi/agentx/commit/bea3b13214557ef6d303f89ac46d80ca63723cfb))
+* **situations:** per-request sources with the person's yes ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 7) ([#1982](https://github.com/anis-marrouchi/agentx/issues/1982)) ([d6416be](https://github.com/anis-marrouchi/agentx/commit/d6416bef58b68dd46a5219f0456649fbcbd7c3f5))
+
 ## [0.237.0](https://github.com/anis-marrouchi/agentx/compare/v0.236.1...v0.237.0) (2026-11-19)
 
 
