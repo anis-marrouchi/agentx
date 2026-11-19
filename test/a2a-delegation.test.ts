@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, afterEach, onTestFinished } from "vitest"
 import Database from "better-sqlite3"
 import { readSignals, setSignalDb } from "../src/improve/signals"
-import { mkdtempSync, rmSync, readFileSync, appendFileSync, existsSync, writeFileSync } from "fs"
+import { mkdtempSync, rmSync, appendFileSync, existsSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, buildCallbackMessage, fallbackReply, resultOfRun, repeatsWritten, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
-import { HandoffStore } from "../src/a2a/handoff-store"
+import { DelegationManager, buildCallbackMessage, fallbackReply, resultOfRun, repeatsWritten, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { HandoffStore, importDelegationLog } from "../src/a2a/handoff-store"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -65,41 +65,23 @@ function harness(over: Partial<DelegationDeps> = {}) {
   return { mgr, local, peer, injected, delivered, logs, calls }
 }
 
-/** One node's hand-off journal (#1861): the jobs database, and the old
- *  file it still writes for one release. `journal()` is what one daemon
- *  process gets: a new process on the same database is a restart. */
+/** One node's hand-off journal (#1861): the jobs database. `journal()` is
+ *  what one daemon process gets at start, as createDelegations builds it:
+ *  a leftover old file (`logPath`) is imported once, then renamed (#1961).
+ *  A new process on the same database is a restart. */
 function node() {
   const dir = mkdtempSync(join(tmpdir(), "agentx-dlg-"))
   const db = new Database(":memory:")
   onTestFinished(() => { db.close(); rmSync(dir, { recursive: true, force: true }) })
   const logPath = join(dir, "delegations.jsonl")
-  const lines = () => existsSync(logPath) ? readFileSync(logPath, "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []
-  return { db, logPath, lines, store: () => new HandoffStore(db), journal: () => ({ logPath, store: new HandoffStore(db) }) }
-}
-
-/** What a daemon from before #1861 finds in the file: a copy of its
- *  load(). The rollback tests check it against the table. */
-function oldDaemonReads(text: string) {
-  const pending = new Map<string, any>()
-  const done = new Set<string>()
-  const held = new Map<string, any>()
-  for (const raw of text.split("\n")) {
-    if (!raw.trim()) continue
-    let line: any
-    try { line = JSON.parse(raw) } catch { continue }
-    if (line.type === "start" && typeof line.id === "string") {
-      const { type: _t, ts: _ts, ...rec } = line
-      if (!done.has(rec.id)) pending.set(rec.id, rec)
-    } else if (line.type === "done" && typeof line.id === "string") {
-      pending.delete(line.id)
-      done.add(line.id)
-    } else if (line.type === "relay" && typeof line.id === "string" && line.record && line.result) {
-      held.set(line.id, { attempt: Number(line.attempt) || 1, reply: line.reply === true })
-    } else if (line.type === "relayed" && typeof line.id === "string") {
-      held.delete(line.id)
-    }
+  const journal = () => {
+    const store = new HandoffStore(db)
+    importDelegationLog(store, logPath, () => {})
+    return { store }
   }
-  return { pending: [...pending.keys()].sort(), held: [...held.keys()].sort() }
+  /** Nothing is written where the old file was, nor beside it. */
+  const noFile = () => !existsSync(logPath) && !existsSync(`${logPath}.imported`)
+  return { db, logPath, noFile, store: () => new HandoffStore(db), journal }
 }
 
 /** Let queued promise callbacks run. */
@@ -322,8 +304,8 @@ describe("answers for one chat come back as one turn (#1749)", () => {
     const b = h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "b" })
     await Promise.all([h.mgr.complete(a.taskId, { status: "done", text: "A" }), h.mgr.complete(b.taskId, { status: "done", text: "B" })])
     expect(n.store().held().map((r) => [r.record.id, r.attempt]).sort()).toEqual([[a.taskId, 1], [b.taskId, 1]].sort())
-    // The old file is still written the same way (#1861, one release).
-    expect(n.lines().filter((l) => l.type === "relay").map((l) => l.id).sort()).toEqual([a.taskId, b.taskId].sort())
+    // In the table only: no file is written (#1961).
+    expect(n.noFile()).toBe(true)
   })
 
   it("carries the root, so work handed on from the callback keeps it", async () => {
@@ -454,30 +436,23 @@ describe("errors, timeouts and duplicates", () => {
 })
 
 describe("the log", () => {
-  it("keeps each outcome and stays bounded while the daemon runs", async () => {
+  it("writes no file, and a new process still suppresses old ids from the table (#1961)", async () => {
     const n = node()
-    const logPath = n.logPath
-    {
-      const h = harness(n.journal())
-      const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
-      await h.mgr.complete(a.taskId, { status: "timeout", text: "slow" })
-      // Enough start/done pairs to trigger compaction more than once.
-      for (let i = 0; i < 600; i++) {
-        const t = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: `m${i}` })
-        await h.mgr.complete(t.taskId, { status: i % 2 ? "error" : "done", text: "x" })
-      }
-      const lines = readFileSync(logPath, "utf-8").trim().split("\n").map((l) => JSON.parse(l))
-      expect(lines.length).toBeLessThan(2 * 500 + 10)
-      // A compacted done line keeps how the delegation ended.
-      expect(lines.find((l) => l.id === a.taskId)).toMatchObject({ type: "done", status: "timeout" })
-      expect(new Set(lines.filter((l) => l.type === "done").map((l) => l.status))).toEqual(new Set(["timeout", "done", "error"]))
-
-      // A new process still suppresses the old ids, from the table.
-      const again = harness(n.journal())
-      expect(await again.mgr.complete(a.taskId, { status: "done", text: "late" })).toBe(false)
-      expect(again.logs.some((l) => l.includes(a.taskId) && l.includes("duplicate"))).toBe(true)
-      expect(n.store().statusOf(a.taskId)).toBe("timeout")
+    const h = harness({ ...n.journal(), injectTurn: async () => ({ content: "", error: "stopped mid-turn (registry-stop)" }) })
+    const a = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "a" })
+    await h.mgr.complete(a.taskId, { status: "timeout", text: "slow" })
+    for (let i = 0; i < 20; i++) {
+      const t = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: `m${i}` })
+      await h.mgr.complete(t.taskId, { status: i % 2 ? "error" : "done", text: "x" })
     }
+    // Starts, ends and held callbacks: none of it reaches a file.
+    expect(n.store().held().length).toBeGreaterThan(0)
+    expect(n.noFile()).toBe(true)
+
+    const again = harness(n.journal())
+    expect(await again.mgr.complete(a.taskId, { status: "done", text: "late" })).toBe(false)
+    expect(again.logs.some((l) => l.includes(a.taskId) && l.includes("duplicate"))).toBe(true)
+    expect(n.store().statusOf(a.taskId)).toBe("timeout")
   })
 
   it("suppresses a duplicate for as long as the row is kept, not only the last 2,000 ids", async () => {
@@ -490,10 +465,6 @@ describe("the log", () => {
     expect(h.logs.join("\n")).toContain("[delegation dlg-old] duplicate done suppressed")
     expect(await h.mgr.complete("dlg-never", { status: "done", text: "?" })).toBe(false)
     expect(h.logs.join("\n")).toContain("for an unknown task ignored")
-  })
-
-  it("remembers the same number of finished ids in memory and on disk", () => {
-    expect(MAX_DONE_IDS).toBe(2000)
   })
 })
 
@@ -522,7 +493,7 @@ describe("after a restart", () => {
       expect(await after.mgr.complete(taskId, { status: "done", text: "late" })).toBe(false)
       const again = harness(n.journal())
       expect(await again.mgr.recover()).toBe(0)
-      expect(readFileSync(logPath, "utf-8")).not.toContain('"type":"start"')
+      expect(existsSync(logPath)).toBe(false)
       expect(n.store().statusOf(taskId)).toBe("lost")
     }
   })
@@ -552,29 +523,30 @@ describe("after a restart", () => {
     expect(one.delivered.length + two.delivered.length).toBe(1)
   })
 
-  it("reads nothing back from the old file on a node with no database", async () => {
+  it("keeps hand-offs in memory only on a node with no database, and writes no file", async () => {
     const n = node()
-    const before = harness({ logPath: n.logPath })
+    const before = harness()
     before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Long job" })
     before.mgr.stop()
-    // The file is still written...
-    expect(n.lines().map((l) => l.type)).toEqual(["start"])
-    // ...but a process without the database keeps hand-offs in memory only.
-    const after = harness({ logPath: n.logPath })
+    expect(n.noFile()).toBe(true)
+    const after = harness()
     expect(await after.mgr.recover()).toBe(0)
     expect(after.injected).toHaveLength(0)
   })
 
-  it("imports the old file at start, once per line, by id", async () => {
+  it("imports a leftover old file at start, once, by id, then renames it", async () => {
     const n = node()
     // A file only an older daemon wrote: one hand-off still out.
     appendFileSync(n.logPath, JSON.stringify({ type: "start", ts: 1, id: "dlg-file", caller: "front", callee: "worker", request: "From the file", origin: { channel: "telegram", chatId: "chat-1" }, root: { kind: "human", channel: "telegram", chatId: "chat-1" }, startedAt: 1 }) + "\n")
     const after = harness(n.journal())
     expect(after.mgr.isPending("dlg-file")).toBe(true)
+    // Imported once, then renamed: never read again (#1961).
+    expect(existsSync(n.logPath)).toBe(false)
+    expect(existsSync(`${n.logPath}.imported`)).toBe(true)
     await after.mgr.recover()
     expect(after.injected).toHaveLength(1)
     expect(after.injected[0].message).toContain("From the file")
-    // Imported again at the next start: it stays ended.
+    // The next start reads the table alone: it stays ended.
     const again = harness(n.journal())
     expect(await again.mgr.recover()).toBe(0)
     expect(n.store().statusOf("dlg-file")).toBe("lost")
@@ -624,9 +596,10 @@ describe("review fixes on #1962", () => {
     await back.mgr.recover()
     expect(back.injected).toHaveLength(0)
     expect(back.delivered).toHaveLength(0)
+    expect(existsSync(`${n.logPath}.imported`)).toBe(true)
   })
 
-  it("an answer pending its callback is not re-run when re-runs are turned off, and never reaches the file", async () => {
+  it("an answer pending its callback is not re-run when re-runs are turned off", async () => {
     const n = node()
     let over = false
     onTestFinished(() => { over = true })
@@ -638,7 +611,7 @@ describe("review fixes on #1962", () => {
     const after = harness({ ...n.journal(), requeueRelayOnRestart: false })
     await after.mgr.recover()
     expect(after.injected).toHaveLength(0)
-    expect(n.lines().some((l) => l.type === "relay")).toBe(false)
+    expect(n.noFile()).toBe(true)
     expect(n.store().held()).toEqual([])
   })
 
@@ -664,25 +637,6 @@ describe("review fixes on #1962", () => {
 })
 
 describe("rollback to a daemon from before the table (#1861)", () => {
-  const STOPPED = { content: "", error: "stopped mid-turn (registry-stop)" }
-
-  it("leaves the file an older daemon reads consistent with the table", async () => {
-    const n = node()
-    const h = harness({ ...n.journal(), injectTurn: async (turn) => { h.injected.push(turn); return STOPPED } })
-    const out = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "still out" })
-    const ended = h.mgr.start({ caller: HUMAN_TURN, callee: "tester", message: "ended" })
-    const otherChat: CallerTurn = { ...HUMAN_TURN, context: { ...HUMAN_TURN.context, chatId: "chat-2" } }
-    const relayed = h.mgr.start({ caller: otherChat, callee: "pm", message: "held" })
-    await h.mgr.complete(ended.taskId, { status: "error", text: "no" })
-    await h.mgr.complete(relayed.taskId, { status: "done", text: "yes" })
-    h.mgr.stop()
-    const s = n.store()
-    const table = { pending: s.open().map((r) => r.id).sort(), held: s.held().filter((r) => !r.pending).map((r) => r.record.id).sort() }
-    expect(table.pending).toEqual([out.taskId])
-    expect(table.held).toEqual([ended.taskId, relayed.taskId].sort())
-    expect(oldDaemonReads(readFileSync(n.logPath, "utf-8"))).toEqual(table)
-  })
-
   it("merges what the older daemon wrote when the new one comes back", async () => {
     const n = node()
     const first = harness(n.journal())
@@ -696,6 +650,7 @@ describe("rollback to a daemon from before the table (#1861)", () => {
     const back = harness(n.journal())
     expect(back.mgr.isPending(out.taskId)).toBe(false)
     expect(back.mgr.isPending("dlg-old-daemon")).toBe(true)
+    expect(existsSync(n.logPath)).toBe(false)
     expect(await back.mgr.recover()).toBe(1)
     expect(back.injected[0].message).toContain("from the old one")
   })
@@ -719,8 +674,7 @@ describe("an answer back whose callback had not started (#1861)", () => {
     expect(before.injected).toHaveLength(0)
     before.mgr.stop()
     expect(n.store().held()).toEqual([expect.objectContaining({ attempt: 1, pending: true })])
-    // The old file only says it is done, as before.
-    expect(n.lines().map((l) => l.type)).toEqual(["start", "done"])
+    expect(n.noFile()).toBe(true)
 
     const after = harness(n.journal())
     await after.mgr.recover()
@@ -766,7 +720,7 @@ describe("a callback turn stopped by a restart (#846)", () => {
   const STOPPED = { content: "", error: "Claude Code was stopped mid-turn (registry-stop), before its time limit" }
 
   /** `journal()` is one daemon process on the node's database. */
-  type Journal = () => { logPath: string; store: HandoffStore }
+  type Journal = () => { store: HandoffStore }
   function withLog<T>(fn: (journal: Journal, n: ReturnType<typeof node>) => Promise<T>): Promise<T> {
     const n = node()
     return fn(n.journal, n)
@@ -812,7 +766,6 @@ describe("a callback turn stopped by a restart (#846)", () => {
       await flush()
       before.mgr.stop()
       expect(n.store().held()[0].result).toMatchObject({ status: "error", state: { state: "blocked", why: "no token" } })
-      expect(n.lines().filter((l) => l.type === "relay")[0].result).toMatchObject({ status: "error", state: { state: "blocked", why: "no token" } })
 
       const after = harness(journal())
       await after.mgr.recover()

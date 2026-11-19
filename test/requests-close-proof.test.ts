@@ -291,8 +291,9 @@ describe("sameCheckDetail (B1)", () => {
     expect(sameCheckDetail(`${MET}; its plan stopped with steps left: 2. review`, MET)).toBe(true)
     expect(sameCheckDetail(`${MET}, 3 left`, MET)).toBe(false)
     expect(sameCheckDetail(null, MET)).toBe(false)
-    const long = "x".repeat(600)
-    expect(sameCheckDetail("x".repeat(500), long)).toBe(true)
+    // Cut as store.closeVerified cuts: 1000 since a matched note's clip is kept (#885).
+    const long = "x".repeat(1200)
+    expect(sameCheckDetail("x".repeat(1000), long)).toBe(true)
   })
 
   it("the owner-words prompt holds every link, past the 500-character evidence (B4)", () => {

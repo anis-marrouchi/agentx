@@ -17,6 +17,9 @@ export interface ForgeItem {
   /** When each of `notes` was written (epoch ms), same order; null when
    *  the forge did not say (#1925). */
   noteTimes?: Array<number | null>
+  /** Each of `notes`' own web address, same order; null when the forge
+   *  gave none (#885: the close evidence links the note that matched). */
+  noteUrls?: Array<string | null>
   url: string
   /** Its label names (status drift, #1138 step F). */
   labels?: string[]
@@ -37,6 +40,12 @@ export type ForgeReader = (provider: "github" | "gitlab", ref: ParsedRef, opts: 
 export interface ParsedRef { project: string; number: number; mr: boolean }
 
 const PATTERN_MAX = 200
+/** A shorter pattern, or one of digits only ("1959"), is found in notes
+ *  that are not the proof (#885). */
+const PATTERN_MIN = 8
+/** How much of the matched note the close evidence keeps (#885): the
+ *  owner-words reviewer reads what was written, not only the pattern. */
+const NOTE_CLIP = 600
 const NOTE_MAX = 10_000
 const TIMEOUT_MS = 10_000
 const STATES: readonly IssueState[] = ["open", "closed", "merged"]
@@ -80,6 +89,10 @@ export function parseIssueSpec(raw: Record<string, unknown>, now = Date.now()): 
   if (state && !(STATES as readonly string[]).includes(state)) return `state must be one of ${STATES.join(", ")}`
   const notePattern = str(raw.notePattern)
   if (notePattern.length > PATTERN_MAX) return `notePattern is longer than ${PATTERN_MAX} characters`
+  if (notePattern && (notePattern.length < PATTERN_MIN || /^\d+$/.test(notePattern))) {
+    return `notePattern "${notePattern}" is too loose: it must be at least ${PATTERN_MIN} characters and not only digits, ` +
+      "or a note that is not the proof closes it. Use words the closing note will hold, such as the request id"
+  }
   // A note pattern looks only at notes written once the loop is open
   // (#1925): a word already on the issue must not close it at once.
   let after = now
@@ -91,16 +104,21 @@ export function parseIssueSpec(raw: Record<string, unknown>, now = Date.now()): 
   return { kind: "issue", provider, ref, ...(state ? { state: state as IssueState } : {}), ...(notePattern ? { notePattern, after } : {}) }
 }
 
-/** The notes a pattern may match: all of them for a spec stored without
+/** Whether note `i` may match: every note for a spec stored without
  *  `after`, else only those written at or after it. A note without a time
  *  is left out: the check cannot tell it is new. */
-function notesToMatch(spec: IssueSpec, item: ForgeItem): string[] {
-  const notes = item.notes ?? []
-  if (spec.after === undefined) return notes
-  return notes.filter((_, i) => {
-    const at = item.noteTimes?.[i]
-    return typeof at === "number" && at >= spec.after!
-  })
+function mayMatch(spec: IssueSpec, item: ForgeItem, i: number): boolean {
+  if (spec.after === undefined) return true
+  const at = item.noteTimes?.[i]
+  return typeof at === "number" && at >= spec.after
+}
+
+/** The evidence of a note that matched (#885): its link and the start of
+ *  its text, on one line, so the close reviewer reads what was written. */
+function noteEvidence(spec: IssueSpec, item: ForgeItem, i: number): string {
+  const text = (item.notes?.[i] ?? "").replace(/\s+/g, " ").trim()
+  const clip = text.length > NOTE_CLIP ? `${text.slice(0, NOTE_CLIP)}…` : text
+  return `${item.noteUrls?.[i] ?? item.url} has a note with "${spec.notePattern}": "${clip}"`
 }
 
 /** A forge time string as epoch ms; null when absent or unreadable. */
@@ -125,7 +143,8 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
     // Plain text, any case: an agent's pattern never runs as a regular
     // expression on the daemon's thread, so it cannot stall it.
     const want = spec.notePattern.toLowerCase()
-    if (notesToMatch(spec, item).some((n) => n.slice(0, NOTE_MAX).toLowerCase().includes(want))) return { verdict: "met", detail: `${item.url} has a note with "${spec.notePattern}"` }
+    const at = (item.notes ?? []).findIndex((n, i) => mayMatch(spec, item, i) && n.slice(0, NOTE_MAX).toLowerCase().includes(want))
+    if (at >= 0) return { verdict: "met", detail: noteEvidence(spec, item, at) }
   }
   const since = spec.notePattern && spec.after !== undefined ? ` since ${new Date(spec.after).toISOString()}` : ""
   return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note${since} has "${spec.notePattern}"` : ""}` }
@@ -207,7 +226,10 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100${since}`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
       const list: any[] = Array.isArray(notes.body) ? notes.body : []
-      return { state, url, labels, ...closer, ...plan, ...stateReason, notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)) }
+      return {
+        state, url, labels, ...closer, ...plan, ...stateReason,
+        notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)), noteUrls: list.map((n) => (typeof n?.html_url === "string" && n.html_url ? n.html_url : null)),
+      }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
@@ -228,6 +250,8 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     const notes = await get(`${base}/notes?per_page=100&sort=desc&order_by=created_at`, headers)
     if (!notes.ok) return { error: `its notes: ${notes.error}` }
     const list: any[] = (Array.isArray(notes.body) ? notes.body : []).slice().reverse()
-    return { state, url, labels, ...closer, ...plan, notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)) }
+    // GitLab's notes carry no address: the item's, with the note's anchor.
+    const noteUrls = list.map((n) => (item.body?.web_url && Number.isInteger(n?.id) ? `${item.body.web_url}#note_${n.id}` : null))
+    return { state, url, labels, ...closer, ...plan, notes: list.map((n) => String(n?.body ?? "")), noteTimes: list.map((n) => timeOf(n?.created_at)), noteUrls }
   }
 }

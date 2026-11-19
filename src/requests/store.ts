@@ -207,6 +207,9 @@ export function firstLink(text: string): string | null {
 
 export const TEXT_MAX = 4000
 const REASON_MAX = 500
+/** A met check's evidence (closeVerified): a matched note's link and its
+ *  first 600 characters fit (#885). close-proof cuts the same. */
+export const CHECK_EVIDENCE_MAX = 1000
 
 /** Creates the tables when missing. Named, not numbered, so it cannot
  *  clash with a migration number another branch claimed. */
@@ -270,6 +273,10 @@ export function ensureRequestTables(db: Database.Database): void {
   // would hide that due time after a rollback; a due time that differs from
   // this one is not pushed yet.
   ensureColumns(db, "requests", [["due_pushed_for", "INTEGER"]])
+  // The hand-back a no-proof ask was for (noqta#884): the end time of the
+  // newest delegation that came back done. Its agent is woken once per
+  // hand-back, not at every check.
+  ensureColumns(db, "requests", [["handback_asked_for", "INTEGER"]])
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
@@ -696,7 +703,7 @@ export class RequestStore {
   /** The checker found the evidence: closed as done, with its words. Its
    *  proof is the check that ran (#1138 D). */
   closeVerified(id: string, evidence: string, now: number): boolean {
-    const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
+    const text = evidence.trim().slice(0, CHECK_EVIDENCE_MAX) || "the check was met"
     const proof: Proof = { kind: "check", value: text, ranAt: now }
     const closed = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
@@ -924,18 +931,30 @@ export class RequestStore {
   }
 
   /** Settled (#1138): the handed work came back done and nobody closed
-   *  it. Closed as done with the delegate's link, or, without one, as
-   *  "unproven: …". Either way unverified: nothing checked the link. Only
-   *  from in progress, or raised for being overdue (#1214) or for a
-   *  hand-off that did not end done (#1520): anything that moved since it
-   *  was read is left. */
+   *  it. Closed as done with the delegate's link, unverified: nothing
+   *  checked the link. Without a link it is not closed (noqta#884): the
+   *  sweep asks its agent for the proof instead. Only from in progress, or
+   *  raised for being overdue (#1214) or for a hand-off that did not end
+   *  done (#1520): anything that moved since it was read is left. */
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
-    const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
+    const evidence = (proof ?? "").trim().slice(0, REASON_MAX)
+    if (!evidence) return false
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")}))`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
+  }
+
+  /** Marks that the agent is asked for the proof of the newest hand-back
+   *  (noqta#884). True only the first time for that hand-back: a later one
+   *  that also came back without a link is asked again. */
+  markHandBackAsked(id: string): boolean {
+    const newest = "(SELECT MAX(l.ended_at) FROM request_links l WHERE l.request_id = requests.id AND l.kind = 'delegation' AND l.ended = 'done')"
+    return this.db.prepare(
+      `UPDATE requests SET handback_asked_for = ${newest} WHERE id = ? AND ${newest} IS NOT NULL
+         AND (handback_asked_for IS NULL OR handback_asked_for < ${newest})`,
+    ).run(id).changes > 0
   }
 
   links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {

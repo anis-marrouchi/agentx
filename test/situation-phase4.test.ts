@@ -58,6 +58,8 @@ interface H {
   settings: SituationsConfig
   /** Notes written, by forge chat. */
   notes: Map<string, string[]>
+  /** The note the note step's agent drafts. */
+  note: string
   /** What the note step's agent lists as follow-ups. */
   followUps: Array<Record<string, string>>
   /** The talk's recent messages (the group log). */
@@ -84,6 +86,7 @@ function setup(opts: { closing?: boolean } = {}): H {
   const runs = new RunStore({ baseDir: dir, nodeId: "node-a" })
   const timers = new TimerService({ baseDir: resolve(dir, "_timers") })
   const x = { dir, db, situations, requests, workflows, runs, timers, notes: new Map(), told: [], cards: [], sends: [], turns: [], logs: [], noteKeys: [] } as unknown as H
+  x.note = "Interview notes"
   x.followUps = [
     { what: "Send the candidate the written offer terms", owner: "recruiter", waitsOn: "owner" },
     { what: "Decide the start date", owner: "owner", waitsOn: "recruiter" },
@@ -100,7 +103,7 @@ function setup(opts: { closing?: boolean } = {}): H {
       // The talk's agent: drafts the note (it cannot post it), lists the follow-ups.
       execute: async (req) => {
         x.turns.push(req)
-        return { content: `Draft ready.\n\`\`\`json\n${JSON.stringify({ note: "Interview notes", followUps: x.followUps })}\n\`\`\`` }
+        return { content: `Draft ready.\n\`\`\`json\n${JSON.stringify({ note: x.note, followUps: x.followUps })}\n\`\`\`` }
       },
     },
     channels: { whatsapp: { send: async (m: { channel: string; chatId: string; text: string }) => { x.sends.push(m); return `m${x.sends.length}` } } },
@@ -574,6 +577,20 @@ describe("re-check fixes", () => {
     const again = await runBuiltin("situation.note", { situationId: row.id, endGeneration: "0", home: HOME, agent: "recruiter", note: "Interview notes" }) as { noteAt: string }
     expect(again.noteAt).toBe(`${HOME}#note_1`)
     expect(h.notes.get(NOTE_CHAT)).toHaveLength(1)
+  })
+
+  it("#1973: an empty drafted note posts nothing and still opens the follow-ups", async () => {
+    h.note = "  "
+    h.followUps = [{ what: "Send the candidate the written offer terms", owner: "recruiter" }]
+    interview(h)
+    await ended()
+    await doneClose()
+    expect(h.runsOf(CLOSE_WORKFLOW)[0].status).toBe("completed")
+    expect(h.notes.size).toBe(0)
+    expect(h.situations.noteFor(h.situations.get(KEY)!.id, 0)).toBeNull()
+    expect(h.requests.listOpen().filter((r) => r.promise).map((p) => p.text)).toEqual(["Send the candidate the written offer terms"])
+    expect(h.told).toHaveLength(1)
+    expect(h.told[0]).toMatch(/\(closed\)\. Note: none, the agent drafted no note\. 1 follow-up, owners named: /)
   })
 
   it("L-c: an allowed agent named in other letter case owns the promise under its registry id", async () => {

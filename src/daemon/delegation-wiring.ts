@@ -21,7 +21,7 @@ import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
 import type Database from "better-sqlite3"
 import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
-import { handoffStoreFor } from "@/a2a/handoff-store"
+import { handoffStoreFor, importDelegationLog } from "@/a2a/handoff-store"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { SessionStore } from "@/agents/sessions"
@@ -346,6 +346,8 @@ export interface DelegationWiring {
   /** The jobs database, opened before the manager is built: the hand-off
    *  journal lives there (#1861). Null: memory only, with a loud warning. */
   db: Database.Database | null
+  /** The daemon's folder: a leftover old delegation log is looked for
+   *  under it, imported once and renamed (#1961). */
   baseDir?: string
   /** Put a callback turn in the intent ledger, so the activity map can
    *  draw it as the answer returning to the caller (#267). */
@@ -487,20 +489,24 @@ export function pushPreview(text: string): string {
   return `${chars.slice(0, PUSH_PREVIEW_MAX).join("").trimEnd()}… (shortened; ask the agent for the full answer)`
 }
 
-/** The old delegation log, under the daemon's folder (#1861: written, not read). */
+/** The old delegation log, under the daemon's folder. No longer written
+ *  (#1961): a node that still has one imports it once at start, then it
+ *  is renamed to `delegations.jsonl.imported`. */
 export const DELEGATION_LOG = ".agentx/a2a/delegations.jsonl"
 
 export function createDelegations(w: DelegationWiring): DelegationManager {
   const cfg = w.config.mesh.delegation
+  const store = handoffStoreFor(w.db, w.log)
+  // Before the manager reads the table back. Without the table (memory
+  // only), a leftover file is left where it is for a start that has one.
+  if (store) importDelegationLog(store, resolve(w.baseDir ?? process.cwd(), DELEGATION_LOG), w.log)
   return new DelegationManager({
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
     coalesceMs: cfg.coalesceSeconds * 1000,
-    // Read from the table; the file is still written for one release so a
-    // rolled-back daemon finds it agreeing (#1861).
-    store: handoffStoreFor(w.db, w.log),
-    logPath: resolve(w.baseDir ?? process.cwd(), DELEGATION_LOG),
+    // The hand-off journal is the table (#1861); no file is written (#1961).
+    store,
     log: w.log,
     onStarted: w.onStarted,
     onDone: w.onDone,

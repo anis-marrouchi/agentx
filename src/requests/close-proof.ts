@@ -1,4 +1,4 @@
-import type { DeliverableProof, RequestRecord, RequestStore } from "./store"
+import { CHECK_EVIDENCE_MAX, type DeliverableProof, type RequestRecord, type RequestStore } from "./store"
 import type { PlanStep } from "./plan-store"
 import { parseRef } from "./checkers/issue"
 
@@ -45,7 +45,7 @@ export interface CloseProofSettings {
 export const DEFAULT_CLOSE_PROOF: CloseProofSettings = { mode: "off", perCheck: 2, askPerCheck: 3 }
 
 /** Same cut as store.closeVerified: kept evidence is compared with it. */
-const DETAIL_MAX = 500
+const DETAIL_MAX = CHECK_EVIDENCE_MAX
 const cut = (t: string) => t.trim().slice(0, DETAIL_MAX) || "the check was met"
 
 /** What the callers add after the checker's own words (daemon-api: the

@@ -11,18 +11,57 @@
 // `requests`): that row exists only while jobs are on and is pruned with
 // them, and a hand-off's way home must outlive both.
 //
-// For one release the old file is still written beside the table, so a
-// daemon rolled back to a version before this one reads a file that agrees
-// with it. At every start the file is imported by id (importFile): what an
-// older daemon wrote there in between is merged, and running it twice
-// changes nothing.
+// The old file is no longer written (#1961). A node that still has one (it
+// ran a release that wrote it, or an older daemon wrote it after a
+// rollback) imports it by id once at start (importDelegationLog): what is
+// in it is merged, running the import twice changes nothing, and the file
+// is then renamed to `delegations.jsonl.imported` and never read again.
 //
 // Every call is one small synchronous statement. The caller logs and
 // ignores a failed write, as it did for the file.
 
 import type Database from "better-sqlite3"
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, renameSync, unlinkSync } from "fs"
 import type { DelegationRecord, DelegationResult, DelegationStatus } from "./delegation"
+
+/** The suffix a delegation log gets once it is imported (#1961). */
+export const IMPORTED_SUFFIX = ".imported"
+
+/**
+ * At start, before the DelegationManager reads the table: merge a leftover
+ * old delegation log into it, then rename the file to `<path>.imported`
+ * so it is never read again. No file: nothing to do. A failed import
+ * leaves the file in place for the next start. When the rename fails the
+ * file is removed instead; when that fails too, a warning is logged and the
+ * start goes on (the next start merges it again, which is harmless until
+ * its rows are pruned).
+ */
+export function importDelegationLog(store: HandoffStore, path: string, log: (msg: string) => void): void {
+  if (!existsSync(path)) return
+  try {
+    const r = store.importFile(path)
+    log(`[delegation] ${r.lines} line(s) of ${path} merged into the handoffs table${r.skipped ? `, ${r.skipped} unreadable skipped` : ""}`)
+  } catch (e: any) {
+    log(`[delegation] could not import ${path} into the handoffs table: ${e?.message ?? e}; tried again at the next start`)
+    return
+  }
+  try {
+    renameSync(path, path + IMPORTED_SUFFIX)
+    log(`[delegation] ${path} renamed to ${path + IMPORTED_SUFFIX}; it is not read again`)
+    return
+  } catch (e: any) {
+    log(`[delegation] could not rename ${path} after its import: ${e?.message ?? e}; removing it instead`)
+  }
+  // A file imported at every start would, once its rows are pruned after
+  // requests.retentionDays, bring them back as open hand-offs and send late
+  // "lost" notices. Its lines are in the table now: remove it.
+  try {
+    unlinkSync(path)
+    log(`[delegation] ${path} removed after its import; it is not read again`)
+  } catch (e: any) {
+    log(`[delegation] WARNING: ${path} was imported but could not be renamed or removed (${e?.message ?? e}); it will be re-imported each start — fix permissions`)
+  }
+}
 
 /** A callback held for one re-run, as read back at start. */
 export interface StoredRelay {
@@ -256,13 +295,6 @@ export class HandoffStore {
     return out
   }
 
-  /** The last `limit` finished ids and how they ended, oldest first. Only
-   *  the old file's compaction still wants them. */
-  recentDone(limit: number): Array<[string, DelegationStatus]> {
-    const rows = this.sql("SELECT id, status FROM handoffs WHERE status IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT ?").all(limit) as Array<{ id: string; status: DelegationStatus }>
-    return rows.reverse().map((r) => [r.id, r.status])
-  }
-
   /** Who each hand-off went to: id → callee, `callee@peer` for a peer's. */
   agents(): Map<string, string> {
     const rows = this.sql("SELECT id, callee, peer FROM handoffs WHERE callee IS NOT NULL").all() as Array<{ id: string; callee: string; peer: string | null }>
@@ -335,12 +367,15 @@ export class HandoffStore {
       // compacted away. Its compaction keeps the starts still out, the done
       // ids (rewritten with the compaction's time) and the relays it still
       // holds, so the `relayed` line is gone and only a done line newer
-      // than the hold is left. A daemon of this version never writes such a
-      // file: every held relay is in its file at the hold's time (append)
-      // or later (its own compaction rewrites held relays). So: a done line
-      // newer than the hold, and no relay line at or after it, means the
-      // writer no longer held it. An answer pending in the table is left
-      // alone: the file never knew it.
+      // than the hold is left. The release that wrote both the table and the
+      // file (#1962) never wrote such a file: every held relay is in its
+      // file at the hold's time (append) or later (its own compaction
+      // rewrites held relays). Releases since write no file at all (#1961),
+      // and a file is imported once, then renamed, so a file an older daemon
+      // writes after a rollback starts empty and only names its own
+      // hand-offs. So: a done line newer than the hold, and no relay line at
+      // or after it, means the writer no longer held it. An answer pending
+      // in the table is left alone: the file never knew it.
       for (const [id, doneTs] of lastDone) {
         const row = relayAtOf.get(id) as { relay_at: number | null; relay_attempt: number | null } | undefined
         if (!row || row.relay_attempt === null || row.relay_attempt < 1 || row.relay_at === null) continue

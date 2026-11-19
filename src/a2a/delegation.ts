@@ -19,14 +19,12 @@
 // row per task id in the `handoffs` table of the jobs database
 // (handoff-store.ts, #1861), so a restart can tell the person that a
 // delegation was lost instead of saying nothing, and pass on once more an
-// answer a restart kept from reaching them. For one release the old
-// `.agentx/a2a/delegations.jsonl` is still written beside it, unchanged,
-// so a rolled-back daemon reads a file that agrees; it is no longer read,
-// only imported into the table at start.
+// answer a restart kept from reaching them. The old
+// `.agentx/a2a/delegations.jsonl` is no longer written (#1961): a node that
+// still has one imports it into the table once at start and renames it
+// (importDelegationLog in handoff-store.ts).
 
 import { emitSignal } from "@/improve/signals"
-import { appendFileSync, mkdirSync, writeFileSync } from "fs"
-import { dirname } from "path"
 import { randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
@@ -241,10 +239,6 @@ export interface DelegationDeps {
    *  answers come back as one turn (#1749). Default 0: only answers
    *  already in are joined. */
   coalesceMs?: number
-  /** The old start/done file, still written for one release so a daemon
-   *  rolled back to a version before the table reads a file that agrees
-   *  (#1861). Never read back: imported into `store` at start. */
-  logPath?: string
   /** The hand-off journal in the jobs database (#1861): what is still out
    *  and what callback is held are read back from it at start. Absent: a
    *  node with no database keeps hand-offs in memory only. */
@@ -299,11 +293,6 @@ const REQUEST_CLIP = 500
 const RESULT_CLIP = 12_000
 /** The answer as a person reads it when the caller wrote no summary. */
 const FALLBACK_CLIP = 3500
-/** Finished task ids the old file keeps when it is compacted. Duplicate
- *  suppression reads the table, for as long as a row is kept. */
-export const MAX_DONE_IDS = 2000
-/** Log lines appended between compactions while the daemon runs. */
-const COMPACT_EVERY = 500
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s
@@ -445,12 +434,6 @@ function batchKeyOf(rec: DelegationRecord): string {
   return `${rec.caller}\u0000${rec.origin.channel}\u0000${rec.origin.chatId}\u0000${rec.kind ?? ""}`
 }
 
-type LogLine =
-  | ({ type: "start"; ts: number } & DelegationRecord)
-  | { type: "done"; id: string; status: DelegationStatus; ts: number }
-  | ({ type: "relay"; id: string; ts: number } & HeldRelay)
-  | { type: "relayed"; id: string; ts: number }
-
 /** Does a run's final answer add nothing to what the callee already wrote
  *  to its caller? True when at least REPEAT_SHARE of its words are in what
  *  was written. A progress note ("on it") followed by the real result
@@ -470,10 +453,6 @@ export const REPEAT_SHARE = 0.5
 
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
-  /** Finished task id → how it ended, oldest first. Only for the old
-   *  file's compaction and a node without the table. */
-  private doneIds = new Map<string, DelegationStatus>()
-  private appendsSinceCompact = 0
   private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin; depth?: number }> = []
   /** One callback at a time per caller chat, in completion order. */
   private chains = new Map<string, Promise<void>>()
@@ -482,11 +461,10 @@ export class DelegationManager {
   private batches = new Map<string, CallbackBatch>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private localRuns = new Map<string, string>()
-  /** Callback turns a restart stopped, by task id (see HeldRelay). */
+  /** Callback turns a restart stopped, and answers back whose callback
+   *  turn never started before it (`pending`, #1861), by task id (see
+   *  HeldRelay). */
   private heldRelays = new Map<string, HeldRelay>()
-  /** Answers back whose callback turn never started before the last
-   *  restart (#1861), until recover() re-runs them. Never in the file. */
-  private pendingCallbacks = new Map<string, HeldRelay>()
   /** Delegations whose callee said its run ends to wait (markWaiting). */
   private waiting = new Map<string, Waiting>()
   /** Delegations whose callee already wrote to the caller (relayReply),
@@ -606,7 +584,6 @@ export class DelegationManager {
     }
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
-    this.append({ type: "start", ts: record.startedAt, ...record })
     this.journal("record the hand-off", (s) => s.insert(record, record.startedAt), undefined)
     try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
 
@@ -724,7 +701,10 @@ export class DelegationManager {
   async complete(id: string, result: DelegationResult): Promise<boolean> {
     const rec = this.pendingById.get(id)
     if (!rec) {
-      const ended = this.journal("read the hand-off", (s) => s.statusOf(id), null) ?? this.doneIds.get(id)
+      // The table knows every kept row; without it (memory only), the
+      // recent list knows this process's last 200.
+      const ended = this.journal("read the hand-off", (s) => s.statusOf(id), null)
+        ?? this.recent.find((r) => r.id === id && r.status !== "running")?.status
       if (ended) this.deps.log(`[delegation ${id}] duplicate ${result.status} suppressed`)
       else this.deps.log(`[delegation ${id}] ${result.status} for an unknown task ignored`)
       return false
@@ -751,8 +731,6 @@ export class DelegationManager {
       this.deps.log(`[delegation ${id}] ${result.status} dropped: another process ended it already`)
       return false
     }
-    this.markDone(id, result.status)
-    this.append({ type: "done", id, status: result.status, ts: this.now() })
     const entry = this.recent.find((r) => r.id === id)
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
@@ -840,7 +818,6 @@ export class DelegationManager {
       text: "This machine restarted while the work was in progress, so its answer never came back.",
     })))
     await relays
-    this.compact()
     return lost.length
   }
 
@@ -852,10 +829,7 @@ export class DelegationManager {
    * notice instead. Returns how many were re-run.
    */
   async requeueRelays(): Promise<number> {
-    // Answers whose callback never started join here, and only here: kept
-    // apart until now so the old file's compaction never writes them.
-    const held = [...this.heldRelays.values(), ...this.pendingCallbacks.values()]
-    this.pendingCallbacks.clear()
+    const held = [...this.heldRelays.values()]
     let rerun = 0
     await Promise.all(held.map((h) => {
       const rec = h.record
@@ -865,7 +839,7 @@ export class DelegationManager {
       // Written down before it starts, and only once: a second process on
       // this database finds it taken.
       if (!this.journal("claim the re-run", (s) => s.claimRerun(rec.id, this.now()), true)) {
-        if (!h.pending) this.heldRelays.delete(rec.id)
+        this.heldRelays.delete(rec.id)
         this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} already taken by another process`)
         return Promise.resolve()
       }
@@ -935,7 +909,7 @@ export class DelegationManager {
     return r?.origin ? { caller: r.caller, origin: r.origin, depth: r.depth ?? 0 } : null
   }
 
-  /** Stop timers (daemon shutdown, tests). Pending work stays in the log. */
+  /** Stop timers (daemon shutdown, tests). Pending work stays in the table. */
   stop(): void {
     for (const t of this.timers.values()) clearTimeout(t)
     this.timers.clear()
@@ -1067,15 +1041,12 @@ export class DelegationManager {
     const wrote = h.wrote ? { wrote: true } : {}
     this.heldRelays.set(h.record.id, { ...held, ...wrote })
     const ts = this.now()
-    // The file gets the fields an older daemon reads, as before.
-    this.append({ type: "relay", id: h.record.id, ts, ...held })
     this.journal("hold the callback", (s) => s.hold(held.record, { ...held, ...wrote }, held.attempt, ts), undefined)
   }
 
   private releaseRelay(id: string): void {
     if (!this.heldRelays.delete(id)) return
     const ts = this.now()
-    this.append({ type: "relayed", id, ts })
     this.journal("release the callback", (s) => s.release(id, ts), undefined)
   }
 
@@ -1092,7 +1063,7 @@ export class DelegationManager {
   }
 
   /** One write or read of the table. A failure is logged and the work goes
-   *  on in memory, as a failed append to the file always did. */
+   *  on in memory. */
   private journal<T>(what: string, fn: (s: HandoffStore) => T, fallback: T): T {
     if (!this.store) return fallback
     try {
@@ -1122,78 +1093,26 @@ export class DelegationManager {
     if (this.recent.length > 200) this.recent.splice(0, this.recent.length - 200)
   }
 
-  private markDone(id: string, status: DelegationStatus): void {
-    this.doneIds.delete(id)
-    this.doneIds.set(id, status)
-    while (this.doneIds.size > MAX_DONE_IDS) {
-      const first = this.doneIds.keys().next().value
-      if (first === undefined) break
-      this.doneIds.delete(first)
-    }
-  }
-
-  private append(line: LogLine): void {
-    const path = this.deps.logPath
-    if (!path) return
-    try {
-      mkdirSync(dirname(path), { recursive: true })
-      appendFileSync(path, JSON.stringify(line) + "\n")
-    } catch (e: any) {
-      this.deps.log(`[delegation] could not write ${path}: ${e?.message ?? e}`)
-    }
-    // Keep the file bounded while the daemon stays up, not only at boot.
-    if (++this.appendsSinceCompact >= COMPACT_EVERY) this.compact()
-  }
-
-  /** At start: the old file is merged into the table (an older daemon may
-   *  have written it since), then what was still out, what callback was
-   *  held, and the finished ids the file's compaction keeps are read back. */
+  /** At start: what was still out and what callback was held are read
+   *  back from the table. A leftover old file was imported into it before
+   *  (importDelegationLog). */
   private load(store: HandoffStore): void {
-    const path = this.deps.logPath
-    if (path) {
-      try {
-        const r = store.importFile(path)
-        if (r.lines || r.skipped) this.deps.log(`[delegation] ${r.lines} line(s) of ${path} merged into the handoffs table${r.skipped ? `, ${r.skipped} unreadable skipped` : ""}`)
-      } catch (e: any) {
-        this.deps.log(`[delegation] could not import ${path} into the handoffs table: ${e?.message ?? e}`)
-      }
-    }
     try {
       for (const rec of store.open()) this.pendingById.set(rec.id, rec)
       const dropped: string[] = []
       for (const h of store.held()) {
-        if (!h.pending) this.heldRelays.set(h.record.id, h)
-        // An answer whose callback never started is re-run once, unless the
-        // owner turned re-runs after a restart off: then it is dropped.
-        else if (this.deps.requeueRelayOnRestart === false) dropped.push(h.record.id)
-        else this.pendingCallbacks.set(h.record.id, h)
+        // An answer whose callback never started is re-run once, like a held
+        // callback, unless the owner turned re-runs after a restart off:
+        // then it is dropped.
+        if (h.pending && this.deps.requeueRelayOnRestart === false) dropped.push(h.record.id)
+        else this.heldRelays.set(h.record.id, h)
       }
       if (dropped.length) {
         store.clearPending(dropped, this.now())
         this.deps.log(`[delegation] ${dropped.length} answer(s) a restart kept from their callback not re-run (requeueRelayOnRestart is off): ${dropped.join(", ")}`)
       }
-      for (const [id, status] of store.recentDone(MAX_DONE_IDS)) this.doneIds.set(id, status)
     } catch (e: any) {
       this.deps.log(`[delegation] could not read the handoffs table: ${e?.message ?? e}`)
     }
-  }
-
-  /** Keep the old file small: only unfinished starts, the recent done ids
-   *  and held callbacks are rewritten, as before #1861. */
-  private compact(): void {
-    this.appendsSinceCompact = 0
-    const path = this.deps.logPath
-    if (!path) return
-    try {
-      const ts = this.now()
-      const lines: LogLine[] = [
-        ...[...this.pendingById.values()].map((r) => ({ type: "start" as const, ts: r.startedAt, ...r })),
-        ...[...this.doneIds].map(([id, status]) => ({ type: "done" as const, id, status, ts })),
-        // The fields an older daemon reads, nothing more.
-        ...[...this.heldRelays].map(([id, h]) => ({ type: "relay" as const, id, ts, record: h.record, result: h.result, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) })),
-      ]
-      mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + (lines.length ? "\n" : ""))
-    } catch { /* best effort */ }
   }
 }
