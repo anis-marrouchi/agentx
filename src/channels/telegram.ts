@@ -100,18 +100,28 @@ export const TELEGRAM_ALLOWED_UPDATES = ["message", "my_chat_member", "chat_memb
 
 const GONE = new Set(["left", "kicked"])
 
-/** A member (not our bot) left or was removed: from a `chat_member`
- *  update, or a `left_chat_member` service message. Null otherwise. */
-export function telegramLeaveOf(update: TelegramUpdate, botUserId?: number): { chatId: string; userId: string } | null {
+/** How long the same leave (chat, person) is handled once: every one of
+ *  our bots in the group gets it, and an admin bot gets it twice
+ *  (`chat_member` and the service message). */
+export const TELEGRAM_LEAVE_DEDUPE_MS = 60_000
+
+/** A member left or was removed: from a `chat_member` update, or a
+ *  `left_chat_member` service message. Null otherwise, and null when the
+ *  one who left is one of our own bot accounts (`ours`): our bots are not
+ *  a party to the talk. Another bot that is not ours is a party (the
+ *  talks this ends are often with another company's bot), so `is_bot`
+ *  alone does not skip a leave. */
+export function telegramLeaveOf(update: TelegramUpdate, ours?: number | ReadonlySet<number>): { chatId: string; userId: string } | null {
+  const isOurs = (id: number) => typeof ours === "number" ? id === ours : !!ours?.has(id)
   const cm = update.chat_member
   if (cm) {
     const uid = cm.new_chat_member?.user?.id
-    if (uid === undefined || uid === botUserId) return null
+    if (uid === undefined || isOurs(uid)) return null
     if (!GONE.has(cm.new_chat_member.status) || GONE.has(cm.old_chat_member?.status)) return null
     return { chatId: String(cm.chat.id), userId: String(uid) }
   }
   const left = update.message?.left_chat_member
-  if (left && update.message?.chat && left.id !== botUserId) {
+  if (left && update.message?.chat && !isOurs(left.id)) {
     return { chatId: String(update.message.chat.id), userId: String(left.id) }
   }
   return null
@@ -1178,20 +1188,28 @@ export class TelegramAdapter implements ChannelAdapter {
     }
   }
 
+  /** (chat, person) → when its leave was first handled. In-process: every
+   *  account on this node shares one adapter. */
+  private recentLeaves = new Map<string, number>()
+
   /** A member left a group (#1892 phase 3). Only for a chat with an open
-   *  talk (`wantsSignal`): one getChatMemberCount, minus our own bots in
-   *  the group, gives who else is still there; a count it cannot get is
-   *  null (unknown, moves nothing). One `left` signal to this node's
-   *  signal hub. Never throws. */
+   *  talk (`wantsSignal`), and only once per (chat, person) in
+   *  TELEGRAM_LEAVE_DEDUPE_MS: the first account to see it counts, the
+   *  others skip. One getChatMemberCount, minus our own bots in the
+   *  group, gives who else is still there; a count it cannot get, or a 0
+   *  resting on a bot list it cannot confirm, is null (unknown, moves
+   *  nothing). One `left` signal to this node's signal hub. Never throws. */
   async handleMemberUpdate(accountId: string, token: string, update: TelegramUpdate): Promise<void> {
     try {
-      const leave = telegramLeaveOf(update, this.botInfo.get(accountId)?.userId)
+      const ours = new Set([...this.botInfo.values()].map((b) => b.userId))
+      const leave = telegramLeaveOf(update, ours)
       if (!leave || !wantsSignal(situationKey("telegram", accountId, leave.chatId))) return
+      if (!this.claimLeave(leave.chatId, leave.userId, Date.now())) return
       let remaining: number | null = null
       try {
         const data = await this.apiCall(token, "getChatMemberCount", { chat_id: leave.chatId })
         const count = Number(data?.result)
-        if (Number.isFinite(count)) remaining = Math.max(0, count - Math.max(1, this.groupStore.getGroupBots(leave.chatId).length))
+        if (Number.isFinite(count)) remaining = await this.othersRemaining(accountId, token, leave.chatId, count)
       } catch (e: any) {
         this.log(`member count after a leave failed (${accountId}): ${describeError(e)}`)
       }
@@ -1199,6 +1217,42 @@ export class TelegramAdapter implements ChannelAdapter {
     } catch (e: any) {
       this.log(`member update error (${accountId}): ${e?.message ?? e}`)
     }
+  }
+
+  /** True the first time a (chat, person) leave is seen in the window. */
+  private claimLeave(chatId: string, userId: string, now: number): boolean {
+    for (const [k, at] of this.recentLeaves) if (now - at >= TELEGRAM_LEAVE_DEDUPE_MS) this.recentLeaves.delete(k)
+    const k = `${chatId}|${userId}`
+    if (this.recentLeaves.has(k)) return false
+    this.recentLeaves.set(k, now)
+    return true
+  }
+
+  /** Members other than our bots, from the chat's member count. The bot
+   *  list is local and can be stale (a bot removed whose own update has
+   *  not landed yet). A non-zero answer errs toward "someone is there",
+   *  which moves nothing. A 0 would end the talk, so it stands only when
+   *  every recorded bot other than the counting one is confirmed in the
+   *  chat (getChatMember); otherwise the answer is null (unknown). */
+  private async othersRemaining(accountId: string, token: string, chatId: string, count: number): Promise<number | null> {
+    const recorded = this.groupStore.getGroupBots(chatId)
+    const remaining = Math.max(0, count - Math.max(1, recorded.length))
+    if (remaining > 0) return remaining
+    for (const bot of recorded) {
+      if (bot.accountId === accountId) continue
+      const userId = this.botInfo.get(bot.accountId)?.userId
+      if (userId === undefined) return null
+      try {
+        const data = await this.apiCall(token, "getChatMember", { chat_id: chatId, user_id: userId })
+        const status = data?.result?.status
+        if (typeof status !== "string" || GONE.has(status)) return null
+        if (status === "restricted" && data.result.is_member === false) return null
+      } catch (e: any) {
+        this.log(`bot check after a leave failed (${accountId}): ${describeError(e)}`)
+        return null
+      }
+    }
+    return remaining
   }
 
   /**

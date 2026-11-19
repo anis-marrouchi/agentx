@@ -110,6 +110,8 @@ The first three are your **hold**: while one of them says you are busy, notices 
 
 On Telegram, AgentX now also asks for member changes (`chat_member`). Telegram sends those only to bots that are admins of the group. Your bot does not need to be an admin: without it, AgentX still sees the "left the group" message Telegram posts in the chat, and otherwise who is present stays unknown.
 
+On Telegram, one of your own bots leaving a group is not a party leaving, and never moves a talk. A bot that is not yours (another company's agent) is a party: its leave counts. When several of your bots are in the group, the same leave is counted once, by one bot. If AgentX finds nobody left but cannot confirm that each of your bots it has on record is still in the group, the count is treated as unknown and nothing changes.
+
 These facts stay on the machine that runs the chat. Mesh peers only see the phase change (the `situation:phase` event), never who left.
 
 **See the sources on a machine:**
@@ -117,6 +119,7 @@ These facts stay on the machine that runs the chat. Mesh peers only see the phas
 1. **Terminal:** run `agentx situation sources`.
 2. Each loaded source shows what it answers now. A source that only reports events (a leave) shows "reports when it happens".
 3. Sources that do not fit this machine are listed as **not loaded**, with the reason, for example `macos-focus  not loaded: needs darwin, this node is linux`.
+4. From another machine (`--node`), each source shows only **known** or **unknown**. The answer itself and its reason (which can name the person you are on a call with, or your Focus mode) are shown only on the machine itself.
 
 **Switch a source off:**
 
