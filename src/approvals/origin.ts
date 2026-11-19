@@ -168,7 +168,7 @@ export function sourceConsentLines(origin: SourceConsentOrigin, card: { id: stri
   if (!Number.isFinite(at)) return ["The answer has no time, so nothing will be read for this request."]
   const until = new Date(at + origin.minutes * 60_000).toISOString()
   return [
-    `You may read ${origin.sources.join(", ")} for this request until ${until}, from this turn or the chat you asked in: call agentx_sources with action "read", request "${card.id}" and the source. Each read is logged.`,
+    `You may read ${origin.sources.join(", ")} for this request until ${until}, from this turn (not a later one), a few reads at most: call agentx_sources with action "read", request "${card.id}" and the source. Each read is logged.`,
     "Use what you read for this request only. After that time a read is refused.",
   ]
 }

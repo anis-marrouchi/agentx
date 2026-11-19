@@ -31,7 +31,7 @@ export interface SourceSettings {
 }
 
 /** Has the person said yes for this source, for this scope, now? */
-export type ConsentCheck = (sourceId: string, scope: SignalScope, now: number) => boolean
+export type ConsentCheck = (sourceId: string, scope: SignalScope, now: number) => boolean | { why: string }
 
 /** Where per-request reads are logged (read-log.ts). Only when, which
  *  source, which agent, which request: never what was read. */
@@ -82,6 +82,12 @@ export class SignalSources {
     return true
   }
 
+  /** Note a source that is not loaded here for another reason than the
+   *  platform (phase 7: tabs without a separate reader). */
+  skip(id: string, reason: string): void {
+    if (!this.sources.has(id)) this.notLoaded.set(id, reason)
+  }
+
   loaded(): SignalSource[] {
     return [...this.sources.values()]
   }
@@ -98,9 +104,12 @@ export class SignalSources {
     if (s.agents?.length && !(scope.agentId && s.agents.includes(scope.agentId))) return "off for this agent"
     if (src.perRequest && !scope.requestId) return "read only for a request"
     if (!opts.skipConsent && (src.sensitivity === "sensitive" || s.consent === "person")) {
-      let yes = false
-      try { yes = this.opts.consent?.(src.id, scope, this.now()) === true } catch { yes = false }
-      if (!yes) return "no consent"
+      let answer: boolean | { why: string } | undefined
+      try { answer = this.opts.consent?.(src.id, scope, this.now()) } catch { answer = false }
+      if (answer !== true) {
+        const why = answer && typeof answer === "object" && typeof answer.why === "string" ? answer.why.slice(0, 160) : ""
+        return why ? `no consent (${why})` : "no consent"
+      }
     }
     return null
   }

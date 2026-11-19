@@ -936,7 +936,12 @@ export class AgentXDaemon {
             store: situations,
             settings: () => this.config.situations,
             calls: () => this.calls,
-            consent: cardConsent(process.cwd()),
+            // The yes must also be one the popup recorded in this process
+            // (popup-yes.ts), and one yes allows situations.consent.maxReads reads.
+            consent: cardConsent(process.cwd(), {
+              maxReads: () => this.config.situations.consent.maxReads,
+              readsSoFar: (id) => this.sourceReadLog?.list({ requestId: id, limit: 500 }).length ?? 0,
+            }),
             readLog: this.sourceReadLog,
             log: (m) => this.log(m),
           })
@@ -8516,7 +8521,8 @@ export class AgentXDaemon {
           if (!this.signalSources) { this.json(res, 503, { error: "signal sources are not available on this node" }); break }
           const body = await readBody(req)
           const local = isLoopback(req.socket?.remoteAddress || "")
-          const turn = sourcesTurnFrom(this.callerProof(req), typeof body.agentId === "string" ? body.agentId : undefined, {
+          const secretHeader = req.headers["x-agentx-turn-secret"]
+          const turn = sourcesTurnFrom({ ...this.callerProof(req), secret: Array.isArray(secretHeader) ? secretHeader[0] : secretHeader }, typeof body.agentId === "string" ? body.agentId : undefined, {
             taskOwner: (id) => this.registry.runningTaskOwner(id)?.agentId ?? null,
             findRunningTurn: (id, by) => this.registry.findRunningTurn(id, by),
           })

@@ -210,6 +210,7 @@ describe("3: only the asking task and the answer turn; reads per yes are capped"
     const a = attach(() => settingsWith({ "open-apps": { enabled: true } }), fakeMac())
     const card = readCard(root, String(ask(a, { sources: ["open-apps"], why: "front app" }).body.request))!
     expect(card.ask).toContain("Asked in telegram chat 100; the answer may be posted there.")
+    expect(card.title).toBe("helper asks to read your open apps (names only)") // no window title: it is not read
   })
 })
 

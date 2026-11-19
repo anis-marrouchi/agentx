@@ -13,7 +13,7 @@ import { z } from "zod"
 //     seat: { noReplyBelow: 0.2, minLabeled: 50 }   # phase 5 (maxFalseNoReply unset)
 //     importance: { enabled: false }                # phase 5
 //     templates: { enabled: false, agentFill: false }  # phase 6
-//     consent: { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60 }  # phase 7
+//     consent: { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60, maxReads: 3, reaskMinutes: 30 }  # phase 7
 //     news: { feeds: [], maxItems: 10, timeoutMs: 8000 }              # phase 7
 //
 // `shadow` (the default) keeps the record of each chat and writes every
@@ -118,6 +118,15 @@ export const situationsConfigSchema = z.object({
     defaultMinutes: z.number().int().min(1).max(24 * 60).default(15),
     /** The longest a yes may last, whatever the agent asks. */
     maxMinutes: z.number().int().min(1).max(24 * 60).default(60),
+    /** Reads one yes allows. */
+    maxReads: z.number().int().min(1).max(100).default(3),
+    /** After a no or no answer, the agent may not ask again for this long. */
+    reaskMinutes: z.number().int().min(0).max(24 * 60).default(30),
+  }).default({}),
+  /** The browser-tabs source (phase 7): only each tab's site by default;
+   *  true also gives the path (which can hold names or codes). */
+  browserTabs: z.object({
+    includePaths: z.boolean().default(false),
   }).default({}),
   /** The `news` per-request source (phase 7): headlines from these RSS or
    *  Atom feeds. Only the owner names the feeds; an agent cannot. */

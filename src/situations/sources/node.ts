@@ -5,7 +5,7 @@ import { applySignal } from "./apply"
 import { callsSource } from "./calls"
 import { onSignal, setSignalInterest } from "./hub"
 import { ownerBusySources } from "./owner-busy"
-import { browserTabsSource, newsSource, openAppsSource, type FetchText, type RunScript } from "./per-request"
+import { browserTabsSource, newsSource, openAppsSource, TABS_NEED_READER, type FetchText, type RunCommand } from "./per-request"
 import { SignalSources, type ConsentCheck, type ReadLogSink } from "./registry"
 import { TELEGRAM_MEMBERS_SOURCE } from "./telegram-members"
 import { isUnknown } from "./types"
@@ -31,8 +31,12 @@ export function attachSignalSources(opts: {
   /** Phase 7: where per-request reads are logged. Without it no
    *  per-request source is read. */
   readLog?: ReadLogSink
-  /** Phase 7, for tests: the AppleScript runner and the feed fetch. */
-  runScript?: RunScript
+  /** Phase 7: runs lsappinfo for open-apps (tests inject it). */
+  runCommand?: RunCommand
+  /** Phase 7: a separate reader that alone holds the macOS Automation
+   *  permission for Chrome and Safari. Without one, browser-tabs is not
+   *  loaded (per-request.ts). The daemon passes none yet. */
+  browserTabsReader?: RunCommand
   fetchText?: FetchText
   platform?: NodeJS.Platform
   log?: (m: string) => void
@@ -47,8 +51,9 @@ export function attachSignalSources(opts: {
   sources.register(TELEGRAM_MEMBERS_SOURCE)
   // Phase 7: per-request sources. Loaded where they fit, read only when
   // switched on, for a request, with the person's yes where needed.
-  sources.register(openAppsSource(opts.runScript))
-  sources.register(browserTabsSource(opts.runScript))
+  sources.register(openAppsSource(opts.runCommand))
+  if (opts.browserTabsReader) sources.register(browserTabsSource(opts.browserTabsReader, () => opts.settings().browserTabs?.includePaths === true))
+  else sources.skip("browser-tabs", TABS_NEED_READER)
   sources.register(newsSource(() => opts.settings().news ?? { feeds: [], maxItems: 10, timeoutMs: 8_000 }, opts.fetchText))
 
   setSignalInterest((key) => opts.settings().mode !== "off" && opts.store.get(key)?.phase === "during")

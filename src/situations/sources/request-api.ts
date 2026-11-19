@@ -1,5 +1,6 @@
-import { isValidCardId, readCard, type CardSettings, type ReplyTarget } from "@/approvals/cards"
-import { askSourceConsent, consentState, type ConsentSettings } from "./consent"
+import { isValidCardId, type CardSettings, type ReplyTarget } from "@/approvals/cards"
+import { chatSecret, secretMatches, taskSecret } from "@/agents/turn-secret"
+import { askSourceConsent, type ConsentSettings } from "./consent"
 import type { SourceReadLog } from "./read-log"
 import type { SignalSources } from "./registry"
 import { isUnknown } from "./types"
@@ -33,9 +34,10 @@ export interface SourcesApiReply {
 
 /** The running turn the proof headers name (as fillTurnFrom): by the task
  *  id, or by a warm process's channel and chat with the agent it claims,
- *  checked against the registry. Null when no running turn matches. */
+ *  checked against the registry, and only with that turn's secret
+ *  (agents/turn-secret.ts). Null when no running turn matches. */
 export function sourcesTurnFrom(
-  proof: { taskId?: string; channel?: string; chatId?: string },
+  proof: { taskId?: string; channel?: string; chatId?: string; secret?: string },
   claimed: string | undefined,
   deps: {
     taskOwner: (taskId: string) => string | null
@@ -44,6 +46,9 @@ export function sourcesTurnFrom(
 ): SourcesTurn | null {
   const agentId = proof.taskId ? deps.taskOwner(proof.taskId) : (proof.channel && proof.chatId ? claimed : undefined)
   if (!agentId) return null
+  // The ids are public on this machine: the turn's secret proves the caller.
+  const expected = proof.taskId ? taskSecret(proof.taskId) : chatSecret(agentId, proof.channel ?? "", proof.chatId ?? "")
+  if (!secretMatches(proof.secret, expected)) return null
   const turn = deps.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId })
   if (!turn) return null
   const c = turn.context
@@ -90,7 +95,7 @@ export function sourcesAsk(body: Record<string, unknown>, deps: {
   }, {
     settings: deps.settings, ...(deps.cardSettings ? { cardSettings: deps.cardSettings } : {}), ...(deps.now !== undefined ? { now: deps.now } : {}),
   })
-  if (!r.ok) return { status: 400, body: { error: r.error } }
+  if (!r.ok) return { status: r.status ?? 400, body: { error: r.error } }
   return { status: 201, body: { request: r.card.id, sources: ids, minutes: r.minutes, waitsUntil: r.card.expires } }
 }
 
@@ -123,10 +128,9 @@ export async function sourcesRead(body: Record<string, unknown>, deps: {
     answers: answers.map((s) => ({ kind: s.kind, value: s.value, reason: s.reason })),
   }
   // Why a yes does not hold, in words the agent can pass on.
-  if (consent && answers.every(isUnknown) && answers.some((s) => s.reason === "no consent")) {
-    const card = isValidCardId(requestId) ? readCard(deps.root, requestId) : null
-    const state = consentState(card, source, t.agentId, deps.now ?? Date.now(), { chat: t.chat, taskId: t.taskId })
-    out.consent = state.granted ? "granted" : state.why
+  if (consent && answers.every(isUnknown)) {
+    const m = answers.map((a) => /^no consent(?: \((.*)\))?$/.exec(a.reason)).find(Boolean)
+    if (m) out.consent = m[1] ?? "no yes for this request"
   }
   return { status: 200, body: out }
 }

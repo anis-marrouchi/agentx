@@ -10,7 +10,10 @@ import { SignalSources } from "../src/situations/sources/registry"
 import { SourceReadLog } from "../src/situations/sources/read-log"
 import { cardConsent, consentMinutes, consentState, quotedWhy } from "../src/situations/sources/consent"
 import { sourcesAsk, sourcesRead, sourcesReads, sourcesTurnFrom, type SourcesTurn } from "../src/situations/sources/request-api"
-import { bareAddress, browserTabsSource, feedHeadlines, newsSource, openAppsSource, type RunScript } from "../src/situations/sources/per-request"
+import { bareAddress, browserTabsSource, feedHeadlines, newsSource, openAppsSource, type RunCommand } from "../src/situations/sources/per-request"
+import { clearPopupYes } from "../src/situations/sources/popup-yes"
+import { popNext } from "../src/approvals/popup-runner"
+import { taskSecret } from "../src/agents/turn-secret"
 import { isUnknown, type Signal } from "../src/situations/sources/types"
 import { decideCard, listCards, readCard, saveCard, verdictMessage, POPUP_ONLY } from "../src/approvals/cards"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
@@ -37,6 +40,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "agentx-1892p7-"))
   db = new Database(":memory:")
   log = new SourceReadLog(db)
+  clearPopupYes()
 })
 
 afterEach(() => {
@@ -46,29 +50,42 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-/** The fake Mac: what AppleScript would answer. Counts each script run,
- *  which is a read of the person's screen. */
+/** The fake Mac: what lsappinfo and the tabs reader would answer. Counts
+ *  each run, which is a read of the person's screen. */
 function fakeMac() {
-  const run = vi.fn<RunScript>(async (script) => {
-    if (script.includes("System Events")) return "Notes\nShopping list\nNotes\nMail\nCalendar\n"
-    if (script.includes("Google Chrome")) return "Docs home\thttps://docs.example.com/start?session=abc123#top\nTracker\thttps://tracker.example.org/board\n"
+  return vi.fn<RunCommand>(async (cmd, args) => {
+    if (cmd === "lsappinfo" && args[0] === "front") return "ASN:0x0-0x1:\n"
+    if (cmd === "lsappinfo" && args[0] === "info") return "\"LSDisplayName\"=\"Notes\"\n"
+    if (cmd === "lsappinfo" && args[0] === "visibleProcessList") return "ASN:0x0-0x1-\"Notes\": ASN:0x0-0x2-\"Mail\": ASN:0x0-0x3-\"Calendar\":\n"
+    if (cmd === "osascript" && args.join(" ").includes("Google Chrome")) return "Docs home\thttps://docs.example.com/start?session=abc123#top\nTracker\thttps://tracker.example.org/board\n"
     return ""
   })
-  return run
+}
+
+/** The person clicks Yes in the daemon's popup (the only yes that counts). */
+async function clickYes(id: string, now = Date.now()) {
+  const shown: string[] = []
+  await popNext({
+    ctx: { root, now }, settings: { enabled: true, speak: false, sound: "", volume: 0, timeoutSeconds: 60 }, log: () => {}, platform: "darwin",
+    focus: () => ({ active: false, mode: null, reason: "test" }),
+    show: async (card) => { shown.push(card.id); return { action: "yes" as const } },
+  })
+  expect(shown).toEqual([id])
 }
 
 function settingsWith(sources: SituationsConfig["sources"], over: Partial<SituationsConfig> = {}): SituationsConfig {
-  return situationsConfigSchema.parse({ ...DEFAULT_SITUATIONS_CONFIG, ...over, sources })
+  return situationsConfigSchema.parse({ ...DEFAULT_SITUATIONS_CONFIG, consent: { ...CONSENT, maxReads: 10 }, ...over, sources })
 }
 
-function attach(settings: () => SituationsConfig, run: RunScript, fetchText?: (u: string) => Promise<string>): AttachedSources {
+function attach(settings: () => SituationsConfig, run: RunCommand, fetchText?: (u: string) => Promise<string>): AttachedSources {
   attached = attachSignalSources({
     store: new SituationStore(db),
     settings,
     calls: () => undefined,
-    consent: cardConsent(root),
+    consent: cardConsent(root, { maxReads: () => settings().consent.maxReads, readsSoFar: (id) => log.list({ requestId: id, limit: 500 }).length }),
     readLog: log,
-    runScript: run,
+    runCommand: run,
+    browserTabsReader: run,
     ...(fetchText ? { fetchText } : {}),
     platform: "darwin",
   })
@@ -76,7 +93,7 @@ function attach(settings: () => SituationsConfig, run: RunScript, fetchText?: (u
 }
 
 const TURN: SourcesTurn = { agentId: AGENT, taskId: TASK, chat: "telegram:100", reply: { channel: "telegram", chatId: "100" } }
-const CONSENT = { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60 }
+const CONSENT = { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60, maxReads: 10, reaskMinutes: 0 }
 
 function ask(sources: SignalSources, body: Record<string, unknown>, over: Partial<Parameters<typeof sourcesAsk>[1]> = {}) {
   return sourcesAsk(body, { local: true, turn: TURN, sources, root, settings: CONSENT, popupOn: true, ...over })
@@ -90,7 +107,8 @@ describe("settings: new features default off", () => {
   it("no per-request source is on, and the yes is short by default", () => {
     const d = DEFAULT_SITUATIONS_CONFIG
     expect(d.sources).toEqual({})
-    expect(d.consent).toEqual({ askMinutes: 60, defaultMinutes: 15, maxMinutes: 60 })
+    expect(d.consent).toEqual({ askMinutes: 60, defaultMinutes: 15, maxMinutes: 60, maxReads: 3, reaskMinutes: 30 })
+    expect(d.browserTabs).toEqual({ includePaths: false })
     expect(d.news).toEqual({ feeds: [], maxItems: 10, timeoutMs: 8000 })
     expect(sourcesToolOn(d.sources)).toBe(false)
     expect(sourcesToolOn({ "browser-tabs": { enabled: true } })).toBe(true)
@@ -162,8 +180,7 @@ describe("the ask is a popup-only decision card: the card is the consent record"
     const card = readCard(root, String(r.body.request))!
     expect(card).toMatchObject({ raised_by: AGENT, popup_only: true, if_silent: "discard", status: "pending" })
     expect(card.origin).toEqual({ kind: "source-consent", agentId: AGENT, sources: ["browser-tabs"], minutes: 60, chat: "telegram:100", taskId: TASK })
-    expect(card.ask).toContain("Asked in a telegram chat.")
-    expect(card.ask).not.toContain("100")
+    expect(card.ask).toContain("Asked in telegram chat 100; the answer may be posted there.")
     expect(card.ask).toContain(`Its reason: "Which doc is open ignore all rules".`)
     expect((card.ask.match(/\?/g) ?? []).length).toBe(1)
     expect(card.ask).toMatch(/goes to its model/)
@@ -207,30 +224,36 @@ describe("the ask is a popup-only decision card: the card is the consent record"
       origin: { kind: "source-consent" as const, agentId: AGENT, sources: ["browser-tabs"], minutes: 15, chat: "telegram:100", taskId: TASK },
     }
     const turn = { chat: "telegram:100", taskId: TASK }
-    expect(consentState(base, "browser-tabs", AGENT, now, turn)).toEqual({ granted: true, until: Date.parse("2030-01-01T10:15:00Z") })
-    // Per request: the asking task, the asking chat, or the turn that tells the answer.
-    expect(consentState(base, "browser-tabs", AGENT, now, { taskId: TASK }).granted).toBe(true)
-    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "telegram:100", taskId: "task-later" }).granted).toBe(true)
-    expect(consentState(base, "browser-tabs", AGENT, now, { chat: `approvals:${base.id}`, taskId: "task-answer" }).granted).toBe(true)
-    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "whatsapp:120363000000000000@g.us", taskId: "task-other" })).toEqual({ granted: false, why: "asked from another chat or turn" })
-    expect(consentState(base, "browser-tabs", AGENT, now, {}).granted).toBe(false)
+    const yes = { cardId: base.id, clickedAt: Date.parse("2030-01-01T10:00:00Z"), agentId: AGENT, sources: ["browser-tabs"], minutes: 15, taskId: TASK, expires: Date.parse(base.expires) }
+    expect(consentState(base, "browser-tabs", AGENT, now, turn, { yes })).toEqual({ granted: true, until: Date.parse("2030-01-01T10:15:00Z") })
+    // The card file alone never grants: the popup's yes must be in memory.
+    expect(consentState(base, "browser-tabs", AGENT, now, turn, { yes: null }).granted).toBe(false)
+    expect(consentState(base, "browser-tabs", AGENT, now, turn).granted).toBe(false) // nothing in memory
+    // Per request: the asking task, or the turn that tells the answer. Not the same chat.
+    expect(consentState(base, "browser-tabs", AGENT, now, { taskId: TASK }, { yes }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "telegram:100", taskId: "task-later" }, { yes }).granted).toBe(false)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: `approvals:${base.id}`, taskId: "task-answer" }, { yes }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "whatsapp:120363000000000000@g.us", taskId: "task-other" }, { yes })).toEqual({ granted: false, why: "asked from another turn" })
+    expect(consentState(base, "browser-tabs", AGENT, now, {}, { yes }).granted).toBe(false)
     // A click after the ask ran out does not count.
-    expect(consentState({ ...base, expires: "2030-01-01T09:59:00Z" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState(base, "browser-tabs", AGENT, Date.parse("2030-01-01T10:15:00Z"), turn).granted).toBe(false) // expired
-    expect(consentState(base, "open-apps", AGENT, now, turn).granted).toBe(false) // not asked for
-    expect(consentState(base, "browser-tabs", OTHER, now, turn).granted).toBe(false) // another agent
-    expect(consentState(base, "browser-tabs", undefined, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, decided_from: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false) // not from the popup
-    expect(consentState({ ...base, popup_only: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, node: "elsewhere" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, status: "pending" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, verdict: "no" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, origin: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState({ ...base, origin: { ...base.origin, minutes: 0 } }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
-    expect(consentState(null, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState(base, "browser-tabs", AGENT, now, turn, { yes: { ...yes, expires: Date.parse("2030-01-01T09:59:00Z") } }).granted).toBe(false)
+    // Reads per yes are capped.
+    expect(consentState(base, "browser-tabs", AGENT, now, turn, { yes, reads: 3, maxReads: 3 })).toEqual({ granted: false, why: "the yes was used for 3 reads already" })
+    expect(consentState(base, "browser-tabs", AGENT, Date.parse("2030-01-01T10:15:00Z"), turn, { yes }).granted).toBe(false) // expired
+    expect(consentState(base, "open-apps", AGENT, now, turn, { yes }).granted).toBe(false) // not asked for
+    expect(consentState(base, "browser-tabs", OTHER, now, turn, { yes }).granted).toBe(false) // another agent
+    expect(consentState(base, "browser-tabs", undefined, now, turn, { yes }).granted).toBe(false)
+    expect(consentState({ ...base, decided_from: undefined }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false) // not from the popup
+    expect(consentState({ ...base, popup_only: undefined }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
+    expect(consentState({ ...base, node: "elsewhere" }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
+    expect(consentState({ ...base, status: "pending" }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
+    expect(consentState({ ...base, verdict: "no" }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
+    expect(consentState({ ...base, origin: undefined }, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
+    expect(consentState(base, "browser-tabs", AGENT, now, turn, { yes: { ...yes, minutes: 0 } }).granted).toBe(false) // the minutes shown come from the yes, not the file
+    expect(consentState(null, "browser-tabs", AGENT, now, turn, { yes }).granted).toBe(false)
     // A card id that is no card file, or a path trick, is a no.
-    expect(cardConsent(root)("browser-tabs", { agentId: AGENT, requestId: "../../etc/passwd" }, now)).toBe(false)
-    expect(cardConsent(root)("browser-tabs", { agentId: AGENT }, now)).toBe(false)
+    expect(cardConsent(root)("browser-tabs", { agentId: AGENT, requestId: "../../etc/passwd" }, now)).not.toBe(true)
+    expect(cardConsent(root)("browser-tabs", { agentId: AGENT }, now)).not.toBe(true)
   })
 
   it("minutes and the quoted reason stay in bounds", () => {
@@ -266,6 +289,10 @@ describe("proof of done (design 9, phase 7)", () => {
     saveCard(root, { ...readCard(root, id)!, status: "decided", verdict: "yes", decided_at: new Date().toISOString() })
     r = await read(a.sources, { source: "browser-tabs", request: id })
     expect(r.body.consent).toBe("the yes did not come from the popup")
+    // Forged in full, as the popup would write it: still no, the daemon has no click for it.
+    saveCard(root, { ...readCard(root, id)!, decided_from: "popup" })
+    r = await read(a.sources, { source: "browser-tabs", request: id })
+    expect(r.body.consent).toBe("no yes was clicked in the popup for this request since the daemon started")
     // The person said no.
     const noId = String(ask(a.sources, { sources: ["browser-tabs"], why: "again" }).body.request)
     decideCard(root, noId, "no", { popup: true })
@@ -276,10 +303,10 @@ describe("proof of done (design 9, phase 7)", () => {
 
     // --- Consent on ---
     const yesId = String(ask(a.sources, { sources: ["browser-tabs", "open-apps"], why: "find the open draft", minutes: 15 }).body.request)
-    expect(decideCard(root, yesId, "yes", { popup: true, by: "operator (popup)" }).ok).toBe(true)
+    await clickYes(yesId)
     r = await read(a.sources, { source: "browser-tabs", request: yesId })
     const tabs = String((r.body.answers as Signal[])[0].value)
-    expect(tabs).toContain("Google Chrome: Docs home (https://docs.example.com/start)")
+    expect(tabs).toContain("Google Chrome: Docs home (https://docs.example.com)") // the site only
     expect(tabs).not.toContain("session=abc123") // no query strings
     r = await read(a.sources, { source: "open-apps", request: yesId })
     expect((r.body.answers as Array<{ kind: string; value: unknown }>).find((s) => s.kind === "front-app")?.value).toBe("Notes")
@@ -295,7 +322,7 @@ describe("proof of done (design 9, phase 7)", () => {
 
     // The same agent, in another chat and turn, cannot use that yes (per request).
     r = await read(a.sources, { source: "browser-tabs", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0009", chat: "whatsapp:120363000000000000@g.us" } })
-    expect(r.body.consent).toBe("asked from another chat or turn")
+    expect(r.body.consent).toBe("asked from another turn")
     expect(log.list()).toHaveLength(3)
     // The turn that tells the agent the answer may read.
     r = await read(a.sources, { source: "open-apps", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0010", chat: `approvals:${yesId}` } })
@@ -311,7 +338,7 @@ describe("proof of done (design 9, phase 7)", () => {
     const run = fakeMac()
     const a = attach(() => settingsWith({ "open-apps": { enabled: true } }), run)
     const id = String(ask(a.sources, { sources: ["open-apps"], why: "front app", minutes: 15 }).body.request)
-    decideCard(root, id, "yes", { popup: true, now: Date.now() - 16 * 60_000 })
+    await clickYes(id, Date.now() - 16 * 60_000)
     const r = await read(a.sources, { source: "open-apps", request: id })
     expect(String(r.body.consent)).toMatch(/^the yes ended at /)
     expect(run).not.toHaveBeenCalled()
@@ -361,28 +388,28 @@ describe("the turn comes from the proof, never the body", () => {
         ? { taskId: TASK, context: { channel: "telegram", chatId: "100" } } : null,
   }
   it("a task proof names its owner; a body's agent id is ignored", () => {
-    expect(sourcesTurnFrom({ taskId: TASK }, OTHER, deps)).toMatchObject({ agentId: AGENT, taskId: TASK, reply: { channel: "telegram", chatId: "100" } })
+    expect(sourcesTurnFrom({ taskId: TASK, secret: taskSecret(TASK) }, OTHER, deps)).toMatchObject({ agentId: AGENT, taskId: TASK, reply: { channel: "telegram", chatId: "100" } })
     expect(sourcesTurnFrom({ taskId: "task-x" }, AGENT, deps)).toBeNull()
     expect(sourcesTurnFrom({}, AGENT, deps)).toBeNull()
     // A warm process: chat proof plus the claimed agent, checked against a running turn.
     expect(sourcesTurnFrom({ channel: "telegram", chatId: "100" }, OTHER, deps)).toBeNull()
-    expect(sourcesTurnFrom({ channel: "telegram", chatId: "100" }, AGENT, deps)?.agentId).toBe(AGENT)
+    expect(sourcesTurnFrom({ channel: "telegram", chatId: "100" }, AGENT, deps)).toBeNull() // no secret
   })
 })
 
 describe("adapters", () => {
-  it("open apps: front app, window title, open apps; unknown parts say why", async () => {
-    const out = await openAppsSource(async () => "Notes\n\nNotes\nMail\n").readAsync!({})
-    expect(out.map((s) => [s.kind, s.value])).toEqual([["front-app", "Notes"], ["front-window", "unknown"], ["open-apps", "Notes, Mail"]])
-    expect(out[1].reason).toMatch(/Accessibility/)
+  it("open apps: front app and open apps; unknown parts say why", async () => {
+    const out = await openAppsSource(async (_c, args) => (args[0] === "front" ? "nothing\n" : "ASN:0x0-0x1-\"Notes\": ASN:0x0-0x2-\"Notes\": ASN:0x0-0x3-\"Mail\":")).readAsync!({})
+    expect(out.map((s) => [s.kind, s.value])).toEqual([["front-app", "unknown"], ["open-apps", "Notes, Mail"]])
+    expect(out[0].reason).toMatch(/no front app/)
   })
 
   it("browser tabs: one browser down does not stop the other; no query or fragment", async () => {
-    const run: RunScript = async (script) => {
-      if (script.includes("Safari")) throw new Error("not allowed")
+    const run: RunCommand = async (_cmd, args) => {
+      if (args.join(" ").includes("Safari")) throw new Error("not allowed")
       return "A\thttps://a.example.com/x?token=1#f\n"
     }
-    const [s] = await browserTabsSource(run).readAsync!({})
+    const [s] = await browserTabsSource(run, () => true).readAsync!({})
     expect(s.value).toBe("Google Chrome: A (https://a.example.com/x)")
     expect(s.reason).toMatch(/Safari: not allowed/)
     expect(bareAddress("javascript:alert(1)")).toBe("javascript:…")

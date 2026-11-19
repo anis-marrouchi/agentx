@@ -1,4 +1,5 @@
 import { focusLabel, type FocusState } from "@/notify/focus"
+import { recordPopupYes } from "@/situations/sources/popup-yes"
 import { readHold } from "@/notify/hold"
 import { cardWords } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
@@ -197,6 +198,9 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
       ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
     })
     log(r.ok ? `[approvals] popup: ${r.message}` : `[approvals] popup: ${key} not recorded: ${r.error}`)
+    // A screen read's yes (#1892 phase 7) lives in this process's memory,
+    // with what the card showed: the card file alone never grants it.
+    if (r.ok && !request && r.verdict === "yes") recordPopupYes(card as DecisionCard, ctx.now ?? Date.now())
     return "shown"
   } catch (e: any) {
     log(`[approvals] popup failed for ${key}: ${e?.message ?? e}`)
