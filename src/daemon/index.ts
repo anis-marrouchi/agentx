@@ -38,6 +38,7 @@ import { setSendToChatRecorder, setSendToChatStore, situationTagOf } from "@/sit
 import { localNumber, numberLine, peerNumbers, yesterday, type NodeNumber } from "@/notify/unanswered"
 import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
+import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
 import { situationsClosing, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
@@ -197,7 +198,7 @@ import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { inboundTaskRaw, recordMeshDispatch } from "@/intent/sources/mesh"
-import { operatorPerson, personName, personOfTurn } from "@/people/people"
+import { operatorPerson, personName, personOfTurn, resolvePerson } from "@/people/people"
 import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
@@ -854,6 +855,14 @@ export class AgentXDaemon {
             store: situations,
             settings: () => this.config.situations,
             claimant: () => this.workflowDispatcher ? (m) => this.workflowDispatcher!.claimantFor(m) : undefined,
+            // Phase 5: the situation-phase seat (shadow unless the owner
+            // names it; acts only under situations.seat.maxFalseNoReply)
+            // and the talk's importance (situations.importance.enabled).
+            seat: new SituationSeat({ settings: () => this.config.situations, log: this.log }),
+            importance: {
+              roleOf: (m) => resolvePerson(this.config.people ?? [], m.channel, m.sender as any)?.role ?? null,
+              openPromise: (channel, chatId) => this.requests?.store.openPromiseInChat(channel, chatId) ?? null,
+            },
           })
           this.router.setSituationGate(this.situationGate)
           setSendToChatStore(situations)
@@ -2189,6 +2198,7 @@ export class AgentXDaemon {
       configureDecisions({
         enabled: true,
         defaultBackend: cfg.defaultBackend,
+        redactState: cfg.redactState,
         store,
         seats: Object.fromEntries(
           Object.entries(cfg.seats).map(([name, seat]) => [
@@ -8398,6 +8408,19 @@ export class AgentXDaemon {
             ...(outcome === "drop" || outcome === "would-drop" ? { outcome } : {}),
           }).map(({ message: _m, ...row }) => row)
           this.json(res, 200, { mode: this.config.situations.mode, rows })
+          break
+        }
+
+        // The situation-phase seat's calibration report (#1892 phase 5):
+        // its mode, whether it may act, and the false "no reply" rate.
+        case "GET /situations/seat": {
+          const seat = this.situationGate?.seat
+          if (!seat) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          try {
+            this.json(res, 200, { mode: seat.mode(), plan: seat.plan(), report: seat.report(), lines: seat.reportText() })
+          } catch (e: any) {
+            this.json(res, 500, { error: `the calibration report could not be read: ${e?.message ?? e}` })
+          }
           break
         }
 

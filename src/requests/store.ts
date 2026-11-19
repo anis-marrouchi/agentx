@@ -461,6 +461,16 @@ export class RequestStore {
     ).get(agentId, ...OPEN_STATES) as { n: number }).n
   }
 
+  /** The earliest-due open promise in this chat (any agent), for a talk's
+   *  importance (#1892 phase 5). `dueAt` null: open promises, none with a
+   *  due time. Null: no open promise. */
+  openPromiseInChat(channel: string, chatId: string): { dueAt: number | null } | null {
+    const r = this.db.prepare(
+      `SELECT COUNT(*) AS n, MIN(due_at) AS due FROM requests WHERE channel = ? AND chat_id = ? AND promise = 1 AND state IN (${placeholders(OPEN_STATES.length)})`,
+    ).get(channel, chatId, ...OPEN_STATES) as { n: number; due: number | null }
+    return r.n > 0 ? { dueAt: r.due ?? null } : null
+  }
+
   /** Did this agent open a promise in this chat since `since`? */
   promisedInChat(agentId: string, channel: string, chatId: string, since: number): boolean {
     return !!this.db.prepare(

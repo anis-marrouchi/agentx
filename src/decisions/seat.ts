@@ -48,6 +48,9 @@ export interface DecisionsRuntime {
   defaultBackend: string
   seats: Record<string, SeatSettings>
   store: DecisionStore | null
+  /** decisions.redactState, for every seat: one switched on by the
+   *  environment alone has no per-seat settings to carry it. */
+  redactState?: boolean
 }
 
 /** A configured seat's timeout when neither the call nor the config sets
@@ -124,6 +127,7 @@ function ensureConfigured(): void {
     runtime = {
       enabled: true,
       defaultBackend: cfg.defaultBackend,
+      redactState: cfg.redactState === true,
       store,
       seats: Object.fromEntries(
         Object.entries(cfg.seats ?? {}).map(([name, seat]: [string, any]) => [
@@ -301,7 +305,7 @@ function record<Q extends Questions>(
       incumbent: toIncumbent(opts.incumbent),
       links: opts.links,
       features: opts.features,
-      keepState: !settings.redactState,
+      keepState: !redacted(settings),
     })
   } catch {
     // Recording is observability. It never breaks the call it observes.
@@ -341,11 +345,16 @@ function recordFailure<Q extends Questions>(
       links: opts.links,
       features: opts.features,
       error: String(err?.message ?? err).slice(0, 500),
-      keepState: !settings.redactState,
+      keepState: !redacted(settings),
     })
   } catch {
     /* observability never breaks the caller */
   }
+}
+
+/** The seat's own redaction, else the global one. */
+function redacted(settings: SeatSettings): boolean {
+  return settings.redactState ?? runtime.redactState ?? false
 }
 
 function toIncumbent(

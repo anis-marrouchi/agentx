@@ -4,6 +4,8 @@ import { classifyCourtesy, type CourtesyClass } from "./courtesy"
 import { DEFAULT_SITUATIONS_CONFIG, type SituationsConfig } from "./config"
 import { SITUATION_CHANNELS, situationKey } from "./key"
 import type { EndReason, Phase, SituationRow, SituationStore } from "./store"
+import { importanceOf, type SituationImportance } from "./importance"
+import type { SituationSeat } from "./seat"
 
 // --- The courtesy-close gate (#1892, phase 1) ---
 //
@@ -61,6 +63,17 @@ export interface GateDecision {
   duplicate?: boolean
   messageId: string
   chatId: string
+  /** The situation-phase seat's answer (phase 5), when it was waited for.
+   *  `acted`: the seat's "no reply needed" made this a closer. */
+  seat?: { callId: string | null; pNeedsReply: number; importance: SituationImportance | null; acted: boolean }
+}
+
+/** What importance (phase 5) reads, besides the message. */
+export interface ImportanceSources {
+  /** The sender's role in `people`, when listed. */
+  roleOf: (msg: IncomingMessage) => string | null
+  /** The earliest-due open promise on the chat, or null when none. */
+  openPromise: (channel: string, chatId: string) => { dueAt: number | null } | null
 }
 
 export interface SituationGateDeps {
@@ -68,6 +81,10 @@ export interface SituationGateDeps {
   settings?: () => SituationsConfig
   /** The dispatcher's claimantFor, when the workflow engine runs here. */
   claimant?: () => ((msg: IncomingMessage) => GateClaim | null) | undefined
+  /** The situation-phase seat (phase 5). Unset: no seat. */
+  seat?: SituationSeat
+  /** Importance inputs (phase 5); used when situations.importance is on. */
+  importance?: ImportanceSources
   now?: () => number
 }
 
@@ -93,16 +110,21 @@ export class SituationGate {
 
   get store(): SituationStore { return this.deps.store }
 
+  /** The situation-phase seat (phase 5), when attached. */
+  get seat(): SituationSeat | undefined { return this.deps.seat }
+
   settings(): SituationsConfig {
     return this.deps.settings?.() ?? DEFAULT_SITUATIONS_CONFIG
   }
 
   /** Pure: reads the record and the claim rule, writes nothing. */
-  decide(msg: IncomingMessage, opts: { replay?: boolean; hop?: boolean; chatId?: string } = {}): GateDecision {
+  decide(msg: IncomingMessage, opts: { replay?: boolean; hop?: boolean; chatId?: string; courtesy?: CourtesyClass } = {}): GateDecision {
     const s = this.settings()
     const chatId = opts.chatId ?? chatOf(msg)
     const key = situationKey(msg.channel, msg.accountId, chatId)
-    const courtesy = classifyCourtesy(msg.text, { hasMedia: !!msg.media })
+    // `courtesy`: the seat's "no reply needed" asks what the gate would
+    // do with a closer (phase 5).
+    const courtesy = opts.courtesy ?? classifyCourtesy(msg.text, { hasMedia: !!msg.media })
     const senderKind = senderKindOf(msg)
     const d: GateDecision = {
       key, active: false, enforce: s.mode === "active", unclaimed: "pass", claimed: null, answer: "pass",
@@ -179,10 +201,41 @@ export class SituationGate {
     return d
   }
 
+  /** The record key a message belongs to (the router's per-chat lock). */
+  keyOf(msg: IncomingMessage, opts: { chatId?: string } = {}): string {
+    return situationKey(msg.channel, msg.accountId, opts.chatId ?? chatOf(msg))
+  }
+
+  /** Ask the situation-phase seat about an unsure message (phase 5).
+   *  Returns the decision to commit: synchronously unless the gate must
+   *  wait for an acting seat. Never throws; without a seat, `d`. */
+  consult(msg: IncomingMessage, d: GateDecision, opts: { replay?: boolean; chatId?: string }, messageJson: () => string): GateDecision | Promise<GateDecision> {
+    const seat = this.deps.seat
+    return seat ? seat.consult(this, msg, d, opts, messageJson) : d
+  }
+
+  /** Importance of the talk (phase 5), when on: from code, else from a
+   *  seat answer the gate waited for (active seat); nothing known keeps
+   *  what is there (a new record: normal). */
+  private judgeImportance(d: GateDecision, msg: IncomingMessage | undefined): void {
+    if (!msg || !this.settings().importance.enabled || d.hop) return
+    const src = this.deps.importance
+    const r = importanceOf({
+      senderKind: d.senderKind,
+      role: src?.roleOf(msg) ?? null,
+      openPromise: src?.openPromise(msg.channel, d.chatId) ?? null,
+      now: this.deps.now?.() ?? Date.now(),
+    })
+    const store = this.deps.store
+    if (r.level) store.setImportance(d.key, r.level, r.why)
+    else if (d.seat?.importance) store.setImportance(d.key, d.seat.importance, "the decision seat's answer")
+    else if (!store.get(d.key)?.importance) store.setImportance(d.key, "normal", r.why)
+  }
+
   /** Write what `decide` found: phase changes (conditional, S9) and, for a
    *  message that goes on from a bot or an agent, one backstop count per
    *  message id (S8). Never throws: the gate must not stop routing. */
-  commit(d: GateDecision): void {
+  commit(d: GateDecision, msg?: IncomingMessage): void {
     if (!d.active || d.duplicate) return
     try {
       const now = this.deps.now?.() ?? Date.now()
@@ -210,12 +263,13 @@ export class SituationGate {
         const s = this.settings()
         this.window.tryFire(d.key, Number.MAX_SAFE_INTEGER, s.backstop.windowMinutes * 60_000, this.deps.now?.() ?? Date.now())
       }
+      this.judgeImportance(d, msg)
     } catch { /* the record is best-effort; routing goes on */ }
   }
 
   /** Record a drop (or, in shadow mode, a would-drop) in the gate log.
    *  Returns the row id, the one `agentx situation release` takes. */
-  logDrop(msg: IncomingMessage, d: GateDecision, messageJson: string, stage: "gate" | "after-hook" | "hop"): number | null {
+  logDrop(msg: IncomingMessage, d: GateDecision, messageJson: string, stage: "gate" | "after-hook" | "hop" | "seat", seatCallId?: string | null): number | null {
     if (d.duplicate) return null
     try {
       return this.deps.store.logGate({
@@ -230,8 +284,9 @@ export class SituationGate {
         text: msg.text ?? "",
         phase: d.phase ?? "none",
         outcome: d.enforce ? "drop" : "would-drop",
-        reason: stage === "gate" ? d.reason : `${d.reason} (${stage})`,
+        reason: stage === "gate" || stage === "seat" ? d.reason : `${d.reason} (${stage})`,
         message: messageJson,
+        seatCallId: seatCallId ?? d.seat?.callId ?? null,
       })
     } catch {
       return null
@@ -249,6 +304,8 @@ export class SituationGate {
     let message: Record<string, unknown>
     try { message = JSON.parse(row.message) as Record<string, unknown> } catch { return { ok: false, error: `row ${id} has no readable message` } }
     if (!this.deps.store.markReleased(id)) return { ok: false, error: `row ${id} was already released` }
+    // The seat held it, and a person says it needed a reply: its label.
+    if (row.seatCallId) this.deps.seat?.labelRelease(row.seatCallId)
     const rec = this.deps.store.get(row.key)
     if (rec && rec.phase !== "during") this.deps.store.move(row.key, { phase: rec.phase, since: rec.phaseChangedAt }, "during", { why: `message ${row.messageId} released by a person`, setBy: "person" })
     return { ok: true, message }

@@ -46,7 +46,7 @@ export const RESUMED_WINDOW_MS = 30 * 60_000
 export const OWNER_BUSY_LINE = "The owner is busy now; do not promise an immediate answer from them."
 
 /** The layer text for one record, or undefined when it adds nothing. */
-export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: boolean; now?: number }): string | undefined {
+export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: boolean; now?: number; importance?: boolean }): string | undefined {
   if (!opts.fresh) {
     if (row.phase === "during") return undefined
     if ((opts.now ?? Date.now()) - row.phaseChangedAt > RESUMED_WINDOW_MS) return undefined
@@ -63,6 +63,9 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
     line = `[Situation] ${name}, phase: during.${row.override === "not-this" ? " A person said this talk is not ending." : ""}`
   }
   if (opts.ownerBusy) line += ` ${OWNER_BUSY_LINE}`
+  // Phase 5 (situations.importance): only a high importance is worth the
+  // tokens. The reason is generic ("a client is in the talk"), never a name.
+  if (opts.importance && row.importance === "high") line += ` This talk matters: ${(row.importanceWhy || "high importance").slice(0, WHY_MAX)}.`
   return line
 }
 
@@ -79,7 +82,7 @@ export function situationContextFor(key: string | undefined, opts: { fresh: bool
     try {
       ownerBusy = (source.hold ?? readHold)().active === true
     } catch { /* unknown means not busy, as the hold reads it */ }
-    return renderSituationLayer(row, { fresh: opts.fresh, ownerBusy, now })
+    return renderSituationLayer(row, { fresh: opts.fresh, ownerBusy, now, importance: source.settings().importance?.enabled === true })
   } catch {
     return undefined
   }

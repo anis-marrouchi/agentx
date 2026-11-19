@@ -3733,6 +3733,14 @@ Give a talk closing steps: when it ends, its agent drafts one note (read only) t
 | `--account <id>` | — | The channel account, when it has several. |
 | `--clear` | — | Remove the closing steps. |
 
+### `agentx situation seat`
+
+Show the decision seat `situation-phase`: its mode, whether it holds messages now, and its calibration report: how many unsure messages it said need no reply, how many of those a person labeled, the false "no reply" rate with its 95% upper bound, your limit (`situations.seat.maxFalseNoReply`) and whether it is ready for active. See [Let a decision seat judge the unsure messages](/jobs/stop-goodbye-loops#let-a-decision-seat-judge-the-unsure-messages).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--json` | — | Print JSON. |
+
 ### `agentx situation sources`
 
 List the signal sources on this machine: the owner's Focus, call and widget hold, calls, and who left a WhatsApp or Telegram group. Shows what each answers now (**unknown** with a reason when it cannot tell), and which sources are not loaded here and why (for example, macOS Focus on a Linux machine).
