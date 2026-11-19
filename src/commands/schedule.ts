@@ -11,8 +11,10 @@ import {
   buildScheduleJob,
   DEFAULT_SCHEDULE_TIMEZONE,
   formatFireTime,
+  isBrokenAppNotify,
   nextFireTime,
   notifyScope,
+  parseNotifyFlag,
   parseOnError,
   rejectSchedule,
   setScheduleEnabled,
@@ -57,10 +59,8 @@ async function resolveNotifyTarget(
     return { channel, chatId, accountId: accountId || undefined }
   }
   // shorthand channel:chatId[:account]
-  const parts = flag.split(":")
-  if (parts.length >= 2) {
-    return { channel: parts[0], chatId: parts[1], accountId: parts[2] }
-  }
+  const target = parseNotifyFlag(flag)
+  if (target) return target
   console.log(chalk.red(`  Unrecognized --notify value: ${flag} (use "me" or "channel:chatId[:account]")`))
   return undefined
 }
@@ -192,6 +192,9 @@ schedule
       console.log(chalk.dim(`      ${human} (${def.timezone || "UTC"})`))
       if (def.notify) {
         console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId} ${notifyScope(def)}`))
+        if (isBrokenAppNotify(def.notify)) {
+          console.log(chalk.yellow(`      notify target is broken (saved before #2005); set it again: --notify app:app:<conversationId>`))
+        }
       }
       if (def.createdBy) console.log(chalk.dim(`      created by agent: ${def.createdBy}`))
       if (builtIn.has(id)) console.log(chalk.dim("      built in: added by AgentX from your settings; a job of the same id in crons replaces it"))
