@@ -15,9 +15,10 @@ A **source** is one of these places AgentX can read from. **Per request** means 
 The rules:
 
 - All of them are **off** until you switch them on.
-- `open-apps` is read only after **you** say yes, for that one request. Your yes counts only when you click it in the popup that the AgentX daemon opens on your Mac. A message in a chat, another agent, another machine, the command line or an edited file can say no, never yes. If the daemon restarts, every yes ends.
+- `open-apps` is read only after **you** say yes, for that one request. Your yes counts only when you click it in the popup that the AgentX daemon opens on your Mac. A message in a chat, another agent, another machine, the command line or an edited file can say no, never yes. If the daemon restarts, every yes ends, and cards asked before the restart are no longer shown.
 - Your yes lasts a few minutes (15 unless the agent asks for another time; never more than 60 unless you change it), and then ends by itself. After that a read is refused.
-- A yes is for one request: the agent can use it only in the task it asked from, and in the turn where it is told your answer. A later message in the same chat cannot use it.
+- The popup shows the card as AgentX wrote it when the agent asked. If the card's file is changed afterwards, the popup does not show it, and a yes clicked while it was changed counts for nothing.
+- A yes is for one request: the agent can use it only in the task it asked from, and in the turn AgentX starts to tell it your answer. A later message in the same chat cannot use it.
 - One yes allows at most 3 reads (you can change this).
 - An agent can have only one card waiting for you. After you say no, or do not answer, it cannot ask again for 30 minutes (you can change this).
 - The card tells you which chat asked. The agent's answer may be posted in that chat, so anyone in that chat may see it.
@@ -41,7 +42,7 @@ Your open apps are read with a macOS tool (`lsappinfo`) that needs no extra perm
 
 ### News is outside text
 
-Headlines come from websites you do not control. A headline could be written to look like an instruction to the agent. The agent is told they are outside text, but read its answer with that in mind. AgentX fetches only public addresses (never your own network or the machine itself, even after a redirect) and stops after about 1 MB per feed.
+Headlines come from websites you do not control. A headline could be written to look like an instruction to the agent. The agent is told they are outside text, but read its answer with that in mind. AgentX fetches only public addresses (never your own network or the machine itself, even after a redirect, and it connects to the exact address it checked) and stops after about 1 MB per feed.
 
 ### Limits
 
@@ -118,6 +119,7 @@ The log holds no content. It works only on the machine itself.
 - **The agent says the ask was refused because the popup is off.** Turn it on: `agentx config set approvals.popup.enabled true`. The popup works only on a Mac, so on another machine nothing can be read from your apps.
 - **A read says "off: a per-request source is read only when … enabled is true".** Switch the source on (see [Turn it on](#turn-it-on)).
 - **A read says "off for this agent".** The source is limited to other agents in `situations.sources.<id>.agents`.
+- **The agent says its card was not shown: "the card was changed after it was asked" or "this daemon did not raise this card".** The card's file was changed, or the daemon restarted after the ask. The agent can ask again.
 - **A read says "no consent (…)".** The words in brackets say why: no yes yet, the yes ended, it was used for its reads already, the daemon restarted since your yes, it was answered somewhere other than the popup, or another agent or task asked for it. The agent may ask again if the request still needs it.
 - **The agent says "a card of yours is still waiting" or "less than 30 minutes ago".** It asked already. Answer the waiting card, or wait for the pause to end.
 - **The agent says "no running turn of yours was found".** The call did not come from inside the agent's own turn with its secret. Restart the daemon after updating AgentX, so agents get the secret.
