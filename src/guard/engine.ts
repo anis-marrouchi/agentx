@@ -1,5 +1,6 @@
 import type { GuardAction, GuardInput, GuardRule, ResolvedPolicy, Verdict, EffectiveAction } from "./types"
 import { buildResolveEnv, resolveTargets, normalizeProtectedSet, matchProtected } from "./resolve"
+import { bashFileAccesses, toolFileAccesses } from "./file-access"
 
 // --- Guard engine ---
 //
@@ -9,6 +10,7 @@ import { buildResolveEnv, resolveTargets, normalizeProtectedSet, matchProtected 
 // tests lean on and the reason the guard is trustworthy as a chokepoint.
 
 const ACTION_RANK: Record<GuardAction, number> = { deny: 3, escalate: 2, warn: 1, allow: 0 }
+const EFFECTIVE_RANK: Record<EffectiveAction, number> = { deny: 3, ask: 2, warn: 1, allow: 0 }
 
 /** Compile a policy regex. JS RegExp has no inline `(?i)` modifier (it throws),
  *  so we strip any `(?i)` occurrences and always compile case-insensitively —
@@ -23,6 +25,15 @@ function protectedSetName(ref: string): string {
   return ref.replace(/^protected_resources\./, "")
 }
 
+interface MatchCtx {
+  candidates: string[]
+  ambientCandidates: string[]
+  expandedCommand: string
+  env: Record<string, string>
+  /** The files the call reads or writes, worked out on first use. */
+  accesses: () => string[]
+}
+
 interface RuleHit {
   rule: GuardRule
   resolvedTarget: string | null
@@ -35,7 +46,7 @@ function ruleMatches(
   rule: GuardRule,
   input: GuardInput,
   policy: ResolvedPolicy,
-  ctx: { candidates: string[]; ambientCandidates: string[]; expandedCommand: string; env: Record<string, string> },
+  ctx: MatchCtx,
 ): RuleHit | null {
   const m = rule.match
 
@@ -58,6 +69,12 @@ function ruleMatches(
     if (!compileRegex(m.path_regex).test(input.filePath)) return null
   }
 
+  // Files the call reads or writes (#1979).
+  if (m.file_access_regex) {
+    const re = compileRegex(m.file_access_regex)
+    if (!ctx.accesses().some((p) => re.test(p))) return null
+  }
+
   // Protected-target gate.
   let resolvedTarget: string | null = null
   if (m.target_in) {
@@ -77,7 +94,7 @@ function ruleMatches(
 
   // A rule with no match clauses at all never fires (guards against an empty
   // rule silently denying everything).
-  if (!m.tool && !m.command_regex && !m.path_regex && !m.target_in) return null
+  if (!m.tool && !m.command_regex && !m.path_regex && !m.file_access_regex && !m.target_in) return null
 
   return { rule, resolvedTarget }
 }
@@ -124,7 +141,21 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
     }
   }
 
-  const ctx = { candidates, ambientCandidates, expandedCommand, env }
+  let accesses: string[] | null = null
+  const ctx: MatchCtx = {
+    candidates, ambientCandidates, expandedCommand, env,
+    accesses: () => {
+      if (accesses) return accesses
+      try {
+        accesses = input.command
+          ? bashFileAccesses(expandedCommand, input.cwd)
+          : input.filePath ? toolFileAccesses(input.tool, input.filePath, input.cwd) : []
+      } catch {
+        accesses = []
+      }
+      return accesses
+    },
+  }
   const hits: RuleHit[] = []
   for (const rule of policy.rules) {
     try {
@@ -145,6 +176,7 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
       matched: false,
       action,
       effectiveAction: applyMode(action, policy.mode),
+      mode: policy.mode,
       ruleId: null,
       severity: null,
       message: null,
@@ -153,15 +185,20 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
   }
 
   // Highest-precedence action wins; an explicit deny can never be downgraded.
-  // Between equal actions, a rule that enforces on its own wins, so a
-  // warn-only match never hides it (#1979).
-  const enforces = (h: RuleHit) => (h.rule.mode === "enforce" ? 1 : 0)
-  hits.sort((a, b) => ACTION_RANK[b.rule.action] - ACTION_RANK[a.rule.action] || enforces(b) - enforces(a))
-  const winner = hits[0]
+  // Each hit is judged in its own mode (#1979); the strictest effective
+  // action wins, then the strictest policy action. A rule's own mode can
+  // only be `enforce`, so it never weakens the policy.
+  const judged = hits.map((h) => {
+    const mode = ruleMode(h.rule, policy.mode)
+    return { ...h, mode, effective: applyMode(h.rule.action, mode) }
+  })
+  judged.sort((a, b) => EFFECTIVE_RANK[b.effective] - EFFECTIVE_RANK[a.effective] || ACTION_RANK[b.rule.action] - ACTION_RANK[a.rule.action])
+  const winner = judged[0]
   return {
     matched: true,
     action: winner.rule.action,
-    effectiveAction: applyMode(winner.rule.action, ruleMode(winner.rule, policy.mode)),
+    effectiveAction: winner.effective,
+    mode: winner.mode,
     ruleId: winner.rule.id,
     severity: winner.rule.severity ?? null,
     message: winner.rule.message ?? null,
@@ -174,6 +211,7 @@ function failClosedVerdict(mode: ResolvedPolicy["mode"], reason: string): Verdic
     matched: true,
     action: "deny",
     effectiveAction: applyMode("deny", mode),
+    mode,
     ruleId: "fail-closed",
     severity: "critical",
     message: `Guard failed closed: ${reason}.`,

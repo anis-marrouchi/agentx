@@ -56,7 +56,7 @@ export function recordDecision(a: AuditInput): string | null {
       matched_rule: a.verdict.ruleId,
       verdict: a.verdict.action,
       effective_action: a.verdict.effectiveAction,
-      mode: a.mode,
+      mode: a.verdict.mode ?? a.mode,
       severity: a.verdict.severity,
       approver: a.approver ?? null,
       ms: a.ms ?? null,

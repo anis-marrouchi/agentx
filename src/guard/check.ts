@@ -37,7 +37,8 @@ export function payloadToInput(p: PreToolUsePayload, agentId?: string, env?: str
   return {
     tool: p.tool_name ?? "Bash",
     command: p.tool_input?.command,
-    filePath: p.tool_input?.file_path,
+    // Grep names its file or folder in `path` (#1979).
+    filePath: p.tool_input?.file_path ?? (p.tool_name === "Grep" && typeof p.tool_input?.path === "string" ? p.tool_input.path : undefined),
     cwd: p.cwd,
     agentId,
     env,
