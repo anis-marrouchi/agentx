@@ -85,6 +85,9 @@ export function situationsClosing(store: SituationStore, body: Record<string, un
     if (ctx.templatesEnabled && named && !situationTemplate(named)) {
       return { status: 400, body: { error: `unknown template ${named}; one of: ${templateIds()}` } }
     }
+    if (ctx.templatesEnabled && named && situationTemplate(named)?.closing === false) {
+      return { status: 400, body: { error: `template ${named} has no closing steps; pick one that has (meeting, meeting.external, job.production, hand-off)` } }
+    }
   }
   const ref = str(body.id, 300)
   const channel = str(body.channel, 40)

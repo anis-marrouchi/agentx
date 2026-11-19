@@ -66,6 +66,20 @@ function purposeOf(row: SituationRow): string {
   return c.setBy === "agent" ? `${quoted(c.purpose, 200)} (as the agent named it)` : c.purpose
 }
 
+const TITLE_MAX = 80
+
+/** The run's title (Workflows page, the owner's send card). Words the
+ *  agent named: the label first, then the quote, cut inside the quotes so
+ *  the label and the closing quote always survive the length cap. */
+function runTitle(prefix: string, row: SituationRow): string {
+  const c = row.closing
+  if (c?.setBy === "agent") {
+    const head = `${prefix} (named by the agent): `
+    return head + quoted(c.purpose, TITLE_MAX - head.length - 2)
+  }
+  return `${prefix}: ${c?.purpose ?? row.template}`.slice(0, TITLE_MAX)
+}
+
 interface Dispatcher {
   startRun(args: { workflowId: string; inputs?: Record<string, unknown>; meta?: Record<string, unknown>; entityRef?: { backend: string; id: string } }): Promise<{ run: { id: string } | null; error?: string }>
   cancelRun(runId: string, reason?: string): Promise<boolean>
@@ -195,7 +209,7 @@ export class SituationRuns {
     const r = await d.startRun({
       workflowId, inputs,
       entityRef: { backend: "situation", id: entity },
-      meta: { startedBy: SITUATION_STARTER, followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${purposeOf(row)}`.slice(0, 80), tags: [`situation:${row.id}`] },
+      meta: { startedBy: SITUATION_STARTER, followUp: false, title: runTitle(workflowId === CLOSE_WORKFLOW ? "Close" : "Max age", row), tags: [`situation:${row.id}`] },
     })
     if (!r.run) { this.deps.log(`[situation] ${row.id}: ${workflowId} not started: ${r.error ?? "unknown error"}`); return null }
     return r.run.id
@@ -232,7 +246,8 @@ export class SituationRuns {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",
       inwardOnly: row.endReason === "stale" ? "yes" : "no",
       agent, purpose, home: c.home,
-      guidance: tpl?.noteGuidance ?? "",
+      // With its leading space: the prompt reads "the talk.{{guidance}}".
+      guidance: tpl?.noteGuidance ? ` ${tpl.noteGuidance}` : "",
       channel, chatId: c.chatId || chat.join("|"),
       ...(account && account !== "*" && account !== "default" ? { accountId: account } : {}),
       ...(c.message ? { message: c.message } : {}),

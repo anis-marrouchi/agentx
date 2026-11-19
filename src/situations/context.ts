@@ -82,6 +82,20 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   return line
 }
 
+/** Set to "1" in an agent process's environment while this node lets
+ *  agents name their talk (phase 6); the agentx MCP server lists
+ *  `agentx_situation` only then. A running process keeps the value it was
+ *  started with. */
+export const SITUATION_TOOL_ENV = "AGENTX_SITUATION_TOOL"
+
+/** Do agents on this node name their talk (`agentx_situation`) now? */
+export function situationToolOn(): boolean {
+  try {
+    const s = source?.settings()
+    return !!s && s.mode !== "off" && s.templates?.enabled === true && s.templates.agentFill === true
+  } catch { return false }
+}
+
 /** The layer for the chat whose record has this key. */
 export function situationContextFor(key: string | undefined, opts: { fresh: boolean }): string | undefined {
   if (!key || !source) return undefined

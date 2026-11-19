@@ -39,6 +39,7 @@ import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonom
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
 import type { PersonLimits } from "@/people/people"
+import { SITUATION_TOOL_ENV, situationToolOn } from "@/situations/context"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -606,6 +607,9 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   const queueChat = warmProcessChat(task.context as any)
   env.AGENTX_QUEUE_CHANNEL = queueChat.channel
   env.AGENTX_QUEUE_CHAT = queueChat.chatId
+  // agentx_situation is listed only while agents may name their talk (#1892).
+  if (situationToolOn()) env[SITUATION_TOOL_ENV] = "1"
+  else delete env[SITUATION_TOOL_ENV]
   return env
 }
 

@@ -206,6 +206,11 @@ A template only adds sentences to your agent's `[Situation]` line and to the not
 - A closing message to the other side is put on one line and always waits for your yes on a card.
 - It cannot change closing steps that a person set, a talk that ended, or another agent's chat.
 - Its own tools cannot use `agentx situation closing`: that route refuses a call that carries an agent's running turn. It cannot tell apart a program on this machine that leaves those marks out, so an agent allowed to run any shell command could still reach it, as it can reach every other daemon command on this machine. Keep agents that join outside talks on a tighter permission mode.
+- In the same way, a program on this machine that names an agent and a chat can name that agent's talk while the agent has exactly one running turn in that chat. It is bounded by the same limits: one of four templates, a few words of purpose, and a closing message that still waits for your card.
+
+When your agent names the talk, the tool's answer gives it the template's rules at once. A session that goes on (a warm chat session) gets the `[Situation]` line again only when the talk is ending or ended, so that answer is where it reads them. When **you** set a template on a talk that is going on, a session that goes on reads the rules at its next fresh start, or when the talk is ending.
+
+The tool `agentx_situation` is listed to your agents only while `situations.templates.enabled` and `situations.templates.agentFill` are both on (and `situations.mode` is not `off`). A warm session keeps the list it started with: after you switch these, its next start lists the tool.
 
 1. **Terminal:** `agentx config set situations.closing.enabled true` (for the closing steps).
 2. **Terminal:** `agentx config set situations.templates.enabled true`.
@@ -372,6 +377,8 @@ To check that your agent can name a talk:
 - **The seat held a message that needed a reply:** send it on with `agentx situation release <id>`. That labels the seat's answer as wrong. If it happens again, lower `situations.seat.maxFalseNoReply` or switch the seat back to shadow.
 - **`agentx situation list` shows no importance:** turn it on with `agentx config set situations.importance.enabled true`. A talk gets it at its next message.
 - **`agentx situation closing --template` answers "unknown template":** with `situations.templates.enabled` on, use one of `agentx situation templates`. With it off, any name is kept as a label and adds nothing.
+- **`agentx situation closing --template conversation` answers "has no closing steps":** `conversation` is the plain chat and runs no closing steps. Pick `meeting`, `meeting.external`, `job.production` or `hand-off`.
+- **Your agent does not have the `agentx_situation` tool:** both template settings must be on and `situations.mode` not `off`; a warm session lists it from its next start.
 - **Your agent says `agentx_situation` answered "an agent may not name its talk":** turn on both `situations.templates.enabled` and `situations.templates.agentFill`.
 - **`agentx_situation` answered "a person set this talk's closing steps":** that is on purpose: what you set is never changed by the agent. Change it yourself with `agentx situation closing`.
 - **`agentx_situation` answered "no running turn proven":** the tool works only inside the agent's own turn in that chat, not from a terminal or another program.

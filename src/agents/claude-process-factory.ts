@@ -18,6 +18,7 @@ import {
 import { BackgroundTasks } from "./background-tasks"
 import { readManagedHash } from "./workspace-setup"
 import { claudeBillingEnv } from "@/utils/workspace-env"
+import { SITUATION_TOOL_ENV, situationToolOn } from "@/situations/context"
 
 // --- Real subprocess factory for `claude` ---
 //
@@ -108,6 +109,9 @@ export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): No
   env.AGENTX_QUEUE_CHANNEL = key.channel
   env.AGENTX_QUEUE_CHAT = key.chatId
   delete env.AGENTX_TASK_ID
+  // agentx_situation is listed only while agents may name their talk (#1892).
+  if (situationToolOn()) env[SITUATION_TOOL_ENV] = "1"
+  else delete env[SITUATION_TOOL_ENV]
   return env
 }
 

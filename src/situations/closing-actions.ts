@@ -154,7 +154,10 @@ export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
     // private talk is posted): the note goes to the owner only, one line
     // and quoted, since the agent wrote it. Nothing is posted.
     if (!input.home.trim()) {
-      return { noteAt: oneLine(input.note, OWNER_NOTE_MAX) ? `for you only: ${quoted(input.note, OWNER_NOTE_MAX)}` : NO_NOTE }
+      // The owner text goes on with ". ": a final period inside the quote
+      // would read as two.
+      const body = oneLine(input.note, OWNER_NOTE_MAX).replace(/\.+$/, "")
+      return { noteAt: body ? `for you only: ${quoted(body, OWNER_NOTE_MAX)}` : NO_NOTE }
     }
     if (!deps?.postNote) throw new Error("posting notes is not running in this process")
     const target = noteTargetOf(input.home, deps.gitlabUrl?.() ?? null)

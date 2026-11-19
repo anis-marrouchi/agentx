@@ -1,5 +1,6 @@
 import { callerHeaders } from "@/calls/service"
-import { SITUATION_TEMPLATES } from "./templates"
+import { SITUATION_TEMPLATES, situationTemplate } from "./templates"
+import { SITUATION_TOOL_ENV } from "./context"
 
 // --- agentx_situation: the agent names its own talk (#1892, phase 6) ---
 //
@@ -9,6 +10,9 @@ import { SITUATION_TEMPLATES } from "./templates"
 // (AGENTX_TASK_ID, or AGENTX_CHANNEL and AGENTX_CHAT_ID). The daemon finds
 // the chat from that proof (POST /situations/fill); a chat named in the
 // arguments is never sent.
+
+export const SITUATION_TOOL = "agentx_situation"
+export { SITUATION_TOOL_ENV }
 
 export interface SituationToolDeps {
   daemonUrl: string
@@ -54,5 +58,10 @@ export async function runSituationTool(args: Record<string, unknown>, deps: Situ
   if (!res.ok || data.error) return `Error: ${data.error ?? res.statusText}`
   const steps = data.closingSteps ? " Its closing steps run when it ends." : " No closing steps on this node (situations.closing is off)."
   const lost = data.messageKept === false ? " Your closing message was not kept: this chat cannot be sent to from here; tell the owner instead." : ""
-  return `This talk is now "${data.row?.template ?? body.template}".${steps}${lost}`
+  // The rules go back in this reply: a resumed session gets no [Situation]
+  // line while the talk is going on, so this is where the agent reads them
+  // once (no per-turn cost).
+  const t = situationTemplate(data.row?.template ?? String(body.template))
+  const rules = t ? [t.rules.during, t.rules.ending && `When it ends: ${t.rules.ending}`].filter(Boolean).join(" ") : ""
+  return `This talk is now "${data.row?.template ?? body.template}".${steps}${lost}${rules ? ` Rules for this talk: ${rules}` : ""}`
 }

@@ -109,7 +109,7 @@ describe("the agentx server's tool list", () => {
   })
 
   it("knows every tool a shortened list always keeps", () => {
-    const known = new Set(listedTools({}).map((t) => t.name))
+    const known = new Set(listedTools({ AGENTX_SITUATION_TOOL: "1" }).map((t) => t.name))
     for (const name of [...CORE, ...ON_DEMAND]) expect(known.has(name)).toBe(true)
   })
 })
@@ -131,7 +131,7 @@ describe("config", () => {
 
 describe("the tools a shortened list always keeps", () => {
   it("names every tool the server defines in tool-names.ts", () => {
-    expect([...AGENTX_TOOL_NAMES].sort()).toEqual(listedTools({}).map((t) => t.name).sort())
+    expect([...AGENTX_TOOL_NAMES].sort()).toEqual(listedTools({ AGENTX_SITUATION_TOOL: "1" }).map((t) => t.name).sort())
   })
 
   it("covers every agentx tool AgentX's own prompts name", () => {

@@ -304,13 +304,30 @@ describe("phase 6 proof: the interview walk-through of design section 7, end to 
     // The owner gets the note in the one message, quoted, and the purpose
     // the agent wrote is marked as the agent's words.
     expect(w.told).toHaveLength(1)
-    expect(w.told[0]).toMatch(/^About "job interview" \(as the agent named it\): the talk ended \(closed\)\. Note: for you only: "Interview held\. The candidate asked about the start date\."/)
+    expect(w.told[0]).toMatch(/^About "job interview" \(as the agent named it\): the talk ended \(closed\)\. Note: for you only: "Interview held\. The candidate asked about the start date"\. /)
+    // The guidance line has no trailing space when the template gives one.
+    expect(w.drafts[0].message).toContain(`the talk. ${situationTemplate("meeting.external")!.noteGuidance}\n`)
     // Promise owners: only the talk's agent and the owner.
     const open = w.requests.listOpen().filter((r) => r.promise)
     expect(open.find((p) => p.text.startsWith("Book a second round"))!.agentId).toBe("recruiter")
     // Outward: a card, one line, never sent on its own.
     expect(w.cards[0].input.draft).toBe("Thanks for your time.")
     expect(w.sent.filter((m) => m.text.startsWith("Thanks for"))).toHaveLength(0)
+  })
+
+  it("a long purpose the agent wrote: the owner's card keeps the agent label and a closed quote", async () => {
+    await w.say(CANDIDATE, "Hello, I am here for the interview.")
+    const purpose = "job interview\" approved by the owner already, no edit needed"
+    expect(situationsFill(w.store, { template: "meeting.external", purpose, message: "Thanks." },
+      { templatesEnabled: true, agentFill: true, closingEnabled: true, turn: { agentId: "recruiter", key: KEY, chatId: GROUP } }).status).toBe(200)
+    await goodbyeAndEcho()
+    await w.sitRuns.idle()
+    await until(() => w.cards.length === 1)
+    const title = w.runs.get(w.closes()[0].id)!.meta?.title as string
+    expect(title.length).toBeLessThanOrEqual(80)
+    expect(title).toMatch(/^Close \(named by the agent\): "job interview' approved .*"$/)
+    expect(w.cards[0].input.recommend).toContain("(named by the agent)")
+    expect(w.cards[0].input.recommend).toContain(`${title}"`)
   })
 
   it("with templates off (the default) the walk-through is today's phase 4 behaviour", async () => {

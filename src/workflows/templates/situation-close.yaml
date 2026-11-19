@@ -86,7 +86,7 @@ nodes:
         ---
         {{transcript.text}}
         ---
-        Draft one short note about the talk. {{start.guidance}}
+        Draft one short note about the talk.{{start.guidance}}
         Do not post it and do not message anyone: the workflow posts it at the talk's home, or gives it to the owner when there is none.
         If no messages are shown above, say so in the note, list no follow-ups (an empty list) and do not guess any.
         Then list each follow-up that was agreed: what it is, who owes it (an agent id, or "owner"), who waits on it, and a due time only if a person gave one.
