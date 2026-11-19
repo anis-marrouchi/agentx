@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import Database from "better-sqlite3"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { RunStore, WorkflowStore, WorkflowDispatcher } from "../src/workflows"
@@ -11,7 +11,10 @@ import { situationKey } from "../src/situations/key"
 import { DEFAULT_SITUATIONS_CONFIG, situationsConfigSchema, type SituationsConfig } from "../src/situations/config"
 import { setSituationContextSource, situationContextFor } from "../src/situations/context"
 import { situationsClosing } from "../src/situations/api"
-import { quoted, setLearnedTemplateSource, situationTemplate } from "../src/situations/templates"
+import { SITUATION_TEMPLATES, quoted, setLearnedTemplateSource, situationTemplate } from "../src/situations/templates"
+import { evaluate } from "../src/guard/engine"
+import { resolveInMemory } from "../src/guard/policy"
+import type { GuardInput } from "../src/guard/types"
 import { ensureSituationWorkflows } from "../src/situations/workflows"
 import { LearnedTemplateStore, learnedSource, lintLearnedText, type LearnedDraft } from "../src/situations/learned"
 import {
@@ -98,10 +101,10 @@ interface Harness {
   deps: LearnDeps
 }
 
-function harness(over: Partial<SituationsConfig["learned"]> = {}, key: string | null = OPERATOR_KEY, approver: string | null = APPROVER): Harness {
+function harness(over: Partial<SituationsConfig["learned"]> = {}, key: string | null = OPERATOR_KEY, approver: string | null = APPROVER, genFile?: string): Harness {
   const db = new Database(":memory:")
   const store = new SituationStore(db, now)
-  const learned = new LearnedTemplateStore(db, { key: () => key, now })
+  const learned = new LearnedTemplateStore(db, { key: () => key, now, genFile })
   // The owner names the approver with the operator key (the route).
   if (approver) learned.setApprover(approver)
   const h = { db, store, learned, cfg: settings(over), calls: [], reviews: [], verdicts: [], learnerUsd: 0.4, reviewUsd: 0.2 } as unknown as Harness
@@ -633,6 +636,134 @@ describe("second review: the learning steps run only in their workflow", () => {
     const state = ensureSituationWorkflows(workflows, { learn: true })
     expect(state.added).toContain(LEARN_WORKFLOW)
     expect(readFileSync(file, "utf-8")).toBe(shipped)
+  })
+})
+
+// --- From the re-check of PR #1989 at 6fdc48c0 ---
+
+describe("re-check: a rollback through the state row and a restart is noticed", () => {
+  const genFile = () => join(mkdtempSync(join(dir, "gen-")), ".agentx", "learned.gen")
+  const restart = (h: Harness, file: string) => new LearnedTemplateStore(h.db, { key: () => OPERATOR_KEY, now, genFile: file })
+  const stateRow = (h: Harness) => h.db.prepare("SELECT * FROM situation_learned_settings").get() as Record<string, unknown>
+  const putBack = (h: Harness, row: Record<string, unknown>) => {
+    h.db.prepare("DELETE FROM situation_learned_settings").run()
+    h.db.prepare("INSERT INTO situation_learned_settings (name, value, mac) VALUES (@name, @value, @mac)").run(row)
+  }
+  async function decided(h: Harness, verdicts: string[]) {
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    h.verdicts = verdicts
+    await learnReviewStep(h.deps)
+  }
+
+  it("B1: a retired template does not come back", async () => {
+    const file = genFile()
+    const h = harness({}, OPERATOR_KEY, APPROVER, file)
+    await decided(h, ['{"verdict":"approve","why":"fits"}', '{"verdict":"reject","why":"no"}'])
+    const old = stateRow(h)
+    expect(h.learned.retire("learned.interview", "owner")).toBe(true)
+    putBack(h, old)
+    const after = restart(h, file)
+    expect(after.template("learned.interview")).toBeNull()
+    expect(after.problem()).toMatch(/older sealed state/)
+  })
+
+  it("B2: a no is not asked again", async () => {
+    const file = genFile()
+    const h = harness({}, OPERATOR_KEY, APPROVER, file)
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    const old = stateRow(h)
+    h.verdicts = ['{"verdict":"reject","why":"no"}', '{"verdict":"reject","why":"no"}']
+    await learnReviewStep(h.deps)
+    putBack(h, old)
+    const after = restart(h, file)
+    expect(after.reviewable()).toEqual([])
+    expect(after.startReview("learned.interview")).toBe(false)
+  })
+
+  it("B3: an earlier approver does not return", async () => {
+    const file = genFile()
+    const h = harness({}, OPERATOR_KEY, APPROVER, file)
+    const old = stateRow(h)
+    h.learned.setApprover("recruiter")
+    putBack(h, old)
+    expect(restart(h, file).approver()).toBeNull()
+  })
+
+  it("a missing generation file, or vanished state rows, stop learning", async () => {
+    const file = genFile()
+    const h = harness({}, OPERATOR_KEY, APPROVER, file)
+    await decided(h, ['{"verdict":"approve","why":"fits"}', '{"verdict":"reject","why":"no"}'])
+    expect(existsSync(file)).toBe(true)
+    unlinkSync(file)
+    expect(restart(h, file).problem()).toMatch(/learned\.gen is missing/)
+    const h2 = harness({}, OPERATOR_KEY, APPROVER, genFile())
+    const file2 = (h2.learned as any).opts.genFile as string
+    h2.db.prepare("DELETE FROM situation_learned_settings").run()
+    expect(restart(h2, file2).problem()).toMatch(/state is missing/)
+    writeFileSync(file2, "999 forged\n")
+    expect(restart(h2, file2).problem()).toMatch(/changed outside AgentX/)
+  })
+
+  it("a reset starts over with a newer generation in the file", async () => {
+    const file = genFile()
+    const h = harness({}, OPERATOR_KEY, APPROVER, file)
+    const old = stateRow(h)
+    h.learned.setApprover("recruiter")
+    putBack(h, old)
+    const after = restart(h, file)
+    expect(after.reset()).toBe(true)
+    expect(restart(h, file).problem()).toBeNull()
+  })
+
+  it("the guard keeps agents off the generation file", () => {
+    const policy = resolveInMemory({ mode: "warn", protected_resources: {}, rules: [], agents: {} })
+    const root = mkdtempSync(join(dir, "guard-"))
+    mkdirSync(join(root, ".agentx"), { recursive: true })
+    writeFileSync(join(root, ".agentx", "learned.gen"), "1 x\n")
+    for (const command of ["cat .agentx/learned.gen", "echo 99 > .agentx/learned.gen", "cp /tmp/old.gen .agentx/learned.gen"]) {
+      const v = evaluate({ tool: "Bash", cwd: root, command } as unknown as GuardInput, policy)
+      expect(v.ruleId, command).toBe("learned-gen-write")
+      expect(v.effectiveAction, command).toBe("deny")
+    }
+  })
+})
+
+describe("re-check: the owner is told when learning stops", () => {
+  it("the review step sets one notice when the state cannot be trusted", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    h.db.prepare("UPDATE situation_learned_settings SET mac = 'x'").run()
+    const out = await learnReviewStep(h.deps)
+    expect(out.notice).toMatch(/Learned templates stopped/)
+    expect(out.notice).toMatch(/agentx situation learned reset/)
+  })
+})
+
+describe("re-check: the lint and quoting", () => {
+  it("passes every shipped catalog rule and guidance", () => {
+    for (const t of SITUATION_TEMPLATES) {
+      for (const text of [...Object.values(t.rules), t.noteGuidance].filter((v): v is string => !!v)) {
+        expect(lintLearnedText(text), `${t.id}: ${text}`).toBeNull()
+      }
+    }
+  })
+
+  it("keeps joiners, Arabic and emoji in quoted text, drops bidi overrides and zero-width spaces", () => {
+    expect(quoted("مر‌حبا 👨‍💻", 50)).toBe('"مر‌حبا 👨‍💻"')
+    expect(quoted("a⁦b⁩c⁠d﻿e", 50)).toBe('"abcde"')
+  })
+})
+
+describe("re-check: a second file declaring situation-learn", () => {
+  it("is reported at start", () => {
+    const base = mkdtempSync(join(dir, "wf-dup-"))
+    const workflows = new WorkflowStore({ baseDir: base })
+    writeFileSync(join(base, "my-copy.yaml"), "id: situation-learn\nversion: 2\ntitle: Copy\nnodes: []\nedges: []\n")
+    const state = ensureSituationWorkflows(workflows, { learn: true })
+    expect(state.broken.map((b) => b.why).join(" ")).toMatch(/my-copy\.yaml.*situation-learn/)
   })
 })
 
