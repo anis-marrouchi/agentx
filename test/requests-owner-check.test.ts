@@ -132,6 +132,45 @@ describe("readVerdict / prompt", () => {
   })
 })
 
+// retro:01M7RHM4763Q09HY7ATFT77DX1 — KSI 562 was reopened 3 times: each
+// check was shown the proof links of an earlier close beside the new ones.
+describe("the owner-words check judges the latest close's proofs only", () => {
+  const LINK_A = "https://git.example.test/other/pipeline/-/merge_requests/9"
+  const LINK_B = "https://git.example.test/example/app/-/merge_requests/4"
+  const MISMATCH = '{"verdict":"mismatch","why":"the link is from another project"}'
+
+  beforeEach(() => {
+    store.progress(ID, 5_500)
+    store.setDeliverables(ID, ["the switch", "the deploy"])
+  })
+
+  async function closeAMismatch() {
+    expect(api({ action: "done", id: ID, evidence: `done ${LINK_A}`, proofs: [{ deliverable: 1, link: LINK_A }] }).status).toBe(200)
+    expect((await checker(MISMATCH).c.run()).reopened).toEqual([ID])
+  }
+
+  it("close with link A, mismatch reopen, close with link B: the prompt has B and not A", async () => {
+    await closeAMismatch()
+    expect(store.get(ID)!.deliverableProofs).toEqual([])
+    expect(api({ action: "done", id: ID, evidence: `done ${LINK_B}`, proofs: [{ deliverable: 1, link: LINK_B }] }).status).toBe(200)
+    const { c, prompts } = checker('{"verdict":"match","why":"ok"}')
+    await c.run()
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]).toContain(LINK_B)
+    expect(prompts[0]).not.toContain(LINK_A)
+    expect(ownerCheckPrompt(store.get(ID)!)).not.toContain(LINK_A)
+  })
+
+  it("keeps a link given by step after the reopen when the done carries none", async () => {
+    await closeAMismatch()
+    expect(api({ action: "step", id: ID, proofs: [{ deliverable: 1, link: LINK_B }] }).status).toBe(200)
+    expect(api({ action: "done", id: ID, evidence: "both done, see the step link" }).status).toBe(200)
+    const p = ownerCheckPrompt(store.get(ID)!)
+    expect(p).toContain(LINK_B)
+    expect(p).not.toContain(LINK_A)
+  })
+})
+
 // A plan that closed too early wakes its agent (#1908): the flag alone woke nobody.
 describe("a plan's close judged a mismatch", () => {
   const MISMATCH = '{"verdict":"mismatch","why":"the review you asked for by noon was never posted"}'
