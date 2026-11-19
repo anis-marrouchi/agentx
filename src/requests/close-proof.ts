@@ -264,10 +264,28 @@ export function askForProof(store: RequestStore, id: string, missing: string[], 
   })
 }
 
+/** A met check's kept evidence, split into the checker's own words and
+ *  the agent's words on done (#1943). Null `agent`: it gave none. */
+export function splitCheckEvidence(evidence: string): { check: string; agent: string | null } {
+  const at = evidence.indexOf(SUFFIXES[0])
+  if (at < 0) return { check: evidence, agent: null }
+  const agent = evidence.slice(at + SUFFIXES[0].length).replace(/\)$/, "").trim()
+  return { check: evidence.slice(0, at), agent: agent || null }
+}
+
 /** The "proof per deliverable" block of the owner-words prompt (#692 B4):
- *  every kept link, where the 500-character evidence cannot hold them. */
-export function proofBlock(d: Deliverables | null): string[] {
-  if (!d || (d.names.length <= 1 && !d.proofs.length)) return []
+ *  every kept link, where the 500-character evidence cannot hold them.
+ *  `kept`: the request's own proof links, shown by the name or number the
+ *  agent gave when its words were never read into a list (#1943: with
+ *  closeProof off, no list is read, and the links reached nobody). */
+export function proofBlock(d: Deliverables | null, kept: DeliverableProof[] = []): string[] {
+  if (!d) {
+    if (!kept.length) return []
+    const labels = [...new Set(kept.map((p) => p.deliverable))]
+    const lines = labels.map((l) => `${/^\d+$/.test(l) ? `${l}.` : `${l}:`} ${kept.filter((p) => p.deliverable === l).map((p) => p.link).join(" ")}`)
+    return ["", "Proof per deliverable (one link or more each, given by the assistant, numbered as it counted what was asked):", ...lines]
+  }
+  if (d.names.length <= 1 && !d.proofs.length) return []
   const lines = d.names.map((name, i) => {
     const links = d.proofs.filter((p) => proves(p, i, name)).map((p) => p.link)
     return `${i + 1}. ${name}: ${links.length ? links.join(" ") : "(no link)"}`

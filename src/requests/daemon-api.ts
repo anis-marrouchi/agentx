@@ -663,7 +663,12 @@ export function handleRequestsApi(
       const v = deps.verdict?.requestId === request.id ? deps.verdict.result : null
       if (!v) return { status: 202, body: { checking: describeCloseWhen(request.closeWhen) }, verify: { requestId: request.id, spec: request.closeWhen } }
       if (v.verdict === "met") {
-        const said = str(input.evidence)
+        // The agent's evidence and its typed proof are kept beside the
+        // check's words (#1943): the check proves only what it checks, and
+        // the reviewer judges the rest on these and the proofs[] links.
+        const ev = str(input.evidence)
+        const extra = proof && input.proof != null && !ev.includes(proof.value) ? describeProof(proof) : ""
+        const said = [ev, extra].filter(Boolean).join("; ")
         const out = closeByCheckNow(store, request.id, v.detail, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now, deps.closeProof ?? PROOF_OFF)
         if (out.outcome === "held") return { status: 409, body: { error: `Not closed: its check gives the same result the owner already found does not match their words (${out.detail}).`, held: true } }
         if (out.outcome === "blocked") {

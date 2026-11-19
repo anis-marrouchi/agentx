@@ -76,6 +76,15 @@ export function describeDeliverables(r: any): string {
   return ` Deliverables: ${list.map((n: string, i: number) => `${i + 1}. ${n}${has(n, i) ? " (linked)" : ""}`).join("; ")}.`
 }
 
+/** The proof links kept per deliverable, after a close (#1943): a met
+ *  check's evidence names only the check, so the agent sees its links
+ *  were kept for the close reviewer too. */
+export function describeProofLinks(r: any): string {
+  const proofs: Array<{ deliverable: string; link: string }> = Array.isArray(r?.deliverableProofs) ? r.deliverableProofs : []
+  if (!proofs.length) return ""
+  return ` Proof links kept for the close reviewer: ${proofs.map((p) => `${p.deliverable}: ${p.link}`).join("; ")}.`
+}
+
 /** One line per open request, oldest first. */
 export function describeOpen(items: any[]): string {
   if (!items.length) return "No open requests."
@@ -252,7 +261,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     }
     if (action === "done") {
       const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""
-      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${fact}`
+      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}`
     }
     return `Request ${r.id} is closed as declined. Reason: ${r.closeReason}`
   } catch (e: any) {

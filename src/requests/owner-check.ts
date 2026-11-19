@@ -19,7 +19,7 @@
 // close is marked unclear. Closes older than `maxAgeHours` are left alone.
 
 import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
-import { deliverablesOf, missingProofs, proofBlock, type Deliverables } from "./close-proof"
+import { deliverablesOf, missingProofs, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
 
 export interface OwnerCheckSettings {
   enabled: boolean
@@ -52,6 +52,24 @@ export const MISMATCH_PREFIX = "Closed without doing what you asked"
 
 /** Who closes a request when every step of its tracked plan finished. */
 export const PLAN_BY = "plan"
+
+/** Who closes a request when its own close check (closeWhen, an issue
+ *  home) is met: store.closeVerified. */
+export const CHECK_BY = "check"
+
+/** How a close by a met check reads to the reviewer (#1943). The check
+ *  proves only what it checks (a merge, an issue closed), so the agent's
+ *  own evidence is given on its own line, not as an aside after it: the
+ *  reviewer judged the rest of the request on the check alone. */
+function metCheckLines(evidence: string): string {
+  const { check, agent } = splitCheckEvidence(evidence)
+  return [
+    `Closed as DONE: the daemon's own close check was met: ${clip(check)}`,
+    "That check proves only what it checks (for example that a merge request is merged), and a deliverable it covers needs no other link. " +
+      "It says nothing about the other things the owner asked: judge those on the assistant's evidence and proof links below.",
+    `Evidence given by the assistant: ${agent ? clip(agent) : "(none)"}`,
+  ].join("\n")
+}
 
 /** What the agent is told when its plan's close was reopened (#1908). */
 export function planMismatchText(r: RequestRecord, why: string): string {
@@ -121,7 +139,9 @@ function allProofsAsked(d: Deliverables): string[] {
 /** `d`: what the owner's words ask for and the links given (#692 B4).
  *  Default: the list and proofs kept on the request. */
 export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deliverablesOf(r, null)): string {
-  const how = r.state === "done"
+  const how = r.state === "done" && r.closedBy === CHECK_BY && r.evidence
+    ? metCheckLines(r.evidence)
+    : r.state === "done"
     ? `Closed as DONE by ${r.closedBy}. Evidence given: ${clip(r.evidence ?? "(none)")}`
     : `Closed as ${r.state.toUpperCase()} by ${r.closedBy}. Reason given: ${clip(r.closeReason ?? "(none)")}`
   return [
@@ -130,7 +150,7 @@ export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deli
     ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
     "",
     how,
-    ...proofBlock(d),
+    ...proofBlock(d, r.deliverableProofs ?? []),
     "",
     "Answer \"mismatch\" when the close does not deliver what the owner asked, for example:",
     "- it did a smaller or different task than the one asked, or only part of it;",
