@@ -173,7 +173,17 @@ export function sourceConsentLines(origin: SourceConsentOrigin, card: { id: stri
   ]
 }
 
-export type CardOrigin = SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+/** The owner's weekly card of learned templates (situations/learned-card.ts,
+ *  #1990). Raised by the situation-learn workflow, owner-only. The daemon
+ *  seals the answer from its own popup or the operator-key route; the
+ *  file never answers, and no agent is told. */
+export interface LearnedDraftsOrigin {
+  kind: "learned-drafts"
+  /** The drafts it asks about, in order. */
+  drafts: string[]
+}
+
+export type CardOrigin = LearnedDraftsOrigin | SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

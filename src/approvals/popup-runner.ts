@@ -67,8 +67,19 @@ export interface PopupRunnerDeps {
    *  desk/route.ts). Unset: every item. A card the owner asked for shows
    *  whatever it says. */
   reaches?: (item: { expires?: string }) => boolean
+  /** A card the daemon raised and seals the answer of itself (learned
+   *  templates, #1990): the card to show, rebuilt from the daemon's own
+   *  record, or why it may not be shown. Never the file as it is: any
+   *  process on this machine can write that. Unset: such a card is not
+   *  shown here. */
+  daemonCard?: (file: DecisionCard) => { card: DecisionCard } | { refused: string }
+  /** The owner answered that card in this popup. */
+  onDaemonAnswer?: (shown: DecisionCard, verdict: "yes" | "no", choice?: string) => void
   platform?: NodeJS.Platform
 }
+
+/** Cards whose answer the daemon seals itself, from this popup only. */
+const DAEMON_CARD_KINDS = new Set<string>(["learned-drafts"])
 
 // Shared by every caller in the process: a config reload must not open a
 // second dialog over the first.
@@ -156,7 +167,11 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   if (!next) return "none"
   // A screen read's card (#1892 phase 7) is shown as the daemon asked it,
   // never as its file says now: the asking agent can write that file.
-  const asked = !request && next.origin?.kind === "source-consent" ? askedCard(next) : null
+  // A learned-templates card (#1990) the same way, from the daemon's
+  // sealed record.
+  const daemonKind = !request && DAEMON_CARD_KINDS.has(next.origin?.kind ?? "")
+  const asked = !request && next.origin?.kind === "source-consent" ? askedCard(next)
+    : daemonKind ? (deps.daemonCard?.(next) ?? { refused: "only the daemon shows this card" }) : null
   const card = asked && "card" in asked ? asked.card : next
   const focus = (deps.focus ?? readHold)()
   if (focus.active) return "held"
@@ -207,6 +222,11 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     // with what the card showed: the card file alone never grants it.
     // Recorded only if the file still matches what was asked and shown.
     if (r.ok && !request && r.verdict === "yes") recordPopupYes(readCard(ctx.root, card.id), ctx.now ?? Date.now())
+    // A daemon card's answer (#1990) is sealed here, in this process,
+    // with the card as it was shown: the file is never read for it.
+    if (r.ok && daemonKind && asked && "card" in asked && (r.verdict === "yes" || r.verdict === "no")) {
+      deps.onDaemonAnswer?.(card, r.verdict, answer.action === "yes" ? answer.choice : undefined)
+    }
     return "shown"
   } catch (e: any) {
     log(`[approvals] popup failed for ${key}: ${e?.message ?? e}`)

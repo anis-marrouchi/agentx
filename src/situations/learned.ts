@@ -10,10 +10,18 @@ import { LEARNED_PREFIX, oneLine, situationTemplate, stripInvisible, type Learne
 // talks. The text of each draft lives in `situation_learned_templates`;
 // every decision about it lives in one sealed STATE (a row of
 // `situation_learned_settings`): its status (draft, active, rejected,
-// retired), how often the approver was asked, who decided and when, the
-// hash of the exact text decided on, the approver the owner named, the
-// owner's picks of a learned template for a talk, and a generation
-// counter that only goes up. Nothing else holds them.
+// retired), who decided and when, the hash of the exact text decided on,
+// the owner's weekly card (#1990) and how many cards in a row went
+// unanswered, whether learning is paused, the owner's picks of a learned
+// template for a talk and when each template was last picked, and a
+// generation counter that only goes up. Nothing else holds them.
+//
+// Only the owner approves (#1990, owner's words 2026-11-19: "yes but i
+// dont want these to go stale and i dont want to overwhelm the user"):
+// one owner-only decision card a week holds that week's drafts
+// (learned-card.ts). Its answer reaches this store only through the
+// daemon: the popup it shows itself, or the operator-key route. The card
+// file is never read for an answer.
 //
 // What a learned template may carry, and only this (a fixed schema, the
 // columns below): a title, a "when" line, one prompt rule per phase and
@@ -29,8 +37,8 @@ import { LEARNED_PREFIX, oneLine, situationTemplate, stripInvisible, type Learne
 //     people to read; they decide nothing;
 //   - an edited state has no valid seal: then nothing learned is drafted,
 //     asked or used until the owner resets it (docs);
-//   - an older sealed state put back (to undo a retire, a no or a new
-//     approver) has a lower generation: this daemon refuses it while it
+//   - an older sealed state put back (to undo a retire or a no) has a
+//     lower generation: this daemon refuses it while it
 //     runs. After a restart it cannot tell: a rollback of the whole
 //     database is the one thing left, and the docs say so;
 //   - a draft is used only while the hash of its text, its evidence
@@ -53,8 +61,8 @@ export interface LearnedDraft {
   noteGuidance?: string
   /** The ended talks it was drafted from (situation ids). */
   evidence: string[]
-  /** What the approver reads of that evidence: built by the daemon at
-   *  draft time from checked values, and sealed with the draft. */
+  /** That evidence as counts: built by the daemon at draft time from
+   *  checked values, and sealed with the draft. */
   evidenceSummary?: string
   why: string
 }
@@ -135,7 +143,7 @@ export function lintDraft(d: Pick<LearnedDraft, "title" | "when" | "rules" | "no
   return out
 }
 
-/** What a reviewer reads of a draft, to tell whether it changed since. */
+/** The text of a draft the owner decides on, to tell whether it changed since. */
 export function learnedContent(r: Pick<LearnedRow, "id" | "base" | "title" | "when" | "rules" | "noteGuidance" | "evidence" | "evidenceSummary" | "why">): string {
   return JSON.stringify([r.id, r.base, r.title, r.when, r.rules.during ?? "", r.rules.ending ?? "", r.rules.ended ?? "", r.noteGuidance, r.evidence, r.evidenceSummary, r.why])
 }
@@ -151,35 +159,82 @@ type Raw = {
 interface Entry {
   /** status */ s: LearnedStatus
   /** hash of the text decided on (content and created_at) */ h: string
-  /** times the approver was asked */ n: number
-  /** last ask */ at: number | null
+  /** asks (phase 8's approver; unused since #1990) */ n: number
+  /** last ask (unused since #1990) */ at: number | null
   /** who decided */ by: string | null
   /** when */ d: number | null
   /** the decision's reason */ w: string | null
   /** retired by, at */ rb: string | null; ra: number | null
 }
 
+/** The owner's card of the week (#1990): one at a time. */
+export interface OpenCard {
+  /** The decision card's id (.agentx/approvals). */
+  id: string
+  at: number
+  expires: number
+  /** The drafts it asks about, in order. */
+  drafts: string[]
+  /** The lines it also says (templates retired since the last card). */
+  said: string[]
+  /** The owner answered at least one draft. */
+  answered?: boolean
+}
+
 interface State {
   v: 1
   /** Goes up with every change; a lower one is refused while running. */
   gen: number
-  approver: string | null
+  /** Phase 8 named an approver agent here. Read and dropped (#1990). */
+  approver?: unknown
   lastRun: number | null
   t: Record<string, Entry>
   /** Hashes of sentences turned down or retired: never drafted again. */
   no: string[]
   /** The owner's picks: situation id → learned template id. */
   picks: Record<string, string>
+  /** When this week's run started (once in 6.5 days). */
+  weekAt?: number | null
+  /** The open card, if any. */
+  card?: OpenCard | null
+  /** When the last card was raised. */
+  lastCard?: number | null
+  /** Cards in a row that closed with no answer. */
+  unanswered?: number
+  /** Learning paused itself at this time (two unanswered cards). */
+  paused?: number | null
+  /** Lines for the owner's next card, or the notice when there is none. */
+  say?: string[]
+  /** Template id → when a talk last picked it. */
+  used?: Record<string, number>
 }
+
+/** Who approves: the owner, on the weekly card or with the operator key. */
+export const OWNER = "owner"
+/** One weekly run, with slack so a cron that fires a moment early runs. */
+export const WEEK_GAP_MS = 6.5 * 24 * 3600_000
+/** An approved template no talk picked for this long is retired. */
+export const UNUSED_RETIRE_MS = 8 * 7 * 24 * 3600_000
+/** Cards in a row with no answer before learning pauses itself. */
+export const PAUSE_AFTER_UNANSWERED = 2
+export const PAUSE_LINE = "Learned templates are paused: the last two weekly cards were not answered, so nothing new is drafted. To start again, run: agentx situation learned resume"
 
 const STATE_ROW = "state"
 const PICKS_MAX = 500
 const NO_MAX = 2000
+const SAY_MAX = 10
 
-/** A review may be tried again only this long after a failed one, and
- *  at most this many times in all: asking again cannot reroll a no. */
-export const REVIEW_RETRY_MS = 6 * 24 * 3600_000
-export const MAX_REVIEW_ATTEMPTS = 2
+/** A state read from the database, as #1990 uses it. Phase 8's approver
+ *  is dropped (only the owner approves now), and a template an approver
+ *  agent said yes to goes back to a draft for the owner's card: nothing
+ *  an agent approved is used. A no stays a no. */
+function normalize(s: State): State {
+  delete s.approver
+  for (const e of Object.values(s.t ?? {})) {
+    if (e.s === "active" && e.by !== OWNER) Object.assign(e, { s: "draft", by: null, d: null, w: null })
+  }
+  return s
+}
 
 const sentenceHash = (v: string) => createHash("sha256").update(oneLine(v, 1000).toLowerCase()).digest("hex").slice(0, 32)
 
@@ -289,7 +344,7 @@ export class LearnedTemplateStore {
     if (!r) {
       const rows = (this.db.prepare("SELECT COUNT(*) AS n FROM situation_learned_templates").get() as { n: number }).n
       if (floor > 0 || rows > 0) return { state: null, why: "the sealed state is missing (deleted, or an older copy of the database was put back)" }
-      return { state: { v: 1, gen: 0, approver: null, lastRun: null, t: {}, no: [], picks: {} } }
+      return { state: { v: 1, gen: 0, lastRun: null, t: {}, no: [], picks: {} } }
     }
     if (!this.same(r.mac, this.mac("state", r.value))) return { state: null, why: "the sealed state was changed outside AgentX" }
     let s: State
@@ -300,7 +355,7 @@ export class LearnedTemplateStore {
     if (file && "missing" in file && s.gen > 0) return { state: null, why: "the generation file .agentx/learned.gen is missing" }
     if (s.gen < floor) return { state: null, why: `an older sealed state was put back (generation ${s.gen}, newest seen ${floor})` }
     this.highGen = s.gen
-    return { state: s }
+    return { state: normalize(s) }
   }
 
   private state(): State | null {
@@ -338,24 +393,6 @@ export class LearnedTemplateStore {
   private mirror(id: string, e: Entry): void {
     this.db.prepare(`UPDATE situation_learned_templates SET status = ?, review_attempts = ?, last_review_at = ?, reviewer = ?, verdict_why = ?,
       decided_at = ?, retired_at = ?, retired_by = ? WHERE id = ?`).run(e.s, e.n, e.at, e.by, e.w, e.d, e.ra, e.rb, id)
-  }
-
-  // --- The approver: named by the owner with the operator key ---
-  //
-  // Not a setting in agentx.json, which agents can edit: the owner names
-  // it with `agentx situation learned approver <agent>` (operator key).
-  // A template is used only while the reviewer who said yes is still the
-  // approver.
-
-  /** Name the approver (owner only: the route checks the operator key).
-   *  Null clears it. */
-  setApprover(agentId: string | null): boolean {
-    return this.change((s) => { s.approver = agentId; return true })
-  }
-
-  /** The approver the owner named, or null (none, or the state cannot be trusted). */
-  approver(): string | null {
-    return this.state()?.approver ?? null
   }
 
   private raw(id: string): Raw | null {
@@ -418,8 +455,8 @@ export class LearnedTemplateStore {
     const sentences = [r.rule_during, r.rule_ending, r.rule_ended, r.note_guidance].filter((v): v is string => !!v)
     let error = ""
     const ok = this.change((s) => {
-      // A sentence the approver turned down (or the owner retired) does
-      // not come back under another name.
+      // A sentence the owner turned down (or retired) does not come back
+      // under another name.
       if (sentences.some((v) => s.no.includes(sentenceHash(v)))) { error = "a sentence of it was turned down or retired before"; return false }
       s.t[id] = { s: "draft", h, n: 0, at: null, by: null, d: null, w: null, rb: null, ra: null }
       this.db.prepare(`INSERT INTO situation_learned_templates (id, base, title, when_text, rule_during, rule_ending, rule_ended, note_guidance, evidence, evidence_summary, why, status, created_at)
@@ -441,57 +478,6 @@ export class LearnedTemplateStore {
     return rows.map((r) => this.toRow(r, s)).filter((r) => !status || (r.sealed && r.status === status))
   }
 
-  /** Drafts the approver may be asked about now: drafted by the daemon,
-   *  unchanged, passing the lint, never answered, not asked too often. */
-  reviewable(): LearnedRow[] {
-    const s = this.state()
-    if (!s) return []
-    const now = this.now()
-    return (this.db.prepare("SELECT * FROM situation_learned_templates ORDER BY created_at, rowid").all() as Raw[])
-      .filter((r) => {
-        const e = this.entry(s, r)
-        return !!e && e.s === "draft" && lintDraft(this.text(r)).length === 0
-          && (e.n === 0 || (e.n < MAX_REVIEW_ATTEMPTS && (e.at ?? 0) <= now - REVIEW_RETRY_MS))
-      })
-      .map((r) => this.toRow(r, s))
-  }
-
-  /** Count a review attempt before the approver is asked. False: the
-   *  draft is no longer reviewable (another run took it). */
-  startReview(id: string): boolean {
-    const now = this.now()
-    const r = this.raw(id)
-    if (!r) return false
-    return this.change((s) => {
-      const e = this.entry(s, r)
-      if (!e || e.s !== "draft") return false
-      if (e.n !== 0 && !(e.n < MAX_REVIEW_ATTEMPTS && (e.at ?? 0) <= now - REVIEW_RETRY_MS)) return false
-      e.n += 1
-      e.at = now
-      this.mirror(id, e)
-      return true
-    })
-  }
-
-  /** The approver's answer, from the review run this daemon started. */
-  private decide(id: string, reviewer: string, why: string, to: "active" | "rejected", seen?: LearnedRow): boolean {
-    const r = this.raw(id)
-    if (!r) return false
-    if (seen && learnedContent(this.text(r)) !== learnedContent(seen)) return false
-    if (to === "active" && lintDraft(this.text(r)).length) return false
-    return this.change((s) => {
-      const e = this.entry(s, r)
-      if (!e || e.s !== "draft" || e.n === 0) return false
-      e.s = to
-      e.by = reviewer
-      e.d = this.now()
-      e.w = oneLine(why, LEARNED_LIMITS.verdictWhy)
-      if (to === "rejected") this.remember(s, r)
-      this.mirror(id, e)
-      return true
-    })
-  }
-
   private remember(s: State, r: Raw): void {
     for (const v of [r.rule_during, r.rule_ending, r.rule_ended, r.note_guidance]) {
       if (v && !s.no.includes(sentenceHash(v))) s.no.push(sentenceHash(v))
@@ -499,16 +485,153 @@ export class LearnedTemplateStore {
     if (s.no.length > NO_MAX) s.no = s.no.slice(-NO_MAX)
   }
 
-  /** The approver said yes. Only learn.ts calls this, in the daemon,
-   *  with the verdict of the run it started. `seen` is the draft as the
-   *  approver read it: a draft changed since is not approved. */
-  approve(id: string, reviewer: string, why: string, seen?: LearnedRow): boolean {
-    return this.decide(id, reviewer, why, "active", seen)
+  // --- The owner's weekly card (#1990) ---
+
+  /** Drafts for the owner's next card: drafted by the daemon, unchanged,
+   *  passing the lint, not answered, not on a card. Oldest first. */
+  cardDrafts(): LearnedRow[] {
+    const s = this.state()
+    if (!s) return []
+    const on = new Set(s.card?.drafts ?? [])
+    return (this.db.prepare("SELECT * FROM situation_learned_templates ORDER BY created_at, rowid").all() as Raw[])
+      .filter((r) => { const e = this.entry(s, r); return !!e && e.s === "draft" && !on.has(r.id) && lintDraft(this.text(r)).length === 0 })
+      .map((r) => this.toRow(r, s))
   }
 
-  /** The approver said no. Sealed and final: it is never asked again. */
-  reject(id: string, reviewer: string, why: string): boolean {
-    return this.decide(id, reviewer, why, "rejected")
+  /** The card that is open now, or null. */
+  openCard(): OpenCard | null {
+    const c = this.state()?.card
+    return c ? structuredClone(c) : null
+  }
+
+  /** When the last card was raised. Unknown (the state cannot be
+   *  trusted): now, so no card is raised. */
+  lastCardAt(): number | null {
+    const s = this.state()
+    return s ? (s.lastCard ?? null) : this.now()
+  }
+
+  /** The lines waiting for the owner's next card. */
+  pendingSay(): string[] {
+    return [...(this.state()?.say ?? [])]
+  }
+
+  /** Take the waiting lines (they go in a notice instead of a card). */
+  takeSay(): string[] {
+    let out: string[] = []
+    this.change((s) => { out = s.say ?? []; if (!out.length) return false; s.say = []; return true })
+    return out
+  }
+
+  /** The daemon raised the week's card. Its lines are said: cleared. */
+  cardRaised(card: Omit<OpenCard, "answered">): boolean {
+    return this.change((s) => {
+      if (s.card) return false
+      s.card = { ...card, drafts: [...card.drafts], said: [...card.said] }
+      s.lastCard = card.at
+      s.say = []
+      return true
+    })
+  }
+
+  /** The owner's answer to one draft on the open card. Only the daemon
+   *  calls this: from its own popup, or from the route that checks the
+   *  operator key. `cardDone`: every draft of the card is answered. */
+  answer(id: string, yes: boolean): { ok: true; cardId: string; cardDone: boolean } | { ok: false; status: 404 | 409; error: string } {
+    const problem = this.problem()
+    if (problem) return { ok: false, status: 409, error: problem }
+    const r = this.raw(id)
+    let fail: { status: 404 | 409; error: string } | null = null
+    let cardId = ""
+    let cardDone = false
+    const ok = this.change((s) => {
+      const c = s.card
+      if (!c || !c.drafts.includes(id) || !r) { fail = { status: 404, error: `${id.slice(0, 60) || "(no id)"} is not on this week's card` }; return false }
+      const e = this.entry(s, r)
+      if (!e) { fail = { status: 409, error: `${id} changed after it was drafted: it is never used` }; return false }
+      if (e.s !== "draft") { fail = { status: 409, error: `${id} was answered already (${e.s})` }; return false }
+      if (yes && lintDraft(this.text(r)).length) { fail = { status: 409, error: `${id} no longer passes the check: it is never used` }; return false }
+      e.s = yes ? "active" : "rejected"
+      e.by = OWNER
+      e.d = this.now()
+      e.w = yes ? "the owner said yes" : "the owner said no"
+      if (!yes) this.remember(s, r)
+      c.answered = true
+      this.mirror(id, e)
+      cardId = c.id
+      cardDone = c.drafts.every((d) => s.t[d]?.s !== "draft")
+      return true
+    })
+    if (ok) return { ok: true, cardId, cardDone }
+    const f = fail as { status: 404 | 409; error: string } | null
+    return { ok: false, ...(f ?? { status: 409 as const, error: this.problem() ?? "the answer could not be sealed" }) }
+  }
+
+  /** The start of a weekly run, once in 6.5 days. Closes last week's
+   *  card (its unanswered drafts are dropped quietly: their sentences may
+   *  come back), retires templates no talk picked for 8 weeks (named in
+   *  the next card), and pauses learning after two unanswered cards in a
+   *  row (said once). `fileAnswered`: the card file shows an answer from
+   *  a person (a no on the Hub); it only keeps learning from pausing,
+   *  it never approves or turns down anything. */
+  startWeek(fileAnswered: boolean): { ok: true; closed: string | null; dropped: string[]; retired: string[]; pausedNow: boolean } | { ok: false; why: string } {
+    const now = this.now()
+    let why = ""
+    const out = { closed: null as string | null, dropped: [] as string[], retired: [] as string[], pausedNow: false }
+    const ok = this.change((s) => {
+      if (s.weekAt != null && s.weekAt > now - WEEK_GAP_MS) { why = `learns once a week: this week's run started ${new Date(s.weekAt).toISOString()}`; return false }
+      s.weekAt = now
+      const say = s.say ?? []
+      if (s.card) {
+        const answered = !!s.card.answered || fileAnswered
+        for (const id of s.card.drafts) {
+          if (s.t[id]?.s !== "draft") continue
+          delete s.t[id]
+          this.db.prepare("DELETE FROM situation_learned_templates WHERE id = ?").run(id)
+          out.dropped.push(id)
+        }
+        s.unanswered = answered ? 0 : (s.unanswered ?? 0) + 1
+        out.closed = s.card.id
+        s.card = null
+      }
+      for (const [id, e] of Object.entries(s.t)) {
+        if (e.s !== "active") continue
+        const last = Math.max(e.d ?? 0, s.used?.[id] ?? 0)
+        if (now - last < UNUSED_RETIRE_MS) continue
+        e.s = "retired"
+        e.rb = "unused for 8 weeks"
+        e.ra = now
+        for (const [sit, t] of Object.entries(s.picks)) if (t === id) delete s.picks[sit]
+        const r = this.raw(id)
+        if (r) this.mirror(id, e)
+        out.retired.push(id)
+        say.push(`Retired: "${oneLine(r?.title ?? id, LEARNED_LIMITS.title)}" (${id}), no talk used it for 8 weeks.`)
+      }
+      if ((s.unanswered ?? 0) >= PAUSE_AFTER_UNANSWERED && !s.paused) {
+        s.paused = now
+        out.pausedNow = true
+        say.push(PAUSE_LINE)
+      }
+      s.say = say.slice(-SAY_MAX)
+      return true
+    })
+    if (ok) return { ok: true, ...out }
+    return { ok: false, why: why || `${this.problem() ?? "the sealed state could not be written"}: nothing learned is drafted, asked or used (see the docs to reset)` }
+  }
+
+  /** When learning paused itself, or null. */
+  paused(): number | null {
+    return this.state()?.paused ?? null
+  }
+
+  /** The owner starts learning again (operator key). */
+  resume(): boolean {
+    return this.change((s) => { s.paused = null; s.unanswered = 0; return true })
+  }
+
+  /** Cards in a row that closed with no answer. */
+  unansweredCards(): number {
+    return this.state()?.unanswered ?? 0
   }
 
   /** The owner takes an approved template back (or drops a draft). Final. */
@@ -527,14 +650,14 @@ export class LearnedTemplateStore {
   }
 
   /** The template as it is used: only one the state holds as active,
-   *  approved by the approver the owner names now, with its text
-   *  unchanged and still passing the lint. Null otherwise. */
+   *  approved by the owner, with its text unchanged and still passing the
+   *  lint. Null otherwise. */
   template(id: string): SituationTemplate | null {
     const r = this.raw(id)
     if (!r) return null
     const s = this.state()
     const e = this.entry(s, r)
-    if (!s || !e || e.s !== "active" || !e.by || e.by !== s.approver) return null
+    if (!s || !e || e.s !== "active" || e.by !== OWNER) return null
     const row = this.text(r)
     if (lintDraft(row).length) return null
     const base = situationTemplate(r.base)
@@ -558,6 +681,8 @@ export class LearnedTemplateStore {
     return this.change((s) => {
       delete s.picks[situationId]
       s.picks[situationId] = templateId
+      // Picked by a talk: in use, so not retired for 8 weeks from now.
+      s.used = { ...(s.used ?? {}), [templateId]: this.now() }
       const keys = Object.keys(s.picks)
       for (const k of keys.slice(0, Math.max(0, keys.length - PICKS_MAX))) delete s.picks[k]
       return true
@@ -570,13 +695,13 @@ export class LearnedTemplateStore {
 
   /** The owner starts over (operator key, `agentx situation learned
    *  reset`), only when the state cannot be trusted: every draft and
-   *  decision is dropped, the approver too. A newer generation than any
-   *  seen, so an older copy is still refused. */
+   *  decision is dropped. A newer generation than any seen, so an older
+   *  copy is still refused. */
   reset(): boolean {
     if (!this.sealKey() || this.problem() === null) return false
     const file = this.readGen()
     const gen = Math.max(this.highGen, file && "gen" in file ? file.gen : 0) + 1
-    const s: State = { v: 1, gen, approver: null, lastRun: null, t: {}, no: [], picks: {} }
+    const s: State = { v: 1, gen, lastRun: null, t: {}, no: [], picks: {} }
     const value = JSON.stringify(s)
     const mac = this.mac("state", value)
     if (!mac) return false
