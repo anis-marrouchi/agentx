@@ -40,7 +40,10 @@ describe("issueCloseWhen reads short refs", () => {
     const gl = { channel: "gitlab", chatId: "noqta/noqta:issue:876", forge: "github" as const }
     expect(issueCloseWhen("post the count on noqta/noqta#877", "prm-6", 7, gl)).toMatchObject({ provider: "gitlab", ref: "noqta/noqta#877" })
     expect(issueCloseWhen("I will post the result on issue 877", "prm-7", 7, gl)).toMatchObject({ provider: "gitlab", ref: "noqta/noqta#877" })
-    expect(issueCloseWhen("result in #877 tonight", "prm-8", 7, gl)).toMatchObject({ ref: "noqta/noqta#877" })
+    expect(issueCloseWhen("result on issue #877 tonight", "prm-8", 7, gl)).toMatchObject({ ref: "noqta/noqta#877" })
+    // A lone "#N" / "!N" is a point or step number, not an issue (DevOps review).
+    expect(issueCloseWhen("result in #877 tonight", "prm-8b", 7, gl)).toBeNull()
+    expect(issueCloseWhen("I'll answer point #2 and step !5 by noon", "prm-8c", 7, gl)).toBeNull()
     expect(issueCloseWhen("MR 41 ready by noon", "prm-9", 7, gl)).toMatchObject({ ref: "noqta/noqta!41" })
     const gh = { channel: "github", chatId: "acme/app:pull:3" }
     expect(issueCloseWhen("fix lands in PR 12", "prm-10", 7, gh)).toMatchObject({ provider: "github", ref: "acme/app#12" })

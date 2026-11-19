@@ -171,8 +171,11 @@ const ITEM_LINK = /https?:\/\/[^\s<>()"'`]+?\/(?:-\/(?:issues|merge_requests)|is
 
 /** "group/project#12" or "group/project!12" in running words. */
 const SHORT_REF = /(?<![\w/.:@-])([\w-][\w.-]*(?:\/[\w-][\w.-]*)+)([#!])(\d+)(?!\w)/
-/** "issue 877", "MR 12", "PR 12", "#877" or "!12": a number in the chat's own project. */
-const BARE_REF = /(?:\b(issue|mr|merge request|pr|pull request)\s+#?|(?<![\w/&])([#!]))(\d+)(?!\w)/i
+/** "issue 877", "MR 12", "PR 12": a number in the chat's own project. A
+ *  lone "#2" / "!2" is not read: promise words say "point #2" or "step #5"
+ *  far more often than they mean an issue, and a wrong checker would stop
+ *  the agent closing its own promise (daemon-api "done" needs it met). */
+const BARE_REF = /\b(issue|mr|merge request|pr|pull request)\s+#?(\d+)(?!\w)/i
 
 type Forge = "github" | "gitlab"
 
@@ -215,10 +218,10 @@ function itemRef(text: string, ctx: IssueRefContext): { provider: Forge; ref: st
   }
   const b = text.match(BARE_REF)
   if (b && chat) {
-    const word = (b[1] ?? "").toLowerCase()
-    const mr = b[2] === "!" || word === "mr" || word === "merge request" || word === "pr" || word === "pull request"
+    const word = b[1].toLowerCase()
+    const mr = word !== "issue"
     // GitHub reads issues and pull requests by "#"; GitLab merge requests by "!".
-    const ref = `${chat.project}${mr && chat.provider === "gitlab" ? "!" : "#"}${b[3]}`
+    const ref = `${chat.project}${mr && chat.provider === "gitlab" ? "!" : "#"}${b[2]}`
     return parseRef(chat.provider, ref) ? { provider: chat.provider, ref } : null
   }
   return null
