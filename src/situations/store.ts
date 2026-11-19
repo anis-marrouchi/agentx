@@ -85,6 +85,10 @@ export interface ClosingSlots {
    *  holds a normalised id (a WhatsApp group id without its "@g.us"
    *  ending), which the channel cannot send to. */
   chatId?: string
+  /** Other agents of this node that may own a follow-up of this talk.
+   *  The talk's agent and the owner always may; anyone else named by the
+   *  note's agent is not given the promise (the talk's agent keeps it). */
+  agents?: string[]
 }
 
 export interface GateLogRow {
@@ -206,7 +210,7 @@ export function clipGateMessage(json: string): string {
 type StatementName =
   | "get" | "getById" | "byPrefix" | "list" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
   | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
-  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing"
+  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing"
 
 /** A row as SQLite returns it: `closing` is JSON text. */
 type RawRow = Omit<SituationRow, "closing"> & { closing: string | null }
@@ -275,6 +279,8 @@ export class SituationStore {
          WHERE id = ? AND phase = 'ended' AND end_generation = ? AND close_generation IS NOT ?`,
       ),
       openWithClosing: db.prepare(`SELECT ${COLS} FROM situations WHERE phase != 'ended' AND closing IS NOT NULL`),
+      endedWithClosing: db.prepare(`SELECT ${COLS} FROM situations WHERE phase = 'ended' AND closing IS NOT NULL AND phase_changed_at >= ?
+        AND (close_generation IS NULL OR close_generation != end_generation)`),
     }
   }
 
@@ -404,6 +410,12 @@ export class SituationStore {
   /** Open talks with closing steps (S14: their expiry runs at start). */
   openWithClosing(): SituationRow[] {
     return (this.q.openWithClosing.all() as RawRow[]).map((r) => toRow(r)!)
+  }
+
+  /** Talks with closing steps that ended since `since` and have no close
+   *  run for that end yet (a close missed while the daemon was down). */
+  endedWithClosing(since: number): SituationRow[] {
+    return (this.q.endedWithClosing.all(since) as RawRow[]).map((r) => toRow(r)!)
   }
 
   /** A person's override (design 8, "How a person overrides"), from the

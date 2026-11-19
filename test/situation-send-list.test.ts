@@ -44,7 +44,9 @@ describe("send list (#1892 j)", () => {
       "daemon/delegation-wiring.ts": 5, // deliverToChat: as the caller says
       // 16 sendOutbound (/send, /channel/send, mesh answers, alerts…) +
       // deliverToChat + the request-status post (a status notice, not a reply)
-      "daemon/index.ts": 18,
+      // + the closing note on a forge home (#1892 phase 4: an issue comment,
+      // not a chat reply)
+      "daemon/index.ts": 19,
       "workflows/nodes/follow-up.ts": 1, // deliver → sendToChat
       "workflows/nodes/handlers.ts": 1, // action.send: true
     })

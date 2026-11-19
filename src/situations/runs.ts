@@ -1,5 +1,6 @@
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
+import type { SituationWorkflowsState } from "./workflows"
 
 // --- The store starts and cancels its two workflow runs (#1892, phase 4) ---
 //
@@ -32,10 +33,29 @@ import type { SituationRow, SituationStore } from "./store"
 // no owner message, nothing outward (3.4, "Stale owner").
 //
 // S14: at daemon start, `resumeOnStart` starts a missing expiry run for
-// every open talk with closing steps.
+// every open talk with closing steps, and a missing close for a talk with
+// closing steps that ended in the last RECOVER_CLOSE_MS (the daemon was
+// down when it ended).
+//
+// Only the record starts these two workflows: `situationStartGuard`, given
+// to the dispatcher, refuses a run of them started by anyone else (an
+// agent's agentx_workflow, a manual run), so no one can feed them inputs.
 
 export const CLOSE_WORKFLOW = "situation-close"
 export const EXPIRY_WORKFLOW = "situation-expiry"
+/** Who starts them: the run's `meta.startedBy`. */
+export const SITUATION_STARTER = "situation"
+/** A close missed while the daemon was down is started at start only for
+ *  an end this recent. */
+export const RECOVER_CLOSE_MS = 24 * 3600_000
+
+/** The dispatcher's start guard: the two situation workflows run only when
+ *  the situation record starts them. Null: allowed. */
+export function situationStartGuard(workflowId: string, meta: { startedBy?: unknown } | undefined): string | null {
+  if (workflowId !== CLOSE_WORKFLOW && workflowId !== EXPIRY_WORKFLOW) return null
+  if (meta?.startedBy === SITUATION_STARTER) return null
+  return `workflow "${workflowId}" is started only by the situation record (agentx situation closing), not by hand or by an agent`
+}
 
 interface Dispatcher {
   startRun(args: { workflowId: string; inputs?: Record<string, unknown>; meta?: Record<string, unknown>; entityRef?: { backend: string; id: string } }): Promise<{ run: { id: string } | null; error?: string }>
@@ -47,8 +67,11 @@ export interface SituationRunsDeps {
   settings: () => SituationsConfig
   /** Null until the workflow engine has started. */
   dispatcher: () => Dispatcher | null
-  /** Installs the two workflows when they are missing (workflows.ts). */
-  ensureWorkflows?: () => void
+  /** Installs the two workflows when they are missing, and says which do
+   *  not load or were deleted (workflows.ts). */
+  ensureWorkflows?: () => SituationWorkflowsState | void
+  /** Is this a known agent of this node? The close's agent must be. */
+  isAgent?: (id: string) => boolean
   /** A run's status, or null when there is no such run. */
   runStatus: (runId: string) => string | null
   log: (m: string) => void
@@ -58,6 +81,8 @@ const LIVE = new Set(["running", "paused"])
 
 export class SituationRuns {
   private chain: Promise<void> = Promise.resolve()
+  /** Problems already logged, so each is logged once until it clears. */
+  private readonly told = new Set<string>()
 
   constructor(private readonly deps: SituationRunsDeps) {}
 
@@ -78,15 +103,22 @@ export class SituationRuns {
   /** S14: an open talk with closing steps and no live expiry run gets one. */
   async resumeOnStart(): Promise<number> {
     let started = 0
+    let closes = 0
     await this.enqueue(async () => {
       if (!this.on()) return
       for (const row of this.deps.store.openWithClosing()) {
         if (row.expiryRunId && LIVE.has(this.deps.runStatus(row.expiryRunId) ?? "")) continue
         if (await this.startExpiry(row)) started++
       }
+      // L5: a close missed while the daemon was down (recent ends only).
+      for (const row of this.deps.store.endedWithClosing(Date.now() - RECOVER_CLOSE_MS)) {
+        if (row.setBy === "peer" || row.closeGeneration === row.endGeneration) continue
+        if (await this.startClose(row)) closes++
+      }
     })
     if (started) this.deps.log(`[situation] restarted ${started} expiry run(s) of open talks`)
-    return started
+    if (closes) this.deps.log(`[situation] started ${closes} close run(s) missed while the daemon was down`)
+    return started + closes
   }
 
   private on(): boolean {
@@ -103,7 +135,7 @@ export class SituationRuns {
     if (!this.on()) return
     if (cleared) {
       await this.cancel(row.expiryRunId, "situation cleared")
-      if (row.phase !== "ended") await this.cancel(row.closeRunId, "situation cleared")
+      await this.cancel(row.closeRunId, "situation cleared")
       return
     }
     const now = this.deps.store.getById(row.id)
@@ -139,11 +171,22 @@ export class SituationRuns {
   private async start(workflowId: string, row: SituationRow, inputs: Record<string, unknown>, entity: string): Promise<string | null> {
     const d = this.deps.dispatcher()
     if (!d) { this.deps.log(`[situation] ${row.id}: no workflow engine yet; ${workflowId} not started`); return null }
-    try { this.deps.ensureWorkflows?.() } catch (e: any) { this.deps.log(`[situation] installing ${workflowId} failed: ${e?.message ?? e}`) }
+    let state: SituationWorkflowsState | void = undefined
+    try { state = this.deps.ensureWorkflows?.() } catch (e: any) { this.deps.log(`[situation] installing ${workflowId} failed: ${e?.message ?? e}`) }
+    // M1: the owner's file is never overwritten. A broken or deleted
+    // workflow stops its runs, said once in the log.
+    const broken = state?.broken.find((b) => b.id === workflowId)
+    const problem = broken ? `${workflowId} does not load: ${broken.why}; no ${workflowId} run starts until it is fixed`
+      : state?.deleted.includes(workflowId) ? `${workflowId} was deleted from the workflow folder; no ${workflowId} run starts (it is not written again)` : null
+    if (problem) {
+      if (!this.told.has(problem)) { this.told.add(problem); this.deps.log(`[situation] ${problem}`) }
+      return null
+    }
+    for (const t of [...this.told]) if (t.startsWith(`${workflowId} `)) this.told.delete(t)
     const r = await d.startRun({
       workflowId, inputs,
       entityRef: { backend: "situation", id: entity },
-      meta: { startedBy: "situation", followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${row.closing?.purpose ?? row.template}`.slice(0, 80), tags: [`situation:${row.id}`] },
+      meta: { startedBy: SITUATION_STARTER, followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${row.closing?.purpose ?? row.template}`.slice(0, 80), tags: [`situation:${row.id}`] },
     })
     if (!r.run) { this.deps.log(`[situation] ${row.id}: ${workflowId} not started: ${r.error ?? "unknown error"}`); return null }
     return r.run.id
@@ -165,11 +208,12 @@ export class SituationRuns {
     return true
   }
 
-  private async startClose(row: SituationRow): Promise<void> {
+  private async startClose(row: SituationRow): Promise<boolean> {
     const c = row.closing!
     const [channel, account, ...chat] = row.key.split("|")
     const agent = c.agent || row.ownerAgent
-    if (!agent) { this.deps.log(`[situation] ${row.id}: no agent to write the closing note; close not started`); return }
+    if (!agent) { this.deps.log(`[situation] ${row.id}: no agent to write the closing note; close not started`); return false }
+    if (this.deps.isAgent && !this.deps.isAgent(agent)) { this.deps.log(`[situation] ${row.id}: "${agent}" is not an agent of this node; close not started`); return false }
     const runId = await this.start(CLOSE_WORKFLOW, row, {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",
       inwardOnly: row.endReason === "stale" ? "yes" : "no",
@@ -178,8 +222,12 @@ export class SituationRuns {
       ...(account && account !== "*" && account !== "default" ? { accountId: account } : {}),
       ...(c.message ? { message: c.message } : {}),
     }, `${row.id}:close:${row.endGeneration}`)
-    if (!runId) return
-    if (!this.deps.store.setCloseRun(row.id, row.endGeneration, runId)) await this.cancel(runId, "a close for this end already runs, or the talk reopened")
+    if (!runId) return false
+    if (!this.deps.store.setCloseRun(row.id, row.endGeneration, runId)) {
+      await this.cancel(runId, "a close for this end already runs, or the talk reopened")
+      return false
+    }
+    return true
   }
 
   private async cancel(runId: string | null | undefined, reason: string): Promise<void> {

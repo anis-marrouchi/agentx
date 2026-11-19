@@ -152,8 +152,9 @@ common(situationCmd
   .command("closing [id]")
   .description("give a talk closing steps: when it ends, one note at its home, each follow-up an open promise, one message to you (needs situations.closing.enabled)")
   .option("--purpose <text>", "what the talk is, e.g. \"the job interview with a candidate\"")
-  .option("--home <link>", "where the note goes: an issue, a merge request or a wiki page")
+  .option("--home <link>", "where the note goes: a GitHub or GitLab issue, pull request or merge request link")
   .option("--agent <id>", "the agent that writes the note (default: the chat's agent)")
+  .option("--agents <ids>", "other agents that may own a follow-up, comma-separated (default: none; the talk's agent keeps the rest)")
   .option("--message <text>", "a closing message to the other side; you are always asked before it is sent")
   .option("--channel <name>", "with --chat, for a talk that has no record yet: telegram, whatsapp, discord or slack")
   .option("--chat <id>", "the chat id as the channel names it (needed with --message on WhatsApp)")
@@ -167,6 +168,7 @@ common(situationCmd
     const body: Record<string, unknown> = opts.clear ? { clear: true } : {
       purpose: opts.purpose, home: opts.home,
       ...(opts.agent ? { agent: opts.agent } : {}),
+      ...(opts.agents ? { agents: String(opts.agents) } : {}),
       ...(opts.message ? { message: opts.message } : {}),
     }
     if (id) body.id = id

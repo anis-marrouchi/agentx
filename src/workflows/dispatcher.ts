@@ -104,6 +104,10 @@ export interface DispatcherOptions {
   onRunEnded?: (run: WorkflowRun, workflow: Workflow | null) => void | Promise<void>
   /** A follow-up step is blocked and needs the owner. Called once per block. */
   onBlocked?: (run: WorkflowRun, workflow: Workflow, nodeId: string, reason: string) => void | Promise<void>
+  /** Refuses a run before it is created: returns why, or null to allow.
+   *  Checked for startRun and for a child run (#1892: the situation
+   *  workflows run only when the situation record starts them). */
+  startGuard?: (workflowId: string, meta: Partial<RunMeta> | undefined) => string | null
   /** Mints an action.run step's proof (#1849). Absent: steps get none. */
   stepProof?: StepProofMinter
 }
@@ -167,6 +171,7 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  private readonly startGuard?: DispatcherOptions["startGuard"]
   private readonly stepProof?: StepProofMinter
   /** Revokers of the step proofs live per run, so cancelling a run ends
    *  the proof of a step still running (#1849). */
@@ -221,6 +226,7 @@ export class WorkflowDispatcher {
     this.followUpDefaults = opts.followUp ?? (() => DEFAULT_FOLLOW_UP)
     this.onRunEnded = opts.onRunEnded
     this.onBlocked = opts.onBlocked
+    this.startGuard = opts.startGuard
     this.stepProof = opts.stepProof
 
     // Register the timer-fire callback once. TimerService is a per-node
@@ -1005,6 +1011,10 @@ export class WorkflowDispatcher {
       this.log(`[workflow:${workflow.id}] not started for ${entityRef.id}: the courtesy gate drops event ${event.id}`)
       return { claimed: false, run: null }
     }
+    if (verdict === "start" && this.startGuard?.(workflow.id, undefined)) {
+      this.log(`[workflow:${workflow.id}] not started for ${entityRef.id}: ${this.startGuard(workflow.id, undefined)}`)
+      return { claimed: false, run: null }
+    }
     if (verdict === "start") {
       // New entity → create a run, seed trigger context, enqueue trigger's successors.
       const init = initialPendingFromTrigger(workflow)!
@@ -1432,6 +1442,8 @@ export class WorkflowDispatcher {
   }): Promise<{ run: WorkflowRun | null; error?: string; awaitingApproval?: boolean }> {
     const wf = this.store.get(args.workflowId)
     if (!wf) return { run: null, error: `workflow "${args.workflowId}" not found` }
+    const refused = this.startGuard?.(wf.id, args.meta) ?? null
+    if (refused) { this.log(`[workflow:${wf.id}] run refused: ${refused}`); return { run: null, error: refused } }
     const init = initialPendingFromTrigger(wf)
     if (!init) return { run: null, error: `workflow "${wf.id}" has no trigger node` }
     const entityRef = args.entityRef ?? { backend: "follow-up", id: `${wf.id}:${randomUUID()}` }
@@ -1883,6 +1895,8 @@ export class WorkflowDispatcher {
   }): Promise<WorkflowRun | null> {
     const childWf = this.store.list().find((w) => w.id === args.childWorkflowId)
     if (!childWf) return null
+    const refused = this.startGuard?.(childWf.id, undefined) ?? null
+    if (refused) { this.log(`[workflow:${childWf.id}] child run refused: ${refused}`); return null }
 
     const init = initialPendingFromTrigger(childWf)
     if (!init) { this.log(`[workflow:${childWf.id}] no trigger node — cannot spawn as child`); return null }

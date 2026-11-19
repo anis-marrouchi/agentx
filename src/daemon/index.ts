@@ -40,12 +40,13 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { setSituationContextSource } from "@/situations/context"
 import { situationsClosing, situationsList, situationsOverride } from "@/situations/api"
-import { SituationRuns } from "@/situations/runs"
+import { SituationRuns, situationStartGuard } from "@/situations/runs"
+import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
-import { setMessageRouter } from "@/channels/router-instance"
+import { getMessageRouter, setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter, gitlabErrorDetail } from "@/channels/gitlab"
@@ -898,14 +899,40 @@ export class AgentXDaemon {
             dispatcher: () => this.workflowDispatcher ?? null,
             ensureWorkflows: () => {
               if (!this.workflowStore) return
-              const added = ensureSituationWorkflows(this.workflowStore)
-              if (added.length) this.log(`  Situations: installed workflow(s) ${added.join(", ")}`)
+              const state = ensureSituationWorkflows(this.workflowStore)
+              if (state.added.length) this.log(`  Situations: installed workflow(s) ${state.added.join(", ")}`)
+              return state
             },
             runStatus: (id) => this.workflowRuns?.get(id)?.status ?? null,
+            isAgent: (id) => !!this.registry.getAgent(id),
             log: (m) => this.log(m),
           })
           this.situationRuns.attach()
-          setSituationClosingDeps({ store: situations, requests: () => this.requests?.store ?? null })
+          setSituationClosingDeps({
+            store: situations,
+            requests: () => this.requests?.store ?? null,
+            settings: () => this.config.situations,
+            isAgent: (id) => !!this.registry.getAgent(id),
+            // The talk's recent messages: the router's group log (the
+            // channel's own id, and the record's normalised one).
+            transcript: (_channel, chatId) => {
+              const router = getMessageRouter()
+              if (!router) return []
+              const got = router.groupMessages(chatId)
+              return got.length || chatId.includes("@") ? got : router.groupMessages(`${chatId}@g.us`)
+            },
+            gitlabUrl: () => forgeConnectorsOf(this.config).gitlab?.url ?? null,
+            // The note: one comment on the home, posted as the talk's agent
+            // through the router (the same path as channel.reply).
+            postNote: async (target, text, agentId, home) => {
+              const router = getMessageRouter()
+              if (!router) throw new Error("message router not wired")
+              const id = await router.sendOutbound({ channel: target.channel, chatId: target.chatId, text, agentId }, { idempotencyKey: "", dedupeWindowMs: 60_000 })
+              const gitlabUrl = forgeConnectorsOf(this.config).gitlab?.url ?? null
+              const forge = forgeHomeOf({ home: { link: home }, group: { channel: "", chatId: "" } } as never, gitlabUrl)
+              return typeof id === "string" && forge ? commentUrl(forge, id, gitlabUrl) : null
+            },
+          })
           this.situationHookOff?.()
           this.situationHookOff = attachSituationHook(this.hooks)
           // S14: open talks get their expiry run back, once the engine runs.
@@ -4472,6 +4499,8 @@ export class AgentXDaemon {
       // An action.run step acts for the run's agent, the same one a card
       // from the run is raised in the name of (owner.ask above, #1849).
       stepProof: stepProofMinter(this.stepProofs, (id) => !!this.registry.getAgent(id)),
+      // The situation workflows run only when the situation record starts them (#1892).
+      startGuard: situationStartGuard,
       onRunEnded: async (run, wf) => {
         const { title, message } = runSummary(run, wf)
         await this.notifyOwner(title, message, run.meta?.startedBy ?? "workflow", run.status === "completed" ? 3 : 4)
@@ -8430,7 +8459,12 @@ export class AgentXDaemon {
         case "POST /situations/closing": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
           const body = await readBody(req)
-          const r = situationsClosing(this.situationGate.store, body)
+          const sit = this.config.situations
+          const r = situationsClosing(this.situationGate.store, body, {
+            closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
+            isAgent: (id) => !!this.registry.getAgent(id),
+            gitlabUrl: forgeConnectorsOf(this.config).gitlab?.url ?? null,
+          })
           if (r.status === 200) this.log(`[situation] closing steps ${body.clear === true ? "removed from" : "set on"} ${String(body.id || `${body.channel} ${body.chatId}`).slice(0, 80)}`)
           this.json(res, r.status, r.body)
           break

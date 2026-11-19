@@ -139,8 +139,8 @@ Some talks need work after they end: after an interview or a client call, someon
 
 When a talk with closing steps ends, AgentX runs the workflow **Situation close**:
 
-1. **Note.** The talk's agent writes one note about the talk at its **home**: the issue, merge request or wiki page you named.
-2. **Follow-ups.** Each follow-up the agent lists becomes an **open promise** with an owner (an agent, or you). A follow-up gets a due time only if a person gave one. Open promises show with your other requests (`agentx requests list`).
+1. **Note.** The talk's agent reads the talk's recent messages (at most the last 30, up to 6000 characters) and drafts one note. Its turn is **read only**: it cannot post, write files or send to any chat, so it cannot message the other side. The workflow then posts the note as one comment on the talk's **home**: the GitHub or GitLab issue, pull request or merge request you named.
+2. **Follow-ups.** Each follow-up the agent lists becomes an **open promise** with an owner: the talk's agent, you, or an agent you allowed with `--agents`. A follow-up the agent gave to anyone else (the other side, or an agent you did not allow) is kept by the talk's agent, with the named owner in its words, for example "Send the portfolio (named owner: candidate)". A follow-up gets a due time only if a person gave one. One set of promises per end: a re-run opens none. Open promises show with your other requests (`agentx requests list`).
 3. **Your message.** You get one message, for example "About the job interview with a candidate: the talk ended (closed). Note: (link). 2 follow-ups, owners named: …". It goes through your hold: while you are in Focus or on a call, it waits.
 4. **Message to the other side (optional).** If you gave a closing message, you are asked first, on a card, every time. Nothing reaches the other side without your yes.
 
@@ -151,17 +151,20 @@ Two more rules keep it safe:
 
 If another organisation's agent says the talk is over, your agent only goes quiet. No closing steps run on its word alone.
 
-Both workflows are in your workflow folder and show on the **Workflows** page with their runs, like any other workflow. They are added the first time they are needed. You can edit them, for example to change what the note asks for; AgentX does not overwrite them.
+Both workflows are in your workflow folder and show on the **Workflows** page with their runs, like any other workflow. They are added once, the first time they are needed. You can edit them, for example to change what the note asks for; AgentX never overwrites them, even when your edit does not load. A workflow that does not load, or that you deleted, is not written again: no run of it starts, and the daemon log says so once. Only the situation record starts these two workflows: a run started by hand or by an agent is refused.
+
+**What it does not cover yet:** the agent sees only the messages this node kept for the chat (its recent group messages). A talk held mostly elsewhere, or older than the last 30 messages, gives the agent a partial excerpt, and the note may miss things. A talk that ended while the daemon was down gets its close at the next start only if it ended in the last 24 hours.
 
 A talk without closing steps is not changed: no workflow runs for it.
 
 **Turn closing steps on:**
 
-1. **Terminal:** `agentx config set situations.closing.enabled true`.
+1. **Terminal:** `agentx config set situations.closing.enabled true`. Until it is on, step 3 answers that closing steps are off.
 2. **Terminal:** find the talk: `agentx situation list`. Each row starts with a short id, for example `3f2a9c1b`.
-3. **Terminal:** give it closing steps: `agentx situation closing 3f2a9c1b --purpose "the job interview with a candidate" --home https://git.example.com/hiring/issues/7`.
-4. To also thank the other side after the talk, add `--message "Thank you for your time today."`. On WhatsApp, also add `--chat` with the chat id ending in `@g.us`.
-5. **Terminal:** for a talk that has not started yet, use `--channel whatsapp --chat <chat id>` instead of the short id.
+3. **Terminal:** give it closing steps: `agentx situation closing 3f2a9c1b --purpose "the job interview with a candidate" --home https://git.example.com/team/hiring/-/issues/7`. The home must be a GitHub or GitLab issue, pull request or merge request.
+4. To let another agent own some follow-ups, add `--agents helper-agent`.
+5. To also thank the other side after the talk, add `--message "Thank you for your time today."`. On WhatsApp, also add `--chat` with the chat id ending in `@g.us`.
+6. **Terminal:** for a talk that has not started yet, use `--channel whatsapp --chat <chat id>` instead of the short id.
 
 **For your own workflows:** each change of phase also fires the hook event `on:situation`. A workflow with a `trigger.hook` step on `on:situation` runs on each change; `filter: { phase: [ended] }` limits it to talks that ended. The hook context has the situation id, channel, chat id, the kind of talk (`template`), `from`, `to` (also as `phase`), `endReason` and who made the change (`setBy`).
 
@@ -175,7 +178,7 @@ A talk without closing steps is not changed: no workflow runs for it.
 | `agentx situation end <id>` | Ends a talk by hand. `<id>` is the first column of `situation list`. |
 | `agentx situation not-this <id>` | Says a talk is not ending: back to **during**, and thanks or goodbyes no longer end it. |
 | `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
-| `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home`, and optionally `--agent`, `--message`. `--clear` removes them. See [Closing steps](#closing-steps-after-a-talk-ends). |
+| `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home` (a GitHub or GitLab issue, pull request or merge request), and optionally `--agent`, `--agents`, `--message`. `--clear` removes them. See [Closing steps](#closing-steps-after-a-talk-ends). |
 | `agentx situation sources` | Lists the signal sources on this machine, what each answers now, and those not loaded here with the reason. `--json` prints JSON. |
 
 All these commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
@@ -230,7 +233,9 @@ To check closing steps:
 - **A person left the group but the talk stayed in during:** someone else is still in the group, the count could not be read (the daemon log says `group read after a leave failed` or `member count after a leave failed`), or the talk was not in **during**. Also check that `situations.sources.whatsapp-groups.enabled` (or `telegram-members`) is not `false`, and that `situations.mode` is not `off`.
 - **Telegram leaves are never seen:** the bot sees the "left the group" message only when Telegram posts one in the chat. To get every member change, make the bot an admin of the group.
 - **`agentx situation sources` shows `macos-focus` as unknown on a Mac:** the daemon may not read the Focus file. Give the app that runs AgentX **Full Disk Access** in System Settings. Until then, Focus does not hold your notices.
-- **A talk with closing steps ended but no Situation close run started:** check `situations.closing.enabled` is `true` and `situations.mode` is not `off`. A talk ended by another organisation's agent runs no closing steps. The daemon log says why with a line starting `[situation]`, for example `no agent to write the closing note` when the chat has no agent yet (give one with `--agent`).
+- **A talk with closing steps ended but no Situation close run started:** check `situations.closing.enabled` is `true` and `situations.mode` is not `off`. A talk ended by another organisation's agent runs no closing steps. The daemon log says why with a line starting `[situation]`, for example `no agent to write the closing note` when the chat has no agent yet (give one with `--agent`), or `situation-close does not load` / `was deleted` when the workflow file was changed or removed (fix or restore `situation-close.yaml` in the workflow folder).
 - **You got no message after a close:** the talk ended as **stale** (no message on purpose), it was opened again before the message went out, or you are in Focus or on a call (the message waits for the hold to end).
+- **`agentx situation closing` answers HTTP 409 "closing steps are off":** turn them on with `agentx config set situations.closing.enabled true` (and `situations.mode` must not be `off`).
+- **`agentx situation closing` answers "home must be a GitHub or GitLab issue":** the note is posted as a comment, so the home must be an issue, pull request or merge request link. A GitLab link must be on this node's GitLab.
 - **`agentx situation closing` answers "a closing message on WhatsApp needs chatId":** add `--chat` with the chat id as WhatsApp names it, ending in `@g.us` for a group.
 - **`agentx situation sources --node <url>` answers HTTP 401:** the list says whether you are busy and with whom, so from another machine it needs the mesh token (`--token`).

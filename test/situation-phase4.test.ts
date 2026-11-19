@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import Database from "better-sqlite3"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { RunStore, WorkflowStore, WorkflowDispatcher, type AgentExecuteRequest, type WorkflowRun } from "../src/workflows"
@@ -12,7 +12,7 @@ import { SituationStore } from "../src/situations/store"
 import { situationKey } from "../src/situations/key"
 import { DEFAULT_SITUATIONS_CONFIG, type SituationsConfig } from "../src/situations/config"
 import { setSendToChatStore } from "../src/situations/send-to-chat"
-import { SituationRuns, CLOSE_WORKFLOW, EXPIRY_WORKFLOW } from "../src/situations/runs"
+import { SituationRuns, CLOSE_WORKFLOW, EXPIRY_WORKFLOW, situationStartGuard } from "../src/situations/runs"
 import { setSituationClosingDeps } from "../src/situations/closing-actions"
 import { ensureSituationWorkflows } from "../src/situations/workflows"
 import { attachSituationHook, situationHookContext } from "../src/situations/hook"
@@ -31,7 +31,11 @@ import { HookRegistry } from "../src/hooks/registry"
 
 const GROUP = "120363000000000000@g.us"
 const KEY = situationKey("whatsapp", "default", GROUP)
-const HOME = "https://git.example.com/hiring/issues/7"
+const HOME = "https://git.example.com/team/hiring/-/issues/7"
+/** The GitLab chat the note is posted on. */
+const NOTE_CHAT = "team/hiring:issue:7"
+const AGENTS = new Set(["recruiter", "helper", "devops-agent"])
+const API = { closingEnabled: true, isAgent: (id: string) => AGENTS.has(id), gitlabUrl: "https://git.example.com" }
 
 const until = async (fn: () => boolean, ms = 3000) => {
   const end = Date.now() + ms
@@ -52,8 +56,13 @@ interface H {
   dispatcher: WorkflowDispatcher
   sitRuns: SituationRuns
   settings: SituationsConfig
-  /** Notes the agent wrote, by home. */
+  /** Notes written, by forge chat. */
   notes: Map<string, string[]>
+  /** What the note step's agent lists as follow-ups. */
+  followUps: Array<Record<string, string>>
+  /** The talk's recent messages (the group log). */
+  transcript: Array<{ sender: string; text: string; timestamp: number }>
+  logs: string[]
   told: string[]
   cards: Array<{ cardId: string; input: OwnerCardInput; runId: string; nodeId: string }>
   sends: Array<{ channel: string; chatId: string; text: string }>
@@ -72,21 +81,24 @@ function setup(opts: { closing?: boolean } = {}): H {
   const workflows = new WorkflowStore({ baseDir: dir })
   const runs = new RunStore({ baseDir: dir, nodeId: "node-a" })
   const timers = new TimerService({ baseDir: resolve(dir, "_timers") })
-  const x = { dir, db, situations, requests, workflows, runs, timers, notes: new Map(), told: [], cards: [], sends: [], turns: [] } as unknown as H
+  const x = { dir, db, situations, requests, workflows, runs, timers, notes: new Map(), told: [], cards: [], sends: [], turns: [], logs: [] } as unknown as H
+  x.followUps = [
+    { what: "Send the candidate the written offer terms", owner: "recruiter", waitsOn: "owner" },
+    { what: "Decide the start date", owner: "owner", waitsOn: "recruiter" },
+  ]
+  x.transcript = [
+    { sender: "Candidate", text: "When would I hear back?", timestamp: 1 },
+    { sender: "Recruiter", text: "We will send the offer terms by Friday.", timestamp: 2 },
+  ]
   x.settings = { ...DEFAULT_SITUATIONS_CONFIG, mode: "active", closing: { enabled: opts.closing ?? true } }
   let n = 0
   x.dispatcher = new WorkflowDispatcher({
     store: workflows, runs, nodeId: "node-a", timers,
     agents: {
-      // The talk's agent: writes one note at the home, lists two follow-ups.
+      // The talk's agent: drafts the note (it cannot post it), lists the follow-ups.
       execute: async (req) => {
         x.turns.push(req)
-        const home = /home: (\S+)/.exec(req.message)?.[1] ?? "?"
-        x.notes.set(home, [...(x.notes.get(home) ?? []), "Interview notes"])
-        return { content: `Note written.\n\`\`\`json\n${JSON.stringify({ noteAt: `${home}#note-1`, followUps: [
-          { what: "Send the candidate the written offer terms", owner: "recruiter", waitsOn: "owner" },
-          { what: "Decide the start date", owner: "owner", waitsOn: "recruiter" },
-        ] })}\n\`\`\`` }
+        return { content: `Draft ready.\n\`\`\`json\n${JSON.stringify({ note: "Interview notes", followUps: x.followUps })}\n\`\`\`` }
       },
     },
     channels: { whatsapp: { send: async (m: { channel: string; chatId: string; text: string }) => { x.sends.push(m); return `m${x.sends.length}` } } },
@@ -99,18 +111,29 @@ function setup(opts: { closing?: boolean } = {}): H {
       },
     },
     followUp: () => ({ stallMinutes: 30, maxNudges: 2, approval: "start" }),
+    startGuard: situationStartGuard,
   })
   x.sitRuns = new SituationRuns({
     store: situations,
     settings: () => x.settings,
     dispatcher: () => x.dispatcher,
-    ensureWorkflows: () => { ensureSituationWorkflows(workflows) },
+    ensureWorkflows: () => ensureSituationWorkflows(workflows),
     runStatus: (id) => runs.get(id)?.status ?? null,
-    log: () => {},
+    isAgent: (id) => AGENTS.has(id),
+    log: (m) => { x.logs.push(m) },
   })
   x.sitRuns.attach()
   setSendToChatStore(situations)
-  setSituationClosingDeps({ store: situations, requests: () => requests })
+  setSituationClosingDeps({
+    store: situations, requests: () => requests, settings: () => x.settings,
+    isAgent: (id) => AGENTS.has(id),
+    transcript: () => x.transcript,
+    gitlabUrl: () => "https://git.example.com",
+    postNote: async (target, text) => {
+      x.notes.set(target.chatId, [...(x.notes.get(target.chatId) ?? []), text])
+      return `${HOME}#note_1`
+    },
+  })
   x.runsOf = (wf) => runs.list().filter((r) => r.workflowId === wf)
   x.fire = async (runId) => {
     const t = timers.list().find((r) => r.runId === runId)
@@ -124,7 +147,7 @@ function setup(opts: { closing?: boolean } = {}): H {
 const live = (r: WorkflowRun) => r.status === "running" || r.status === "paused"
 
 /** A talk with closing steps, in `during`. */
-function interview(x: H, extra: { message?: string; chatId?: string } = {}) {
+function interview(x: H, extra: { message?: string; chatId?: string; agents?: string[] } = {}) {
   x.situations.create(KEY, "during", "first message")
   x.situations.claimOwner(KEY, "recruiter")
   const row = x.situations.get(KEY)!
@@ -157,11 +180,16 @@ describe("phase 4 proof: a test interview closes", () => {
     expect(close).toBeTruthy()
     await until(() => h.runs.get(close.id)!.status === "completed")
 
-    // One note, at its home.
-    expect([...h.notes.keys()]).toEqual([HOME])
-    expect(h.notes.get(HOME)).toHaveLength(1)
+    // One note, at its home, posted by the workflow (not by the agent).
+    expect([...h.notes.keys()]).toEqual([NOTE_CHAT])
+    expect(h.notes.get(NOTE_CHAT)).toHaveLength(1)
+    expect(h.notes.get(NOTE_CHAT)![0]).toContain("Interview notes")
     expect(h.turns).toHaveLength(1)
     expect(h.turns[0].agentId).toBe("recruiter")
+    // M3: the drafting turn is read-only (no channel send, no write) and
+    // reads a bounded excerpt of the talk.
+    expect(h.turns[0].autonomy).toBe("report")
+    expect(h.turns[0].message).toContain("Recruiter: We will send the offer terms by Friday.")
     // Each follow-up: an open promise with an owner.
     const open = h.requests.listOpen().filter((r) => r.promise)
     expect(open.map((p) => p.text).sort()).toEqual(["Decide the start date", "Send the candidate the written offer terms"])
@@ -171,7 +199,7 @@ describe("phase 4 proof: a test interview closes", () => {
     expect(open.every((p) => p.dueAt === null)).toBe(true)
     // The owner got one message, opening with its subject.
     expect(h.told).toHaveLength(1)
-    expect(h.told[0]).toMatch(/^About the job interview with a test candidate: the talk ended \(closed\)\. Note: https:\/\/git\.example\.com\/hiring\/issues\/7#note-1\. 2 follow-ups/)
+    expect(h.told[0]).toMatch(/^About the job interview with a test candidate: the talk ended \(closed\)\. Note: https:\/\/git\.example\.com\/team\/hiring\/-\/issues\/7#note_1\. 2 follow-ups/)
     // Nothing went to the other side, no card was raised.
     expect(h.sends).toHaveLength(0)
     expect(h.cards).toHaveLength(0)
@@ -195,6 +223,10 @@ describe("phase 4 proof: a test interview closes", () => {
     const again = await runBuiltin("situation.promises", { situationId: row.id, endGeneration: "0", agent: "recruiter", channel: "whatsapp", chatId: GROUP, home: HOME,
       followUps: JSON.stringify([{ what: "Decide the start date", owner: "owner" }, { what: "Send the candidate the written offer terms", owner: "recruiter" }]) }) as { opened: number }
     expect(again.opened).toBe(0)
+    // L6: reworded on a second run, still one set per close generation.
+    const reworded = await runBuiltin("situation.promises", { situationId: row.id, endGeneration: "0", agent: "recruiter", channel: "whatsapp", chatId: GROUP, home: HOME,
+      followUps: JSON.stringify([{ what: "Pick a start date", owner: "owner" }]) }) as { opened: number }
+    expect(reworded.opened).toBe(0)
     expect(h.requests.listOpen().filter((r) => r.promise)).toHaveLength(2)
   })
 
@@ -233,7 +265,7 @@ describe("expiry runs", () => {
     expect(h.situations.get(KEY)!.endReason).toBe("stale")
     await h.sitRuns.idle()
     await until(() => h.runsOf(CLOSE_WORKFLOW).some((r) => r.status === "completed"))
-    expect(h.notes.get(HOME)).toHaveLength(1)
+    expect(h.notes.get(NOTE_CHAT)).toHaveLength(1)
     expect(h.requests.listOpen().filter((r) => r.promise)).toHaveLength(2)
     expect(h.told).toHaveLength(0)
     expect(h.cards).toHaveLength(0)
@@ -284,7 +316,7 @@ describe("close runs: once per end generation", () => {
     const started = await h.dispatcher.startRun({ workflowId: CLOSE_WORKFLOW, inputs: {
       situationId: row.id, endGeneration: 0, reason: "closed", inwardOnly: "no", agent: "recruiter",
       purpose: "the interview", home: HOME, channel: "whatsapp", chatId: GROUP, message: "Thank you for your time.",
-    }, meta: { followUp: false } })
+    }, meta: { startedBy: "situation", followUp: false } })
     await until(() => ["completed", "failed"].includes(h.runs.get(started.run!.id)!.status))
     const run = h.runs.get(started.run!.id)!
     expect(run.status).toBe("failed")
@@ -351,13 +383,146 @@ describe("closing steps are set by a person or a workflow step", () => {
   it("POST /situations/closing sets them on an existing talk and validates the input", () => {
     h.situations.create(KEY, "during", "first message")
     const id = h.situations.get(KEY)!.id
-    expect(situationsClosing(h.situations, { id, purpose: "an interview", home: HOME }).status).toBe(200)
+    expect(situationsClosing(h.situations, { id, purpose: "an interview", home: HOME }, API).status).toBe(200)
     expect(h.situations.get(KEY)!.closing).toEqual({ purpose: "an interview", home: HOME })
     expect(h.situations.get(KEY)!.template).toBe("meeting")
-    expect(situationsClosing(h.situations, { id, purpose: "", home: HOME }).status).toBe(400)
-    expect(situationsClosing(h.situations, { id: "nope-nope", purpose: "x", home: HOME }).status).toBe(404)
-    expect(situationsClosing(h.situations, { id, clear: true }).status).toBe(200)
+    expect(situationsClosing(h.situations, { id, purpose: "", home: HOME }, API).status).toBe(400)
+    expect(situationsClosing(h.situations, { id: "nope-nope", purpose: "x", home: HOME }, API).status).toBe(404)
+    expect(situationsClosing(h.situations, { id, clear: true }, API).status).toBe(200)
     expect(h.situations.get(KEY)!.closing).toBeNull()
+  })
+})
+
+describe("review fixes", () => {
+  const ended = async () => {
+    moveTo(h, "ending")
+    h.situations.noteSent(KEY, "recruiter")
+    await h.sitRuns.idle()
+  }
+  const doneClose = () => until(() => h.runsOf(CLOSE_WORKFLOW).some((r) => r.status === "completed" || r.status === "failed"))
+
+  it("M1: an owner's broken edit of a workflow is not overwritten, and no close starts", async () => {
+    writeFileSync(join(h.dir, "situation-close.yaml"), "id: situation-close\nnodes: [this is not a workflow\n")
+    interview(h)
+    await ended()
+    expect(readFileSync(join(h.dir, "situation-close.yaml"), "utf-8")).toContain("this is not a workflow")
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(0)
+    expect(h.logs.some((l) => /situation-close.*does not load/.test(l))).toBe(true)
+  })
+
+  it("M1: a .json and a .yaml of the same workflow are left alone", () => {
+    writeFileSync(join(h.dir, "situation-expiry.json"), "{}")
+    writeFileSync(join(h.dir, "situation-expiry.yaml"), "id: situation-expiry\n")
+    const r = ensureSituationWorkflows(h.workflows)
+    expect(r.broken.map((b) => b.id)).toContain("situation-expiry")
+    expect(readFileSync(join(h.dir, "situation-expiry.json"), "utf-8")).toBe("{}")
+  })
+
+  it("M1: a deleted template stays deleted; it is logged once and no run starts", async () => {
+    expect(ensureSituationWorkflows(h.workflows).added).toEqual([CLOSE_WORKFLOW, EXPIRY_WORKFLOW])
+    rmSync(join(h.dir, "situation-close.yaml"))
+    expect(ensureSituationWorkflows(h.workflows).added).toEqual([])
+    expect(existsSync(join(h.dir, "situation-close.yaml"))).toBe(false)
+    interview(h)
+    await ended()
+    moveTo(h, "during", "again")
+    moveTo(h, "ended")
+    await h.sitRuns.idle()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(0)
+    expect(h.logs.filter((l) => /situation-close.*was deleted/.test(l))).toHaveLength(1)
+  })
+
+  it("M2: a follow-up owned by an unknown party is kept by the talk's agent, named in its words", async () => {
+    h.followUps = [{ what: "Send the portfolio", owner: "candidate", waitsOn: "recruiter" }]
+    interview(h)
+    await ended()
+    await doneClose()
+    const [p] = h.requests.listOpen().filter((r) => r.promise)
+    expect(p.agentId).toBe("recruiter")
+    expect(p.text).toBe("Send the portfolio (named owner: candidate)")
+  })
+
+  it("M2: a real agent the closing steps do not allow is not given the promise", async () => {
+    h.followUps = [{ what: "Restart the build server", owner: "devops-agent" }]
+    interview(h)
+    await ended()
+    await doneClose()
+    const [p] = h.requests.listOpen().filter((r) => r.promise)
+    expect(p.agentId).toBe("recruiter")
+    expect(p.text).toContain("named owner: devops-agent")
+  })
+
+  it("M2: an agent the closing steps allow owns its follow-up", async () => {
+    h.followUps = [{ what: "Book the second interview", owner: "helper" }]
+    interview(h, { agents: ["helper"] })
+    await ended()
+    await doneClose()
+    const [p] = h.requests.listOpen().filter((r) => r.promise)
+    expect(p.agentId).toBe("helper")
+    expect(p.text).toBe("Book the second interview")
+  })
+
+  it("M3: a home that is not a forge issue or merge request is refused", () => {
+    h.situations.create(KEY, "during", "first message")
+    const id = h.situations.get(KEY)!.id
+    const r = situationsClosing(h.situations, { id, purpose: "x", home: "https://wiki.example.com/page" }, API)
+    expect(r.status).toBe(400)
+  })
+
+  it("L1: clearing an ended talk cancels its close run", async () => {
+    interview(h, { message: "Thanks.", chatId: GROUP })
+    await ended()
+    await until(() => h.cards.length === 1)
+    const [close] = h.runsOf(CLOSE_WORKFLOW)
+    expect(live(close)).toBe(true)
+    expect(h.situations.override(h.situations.get(KEY)!.id, "clear", "test").ok).toBe(true)
+    await h.sitRuns.idle()
+    expect(h.runs.get(close.id)!.status).toBe("canceled")
+  })
+
+  it("L2: a close or expiry run not started by the situation record is refused", async () => {
+    ensureSituationWorkflows(h.workflows)
+    const r = await h.dispatcher.startRun({ workflowId: CLOSE_WORKFLOW, inputs: { agent: "recruiter" }, meta: { startedBy: "recruiter" } })
+    expect(r.run).toBeNull()
+    expect(r.error).toMatch(/only by the situation record/)
+    const e = await h.dispatcher.startRun({ workflowId: EXPIRY_WORKFLOW, inputs: {} })
+    expect(e.run).toBeNull()
+  })
+
+  it("L2: closing steps naming an unknown agent are refused", () => {
+    h.situations.create(KEY, "during", "first message")
+    const id = h.situations.get(KEY)!.id
+    expect(situationsClosing(h.situations, { id, purpose: "x", home: HOME, agent: "nobody" }, API).status).toBe(400)
+  })
+
+  it("L3: setting closing steps while closing is off answers 409", () => {
+    h.situations.create(KEY, "during", "first message")
+    const id = h.situations.get(KEY)!.id
+    const r = situationsClosing(h.situations, { id, purpose: "x", home: HOME }, { ...API, closingEnabled: false })
+    expect(r.status).toBe(409)
+    expect((r.body as { error: string }).error).toMatch(/situations\.closing\.enabled/)
+  })
+
+  it("L4: situation.expire does nothing while closing is off", async () => {
+    const row = interview(h)
+    h.settings = { ...h.settings, closing: { enabled: false } }
+    const { runBuiltin } = await import("../src/actions/builtin")
+    const r = await runBuiltin("situation.expire", { situationId: row.id, phaseChangedAt: String(row.phaseChangedAt) }) as { ended: boolean }
+    expect(r.ended).toBe(false)
+    expect(h.situations.get(KEY)!.phase).toBe("during")
+  })
+
+  it("L5: at daemon start, a close missed for a recent end is started", async () => {
+    interview(h)
+    await h.sitRuns.idle()
+    h.sitRuns.detach()
+    moveTo(h, "ended")
+    h.sitRuns.attach()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(0)
+    await h.sitRuns.resumeOnStart()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(1)
+    await h.sitRuns.resumeOnStart()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(1)
   })
 })
 
