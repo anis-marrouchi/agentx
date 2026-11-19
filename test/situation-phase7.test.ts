@@ -441,7 +441,7 @@ describe("review fixes", () => {
     const text = await runSourcesTool({ action: "read", source: "browser-tabs", request: "2030-01-01-x-abcd" }, { daemonUrl: "http://127.0.0.1:1", fetch, env: { AGENTX_TASK_ID: TASK } })
     expect(text.startsWith(SOURCES_READ_MARK)).toBe(true)
     expect(text).toContain("Secret plans")
-    expect(redactSourcesRead(`before ${text}`)).toBe("before [agentx_sources read: content not kept]")
+    expect(redactSourcesRead(`before ${text}`)).toBe("before [agentx_sources read: content left out of AgentX traces]")
     const steps: Array<{ outputSummary?: string | null }> = []
     const listen = (e: any) => { steps.push(e) }
     getEventBus().on("task:step", listen)
@@ -449,7 +449,7 @@ describe("review fixes", () => {
     getEventBus().off("task:step", listen)
     expect(steps.length).toBeGreaterThan(0)
     expect(JSON.stringify(steps)).not.toContain("Secret plans")
-    expect(steps[0].outputSummary).toContain("content not kept")
+    expect(steps[0].outputSummary).toContain("content left out of AgentX traces")
   })
 
   it("two sources and a long reason still fit one card", () => {

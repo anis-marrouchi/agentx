@@ -22,7 +22,7 @@ The rules:
 - One yes allows at most 3 reads (you can change this).
 - An agent can have only one card waiting for you. After you say no, or do not answer, it cannot ask again for 30 minutes (you can change this).
 - The card tells you which chat asked. The agent's answer may be posted in that chat, so anyone in that chat may see it.
-- Each read is written in a log: when, which source, which agent, for which request. What was read is not kept by AgentX: it goes only to the agent that asked, and from there to its model, which the card tells you.
+- Each read is written in a log: when, which source, which agent, for which request. What was read goes only to the agent that asked, and from there to its model and its session file, which the card tells you. AgentX's own traces, hooks and live views leave it out (see below).
 
 ### Where what was read still ends up
 
@@ -85,7 +85,7 @@ For `news`, also list your feeds:
 ## What happens when an agent asks
 
 1. You ask an agent something that needs your screen, for example "which app do I have in front?".
-2. The agent asks you. A popup opens on your Mac: "helper asks to read your open apps (names only)", with how many minutes, the chat that asked, its reason in quotes, and that what it reads goes to its model.
+2. The agent asks you. A popup opens on your Mac: "helper asks to read your open apps (names only)", with how many minutes, the chat that asked, its reason in quotes, and that what it reads goes to its model and its session file.
    ![The popup: "helper asks to read your open apps (names only)", for 15 minutes from your yes, the chat that asked, the agent's reason in quotes, and the buttons Not now, No and Yes.](/screenshots/screen-for-a-request/consent-card.png)
 3. **Popup:** click **Yes** to let it read, or **No**. If you do nothing, the card expires after `askMinutes` and nothing is read.
 4. After a yes, the agent reads and answers you. It can read again for the same request, up to `maxReads` times, until the yes ends. In the plain-dialog popup style, the Return key picks **Not now**, never **Yes**.
