@@ -86,6 +86,10 @@ describe("promise", () => {
     expect((await promise({ closeWhen: { kind: "url", url: "ftp://x" } })).status).toBe(400)
     expect((await promise({ closeWhen: { kind: "url", url: "https://x" } }, { checkers: { enabled: ["issue"], checkEveryMinutes: 10, repos: {} } })).body)
       .toMatchObject({ error: expect.stringMatching(/turned off/) })
+    // #885: a note pattern of one number closes it on a note that is not the proof.
+    const loose = await promise({ closeWhen: { kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "1959" } })
+    expect(loose).toMatchObject({ status: 400, body: { error: expect.stringMatching(/notePattern "1959" is too loose: it must be at least 8 characters and not only digits/) } })
+    expect((await promise({ closeWhen: { kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "merged" } })).status).toBe(400)
     expect((await promise({}, { runningTurn: () => null })).status).toBe(403)
     expect(store.listOpen()).toEqual([])
   })
@@ -170,6 +174,15 @@ describe("done on a loop with a check", () => {
     expect(store.get(id)).toMatchObject({ state: "done", verifyState: "verified", evidence: "https://example.com/v answered (agent: https://example.com/pr/1)" })
   })
 
+  it("keeps a matched note's link and 600-character clip whole in the close evidence (#885)", async () => {
+    const id = await withCheck()
+    const detail = `https://gitlab.example.com/noqta/noqta/-/issues/842#note_77 has a note with "req-01M7QH5N": "${"y".repeat(600)}…"`
+    verdict = { verdict: "met", detail }
+    clock += 11 * 60_000
+    expect(await sweep()).toMatchObject({ verified: 1 })
+    expect(store.get(id)).toMatchObject({ state: "done", closedBy: "check", evidence: detail })
+  })
+
   it("a node with no checker leaves it open as unverified", async () => {
     const id = await withCheck()
     const res = await handleRequestsCall("POST", "/requests", { action: "done", agentId: "coder", id }, { ...deps(), check: undefined })
@@ -182,6 +195,13 @@ describe("done on a loop with a check", () => {
     expect((await post({ action: "accept", agentId: "coder", due: "2030-03-02T09:00:00Z", closeWhen: { kind: "issue", provider: "github", ref: "acme/app#12" } })).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ owedTo: "owner", dueAt: Date.parse("2030-03-02T09:00:00Z"), closeWhen: { kind: "issue", ref: "acme/app#12" } })
     expect((await post({ action: "done", agentId: "coder", evidence: "merged" })).status).toBe(409)
+  })
+
+  it("accept refuses a note pattern that is short or only digits (#885)", async () => {
+    ownerTurn("t1")
+    const out = await post({ action: "accept", agentId: "coder", closeWhen: { kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "12345678" } })
+    expect(out).toMatchObject({ status: 400, body: { error: expect.stringMatching(/not only digits/) } })
+    expect(store.get("req-t1")).toMatchObject({ closeWhen: null })
   })
 })
 
