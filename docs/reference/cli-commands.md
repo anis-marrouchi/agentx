@@ -3756,6 +3756,26 @@ List the situation templates: what each adds to the agent's `[Situation]` line i
 |---|---|---|
 | `--json` | — | Print JSON. |
 
+### `agentx situation learned`
+
+List the learned templates, newest first: each draft the weekly run `situation-learn` made, the talks it came from (a count), its sentences, the approver's yes or no with the reason, and whether it is **in use**. Works only on the machine itself. See [Learn templates from ended talks](/jobs/learned-templates).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--json` | — | Print JSON. |
+
+### `agentx situation learned approver [agent]`
+
+Name the agent that says yes or no to each learned draft. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. Templates approved by an earlier approver are no longer used.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--clear` | — | Remove the approver: drafts wait and nothing learned is used. |
+
+### `agentx situation learned retire <id>`
+
+Take back a learned template (or drop a draft): it is no longer used. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. There is no command that approves a draft.
+
 ### `agentx situation seat`
 
 Show the decision seat `situation-phase`: its mode, whether it holds messages now, and its calibration report: how many unsure messages it said need no reply, how many of those a person labeled, the false "no reply" rate with its 95% upper bound, your limit (`situations.seat.maxFalseNoReply`) and whether it is ready for active. See [Let a decision seat judge the unsure messages](/jobs/stop-goodbye-loops#let-a-decision-seat-judge-the-unsure-messages).
