@@ -86,9 +86,12 @@ export function wokenAgent(r: { state: string; attentionReason?: string | null }
 }
 
 /** What the closing agent is told when its close was reopened (noqta#876):
- *  the owner's words, why, and each deliverable still without a proof. */
+ *  the owner's words, why, and each deliverable it must link again.
+ *  The reopen clears the request's own proofs (#1952), so every deliverable
+ *  is asked for, not only those that had none. A plan's step links are not
+ *  cleared: there only the ones still without a link are asked for. */
 export function mismatchText(r: RequestRecord, why: string, d: Deliverables | null): string {
-  const missing = d ? missingProofs(r, d) : []
+  const missing = !d ? [] : d.fromPlan ? missingProofs(r, d) : allProofsAsked(d)
   const how = r.state === "done" ? "closed it as done" : `closed it as ${r.state}`
   return [
     `[agentx:request-reopened id=${r.id}] You ${how}, but the close does not do what the owner asked, so the request is open again.`,
@@ -98,13 +101,21 @@ export function mismatchText(r: RequestRecord, why: string, d: Deliverables | nu
     ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
     "",
     `Why the close does not match: ${why || "the close does not match the owner's words"}`,
-    ...(missing.length ? ["", "Still without a proof link:", ...missing.map((m) => `- ${m}`)] : []),
+    ...(missing.length
+      ? ["", d?.fromPlan ? "Still without a proof link:" : "Give a proof link for each (the earlier links were cleared with the reopen):", ...missing.map((m) => `- ${m}`)]
+      : []),
     "",
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
     `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
       `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
       `If it cannot be done, decline it with the reason in the owner's terms. The owner is told it is open again and that it is yours.`,
   ].join("\n")
+}
+
+/** Every deliverable, numbered as in the list. One deliverable needs no
+ *  proof link: it closes as before (as missingProofs). */
+function allProofsAsked(d: Deliverables): string[] {
+  return d.names.length <= 1 ? [] : d.names.map((name, i) => `${i + 1}. ${name}`)
 }
 
 /** `d`: what the owner's words ask for and the links given (#692 B4).

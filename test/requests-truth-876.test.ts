@@ -62,7 +62,23 @@ describe("cause 1: an owner-words mismatch wakes the agent that closed it", () =
     return { c, woken }
   }
 
-  it("wakes the closing agent once, with the deliverables still missing, and the owner reads that it is the agent's", async () => {
+  it("a reopen with 2 deliverables, both proven, asks a link for both again (#1952: the reopen clears the proofs)", async () => {
+    store.setDeliverables(ID, ["release note", "staging link"])
+    store.addProofs(ID, [
+      { deliverable: "1", link: "https://git.example/g/p/-/issues/9#note_1" },
+      { deliverable: "2", link: "https://git.example/g/p/-/issues/9#note_2" },
+    ], 5_800)
+    expect(api({ action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
+    const { c, woken } = check()
+    expect(await c.run()).toMatchObject({ reopened: [ID], woken: [ID] })
+    expect(store.get(ID)!.deliverableProofs ?? []).toEqual([])
+    expect(woken[0].text).toContain("Give a proof link for each")
+    expect(woken[0].text).toContain("- 1. release note")
+    expect(woken[0].text).toContain("- 2. staging link")
+    expect(woken[0].text).toContain("proofs:[{deliverable:<number>")
+  })
+
+  it("wakes the closing agent once, asking a link for every deliverable, and the owner reads that it is the agent's", async () => {
     store.setDeliverables(ID, ["release note", "staging link", "test report"])
     store.addProofs(ID, [{ deliverable: "1", link: "https://git.example/g/p/-/issues/9#note_1" }], 5_800)
     expect(api({ action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
@@ -73,7 +89,7 @@ describe("cause 1: an owner-words mismatch wakes the agent that closed it", () =
     expect(woken[0].text).toContain("only the release note was posted")
     expect(woken[0].text).toContain("2. staging link")
     expect(woken[0].text).toContain("3. test report")
-    expect(woken[0].text).not.toContain("1. release note")
+    expect(woken[0].text).toContain("1. release note")
     const r = store.get(ID)!
     expect(r.state).toBe("needs_attention")
     expect(wokenAgent(r)).toBe("coder")
