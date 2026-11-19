@@ -25,6 +25,21 @@ const DAY_MS = 86_400_000
  *  a retro on the reviewer model a few dollars. */
 export const CALL_ESTIMATE_USD: Record<SpendStage, number> = { merge: 0.1, retro: 2, learn: 1, "learn-review": 0.5 }
 
+/** Book a call at its estimate before it starts (learned templates, #1892
+ *  phase 8): a crash or a second caller during the call still sees it.
+ *  `settleSpend` puts in the real cost once the call returns. */
+export function reserveSpend(db: Database.Database, stage: SpendStage, ref?: string | null, now = Date.now()): number {
+  ensureTable(db)
+  return Number(db.prepare("INSERT INTO improve_spend (at, stage, usd, ref) VALUES (?, ?, ?, ?)").run(now, stage, CALL_ESTIMATE_USD[stage], ref ?? null).lastInsertRowid)
+}
+
+/** The real cost of a reserved call. Null: the CLI reported none, the
+ *  estimate stays booked. */
+export function settleSpend(db: Database.Database, id: number, usd: number | null): void {
+  if (usd == null || !Number.isFinite(usd) || usd < 0) return
+  db.prepare("UPDATE improve_spend SET usd = ? WHERE id = ?").run(usd, id)
+}
+
 /** Dollars booked for these stages since `since`. */
 export function spentSince(db: Database.Database, stages: SpendStage[], since: number): number {
   try {

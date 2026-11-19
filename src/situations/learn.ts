@@ -1,8 +1,8 @@
 import type Database from "better-sqlite3"
 import { z } from "zod"
-import { CALL_ESTIMATE_USD, canSpend, recordSpend, spentSince, type ImproveSettings, type SpendStage } from "@/improve/budget"
+import { CALL_ESTIMATE_USD, canSpend, reserveSpend, settleSpend, spentSince, type ImproveSettings, type SpendStage } from "@/improve/budget"
 import type { SituationsConfig } from "./config"
-import { LEARNED_BASES, LEARNED_LIMITS, type LearnedDraft, type LearnedRow, type LearnedTemplateStore } from "./learned"
+import { LEARNED_BASES, LEARNED_LIMITS, learnedContent, type LearnedDraft, type LearnedRow, type LearnedTemplateStore } from "./learned"
 import { quoted } from "./templates"
 
 // --- The weekly learning run (#1892 phase 8) ---
@@ -13,27 +13,49 @@ import { quoted } from "./templates"
 //   draft   one model call over the ended talks of the last
 //           `situations.learned.windowDays`: redacted counts per talk
 //           (template, how it ended, how long, gate drops by reason and
-//           kind of sender) and the lower-case words of its purpose. No
-//           message text, no name, number, chat or sender id leaves the
-//           node. The model answers with up to `maxDrafts` drafts in a
-//           fixed schema (prompt rules and note guidance only), each
-//           pointing to at least `minEvidence` of the talks it was shown.
-//   review  each new draft goes once to the approver
-//           (`situations.learned.approver`, owner's answer Q5): a run the
-//           daemon starts itself, isolated and read only (the review-gate
-//           pattern). Its JSON verdict is read in this process and sealed
-//           (learned.ts). Asking again cannot reroll a no.
+//           kind of sender) and the lower-case purpose words that at
+//           least `minEvidence` talks share (a word only one talk has may
+//           be a name). No message text, no name, number, chat or sender
+//           id leaves the node. The model answers with up to `maxDrafts`
+//           drafts in a fixed schema (prompt rules and note guidance
+//           only), each pointing to at least `minEvidence` talks it was
+//           shown.
+//   review  each new draft goes once to the approver the owner named
+//           with the operator key (learned.ts, owner's answer Q5): a run
+//           the daemon starts itself, isolated and read only (the
+//           review-gate pattern). Its JSON verdict is read in this process
+//           and sealed. Asking again cannot reroll a no: the ask count is
+//           sealed, and this process also remembers each draft it asked.
 //
-// Cost (owner's answer Q6): every call is booked against
-// `improve.dailyUsd` (improve_spend, stages learn and learn-review) and
-// against `situations.learned.maxRunUsd` ($2 at most) over 7 days. Before
-// each call its estimate must fit both; past either, the run stops there.
-// Drafting runs at most once in 7 days, booked before its call, whatever
-// starts the step.
+// Cost (owner's answer Q6): every call is booked at its estimate before
+// it starts, against `improve.dailyUsd` (improve_spend, stages learn and
+// learn-review) and against `situations.learned.maxRunUsd` ($2 at most)
+// for the run (the spend of the last 6.5 days); the real cost replaces
+// the estimate when the call returns. A call that would not fit is not
+// made, and the run stops there. Drafting runs at most once in 6.5 days,
+// booked before its call. The steps of one node run one at a time.
 
 export const LEARN_WORKFLOW = "situation-learn"
 const DAY_MS = 24 * 3600_000
-const WEEK_MS = 7 * DAY_MS
+/** One run's window: a week, with slack so a Monday cron that fires a
+ *  moment early still runs. */
+const RUN_GAP_MS = 6.5 * DAY_MS
+
+/** Per database: the steps run one at a time, and the drafts this
+ *  process already put to the approver (never asked twice here, whatever
+ *  the database says). */
+const state = new WeakMap<Database.Database, { chain: Promise<unknown>; asked: Set<string> }>()
+function stateOf(db: Database.Database) {
+  let s = state.get(db)
+  if (!s) { s = { chain: Promise.resolve(), asked: new Set() }; state.set(db, s) }
+  return s
+}
+function serial<T>(db: Database.Database, fn: () => Promise<T>): Promise<T> {
+  const s = stateOf(db)
+  const next = s.chain.then(fn, fn)
+  s.chain = next.catch(() => {})
+  return next
+}
 /** The drafting call's input stays under this many characters. */
 export const LEARN_INPUT_MAX = 20_000
 const ROWS_MAX = 200
@@ -56,7 +78,8 @@ export interface LearnDeps {
 
 /** The words of a purpose that cannot name anyone: lower-case Latin words
  *  only. A capitalised word (a name), a digit, an address, a link or a
- *  word in a script without capitals is dropped. */
+ *  word in a script without capitals is dropped. learningRows also drops
+ *  a word fewer than `minShared` talks have (a name written lower case). */
 export function redactPurpose(text: string | null | undefined): string {
   return String(text ?? "").split(/\s+/)
     .map((w) => w.replace(/^[("'«]+|[)"'».,;:!?]+$/g, ""))
@@ -85,7 +108,7 @@ export interface LearnEvidenceRow {
 
 /** Ended talks since `since` (or these ids), redacted, newest first, with
  *  short refs; `ids` maps each ref back to its situation id on this node. */
-export function learningRows(db: Database.Database, opts: { since?: number; ids?: string[]; limit?: number }): { rows: LearnEvidenceRow[]; ids: Map<string, string> } {
+export function learningRows(db: Database.Database, opts: { since?: number; ids?: string[]; limit?: number; minShared?: number }): { rows: LearnEvidenceRow[]; ids: Map<string, string> } {
   type R = { id: string; template: string; endReason: string | null; setBy: string; closing: string | null; enteredAt: number; changedAt: number; importance: string | null }
   let talks: R[] = []
   const cols = "id, template, end_reason AS endReason, set_by AS setBy, closing, entered_at AS enteredAt, phase_changed_at AS changedAt, importance"
@@ -122,6 +145,12 @@ export function learningRows(db: Database.Database, opts: { since?: number; ids?
       importance: t.importance ?? null, gate,
     }
   })
+  // A purpose word fewer than `minShared` talks have is dropped: a name
+  // written in lower case is rarely shared by that many talks.
+  const minShared = Math.max(2, opts.minShared ?? 3)
+  const seen = new Map<string, number>()
+  for (const r of rows) for (const w of new Set(r.purpose.split(" ").filter(Boolean))) seen.set(w, (seen.get(w) ?? 0) + 1)
+  for (const r of rows) r.purpose = r.purpose.split(" ").filter((w) => w && (seen.get(w) ?? 0) >= minShared).join(" ")
   return { rows, ids }
 }
 
@@ -247,10 +276,10 @@ export function mayCall(deps: Pick<LearnDeps, "db" | "settings" | "improve">, st
   const daily = canSpend(deps.db, deps.improve(), stage, now)
   if (!daily.ok) return daily
   const cap = deps.settings().learned.maxRunUsd
-  const week = spentSince(deps.db, ["learn", "learn-review"], now - WEEK_MS)
+  const run = spentSince(deps.db, ["learn", "learn-review"], now - RUN_GAP_MS)
   const est = CALL_ESTIMATE_USD[stage]
-  if (week + est > cap) {
-    return { ok: false, why: `run cap: $${week.toFixed(2)} spent on learning in 7 days, a ${stage} call is booked at $${est.toFixed(2)}, limit situations.learned.maxRunUsd $${cap.toFixed(2)}` }
+  if (run + est > cap) {
+    return { ok: false, why: `run cap: $${run.toFixed(2)} spent on learning this run, a ${stage} call is booked at $${est.toFixed(2)}, limit situations.learned.maxRunUsd $${cap.toFixed(2)}` }
   }
   return { ok: true }
 }
@@ -263,15 +292,19 @@ export interface DraftOutcome {
   spentUsd: number
 }
 
-export async function learnDraftStep(deps: LearnDeps): Promise<DraftOutcome> {
+export function learnDraftStep(deps: LearnDeps): Promise<DraftOutcome> {
+  return serial(deps.db, () => draftStep(deps))
+}
+
+async function draftStep(deps: LearnDeps): Promise<DraftOutcome> {
   const now = (deps.now ?? Date.now)()
   const s = deps.settings()
   const out: DraftOutcome = { ran: false, drafted: [], skipped: [], spentUsd: 0 }
   const off = on(s)
   if (off) return { ...out, why: off }
   const last = deps.learned.lastRunAt()
-  if (last !== null && last > now - WEEK_MS) return { ...out, why: `learns once a week: the last run started ${new Date(last).toISOString()}` }
-  const { rows, ids } = learningRows(deps.db, { since: now - s.learned.windowDays * DAY_MS })
+  if (last !== null && last > now - RUN_GAP_MS) return { ...out, why: `learns once a week: the last run started ${new Date(last).toISOString()}` }
+  const { rows, ids } = learningRows(deps.db, { since: now - s.learned.windowDays * DAY_MS, minShared: s.learned.minEvidence })
   if (rows.length < s.learned.minEvidence) {
     return { ...out, why: `${rows.length} ended talk(s) in the last ${s.learned.windowDays} days; a draft needs ${s.learned.minEvidence}` }
   }
@@ -279,18 +312,19 @@ export async function learnDraftStep(deps: LearnDeps): Promise<DraftOutcome> {
   const gate = mayCall(deps, "learn", now)
   if (!gate.ok) return { ...out, why: gate.why }
 
-  // Booked before the call: a second start this week makes no call.
+  // Booked before the call: a second start this week makes no call, and
+  // a crash during the call still counts against the caps.
   deps.learned.recordRun(`${rows.length} talks`)
+  const booking = reserveSpend(deps.db, "learn", LEARN_WORKFLOW, now)
   out.ran = true
   let reply: { text: string; usd: number | null }
   try {
     reply = await deps.call(learnInput(rows), s.learned.model, LEARN_PROMPT)
   } catch (e: any) {
-    recordSpend(deps.db, "learn", null, LEARN_WORKFLOW, now)
     out.spentUsd = CALL_ESTIMATE_USD.learn
     return { ...out, why: `the drafting call failed: ${String(e?.message ?? e).slice(0, 200)}` }
   }
-  recordSpend(deps.db, "learn", reply.usd, LEARN_WORKFLOW, now)
+  settleSpend(deps.db, booking, reply.usd)
   out.spentUsd = reply.usd ?? CALL_ESTIMATE_USD.learn
   const parsed = parseLearnReply(reply.text, ids, { minEvidence: s.learned.minEvidence, maxDrafts: s.learned.maxDrafts })
   out.skipped.push(...parsed.skipped)
@@ -312,30 +346,39 @@ export interface ReviewOutcome {
   spentUsd: number
 }
 
-export async function learnReviewStep(deps: LearnDeps): Promise<ReviewOutcome> {
+export function learnReviewStep(deps: LearnDeps): Promise<ReviewOutcome> {
+  return serial(deps.db, () => reviewStep(deps))
+}
+
+async function reviewStep(deps: LearnDeps): Promise<ReviewOutcome> {
   const clock = deps.now ?? Date.now
   const s = deps.settings()
   const out: ReviewOutcome = { reviewed: [], spentUsd: 0 }
   const off = on(s)
   if (off) return { ...out, stopped: off }
-  const approver = s.learned.approver
+  const approver = deps.learned.approver()
   if (!approver || !deps.isAgent(approver)) {
-    return { ...out, stopped: `no approver: set situations.learned.approver to an agent of this node${approver ? ` (${approver} is not one)` : ""}; drafts wait` }
+    return { ...out, stopped: `no approver: name one with \`agentx situation learned approver <agent>\`${approver ? ` (${approver} is not an agent of this node)` : ""}; drafts wait` }
   }
+  const asked = stateOf(deps.db).asked
   for (const row of deps.learned.reviewable()) {
+    const content = learnedContent(row)
+    if (asked.has(content)) continue
     const now = clock()
     const gate = mayCall(deps, "learn-review", now)
     if (!gate.ok) { out.stopped = gate.why; break }
     // Counted before the call: a no, or a failed answer, cannot be rerolled.
     if (!deps.learned.startReview(row.id)) continue
-    const { rows: evidence } = learningRows(deps.db, { ids: row.evidence })
+    asked.add(content)
+    const booking = reserveSpend(deps.db, "learn-review", row.id, now)
+    const { rows: evidence } = learningRows(deps.db, { ids: row.evidence, minShared: s.learned.minEvidence })
     let res: { text: string; usd: number | null; error?: string }
     try {
       res = await deps.review(approver, reviewPrompt(row, evidence))
     } catch (e: any) {
       res = { text: "", usd: null, error: String(e?.message ?? e) }
     }
-    recordSpend(deps.db, "learn-review", res.usd, row.id, now)
+    settleSpend(deps.db, booking, res.usd)
     out.spentUsd += res.usd ?? CALL_ESTIMATE_USD["learn-review"]
     if (res.error) { out.reviewed.push({ id: row.id, verdict: "none", why: `the review run failed: ${res.error.slice(0, 200)}` }); continue }
     const v = parseVerdict(res.text)

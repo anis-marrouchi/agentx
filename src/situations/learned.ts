@@ -160,6 +160,11 @@ export class LearnedTemplateStore {
         retired_at INTEGER,
         retired_by TEXT
       );
+      CREATE TABLE IF NOT EXISTS situation_learned_settings (
+        name TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        mac TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS situation_learn_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         at INTEGER NOT NULL,
@@ -192,13 +197,48 @@ export class LearnedTemplateStore {
     return timingSafeEqual(Buffer.from(given), Buffer.from(want))
   }
 
+  /** The draft seal also covers how often the approver was asked: each
+   *  ask re-seals it, so setting the count back (to ask again after a
+   *  no) breaks the seal and the draft is never asked or used again. */
   private draftSealed(r: Raw): boolean {
-    return this.sealMatches("draft", r, String(r.created_at), r.draft_mac)
+    return this.sealMatches("draft", r, `${r.created_at}\n${r.review_attempts}`, r.draft_mac)
   }
 
   private approvalSealed(r: Raw): boolean {
     return r.status === "active" && !!r.reviewer && r.decided_at !== null
       && this.draftSealed(r) && this.sealMatches("active", r, `${r.reviewer}\n${r.decided_at}`, r.approval_mac)
+  }
+
+  // --- The approver: set by the owner with the operator key, sealed ---
+  //
+  // Not a setting in agentx.json, which agents can edit: the owner names
+  // it with `agentx situation learned approver <agent>` (operator key).
+  // A template is used only while its sealed reviewer is still the
+  // sealed approver.
+
+  private settingMac(name: string, value: string): string | null {
+    const key = this.sealKey()
+    return key ? createHmac("sha256", key).update(`setting\n${name}\n${value}`).digest("hex") : null
+  }
+
+  /** Name the approver (owner only: the route checks the operator key).
+   *  Null clears it. */
+  setApprover(agentId: string | null): boolean {
+    if (agentId === null) { this.db.prepare("DELETE FROM situation_learned_settings WHERE name = 'approver'").run(); return true }
+    const mac = this.settingMac("approver", agentId)
+    if (!mac) return false
+    this.db.prepare("INSERT INTO situation_learned_settings (name, value, mac) VALUES ('approver', ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, mac = excluded.mac")
+      .run(agentId, mac)
+    return true
+  }
+
+  /** The approver the owner named, or null (none, or its seal is wrong). */
+  approver(): string | null {
+    const r = this.db.prepare("SELECT value, mac FROM situation_learned_settings WHERE name = 'approver'").get() as { value: string; mac: string } | undefined
+    if (!r) return null
+    const want = this.settingMac("approver", r.value)
+    if (!want || r.mac?.length !== want.length || !timingSafeEqual(Buffer.from(r.mac), Buffer.from(want))) return null
+    return r.value
   }
 
   private raw(id: string): Raw | null {
@@ -227,6 +267,14 @@ export class LearnedTemplateStore {
     if (lint.length) return { ok: false, error: lint.join("; ") }
     const id = `${LEARNED_PREFIX}${d.slug}`
     if (this.raw(id)) return { ok: false, error: `${id} was drafted before` }
+    // A sentence the approver turned down (or the owner retired) does not
+    // come back under another name.
+    const said = new Set<string>()
+    for (const old of this.db.prepare("SELECT rule_during, rule_ending, rule_ended, note_guidance FROM situation_learned_templates WHERE status IN ('rejected', 'retired')").all() as Array<Record<string, string | null>>) {
+      for (const v of Object.values(old)) if (v) said.add(v.toLowerCase())
+    }
+    const again = [d.rules.during, d.rules.ending, d.rules.ended, d.noteGuidance].find((v) => v && said.has(oneLine(v, 1000).toLowerCase()))
+    if (again) return { ok: false, error: "a sentence of it was turned down or retired before" }
     const r: Raw = {
       id, base: d.base, title: oneLine(d.title, LEARNED_LIMITS.title), when_text: oneLine(d.when, LEARNED_LIMITS.when),
       rule_during: d.rules.during ? oneLine(d.rules.during, LEARNED_LIMITS.rule) : null,
@@ -237,7 +285,7 @@ export class LearnedTemplateStore {
       status: "draft", created_at: this.now(), draft_mac: null, review_attempts: 0, last_review_at: null, reviewer: null,
       verdict_why: null, decided_at: null, approval_mac: null, retired_at: null, retired_by: null,
     }
-    r.draft_mac = this.seal("draft", r, String(r.created_at))
+    r.draft_mac = this.seal("draft", r, `${r.created_at}\n0`)
     this.db.prepare(`INSERT INTO situation_learned_templates (id, base, title, when_text, rule_during, rule_ending, rule_ended, note_guidance, evidence, why, status, created_at, draft_mac)
       VALUES (@id, @base, @title, @when_text, @rule_during, @rule_ending, @rule_ended, @note_guidance, @evidence, @why, @status, @created_at, @draft_mac)`).run(r)
     return { ok: true, id }
@@ -270,9 +318,14 @@ export class LearnedTemplateStore {
    *  draft is no longer reviewable (another run took it). */
   startReview(id: string): boolean {
     const now = this.now()
-    return this.db.prepare(`UPDATE situation_learned_templates SET review_attempts = review_attempts + 1, last_review_at = ?
-      WHERE id = ? AND status = 'draft' AND (review_attempts = 0 OR (review_attempts < ? AND COALESCE(last_review_at, 0) <= ?))`)
-      .run(now, id, MAX_REVIEW_ATTEMPTS, now - REVIEW_RETRY_MS).changes > 0
+    const r = this.raw(id)
+    if (!r || r.status !== "draft" || !this.draftSealed(r)) return false
+    if (r.review_attempts !== 0 && !(r.review_attempts < MAX_REVIEW_ATTEMPTS && (r.last_review_at ?? 0) <= now - REVIEW_RETRY_MS)) return false
+    const next = { ...r, review_attempts: r.review_attempts + 1 }
+    const mac = this.seal("draft", next, `${r.created_at}\n${next.review_attempts}`)
+    return this.db.prepare(`UPDATE situation_learned_templates SET review_attempts = ?, last_review_at = ?, draft_mac = ?
+      WHERE id = ? AND status = 'draft' AND review_attempts = ? AND draft_mac = ?`)
+      .run(next.review_attempts, now, mac, id, r.review_attempts, r.draft_mac).changes > 0
   }
 
   /** The approver said yes in its review run. Only learn.ts calls this,
@@ -305,7 +358,7 @@ export class LearnedTemplateStore {
    *  out and whose text still passes the lint. Null otherwise. */
   template(id: string): SituationTemplate | null {
     const r = this.raw(id)
-    if (!r || !this.approvalSealed(r)) return null
+    if (!r || !this.approvalSealed(r) || r.reviewer !== this.approver()) return null
     const row = this.toRow(r)
     if (lintDraft(row).length) return null
     const base = situationTemplate(r.base)

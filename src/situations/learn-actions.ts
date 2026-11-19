@@ -11,6 +11,7 @@ import { learnDraftStep, learnReviewStep, type LearnDeps } from "./learn"
 // Neither takes an input: what is drafted, who approves and the verdict
 // never come from the workflow file or from a caller. Built-ins can also
 // be called over /api/actions/builtin by an agent on this machine; that
+// is refused (workflowOnly). An agent-written workflow that calls them
 // changes nothing either: the week's one drafting call is booked before
 // it runs, and each draft is put to the approver once.
 
@@ -39,6 +40,7 @@ export const situationLearnDraft: BuiltinAction<NoInput, DraftOutput> = {
   inputSchema: noInput,
   outputSchema: draftOutput,
   timeoutMs: 240_000,
+  workflowOnly: true,
   handler: async () => {
     if (!deps) return { ran: false, why: "learned templates are not available on this node", drafted: [], skipped: [], spentUsd: 0 }
     return learnDraftStep(deps)
@@ -55,11 +57,12 @@ type ReviewOutput = z.infer<typeof reviewOutput>
 
 export const situationLearnReview: BuiltinAction<NoInput, ReviewOutput> = {
   name: "situation.learn.review",
-  description: "The weekly learned-templates run's second step: the approver (situations.learned.approver) says yes or no to each new draft, once, in a run the daemon starts.",
+  description: "The weekly learned-templates run's second step: the approver the owner named (agentx situation learned approver) says yes or no to each new draft, once, in a run the daemon starts.",
   inputSchema: noInput,
   outputSchema: reviewOutput,
   // One isolated review run per draft, at most situations.learned.maxDrafts.
   timeoutMs: 45 * 60_000,
+  workflowOnly: true,
   handler: async () => {
     if (!deps) return { reviewed: [], stopped: "learned templates are not available on this node", spentUsd: 0 }
     return learnReviewStep(deps)

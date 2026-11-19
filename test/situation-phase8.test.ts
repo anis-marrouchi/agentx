@@ -40,7 +40,7 @@ afterAll(() => { process.chdir(cwd); rmSync(dir, { recursive: true, force: true 
 function settings(over: Partial<SituationsConfig["learned"]> = {}): SituationsConfig {
   return {
     ...DEFAULT_SITUATIONS_CONFIG, mode: "active", closing: { enabled: true }, templates: { enabled: true, agentFill: false },
-    learned: { ...DEFAULT_SITUATIONS_CONFIG.learned, enabled: true, approver: APPROVER, ...over },
+    learned: { ...DEFAULT_SITUATIONS_CONFIG.learned, enabled: true, ...over },
   }
 }
 const improveOn = () => improveConfigSchema.parse({ enabled: true, dailyUsd: 3 })
@@ -51,16 +51,18 @@ const now = () => clock
 /** Ended talks as the gate and the store write them: closing steps set
  *  by a person (purpose with a name and a number in it), a gate log
  *  with sender names and message text. */
+let seq = 0
 function seedTalks(store: SituationStore, n: number, purpose = "job interview with Samira Haddad 55501234") {
   const ids: string[] = []
   for (let i = 0; i < n; i++) {
-    const key = situationKey("whatsapp", "default", `1203630000000000${10 + i}@g.us`)
+    const chat = `12036300000000${String(++seq).padStart(4, "0")}@g.us`
+    const key = situationKey("whatsapp", "default", chat)
     store.create(key, "during", "first message")
     store.claimOwner(key, "recruiter")
     const r = store.get(key)!
     store.setClosing(r.id, { purpose, home: "https://git.example.com/team/hiring/-/issues/7" }, "meeting.external")
     store.logGate({
-      key, situationId: r.id, messageId: `m-${i}`, channel: "whatsapp", chatId: `1203630000000000${10 + i}@g.us`,
+      key, situationId: r.id, messageId: `m-${i}`, channel: "whatsapp", chatId: chat,
       senderId: "15550111@s.whatsapp.net", senderName: "Samira Haddad", senderKind: "person", text: "thanks Samira here, call me on 55501234",
       phase: "ended", outcome: "drop", reason: "courtesy after the end", message: "{}",
     })
@@ -96,10 +98,12 @@ interface Harness {
   deps: LearnDeps
 }
 
-function harness(over: Partial<SituationsConfig["learned"]> = {}, key: string | null = OPERATOR_KEY): Harness {
+function harness(over: Partial<SituationsConfig["learned"]> = {}, key: string | null = OPERATOR_KEY, approver: string | null = APPROVER): Harness {
   const db = new Database(":memory:")
   const store = new SituationStore(db, now)
   const learned = new LearnedTemplateStore(db, { key: () => key, now })
+  // The owner names the approver with the operator key (the route).
+  if (approver) learned.setApprover(approver)
   const h = { db, store, learned, cfg: settings(over), calls: [], reviews: [], verdicts: [], learnerUsd: 0.4, reviewUsd: 0.2 } as unknown as Harness
   h.learnerReply = (input) => {
     const refs = [...input.matchAll(/"ref":\s*"(r\d+)"/g)].map((m) => m[1])
@@ -121,7 +125,7 @@ describe("settings", () => {
   it("are off by default, with a $2 run cap that cannot be raised", () => {
     const d = DEFAULT_SITUATIONS_CONFIG.learned
     expect(d.enabled).toBe(false)
-    expect(d.approver).toBeUndefined()
+    expect("approver" in d).toBe(false) // named with the operator key, not in agentx.json
     expect(d.maxRunUsd).toBe(2)
     expect(situationsConfigSchema.safeParse({ learned: { maxRunUsd: 5 } }).success).toBe(false)
   })
@@ -332,7 +336,7 @@ describe("the approver", () => {
   })
 
   it("must be set and be an agent of this node", async () => {
-    const h = harness({ approver: undefined })
+    const h = harness({}, OPERATOR_KEY, null)
     seedTalks(h.store, 3)
     await learnDraftStep(h.deps)
     const out = await learnReviewStep(h.deps)
@@ -350,6 +354,101 @@ describe("the approver", () => {
     expect(p).toMatch(/outside text/i)
     expect(p).toContain('"Ask what the candidate expects as next steps before the talk ends."')
     expect(p).not.toMatch(/Samira|55501234/)
+  })
+})
+
+// --- From the independent review ---
+
+describe("review fixes", () => {
+  it("a no set back to a fresh draft in the database is never asked again", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    h.verdicts = ['{"verdict":"reject","why":"too broad"}', '{"verdict":"reject","why":"too broad"}']
+    await learnReviewStep(h.deps)
+    h.db.prepare("UPDATE situation_learned_templates SET status = 'draft', review_attempts = 0, last_review_at = NULL, reviewer = NULL").run()
+    clock += 7 * DAY
+    h.verdicts = ['{"verdict":"approve","why":"fits"}', '{"verdict":"approve","why":"fits"}']
+    await learnReviewStep(h.deps)
+    expect(h.reviews).toHaveLength(2)
+    expect(h.learned.reviewable()).toEqual([])
+    expect(h.learned.template("learned.interview")).toBeNull()
+  })
+
+  it("the same draft restored from a copy is not asked twice by this daemon", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    const copy = h.db.prepare("SELECT * FROM situation_learned_templates").all() as Array<Record<string, unknown>>
+    h.verdicts = ['{"verdict":"reject","why":"no"}', '{"verdict":"reject","why":"no"}']
+    await learnReviewStep(h.deps)
+    h.db.prepare("DELETE FROM situation_learned_templates").run()
+    for (const r of copy) h.db.prepare(`INSERT INTO situation_learned_templates (${Object.keys(r).join(", ")}) VALUES (${Object.keys(r).map((k) => `@${k}`).join(", ")})`).run(r)
+    h.verdicts = ['{"verdict":"approve","why":"fits"}', '{"verdict":"approve","why":"fits"}']
+    await learnReviewStep(h.deps)
+    expect(h.reviews).toHaveLength(2)
+    expect(h.learned.get("learned.interview")?.status).toBe("draft")
+  })
+
+  it("an approver written into the database is not used, and a new approver ends old approvals", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    h.verdicts = ['{"verdict":"approve","why":"fits"}', '{"verdict":"reject","why":"no"}']
+    await learnReviewStep(h.deps)
+    expect(h.learned.template("learned.interview")).not.toBeNull()
+    h.db.prepare("UPDATE situation_learned_settings SET value = 'recruiter' WHERE name = 'approver'").run()
+    expect(h.learned.approver()).toBeNull()
+    expect(h.learned.template("learned.interview")).toBeNull()
+    h.learned.setApprover("recruiter")
+    expect(h.learned.template("learned.interview")).toBeNull()
+    h.learned.setApprover(APPROVER)
+    expect(h.learned.template("learned.interview")).not.toBeNull()
+  })
+
+  it("the learning steps cannot be called over the built-in actions API", async () => {
+    const { getBuiltin } = await import("../src/actions/builtin")
+    registerAllBuiltins()
+    expect(getBuiltin("situation.learn.draft")?.workflowOnly).toBe(true)
+    expect(getBuiltin("situation.learn.review")?.workflowOnly).toBe(true)
+  })
+
+  it("two steps started at once make one drafting call", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    const [a, b] = await Promise.all([learnDraftStep(h.deps), learnDraftStep(h.deps)])
+    expect([a.ran, b.ran].sort()).toEqual([false, true])
+    expect(h.calls).toHaveLength(1)
+  })
+
+  it("a call that fails is still booked at its estimate", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    h.deps.call = async () => { throw new Error("timed out") }
+    const out = await learnDraftStep(h.deps)
+    expect(out.why).toMatch(/timed out/)
+    const r = h.db.prepare("SELECT SUM(usd) AS usd FROM improve_spend WHERE stage = 'learn'").get() as { usd: number }
+    expect(r.usd).toBe(1)
+  })
+
+  it("a purpose word only one talk has (a name in lower case) is dropped", () => {
+    const h = harness()
+    seedTalks(h.store, 2, "interview with sami for backend")
+    seedTalks(h.store, 1, "interview with lina for backend")
+    const { rows } = learningRows(h.db, { since: clock - 28 * DAY, minShared: 3 })
+    expect(JSON.stringify(rows)).not.toMatch(/sami|lina/)
+    expect(rows.every((r) => r.purpose === "interview with for backend")).toBe(true)
+  })
+
+  it("a sentence turned down does not come back under another name", async () => {
+    const h = harness()
+    seedTalks(h.store, 3)
+    await learnDraftStep(h.deps)
+    h.verdicts = ['{"verdict":"reject","why":"no"}', '{"verdict":"reject","why":"no"}']
+    await learnReviewStep(h.deps)
+    const ids = [...learningRows(h.db, { since: clock - 28 * DAY }).ids.values()]
+    const again = h.learned.addDraft({ ...GOOD_DRAFT([]), slug: "interview-two", evidence: ids })
+    expect(again.ok).toBe(false)
   })
 })
 

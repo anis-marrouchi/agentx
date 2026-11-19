@@ -35,6 +35,9 @@ export interface BuiltinAction<I = unknown, O = unknown> {
   outputSchema: z.ZodType<O, z.ZodTypeDef, unknown>
   /** Optional per-action timeout. Daemon-level cap is 60s. */
   timeoutMs?: number
+  /** Runs only as a step of a workflow: POST /api/actions/builtin/:name
+   *  refuses it (an agent on this machine cannot call it directly). */
+  workflowOnly?: boolean
   /** The actual implementation. Must not throw — return an error
    *  result via the output schema or wrap in a try/catch upstream. */
   handler: (input: I) => Promise<O>

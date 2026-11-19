@@ -47,7 +47,7 @@ import { ensureSituationWorkflows } from "@/situations/workflows"
 import { LearnedTemplateStore } from "@/situations/learned"
 import { setSituationLearnDeps } from "@/situations/learn-actions"
 import { setLearnedTemplateSource } from "@/situations/templates"
-import { learnedRetire, learnedView, LEARN_REVIEW_CHANNEL } from "@/situations/learned-api"
+import { learnedRetire, learnedSetApprover, learnedView, LEARN_REVIEW_CHANNEL } from "@/situations/learned-api"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
@@ -5480,6 +5480,7 @@ export class AgentXDaemon {
     // The owner takes a learned template back (#1892 phase 8): this
     // machine only, with the operator key (checked in the route).
     "/situations/learned/retire",
+    "/situations/learned/approver",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -7489,6 +7490,7 @@ export class AgentXDaemon {
       if (builtinRunMatch) {
         const name = builtinRunMatch[1]
         if (!getBuiltin(name)) { this.json(res, 404, { error: `unknown built-in: ${name}` }); return }
+        if (getBuiltin(name)?.workflowOnly) { this.json(res, 403, { error: `built-in ${name} runs only as a step of its workflow` }); return }
         try {
           const body = await readJsonBody(req)
           const output = await runBuiltin(name, body)
@@ -8595,6 +8597,18 @@ export class AgentXDaemon {
             agentProof: agentProofShown(this.callerProof(req)),
           })
           if (r.status === 200) this.log(`[situation] learned template ${String(body.id).slice(0, 60)} retired by the owner`)
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "POST /situations/learned/approver": {
+          const body = await readBody(req)
+          const r = learnedSetApprover(this.learnedTemplates, body, {
+            thisMachine: isThisMachine(req.socket?.remoteAddress),
+            keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+            agentProof: agentProofShown(this.callerProof(req)),
+            isAgent: (id) => !!this.registry.getAgent(id),
+          })
+          if (r.status === 200) this.log(`[situation] learned-template approver ${r.body.approver ? `set to ${String(r.body.approver)}` : "cleared"} by the owner`)
           this.json(res, r.status, r.body)
           break
         }

@@ -4,12 +4,12 @@ import type { LearnedRow, LearnedTemplateStore } from "./learned"
 //
 //   GET  /situations/learned          the drafts and their verdicts
 //   POST /situations/learned/retire   take one back ({"id": "learned.x"})
+//   POST /situations/learned/approver name the approver ({"agent": "x"})
 //
-// Both answer callers on this machine only. Retiring also needs the
-// operator key (`agentx situation learned retire` sends it), and no agent
-// turn's headers: an agent cannot take back what the approver approved.
-// There is no route that approves: only the approver's own review run,
-// started by the daemon, does (learn.ts).
+// All answer callers on this machine only. The two POSTs also need the
+// operator key (the CLI sends it), and no agent turn's headers. There is
+// no route that approves: only the approver's own review run, started by
+// the daemon, does (learn.ts).
 
 /** The channel name of the approver's review runs (traces, process list). */
 export const LEARN_REVIEW_CHANNEL = "situation-learn"
@@ -33,8 +33,23 @@ export function learnedView(store: LearnedTemplateStore | undefined, ctx: { this
   const rows = store.list()
   return {
     status: 200,
-    body: { enabled: ctx.enabled, templates: rows.map((r) => learnedRowView(r, ctx.enabled && !!store.template(r.id))) },
+    body: { enabled: ctx.enabled, approver: store.approver(), templates: rows.map((r) => learnedRowView(r, ctx.enabled && !!store.template(r.id))) },
   }
+}
+
+/** The owner names the approver ({"agent": "<id>"}, or {"clear": true}).
+ *  Same caller rules as retire. Sealed with the operator key: an agent
+ *  that edits the database or agentx.json cannot name itself. */
+export function learnedSetApprover(store: LearnedTemplateStore | undefined, body: Record<string, unknown>, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean; isAgent: (id: string) => boolean }): Reply {
+  if (!ctx.thisMachine) return { status: 403, body: { error: "learned templates answer only on this machine" } }
+  if (ctx.agentProof) return { status: 403, body: { error: "only the owner names the approver" } }
+  if (!ctx.keyShown) return { status: 403, body: { error: "run `agentx situation learned approver <agent>` from the AgentX folder (it sends the operator key in .agentx/operator.key)" } }
+  if (!store) return { status: 503, body: { error: "learned templates are not available on this node" } }
+  if (body.clear === true) { store.setApprover(null); return { status: 200, body: { ok: true, approver: null } } }
+  const agent = typeof body.agent === "string" ? body.agent.trim() : ""
+  if (!agent || !ctx.isAgent(agent)) return { status: 400, body: { error: `not an agent of this node: ${agent.slice(0, 60) || "(none)"}` } }
+  if (!store.setApprover(agent)) return { status: 409, body: { error: "no operator key on this node (.agentx/operator.key)" } }
+  return { status: 200, body: { ok: true, approver: agent } }
 }
 
 export function learnedRetire(store: LearnedTemplateStore | undefined, body: Record<string, unknown>, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean }): Reply {
