@@ -143,8 +143,10 @@ db
     if (opts.day) { where.push("day = @day"); params.day = opts.day }
     const sql = `
       SELECT day, agent_id, model, tasks,
-             input_tokens AS in_tok, output_tokens AS out_tok,
-             cache_read_tokens AS cache_read, cache_create_tokens AS cache_create
+             input_tokens + tier2_input_tokens AS in_tok,
+             output_tokens + tier2_output_tokens AS out_tok,
+             cache_read_tokens + tier2_cache_read_tokens AS cache_read,
+             cache_create_tokens + tier2_cache_create_tokens AS cache_create
       FROM usage_daily
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY day DESC, agent_id

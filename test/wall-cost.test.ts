@@ -235,3 +235,17 @@ describe("Everything /admin/cost did, on the Wall (#1423, #1449)", () => {
     expect(costBudgetsHtml([{ name: "node-a", peer: null, budgets: null }], {})).toContain("The budgets could not be read.")
   })
 })
+
+describe("tier-2 pricing (#1994)", () => {
+  it("prices tier-2 tokens in full at 1.5×; the lanes are disjoint", () => {
+    const put = db!.prepare(
+      `INSERT INTO usage_daily (agent_id, model, day, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens, tier2_input_tokens, tier2_output_tokens, tier2_cache_read_tokens, tier2_cache_create_tokens, tasks)
+       VALUES (?, 'claude-sonnet-4-5', ?, ?, ?, ?, 0, ?, ?, ?, 0, 1)`,
+    )
+    put.run("base-only", day(0), 1_000, 2_000, 300_000, 0, 0, 0)
+    put.run("tier2-only", day(0), 0, 0, 0, 1_000, 2_000, 300_000)
+    const cost = (id: string) => buildCost(db!, 7).perAgent.find((a) => a.agent_id === id)!.cost
+    expect(cost("base-only")).toBeGreaterThan(0)
+    expect(cost("tier2-only")).toBeCloseTo(cost("base-only") * 1.5, 10)
+  })
+})

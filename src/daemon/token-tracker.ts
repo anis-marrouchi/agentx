@@ -226,26 +226,51 @@ export interface TaskUsage {
   cacheCreateTokens: number
 }
 
-/** Split a TaskUsage into tier1 and tier2 buckets using the same
- *  CONTEXT_TIER_THRESHOLD that record() applies. Output inherits the
- *  tier of its request. Returned as a flat object so callers can spread
- *  it directly into bus payloads or DB writes. */
-export function splitTaskUsageByTier(u: TaskUsage): {
+/** Keep one usage per API call from a Claude message envelope
+ *  (`{ id, usage }`). The stream repeats a message once per content block,
+ *  each with the same id, so the last event per id wins (#1994). */
+export function noteCallUsage(calls: Map<string, TaskUsage>, message: any): void {
+  const u = message?.usage
+  if (!u) return
+  calls.set(typeof message.id === "string" ? message.id : `call-${calls.size}`, {
+    inputTokens: u.input_tokens || 0,
+    outputTokens: u.output_tokens || 0,
+    cacheReadTokens: u.cache_read_input_tokens || 0,
+    cacheCreateTokens: u.cache_creation_input_tokens || 0,
+  })
+}
+
+/** Split a run's TaskUsage into tier1 and tier2 buckets. The provider bills
+ *  the long-context rate per call, on calls whose input (input + cacheRead +
+ *  cacheCreate) passes CONTEXT_TIER_THRESHOLD; output inherits its call's
+ *  tier. With `calls` (per-call usage, Claude Code stream paths) only those
+ *  calls go to tier2, capped at the run totals, and the rest of the totals
+ *  stays tier1 (#1994). Without per-call usage (JSON output, other runtimes)
+ *  the run's summed input decides for the whole run, which over-counts tier2
+ *  for runs of many small calls. Returned as a flat object so callers can
+ *  spread it directly into bus payloads or DB writes. */
+export function splitTaskUsageByTier(u: TaskUsage, calls?: TaskUsage[]): {
   inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number
   tier2InputTokens: number; tier2OutputTokens: number; tier2CacheReadTokens: number; tier2CacheCreateTokens: number
 } {
-  const totalInput = u.inputTokens + u.cacheReadTokens + u.cacheCreateTokens
-  if (totalInput > CONTEXT_TIER_THRESHOLD) {
-    return {
-      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0,
-      tier2InputTokens: u.inputTokens, tier2OutputTokens: u.outputTokens,
-      tier2CacheReadTokens: u.cacheReadTokens, tier2CacheCreateTokens: u.cacheCreateTokens,
-    }
-  }
+  const none: TaskUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreateTokens: 0 }
+  const isTier2 = (c: TaskUsage) => c.inputTokens + c.cacheReadTokens + c.cacheCreateTokens > CONTEXT_TIER_THRESHOLD
+  const t2 = calls?.length
+    ? calls.filter(isTier2).reduce((s, c) => ({
+        inputTokens: s.inputTokens + c.inputTokens,
+        outputTokens: s.outputTokens + c.outputTokens,
+        cacheReadTokens: s.cacheReadTokens + c.cacheReadTokens,
+        cacheCreateTokens: s.cacheCreateTokens + c.cacheCreateTokens,
+      }), none)
+    : isTier2(u) ? u : none
+  const i2 = Math.min(t2.inputTokens, u.inputTokens)
+  const o2 = Math.min(t2.outputTokens, u.outputTokens)
+  const cr2 = Math.min(t2.cacheReadTokens, u.cacheReadTokens)
+  const cw2 = Math.min(t2.cacheCreateTokens, u.cacheCreateTokens)
   return {
-    inputTokens: u.inputTokens, outputTokens: u.outputTokens,
-    cacheReadTokens: u.cacheReadTokens, cacheCreateTokens: u.cacheCreateTokens,
-    tier2InputTokens: 0, tier2OutputTokens: 0, tier2CacheReadTokens: 0, tier2CacheCreateTokens: 0,
+    inputTokens: u.inputTokens - i2, outputTokens: u.outputTokens - o2,
+    cacheReadTokens: u.cacheReadTokens - cr2, cacheCreateTokens: u.cacheCreateTokens - cw2,
+    tier2InputTokens: i2, tier2OutputTokens: o2, tier2CacheReadTokens: cr2, tier2CacheCreateTokens: cw2,
   }
 }
 
@@ -311,10 +336,10 @@ export class TokenTracker {
    * models through cost(), other providers' API models at their flat rate
    * (no long-prompt surcharge), undefined for a model with no price.
    */
-  runCost(usage: TaskUsage, model: string | undefined, tier?: string): number | undefined {
+  runCost(usage: TaskUsage, model: string | undefined, tier?: string, calls?: TaskUsage[]): number | undefined {
     if (!isPricedModel(model, tier, this.pricing)) return undefined
     const family = model ? apiModelFamily(model, this.pricing) : null
-    if (!family) return this.cost({ tasks: 1, totalDuration: 0, errors: 0, ...splitTaskUsageByTier(usage) }, model)
+    if (!family) return this.cost({ tasks: 1, totalDuration: 0, errors: 0, ...splitTaskUsageByTier(usage, calls) }, model)
     const p = this.pricing[family]
     return ((usage.inputTokens || 0) * p.input +
       (usage.outputTokens || 0) * p.output +
@@ -339,6 +364,7 @@ export class TokenTracker {
     model?: string,
     channel?: string,
     sessionKey?: string,
+    calls?: TaskUsage[],
   ): void {
     const daily = this.today()
     const agent = daily.agents[agentId] || {
@@ -353,24 +379,14 @@ export class TokenTracker {
     agent.totalDuration += duration
     if (model) agent.model = model
 
-    // Split this request into tier1/tier2 based on its TOTAL input size
-    // (input + cacheCreate + cacheRead). Output inherits the tier of its
-    // request. Estimated paths (no realUsage) are always tier1 — they're
-    // too small to reach the threshold.
+    // Split into tier1/tier2 per call where per-call usage exists, else
+    // per run (splitTaskUsageByTier). Estimated paths (no realUsage) are
+    // always tier1 — they're too small to reach the threshold.
     let i1 = 0, o1 = 0, cr1 = 0, cw1 = 0, i2 = 0, o2 = 0, cr2 = 0, cw2 = 0
     if (realUsage) {
-      const totalInput = realUsage.inputTokens + realUsage.cacheReadTokens + realUsage.cacheCreateTokens
-      if (totalInput > CONTEXT_TIER_THRESHOLD) {
-        i2 = realUsage.inputTokens
-        o2 = realUsage.outputTokens
-        cr2 = realUsage.cacheReadTokens
-        cw2 = realUsage.cacheCreateTokens
-      } else {
-        i1 = realUsage.inputTokens
-        o1 = realUsage.outputTokens
-        cr1 = realUsage.cacheReadTokens
-        cw1 = realUsage.cacheCreateTokens
-      }
+      const s = splitTaskUsageByTier(realUsage, calls)
+      i1 = s.inputTokens; o1 = s.outputTokens; cr1 = s.cacheReadTokens; cw1 = s.cacheCreateTokens
+      i2 = s.tier2InputTokens; o2 = s.tier2OutputTokens; cr2 = s.tier2CacheReadTokens; cw2 = s.tier2CacheCreateTokens
     } else if (messageLength !== undefined && responseLength !== undefined) {
       i1 = Math.ceil(messageLength / 4)
       o1 = Math.ceil(responseLength / 4)

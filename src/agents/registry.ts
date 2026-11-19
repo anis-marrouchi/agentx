@@ -3804,7 +3804,7 @@ export class AgentRegistry {
       // (sqlite usage_daily, audit, dashboard) record both lanes. The same
       // threshold that TokenTracker.record() applies — extracted as a
       // helper so the two sites can never drift.
-      const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
+      const split = response.usage ? splitTaskUsageByTier(response.usage, response.callUsage) : undefined
       // What the run cost: the runtime's own figure when it reports one
       // (Claude Code's total_cost_usd), else the tokens at the billed
       // model's list price: Claude, or another provider's API model in the
@@ -3812,7 +3812,7 @@ export class AgentRegistry {
       // Summed per agent, project and month (#1162).
       const pricedModel = response.billedModel || task.model || state.def.model || undefined
       const costUsd = response.costUsd ?? (response.usage
-        ? this.tokenTracker.runCost(response.usage, pricedModel, state.def.tier)
+        ? this.tokenTracker.runCost(response.usage, pricedModel, state.def.tier, response.callUsage)
         : undefined)
       completedEmitted = true
       getEventBus().emit("task:completed", {
@@ -4001,6 +4001,7 @@ export class AgentRegistry {
           billedModel,
           tChannel,
           tSessionKey,
+          response.callUsage,
         )
 
         this.log(

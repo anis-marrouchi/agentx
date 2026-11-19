@@ -3879,7 +3879,7 @@ Session rotation events (stale \| tier-2 \| max-turns).
 
 ### `agentx db usage`
 
-Token usage rolled up per (agent, model, day).
+Token usage rolled up per (agent, model, day). The token columns count every call of a run, including the side calls on the cheaper tier (tier 2), so a day's total matches what the account was billed.
 
 | Flag | Default | What it does |
 |---|---|---|

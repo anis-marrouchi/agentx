@@ -43,13 +43,15 @@ function rowCost(row: {
   tier2_cache_read_tokens?: number; tier2_cache_create_tokens?: number;
 }): number {
   const r = RATE_PER_M[modelFamily(row.model)]
-  // Tier-2 columns ALSO live in input_tokens etc. (they're a subset, not a
-  // disjoint count). The tier-2 multiplier (1.5×) is the additional charge.
+  // Tier-2 columns are disjoint from the base columns (splitTaskUsageByTier
+  // books each token in one lane), so tier-2 tokens are priced here in full
+  // at 1.5× (#1994): the base rate plus the 0.5× surcharge.
+  const all = (base: number, tier2: number | undefined) => (base || 0) + (tier2 ?? 0)
   const base =
-    (row.input_tokens / 1_000_000) * r.input +
-    (row.output_tokens / 1_000_000) * r.output +
-    (row.cache_read_tokens / 1_000_000) * r.cacheRead +
-    (row.cache_create_tokens / 1_000_000) * r.cacheCreate
+    (all(row.input_tokens, row.tier2_input_tokens) / 1_000_000) * r.input +
+    (all(row.output_tokens, row.tier2_output_tokens) / 1_000_000) * r.output +
+    (all(row.cache_read_tokens, row.tier2_cache_read_tokens) / 1_000_000) * r.cacheRead +
+    (all(row.cache_create_tokens, row.tier2_cache_create_tokens) / 1_000_000) * r.cacheCreate
   const tier2Surcharge =
     ((row.tier2_input_tokens ?? 0) / 1_000_000) * r.input * 0.5 +
     ((row.tier2_output_tokens ?? 0) / 1_000_000) * r.output * 0.5 +
@@ -455,9 +457,9 @@ export function buildCost(db: Database.Database, range: number) {
       ((r.tier2_cache_read_tokens || 0) / 1e6) * rate.cacheRead * 0.5 +
       ((r.tier2_cache_create_tokens || 0) / 1e6) * rate.cacheCreate * 0.5
 
-    // Tier-2 token columns on usage_daily are SUBSETS of the base columns
-    // (same tokens, just billed at the higher rate). The dashboard surfaces
-    // total tokens processed so display sums tier1 + tier2 here.
+    // Tier-2 token columns on usage_daily are disjoint from the base
+    // columns. The dashboard surfaces total tokens processed, so display
+    // sums tier1 + tier2 here.
     const inTok  = (r.input_tokens || 0)         + (r.tier2_input_tokens || 0)
     const outTok = (r.output_tokens || 0)        + (r.tier2_output_tokens || 0)
     const crTok  = (r.cache_read_tokens || 0)    + (r.tier2_cache_read_tokens || 0)
