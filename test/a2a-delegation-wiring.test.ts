@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, readFileSync, rmSync } from "fs"
+import Database from "better-sqlite3"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
-import { join } from "path"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, waitingBody, type CallerHint } from "../src/daemon/delegation-wiring"
+import { dirname, join } from "path"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, DELEGATION_LOG, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, waitingBody, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { withCallerEnv } from "../src/agents/runtime"
@@ -321,5 +322,55 @@ describe("a run that says it ends waiting (#1100)", () => {
     expect(String(b.note)).toContain("lead is told the work is waiting for the build by 2030-01-01 12:00 UTC, not done")
     const alone = waitingBody({ delegation: null, asker: null, on: "x" })
     expect(String(alone.note)).toContain("no one is called back")
+  })
+})
+
+describe("the old delegation log at start (#1961)", () => {
+  const leftover = (dir: string) => {
+    const p = join(dir, DELEGATION_LOG)
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(p, JSON.stringify({ type: "start", ts: 1, id: "dlg-file", caller: "front", callee: "worker", request: "From the file", origin: { channel: "telegram", chatId: "chat-1" }, root: { kind: "human", channel: "telegram", chatId: "chat-1" }, startedAt: 1 }) + "\n")
+    return p
+  }
+  const build = (dir: string, db: Database.Database | null) => createDelegations({
+    config: daemonConfigSchema.parse({ node: { id: "n", name: "n" } }),
+    registry: { execute: async () => ({ content: "" }), cancelRunningTask: () => null, refusalFor: () => null, isChatBusy: () => false } as any,
+    router: { getChannel: () => undefined, sendOutbound: async () => {} } as any,
+    mesh: () => undefined,
+    log: () => {},
+    replies: new CallbackReplies(),
+    db,
+    baseDir: dir,
+  })
+
+  it("imports a leftover file into the table once, renames it, and writes none", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-dlgw-"))
+    const db = new Database(":memory:")
+    try {
+      const p = leftover(dir)
+      const mgr = build(dir, db)
+      expect(mgr.isPending("dlg-file")).toBe(true)
+      expect(existsSync(p)).toBe(false)
+      expect(existsSync(`${p}.imported`)).toBe(true)
+      mgr.stop()
+      // The next start reads the table alone.
+      const again = build(dir, db)
+      expect(again.isPending("dlg-file")).toBe(true)
+      expect(existsSync(p)).toBe(false)
+      again.stop()
+    } finally { db.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it("leaves a leftover file where it is on a node with no database", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-dlgw-"))
+    try {
+      const p = leftover(dir)
+      const mgr = build(dir, null)
+      expect(mgr.journalMode()).toBe("memory-only")
+      expect(mgr.isPending("dlg-file")).toBe(false)
+      expect(existsSync(p)).toBe(true)
+      expect(existsSync(`${p}.imported`)).toBe(false)
+      mgr.stop()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

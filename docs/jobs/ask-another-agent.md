@@ -26,6 +26,8 @@ AgentX writes down every piece of work it hands out, in its database on the mach
 
 Each answer is passed on at most once more, never in a loop.
 
+Older versions of AgentX kept this list in a file, `.agentx/a2a/delegations.jsonl`. AgentX no longer writes that file. If a machine still has one, AgentX copies it into the database once at start, then renames it to `delegations.jsonl.imported`. The renamed file is never read again, and you can delete it.
+
 ## Which chats this applies to
 
 It applies when a person started the conversation on one of these: Telegram, WhatsApp, a GitLab or GitHub comment, the phone app, voice, or the dashboard chat.
