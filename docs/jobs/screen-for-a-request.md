@@ -123,7 +123,7 @@ The log holds no content. It works only on the machine itself.
 - **A read says "no consent (…)".** The words in brackets say why: no yes yet, the yes ended, it was used for its reads already, the daemon restarted since your yes, it was answered somewhere other than the popup, or another agent or task asked for it. The agent may ask again if the request still needs it.
 - **The agent says "a card of yours is still waiting" or "less than 30 minutes ago".** It asked already. Answer the waiting card, or wait for the pause to end.
 - **The agent says "no running turn of yours was found".** The call did not come from inside the agent's own turn with its secret. Restart the daemon after updating AgentX, so agents get the secret.
-- **The agent does not have the `agentx_sources` tool.** Restart the daemon after switching a source on: `agentx restart`.
+- **The agent does not have the `agentx_sources` tool.** The daemon loads the tool when it starts, so after switching a source on, restart it: `agentx restart`.
 - **`browser-tabs` is "not loaded".** That is expected for now: see [Why tabs are not read yet](#why-tabs-are-not-read-yet).
 - **News says "refused: … is a private address".** A feed, or a page it redirects to, is on your own network. Only public feeds are read.
-- **News says "no feeds".** Set `situations.news.feeds`.
+- **News says "no feeds".** No feed is listed yet: put the feed addresses in `situations.news.feeds`.
