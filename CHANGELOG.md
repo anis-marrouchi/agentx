@@ -2,6 +2,23 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.236.0](https://github.com/anis-marrouchi/agentx/compare/v0.235.0...v0.236.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **requests:** `agentx request-status` and the `requestStatus` setting are removed. Use the Jobs page (Hub > Jobs). A `requestStatus` block left in agentx.json is ignored with a warning; delete it.
+
+### Features
+
+* **requests:** remove request status ([#1950](https://github.com/anis-marrouchi/agentx/issues/1950)) ([#1968](https://github.com/anis-marrouchi/agentx/issues/1968)) ([60c3dc0](https://github.com/anis-marrouchi/agentx/commit/60c3dc0ed7d11d3f3ba63abf0dcd8271de730dc2))
+* **situations:** closing steps (Refs [#1892](https://github.com/anis-marrouchi/agentx/issues/1892), phase 4) ([#1964](https://github.com/anis-marrouchi/agentx/issues/1964)) ([62f0097](https://github.com/anis-marrouchi/agentx/commit/62f0097f3c26dfc5b395cdaa1b090cde8b93800f))
+
+
+### Bug Fixes
+
+* **requests:** a met close check keeps the agent's proofs for the close reviewer ([#1966](https://github.com/anis-marrouchi/agentx/issues/1966)) ([5e1b0fd](https://github.com/anis-marrouchi/agentx/commit/5e1b0fd3ef9d3485fe7a790788339507439b07c5))
+
 ## [0.235.0](https://github.com/anis-marrouchi/agentx/compare/v0.234.1...v0.235.0) (2026-11-19)
 
 
