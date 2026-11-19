@@ -5,7 +5,8 @@ import { applySignal } from "./apply"
 import { callsSource } from "./calls"
 import { onSignal, setSignalInterest } from "./hub"
 import { ownerBusySources } from "./owner-busy"
-import { SignalSources, type ConsentCheck } from "./registry"
+import { browserTabsSource, newsSource, openAppsSource, type FetchText, type RunScript } from "./per-request"
+import { SignalSources, type ConsentCheck, type ReadLogSink } from "./registry"
 import { TELEGRAM_MEMBERS_SOURCE } from "./telegram-members"
 import { isUnknown } from "./types"
 import { WHATSAPP_GROUPS_SOURCE } from "./whatsapp-groups"
@@ -27,13 +28,28 @@ export function attachSignalSources(opts: {
   settings: () => SituationsConfig
   calls: () => Pick<CallStore, "list"> | undefined
   consent?: ConsentCheck
+  /** Phase 7: where per-request reads are logged. Without it no
+   *  per-request source is read. */
+  readLog?: ReadLogSink
+  /** Phase 7, for tests: the AppleScript runner and the feed fetch. */
+  runScript?: RunScript
+  fetchText?: FetchText
+  platform?: NodeJS.Platform
   log?: (m: string) => void
 }): AttachedSources {
-  const sources = new SignalSources({ settings: () => opts.settings().sources, consent: opts.consent })
+  const sources = new SignalSources({
+    settings: () => opts.settings().sources, consent: opts.consent, readLog: opts.readLog,
+    ...(opts.platform ? { platform: opts.platform } : {}),
+  })
   for (const s of ownerBusySources()) sources.register(s)
   sources.register(callsSource(opts.calls))
   sources.register(WHATSAPP_GROUPS_SOURCE)
   sources.register(TELEGRAM_MEMBERS_SOURCE)
+  // Phase 7: per-request sources. Loaded where they fit, read only when
+  // switched on, for a request, with the person's yes where needed.
+  sources.register(openAppsSource(opts.runScript))
+  sources.register(browserTabsSource(opts.runScript))
+  sources.register(newsSource(() => opts.settings().news ?? { feeds: [], maxItems: 10, timeoutMs: 8_000 }, opts.fetchText))
 
   setSignalInterest((key) => opts.settings().mode !== "off" && opts.store.get(key)?.phase === "during")
   const off = onSignal((s) => {
@@ -59,8 +75,10 @@ export function attachSignalSources(opts: {
 export function sourcesView(sources: SignalSources, opts: { local: boolean }) {
   return {
     loaded: sources.loaded().map((s) => {
-      const answer = s.mode === "read" ? sources.read(s.id, {})[0] : undefined
       const base = { id: s.id, kind: s.kind, sensitivity: s.sensitivity, mode: s.mode }
+      // A per-request source is never read for this view (phase 7).
+      if (s.perRequest) return { ...base, perRequest: true }
+      const answer = s.mode === "read" ? sources.read(s.id, {})[0] : undefined
       if (!answer) return base
       if (!opts.local) return { ...base, state: isUnknown(answer) ? "unknown" : "known" }
       return { ...base, value: isUnknown(answer) ? "unknown" : answer.value, reason: answer.reason }

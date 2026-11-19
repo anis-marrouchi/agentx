@@ -47,6 +47,9 @@ import { ensureSituationWorkflows } from "@/situations/workflows"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
+import { cardConsent } from "@/situations/sources/consent"
+import { SourceReadLog } from "@/situations/sources/read-log"
+import { sourcesAsk, sourcesRead, sourcesReads, sourcesTurnFrom } from "@/situations/sources/request-api"
 import { getMessageRouter, setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -401,6 +404,8 @@ export class AgentXDaemon {
   private situationGate?: SituationGate
   /** This node's signal sources (#1892 phase 3). */
   private signalSources?: AttachedSources
+  /** Phase 7 (#1892): one row per read of a per-request source. */
+  private sourceReadLog?: SourceReadLog
   /** Closing steps (#1892 phase 4): the store's expiry and close runs. */
   private situationRuns?: SituationRuns
   private situationHookOff?: () => void
@@ -923,10 +928,16 @@ export class AgentXDaemon {
           // reported by a channel or the call store moves the record.
           // Signals stay on this node (not on the event bus).
           this.signalSources?.detach()
+          // Phase 7: per-request sources (open apps, browser tabs, news),
+          // off unless switched on. The person's yes is the decision card
+          // they answered in the popup (consent.ts); each read is logged.
+          this.sourceReadLog = new SourceReadLog(db)
           this.signalSources = attachSignalSources({
             store: situations,
             settings: () => this.config.situations,
             calls: () => this.calls,
+            consent: cardConsent(process.cwd()),
+            readLog: this.sourceReadLog,
             log: (m) => this.log(m),
           })
           const skipped = this.signalSources.sources.skipped()
@@ -8497,6 +8508,40 @@ export class AgentXDaemon {
 
         // Phase 6: the chat's agent names its own talk (agentx_situation).
         // The chat is the proven running turn's, never the body's.
+        // Phase 7 (#1892): per-request sources. An agent's running turn
+        // asks the person (one popup-only card) and reads for that
+        // request. Callers on this machine only; signals stay here.
+        case "POST /situations/sources/ask":
+        case "POST /situations/sources/read": {
+          if (!this.signalSources) { this.json(res, 503, { error: "signal sources are not available on this node" }); break }
+          const body = await readBody(req)
+          const local = isLoopback(req.socket?.remoteAddress || "")
+          const turn = sourcesTurnFrom(this.callerProof(req), typeof body.agentId === "string" ? body.agentId : undefined, {
+            taskOwner: (id) => this.registry.runningTaskOwner(id)?.agentId ?? null,
+            findRunningTurn: (id, by) => this.registry.findRunningTurn(id, by),
+          })
+          const sources = this.signalSources.sources
+          const ask = (req.url || "").split("?")[0].endsWith("/ask")
+          const r = ask
+            ? sourcesAsk(body, {
+                local, turn, sources, root: process.cwd(),
+                settings: this.config.situations.consent,
+                cardSettings: this.config.approvals,
+                popupOn: this.config.approvals.popup?.enabled === true && process.platform === "darwin",
+              })
+            : await sourcesRead(body, { local, turn, sources, root: process.cwd() })
+          if (ask && r.status === 201) this.log(`[situation] ${turn?.agentId} asks the person to read ${(r.body.sources as string[]).join(", ")} (card ${String(r.body.request)})`)
+          if (!ask && r.status === 200) this.log(`[situation] ${turn?.agentId} read ${String(r.body.source)} for ${String(r.body.request).slice(0, 80)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "GET /situations/sources/reads": {
+          const q = new URL(req.url || "/", "http://localhost").searchParams
+          const r = sourcesReads(q, { local: isLoopback(req.socket?.remoteAddress || ""), log: this.sourceReadLog })
+          this.json(res, r.status, r.body)
+          break
+        }
+
         case "POST /situations/fill": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
           const body = await readBody(req)

@@ -80,6 +80,10 @@ export function isMeshGatedPath(path: string): boolean {
     // Which signal sources run here and what they answer now (#1892
     // phase 3): whether the owner is in Focus or on a call, and with whom.
     path === "/situations/sources" ||
+    // Per-request sources (#1892 phase 7): an agent asks the person and
+    // reads their open apps, browser tabs or news; the read log. The
+    // handlers also refuse every caller off this machine.
+    path.startsWith("/situations/sources/") ||
     // The situation-phase seat's calibration report (#1892 phase 5):
     // counts only, gated like the gate log it is built from.
     path === "/situations/seat" ||

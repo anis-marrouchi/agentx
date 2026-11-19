@@ -9,6 +9,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_detect_output_type",
   "agentx_channel_reply",
   "agentx_situation",
+  "agentx_sources",
   "agentx_channel_label",
   "agentx_send",
   "agentx_send_agent",

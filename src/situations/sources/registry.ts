@@ -17,6 +17,12 @@ import { fitsPlatform, isUnknown, unknownSignal, type Signal, type SignalScope, 
 // `consent: person`. The yes itself (with its expiry) is the `consent`
 // callback's business: phase 7 stores it. With no callback, nothing has
 // consent, so a sensitive source is never read.
+//
+// Per-request sources (phase 7: open apps, browser tabs, news) add two
+// refusals before consent: off unless switched on (`enabled: true`), and
+// read only for a named request. They are read only by
+// `readForRequest`, which writes the read log row BEFORE the source is
+// touched: a row that cannot be written means no read (fail closed).
 
 export interface SourceSettings {
   enabled?: boolean
@@ -27,12 +33,26 @@ export interface SourceSettings {
 /** Has the person said yes for this source, for this scope, now? */
 export type ConsentCheck = (sourceId: string, scope: SignalScope, now: number) => boolean
 
+/** Where per-request reads are logged (read-log.ts). Only when, which
+ *  source, which agent, which request: never what was read. */
+export interface ReadLogSink {
+  /** Called before the source is read. Returns the row id. */
+  start(row: { at: number; source: string; agentId: string; requestId: string }): number
+  /** Called after: how it went and how many answers came back. */
+  finish(id: number, outcome: "read" | "down" | "empty", count: number): void
+}
+
 export interface SignalSourcesOptions {
   platform?: NodeJS.Platform
   settings?: () => Record<string, SourceSettings> | undefined
   consent?: ConsentCheck
   now?: () => number
+  readLog?: ReadLogSink
 }
+
+/** A per-request read's answer cut to fit: values are text the agent
+ *  reads, never a dump. */
+const PER_REQUEST_VALUE_MAX = 6_000
 
 export class SignalSources {
   private readonly sources = new Map<string, SignalSource>()
@@ -71,11 +91,13 @@ export class SignalSources {
   }
 
   /** Why this source may not be read for this scope, or null when it may. */
-  private refusal(src: SignalSource, scope: SignalScope): string | null {
+  private refusal(src: SignalSource, scope: SignalScope, opts: { skipConsent?: boolean } = {}): string | null {
     const s = this.settingsOf(src.id)
     if (s.enabled === false) return "switched off in situations.sources"
+    if (src.perRequest && s.enabled !== true) return `off: a per-request source is read only when situations.sources.${src.id}.enabled is true`
     if (s.agents?.length && !(scope.agentId && s.agents.includes(scope.agentId))) return "off for this agent"
-    if (src.sensitivity === "sensitive" || s.consent === "person") {
+    if (src.perRequest && !scope.requestId) return "read only for a request"
+    if (!opts.skipConsent && (src.sensitivity === "sensitive" || s.consent === "person")) {
       let yes = false
       try { yes = this.opts.consent?.(src.id, scope, this.now()) === true } catch { yes = false }
       if (!yes) return "no consent"
@@ -90,6 +112,7 @@ export class SignalSources {
       const why = this.notLoaded.get(id)
       return [unknownSignal(id, "unknown", "", why ? `not loaded on this node (${why})` : "not loaded on this node", now, scope.key)]
     }
+    if (src.perRequest) return [unknownSignal(id, src.kind, "", "a per-request source: read only for a request, with its own yes where it needs one", now, scope.key)]
     const no = this.refusal(src, scope)
     if (no) return [unknownSignal(id, src.kind, "", no, now, scope.key)]
     if (!src.read) return [unknownSignal(id, src.kind, "", "a push source: it answers only when something happens", now, scope.key)]
@@ -111,7 +134,68 @@ export class SignalSources {
    *  agents accepts a signal only for a talk one of them owns (#1945). */
   accepts(s: Signal, agentId?: string): boolean {
     const src = this.sources.get(s.source)
-    if (!src) return false
+    if (!src || src.perRequest) return false
     return this.refusal(src, { key: s.scope, ...(agentId ? { agentId } : {}) }) === null
+  }
+
+  /** Is this a per-request source loaded here? */
+  isPerRequest(id: string): boolean {
+    return this.sources.get(id)?.perRequest === true
+  }
+
+  /** Why this per-request source may not be asked for by this agent,
+   *  leaving the person's yes aside, or null when it may. Reads nothing,
+   *  logs nothing. */
+  askRefusal(id: string, agentId: string): string | null {
+    const src = this.sources.get(id)
+    if (!src) return this.notLoaded.has(id) ? `not loaded on this node (${this.notLoaded.get(id)})` : "not loaded on this node"
+    if (!src.perRequest) return "not a per-request source"
+    return this.refusal(src, { agentId, requestId: "ask" }, { skipConsent: true })
+  }
+
+  /** Does this source need the person's yes before a read? */
+  needsConsent(id: string): boolean {
+    const src = this.sources.get(id)
+    if (!src) return true
+    return src.sensitivity === "sensitive" || this.settingsOf(id).consent === "person"
+  }
+
+  /** Read a per-request source for one request (phase 7). In order:
+   *  every refusal of `read` plus "off unless switched on" and "only for
+   *  a request"; then one read log row; then the read. Nothing is read,
+   *  and no row is written, when any check says no. */
+  async readForRequest(id: string, scope: SignalScope): Promise<Signal[]> {
+    const now = this.now()
+    const src = this.sources.get(id)
+    if (!src || !src.perRequest) {
+      return [unknownSignal(id, src?.kind ?? "unknown", "", src ? "not a per-request source" : "not loaded on this node", now, scope.key)]
+    }
+    const no = this.refusal(src, scope)
+    if (no) return [unknownSignal(id, src.kind, "", no, now, scope.key)]
+    if (!this.opts.readLog) return [unknownSignal(id, src.kind, "", "no read log on this node: not read", now, scope.key)]
+    let row: number
+    try {
+      row = this.opts.readLog.start({ at: now, source: id, agentId: scope.agentId ?? "", requestId: scope.requestId ?? "" })
+    } catch (e: any) {
+      return [unknownSignal(id, src.kind, "", `the read log could not be written, so nothing was read: ${String(e?.message ?? e).slice(0, 120)}`, now, scope.key)]
+    }
+    const finish = (outcome: "read" | "down" | "empty", count: number) => {
+      try { this.opts.readLog?.finish(row, outcome, count) } catch { /* the row exists; its outcome is best effort */ }
+    }
+    let out: Signal[]
+    try {
+      out = src.readAsync ? await src.readAsync(scope) : (src.read?.(scope) ?? [])
+    } catch (e: any) {
+      finish("down", 0)
+      return [unknownSignal(id, src.kind, "", `source down: ${String(e?.message ?? e).slice(0, 200)}`, now, scope.key)]
+    }
+    if (!Array.isArray(out) || out.length === 0) {
+      finish("empty", 0)
+      return [unknownSignal(id, src.kind, "", "the source gave no answer", now, scope.key)]
+    }
+    finish("read", out.filter((s) => !isUnknown(s)).length)
+    return out.map((s) => typeof s.value === "string" && s.value.length > PER_REQUEST_VALUE_MAX
+      ? { ...s, value: `${s.value.slice(0, PER_REQUEST_VALUE_MAX - 1)}…` }
+      : s)
   }
 }

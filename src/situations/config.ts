@@ -13,6 +13,8 @@ import { z } from "zod"
 //     seat: { noReplyBelow: 0.2, minLabeled: 50 }   # phase 5 (maxFalseNoReply unset)
 //     importance: { enabled: false }                # phase 5
 //     templates: { enabled: false, agentFill: false }  # phase 6
+//     consent: { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60 }  # phase 7
+//     news: { feeds: [], maxItems: 10, timeoutMs: 8000 }              # phase 7
 //
 // `shadow` (the default) keeps the record of each chat and writes every
 // message the gate WOULD drop to the gate log, but drops nothing and sends
@@ -49,7 +51,13 @@ export const situationsConfigSchema = z.object({
    *  limits it to some agents, or asks the person's yes before a read
    *  (`consent: person`). A sensitive source always needs that yes. The
    *  owner's hold (Focus, call, widget) does not read these switches: it
-   *  holds as before. */
+   *  holds as before.
+   *
+   *  Per-request sources (phase 7): `open-apps`, `browser-tabs`, `news`.
+   *  These are OFF unless `enabled: true`, and read only when an agent
+   *  asks for one request (`agentx_sources`). `open-apps` and
+   *  `browser-tabs` are sensitive: each request needs the person's yes in
+   *  the popup on this machine, and the yes ends by itself. */
   sources: z.record(z.string(), z.object({
     enabled: z.boolean().optional(),
     agents: z.array(z.string()).optional(),
@@ -99,6 +107,24 @@ export const situationsConfigSchema = z.object({
      *  other writer, no extra promise owners, never over what a person
      *  set. Needs `enabled`. */
     agentFill: z.boolean().default(false),
+  }).default({}),
+  /** The person's yes for a per-request source (phase 7). An agent's ask
+   *  is a decision card that takes a yes only in the popup on this
+   *  machine; the card is the consent record. */
+  consent: z.object({
+    /** How long the card waits for an answer. No answer: nothing is read. */
+    askMinutes: z.number().int().min(1).max(24 * 60).default(60),
+    /** How long a yes lasts when the agent names no time. */
+    defaultMinutes: z.number().int().min(1).max(24 * 60).default(15),
+    /** The longest a yes may last, whatever the agent asks. */
+    maxMinutes: z.number().int().min(1).max(24 * 60).default(60),
+  }).default({}),
+  /** The `news` per-request source (phase 7): headlines from these RSS or
+   *  Atom feeds. Only the owner names the feeds; an agent cannot. */
+  news: z.object({
+    feeds: z.array(z.string().url().refine((u) => /^https?:\/\//i.test(u), "an http(s) link")).max(20).default([]),
+    maxItems: z.number().int().min(1).max(50).default(10),
+    timeoutMs: z.number().int().min(500).max(60_000).default(8_000),
   }).default({}),
 }).default({})
 

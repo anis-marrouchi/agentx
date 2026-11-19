@@ -13,6 +13,7 @@ import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 import { busyText, callerHeaders } from "@/calls/service"
 import { SITUATION_TOOL, SITUATION_TOOL_DESCRIPTION, SITUATION_TOOL_ENV, SITUATION_TOOL_SCHEMA } from "@/situations/tool"
+import { SOURCES_TOOL, SOURCES_TOOL_DESCRIPTION, SOURCES_TOOL_ENV, SOURCES_TOOL_SCHEMA } from "@/situations/sources-tool"
 import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
 import { HUB_NAME } from "@/daemon/ui/hub-name"
 
@@ -511,6 +512,11 @@ const TOOLS = [
     name: "agentx_situation",
     description: SITUATION_TOOL_DESCRIPTION,
     inputSchema: SITUATION_TOOL_SCHEMA,
+  },
+  {
+    name: "agentx_sources",
+    description: SOURCES_TOOL_DESCRIPTION,
+    inputSchema: SOURCES_TOOL_SCHEMA,
   },
   {
     name: "agentx_channel_label",
@@ -2229,6 +2235,12 @@ async function handleToolCall(
       return { content: [{ type: "text", text }] }
     }
 
+    case "agentx_sources": {
+      const { runSourcesTool } = await import("@/situations/sources-tool")
+      const text = await runSourcesTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
     case "agentx_request": {
       const { runRequestTool } = await import("@/requests/tool")
       const text = await runRequestTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
@@ -2529,7 +2541,10 @@ export function listedTools(env: NodeJS.ProcessEnv = process.env, toolSet: McpTo
   // agentx_situation (#1892 phase 6) is listed only where the daemon said
   // agent fill is on (AGENTX_SITUATION_TOOL, set per agent process), so a
   // node that has it off carries no schema for it.
-  const offered = toolSetTools(toolSet).filter((t) => t.name !== SITUATION_TOOL || env[SITUATION_TOOL_ENV] === "1")
+  // agentx_sources (phase 7) likewise, only while a per-request source is on.
+  const offered = toolSetTools(toolSet).filter((t) =>
+    (t.name !== SITUATION_TOOL || env[SITUATION_TOOL_ENV] === "1") &&
+    (t.name !== SOURCES_TOOL || env[SOURCES_TOOL_ENV] === "1"))
   const wanted = new Set((env.AGENTX_MCP_TOOLS ?? "").split(",").map((t) => t.trim()).filter(Boolean))
   if (!wanted.size) return offered
   const kept = offered.filter((t) => wanted.has(t.name))
