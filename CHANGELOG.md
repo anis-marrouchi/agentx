@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.237.0](https://github.com/anis-marrouchi/agentx/compare/v0.236.1...v0.237.0) (2026-11-19)
+
+
+### Features
+
+* **situations:** templates and agent-named talks ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 6) ([#1978](https://github.com/anis-marrouchi/agentx/issues/1978)) ([cc61b3f](https://github.com/anis-marrouchi/agentx/commit/cc61b3f4787883daefa742cd25c497e8a90149bc))
+
+
+### Bug Fixes
+
+* **situations:** closing steps need the owner's operator key ([#1981](https://github.com/anis-marrouchi/agentx/issues/1981)) ([3c81ae3](https://github.com/anis-marrouchi/agentx/commit/3c81ae31c1fa410c3d4c99be316b38cac8875a1c))
+
 ## [0.236.1](https://github.com/anis-marrouchi/agentx/compare/v0.236.0...v0.236.1) (2026-11-19)
 
 
