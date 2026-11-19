@@ -491,7 +491,7 @@ No flags.
 | `--agent <id>` | — | Agent to run. |
 | `--do <prompt>` | — | Prompt to run at each tick (required unless --id exists). |
 | `--id <name>` | — | Explicit cron id (default: auto-slug of &lt;when&gt;-&lt;agent&gt;). |
-| `--notify <target>` | — | "me" (use notifications.destination) or "channel:chatId[:accountId]". |
+| `--notify <target>` | — | "me" (use notifications.destination) or "channel:chatId". Everything after the first colon is the chat id, colons included (`app:app:01ABC` → chat `app:01ABC`). Only telegram and whatsapp read a third part as the account: "telegram:chatId:accountId". |
 | `--no-deliver` | — | Send only failures to `--notify`, not each run's answer. |
 | `--only-exceptions` | — | The run decides: an answer of NOTHING_TO_REPORT sends nothing to `--notify`. |
 | `--on-error <modes>` | — | Comma list of "log\|notify\|disable" (default: log; notify implies "notify"). |
