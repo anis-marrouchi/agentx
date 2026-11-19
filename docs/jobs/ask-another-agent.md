@@ -26,6 +26,8 @@ AgentX writes down every piece of work it hands out, in its database on the mach
 
 Each answer is passed on at most once more, never in a loop.
 
+Older versions of AgentX kept this list in a file, `.agentx/a2a/delegations.jsonl`. AgentX no longer writes that file. If a machine still has one, AgentX copies it into the database once at start, then renames it to `delegations.jsonl.imported`. The renamed file is never read again. Keep it: it is what you need to roll back to an older AgentX (see **If something is wrong**). If the file cannot be renamed, AgentX removes it instead.
+
 ## Which chats this applies to
 
 It applies when a person started the conversation on one of these: Telegram, WhatsApp, a GitLab or GitHub comment, the phone app, voice, or the dashboard chat.
@@ -211,6 +213,8 @@ Some requests are refused straight away with status `409`:
 - **The update never arrives:** open the daemon log and search for `[delegation`. A line ending in `no route to …` means the machine running your agent has no connection to that chat app; set the chat app up on that machine.
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
+- **You need to go back to an older AgentX:** Roll back only to 0.235.0 or later. Rolling back further, the older daemon does not report hand-offs still out as lost, does not re-run answers on their way back, and drops a peer's late answer; those hand-offs are reported lost late after coming forward again. If you must go further back, first rename `.agentx/a2a/delegations.jsonl.imported` back to `delegations.jsonl` (restores what the older daemon can read, as of the import).
+- **The daemon log says `[delegation] WARNING: … imported but could not be renamed or removed`:** AgentX cannot change files in `.agentx/a2a/`. Fix that folder's permissions so the user that runs AgentX can write to it, then restart AgentX. Until then the old file is read again at every start.
 - **After a restart, nobody is told about work that was still out, or you got the notice "Hand-offs kept in memory only":** search the daemon log for `[delegation] WARNING: no database`. **Terminal:** `curl -s http://127.0.0.1:18800/health | jq .handoffs` prints `"memory-only"` on such a machine (`"database"` when all is well). The database (`.agentx/db.sqlite`) did not open on that machine, so hand-offs were kept in memory only. The line before it in the log, starting `[storage/sqlite]`, says why; usually the database module must be installed again (`pnpm install`).
 - **You get "could not pass on the answer … because of a restart":** AgentX restarted twice while your agent was passing the answer on, or the second try failed. Ask your agent for the answer again. If you track requests, the request shows what the helper said. In the daemon log, the lines starting `[delegation` with the reference from the message say what happened.
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.

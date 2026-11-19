@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import Database from "better-sqlite3"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { HandoffStore, handoffStoreFor } from "../src/a2a/handoff-store"
+import { HandoffStore, handoffStoreFor, importDelegationLog } from "../src/a2a/handoff-store"
 import type { DelegationRecord } from "../src/a2a/delegation"
 
 // #1861: the hand-off log moves from .agentx/a2a/delegations.jsonl into a
-// `handoffs` table of the jobs database.
+// `handoffs` table of the jobs database. #1961: the file is no longer
+// written; a leftover one is imported once at start, then renamed.
 
 function rec(id: string, over: Partial<DelegationRecord> = {}): DelegationRecord {
   return {
@@ -123,14 +124,6 @@ describe("the handoffs table", () => {
     store.insert(rec("dlg-a"), 1000)
     store.insert(rec("dlg-b", { callee: "pm", peer: "vps" }), 1000)
     expect([...store.agents()].sort()).toEqual([["dlg-a", "worker"], ["dlg-b", "pm@vps"]])
-  })
-
-  it("lists the last finished ids, oldest first", () => {
-    for (const [i, s] of (["done", "error", "lost"] as const).entries()) {
-      store.insert(rec(`dlg-${i}`), 1000)
-      store.end(`dlg-${i}`, s, 2000 + i)
-    }
-    expect(store.recentDone(2)).toEqual([["dlg-1", "error"], ["dlg-2", "lost"]])
   })
 
   it("skips a row whose way home cannot be read", () => {
@@ -274,6 +267,83 @@ describe("importing the old delegation log", () => {
 
   it("does nothing without a file", () => {
     expect(store.importFile(join(dir, "none.jsonl"))).toEqual({ lines: 0, skipped: 0 })
+  })
+})
+
+describe("a leftover delegation log at start (#1961)", () => {
+  const start = (id: string) => JSON.stringify({ type: "start", ts: 1000, ...rec(id) })
+
+  it("is imported once, then renamed and never read again", () => {
+    const p = join(dir, "delegations.jsonl")
+    writeFileSync(p, start("dlg-a") + "\n")
+    const logs: string[] = []
+    importDelegationLog(store, p, (m) => logs.push(m))
+    expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    expect(existsSync(p)).toBe(false)
+    expect(readFileSync(`${p}.imported`, "utf-8")).toContain("dlg-a")
+    expect(logs.join("\n")).toContain("1 line(s)")
+    expect(logs.join("\n")).toContain("renamed")
+    // The renamed file is not read: a later start changes nothing.
+    store.end("dlg-a", "lost", 2000)
+    importDelegationLog(store, p, (m) => logs.push(m))
+    expect(store.statusOf("dlg-a")).toBe("lost")
+  })
+
+  it("does nothing, and says nothing, when there is no file", () => {
+    const logs: string[] = []
+    importDelegationLog(store, join(dir, "delegations.jsonl"), (m) => logs.push(m))
+    expect(logs).toEqual([])
+    expect(existsSync(join(dir, "delegations.jsonl.imported"))).toBe(false)
+  })
+
+  it("removes the file instead when the rename fails, so pruned rows never come back", () => {
+    const p = join(dir, "delegations.jsonl")
+    writeFileSync(p, start("dlg-a") + "\n")
+    // A folder already where the renamed file would go: the rename fails.
+    mkdirSync(`${p}.imported`)
+    writeFileSync(join(`${p}.imported`, "x"), "x")
+    const logs: string[] = []
+    importDelegationLog(store, p, (m) => logs.push(m))
+    expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    expect(existsSync(p)).toBe(false)
+    expect(logs.join("\n")).toContain("could not rename")
+    expect(logs.join("\n")).toContain("removed after its import")
+    expect(logs.join("\n")).not.toContain("WARNING")
+    // Pruned after retention: no later start brings it back as open.
+    store.end("dlg-a", "done", 2000)
+    store.prune(3000)
+    importDelegationLog(store, p, () => {})
+    expect(store.open()).toEqual([])
+  })
+
+  it("warns, and goes on, when the file can be neither renamed nor removed", () => {
+    const folder = join(dir, "a2a")
+    mkdirSync(folder)
+    const p = join(folder, "delegations.jsonl")
+    writeFileSync(p, start("dlg-a") + "\n")
+    chmodSync(folder, 0o555) // readable, but nothing can be renamed or removed in it
+    try {
+      const logs: string[] = []
+      importDelegationLog(store, p, (m) => logs.push(m))
+      expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+      expect(existsSync(p)).toBe(true)
+      expect(logs.join("\n")).toContain("[delegation] WARNING:")
+      expect(logs.join("\n")).toContain("could not be renamed or removed")
+      expect(logs.join("\n")).toContain("fix permissions")
+      // The next start merges it again: nothing changes.
+      importDelegationLog(store, p, () => {})
+      expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    } finally { chmodSync(folder, 0o755) }
+  })
+
+  it("keeps a file it could not import for the next start", () => {
+    const p = join(dir, "delegations.jsonl")
+    mkdirSync(p) // unreadable as a file
+    const logs: string[] = []
+    importDelegationLog(store, p, (m) => logs.push(m))
+    expect(logs.join("\n")).toContain("could not import")
+    expect(existsSync(p)).toBe(true)
+    expect(existsSync(`${p}.imported`)).toBe(false)
   })
 })
 
