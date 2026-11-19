@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.239.0](https://github.com/anis-marrouchi/agentx/compare/v0.238.0...v0.239.0) (2026-11-19)
+
+
+### Features
+
+* **situations:** owner approves learned templates on a weekly card ([#1990](https://github.com/anis-marrouchi/agentx/issues/1990)) ([#1991](https://github.com/anis-marrouchi/agentx/issues/1991)) ([ea3b9c7](https://github.com/anis-marrouchi/agentx/commit/ea3b9c72e8acb02f1ee43134fa17c0df1eec5b75))
+
+
+### Bug Fixes
+
+* **guard:** judge a glob left unexpanded past the budget by the key it could name ([45fe887](https://github.com/anis-marrouchi/agentx/commit/45fe88736be8d005da30fd3f75af4c39d0ea3f59))
+* **situations:** read marks claim only AgentX's own paths; IPv4 inside IPv6 is private ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 7) ([3de9d52](https://github.com/anis-marrouchi/agentx/commit/3de9d52e2531113f44dba4b3cd96911715c70d07))
+* **usage:** decide the 200k tier per model call, not per run ([#1994](https://github.com/anis-marrouchi/agentx/issues/1994)) ([#2003](https://github.com/anis-marrouchi/agentx/issues/2003)) ([7f4a512](https://github.com/anis-marrouchi/agentx/commit/7f4a51281e3f562ebe7dfa5227bba4d5577a8ca3))
+
 ## [0.238.0](https://github.com/anis-marrouchi/agentx/compare/v0.237.0...v0.238.0) (2026-11-19)
 
 
