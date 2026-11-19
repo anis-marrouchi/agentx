@@ -228,6 +228,17 @@ function guardHookCommand(agentId: string, daemonPort: string, root: string = pr
   return buildGuardHookCommand({ port: daemonPort, root, agentId, required: true })
 }
 
+/** The guard on Read and Grep (#1979: keeps agents off .agentx/operator.key).
+ *  They change nothing, so when neither check answers they run (no
+ *  last-resort deny), and the daemon gets 5 s, not the 55 s a confirmation
+ *  dialog needs: a stalled daemon must not hold every file read. */
+export const READ_GUARD_BUDGET = { connectS: 1, maxTimeS: 5, deadlineMs: 3000 }
+export const READ_GUARD_HOOK_TIMEOUT_S = 15
+
+function readGuardHookCommand(agentId: string, daemonPort: string, root: string = process.cwd()): string {
+  return buildGuardHookCommand({ port: daemonPort, root, agentId, required: false, budget: READ_GUARD_BUDGET })
+}
+
 /** How long curl waits for /guard/check on an MCP tool: the write card's
  *  wait (#1736) plus room for the daemon to answer after it. */
 export const MCP_GUARD_CURL_S = MCP_CONFIRM_WAIT_S + 15
@@ -263,8 +274,8 @@ function guardPreToolUseHooks(
   const command = guardHookCommand(agentId, daemonPort)
   const entries: unknown[] = [
     { matcher: "Bash", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
-    // Read too (#1979): the catalog keeps agents off .agentx/operator.key.
-    { matcher: "Write|Edit|Read", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
+    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
+    { matcher: "Read|Grep", hooks: [{ type: "command", command: readGuardHookCommand(agentId, daemonPort), timeout: READ_GUARD_HOOK_TIMEOUT_S }] },
   ]
   const mcpMatcher = allowListHookMatcher(mcp)
   if (mcpMatcher) {
