@@ -137,7 +137,11 @@ Three older paths now go through the job's wake:
 
 All of them count toward the job's caps. Task watchers are removed: a job that is not finished is followed by its own wake and the stalled check. An old `agentx.json` that still has their section loads; the section is ignored. Their table in the database (`task_watchers`) is deleted at start when it is empty; one that still holds rows is left as it is.
 
-The delegation log (`.agentx/a2a/delegations.jsonl`) is still in place. It is not a list of jobs: it is how a hand-off that was still out when the daemon restarted is reported as lost, and how an answer a restart stopped on its way back is passed on once more.
+Hand-offs (work one agent hands to another) are kept in their own table, `handoffs`, in the same database as the jobs (`.agentx/db.sqlite`). It is not a list of jobs: it is how a hand-off that was still out when the daemon restarted is reported as lost, and how an answer a restart kept from reaching the agent that asked is passed on once more. A hand-off's job is the job row `job-<hand-off id>`; the two are joined by that id. Ended hand-offs are deleted after `requests.retentionDays`, like finished jobs. One whose answer is still waiting to be passed on is kept until it is.
+
+The old delegation log (`.agentx/a2a/delegations.jsonl`) is still written for this release, but no longer read. At every start, AgentX adds what is in it to the table, so going back to an older AgentX and forward again loses nothing. A later release stops writing it.
+
+On a machine where the database cannot open, hand-offs are kept in memory only. The daemon log says so at start with a line beginning `[delegation] WARNING: no database`. A restart then forgets every hand-off still out, and nobody is told it was lost.
 
 Jobs are kept while `requests.enabled` is on. To keep jobs on a node where requests are off, set `requests.jobs.enabled` to `true`: every run that is not your own turn gets its job, and your own requests leave no record there. Set it to `false` to keep no jobs at all.
 

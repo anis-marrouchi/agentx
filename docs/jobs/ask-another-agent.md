@@ -16,6 +16,16 @@ When your agent asked several helpers at once, their answers come back together 
 
 Work that an agent started on its own, such as a schedule or a workflow, does not change: the agent waits for the helper's answer, as before.
 
+## When AgentX restarts
+
+AgentX writes down every piece of work it hands out, in its database on the machine of the agent that asked. After a restart it reads that back:
+
+- **The helper was still working:** its answer will never come. Your agent is told the work "was lost", and tells you.
+- **The answer was back, but your agent had not started passing it on** (for example, it was busy with another message in the same chat): your agent passes it on once, right after the restart.
+- **Your agent was passing it on when AgentX stopped:** it tries once more after the restart (see `requeueRelayOnRestart` below). If that try is stopped or fails too, you get a short message saying the answer could not be passed on.
+
+Each answer is passed on at most once more, never in a loop.
+
 ## Which chats this applies to
 
 It applies when a person started the conversation on one of these: Telegram, WhatsApp, a GitLab or GitHub comment, the phone app, voice, or the dashboard chat.
@@ -41,7 +51,7 @@ These settings live under `mesh.delegation` in `agentx.json`. They apply to help
 |---|---|---|
 | `mesh.delegation.asyncWhenHuman` | `true` | Turn it off (`false`) to make every agent wait for its helper, as in older versions. |
 | `mesh.delegation.timeoutMinutes` | `30` | How long a helper has to answer. After this, your agent is told it timed out, and a helper on this machine is stopped. |
-| `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. |
+| `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. An answer your agent had not started passing on is still passed on once after a restart: that is its first try. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 | `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
 | `mesh.delegation.agentChains.perAgentHour` | `15` | For work no person asked for (a schedule, or agents asking each other), how many times one agent may hand work to another agent in any one hour. Past it, the agent is told to finish the work itself or write to you once. Work you asked for is never counted. `0` turns this off. |
@@ -201,6 +211,7 @@ Some requests are refused straight away with status `409`:
 - **The update never arrives:** open the daemon log and search for `[delegation`. A line ending in `no route to …` means the machine running your agent has no connection to that chat app; set the chat app up on that machine.
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
+- **After a restart, nobody is told about work that was still out:** search the daemon log for `[delegation] WARNING: no database`. The database (`.agentx/db.sqlite`) did not open on that machine, so hand-offs were kept in memory only. The line before it in the log, starting `[storage/sqlite]`, says why; usually the database module must be installed again (`pnpm install`).
 - **You get "could not pass on the answer … because of a restart":** AgentX restarted twice while your agent was passing the answer on, or the second try failed. Ask your agent for the answer again. If you track requests, the request shows what the helper said. In the daemon log, the lines starting `[delegation` with the reference from the message say what happened.
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
