@@ -816,16 +816,6 @@ Show or change the requests settings (requests in agentx.json).
 | `--resend-hold-hours <n>` | — | Hours your notice waits for the resend before you are told anyway. |
 | `--flow-zone <zone>` | — | The time zone whose day the flow rate counts by, for example Africa/Tunis. |
 
-## request-status
-
-> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
-
-`agentx request-status [channel] [state]`: [deprecated — see the Jobs page] Show each person the state of their request in the thread where they asked (GitLab, GitHub).
-
-With no arguments it lists the channels and whether each is on. With a channel (`gitlab` or `github`) and `on` or `off` it changes `requestStatus.channels` in `agentx.json` and the running daemon picks the change up. See [`requestStatus`](./config-automation.md#requeststatus).
-
-No flags.
-
 ## attach
 
 `agentx attach`: Wear an agentx agent identity in this Claude Code session.

@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, the daily exceptions digest, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, the daily exceptions digest, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -462,46 +462,6 @@ Tracked numbers and their readings. See [Track numbers over time](/jobs/numbers)
 | `numbers.retryMinutes` | whole number (5 to 1440) | `60` | Minutes before a failed read is tried again. |
 | `numbers.missedTwiceCard` | boolean | `true` | A number that misses its target twice in a row raises one decision card for its owner agent. `false`: no card; `agentx numbers review` still lists it. See [When a number misses twice](/jobs/numbers#when-a-number-misses-twice). |
 | `numbers.reviewer` | string (agent id) | unset | An agent that checks the owner's follow-up on a missed-twice card. It is told when you say yes, and gets the card itself when the number has no owner agent on this computer. |
-
-## `requestStatus`
-
-> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
-
-Request status: a person who asks an agent for work in a GitLab or GitHub thread sees the state of that request in the same thread. Off by default. It works on its own; `requests.enabled` does not have to be on.
-
-When it is on for a channel, AgentX posts one comment for each request and edits that same comment as the work moves. It is never posted twice. The comment shows one of these states:
-
-| State | When |
-|---|---|
-| Queued | The agent is busy with an earlier message in the same thread. |
-| Working | The agent's turn started. |
-| Waiting on *agent* | The agent handed the work to another agent and waits for its answer. |
-| Waiting on an answer from the owner | The agent raised a decision card and waits for it. The comment does not show the question. |
-| Done | The turn ended and nothing it handed out is still open. |
-| Failed | The turn, or work it handed out, ended with an error. Also a queued message whose turn could not start. |
-| Timed out | The turn, or work it handed out, hit its time limit, or a decision card expired without an answer. |
-| Stopped | Someone stopped the run. |
-| Cut off by a restart | A restart stopped the run and it was not picked up again. Written after the daemon is back. |
-
-The comment names the agent that was asked, the state, the time (UTC) and, while waiting, the agent the work waits on. It never shows an error text, a file path, a machine name or anything about other requests.
-
-Every event that starts a turn in an issue, a merge request or a pull request gets a status comment: a comment from a person, and also an assignment or a newly opened issue or pull request. An event with no thread to comment on, such as a pipeline or a push, gets none.
-
-When the comment cannot be written (the token is refused, the issue was deleted), AgentX tries again once a minute and stops after five failed tries. It tries once more each time the state changes.
-
-While it is on for GitLab, an agent that is assigned an issue or a merge request is no longer asked to write its own acknowledgement comment: the status comment is the acknowledgement.
-
-To turn it on:
-
-1. Open a terminal in the folder that holds `agentx.json`.
-2. Run `agentx request-status gitlab on` (or `github`). The running daemon picks the change up; no restart is needed.
-3. Or, in the browser: **Settings › Channels**, open **GitLab** or **GitHub**, and switch **Request status** on.
-
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `requestStatus.channels` | list of strings | `[]` | Channels that show request status: `gitlab`, `github`. Empty: off. Ended requests are forgotten after `requests.retentionDays`. |
-
-In a mesh, an edit is made with the same agent account that wrote the comment. When that account's token lives on another machine, the edit is sent there; that machine must run a version that has request status, or the comment stays at its first state.
 
 ## `qualityReport`
 
