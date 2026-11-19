@@ -570,7 +570,7 @@ The courtesy gate: after a talk in a chat has ended with a goodbye, more "thanks
 | `backstop.windowMinutes` | `10` | The window for `backstop.count`. |
 | `maxAge.duringHours` | `12` | A talk with no change this long is treated as over. |
 | `maxAge.endingMinutes` | `60` | A talk waiting for the agent's goodbye this long is treated as over. |
-| `seat.maxFalseNoReply` | not set | The decision seat `situation-phase` holds an unsure message only while its false "no reply" rate (95% upper bound) is under this, for example `0.02`. Not set: it never holds one. See [Let a decision seat judge the unsure messages](/jobs/stop-goodbye-loops#let-a-decision-seat-judge-the-unsure-messages). |
+| `seat.maxFalseNoReply` | not set | The decision seat `situation-phase` (off until named in `decisions.seats.situation-phase`, for example `{ "mode": "shadow", "backend": "jev" }`) holds an unsure message only while its false "no reply" rate (95% upper bound) is under this, for example `0.02`. Not set: it never holds one. See [Let a decision seat judge the unsure messages](/jobs/stop-goodbye-loops#let-a-decision-seat-judge-the-unsure-messages). |
 | `seat.noReplyBelow` | `0.2` | The seat's "no reply needed": its chance that a reply is needed is at or under this. |
 | `seat.minLabeled` | `50` | Labeled "no reply" answers needed before the seat may hold messages. |
 | `importance.enabled` | `false` | Works out each talk's importance (low, normal, high) from your `people` list and open promises. See [Importance](/jobs/stop-goodbye-loops#importance). |

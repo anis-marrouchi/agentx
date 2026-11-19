@@ -50,7 +50,9 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.seat.maxFalseNoReply` | not set | The highest false "no reply" rate you accept from the decision seat, for example `0.02` (2 in 100). Not set: the seat never holds a message. See [Let a decision seat judge the unsure messages](#let-a-decision-seat-judge-the-unsure-messages). |
 | `situations.seat.noReplyBelow` | `0.2` | The seat says "no reply needed" when its chance that the message needs a reply is at or under this. |
 | `situations.seat.minLabeled` | `50` | How many labeled "no reply" answers the report needs before the seat may hold messages. |
-| `decisions.seats.situation-phase.mode` | shadow | The seat's own mode: `off`, `shadow` (records only) or `active`. Not set: shadow, once `decisions.enabled` is on. |
+| `decisions.seats.situation-phase.mode` | `off` | The seat's own mode: `off`, `shadow` (records only) or `active`. Not set: off, like every decision seat. |
+| `decisions.seats.situation-phase.backend` | `decisions.defaultBackend` | Where the seat's answers come from. Name a hosted one, such as `jev`: the default may be the local one, which starts a model program on this machine for each answer. |
+| `decisions.seats.situation-phase.explore` | `0.15` | When the seat is active, the share of its "no reply" answers let through anyway and written as **would drop**, so that its mistakes can still be found. |
 | `situations.importance.enabled` | `false` | `true` works out each talk's importance (see [Importance](#importance)). |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
 
@@ -179,15 +181,27 @@ The word list knows thanks and goodbye phrases. Some short messages it cannot pl
 
 A **decision seat** is a small, cheap model that answers one fixed question with a probability (see [Typed decisions](/architecture/jev)). The seat `situation-phase` is asked about these unsure messages only, and only once a talk is **ending** or **ended**. It answers three things at once: where the talk is now, whether the message **needs a reply**, and how much the talk matters.
 
-It works in three steps, and it never holds a message until you have seen how often it is wrong:
+It is **off** until you switch it on. Then it works in three steps, and it never holds a message until you have seen how often it is wrong:
 
-1. **Shadow (the default).** Once typed decisions are on (`decisions.enabled`), the seat is asked about each unsure message, but the message still reaches your agent at once. When the seat says no reply is needed, the gate log gets a **would drop** row with the seat's call id.
+1. **Shadow.** The seat is asked about each unsure message whose answer could change something, but the message still reaches your agent at once. When the seat says no reply is needed, the gate log gets a **would drop** row with the seat's call id.
 2. **Labels and report.** You read those rows and say, for each, whether the message did need a reply. The **calibration report** then states the **false "no reply" rate**: of the messages the seat said need no reply, how many did.
 3. **Active, below your limit.** You set the highest false "no reply" rate you accept, and switch the seat to active. The gate then holds an unsure message the seat says needs no reply, as it holds a "thanks" (a person gets the reaction). It does this only while the report is under your limit, with enough labels.
 
-To be safe, the limit is compared with the **upper end** of the rate's 95% range, not the rate itself: four good labels prove little. If no limit is set, the seat never holds anything, even when switched to active.
+To be safe, the limit is compared with the **upper end** of the rate's 95% range, not the rate itself: four good labels prove little. Even with no mistakes at all, 50 labels still give an upper end of 7.1%, and about 190 labels are needed to get under 2%. If no limit is set, the seat never holds anything, even when switched to active.
+
+Only answers from the backend and model the seat uses now count. If you switch the backend, or the model behind it changes, the report starts again from zero and the seat stops holding messages until it has enough new labels.
+
+Once the seat is active, the messages it holds no longer reach your agent, so the only new examples of its "no reply" answers are the share it lets through (`explore`, 15% by default) and the held messages you release. Keep reading the would-drop rows and the held messages.
+
+What the seat is sent: the message text, the channel, whether the chat is a group, the phase and why the talk ended (closed, stale, ...), and only the **kind** of sender (person, bot or agent). No name, number or other id of the sender is sent. With `decisions.redactState` on, the message is not stored with the answer either.
 
 If the seat fails (its service is down, out of credits, or slower than 1.5 seconds), the message passes, as without the seat. A held message can be sent on with `agentx situation release`, and that also records that it needed a reply.
+
+**Switch it on (shadow):**
+
+1. **Terminal:** make sure typed decisions are on: `agentx config set decisions.enabled true`.
+2. **Terminal:** name the seat with a hosted backend, in shadow. In the daemon config this is `"decisions": { "seats": { "situation-phase": { "mode": "shadow", "backend": "jev" } } }`. From the terminal: `agentx config set decisions.seats.situation-phase.backend jev`, then `agentx config set decisions.seats.situation-phase.mode shadow`.
+3. **Terminal:** restart the daemon so the seat's settings are loaded: `agentx daemon restart`.
 
 **Label and read the report:**
 
@@ -199,9 +213,13 @@ If the seat fails (its service is down, out of credits, or slower than 1.5 secon
 
 1. **Terminal:** set your limit, for example 2 in 100: `agentx config set situations.seat.maxFalseNoReply 0.02`.
 2. **Terminal:** `agentx config set decisions.seats.situation-phase.mode active`.
-3. **Terminal:** `agentx situation seat`. It shows `Seat situation-phase: active (holds messages)` when the report is under your limit. Otherwise it shows why not, and keeps only recording.
+3. **Terminal:** `agentx daemon restart` (seat modes are read at start; the limit is read for each message).
+4. **Terminal:** `agentx situation seat`. It shows `Seat situation-phase: active (holds messages)` when the report is under your limit. Otherwise it shows why not, and keeps only recording.
 
-**Switch it off:** `agentx config set decisions.seats.situation-phase.mode off`.
+**Switch it off:**
+
+1. **Terminal:** `agentx config set decisions.seats.situation-phase.mode off`.
+2. **Terminal:** `agentx daemon restart`.
 
 ## Importance
 
@@ -294,7 +312,8 @@ To check closing steps:
 - **`agentx situation closing` answers HTTP 409 "closing steps are off":** turn them on with `agentx config set situations.closing.enabled true` (and `situations.mode` must not be `off`).
 - **`agentx situation closing` answers "home must be a GitHub or GitLab issue":** the note is posted as a comment, so the home must be an issue, pull request or merge request link. A GitLab link must be on this node's GitLab.
 - **`agentx situation closing` answers "a closing message on WhatsApp needs chatId":** add `--chat` with the chat id as WhatsApp names it, ending in `@g.us` for a group.
-- **`agentx situation seat` says `off`:** typed decisions are off (`decisions.enabled`), or `decisions.seats.situation-phase.mode` is `off`.
+- **`agentx situation seat` says `off`:** the seat is off until you name it (see [Switch it on](#let-a-decision-seat-judge-the-unsure-messages)), or typed decisions are off (`decisions.enabled`).
+- **The report shows 0 answers after a change:** you switched the backend, or the model behind it changed. Only answers from the current one count; label new rows.
 - **The seat is active but holds nothing:** `agentx situation seat` says why: no limit set, too few labels, or the upper bound is over your limit. Label more rows, or check the limit.
 - **The seat writes no would-drop rows:** it is asked only about short messages the word list is unsure of, after a talk is ending or ended. If its service is down or out of credits, no answer comes and nothing is written; the daemon log shows `[decisions] seat "situation-phase" ... failed`.
 - **The seat held a message that needed a reply:** send it on with `agentx situation release <id>`. That labels the seat's answer as wrong. If it happens again, lower `situations.seat.maxFalseNoReply` or switch the seat back to shadow.
