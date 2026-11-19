@@ -114,7 +114,7 @@ export function askSourceConsent(
     const chat = (at > 0 ? input.chat.slice(at + 1) : "").replace(/\s+/g, " ").replace(/["?]/g, "").slice(0, 60)
     where = ` Asked in ${channel} chat${chat ? ` ${chat}` : ""}; the answer may be posted there.`
   }
-  const head = `Let ${input.agentId} read ${what} for one request, for ${minutes} minutes from your yes? What it reads goes to its model.${where} Its reason: "`
+  const head = `Let ${input.agentId} read ${what} for one request, for ${minutes} minutes from your yes? What it reads goes to its model and its session file.${where} Its reason: "`
   const room = ASK_MAX - head.length - 2
   if (room < 12) return { ok: false, error: "too many sources for one card: ask for fewer" }
   const why = quotedWhy(input.why, Math.min(WHY_MAX, room))

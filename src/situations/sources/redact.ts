@@ -7,9 +7,11 @@
 // The tool starts its answer with this mark; those paths keep only the
 // text before it and a note. No imports: the agent registry uses it.
 
-export const SOURCES_READ_MARK = "[agentx_sources read: the person's screen or news, for this request only; not kept]"
+// The agent's own session file (e.g. ~/.claude/projects/**.jsonl) still
+// holds the full tool result, so the marks claim only AgentX's own paths.
+export const SOURCES_READ_MARK = "[agentx_sources read: the person's screen or news, for this request only; left out of AgentX traces, hooks and live views]"
 
-export const SOURCES_READ_REDACTED = "[agentx_sources read: content not kept]"
+export const SOURCES_READ_REDACTED = "[agentx_sources read: content left out of AgentX traces]"
 
 /** The text with any per-request read answer cut out. */
 export function redactSourcesRead(text: string): string {
