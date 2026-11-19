@@ -6,6 +6,7 @@ import { evaluate } from "../../src/guard/engine"
 import { resolveInMemory } from "../../src/guard/policy"
 import { payloadToInput } from "../../src/guard/check"
 import { guardPolicySchema, type GuardInput, type GuardMode } from "../../src/guard/types"
+import { bashFileAccesses } from "../../src/guard/file-access"
 
 // #1979: agents may not read or change `.agentx/operator.key`, the secret
 // that proves a daemon call is the owner's. The rule blocks even while the
@@ -153,5 +154,53 @@ describe("a rule's own mode can only make it stricter (#1979)", () => {
     expect(v.mode).toBe("enforce")
     const plain = evaluate({ tool: "Bash", command: "ls" }, policy)
     expect(plain.mode).toBe("warn")
+  })
+})
+
+describe("file access: odd arguments, tar and cp options, and a time budget (#1979)", () => {
+  it("an invalid glob never clears the other arguments", () => {
+    for (const c of ["cat .agentx/operator.key '[z-a]'", "cat '[z-a]' .agentx/operator.key", "cat .agentx/operator.ke[z-a] .agentx/operator.key"]) {
+      expect(run({ command: c }).effectiveAction, c).toBe("deny")
+    }
+    expect(run({ command: "cat '[z-a]'" }).effectiveAction).toBe("allow")
+  })
+
+  it("tar -C names the folder the other arguments are read from, and -f is the archive, not an input", () => {
+    for (const cwd of [root, "/", join(root, "lib")]) {
+      const c = `COPYFILE_DISABLE=1 tar --no-xattrs -C ${root} -czf - lib src/operator.ts`
+      expect(run({ command: c, cwd }).effectiveAction, cwd).toBe("allow")
+      expect(run({ command: `tar --directory=${root} -czf /tmp/x.tgz lib`, cwd }).effectiveAction).toBe("allow")
+      expect(run({ command: `tar czf /tmp/x.tgz -C ${root} lib`, cwd }).effectiveAction).toBe("allow")
+      // Still denied: the install root itself, or the key, read from -C.
+      expect(run({ command: `tar -czf x -C ${root} .`, cwd }).effectiveAction).toBe("deny")
+      expect(run({ command: `tar -C ${root} -czf - .agentx/operator.key`, cwd }).effectiveAction).toBe("deny")
+      expect(run({ command: `tar czf - -C ${root} .agentx`, cwd }).effectiveAction).toBe("deny")
+    }
+  })
+
+  it("a copy's destination is not read: cp, scp and rsync into a folder that holds the key", () => {
+    expect(run({ command: "cp lib/a.ts ." }).effectiveAction).toBe("allow")
+    expect(run({ command: `cp -t ${root} lib/a.ts` }).effectiveAction).toBe("allow")
+    expect(run({ command: "rsync -a lib/ ." }).effectiveAction).toBe("allow")
+    expect(run({ command: "zip /tmp/x.zip lib/a.ts" }).effectiveAction).toBe("allow")
+    // A copy out of the folder, or onto the key, still is.
+    expect(run({ command: "cp -r . /tmp/x" }).effectiveAction).toBe("deny")
+    expect(run({ command: "cp lib/a.ts .agentx/operator.key" }).effectiveAction).toBe("deny")
+    expect(run({ command: "cp -t /tmp .agentx/operator.key" }).effectiveAction).toBe("deny")
+    expect(run({ command: "zip -r /tmp/x.zip ." }).effectiveAction).toBe("deny")
+  })
+
+  it("stops listing folders past its budget and keeps what it found", () => {
+    const big = join(root, "big")
+    for (let a = 0; a < 30; a++) for (let b = 0; b < 30; b++) mkdirSync(join(big, `a${a}`, `b${b}`), { recursive: true })
+    const t = Date.now()
+    const found = bashFileAccesses(`cat ${big}/*/*/* .agentx/operator.key`, root, { budgetMs: 1000, maxEntries: 50 })
+    expect(Date.now() - t).toBeLessThan(1000)
+    expect(found).toContain(join(root, ".agentx/operator.key"))
+    const none = bashFileAccesses(`cat ${big}/*/*`, root, { budgetMs: 0 })
+    expect(none.length).toBeLessThan(10)
+    // A folder walk reads dot folders before big ones: the key is found
+    // although `big` alone holds more entries than the budget.
+    expect(bashFileAccesses("tar czf /tmp/x.tgz .", root, { maxEntries: 20 })).toContain(join(root, ".agentx/operator.key"))
   })
 })

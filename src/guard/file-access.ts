@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, realpathSync, statSync } from "fs"
+import { existsSync, opendirSync, realpathSync, statSync, type Dir } from "fs"
 import { homedir } from "os"
 import { basename, isAbsolute, join, resolve } from "path"
 
@@ -193,7 +193,66 @@ function parseInto(src: string, out: Simple[], depth: number): void {
 
 const expandHome = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p)
 
+/** How much folder listing one call may do (#1979). The guard answers on
+ *  the daemon's one thread, so a glob like `~/*\/*\/*\/*` must not stall
+ *  it: past the budget, listing stops and the paths found so far are
+ *  judged (fail open for the rest). Literal paths are always judged. */
+export interface AccessBudget {
+  /** Milliseconds of folder listing (default 100). */
+  budgetMs?: number
+  /** Folder entries read in all (default 5000). */
+  maxEntries?: number
+}
+
+interface Budget { until: number; entries: number; spent: boolean }
+
+let budgetLogged = false
+
+function newBudget(o: AccessBudget = {}): Budget {
+  return { until: Date.now() + (o.budgetMs ?? 100), entries: o.maxEntries ?? 5000, spent: false }
+}
+
+function spend(b: Budget): boolean {
+  if (b.spent) return false
+  if (b.entries <= 0 || Date.now() >= b.until) {
+    b.spent = true
+    if (!budgetLogged) {
+      budgetLogged = true
+      process.stderr.write("[agentx-guard] file access: folder listing budget spent; judging the paths found so far\n")
+    }
+    return false
+  }
+  b.entries--
+  return true
+}
+
+/** A folder's entry names, read one at a time within the budget. */
+function listDir(dir: string, b: Budget): string[] {
+  return listEntries(dir, b).map((e) => e.name)
+}
+
+/** Like listDir, with whether each entry is a folder (no stat call). */
+function listEntries(dir: string, b: Budget): { name: string; folder: boolean }[] {
+  const names: { name: string; folder: boolean }[] = []
+  let d: Dir | null = null
+  try {
+    d = opendirSync(dir)
+    for (let e = d.readSync(); e; e = d.readSync()) {
+      if (!spend(b)) break
+      names.push({ name: e.name, folder: e.isDirectory() })
+    }
+  } catch {
+    /* unreadable */
+  } finally {
+    try { d?.closeSync() } catch { /* closed */ }
+  }
+  return names
+}
+
+/** A glob segment as a regex; an invalid pattern (`[z-a]`) matches only
+ *  its own literal text, as a shell would leave it. */
 function globToRegex(seg: string): RegExp {
+  const literal = new RegExp(`^${seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)
   let r = ""
   for (let k = 0; k < seg.length; k++) {
     const c = seg[k]
@@ -206,14 +265,18 @@ function globToRegex(seg: string): RegExp {
       k = j
     } else r += c.replace(/[.+^${}()|\\]/g, "\\$&")
   }
-  return new RegExp(`^${r}$`)
+  try {
+    return new RegExp(`^${r}$`)
+  } catch {
+    return literal
+  }
 }
 
 const hasGlob = (s: string) => /[*?[]/.test(s)
 
 /** Expand a glob over the file system, as a shell would (dot files only
  *  for a segment that starts with a dot). At most 200 matches. */
-function expandGlob(abs: string): string[] {
+function expandGlob(abs: string, b: Budget): string[] {
   const parts = abs.split("/").filter(Boolean)
   let paths = ["/"]
   for (const seg of parts) {
@@ -221,9 +284,8 @@ function expandGlob(abs: string): string[] {
     const re = globToRegex(seg)
     const next: string[] = []
     for (const p of paths) {
-      let names: string[] = []
-      try { names = readdirSync(p) } catch { continue }
-      for (const n of names) {
+      if (b.spent) break
+      for (const n of listDir(p, b)) {
         if (n.startsWith(".") && !seg.startsWith(".")) continue
         if (re.test(n)) next.push(join(p, n))
         if (next.length >= 200) break
@@ -236,41 +298,121 @@ function expandGlob(abs: string): string[] {
 }
 
 /** A folder's files, two levels down (`tar czf a.tgz .` holds `.agentx/operator.key`). */
-function folderFiles(dir: string, out: string[], level = 0): void {
+/** This folder's entries first, then its sub-folders', dot folders (where
+ *  settings and secrets live, and which are small) before the others, so a
+ *  budget spent on a big build folder never hides `.agentx/operator.key`. */
+function folderFiles(dir: string, out: string[], b: Budget, level = 0): void {
   if (level >= 2 || out.length >= MAX_PATHS) return
-  let names: string[] = []
-  try { names = readdirSync(dir) } catch { return }
-  for (const n of names) {
-    if (n === "node_modules" || n === ".git") continue
-    const p = join(dir, n)
+  const subs: string[] = []
+  for (const e of listEntries(dir, b)) {
+    if (e.name === "node_modules" || e.name === ".git") continue
+    const p = join(dir, e.name)
     out.push(p)
     if (out.length >= MAX_PATHS) return
-    try { if (statSync(p).isDirectory()) folderFiles(p, out, level + 1) } catch { /* gone */ }
+    if (e.folder) subs.push(p)
   }
+  subs.sort((x, y) => Number(!basename(x).startsWith(".")) - Number(!basename(y).startsWith(".")))
+  for (const p of subs) folderFiles(p, out, b, level + 1)
 }
 
 /** Resolve one argument to the paths it names: normalised, globs expanded,
- *  symlinks followed, and with `folders`, a folder's files. */
-function pathsOf(arg: string, cwd: string, out: string[], folders: boolean): void {
-  if (!arg || arg.length > 4096) return
-  const abs = resolve(cwd, expandHome(arg))
-  const found = hasGlob(arg) ? expandGlob(abs) : [abs]
-  for (const p of found) {
-    out.push(p)
-    if (!existsSync(p)) continue
-    try { out.push(realpathSync(p)) } catch { /* unreadable */ }
-    if (folders) {
-      try { if (statSync(p).isDirectory()) folderFiles(p, out) } catch { /* gone */ }
+ *  symlinks followed, and with `folders`, a folder's files. Never throws:
+ *  one odd argument must not clear the others. */
+function pathsOf(arg: string, cwd: string, out: string[], folders: boolean, b: Budget): void {
+  try {
+    if (!arg || arg.length > 4096) return
+    const abs = resolve(cwd, expandHome(arg))
+    const found = hasGlob(arg) ? [abs, ...expandGlob(abs, b)] : [abs]
+    for (const p of found) {
+      out.push(p)
+      if (!existsSync(p)) continue
+      try { out.push(realpathSync(p)) } catch { /* unreadable */ }
+      if (folders) {
+        try { if (statSync(p).isDirectory()) folderFiles(p, out, b) } catch { /* gone */ }
+      }
     }
+  } catch {
+    /* judged on what was found */
   }
 }
 
+/** Options that take the next word as their value, per folder tool. */
+const VALUE_OPTS: Record<string, Set<string>> = {
+  tar: new Set(["-C", "--directory", "-f", "--file", "-T", "--files-from", "-X", "--exclude-from", "-b", "--blocking-factor", "--exclude", "-K", "-N", "-g", "-L", "-V", "--transform", "--owner", "--group", "--mode", "--mtime"]),
+  cp: new Set(["-t", "--target-directory", "-S", "--suffix", "--backup", "--reflink", "--sparse"]),
+  scp: new Set(["-i", "-P", "-o", "-F", "-c", "-l", "-S", "-J", "-D", "-X"]),
+  rsync: new Set(["-e", "--rsh", "--exclude", "--include", "--filter", "-f", "--exclude-from", "--include-from", "--files-from", "--rsync-path", "-T", "--temp-dir", "--log-file", "--password-file", "-B", "--block-size", "--chmod", "--chown", "--partial-dir", "--backup-dir", "--suffix"]),
+  zip: new Set(["-b", "-n", "-t", "-tt", "-O", "-P", "-Z", "-s", "-sp"]),
+  "7z": new Set([]),
+}
+/** Short letters of a tar cluster (`-czf`, `czf`) that take a value, in order. */
+const TAR_VALUE_LETTERS = new Set(["f", "C", "T", "X", "b", "K", "N", "g", "L", "V"])
+
+interface Planned { arg: string; dir: string; walk: boolean }
+
+/** Which arguments of a folder tool are read (walked) and which are only
+ *  its destination or archive (checked, not walked). tar's -C changes the
+ *  folder the arguments after it are read from. */
+function planFolderTool(prog: string, args: string[], here: string): Planned[] {
+  const values = VALUE_OPTS[prog] ?? new Set<string>()
+  const planned: Planned[] = []
+  const positional: { arg: string; dir: string }[] = []
+  let dir = here
+  let target: string | null = null
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k]
+    // tar's letter clusters: `-czf x`, or the old form `czf x` first.
+    const cluster = prog === "tar" && (/^-[A-Za-z]{2,}$/.test(a) || (k === 0 && /^[A-Za-z]+$/.test(a)))
+    if (cluster) {
+      for (const letter of a.replace(/^-/, "")) {
+        if (!TAR_VALUE_LETTERS.has(letter) || k + 1 >= args.length) continue
+        const v = args[++k]
+        if (letter === "C") dir = resolve(dir, expandHome(v))
+        else planned.push({ arg: v, dir: here, walk: false })
+      }
+      continue
+    }
+    if (a.startsWith("-") && a.length > 1) {
+      const eq = a.indexOf("=")
+      const name = eq > 0 ? a.slice(0, eq) : a
+      const inline = eq > 0 ? a.slice(eq + 1) : null
+      if (!values.has(name)) continue
+      const v = inline ?? (k + 1 < args.length ? args[++k] : null)
+      if (v === null) continue
+      if (prog === "tar" && (name === "-C" || name === "--directory")) dir = resolve(dir, expandHome(v))
+      else if (prog === "cp" && (name === "-t" || name === "--target-directory")) target = v
+      else planned.push({ arg: v, dir: here, walk: false })
+      continue
+    }
+    positional.push({ arg: a, dir })
+  }
+  if (prog === "tar") {
+    for (const p of positional) planned.push({ ...p, walk: true })
+  } else if (prog === "zip") {
+    positional.forEach((p, i) => planned.push({ ...p, walk: i > 0 }))
+  } else if (prog === "7z") {
+    positional.forEach((p, i) => planned.push({ ...p, walk: i > 1 }))
+  } else {
+    // cp, scp, rsync: the last word is the destination, unless cp -t names it.
+    if (target !== null) planned.push({ arg: target, dir: here, walk: false })
+    const last = target === null && positional.length > 1 ? positional.length - 1 : -1
+    positional.forEach((p, i) => planned.push({ ...p, walk: i !== last }))
+  }
+  return planned
+}
+
 /** The paths a Bash command reads or writes the content of. */
-export function bashFileAccesses(command: string, cwd: string = process.cwd()): string[] {
+export function bashFileAccesses(command: string, cwd: string = process.cwd(), budget: AccessBudget = {}): string[] {
+  const b = newBudget(budget)
   const out: string[] = []
+  accessesInto(command, cwd, out, b)
+  return out
+}
+
+function accessesInto(command: string, cwd: string, out: string[], b: Budget): void {
   let here = cwd
   for (const cmd of parseShell(command)) {
-    for (const f of cmd.files) pathsOf(f, here, out, false)
+    for (const f of cmd.files) pathsOf(f, here, out, false, b)
     let words = cmd.words
     // Leading VAR=value and wrappers (sudo, env...).
     while (words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]) || WRAPPERS.has(basename(words[0])))) {
@@ -285,13 +427,18 @@ export function bashFileAccesses(command: string, cwd: string = process.cwd()): 
       continue
     }
     if (!CONTENT_TOOLS.has(prog)) continue
+    if (FOLDER_TOOLS.has(prog)) {
+      for (const p of planFolderTool(prog, args, here)) pathsOf(p.arg, p.dir, out, p.walk, b)
+      if (out.length >= MAX_PATHS) return
+      continue
+    }
     for (let k = 0; k < args.length; k++) {
       const a = args[k]
       if (CODE_FLAGS.has(a) && k + 1 < args.length && (SHELLS.has(prog) || INTERPRETERS.has(prog))) {
         const code = args[++k]
-        if (SHELLS.has(prog)) out.push(...bashFileAccesses(code, here))
+        if (SHELLS.has(prog)) accessesInto(code, here, out, b)
         // Every path-like piece of the code: quoted strings, words.
-        else for (const piece of code.split(/[\s'"`(),;+\[\]{}]+/)) if (piece.includes("/") || piece.includes(".")) pathsOf(piece, here, out, false)
+        else for (const piece of code.split(/[\s'"`(),;+\[\]{}]+/)) if (piece.includes("/") || piece.includes(".")) pathsOf(piece, here, out, false, b)
         continue
       }
       if (a.startsWith("-") && !a.includes("=")) continue
@@ -301,23 +448,23 @@ export function bashFileAccesses(command: string, cwd: string = process.cwd()): 
       const candidates = [a]
       if (at >= 0) candidates.push(a.slice(at + 1))
       if (eq >= 0) candidates.push(a.slice(eq + 1))
-      for (const c of candidates) pathsOf(c, here, out, FOLDER_TOOLS.has(prog))
-      if (out.length >= MAX_PATHS) return out
+      for (const c of candidates) pathsOf(c, here, out, false, b)
+      if (out.length >= MAX_PATHS) return
     }
   }
-  return out
 }
 
 /** The paths a file tool (Read, Write, Edit, Grep) touches: the path itself,
  *  normalised and with symlinks followed; for a Grep over a folder, its
  *  files one level down. */
-export function toolFileAccesses(tool: string, filePath: string, cwd: string = process.cwd()): string[] {
+export function toolFileAccesses(tool: string, filePath: string, cwd: string = process.cwd(), budget: AccessBudget = {}): string[] {
+  const b = newBudget(budget)
   const out: string[] = []
   const abs = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, expandHome(filePath))
-  pathsOf(abs, cwd, out, false)
+  pathsOf(abs, cwd, out, false, b)
   if (tool === "Grep") {
     try {
-      if (statSync(abs).isDirectory()) for (const n of readdirSync(abs)) pathsOf(join(abs, n), cwd, out, false)
+      if (statSync(abs).isDirectory()) for (const n of listDir(abs, b)) pathsOf(join(abs, n), cwd, out, false, b)
     } catch { /* not there */ }
   }
   return out
