@@ -2,7 +2,7 @@ import { readHold } from "@/notify/hold"
 import type { FocusState } from "@/notify/focus"
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
-import { oneLine, situationTemplate } from "./templates"
+import { oneLine, quoted, situationTemplate } from "./templates"
 
 // --- The [Situation] prompt layer (#1892, phase 2) ---
 //
@@ -60,8 +60,8 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   // purpose (one line, quoted: a person or the agent wrote it) and the
   // phase's rule. Off: the line is exactly as before.
   const tpl = opts.templates ? situationTemplate(row.template) : null
-  const purpose = tpl && row.closing?.purpose ? oneLine(row.closing.purpose, PURPOSE_MAX) : ""
-  const name = tpl ? `${tpl.title}${purpose ? ` ("${purpose}")` : ""}` : row.template.charAt(0).toUpperCase() + row.template.slice(1)
+  const purpose = tpl && oneLine(row.closing?.purpose, PURPOSE_MAX) ? quoted(row.closing!.purpose, PURPOSE_MAX) : ""
+  const name = tpl ? `${tpl.title}${purpose ? ` (${purpose})` : ""}` : row.template.charAt(0).toUpperCase() + row.template.slice(1)
   const why = row.why ? row.why.replace(/\s+/g, " ").slice(0, WHY_MAX) : ""
   const byPerson = row.setBy === "person" ? " It was set by a person." : ""
   let line: string

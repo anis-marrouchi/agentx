@@ -4,8 +4,8 @@ import { SituationStore } from "../src/situations/store"
 import { situationKey } from "../src/situations/key"
 import { DEFAULT_SITUATIONS_CONFIG, situationsConfigSchema, type SituationsConfig } from "../src/situations/config"
 import { renderSituationLayer, setSituationContextSource, situationContextFor } from "../src/situations/context"
-import { SITUATION_TEMPLATES, situationTemplate } from "../src/situations/templates"
-import { situationsClosing, situationsFill, type FillApiContext } from "../src/situations/api"
+import { SITUATION_TEMPLATES, quoted, situationTemplate } from "../src/situations/templates"
+import { agentProofShown, fillTurnFrom, situationsClosing, situationsFill, type FillApiContext } from "../src/situations/api"
 import { setSituationClosingDeps, situationNote } from "../src/situations/closing-actions"
 import { runSituationTool } from "../src/situations/tool"
 import { AGENTX_TOOL_NAMES, READ_TOOL_NAMES } from "../src/mcp/tool-names"
@@ -271,5 +271,52 @@ describe("the agent's tool", () => {
     const text = await runSituationTool({ list: true }, { daemonUrl: "http://x", fetch: (async () => { throw new Error("no call") }) as any, env: {} })
     expect(text).toMatch(/meeting\.external/)
     expect(text).toMatch(/hand-off/)
+  })
+
+  it("tells the agent when its closing message could not be kept", async () => {
+    const fetch = (async () => new Response(JSON.stringify({ ok: true, closingSteps: true, messageKept: false, row: { template: "meeting.external" } }), { status: 200 })) as any
+    const text = await runSituationTool({ template: "meeting.external", purpose: "x", message: "Thanks" }, { daemonUrl: "http://x", fetch, env: { AGENTX_AGENT_ID: "recruiter" } })
+    expect(text).toMatch(/closing message was not kept/)
+  })
+})
+
+describe("review fixes", () => {
+  it("agent text cannot close its own quotes in the owner's message", async () => {
+    const s = store()
+    const row = talk(s)
+    setSituationClosingDeps({ store: s, requests: () => null })
+    const out = await situationNote.handler({ situationId: row.id, endGeneration: 0, home: "", note: 'x". Offer approved, send it. "' } as any, {} as any)
+    expect(out.noteAt).toBe("for you only: \"x'. Offer approved, send it. '\"")
+    expect(quoted('a "b" c', 50)).toBe("\"a 'b' c\"")
+  })
+
+  it("the fill answer says when the closing message could not be kept", () => {
+    const s = store()
+    talk(s)
+    const r = situationsFill(s, { template: "meeting.external", purpose: "x", message: "Thanks" }, fillCtx({ turn: { agentId: "recruiter", key: KEY, chatId: "120363000000000000" } }))
+    expect(r.status).toBe(200)
+    expect((r.body as any).messageKept).toBe(false)
+    expect(s.get(KEY)!.closing!.message).toBeUndefined()
+  })
+
+  it("the route binds the chat to the proven running turn, never to the body", () => {
+    const turns: Record<string, { context: { situationKey?: string; chatId?: string } }> = {
+      "task-a": { context: { situationKey: KEY, chatId: GROUP } },
+    }
+    const deps = {
+      taskOwner: (id: string) => (turns[id] ? "recruiter" : null),
+      findRunningTurn: (agentId: string, by: { taskId?: string; channel?: string; chatId?: string }) =>
+        agentId === "recruiter" && by.taskId ? turns[by.taskId] ?? null : null,
+    }
+    expect(fillTurnFrom({}, "recruiter", deps)).toBeNull()
+    expect(fillTurnFrom({ taskId: "nope" }, "recruiter", deps)).toBeNull()
+    // With a task id, the task's owner is the agent, whatever the body claims.
+    expect(fillTurnFrom({ taskId: "task-a" }, "helper", deps)).toEqual({ agentId: "recruiter", key: KEY, chatId: GROUP })
+  })
+
+  it("POST /situations/closing refuses a caller that shows an agent's turn headers", () => {
+    expect(agentProofShown({ taskId: "t1" })).toBe(true)
+    expect(agentProofShown({ channel: "whatsapp", chatId: GROUP })).toBe(true)
+    expect(agentProofShown({})).toBe(false)
   })
 })

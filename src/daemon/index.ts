@@ -40,7 +40,7 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
-import { situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
+import { agentProofShown, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
@@ -8479,11 +8479,14 @@ export class AgentXDaemon {
 
         case "POST /situations/closing": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          // A person's route (phase 6): a call made with an agent turn's
+          // headers is an agent's tool; it names its talk with /situations/fill.
+          if (agentProofShown(this.callerProof(req))) { this.json(res, 403, { error: "closing steps are set by a person; an agent names its talk with agentx_situation" }); break }
           const body = await readBody(req)
           const sit = this.config.situations
           const r = situationsClosing(this.situationGate.store, body, {
             closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
-            templatesEnabled: sit.templates?.enabled === true,
+            templatesEnabled: sit.mode !== "off" && sit.templates?.enabled === true,
             isAgent: (id) => !!this.registry.getAgent(id),
             gitlabUrl: forgeConnectorsOf(this.config).gitlab?.url ?? null,
           })
@@ -8498,16 +8501,17 @@ export class AgentXDaemon {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
           const body = await readBody(req)
           const sit = this.config.situations
-          const proof = this.callerProof(req)
-          const agentId = this.provenAgent(proof, typeof body.agentId === "string" ? body.agentId : undefined)
-          const running = agentId ? this.registry.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId }) : null
+          const turn = fillTurnFrom(this.callerProof(req), typeof body.agentId === "string" ? body.agentId : undefined, {
+            taskOwner: (id) => this.registry.runningTaskOwner(id)?.agentId ?? null,
+            findRunningTurn: (id, by) => this.registry.findRunningTurn(id, by),
+          })
           const r = situationsFill(this.situationGate.store, body, {
             templatesEnabled: sit.mode !== "off" && sit.templates?.enabled === true,
             agentFill: sit.templates?.agentFill === true,
             closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
-            turn: agentId && running ? { agentId, key: running.context.situationKey, chatId: running.context.chatId } : null,
+            turn,
           })
-          if (r.status === 200) this.log(`[situation] ${agentId} named its talk ${String(body.template).slice(0, 40)}`)
+          if (r.status === 200) this.log(`[situation] ${turn?.agentId} named its talk ${String(body.template).slice(0, 40)}`)
           this.json(res, r.status, r.body)
           break
         }

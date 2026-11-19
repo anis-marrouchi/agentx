@@ -1,7 +1,7 @@
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
 import type { SituationWorkflowsState } from "./workflows"
-import { oneLine, situationTemplate } from "./templates"
+import { quoted, situationTemplate } from "./templates"
 
 // --- The store starts and cancels its two workflow runs (#1892, phase 4) ---
 //
@@ -56,6 +56,14 @@ export function situationStartGuard(workflowId: string, meta: { startedBy?: unkn
   if (workflowId !== CLOSE_WORKFLOW && workflowId !== EXPIRY_WORKFLOW) return null
   if (meta?.startedBy === SITUATION_STARTER) return null
   return `workflow "${workflowId}" is started only by the situation record (agentx situation closing), not by hand or by an agent`
+}
+
+/** The talk's purpose as a person reads it (owner message, run title).
+ *  Words the agent named (phase 6) are quoted and marked as its own. */
+function purposeOf(row: SituationRow): string {
+  const c = row.closing
+  if (!c) return row.template
+  return c.setBy === "agent" ? `${quoted(c.purpose, 200)} (as the agent named it)` : c.purpose
 }
 
 interface Dispatcher {
@@ -187,7 +195,7 @@ export class SituationRuns {
     const r = await d.startRun({
       workflowId, inputs,
       entityRef: { backend: "situation", id: entity },
-      meta: { startedBy: SITUATION_STARTER, followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${row.closing?.purpose ?? row.template}`.slice(0, 80), tags: [`situation:${row.id}`] },
+      meta: { startedBy: SITUATION_STARTER, followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${purposeOf(row)}`.slice(0, 80), tags: [`situation:${row.id}`] },
     })
     if (!r.run) { this.deps.log(`[situation] ${row.id}: ${workflowId} not started: ${r.error ?? "unknown error"}`); return null }
     return r.run.id
@@ -219,7 +227,7 @@ export class SituationRuns {
     // the agent's own words marked as such where the owner reads them.
     const s = this.deps.settings()
     const tpl = s.templates?.enabled ? situationTemplate(row.template) : null
-    const purpose = c.setBy === "agent" ? `"${oneLine(c.purpose, 200)}" (as the agent named it)` : c.purpose
+    const purpose = purposeOf(row)
     const runId = await this.start(CLOSE_WORKFLOW, row, {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",
       inwardOnly: row.endReason === "stale" ? "yes" : "no",

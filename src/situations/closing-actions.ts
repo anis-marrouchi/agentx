@@ -5,7 +5,7 @@ import { OWED_TO_OWNER, type RequestStore } from "@/requests/store"
 import { forgeChatOf, forgeHomeOf } from "@/daemon/wall-forge-state"
 import type { SituationsConfig } from "./config"
 import type { SituationStore } from "./store"
-import { oneLine } from "./templates"
+import { oneLine, quoted } from "./templates"
 
 // --- The steps of the two situation workflows (#1892, phase 4) ---
 //
@@ -154,8 +154,7 @@ export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
     // private talk is posted): the note goes to the owner only, one line
     // and quoted, since the agent wrote it. Nothing is posted.
     if (!input.home.trim()) {
-      const body = oneLine(input.note, OWNER_NOTE_MAX)
-      return { noteAt: body ? `for you only: "${body}"` : NO_NOTE }
+      return { noteAt: oneLine(input.note, OWNER_NOTE_MAX) ? `for you only: ${quoted(input.note, OWNER_NOTE_MAX)}` : NO_NOTE }
     }
     if (!deps?.postNote) throw new Error("posting notes is not running in this process")
     const target = noteTargetOf(input.home, deps.gitlabUrl?.() ?? null)

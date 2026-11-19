@@ -110,3 +110,10 @@ export function oneLine(v: unknown, max: number): string {
 export function agentTemplateIds(): string {
   return SITUATION_TEMPLATES.filter((t) => t.agentMay).map((t) => t.id).join(", ")
 }
+
+/** Agent text as the owner reads it: one line, capped, inside double
+ *  quotes it cannot close (its own double quotes become single ones), so
+ *  it cannot forge the text around it. */
+export function quoted(v: unknown, max: number): string {
+  return `"${oneLine(v, max).replace(/"/g, "'")}"`
+}

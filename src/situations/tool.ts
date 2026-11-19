@@ -50,7 +50,9 @@ export async function runSituationTool(args: Record<string, unknown>, deps: Situ
     headers: { "Content-Type": "application/json", ...callerHeaders(env) },
     body: JSON.stringify(body),
   })
-  const data = (await res.json().catch(() => ({}))) as { error?: string; closingSteps?: boolean; row?: { template?: string } }
+  const data = (await res.json().catch(() => ({}))) as { error?: string; closingSteps?: boolean; messageKept?: boolean; row?: { template?: string } }
   if (!res.ok || data.error) return `Error: ${data.error ?? res.statusText}`
-  return `This talk is now "${data.row?.template ?? body.template}".${data.closingSteps ? " Its closing steps run when it ends." : " No closing steps on this node (situations.closing is off)."}`
+  const steps = data.closingSteps ? " Its closing steps run when it ends." : " No closing steps on this node (situations.closing is off)."
+  const lost = data.messageKept === false ? " Your closing message was not kept: this chat cannot be sent to from here; tell the owner instead." : ""
+  return `This talk is now "${data.row?.template ?? body.template}".${steps}${lost}`
 }

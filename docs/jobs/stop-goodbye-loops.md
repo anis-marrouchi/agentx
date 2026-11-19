@@ -205,6 +205,7 @@ A template only adds sentences to your agent's `[Situation]` line and to the not
 - Follow-ups can be owned only by the talk's agent or by you.
 - A closing message to the other side is put on one line and always waits for your yes on a card.
 - It cannot change closing steps that a person set, a talk that ended, or another agent's chat.
+- Its own tools cannot use `agentx situation closing`: that route refuses a call that carries an agent's running turn. It cannot tell apart a program on this machine that leaves those marks out, so an agent allowed to run any shell command could still reach it, as it can reach every other daemon command on this machine. Keep agents that join outside talks on a tighter permission mode.
 
 1. **Terminal:** `agentx config set situations.closing.enabled true` (for the closing steps).
 2. **Terminal:** `agentx config set situations.templates.enabled true`.

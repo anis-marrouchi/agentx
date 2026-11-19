@@ -188,5 +188,38 @@ export function situationsFill(store: SituationStore, body: Record<string, unkno
     ...(message && canSend ? { message, chatId: rawChat } : {}),
   } : null
   const after = store.setClosing(row.id, closing, template.id)
-  return { status: 200, body: { ok: true, closingSteps: !!closing, row: after ? situationView(after) : null } }
+  return {
+    status: 200,
+    body: { ok: true, closingSteps: !!closing, ...(message ? { messageKept: !!closing?.message } : {}), row: after ? situationView(after) : null },
+  }
+}
+
+/** What a caller shows about the agent turn behind it (the daemon reads
+ *  the X-AgentX-Task, -Channel and -Chat headers). */
+export interface TurnProof { taskId?: string; channel?: string; chatId?: string }
+
+/** The running turn a /situations/fill call proves: with a task id, that
+ *  task's owner and its own chat; else the claimed agent's one running
+ *  turn in the named channel and chat. The chat and its situation key
+ *  always come from the turn, never from the request body. */
+export function fillTurnFrom(
+  proof: TurnProof,
+  claimed: string | undefined,
+  deps: {
+    taskOwner: (taskId: string) => string | null
+    findRunningTurn: (agentId: string, by: { taskId?: string; channel?: string; chatId?: string }) => { context: { situationKey?: string; chatId?: string } } | null
+  },
+): FillApiContext["turn"] {
+  const agentId = proof.taskId ? deps.taskOwner(proof.taskId) : (proof.channel && proof.chatId ? claimed : undefined)
+  if (!agentId) return null
+  const turn = deps.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId })
+  return turn ? { agentId, key: turn.context.situationKey, chatId: turn.context.chatId } : null
+}
+
+/** A request that shows an agent turn's headers comes from an agent's
+ *  tool. The person-only routes (`/situations/closing`) refuse it. This
+ *  stops the agent's own tools, not a process that leaves the headers
+ *  out (loopback is not an identity; see the docs' limits). */
+export function agentProofShown(proof: TurnProof): boolean {
+  return !!(proof.taskId || (proof.channel && proof.chatId))
 }
