@@ -105,7 +105,9 @@ export const PER_REQUEST_SOURCE_IDS = ["open-apps", "browser-tabs", "news"] as c
 
 /** Is any per-request source switched on in these settings? */
 export function sourcesToolOn(sources: Record<string, { enabled?: boolean }> | undefined): boolean {
-  return PER_REQUEST_SOURCE_IDS.some((id) => sources?.[id]?.enabled === true)
+  // browser-tabs never loads without a separate reader (none yet), so it
+  // alone does not list the tool.
+  return PER_REQUEST_SOURCE_IDS.some((id) => id !== "browser-tabs" && sources?.[id]?.enabled === true)
 }
 
 /** Do agents on this node get `agentx_sources` now (phase 7)? Only while

@@ -1,6 +1,7 @@
 import { execFile } from "child_process"
 import { lookup as dnsLookup } from "dns/promises"
 import { isIP } from "net"
+import { Agent, fetch as undiciFetch } from "undici"
 import { UNKNOWN, type Signal, type SignalSource } from "./types"
 
 // --- Per-request sources (#1892 phase 7, design 2.2) ---
@@ -72,19 +73,20 @@ export function isPrivateAddress(ip: string): boolean {
   if (v === 4) {
     const [a, b] = ip.split(".").map(Number)
     return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19)) || a >= 224
   }
   if (v === 6) {
     const s = ip.toLowerCase()
     if (s === "::" || s === "::1") return true
     if (s.startsWith("::ffff:")) return isPrivateAddress(s.slice(7))
-    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff")
+    // ULA, link-local, multicast, and NAT64 (64:ff9b::/96 reaches IPv4 inside).
+    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("64:ff9b:")
   }
   return true
 }
 
 export interface FeedDeps {
-  fetch?: (url: string, init: RequestInit) => Promise<Response>
+  fetch?: (url: string, init: RequestInit & { dispatcher?: unknown }) => Promise<Response>
   lookup?: (host: string) => Promise<string[]>
   maxBytes?: number
 }
@@ -92,35 +94,57 @@ export interface FeedDeps {
 const FEED_MAX_BYTES = 1_000_000
 const MAX_REDIRECTS = 3
 
-async function assertPublic(url: URL, lookup: (host: string) => Promise<string[]>): Promise<void> {
+async function assertPublic(url: URL, lookup: (host: string) => Promise<string[]>): Promise<string> {
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("not an http(s) address")
   const host = url.hostname.replace(/^\[|\]$/g, "")
   const ips = isIP(host) ? [host] : await lookup(host)
   if (!ips.length || ips.some(isPrivateAddress)) throw new Error(`refused: ${url.hostname} is a private address`)
+  return ips[0]
 }
 
-/** Fetch one feed: public addresses only, redirects followed by hand
- *  with the same check, the body cut at a size cap. */
+/** A connection pinned to the address that was checked: the socket never
+ *  asks DNS again, so a second, private answer (DNS rebinding) is not used. */
+function pinnedTo(ip: string): Agent {
+  const family = isIP(ip)
+  return new Agent({
+    connect: {
+      lookup: (_host: string, opts: any, cb: (...a: any[]) => void) => {
+        if (opts?.all) cb(null, [{ address: ip, family }])
+        else cb(null, ip, family)
+      },
+    },
+  })
+}
+
+/** Fetch one feed: public addresses only, the connection pinned to the
+ *  checked address, redirects followed by hand with the same check, the
+ *  body cut at a size cap. */
 export async function fetchFeed(url: string, timeoutMs: number, deps: FeedDeps = {}): Promise<string> {
-  const get = deps.fetch ?? ((u, i) => fetch(u, i))
+  const get = deps.fetch ?? ((u, i) => undiciFetch(u, i as any) as unknown as Promise<Response>)
   const lookup = deps.lookup ?? (async (h) => (await dnsLookup(h, { all: true })).map((a) => a.address))
   const max = deps.maxBytes ?? FEED_MAX_BYTES
   let at = new URL(url)
   for (let hop = 0; ; hop++) {
-    await assertPublic(at, lookup)
-    const res = await get(at.toString(), {
-      redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
-    })
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location")
-      if (!loc || hop >= MAX_REDIRECTS) throw new Error("too many redirects")
-      at = new URL(loc, at)
-      continue
+    const ip = await assertPublic(at, lookup)
+    const dispatcher = pinnedTo(ip)
+    try {
+      const res = await get(at.toString(), {
+        redirect: "manual",
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent })
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location")
+        if (!loc || hop >= MAX_REDIRECTS) throw new Error("too many redirects")
+        at = new URL(loc, at)
+        continue
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await readCapped(res, max)
+    } finally {
+      void dispatcher.close().catch(() => {})
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return readCapped(res, max)
   }
 }
 
