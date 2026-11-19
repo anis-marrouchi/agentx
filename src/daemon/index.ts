@@ -40,7 +40,7 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
-import { situationsClosing, situationsList, situationsOverride } from "@/situations/api"
+import { situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
@@ -5398,6 +5398,10 @@ export class AgentXDaemon {
     "/situations/override",
     // Gives a talk closing steps (#1892 phase 4): same callers as above.
     "/situations/closing",
+    // The chat's agent names its own talk (#1892 phase 6): loopback (the
+    // agent's MCP tool) with the running turn's proof headers, checked in
+    // the route.
+    "/situations/fill",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8479,10 +8483,31 @@ export class AgentXDaemon {
           const sit = this.config.situations
           const r = situationsClosing(this.situationGate.store, body, {
             closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
+            templatesEnabled: sit.templates?.enabled === true,
             isAgent: (id) => !!this.registry.getAgent(id),
             gitlabUrl: forgeConnectorsOf(this.config).gitlab?.url ?? null,
           })
           if (r.status === 200) this.log(`[situation] closing steps ${body.clear === true ? "removed from" : "set on"} ${String(body.id || `${body.channel} ${body.chatId}`).slice(0, 80)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+
+        // Phase 6: the chat's agent names its own talk (agentx_situation).
+        // The chat is the proven running turn's, never the body's.
+        case "POST /situations/fill": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const body = await readBody(req)
+          const sit = this.config.situations
+          const proof = this.callerProof(req)
+          const agentId = this.provenAgent(proof, typeof body.agentId === "string" ? body.agentId : undefined)
+          const running = agentId ? this.registry.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId }) : null
+          const r = situationsFill(this.situationGate.store, body, {
+            templatesEnabled: sit.mode !== "off" && sit.templates?.enabled === true,
+            agentFill: sit.templates?.agentFill === true,
+            closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
+            turn: agentId && running ? { agentId, key: running.context.situationKey, chatId: running.context.chatId } : null,
+          })
+          if (r.status === 200) this.log(`[situation] ${agentId} named its talk ${String(body.template).slice(0, 40)}`)
           this.json(res, r.status, r.body)
           break
         }

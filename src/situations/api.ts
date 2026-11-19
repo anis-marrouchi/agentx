@@ -1,6 +1,7 @@
 import type { ClosingSlots, OverrideAction, Phase, SituationRow, SituationStore } from "./store"
 import { SITUATION_CHANNELS, situationKey } from "./key"
 import { noteTargetOf } from "./closing-actions"
+import { agentTemplateIds, oneLine, situationTemplate, templateIds } from "./templates"
 
 // --- The daemon's situation routes (#1892, phase 2) ---
 //
@@ -55,6 +56,9 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
  *  `agents` (who else may own a follow-up) must be agents of this node. */
 export interface ClosingApiContext {
   closingEnabled: boolean
+  /** situations.templates.enabled (phase 6): the template must be one of
+   *  the catalog. Off: any name is kept as a label, as before. */
+  templatesEnabled?: boolean
   isAgent: (id: string) => boolean
   gitlabUrl: string | null
 }
@@ -77,6 +81,10 @@ export function situationsClosing(store: SituationStore, body: Record<string, un
     }
     const unknown = [str(body.agent, 100), ...agents].filter((a) => a && !ctx.isAgent(a))
     if (unknown.length) return { status: 400, body: { error: `not an agent of this node: ${unknown.join(", ")}` } }
+    const named = str(body.template, 40)
+    if (ctx.templatesEnabled && named && !situationTemplate(named)) {
+      return { status: 400, body: { error: `unknown template ${named}; one of: ${templateIds()}` } }
+    }
   }
   const ref = str(body.id, 300)
   const channel = str(body.channel, 40)
@@ -123,4 +131,62 @@ export function situationsOverride(store: SituationStore, body: Record<string, u
   const r = store.override(id, action as OverrideAction, by)
   if (!r.ok) return { status: r.status, body: { error: r.error } }
   return { status: 200, body: { ok: true, action, row: r.row ? situationView(r.row) : null } }
+}
+
+// --- Phase 6: the chat's own agent names its talk ---
+
+/** POST /situations/fill: the chat's agent, in its running turn, names
+ *  the talk's template and purpose, and may draft a closing message to
+ *  the other side. The chat is the turn's own, proven by the daemon from
+ *  the caller's task or chat headers; anything the body says about a chat
+ *  is ignored. The agent may not:
+ *    - pick a note home (the note goes to the owner's message only), name
+ *      another writer, or widen who may own a follow-up;
+ *    - change what a person set (409);
+ *    - fill a talk that has ended, another agent's chat, or a chat with
+ *      no record.
+ *  Its text is made one line and capped: the owner reads it on a card. */
+export interface FillApiContext {
+  templatesEnabled: boolean
+  agentFill: boolean
+  closingEnabled: boolean
+  /** The caller's running turn: its agent, the chat's situation key and
+   *  the chat id as the channel names it. Null: no running turn proven. */
+  turn: { agentId: string; key?: string; chatId?: string } | null
+}
+
+export const FILL_PURPOSE_MAX = 200
+export const FILL_MESSAGE_MAX = 1000
+
+export function situationsFill(store: SituationStore, body: Record<string, unknown>, ctx: FillApiContext): Reply {
+  if (!ctx.templatesEnabled || !ctx.agentFill) {
+    return { status: 409, body: { error: "an agent may not name its talk on this node: situations.templates.enabled and situations.templates.agentFill are off" } }
+  }
+  if (!ctx.turn) return { status: 403, body: { error: "only an agent in its running turn may name its talk (no running turn proven)" } }
+  const { agentId, key } = ctx.turn
+  if (!key) return { status: 400, body: { error: "this turn's chat has no situation (telegram, whatsapp, discord or slack only)" } }
+  const template = situationTemplate(str(body.template, 40))
+  if (!template || !template.agentMay) {
+    return { status: 400, body: { error: `template must be one of: ${agentTemplateIds()}` } }
+  }
+  const purpose = oneLine(body.purpose, FILL_PURPOSE_MAX)
+  if (!purpose) return { status: 400, body: { error: "Required: purpose (what the talk is, in a few words)" } }
+  const message = oneLine(body.message, FILL_MESSAGE_MAX)
+  const row = store.get(key)
+  if (!row) return { status: 404, body: { error: "this chat has no talk yet" } }
+  if (row.ownerAgent && row.ownerAgent !== agentId) return { status: 403, body: { error: "this chat's talk belongs to another agent" } }
+  if (row.phase === "ended") return { status: 409, body: { error: "this talk has ended" } }
+  if (row.closing && row.closing.setBy !== "agent") {
+    return { status: 409, body: { error: "a person set this talk's closing steps; they are kept as they are" } }
+  }
+  if (!row.ownerAgent) store.claimOwner(key, agentId)
+  const rawChat = str(ctx.turn.chatId, 300)
+  // The key holds a normalised WhatsApp id the channel cannot send to.
+  const canSend = !!rawChat && (key.split("|")[0] !== "whatsapp" || rawChat.includes("@"))
+  const closing: ClosingSlots | null = ctx.closingEnabled && template.closing ? {
+    purpose, home: "", agent: agentId, setBy: "agent",
+    ...(message && canSend ? { message, chatId: rawChat } : {}),
+  } : null
+  const after = store.setClosing(row.id, closing, template.id)
+  return { status: 200, body: { ok: true, closingSteps: !!closing, row: after ? situationView(after) : null } }
 }

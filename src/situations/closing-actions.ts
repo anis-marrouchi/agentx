@@ -5,6 +5,7 @@ import { OWED_TO_OWNER, type RequestStore } from "@/requests/store"
 import { forgeChatOf, forgeHomeOf } from "@/daemon/wall-forge-state"
 import type { SituationsConfig } from "./config"
 import type { SituationStore } from "./store"
+import { oneLine } from "./templates"
 
 // --- The steps of the two situation workflows (#1892, phase 4) ---
 //
@@ -123,7 +124,9 @@ export const situationTranscript: BuiltinAction<TranscriptInput, TranscriptOutpu
 const noteInput = z.object({
   situationId: z.string().min(1),
   endGeneration: num,
-  home: z.string().min(1).max(500),
+  /** Empty: no home (phase 6, steps the agent named). The note is not
+   *  posted; it goes to the owner's message only. */
+  home: z.string().max(500),
   /** The talk's agent: the comment is posted as it. */
   agent: z.string().max(100).optional(),
   purpose: z.string().max(300).optional(),
@@ -138,6 +141,8 @@ type NoteOutput = z.infer<typeof noteOutput>
  *  still become promises (#1973). Words, not a link, because the installed
  *  template reads "Note: {{post_note.noteAt}}." and is never rewritten. */
 export const NO_NOTE = "none, the agent drafted no note"
+/** A note with no home, in the owner's message, is cut to this size. */
+export const OWNER_NOTE_MAX = 1200
 
 export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
   name: "situation.note",
@@ -145,6 +150,13 @@ export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
   inputSchema: noteInput,
   outputSchema: noteOutput,
   handler: async (input) => {
+    // No home (an agent named the steps; it may not pick where a note of a
+    // private talk is posted): the note goes to the owner only, one line
+    // and quoted, since the agent wrote it. Nothing is posted.
+    if (!input.home.trim()) {
+      const body = oneLine(input.note, OWNER_NOTE_MAX)
+      return { noteAt: body ? `for you only: "${body}"` : NO_NOTE }
+    }
     if (!deps?.postNote) throw new Error("posting notes is not running in this process")
     const target = noteTargetOf(input.home, deps.gitlabUrl?.() ?? null)
     if (!target) throw new Error(`the home ${input.home} is not a GitHub or GitLab issue, pull or merge request of this node`)

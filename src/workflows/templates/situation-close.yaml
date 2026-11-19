@@ -15,6 +15,12 @@
 #   3. post_note: the note is posted as one comment at the talk's home (a
 #                 GitHub or GitLab issue, pull or merge request). An empty
 #                 draft posts nothing; the run goes on to the promises.
+#                 A talk with no home (its agent named the steps, phase 6)
+#                 posts nothing: the note goes into the owner's message.
+#
+# Phase 6 adds the `guidance` input, the template's line on what the note
+# must hold. A copy installed before phase 6 keeps working unchanged (it
+# ignores `guidance`): it is never overwritten (situations/workflows.ts).
 #   4. promises:  each follow-up becomes an open promise with an owner.
 #                 None when the node kept no messages of the talk (the
 #                 agent had nothing to read, so its list would be a guess).
@@ -52,7 +58,8 @@ nodes:
           inwardOnly:    { type: string, description: "yes: notes and promises only (a stale end)" }
           agent:         { type: string, description: "The agent that drafts the note and owns the follow-ups" }
           purpose:       { type: string, description: "What the talk was" }
-          home:          { type: string, description: "The issue or merge request the note goes on" }
+          home:          { type: string, description: "The issue or merge request the note goes on; empty: the note goes to the owner only" }
+          guidance:      { type: string, description: "What the note must hold, from the talk's template (phase 6); may be empty" }
           channel:       { type: string }
           chatId:        { type: string }
           accountId:     { type: string }
@@ -74,12 +81,13 @@ nodes:
       autonomy: report
       resultParser: json
       prompt: |
-        The talk "{{start.purpose}}" ({{start.channel}}) has ended (reason: {{start.reason}}).
+        The talk about {{start.purpose}} ({{start.channel}}) has ended (reason: {{start.reason}}).
         Its recent messages, oldest first (an excerpt; older messages may be missing):
         ---
         {{transcript.text}}
         ---
-        Draft one short note about the talk for its home ({{start.home}}). Do not post it and do not message anyone: the workflow posts it.
+        Draft one short note about the talk. {{start.guidance}}
+        Do not post it and do not message anyone: the workflow posts it at the talk's home, or gives it to the owner when there is none.
         If no messages are shown above, say so in the note, list no follow-ups (an empty list) and do not guess any.
         Then list each follow-up that was agreed: what it is, who owes it (an agent id, or "owner"), who waits on it, and a due time only if a person gave one.
         End your reply with one JSON block, and nothing after it:

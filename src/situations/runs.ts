@@ -1,6 +1,7 @@
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
 import type { SituationWorkflowsState } from "./workflows"
+import { oneLine, situationTemplate } from "./templates"
 
 // --- The store starts and cancels its two workflow runs (#1892, phase 4) ---
 //
@@ -214,10 +215,16 @@ export class SituationRuns {
     const agent = c.agent || row.ownerAgent
     if (!agent) { this.deps.log(`[situation] ${row.id}: no agent to write the closing note; close not started`); return false }
     if (this.deps.isAgent && !this.deps.isAgent(agent)) { this.deps.log(`[situation] ${row.id}: "${agent}" is not an agent of this node; close not started`); return false }
+    // Phase 6: the template's guidance for the note (templates on), and
+    // the agent's own words marked as such where the owner reads them.
+    const s = this.deps.settings()
+    const tpl = s.templates?.enabled ? situationTemplate(row.template) : null
+    const purpose = c.setBy === "agent" ? `"${oneLine(c.purpose, 200)}" (as the agent named it)` : c.purpose
     const runId = await this.start(CLOSE_WORKFLOW, row, {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",
       inwardOnly: row.endReason === "stale" ? "yes" : "no",
-      agent, purpose: c.purpose, home: c.home,
+      agent, purpose, home: c.home,
+      guidance: tpl?.noteGuidance ?? "",
       channel, chatId: c.chatId || chat.join("|"),
       ...(account && account !== "*" && account !== "default" ? { accountId: account } : {}),
       ...(c.message ? { message: c.message } : {}),

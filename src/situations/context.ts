@@ -2,6 +2,7 @@ import { readHold } from "@/notify/hold"
 import type { FocusState } from "@/notify/focus"
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
+import { oneLine, situationTemplate } from "./templates"
 
 // --- The [Situation] prompt layer (#1892, phase 2) ---
 //
@@ -40,18 +41,27 @@ export function setSituationContextSource(s: SituationContextSource | null): voi
 }
 
 const WHY_MAX = 120
+const PURPOSE_MAX = 80
+/** Phase 6, `situations.templates.agentFill`: a fresh plain conversation
+ *  is told once that its agent may name the talk. */
+export const AGENT_FILL_LINE = "If this chat is a meeting with an outside party, a hand-off or a change on a live system, name it once with the agentx_situation tool."
 /** A resumed session gets the line only this long after the phase changed
  *  to `ending` or `ended`; after that, fresh sessions only. */
 export const RESUMED_WINDOW_MS = 30 * 60_000
 export const OWNER_BUSY_LINE = "The owner is busy now; do not promise an immediate answer from them."
 
 /** The layer text for one record, or undefined when it adds nothing. */
-export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: boolean; now?: number; importance?: boolean }): string | undefined {
+export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; ownerBusy?: boolean; now?: number; importance?: boolean; templates?: boolean; agentFill?: boolean }): string | undefined {
   if (!opts.fresh) {
     if (row.phase === "during") return undefined
     if ((opts.now ?? Date.now()) - row.phaseChangedAt > RESUMED_WINDOW_MS) return undefined
   }
-  const name = row.template.charAt(0).toUpperCase() + row.template.slice(1)
+  // Phase 6 (situations.templates): the template's title, the talk's
+  // purpose (one line, quoted: a person or the agent wrote it) and the
+  // phase's rule. Off: the line is exactly as before.
+  const tpl = opts.templates ? situationTemplate(row.template) : null
+  const purpose = tpl && row.closing?.purpose ? oneLine(row.closing.purpose, PURPOSE_MAX) : ""
+  const name = tpl ? `${tpl.title}${purpose ? ` ("${purpose}")` : ""}` : row.template.charAt(0).toUpperCase() + row.template.slice(1)
   const why = row.why ? row.why.replace(/\s+/g, " ").slice(0, WHY_MAX) : ""
   const byPerson = row.setBy === "person" ? " It was set by a person." : ""
   let line: string
@@ -62,6 +72,9 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   } else {
     line = `[Situation] ${name}, phase: during.${row.override === "not-this" ? " A person said this talk is not ending." : ""}`
   }
+  const rule = tpl?.rules[row.phase]
+  if (rule) line += ` ${rule}`
+  if (opts.templates && opts.agentFill && opts.fresh && row.phase === "during" && row.template === "conversation") line += ` ${AGENT_FILL_LINE}`
   if (opts.ownerBusy) line += ` ${OWNER_BUSY_LINE}`
   // Phase 5 (situations.importance): only a high importance is worth the
   // tokens. The reason is generic ("a client is in the talk"), never a name.
@@ -82,7 +95,11 @@ export function situationContextFor(key: string | undefined, opts: { fresh: bool
     try {
       ownerBusy = (source.hold ?? readHold)().active === true
     } catch { /* unknown means not busy, as the hold reads it */ }
-    return renderSituationLayer(row, { fresh: opts.fresh, ownerBusy, now, importance: source.settings().importance?.enabled === true })
+    const t = source.settings().templates
+    return renderSituationLayer(row, {
+      fresh: opts.fresh, ownerBusy, now, importance: source.settings().importance?.enabled === true,
+      templates: t?.enabled === true, agentFill: t?.enabled === true && t.agentFill === true,
+    })
   } catch {
     return undefined
   }

@@ -77,7 +77,8 @@ export interface SituationRow {
 export interface ClosingSlots {
   /** What the talk is, in a few words: "job interview with a candidate". */
   purpose: string
-  /** Where the note goes: an issue or merge request link, a wiki page. */
+  /** Where the note goes: an issue or merge request link. Empty (phase 6,
+   *  steps an agent named): the note goes to the owner's message only. */
   home: string
   /** The agent that writes the note and owns the follow-ups. Default: the
    *  chat's agent. */
@@ -93,6 +94,11 @@ export interface ClosingSlots {
    *  The talk's agent and the owner always may; anyone else named by the
    *  note's agent is not given the promise (the talk's agent keeps it). */
   agents?: string[]
+  /** Who set these steps (phase 6). Absent: a person (phase 4 rows).
+   *  `agent`: the chat's own agent named them in its turn; then `home` is
+   *  empty (the note goes to the owner only), `agent` is that agent and
+   *  `agents` is never set. An agent never overwrites a person's steps. */
+  setBy?: "agent"
 }
 
 export interface GateLogRow {

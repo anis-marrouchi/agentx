@@ -12,6 +12,7 @@ import { describeScreen, type ScreenView } from "@/daemon/screen-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 import { busyText, callerHeaders } from "@/calls/service"
+import { SITUATION_TOOL_DESCRIPTION, SITUATION_TOOL_SCHEMA } from "@/situations/tool"
 import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
 import { HUB_NAME } from "@/daemon/ui/hub-name"
 
@@ -505,6 +506,11 @@ const TOOLS = [
       },
       required: ["channel", "chatId", "text"],
     },
+  },
+  {
+    name: "agentx_situation",
+    description: SITUATION_TOOL_DESCRIPTION,
+    inputSchema: SITUATION_TOOL_SCHEMA,
   },
   {
     name: "agentx_channel_label",
@@ -2214,6 +2220,12 @@ async function handleToolCall(
     case "agentx_note": {
       const { runNoteTool } = await import("@/native/note-tool")
       const text = await runNoteTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_situation": {
+      const { runSituationTool } = await import("@/situations/tool")
+      const text = await runSituationTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 
