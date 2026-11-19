@@ -46,7 +46,7 @@ import { renderMeshPage } from "./ui/pages/mesh"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
 import { classicRedirect } from "./ui/classic-routes"
-import { handleWorkflowsApi, isWorkflowEditorWrite } from "./workflows-api"
+import { handleWorkflowsApi, isWorkflowEditorWrite, resumeRunViaDaemon } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimRun } from "@/workflows/follow-up"
@@ -1663,6 +1663,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       store: ctx.workflowStore,
       runs: ctx.workflowRuns,
       layouts: ctx.workflowLayouts,
+      // No dispatcher here: Resume goes to the daemon (#876).
+      resumeRun: resumeRunViaDaemon(ctx.config.dashboard.daemonUrl, ctx.config.dashboard.token || undefined),
       requireScope: (r, s, scopes) => {
         // When ctx.token is set the legacy check above already verified
         // write scope on any /api call, so we don't re-gate here.
