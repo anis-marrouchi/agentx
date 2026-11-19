@@ -40,6 +40,7 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { setSituationContextSource } from "@/situations/context"
 import { situationsList, situationsOverride } from "@/situations/api"
+import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
@@ -392,6 +393,8 @@ export class AgentXDaemon {
   private workflowDispatcher?: WorkflowDispatcher
   /** The courtesy-close gate (#1892); unset when SQLite is unavailable. */
   private situationGate?: SituationGate
+  /** This node's signal sources (#1892 phase 3). */
+  private signalSources?: AttachedSources
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
@@ -875,6 +878,18 @@ export class AgentXDaemon {
           // The [Situation] prompt layer reads the same record (phase 2).
           setSituationContextSource({ store: situations, settings: () => this.config.situations })
           this.log(`  Courtesy gate: ${this.config.situations.mode}`)
+          // Signal sources (phase 3): adapters that fit this node; a leave
+          // reported by a channel or the call store moves the record.
+          // Signals stay on this node (not on the event bus).
+          this.signalSources?.detach()
+          this.signalSources = attachSignalSources({
+            store: situations,
+            settings: () => this.config.situations,
+            calls: () => this.calls,
+            log: (m) => this.log(m),
+          })
+          const skipped = this.signalSources.sources.skipped()
+          this.log(`  Signal sources: ${this.signalSources.sources.loaded().map((s) => s.id).join(", ")}${skipped.length ? ` (not loaded: ${skipped.map((s) => s.id).join(", ")})` : ""}`)
         } catch (e: any) {
           this.log(`  Courtesy gate: not available (${e?.message ?? e})`)
         }
@@ -8342,6 +8357,13 @@ export class AgentXDaemon {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
           const r = situationsList(this.situationGate.store, new URL(req.url || "/", "http://localhost").searchParams, this.config.situations.mode)
           this.json(res, r.status, r.body)
+          break
+        }
+        // Which signal sources run on this node and what each answers now
+        // (#1892 phase 3): `agentx situation sources`. Mesh-gated.
+        case "GET /situations/sources": {
+          if (!this.signalSources) { this.json(res, 503, { error: "signal sources are not available on this node" }); break }
+          this.json(res, 200, { platform: process.platform, ...sourcesView(this.signalSources.sources) })
           break
         }
         case "POST /situations/override": {

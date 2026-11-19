@@ -39,6 +39,18 @@ export const situationsConfigSchema = z.object({
     duringHours: z.number().min(0.25).max(24 * 30).default(12),
     endingMinutes: z.number().min(1).max(24 * 60).default(60),
   }).default({}),
+  /** Signal sources (phase 3), by id: `macos-focus`, `widget-hold`,
+   *  `call-hold`, `calls`, `whatsapp-groups`, `telegram-members`. Every
+   *  source is on where its adapter fits the node; this switches one off,
+   *  limits it to some agents, or asks the person's yes before a read
+   *  (`consent: person`). A sensitive source always needs that yes. The
+   *  owner's hold (Focus, call, widget) does not read these switches: it
+   *  holds as before. */
+  sources: z.record(z.string(), z.object({
+    enabled: z.boolean().optional(),
+    agents: z.array(z.string()).optional(),
+    consent: z.enum(["none", "person"]).optional(),
+  })).default({}),
 }).default({})
 
 export type SituationsConfig = z.infer<typeof situationsConfigSchema>

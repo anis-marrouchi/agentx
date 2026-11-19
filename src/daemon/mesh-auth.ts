@@ -77,6 +77,9 @@ export function isMeshGatedPath(path: string): boolean {
     // moved, which can name a sender. Its override (POST) is in
     // MESH_PROTECTED_PATHS.
     path === "/situations" ||
+    // Which signal sources run here and what they answer now (#1892
+    // phase 3): whether the owner is in Focus or on a call, and with whom.
+    path === "/situations/sources" ||
     // Past voice exchanges: what was asked and answered out loud. A
     // replay under it makes this host speak.
     path === "/voice/history" || path.startsWith("/voice/history/") ||

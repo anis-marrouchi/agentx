@@ -4,6 +4,9 @@ import { existsSync, mkdirSync, writeFileSync } from "fs"
 import { resolve, join } from "path"
 import { randomUUID } from "crypto"
 import { WhatsAppCache, type ContactRecord, type ChatRecord, type GroupRecord } from "./whatsapp-cache"
+import { situationKey } from "@/situations/key"
+import { publishSignal, wantsSignal } from "@/situations/sources/hub"
+import { othersRemaining, whatsappLeaveSignals, whatsappLeavers } from "@/situations/sources/whatsapp-groups"
 
 /** Shapes returned by the adapter's read API — used by the wiki ingestor.
  *  These are stable contracts so the ingestor can mock the adapter without
@@ -371,6 +374,11 @@ export class WhatsAppAdapter implements ChannelAdapter {
     })
     this.sock.ev.on("groups.update", (updates: any) => {
       try { this.cache.applyGroupsUpdate(updates) } catch (e: any) { this.log(`cache groups.update error: ${e.message}`) }
+    })
+    // Who left a group (#1892 phase 3): a signal for the chat's situation.
+    this.sock.ev.on("group-participants.update", async (update: any) => {
+      if (myGeneration !== this.generation) return
+      await this.onParticipantsUpdate(update)
     })
 
     // Handle connection updates (ignore events from stale sockets via generation check)
@@ -776,6 +784,29 @@ export class WhatsAppAdapter implements ChannelAdapter {
     // if the status field is empty. Keeps the ingestor's happy path fast
     // on bulk list-then-ingest workflows.
     return record ? contactRecordToSummary(record) : null
+  }
+
+  /** Someone left or was removed from a group (#1892 phase 3). Only for a
+   *  group with an open talk (`wantsSignal`): then one live, throttled read
+   *  of the group counts who is still there, and one `left` signal per
+   *  leaver goes to this node's signal hub. A failed read leaves the count
+   *  unknown (null), which moves nothing. Never throws. */
+  async onParticipantsUpdate(update: any): Promise<void> {
+    try {
+      const me = this.sock?.user
+      const leavers = whatsappLeavers(update, me)
+      if (!leavers.length || !wantsSignal(situationKey("whatsapp", "default", update.id))) return
+      let remaining: number | null = null
+      try {
+        const meta: any = await this.throttleGate(() => this.sock.groupMetadata(update.id))
+        remaining = othersRemaining(meta?.participants, me, leavers)
+      } catch (e: any) {
+        this.log(`group read after a leave failed: ${e?.message ?? e}`)
+      }
+      for (const s of whatsappLeaveSignals(update, { me, remaining, now: Date.now() })) publishSignal(s)
+    } catch (e: any) {
+      this.log(`group-participants.update error: ${e?.message ?? e}`)
+    }
   }
 
   async getGroupMetadata(jid: string): Promise<GroupInfo | null> {

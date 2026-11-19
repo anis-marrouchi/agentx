@@ -4,6 +4,9 @@ import { splitMessageText, TG_CHUNK_CHARS, TG_MAX_MESSAGE_CHARS } from "./messag
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { resolve, dirname } from "path"
 import { getCursorStore, type CursorStore } from "./cursor-store"
+import { situationKey } from "@/situations/key"
+import { publishSignal, wantsSignal } from "@/situations/sources/hub"
+import { telegramLeftSignal } from "@/situations/sources/telegram-members"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
@@ -45,7 +48,7 @@ export function mediaSendSpec(chatId: string, media: OutMedia, replyTo?: string)
   return { method, params }
 }
 
-interface TelegramUpdate {
+export interface TelegramUpdate {
   update_id: number
   message?: {
     message_id: number
@@ -61,6 +64,15 @@ interface TelegramUpdate {
     video?: { file_id: string; duration: number; mime_type?: string }
     document?: { file_id: string; file_name?: string; mime_type?: string }
     sticker?: { file_id: string; emoji?: string }
+    /** Service message: this member left or was removed (#1892 phase 3). */
+    left_chat_member?: { id: number; first_name?: string; is_bot?: boolean }
+  }
+  /** Another member's status changed. Sent only to admin bots (#1892 phase 3). */
+  chat_member?: {
+    chat: { id: number; type: string; title?: string }
+    from: { id: number; first_name: string }
+    old_chat_member: { user: { id: number; is_bot?: boolean }; status: string }
+    new_chat_member: { user: { id: number; is_bot?: boolean }; status: string }
   }
   my_chat_member?: {
     chat: { id: number; type: string; title?: string }
@@ -78,6 +90,31 @@ interface TelegramAccountConfig {
   allowFrom?: string[]
   /** When false, register the token for outbound send only (no long-poll). */
   pollInbound?: boolean
+}
+
+/** What getUpdates asks for. `message` and `my_chat_member` as always;
+ *  `chat_member` (#1892 phase 3) adds other members' leaves, which
+ *  Telegram sends only to admin bots. A bot that is not an admin simply
+ *  gets none, and who is present stays unknown. */
+export const TELEGRAM_ALLOWED_UPDATES = ["message", "my_chat_member", "chat_member"] as const
+
+const GONE = new Set(["left", "kicked"])
+
+/** A member (not our bot) left or was removed: from a `chat_member`
+ *  update, or a `left_chat_member` service message. Null otherwise. */
+export function telegramLeaveOf(update: TelegramUpdate, botUserId?: number): { chatId: string; userId: string } | null {
+  const cm = update.chat_member
+  if (cm) {
+    const uid = cm.new_chat_member?.user?.id
+    if (uid === undefined || uid === botUserId) return null
+    if (!GONE.has(cm.new_chat_member.status) || GONE.has(cm.old_chat_member?.status)) return null
+    return { chatId: String(cm.chat.id), userId: String(uid) }
+  }
+  const left = update.message?.left_chat_member
+  if (left && update.message?.chat && left.id !== botUserId) {
+    return { chatId: String(update.message.chat.id), userId: String(left.id) }
+  }
+  return null
 }
 
 function describeError(e: any): string {
@@ -934,7 +971,7 @@ export class TelegramAdapter implements ChannelAdapter {
         const data = await this.apiCall(config.token, "getUpdates", {
           offset: offset || undefined,
           timeout: 30,
-          allowed_updates: ["message", "my_chat_member"],
+          allowed_updates: [...TELEGRAM_ALLOWED_UPDATES],
         })
 
         const updates: TelegramUpdate[] = data.result || []
@@ -948,6 +985,13 @@ export class TelegramAdapter implements ChannelAdapter {
           // 500ms, which left a window where Telegram had already deleted
           // the message but the disk still pointed at the old offset.)
           this.cursors.commit("telegram", accountId, update.update_id + 1)
+
+          // Someone left a group (#1892 phase 3). Off the hot path; the
+          // service message has no text, so the message branch below
+          // skips it as before.
+          if (update.chat_member || update.message?.left_chat_member) {
+            void this.handleMemberUpdate(accountId, config.token, update)
+          }
 
           if (update.message && this.handler) {
             const msg = update.message
@@ -1131,6 +1175,29 @@ export class TelegramAdapter implements ChannelAdapter {
         this.log(`Poll error (${accountId}): ${describeError(e)} [retry in ${backoff / 1000}s, errors: ${consecutiveErrors}]`)
         await new Promise((r) => setTimeout(r, backoff))
       }
+    }
+  }
+
+  /** A member left a group (#1892 phase 3). Only for a chat with an open
+   *  talk (`wantsSignal`): one getChatMemberCount, minus our own bots in
+   *  the group, gives who else is still there; a count it cannot get is
+   *  null (unknown, moves nothing). One `left` signal to this node's
+   *  signal hub. Never throws. */
+  async handleMemberUpdate(accountId: string, token: string, update: TelegramUpdate): Promise<void> {
+    try {
+      const leave = telegramLeaveOf(update, this.botInfo.get(accountId)?.userId)
+      if (!leave || !wantsSignal(situationKey("telegram", accountId, leave.chatId))) return
+      let remaining: number | null = null
+      try {
+        const data = await this.apiCall(token, "getChatMemberCount", { chat_id: leave.chatId })
+        const count = Number(data?.result)
+        if (Number.isFinite(count)) remaining = Math.max(0, count - Math.max(1, this.groupStore.getGroupBots(leave.chatId).length))
+      } catch (e: any) {
+        this.log(`member count after a leave failed (${accountId}): ${describeError(e)}`)
+      }
+      publishSignal(telegramLeftSignal(accountId, leave.chatId, leave.userId, remaining, Date.now()))
+    } catch (e: any) {
+      this.log(`member update error (${accountId}): ${e?.message ?? e}`)
     }
   }
 
