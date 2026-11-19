@@ -575,6 +575,8 @@ The courtesy gate: after a talk in a chat has ended with a goodbye, more "thanks
 | `seat.minLabeled` | `50` | Labeled "no reply" answers needed before the seat may hold messages. |
 | `importance.enabled` | `false` | Works out each talk's importance (low, normal, high) from your `people` list and open promises. See [Importance](/jobs/stop-goodbye-loops#importance). |
 | `closing.enabled` | `false` | Closing steps: a talk given closing steps (`agentx situation closing`) gets a note, promises and one message to you when it ends, and is ended as stale at its max age. A talk without closing steps is unchanged. See [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends). |
+| `templates.enabled` | `false` | Templates (`meeting`, `meeting.external`, `job.production`, `hand-off`) add their sentences to the agent's `[Situation]` line and their guidance to the closing note, and `agentx situation closing --template` accepts only these. Off: a template name is only a label. See [Templates](/jobs/stop-goodbye-loops#templates-what-kind-of-talk-it-is). |
+| `templates.agentFill` | `false` | The chat's own agent may name its talk with `agentx_situation` (template, purpose, an optional closing message you approve). It cannot pick a note home, other follow-up owners, or change what a person set. Needs `templates.enabled`. |
 
 ```json
 "situations": { "mode": "active", "courtesy": { "onPerson": "react" } }

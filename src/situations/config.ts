@@ -12,6 +12,7 @@ import { z } from "zod"
 //     closing: { enabled: false }   # phase 4: closing steps
 //     seat: { noReplyBelow: 0.2, minLabeled: 50 }   # phase 5 (maxFalseNoReply unset)
 //     importance: { enabled: false }                # phase 5
+//     templates: { enabled: false, agentFill: false }  # phase 6
 //
 // `shadow` (the default) keeps the record of each chat and writes every
 // message the gate WOULD drop to the gate log, but drops nothing and sends
@@ -84,6 +85,20 @@ export const situationsConfigSchema = z.object({
    *  when high, in the [Situation] prompt line. Off by default. */
   importance: z.object({
     enabled: z.boolean().default(false),
+  }).default({}),
+  /** Templates (phase 6, templates.ts): `meeting`, `meeting.external`,
+   *  `job.production`, `hand-off`. Off by default: the [Situation] line
+   *  and the closing note are as before, and any template name a person
+   *  gives is kept as a label. On: a talk's template adds its prompt
+   *  rules to the [Situation] line, its guidance to the closing note, and
+   *  a person may name only a template of the catalog. */
+  templates: z.object({
+    enabled: z.boolean().default(false),
+    /** The chat's own agent may name its talk's template and purpose in
+     *  its turn (`agentx_situation`), within limits: no note home, no
+     *  other writer, no extra promise owners, never over what a person
+     *  set. Needs `enabled`. */
+    agentFill: z.boolean().default(false),
   }).default({}),
 }).default({})
 

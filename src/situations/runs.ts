@@ -1,6 +1,7 @@
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
 import type { SituationWorkflowsState } from "./workflows"
+import { quoted, situationTemplate } from "./templates"
 
 // --- The store starts and cancels its two workflow runs (#1892, phase 4) ---
 //
@@ -55,6 +56,28 @@ export function situationStartGuard(workflowId: string, meta: { startedBy?: unkn
   if (workflowId !== CLOSE_WORKFLOW && workflowId !== EXPIRY_WORKFLOW) return null
   if (meta?.startedBy === SITUATION_STARTER) return null
   return `workflow "${workflowId}" is started only by the situation record (agentx situation closing), not by hand or by an agent`
+}
+
+/** The talk's purpose as a person reads it (owner message, run title).
+ *  Words the agent named (phase 6) are quoted and marked as its own. */
+function purposeOf(row: SituationRow): string {
+  const c = row.closing
+  if (!c) return row.template
+  return c.setBy === "agent" ? `${quoted(c.purpose, 200)} (as the agent named it)` : c.purpose
+}
+
+const TITLE_MAX = 80
+
+/** The run's title (Workflows page, the owner's send card). Words the
+ *  agent named: the label first, then the quote, cut inside the quotes so
+ *  the label and the closing quote always survive the length cap. */
+function runTitle(prefix: string, row: SituationRow): string {
+  const c = row.closing
+  if (c?.setBy === "agent") {
+    const head = `${prefix} (named by the agent): `
+    return head + quoted(c.purpose, TITLE_MAX - head.length - 2)
+  }
+  return `${prefix}: ${c?.purpose ?? row.template}`.slice(0, TITLE_MAX)
 }
 
 interface Dispatcher {
@@ -186,7 +209,7 @@ export class SituationRuns {
     const r = await d.startRun({
       workflowId, inputs,
       entityRef: { backend: "situation", id: entity },
-      meta: { startedBy: SITUATION_STARTER, followUp: false, title: `${workflowId === CLOSE_WORKFLOW ? "Close" : "Max age"}: ${row.closing?.purpose ?? row.template}`.slice(0, 80), tags: [`situation:${row.id}`] },
+      meta: { startedBy: SITUATION_STARTER, followUp: false, title: runTitle(workflowId === CLOSE_WORKFLOW ? "Close" : "Max age", row), tags: [`situation:${row.id}`] },
     })
     if (!r.run) { this.deps.log(`[situation] ${row.id}: ${workflowId} not started: ${r.error ?? "unknown error"}`); return null }
     return r.run.id
@@ -214,10 +237,17 @@ export class SituationRuns {
     const agent = c.agent || row.ownerAgent
     if (!agent) { this.deps.log(`[situation] ${row.id}: no agent to write the closing note; close not started`); return false }
     if (this.deps.isAgent && !this.deps.isAgent(agent)) { this.deps.log(`[situation] ${row.id}: "${agent}" is not an agent of this node; close not started`); return false }
+    // Phase 6: the template's guidance for the note (templates on), and
+    // the agent's own words marked as such where the owner reads them.
+    const s = this.deps.settings()
+    const tpl = s.templates?.enabled ? situationTemplate(row.template) : null
+    const purpose = purposeOf(row)
     const runId = await this.start(CLOSE_WORKFLOW, row, {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",
       inwardOnly: row.endReason === "stale" ? "yes" : "no",
-      agent, purpose: c.purpose, home: c.home,
+      agent, purpose, home: c.home,
+      // With its leading space: the prompt reads "the talk.{{guidance}}".
+      guidance: tpl?.noteGuidance ? ` ${tpl.noteGuidance}` : "",
       channel, chatId: c.chatId || chat.join("|"),
       ...(account && account !== "*" && account !== "default" ? { accountId: account } : {}),
       ...(c.message ? { message: c.message } : {}),

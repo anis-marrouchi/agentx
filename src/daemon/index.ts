@@ -40,7 +40,7 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
-import { situationsClosing, situationsList, situationsOverride } from "@/situations/api"
+import { agentProofShown, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
@@ -5398,6 +5398,10 @@ export class AgentXDaemon {
     "/situations/override",
     // Gives a talk closing steps (#1892 phase 4): same callers as above.
     "/situations/closing",
+    // The chat's agent names its own talk (#1892 phase 6): loopback (the
+    // agent's MCP tool) with the running turn's proof headers, checked in
+    // the route.
+    "/situations/fill",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8475,14 +8479,39 @@ export class AgentXDaemon {
 
         case "POST /situations/closing": {
           if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          // A person's route (phase 6): a call made with an agent turn's
+          // headers is an agent's tool; it names its talk with /situations/fill.
+          if (agentProofShown(this.callerProof(req))) { this.json(res, 403, { error: "closing steps are set by a person; an agent names its talk with agentx_situation" }); break }
           const body = await readBody(req)
           const sit = this.config.situations
           const r = situationsClosing(this.situationGate.store, body, {
             closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
+            templatesEnabled: sit.mode !== "off" && sit.templates?.enabled === true,
             isAgent: (id) => !!this.registry.getAgent(id),
             gitlabUrl: forgeConnectorsOf(this.config).gitlab?.url ?? null,
           })
           if (r.status === 200) this.log(`[situation] closing steps ${body.clear === true ? "removed from" : "set on"} ${String(body.id || `${body.channel} ${body.chatId}`).slice(0, 80)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+
+        // Phase 6: the chat's agent names its own talk (agentx_situation).
+        // The chat is the proven running turn's, never the body's.
+        case "POST /situations/fill": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const body = await readBody(req)
+          const sit = this.config.situations
+          const turn = fillTurnFrom(this.callerProof(req), typeof body.agentId === "string" ? body.agentId : undefined, {
+            taskOwner: (id) => this.registry.runningTaskOwner(id)?.agentId ?? null,
+            findRunningTurn: (id, by) => this.registry.findRunningTurn(id, by),
+          })
+          const r = situationsFill(this.situationGate.store, body, {
+            templatesEnabled: sit.mode !== "off" && sit.templates?.enabled === true,
+            agentFill: sit.templates?.agentFill === true,
+            closingEnabled: sit.mode !== "off" && sit.closing?.enabled === true,
+            turn,
+          })
+          if (r.status === 200) this.log(`[situation] ${turn?.agentId} named its talk ${String(body.template).slice(0, 40)}`)
           this.json(res, r.status, r.body)
           break
         }

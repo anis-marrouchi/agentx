@@ -24,7 +24,7 @@ import { AGENTX_TOOL_NAMES } from "../src/mcp/tool-names"
 // misspelt name is rejected.
 
 const agentx = { type: "stdio" as const, command: "node", args: ["cli.js", "serve", "--stdio"] }
-const CORE = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state"]
+const CORE = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state", "agentx_situation"]
 const ON_DEMAND = ["agentx_agents", "agentx_recent", "agentx_wiki_query", "agentx_lookup"]
 
 describe("leanAgentxTools", () => {
@@ -90,7 +90,7 @@ describe("lean MCP config with an agentx tool list", () => {
 
   it("shows the count in the daemon log line", () => {
     const lean = { ...DEFAULT_LEAN, contextOnDemand: false, agentxTools: ["agentx_crons"] }
-    expect(describeProfile("lean", lean, "cron")).toContain("agentx-tools=11")
+    expect(describeProfile("lean", lean, "cron")).toContain("agentx-tools=12")
     expect(describeProfile("lean", DEFAULT_LEAN, "cron")).not.toContain("agentx-tools")
   })
 })
@@ -109,7 +109,7 @@ describe("the agentx server's tool list", () => {
   })
 
   it("knows every tool a shortened list always keeps", () => {
-    const known = new Set(listedTools({}).map((t) => t.name))
+    const known = new Set(listedTools({ AGENTX_SITUATION_TOOL: "1" }).map((t) => t.name))
     for (const name of [...CORE, ...ON_DEMAND]) expect(known.has(name)).toBe(true)
   })
 })
@@ -131,7 +131,7 @@ describe("config", () => {
 
 describe("the tools a shortened list always keeps", () => {
   it("names every tool the server defines in tool-names.ts", () => {
-    expect([...AGENTX_TOOL_NAMES].sort()).toEqual(listedTools({}).map((t) => t.name).sort())
+    expect([...AGENTX_TOOL_NAMES].sort()).toEqual(listedTools({ AGENTX_SITUATION_TOOL: "1" }).map((t) => t.name).sort())
   })
 
   it("covers every agentx tool AgentX's own prompts name", () => {

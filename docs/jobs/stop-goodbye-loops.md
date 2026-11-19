@@ -54,6 +54,8 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `decisions.seats.situation-phase.backend` | `decisions.defaultBackend` | Where the seat's answers come from. Name a hosted one, such as `jev`: the default may be the local one, which starts a model program on this machine for each answer. |
 | `decisions.seats.situation-phase.explore` | `0.15` | When the seat is active, the share of its "no reply" answers let through anyway and written as **would drop**, so that its mistakes can still be found. |
 | `situations.importance.enabled` | `false` | `true` works out each talk's importance (see [Importance](#importance)). |
+| `situations.templates.enabled` | `false` | `true` adds each talk's template rules to your agent's `[Situation]` line and to its closing note, and accepts only templates from `agentx situation templates` (see [Templates](#templates-what-kind-of-talk-it-is)). |
+| `situations.templates.agentFill` | `false` | `true` lets the chat's own agent name its talk with `agentx_situation`, within the limits in [Templates](#templates-what-kind-of-talk-it-is). Needs `situations.templates.enabled`. |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
 
 ## Turn it on
@@ -175,6 +177,47 @@ A talk without closing steps is not changed: no workflow runs for it.
 
 **For your own workflows:** each change of phase also fires the hook event `on:situation`. A workflow with a `trigger.hook` step on `on:situation` runs on each change; `filter: { phase: [ended] }` limits it to talks that ended. The hook context has the situation id, channel, chat id, the kind of talk (`template`), `from`, `to` (also as `phase`), `endReason` and who made the change (`setBy`).
 
+## Templates: what kind of talk it is
+
+A **template** names the kind of talk and adds what that kind of talk needs. AgentX has these:
+
+| Template | For | What it adds |
+|---|---|---|
+| `conversation` | every chat, by default | nothing (the rules above) |
+| `meeting` | a meeting with a set purpose | "keep to the purpose", and closing steps |
+| `meeting.external` | an outside party is present: an interview, a client meeting | no inside facts, no offer, no promise without an owner; no new promise in the goodbye; closing steps whose note keeps to what was said |
+| `job.production` | a change on a live system | say what will change and how to undo it, check it worked, do not call it done without the check; closing steps whose note says what changed and how it was checked |
+| `hand-off` | work handed to someone else | say what is handed over, to whom and what done looks like; one confirmation, no thanks for thanks; closing steps where each handed task is a follow-up with its owner |
+
+A template only adds sentences to your agent's `[Situation]` line and to the note it drafts. It never holds a message or sends one: every template keeps the gate rules above, and nothing reaches the other side without your yes.
+
+**Turn templates on:**
+
+1. **Terminal:** `agentx config set situations.templates.enabled true`.
+2. **Terminal:** see the list and the exact sentences: `agentx situation templates`.
+3. **Terminal:** give a talk a template with its closing steps: `agentx situation closing 3f2a9c1b --template meeting.external --purpose "job interview with a candidate" --home <issue link>`. With templates on, the template must be one from the list.
+
+**Let your agent name the talk itself (optional).** Your agent often knows first that a chat is an interview. With this on, its `[Situation]` line says it may name the talk once with the tool `agentx_situation`: the template and a few words of purpose, and optionally a closing message to the other side. Limits:
+
+- It can only name the chat it is answering in, and only while its turn is running.
+- It cannot choose where the note goes. With no home, the note is not posted anywhere: it comes to you inside your one message, in quotes, for example `Note: for you only: "…"`. A talk that ends as stale sends you no message, so its note is not kept.
+- The purpose it wrote is shown to you in quotes, marked "(as the agent named it)".
+- Follow-ups can be owned only by the talk's agent or by you.
+- A closing message to the other side is put on one line and always waits for your yes on a card.
+- It cannot change closing steps that a person set, a talk that ended, or another agent's chat.
+- Its own tools cannot use `agentx situation closing`: that route refuses a call that carries an agent's running turn. It cannot tell apart a program on this machine that leaves those marks out, so an agent allowed to run any shell command could still reach it, as it can reach every other daemon command on this machine. Keep agents that join outside talks on a tighter permission mode.
+- In the same way, a program on this machine that names an agent and a chat can name that agent's talk while the agent has exactly one running turn in that chat. It is bounded by the same limits: one of four templates, a few words of purpose, and a closing message that still waits for your card.
+
+When your agent names the talk, the tool's answer gives it the template's rules at once. A session that goes on (a warm chat session) gets the `[Situation]` line again only when the talk is ending or ended, so that answer is where it reads them. When **you** set a template on a talk that is going on, a session that goes on reads the rules at its next fresh start, or when the talk is ending.
+
+The tool `agentx_situation` is listed to your agents only while `situations.templates.enabled` and `situations.templates.agentFill` are both on (and `situations.mode` is not `off`). A warm session keeps the list it started with: after you switch these, its next start lists the tool.
+
+1. **Terminal:** `agentx config set situations.closing.enabled true` (for the closing steps).
+2. **Terminal:** `agentx config set situations.templates.enabled true`.
+3. **Terminal:** `agentx config set situations.templates.agentFill true`.
+
+Settings are read for each message and each turn: no restart is needed.
+
 ## Let a decision seat judge the unsure messages
 
 The word list knows thanks and goodbye phrases. Some short messages it cannot place: "ok", 👍, "thanks John", "perfect, thanks". These always pass, because they may answer a question your agent asked. After a talk has ended, most of them still need no answer.
@@ -244,7 +287,8 @@ It is off by default. **Terminal:** `agentx config set situations.importance.ena
 | `agentx situation end <id>` | Ends a talk by hand. `<id>` is the first column of `situation list`. |
 | `agentx situation not-this <id>` | Says a talk is not ending: back to **during**, and thanks or goodbyes no longer end it. |
 | `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
-| `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home` (a GitHub or GitLab issue, pull request or merge request), and optionally `--agent`, `--agents`, `--message`. `--clear` removes them. See [Closing steps](#closing-steps-after-a-talk-ends). |
+| `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home` (a GitHub or GitLab issue, pull request or merge request), and optionally `--agent`, `--agents`, `--message`. `--clear` removes them. `--template <id>` names the kind of talk (default `meeting`). See [Closing steps](#closing-steps-after-a-talk-ends). |
+| `agentx situation templates` | Lists the templates, the sentences each adds for each phase, and whether your agent may pick it. `--json` prints JSON. |
 | `agentx situation seat` | Shows the decision seat `situation-phase`: its mode, whether it holds messages now, and its calibration report with the false "no reply" rate. `--json` prints JSON. |
 | `agentx situation sources` | Lists the signal sources on this machine, what each answers now, and those not loaded here with the reason. `--json` prints JSON. |
 
@@ -291,6 +335,20 @@ To check closing steps:
 6. **Browser:** on the **Workflows** page, **Situation close** has one run. When it is done, the test issue has one note from your agent.
 7. You got one message that starts with "About a test talk". **Terminal:** `agentx requests list` lists the follow-ups as open promises, each with an owner.
 
+To check templates:
+
+1. **Terminal:** `agentx config set situations.templates.enabled true`, then `agentx situation templates`. The list shows `meeting.external`, `job.production` and `hand-off`.
+2. In a test chat, send your agent a question and let it answer.
+3. **Terminal:** `agentx situation list`, then `agentx situation closing <id> --template meeting.external --purpose "a test interview" --home <a test issue link>`.
+4. **Terminal:** `agentx situation list` shows the talk as `meeting.external`.
+5. In the test chat, send a new question. Your agent's next fresh session starts with `[Situation] Meeting with an outside party ("a test interview"), phase: during.` and the template's sentence.
+
+To check that your agent can name a talk:
+
+1. **Terminal:** `agentx config set situations.templates.agentFill true`.
+2. In a new test chat, write "Hello, I am here for the interview for the support role."
+3. **Terminal:** `agentx daemon logs` shows `[situation] <agent> named its talk meeting.external`, and `agentx situation list` shows the template.
+
 ## If something is wrong
 
 - **The log stays empty:** check that `situations.mode` is not `off` and that the chat is on Telegram, WhatsApp, Discord or Slack. Shadow and active modes only list messages after a talk has ended.
@@ -318,4 +376,12 @@ To check closing steps:
 - **The seat writes no would-drop rows:** it is asked only about short messages the word list is unsure of, after a talk is ending or ended. If its service is down or out of credits, no answer comes and nothing is written; the daemon log shows `[decisions] seat "situation-phase" ... failed`.
 - **The seat held a message that needed a reply:** send it on with `agentx situation release <id>`. That labels the seat's answer as wrong. If it happens again, lower `situations.seat.maxFalseNoReply` or switch the seat back to shadow.
 - **`agentx situation list` shows no importance:** turn it on with `agentx config set situations.importance.enabled true`. A talk gets it at its next message.
+- **`agentx situation closing --template` answers "unknown template":** with `situations.templates.enabled` on, use one of `agentx situation templates`. With it off, any name is kept as a label and adds nothing.
+- **`agentx situation closing --template conversation` answers "has no closing steps":** `conversation` is the plain chat and runs no closing steps. Pick `meeting`, `meeting.external`, `job.production` or `hand-off`.
+- **Your agent does not have the `agentx_situation` tool:** both template settings must be on and `situations.mode` not `off`; a warm session lists it from its next start.
+- **Your agent says `agentx_situation` answered "an agent may not name its talk":** turn on both `situations.templates.enabled` and `situations.templates.agentFill`.
+- **`agentx_situation` answered "a person set this talk's closing steps":** that is on purpose: what you set is never changed by the agent. Change it yourself with `agentx situation closing`.
+- **`agentx_situation` answered "no running turn proven":** the tool works only inside the agent's own turn in that chat, not from a terminal or another program.
+- **The note of a talk your agent named never arrived:** with no home, the note comes only inside your closing message. A talk that ended as stale sends no message, so there is no note. Give the talk a home with `agentx situation closing --home` to keep its notes.
+- **The `[Situation]` line has no template sentence:** check `situations.templates.enabled` is `true` and `situations.mode` is `active`. On a session that goes on, the line comes back only while the talk is ending or ended.
 - **`agentx situation sources --node <url>` answers HTTP 401:** the list says whether you are busy and with whom, so from another machine it needs the mesh token (`--token`).
