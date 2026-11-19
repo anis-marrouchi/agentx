@@ -2,7 +2,7 @@ import { readHold } from "@/notify/hold"
 import type { FocusState } from "@/notify/focus"
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
-import { oneLine, quoted, situationTemplate } from "./templates"
+import { oneLine, quoted, situationTemplateFor, templateText } from "./templates"
 
 // --- The [Situation] prompt layer (#1892, phase 2) ---
 //
@@ -59,7 +59,7 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   // Phase 6 (situations.templates): the template's title, the talk's
   // purpose (one line, quoted: a person or the agent wrote it) and the
   // phase's rule. Off: the line is exactly as before.
-  const tpl = opts.templates ? situationTemplate(row.template) : null
+  const tpl = opts.templates ? situationTemplateFor(row) : null
   const purpose = tpl && oneLine(row.closing?.purpose, PURPOSE_MAX) ? quoted(row.closing!.purpose, PURPOSE_MAX) : ""
   const name = tpl ? `${tpl.title}${purpose ? ` (${purpose})` : ""}` : row.template.charAt(0).toUpperCase() + row.template.slice(1)
   const why = row.why ? row.why.replace(/\s+/g, " ").slice(0, WHY_MAX) : ""
@@ -72,7 +72,8 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   } else {
     line = `[Situation] ${name}, phase: during.${row.override === "not-this" ? " A person said this talk is not ending." : ""}`
   }
-  const rule = tpl?.rules[row.phase]
+  // A learned template's rule (phase 8) is quoted and labelled as such.
+  const rule = tpl ? templateText(tpl, tpl.rules[row.phase]) : ""
   if (rule) line += ` ${rule}`
   if (opts.templates && opts.agentFill && opts.fresh && row.phase === "during" && row.template === "conversation") line += ` ${AGENT_FILL_LINE}`
   if (opts.ownerBusy) line += ` ${OWNER_BUSY_LINE}`

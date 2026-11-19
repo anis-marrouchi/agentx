@@ -15,6 +15,7 @@ import { z } from "zod"
 //     templates: { enabled: false, agentFill: false }  # phase 6
 //     consent: { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60, maxReads: 3, reaskMinutes: 30 }  # phase 7
 //     news: { feeds: [], maxItems: 10, timeoutMs: 8000 }              # phase 7
+//     learned: { enabled: false, model: opus, maxRunUsd: 2, windowDays: 28 }  # phase 8
 //
 // `shadow` (the default) keeps the record of each chat and writes every
 // message the gate WOULD drop to the gate log, but drops nothing and sends
@@ -107,6 +108,30 @@ export const situationsConfigSchema = z.object({
      *  other writer, no extra promise owners, never over what a person
      *  set. Needs `enabled`. */
     agentFill: z.boolean().default(false),
+  }).default({}),
+  /** Learned templates (phase 8, learn.ts). Off by default. On: the
+   *  weekly `situation-learn` workflow drafts templates from ended talks
+   *  (redacted counts and shared lower-case purpose words only), and the
+   *  approver agent says yes or no to each draft once. A draft carries
+   *  prompt rules and closing-note guidance only; it is used (named by a
+   *  person, with `templates.enabled`) only after the approver's yes.
+   *  The approver is not a setting here (agents can edit this file): the
+   *  owner names it with `agentx situation learned approver <agent>`,
+   *  which needs the operator key. Model calls also need
+   *  `improve.enabled` and fit inside `improve.dailyUsd`. */
+  learned: z.object({
+    enabled: z.boolean().default(false),
+    /** The model that drafts (a strong one; it runs once a week). */
+    model: z.string().min(1).default("opus"),
+    /** Dollars one weekly run may spend, drafting and approver's reviews
+     *  together, inside `improve.dailyUsd`. At most $2 (owner's answer). */
+    maxRunUsd: z.number().min(0).max(2).default(2),
+    /** How far back the run reads ended talks. */
+    windowDays: z.number().int().min(7).max(30).default(28),
+    /** Ended talks a draft must point to. */
+    minEvidence: z.number().int().min(2).max(50).default(3),
+    /** Drafts one run may propose. */
+    maxDrafts: z.number().int().min(1).max(5).default(3),
   }).default({}),
   /** The person's yes for a per-request source (phase 7). An agent's ask
    *  is a decision card that takes a yes only in the popup on this

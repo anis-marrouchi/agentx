@@ -111,6 +111,19 @@ export const CATALOG_RULES: GuardRule[] = [
     message: "The operator key proves a call is the owner's; agents may not read or change it.",
     preconditions: [],
   },
+  // The highest generation of the learned-templates state (#1892 phase 8),
+  // kept outside the database so putting back an older copy of the
+  // database is noticed after a restart. Sealed with the operator key;
+  // agents may not touch it. Same second lock, same gaps.
+  {
+    id: "learned-gen-write",
+    match: { file_access_regex: "(^|/)\\.agentx/learned\\.gen$" },
+    action: "deny",
+    mode: "enforce",
+    severity: "critical",
+    message: "This file guards learned-template decisions against rollback; agents may not read or change it.",
+    preconditions: [],
+  },
 
   // ---- Containers / volumes ---------------------------------------------
   {

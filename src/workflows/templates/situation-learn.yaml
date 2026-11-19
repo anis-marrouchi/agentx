@@ -1,0 +1,77 @@
+# Situation learn: the weekly learned-templates run (#1892, phase 8).
+#
+# Installed at daemon start while `situations.learned.enabled` is on, and
+# put back at each daemon start if this file was changed or deleted
+# (situations/workflows.ts): it is not meant to be edited. Runs once a
+# week (the cron below); the code also refuses a second drafting run
+# within 6.5 days, whatever starts it. Its two steps run only in this
+# workflow.
+#
+#   1. draft:   one model call over the ended talks of the last few weeks,
+#               redacted (counts and shared lower-case purpose words; no
+#               messages, names, numbers or chat ids). Up to `maxDrafts`
+#               drafts in a fixed schema: prompt rules and closing-note
+#               guidance only.
+#   2. review:  each new draft goes once to the approver the owner named
+#               (`agentx situation learned approver <agent>`), in a
+#               tool-less call the daemon makes with fixed rules. Its yes
+#               or no is read and sealed by the daemon, not taken from
+#               this file. Nothing is used before a yes.
+#   3. tell_owner: one message to the owner when something was decided.
+#
+# Cost (per node): every call is booked at its estimate before it starts,
+# against `improve.dailyUsd` and, over 6.5 days, against
+# `situations.learned.maxRunUsd` ($2 at most). A call that would pass
+# either is not made; the run stops there.
+#
+# Neither step takes inputs: editing this file can change when it runs,
+# not what is drafted, who approves or what the verdict is.
+
+id: situation-learn
+version: 2
+title: Situation learn
+description: Once a week, drafts situation templates from ended talks; the approver agent says yes or no to each draft. Nothing learned is used before a yes.
+autoStart: false
+
+nodes:
+  - id: start
+    type: trigger.cron
+    config:
+      spec: "0 4 * * 1"
+      timezone: UTC
+
+  - id: draft
+    type: action.builtin
+    config:
+      name: situation.learn.draft
+
+  - id: review
+    type: action.builtin
+    config:
+      name: situation.learn.review
+
+  - id: decided
+    type: branch
+    config:
+      cases:
+        - when: { kind: exists, params: { path: review.notice } }
+          to: tell_owner
+      default: done
+
+  - id: tell_owner
+    type: owner.notify
+    config:
+      text: "{{review.notice}}"
+
+  - id: done
+    type: end
+    config:
+      status: completed
+
+edges:
+  - { from: start, to: draft }
+  - { from: draft, to: review }
+  - { from: review, to: decided }
+  - { from: decided, fromPort: tell_owner, to: tell_owner }
+  - { from: decided, fromPort: done, to: done }
+  - { from: tell_owner, to: done }

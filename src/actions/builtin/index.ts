@@ -18,6 +18,7 @@ import { meshDelegate } from "./mesh"
 import { ragLexical } from "./rag"
 import { signalResume } from "./signal"
 import { situationExpire, situationNote, situationPromises, situationTranscript } from "@/situations/closing-actions"
+import { situationLearnDraft, situationLearnReview } from "@/situations/learn-actions"
 
 /**
  * Register every shipped built-in. Idempotent — re-registering the
@@ -40,6 +41,8 @@ export function registerAllBuiltins(): void {
   registerBuiltin(ragLexical)
   registerBuiltin(signalResume)
   registerBuiltin(situationExpire)
+  registerBuiltin(situationLearnDraft)
+  registerBuiltin(situationLearnReview)
   registerBuiltin(situationPromises)
   registerBuiltin(situationTranscript)
   registerBuiltin(situationNote)

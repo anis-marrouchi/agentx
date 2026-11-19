@@ -274,6 +274,62 @@ situationCmd
     }
   })
 
+// Phase 8: learned templates (#1892). The drafts the weekly run made, the
+// approver's verdicts, and which are in use. Retire takes one back.
+const learnedCmd = situationCmd
+  .command("learned")
+  .description("learned templates: the weekly drafts, the approver's yes or no, and which are in use (situations.learned.enabled)")
+
+common(learnedCmd
+  .command("list", { isDefault: true })
+  .description("list learned templates, newest first")
+  .option("--json", "print JSON"))
+  .action(async (opts: Opts & { json?: boolean }) => {
+    const data = await call(opts, "GET", "/situations/learned")
+    if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+    const rows = (data.templates ?? []) as Array<Record<string, any>>
+    if (!data.enabled) console.log(chalk.dim("  situations.learned.enabled is off: nothing learned is used."))
+    if (data.problem) console.log(chalk.red(`  ${data.problem}: nothing learned is drafted, asked or used. Start over with: agentx situation learned reset`))
+    else console.log(data.approver ? `  Approver: ${data.approver}` : chalk.yellow("  No approver: drafts wait (agentx situation learned approver <agent>)."))
+    if (!rows.length) { console.log(chalk.dim("  No learned templates yet.")); return }
+    for (const t of rows) {
+      const state = t.inUse ? chalk.green("in use") : t.status === "active" ? chalk.yellow("approved, not in use") : t.status
+      console.log(`  ${chalk.bold(String(t.id).padEnd(28))} ${state}  ${chalk.dim(`from ${t.evidence} talk(s), based on ${t.base}`)}`)
+      console.log(`    ${t.title}: ${chalk.dim(t.when)}`)
+      for (const [phase, rule] of Object.entries(t.rules ?? {})) console.log(`    ${chalk.dim(phase.padEnd(7))} "${rule}"`)
+      if (t.noteGuidance) console.log(`    ${chalk.dim("note".padEnd(7))} "${t.noteGuidance}"`)
+      if (t.reviewer) console.log(chalk.dim(`    ${t.status === "rejected" ? "turned down" : "approved"} by ${t.reviewer}${t.verdictWhy ? `: ${t.verdictWhy}` : ""}`))
+      else if (t.status === "draft") console.log(chalk.dim(`    waiting for the approver (asked ${t.reviewAttempts} time(s))`))
+      if (!t.sealed) console.log(chalk.red("    not drafted by this daemon (no valid seal): never reviewed or used"))
+    }
+  })
+
+common(learnedCmd
+  .command("approver [agent]")
+  .description("name the agent that approves or turns down each learned draft (owner only: sends the operator key)")
+  .option("--clear", "remove the approver: drafts wait and nothing learned is used"))
+  .action(async (agent: string | undefined, opts: Opts & { clear?: boolean }) => {
+    if (!agent && !opts.clear) { console.log(chalk.red("  Give an agent id, or --clear.")); process.exit(1) }
+    await call(opts, "POST", "/situations/learned/approver", opts.clear ? { clear: true } : { agent }, { ownerKey: true })
+    console.log(chalk.green(opts.clear ? "  Approver removed: drafts wait, and nothing learned is used." : `  ${agent} now approves or turns down learned drafts. Templates approved by anyone else are no longer used.`))
+  })
+
+common(learnedCmd
+  .command("reset")
+  .description("start over when the sealed state of learned templates cannot be trusted (owner only: sends the operator key)"))
+  .action(async (opts: Opts) => {
+    const data = await call(opts, "POST", "/situations/learned/reset", {}, { ownerKey: true })
+    console.log(chalk.green(`  Learned templates reset (${data.was}). Every draft and decision was dropped; name the approver again.`))
+  })
+
+common(learnedCmd
+  .command("retire <id>")
+  .description("take back a learned template (or drop a draft): it is no longer used"))
+  .action(async (id: string, opts: Opts) => {
+    await call(opts, "POST", "/situations/learned/retire", { id }, { ownerKey: true })
+    console.log(chalk.green(`  ${id} retired: it is no longer used.`))
+  })
+
 common(situationCmd
   .command("release <id>")
   .description("re-deliver a dropped message to the agent, once, and reopen the talk"))

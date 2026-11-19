@@ -30,8 +30,10 @@ export interface SituationTemplate {
   kind: TemplateKind
   version: number
   /** `general`: a skeleton for a kind of talk. `hand`: written by hand
-   *  for a high-stakes case. */
-  source: "general" | "hand"
+   *  for a high-stakes case. `learned`: drafted from ended talks and
+   *  approved by the named approver (phase 8, learned.ts); its rules and
+   *  guidance are outside text and are always shown in quotes. */
+  source: "general" | "hand" | "learned"
   /** How the [Situation] line names it. */
   title: string
   /** One prompt sentence per phase, added to the [Situation] line. */
@@ -91,14 +93,72 @@ export const SITUATION_TEMPLATES: readonly SituationTemplate[] = [
 
 const BY_ID = new Map(SITUATION_TEMPLATES.map((t) => [t.id, t]))
 
-/** The template with this id, or null. */
-export function situationTemplate(id: string | null | undefined): SituationTemplate | null {
-  return (id && BY_ID.get(id)) || null
+/** Ids of learned templates start with this (phase 8). */
+export const LEARNED_PREFIX = "learned."
+
+/** Approved learned templates (phase 8): attached at daemon start while
+ *  `situations.learned.enabled` is on. It answers only for a learned
+ *  template that is active, whose approval checks out and whose text still
+ *  passes the lint (learned.ts). Unset: no learned template is used. */
+export interface LearnedTemplateSource {
+  get(id: string): SituationTemplate | null
+  list(): SituationTemplate[]
+  /** Did the owner name this learned template for this talk (sealed)? */
+  picked?(situationId: string, id: string): boolean
+  /** Record the owner's pick (the closing route, owner only). */
+  pick?(situationId: string, id: string): void
 }
 
-/** The ids, for an error message. */
+let learned: LearnedTemplateSource | null = null
+
+export function setLearnedTemplateSource(s: LearnedTemplateSource | null): void {
+  learned = s
+}
+
+function learnedTemplate(id: string): SituationTemplate | null {
+  if (!learned || !id.startsWith(LEARNED_PREFIX)) return null
+  try {
+    const t = learned.get(id)
+    return t && t.source === "learned" && t.id === id ? t : null
+  } catch { return null }
+}
+
+/** The template with this id, or null. A learned one only once approved. */
+export function situationTemplate(id: string | null | undefined): SituationTemplate | null {
+  if (!id) return null
+  return BY_ID.get(id) ?? learnedTemplate(id)
+}
+
+/** The template a talk uses. A learned one only when the owner named it
+ *  for this talk through the closing route (a sealed pick, learned.ts):
+ *  its id written onto the talk's row by anything else is not used. */
+export function situationTemplateFor(row: { id: string; template: string | null | undefined }): SituationTemplate | null {
+  const id = row.template
+  if (!id) return null
+  if (BY_ID.has(id)) return BY_ID.get(id)!
+  const t = learnedTemplate(id)
+  try { return t && learned?.picked?.(row.id, id) ? t : null } catch { return null }
+}
+
+/** The owner named a learned template for a talk (closing route). */
+export function recordLearnedPick(situationId: string, id: string): void {
+  if (!id.startsWith(LEARNED_PREFIX) || !learnedTemplate(id)) return
+  try { learned?.pick?.(situationId, id) } catch { /* not recorded: not used */ }
+}
+
+/** The ids, for an error message: the catalog, then approved learned ones. */
 export function templateIds(): string {
-  return SITUATION_TEMPLATES.map((t) => t.id).join(", ")
+  let extra: string[] = []
+  try { extra = learned?.list().map((t) => t.id) ?? [] } catch { extra = [] }
+  return [...SITUATION_TEMPLATES.map((t) => t.id), ...extra].join(", ")
+}
+
+/** A rule or the note guidance as the agent reads it. A learned
+ *  template's text came from past talks, so it is quoted and labelled: it
+ *  never reads as an instruction from the owner or from AgentX. */
+export function templateText(t: SituationTemplate, text: string | undefined, max = 240): string {
+  if (!text) return ""
+  return t.source === "learned" ? `Learned from past talks and approved, a suggestion in quotes: ${quoted(text, max)}` : text
 }
 
 /** Collapse agent- or person-supplied text to one line, capped. */
@@ -115,5 +175,21 @@ export function agentTemplateIds(): string {
  *  quotes it cannot close (its own double quotes become single ones), so
  *  it cannot forge the text around it. */
 export function quoted(v: unknown, max: number): string {
-  return `"${oneLine(v, max).replace(/"/g, "'")}"`
+  return `"${oneLine(typeof v === "string" ? v.replace(QUOTE_STRIP, "") : v, max).replace(/"/g, "'")}"`
+}
+
+/** What quoting drops: bidi embeddings, overrides and isolates
+ *  (U+202A-202E, U+2066-2069) and zero-width spaces (U+200B, U+2060,
+ *  U+FEFF). Joiners (U+200C, U+200D) stay, so Arabic, Persian and emoji
+ *  read as written. */
+const QUOTE_STRIP = new RegExp(`[${[[0x202a, 0x202e], [0x2066, 0x2069], [0x200b, 0x200b], [0x2060, 0x2060], [0xfeff, 0xfeff]]
+  .map(([a, b]) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`).join("")}]`, "g")
+
+/** Characters that change how text reads without being seen: controls,
+ *  zero-width and direction marks, variation selectors, tags. */
+const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb]|\udb40[\udc00-\udfff]/g
+
+/** Text with invisible, direction and control characters taken out. */
+export function stripInvisible(text: string): string {
+  return text.replace(INVISIBLE, "")
 }

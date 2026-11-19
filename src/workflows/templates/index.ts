@@ -28,6 +28,8 @@ export type TemplateName =
   // `agentx workflow new`: they are not in TEMPLATES below.
   | "situation-close"
   | "situation-expiry"
+  // Phase 8: installed at daemon start while situations.learned.enabled.
+  | "situation-learn"
 
 export interface TemplateMeta {
   name: TemplateName
