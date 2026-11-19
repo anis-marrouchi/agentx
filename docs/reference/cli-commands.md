@@ -3758,27 +3758,27 @@ List the situation templates: what each adds to the agent's `[Situation]` line i
 
 ### `agentx situation learned`
 
-List the learned templates, newest first: each draft the weekly run `situation-learn` made, the talks it came from (a count), its sentences, the approver's yes or no with the reason, and whether it is **in use**. Works only on the machine itself. See [Learn templates from ended talks](/jobs/learned-templates).
+List the learned templates, newest first: each draft the weekly run `situation-learn` made, the talks it came from (a count), its sentences, your yes or no, and whether it is **in use**. The first lines say whether this week's card is open and whether learning is paused. Works only on the machine itself. See [Learn templates from ended talks](/jobs/learned-templates).
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--json` | — | Print JSON. |
 
-### `agentx situation learned approver [agent]`
+### `agentx situation learned answer <id> <yes|no>`
 
-Name the agent that says yes or no to each learned draft. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. Templates approved by an earlier approver are no longer used.
+Your answer to one draft on this week's card. `yes`: the template may be used on the talks you name it on. `no`: it is never used, and its sentences are not drafted again. Once every draft of the card is answered, the card closes. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. The other way to answer is the Mac popup. See [Answer the weekly card](/jobs/learned-templates#answer-the-weekly-card).
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--clear` | — | Remove the approver: drafts wait and nothing learned is used. |
+### `agentx situation learned resume`
+
+Start learning again after it paused itself (two weekly cards in a row got no answer). The next weekly run drafts again. Owner only: it sends your operator key.
 
 ### `agentx situation learned reset`
 
-Start over when the sealed record of learned templates cannot be trusted (`agentx situation learned` says it was changed outside AgentX, or an older copy was put back). Drops every draft and decision, and the approver. Owner only: it sends your operator key. Refused while the record is sound.
+Start over when the sealed record of learned templates cannot be trusted (`agentx situation learned` says it was changed outside AgentX, or an older copy was put back). Drops every draft and decision. Owner only: it sends your operator key. Refused while the record is sound.
 
 ### `agentx situation learned retire <id>`
 
-Take back a learned template (or drop a draft): it is no longer used. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. There is no command that approves a draft.
+Take back a learned template (or drop a draft): it is no longer used. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key.
 
 ### `agentx situation seat`
 
