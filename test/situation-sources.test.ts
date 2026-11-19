@@ -291,4 +291,35 @@ describe("the node's wiring (daemon start)", () => {
     }
     expect(wantsSignal(key)).toBe(false)
   })
+
+  it("a push source limited to some agents applies a leave only for a talk those agents own (#1945)", async () => {
+    const { attachSignalSources } = await import("../src/situations/sources/node")
+    const store = new SituationStore(new Database(":memory:"))
+    const cfg: SituationsConfig = {
+      ...DEFAULT_SITUATIONS_CONFIG, mode: "active",
+      sources: { "whatsapp-groups": { agents: ["helper"] }, "telegram-members": { agents: ["helper"] } },
+    }
+    const node = attachSignalSources({ store, settings: () => cfg, calls: () => undefined })
+    try {
+      const cases: Array<[string, string]> = [
+        ["whatsapp-groups", situationKey("whatsapp", "default", "120363000000000011@g.us")],
+        ["telegram-members", situationKey("telegram", "default", "-1001")],
+      ]
+      for (const [source, base] of cases) {
+        const mine = `${base}-mine`, other = `${base}-other`, unowned = `${base}-unowned`
+        for (const k of [mine, other, unowned]) store.create(k, "during", "first")
+        store.claimOwner(mine, "helper")
+        store.claimOwner(other, "writer")
+        const leave = (scope: string): Signal => ({ source, kind: "left", subject: "u1", value: true, checkedAt: 1, expiresAt: null, reason: "left", scope, remaining: 0 })
+        publishSignal(leave(mine))
+        publishSignal(leave(other))
+        publishSignal(leave(unowned))
+        expect(store.get(mine)!.phase).toBe("ending")
+        expect(store.get(other)!.phase).toBe("during")
+        expect(store.get(unowned)!.phase).toBe("during")
+      }
+    } finally {
+      node.detach()
+    }
+  })
 })

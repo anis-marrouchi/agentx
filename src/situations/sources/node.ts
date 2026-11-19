@@ -37,7 +37,9 @@ export function attachSignalSources(opts: {
 
   setSignalInterest((key) => opts.settings().mode !== "off" && opts.store.get(key)?.phase === "during")
   const off = onSignal((s) => {
-    if (!sources.accepts(s)) return
+    // The talk's owner decides a source limited to some agents (#1945).
+    const owner = s.scope ? opts.store.get(s.scope)?.ownerAgent ?? undefined : undefined
+    if (!sources.accepts(s, owner)) return
     if (applySignal(opts.store, opts.settings, s).moved) opts.log?.(`[situation] ${s.source}: the last other party left; talk → ending`)
   })
   return {

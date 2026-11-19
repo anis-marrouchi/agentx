@@ -106,10 +106,12 @@ export class SignalSources {
   }
 
   /** A pushed signal is used only when its source is loaded here and may
-   *  be read for its chat (switched on, consent where needed). */
-  accepts(s: Signal): boolean {
+   *  be read for its chat (switched on, consent where needed). `agentId`
+   *  is the agent that owns the chat's talk: a source limited to some
+   *  agents accepts a signal only for a talk one of them owns (#1945). */
+  accepts(s: Signal, agentId?: string): boolean {
     const src = this.sources.get(s.source)
     if (!src) return false
-    return this.refusal(src, { key: s.scope }) === null
+    return this.refusal(src, { key: s.scope, ...(agentId ? { agentId } : {}) }) === null
   }
 }

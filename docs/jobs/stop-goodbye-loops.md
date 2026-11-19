@@ -45,7 +45,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.maxAge.duringHours` | `12` | A talk with no change for this long is treated as over. |
 | `situations.maxAge.endingMinutes` | `60` | A talk left in **ending** this long (your agent never said goodbye) is treated as over. |
 | `situations.sources.<id>.enabled` | on | `false` switches one signal source off (see [Signals: who left, who is busy](#signals-who-left-who-is-busy)). |
-| `situations.sources.<id>.agents` | all agents | A list of agent ids: the source is read only for these agents. |
+| `situations.sources.<id>.agents` | all agents | A list of agent ids: the source is used only for these agents. For `whatsapp-groups` and `telegram-members`, a leave counts only in a talk one of these agents has answered in; in other talks it is ignored. |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
 
 ## Turn it on
@@ -122,6 +122,12 @@ These facts stay on the machine that runs the chat. Mesh peers only see the phas
 
 1. **Terminal:** `agentx config set situations.sources.whatsapp-groups.enabled false`.
 2. Leaves in WhatsApp groups no longer move a talk. Turn it back on with `true`.
+
+**Limit a source to some agents:**
+
+1. **Terminal:** `agentx config set situations.sources.whatsapp-groups.agents '["helper"]'` (use your agent's id instead of `helper`).
+2. A leave in a WhatsApp group now moves a talk only when the agent `helper` has answered in it. Talks of your other agents, and talks no agent has answered in yet, stay as they are.
+3. **Terminal:** to use the source for all agents again, `agentx config set situations.sources.whatsapp-groups.agents '[]'`.
 
 ## Commands
 
