@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.235.0](https://github.com/anis-marrouchi/agentx/compare/v0.234.1...v0.235.0) (2026-11-19)
+
+
+### Features
+
+* **a2a:** move the hand-off log into the jobs database ([#1861](https://github.com/anis-marrouchi/agentx/issues/1861)) ([#1962](https://github.com/anis-marrouchi/agentx/issues/1962)) ([fc20af6](https://github.com/anis-marrouchi/agentx/commit/fc20af63de48128c4f3f3891e630df6eb299d865))
+
+
+### Bug Fixes
+
+* **board-dashboard:** refuse off-box workflow writes without a token ([025b78f](https://github.com/anis-marrouchi/agentx/commit/025b78f171dd280c8dd4724e317be2133c07bf41))
+* **requests:** ask a proof link for every deliverable on an owner-check reopen ([#1965](https://github.com/anis-marrouchi/agentx/issues/1965)) ([65d7918](https://github.com/anis-marrouchi/agentx/commit/65d7918fc9626988b00c7d6bed3a4518468fc317))
+* **requests:** every promise naming an issue gets the note checker (noqta[#876](https://github.com/anis-marrouchi/agentx/issues/876)) ([#1959](https://github.com/anis-marrouchi/agentx/issues/1959)) ([53144a8](https://github.com/anis-marrouchi/agentx/commit/53144a8347020c5cff3a9fce35f71fd46daa2f2b))
+* **requests:** owner-words check judges only the latest close's proofs (retro:01M7RHM4763Q09HY7ATFT77DX1) ([2b499ed](https://github.com/anis-marrouchi/agentx/commit/2b499ed2ccd41d89082c4d95a16add26d439cdef))
+* **workflows:** dashboard Resume hands the run to the daemon ([#876](https://github.com/anis-marrouchi/agentx/issues/876)) ([d76f06e](https://github.com/anis-marrouchi/agentx/commit/d76f06e16cad978b3787f09d1dd10d779bbbe7ae))
+
 ## [0.234.1](https://github.com/anis-marrouchi/agentx/compare/v0.234.0...v0.234.1) (2026-11-19)
 
 
