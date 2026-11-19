@@ -1668,10 +1668,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         // write scope on any /api call, so we don't re-gate here.
         // When it's not set (localhost default), enforce scopes ourselves
         // only if the caller *presented* a token — otherwise allow through
-        // to preserve the loopback "safe default" UX.
+        // to preserve the loopback "safe default" UX. An off-box write with
+        // no token is refused: it can pause or cancel any run (#1948).
         if (ctx.token) return true
         const presented = extractToken(r as any)
-        if (!presented) return true
+        if (!presented) {
+          if (!scopes.includes("dashboard:write") || !isOffBox(r as IncomingMessage)) return true
+          sendJson(s, 401, { error: "a token is needed for this change from another machine" })
+          return false
+        }
         const rec = new TokenStore().verify(presented)
         if (!rec) { sendJson(s, 401, { error: "invalid or revoked token" }); return false }
         for (const scope of scopes) {
