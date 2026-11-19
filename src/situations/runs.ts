@@ -1,7 +1,7 @@
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
 import type { SituationWorkflowsState } from "./workflows"
-import { quoted, situationTemplate, templateText } from "./templates"
+import { quoted, situationTemplateFor, templateText } from "./templates"
 
 // --- The store starts and cancels its two workflow runs (#1892, phase 4) ---
 //
@@ -240,7 +240,7 @@ export class SituationRuns {
     // Phase 6: the template's guidance for the note (templates on), and
     // the agent's own words marked as such where the owner reads them.
     const s = this.deps.settings()
-    const tpl = s.templates?.enabled ? situationTemplate(row.template) : null
+    const tpl = s.templates?.enabled ? situationTemplateFor(row) : null
     const purpose = purposeOf(row)
     const runId = await this.start(CLOSE_WORKFLOW, row, {
       situationId: row.id, endGeneration: row.endGeneration, reason: row.endReason ?? "closed",

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { readTemplate, type TemplateName } from "@/workflows/templates"
 import { parseYamlWorkflow } from "@/workflows/yaml"
@@ -51,6 +51,20 @@ export function ensureSituationWorkflows(store: Pick<WorkflowStore, "get" | "bas
   const ids: readonly TemplateName[] = opts.learn ? [LEARN_ID] : IDS
   for (const id of ids) {
     const files = [`${id}.yaml`, `${id}.yml`, `${id}.json`].filter((f) => existsSync(resolve(dir, f)))
+    // The learning run is not the owner's to edit (its steps, the owner's
+    // notice): a file that differs from the shipped one is put back, and
+    // a deleted one too. To stop it, switch situations.learned.enabled off.
+    if (id === LEARN_ID) {
+      const text = readTemplate(id)
+      let same = false
+      try { same = files.length === 1 && files[0] === `${id}.yaml` && readFileSync(resolve(dir, files[0]), "utf-8") === text } catch { same = false }
+      if (same) continue
+      for (const f of files) { try { unlinkSync(resolve(dir, f)) } catch { /* rewritten below */ } }
+      workflowSchema.parse(parseYamlWorkflow(text, { filePath: `${id}.yaml` }))
+      writeFileSync(resolve(dir, `${id}.yaml`), text)
+      out.added.push(id)
+      continue
+    }
     if (files.length > 0) {
       if (files.length > 1) { out.broken.push({ id, why: `both ${files.join(" and ")} exist; delete one` }); continue }
       if (!store.get(id)) out.broken.push({ id, why: `${files[0]} does not load as a workflow (agentx workflow validate shows why)` })

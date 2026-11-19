@@ -1,13 +1,17 @@
 import type Database from "better-sqlite3"
-import { createHmac, timingSafeEqual } from "crypto"
-import { LEARNED_PREFIX, oneLine, situationTemplate, type SituationTemplate } from "./templates"
+import { createHash, createHmac, timingSafeEqual } from "crypto"
+import { LEARNED_PREFIX, oneLine, situationTemplate, stripInvisible, type LearnedTemplateSource, type SituationTemplate } from "./templates"
 
 // --- Learned templates: the one home of drafts and approvals (#1892 phase 8) ---
 //
 // The weekly `situation-learn` run (learn.ts) drafts templates from ended
-// talks. Each draft lives here, in the daemon's SQLite file, with its
-// status: draft → active (the approver said yes) or rejected (no), and
-// active → retired (the owner took it back). Nothing else holds them.
+// talks. The text of each draft lives in `situation_learned_templates`;
+// every decision about it lives in one sealed STATE (a row of
+// `situation_learned_settings`): its status (draft, active, rejected,
+// retired), how often the approver was asked, who decided and when, the
+// hash of the exact text decided on, the approver the owner named, the
+// owner's picks of a learned template for a talk, and a generation
+// counter that only goes up. Nothing else holds them.
 //
 // What a learned template may carry, and only this (a fixed schema, the
 // columns below): a title, a "when" line, one prompt rule per phase and
@@ -16,22 +20,25 @@ import { LEARNED_PREFIX, oneLine, situationTemplate, type SituationTemplate } fr
 // note home or promise owners: there is no column for them, and the lint
 // refuses text that asks for them. Its closing steps are the base's.
 //
-// Agents run as the same user and can write this file. So a status is
-// not proof:
-//   - a draft counts only with its draft seal, written when the daemon
-//     drafted it;
-//   - an active row counts only with its approval seal, written when the
-//     approver's own review run (started by the daemon, learn.ts) said
-//     yes, over the exact text it read.
-// Both seals are HMACs under a key derived from the operator key
-// (.agentx/operator.key, which the guard keeps agents from reading,
-// #1979). A row an agent wrote or changed has no valid seal and is never
-// reviewed or used. No operator key: nothing is drafted or used.
+// Agents run as the same user and can write this database. So:
+//   - the state is an HMAC-sealed document under a key derived from the
+//     operator key (.agentx/operator.key, which the guard keeps agents
+//     from reading, #1979). A row's own status columns are a copy for
+//     people to read; they decide nothing;
+//   - an edited state has no valid seal: then nothing learned is drafted,
+//     asked or used until the owner resets it (docs);
+//   - an older sealed state put back (to undo a retire, a no or a new
+//     approver) has a lower generation: this daemon refuses it while it
+//     runs. After a restart it cannot tell: a rollback of the whole
+//     database is the one thing left, and the docs say so;
+//   - a draft is used only while the hash of its text, its evidence
+//     summary included, still matches the state's.
+// No operator key: nothing is drafted or used.
 
 export const LEARNED_BASES = ["meeting", "meeting.external", "job.production", "hand-off"] as const
 export type LearnedBase = (typeof LEARNED_BASES)[number]
 
-export const LEARNED_LIMITS = { slug: 40, title: 60, when: 160, rule: 200, guidance: 200, why: 300, verdictWhy: 300 } as const
+export const LEARNED_LIMITS = { slug: 40, title: 60, when: 160, rule: 200, guidance: 200, why: 300, verdictWhy: 300, evidence: 12_000 } as const
 
 export type LearnedStatus = "draft" | "active" | "rejected" | "retired"
 
@@ -44,6 +51,9 @@ export interface LearnedDraft {
   noteGuidance?: string
   /** The ended talks it was drafted from (situation ids). */
   evidence: string[]
+  /** What the approver reads of that evidence: built by the daemon at
+   *  draft time from checked values, and sealed with the draft. */
+  evidenceSummary?: string
   why: string
 }
 
@@ -55,6 +65,7 @@ export interface LearnedRow {
   rules: Partial<Record<"during" | "ending" | "ended", string>>
   noteGuidance: string
   evidence: string[]
+  evidenceSummary: string
   why: string
   status: LearnedStatus
   createdAt: number
@@ -65,27 +76,34 @@ export interface LearnedRow {
   decidedAt: number | null
   retiredAt: number | null
   retiredBy: string | null
-  /** The daemon drafted it (its draft seal checks out). */
+  /** The daemon drafted it and its text is the one the state holds. */
   sealed: boolean
 }
+
+// --- The lint ---
+
+
+const NUMBER_WORDS = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen"
 
 /** Text a learned template may not hold. Each pattern names what it
  *  guards: the template adds sentences, nothing else. */
 const LINT: Array<[RegExp, string]> = [
-  [/https?:|www\.|\b[\w-]+\.(?:com|net|org|io|dev|app|tn|fr|de|uk)\b/i, "a link"],
-  [/@/, "an address or handle"],
-  [/\d{3,}/, "a number"],
-  [/["`{}<>$\\|]|\[\[/, "quotes, code or markup"],
+  [/[^\p{Script=Latin} .,;:!?'()-]/u, "characters other than Latin letters, spaces and plain punctuation"],
+  [/\bh(?:tt|xx)ps?\b|www|\b\w+\.\w{2,}\b|\bdot (?:com|net|org|io|dev|app)\b|\[\.\]|\(\.\)/i, "a link"],
+  [new RegExp(`\\b(?:${NUMBER_WORDS})\\b`, "i"), "a number"],
   [/\b(?:send|sends|sent|post|posts|posted|publish|forward|e-?mail|dm|sms|whatsapp|telegram|slack|discord|notify|text them|call them|call back|webhook|curl)\b/i, "a send to anyone"],
   [/\b(?:issue|merge request|pull request|ticket|wiki|repo|repository|home)\b/i, "a note home"],
   [/\b(?:assign|assigned|owned by|owner is|owners are|promise (?:to|for)|due (?:on|by))\b/i, "a promise owner or due time"],
-  [/\b(?:ignore|disregard|override|bypass|instruction|instructions|system prompt|prompt|the owner (?:says|said|wants|asks|told)|operator|daemon|agentx|tool|tools|approve|approval|gate|permission|secret|password|token|key)\b/i, "an instruction to the system"],
+  [/\b(?:owner|owners|boss|manager|admin|administrator|the user (?:wants|says|said|asks|asked)|user wants|already (?:approved|agreed|allowed)|pre-?approved|authori[sz]ed|on behalf)\b/i, "a claim of someone's authority"],
+  [/\b(?:ignore|disregard|override|bypass|instruction|instructions|system prompt|prompt|operator|daemon|agentx|tool|tools|approve|approved|approval|gate|permission|secret|password|token|key|reviewer|verdict)\b/i, "an instruction to the system"],
 ]
 
 /** Why this learned text is refused, or null when it may be used. */
 export function lintLearnedText(text: string): string | null {
-  const t = text.replace(/\s+/g, " ").trim()
+  if (text !== stripInvisible(text)) return "holds invisible or direction characters"
+  const t = text.normalize("NFKC").replace(/\s+/g, " ").trim()
   if (!t) return "empty"
+  if (t !== text.replace(/\s+/g, " ").trim()) return "holds look-alike characters"
   for (const [re, what] of LINT) if (re.test(t)) return `holds ${what}`
   // A capitalised word inside a sentence looks like a name (all capitals,
   // such as HR, is a role).
@@ -98,7 +116,7 @@ export function lintLearnedText(text: string): string | null {
 }
 
 /** Every refusal for a draft's text fields. */
-export function lintDraft(d: Pick<LearnedDraft, "title" | "when" | "rules" | "noteGuidance">): string[] {
+export function lintDraft(d: Pick<LearnedDraft, "title" | "when" | "rules" | "noteGuidance"> & { why?: string }): string[] {
   const out: string[] = []
   const check = (label: string, text: string | undefined, max: number) => {
     if (text === undefined || text === "") return
@@ -110,29 +128,63 @@ export function lintDraft(d: Pick<LearnedDraft, "title" | "when" | "rules" | "no
   check("when", d.when, LEARNED_LIMITS.when)
   for (const p of ["during", "ending", "ended"] as const) check(`rules.${p}`, d.rules[p], LEARNED_LIMITS.rule)
   check("noteGuidance", d.noteGuidance, LEARNED_LIMITS.guidance)
+  check("why", d.why, LEARNED_LIMITS.why)
   if (!d.rules.during && !d.rules.ending && !d.rules.ended && !d.noteGuidance) out.push("no rule and no guidance")
   return out
 }
 
 /** What a reviewer reads of a draft, to tell whether it changed since. */
-export function learnedContent(r: Pick<LearnedRow, "id" | "base" | "title" | "when" | "rules" | "noteGuidance" | "evidence">): string {
-  return JSON.stringify([r.id, r.base, r.title, r.when, r.rules.during ?? "", r.rules.ending ?? "", r.rules.ended ?? "", r.noteGuidance, r.evidence])
+export function learnedContent(r: Pick<LearnedRow, "id" | "base" | "title" | "when" | "rules" | "noteGuidance" | "evidence" | "evidenceSummary" | "why">): string {
+  return JSON.stringify([r.id, r.base, r.title, r.when, r.rules.during ?? "", r.rules.ending ?? "", r.rules.ended ?? "", r.noteGuidance, r.evidence, r.evidenceSummary, r.why])
 }
 
 type Raw = {
   id: string; base: string; title: string; when_text: string; rule_during: string | null; rule_ending: string | null; rule_ended: string | null
-  note_guidance: string | null; evidence: string; why: string; status: LearnedStatus; created_at: number; draft_mac: string | null
+  note_guidance: string | null; evidence: string; evidence_summary: string; why: string; status: string; created_at: number
   review_attempts: number; last_review_at: number | null; reviewer: string | null; verdict_why: string | null; decided_at: number | null
-  approval_mac: string | null; retired_at: number | null; retired_by: string | null
+  retired_at: number | null; retired_by: string | null
 }
+
+/** One draft's decisions, in the sealed state. */
+interface Entry {
+  /** status */ s: LearnedStatus
+  /** hash of the text decided on (content and created_at) */ h: string
+  /** times the approver was asked */ n: number
+  /** last ask */ at: number | null
+  /** who decided */ by: string | null
+  /** when */ d: number | null
+  /** the decision's reason */ w: string | null
+  /** retired by, at */ rb: string | null; ra: number | null
+}
+
+interface State {
+  v: 1
+  /** Goes up with every change; a lower one is refused while running. */
+  gen: number
+  approver: string | null
+  lastRun: number | null
+  t: Record<string, Entry>
+  /** Hashes of sentences turned down or retired: never drafted again. */
+  no: string[]
+  /** The owner's picks: situation id → learned template id. */
+  picks: Record<string, string>
+}
+
+const STATE_ROW = "state"
+const PICKS_MAX = 500
+const NO_MAX = 2000
 
 /** A review may be tried again only this long after a failed one, and
  *  at most this many times in all: asking again cannot reroll a no. */
 export const REVIEW_RETRY_MS = 6 * 24 * 3600_000
 export const MAX_REVIEW_ATTEMPTS = 2
 
+const sentenceHash = (v: string) => createHash("sha256").update(oneLine(v, 1000).toLowerCase()).digest("hex").slice(0, 32)
+
 export class LearnedTemplateStore {
   private readonly now: () => number
+  /** The highest generation this process has seen. */
+  private highGen = 0
 
   constructor(private readonly db: Database.Database, private readonly opts: { key: () => string | null; now?: () => number }) {
     this.now = opts.now ?? Date.now
@@ -147,16 +199,15 @@ export class LearnedTemplateStore {
         rule_ended TEXT,
         note_guidance TEXT,
         evidence TEXT NOT NULL DEFAULT '[]',
+        evidence_summary TEXT NOT NULL DEFAULT '',
         why TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        draft_mac TEXT,
         review_attempts INTEGER NOT NULL DEFAULT 0,
         last_review_at INTEGER,
         reviewer TEXT,
         verdict_why TEXT,
         decided_at INTEGER,
-        approval_mac TEXT,
         retired_at INTEGER,
         retired_by TEXT
       );
@@ -176,7 +227,7 @@ export class LearnedTemplateStore {
   /** The seal key: derived from the operator key, for this use only. */
   private sealKey(): Buffer | null {
     const k = this.opts.key()
-    return k ? createHmac("sha256", k).update("agentx situations.learned v1").digest() : null
+    return k ? createHmac("sha256", k).update("agentx situations.learned v2").digest() : null
   }
 
   /** Can this node seal (it has an operator key)? */
@@ -184,76 +235,120 @@ export class LearnedTemplateStore {
     return !!this.sealKey()
   }
 
-  private seal(kind: "draft" | "active", r: Raw, extra: string): string | null {
+  private mac(kind: string, text: string): string | null {
     const key = this.sealKey()
-    if (!key) return null
-    const content = JSON.stringify([r.id, r.base, r.title, r.when_text, r.rule_during ?? "", r.rule_ending ?? "", r.rule_ended ?? "", r.note_guidance ?? "", r.evidence])
-    return createHmac("sha256", key).update(`${kind}\n${content}\n${extra}`).digest("hex")
+    return key ? createHmac("sha256", key).update(`${kind}\n${text}`).digest("hex") : null
   }
 
-  private sealMatches(kind: "draft" | "active", r: Raw, extra: string, given: string | null): boolean {
-    const want = this.seal(kind, r, extra)
-    if (!want || !given || given.length !== want.length) return false
-    return timingSafeEqual(Buffer.from(given), Buffer.from(want))
+  private same(a: string | null | undefined, b: string | null): boolean {
+    return !!a && !!b && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
   }
 
-  /** The draft seal also covers how often the approver was asked: each
-   *  ask re-seals it, so setting the count back (to ask again after a
-   *  no) breaks the seal and the draft is never asked or used again. */
-  private draftSealed(r: Raw): boolean {
-    return this.sealMatches("draft", r, `${r.created_at}\n${r.review_attempts}`, r.draft_mac)
+  private contentHash(r: Raw): string | null {
+    return this.mac("content", JSON.stringify([learnedContent(this.text(r)), r.created_at]))
   }
 
-  private approvalSealed(r: Raw): boolean {
-    return r.status === "active" && !!r.reviewer && r.decided_at !== null
-      && this.draftSealed(r) && this.sealMatches("active", r, `${r.reviewer}\n${r.decided_at}`, r.approval_mac)
+  // --- The sealed state ---
+
+  /** The state, or null with the reason it cannot be trusted. */
+  private load(): { state: State } | { state: null; why: string } {
+    if (!this.sealKey()) return { state: null, why: "no operator key on this node (.agentx/operator.key)" }
+    const r = this.db.prepare("SELECT value, mac FROM situation_learned_settings WHERE name = ?").get(STATE_ROW) as { value: string; mac: string } | undefined
+    if (!r) {
+      const rows = (this.db.prepare("SELECT COUNT(*) AS n FROM situation_learned_templates").get() as { n: number }).n
+      if (this.highGen > 0 || rows > 0) return { state: null, why: "the sealed state is missing" }
+      return { state: { v: 1, gen: 0, approver: null, lastRun: null, t: {}, no: [], picks: {} } }
+    }
+    if (!this.same(r.mac, this.mac("state", r.value))) return { state: null, why: "the sealed state was changed outside AgentX" }
+    let s: State
+    try { s = JSON.parse(r.value) as State } catch { return { state: null, why: "the sealed state does not read" } }
+    if (s?.v !== 1 || typeof s.gen !== "number") return { state: null, why: "the sealed state does not read" }
+    if (s.gen < this.highGen) return { state: null, why: `an older sealed state was put back (generation ${s.gen}, this daemon saw ${this.highGen})` }
+    this.highGen = s.gen
+    return { state: s }
   }
 
-  // --- The approver: set by the owner with the operator key, sealed ---
+  private state(): State | null {
+    return this.load().state
+  }
+
+  /** Why nothing learned can be drafted, asked or used now, or null. */
+  problem(): string | null {
+    const l = this.load()
+    return l.state ? null : l.why
+  }
+
+  /** Change the state: read, check, change, seal, all in one transaction.
+   *  False when the state cannot be trusted or `fn` declined. */
+  private change(fn: (s: State) => boolean): boolean {
+    return this.db.transaction(() => {
+      const s = this.state()
+      if (!s || !fn(s)) return false
+      s.gen += 1
+      const value = JSON.stringify(s)
+      const mac = this.mac("state", value)
+      if (!mac) return false
+      this.db.prepare("INSERT INTO situation_learned_settings (name, value, mac) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, mac = excluded.mac")
+        .run(STATE_ROW, value, mac)
+      this.highGen = s.gen
+      return true
+    })()
+  }
+
+  /** Copy an entry's decision onto the row, for people to read. */
+  private mirror(id: string, e: Entry): void {
+    this.db.prepare(`UPDATE situation_learned_templates SET status = ?, review_attempts = ?, last_review_at = ?, reviewer = ?, verdict_why = ?,
+      decided_at = ?, retired_at = ?, retired_by = ? WHERE id = ?`).run(e.s, e.n, e.at, e.by, e.w, e.d, e.ra, e.rb, id)
+  }
+
+  // --- The approver: named by the owner with the operator key ---
   //
   // Not a setting in agentx.json, which agents can edit: the owner names
   // it with `agentx situation learned approver <agent>` (operator key).
-  // A template is used only while its sealed reviewer is still the
-  // sealed approver.
-
-  private settingMac(name: string, value: string): string | null {
-    const key = this.sealKey()
-    return key ? createHmac("sha256", key).update(`setting\n${name}\n${value}`).digest("hex") : null
-  }
+  // A template is used only while the reviewer who said yes is still the
+  // approver.
 
   /** Name the approver (owner only: the route checks the operator key).
    *  Null clears it. */
   setApprover(agentId: string | null): boolean {
-    if (agentId === null) { this.db.prepare("DELETE FROM situation_learned_settings WHERE name = 'approver'").run(); return true }
-    const mac = this.settingMac("approver", agentId)
-    if (!mac) return false
-    this.db.prepare("INSERT INTO situation_learned_settings (name, value, mac) VALUES ('approver', ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, mac = excluded.mac")
-      .run(agentId, mac)
-    return true
+    return this.change((s) => { s.approver = agentId; return true })
   }
 
-  /** The approver the owner named, or null (none, or its seal is wrong). */
+  /** The approver the owner named, or null (none, or the state cannot be trusted). */
   approver(): string | null {
-    const r = this.db.prepare("SELECT value, mac FROM situation_learned_settings WHERE name = 'approver'").get() as { value: string; mac: string } | undefined
-    if (!r) return null
-    const want = this.settingMac("approver", r.value)
-    if (!want || r.mac?.length !== want.length || !timingSafeEqual(Buffer.from(r.mac), Buffer.from(want))) return null
-    return r.value
+    return this.state()?.approver ?? null
   }
 
   private raw(id: string): Raw | null {
     return (this.db.prepare("SELECT * FROM situation_learned_templates WHERE id = ?").get(id) as Raw | undefined) ?? null
   }
 
-  private toRow(r: Raw): LearnedRow {
+  private text(r: Raw): Pick<LearnedRow, "id" | "base" | "title" | "when" | "rules" | "noteGuidance" | "evidence" | "evidenceSummary" | "why"> {
     let evidence: string[] = []
     try { const v = JSON.parse(r.evidence); if (Array.isArray(v)) evidence = v.filter((x): x is string => typeof x === "string") } catch { evidence = [] }
     return {
       id: r.id, base: r.base, title: r.title, when: r.when_text,
       rules: { ...(r.rule_during ? { during: r.rule_during } : {}), ...(r.rule_ending ? { ending: r.rule_ending } : {}), ...(r.rule_ended ? { ended: r.rule_ended } : {}) },
-      noteGuidance: r.note_guidance ?? "", evidence, why: r.why, status: r.status, createdAt: r.created_at,
-      reviewAttempts: r.review_attempts, lastReviewAt: r.last_review_at, reviewer: r.reviewer, verdictWhy: r.verdict_why,
-      decidedAt: r.decided_at, retiredAt: r.retired_at, retiredBy: r.retired_by, sealed: this.draftSealed(r),
+      noteGuidance: r.note_guidance ?? "", evidence, evidenceSummary: r.evidence_summary ?? "", why: r.why,
+    }
+  }
+
+  /** The entry for a row whose text is the one the state holds, or null. */
+  private entry(s: State | null, r: Raw): Entry | null {
+    const e = s?.t[r.id]
+    return e && this.same(e.h, this.contentHash(r)) ? e : null
+  }
+
+  private toRow(r: Raw, s: State | null): LearnedRow {
+    const e = this.entry(s, r)
+    return {
+      ...this.text(r), createdAt: r.created_at,
+      // Without a matching entry the row's own columns are shown, but it
+      // is not sealed and never asked about or used.
+      status: e ? e.s : (["draft", "active", "rejected", "retired"].includes(r.status) ? r.status as LearnedStatus : "draft"),
+      reviewAttempts: e ? e.n : r.review_attempts, lastReviewAt: e ? e.at : r.last_review_at,
+      reviewer: e ? e.by : r.reviewer, verdictWhy: e ? e.w : r.verdict_why, decidedAt: e ? e.d : r.decided_at,
+      retiredAt: e ? e.ra : r.retired_at, retiredBy: e ? e.rb : r.retired_by, sealed: !!e,
     }
   }
 
@@ -261,57 +356,65 @@ export class LearnedTemplateStore {
    *  an id used before (in any status) or for text the lint refuses. */
   addDraft(d: LearnedDraft): { ok: true; id: string } | { ok: false; error: string } {
     if (!this.sealKey()) return { ok: false, error: "no operator key on this node (.agentx/operator.key): nothing is drafted" }
+    const problem = this.problem()
+    if (problem) return { ok: false, error: problem }
     if (!(LEARNED_BASES as readonly string[]).includes(d.base)) return { ok: false, error: `base must be one of ${LEARNED_BASES.join(", ")}` }
     if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(d.slug)) return { ok: false, error: "slug must be lower-case letters, digits and dashes" }
     const lint = lintDraft(d)
     if (lint.length) return { ok: false, error: lint.join("; ") }
     const id = `${LEARNED_PREFIX}${d.slug}`
-    if (this.raw(id)) return { ok: false, error: `${id} was drafted before` }
-    // A sentence the approver turned down (or the owner retired) does not
-    // come back under another name.
-    const said = new Set<string>()
-    for (const old of this.db.prepare("SELECT rule_during, rule_ending, rule_ended, note_guidance FROM situation_learned_templates WHERE status IN ('rejected', 'retired')").all() as Array<Record<string, string | null>>) {
-      for (const v of Object.values(old)) if (v) said.add(v.toLowerCase())
-    }
-    const again = [d.rules.during, d.rules.ending, d.rules.ended, d.noteGuidance].find((v) => v && said.has(oneLine(v, 1000).toLowerCase()))
-    if (again) return { ok: false, error: "a sentence of it was turned down or retired before" }
+    if (this.raw(id) || this.state()?.t[id]) return { ok: false, error: `${id} was drafted before` }
     const r: Raw = {
       id, base: d.base, title: oneLine(d.title, LEARNED_LIMITS.title), when_text: oneLine(d.when, LEARNED_LIMITS.when),
       rule_during: d.rules.during ? oneLine(d.rules.during, LEARNED_LIMITS.rule) : null,
       rule_ending: d.rules.ending ? oneLine(d.rules.ending, LEARNED_LIMITS.rule) : null,
       rule_ended: d.rules.ended ? oneLine(d.rules.ended, LEARNED_LIMITS.rule) : null,
       note_guidance: d.noteGuidance ? oneLine(d.noteGuidance, LEARNED_LIMITS.guidance) : null,
-      evidence: JSON.stringify([...new Set(d.evidence)].slice(0, 50)), why: oneLine(d.why, LEARNED_LIMITS.why),
-      status: "draft", created_at: this.now(), draft_mac: null, review_attempts: 0, last_review_at: null, reviewer: null,
-      verdict_why: null, decided_at: null, approval_mac: null, retired_at: null, retired_by: null,
+      evidence: JSON.stringify([...new Set(d.evidence)].slice(0, 50)), evidence_summary: String(d.evidenceSummary ?? "").slice(0, LEARNED_LIMITS.evidence),
+      why: oneLine(d.why, LEARNED_LIMITS.why), status: "draft", created_at: this.now(), review_attempts: 0, last_review_at: null, reviewer: null,
+      verdict_why: null, decided_at: null, retired_at: null, retired_by: null,
     }
-    r.draft_mac = this.seal("draft", r, `${r.created_at}\n0`)
-    this.db.prepare(`INSERT INTO situation_learned_templates (id, base, title, when_text, rule_during, rule_ending, rule_ended, note_guidance, evidence, why, status, created_at, draft_mac)
-      VALUES (@id, @base, @title, @when_text, @rule_during, @rule_ending, @rule_ended, @note_guidance, @evidence, @why, @status, @created_at, @draft_mac)`).run(r)
-    return { ok: true, id }
+    const h = this.contentHash(r)
+    if (!h) return { ok: false, error: "no operator key on this node (.agentx/operator.key): nothing is drafted" }
+    const sentences = [r.rule_during, r.rule_ending, r.rule_ended, r.note_guidance].filter((v): v is string => !!v)
+    let error = ""
+    const ok = this.change((s) => {
+      // A sentence the approver turned down (or the owner retired) does
+      // not come back under another name.
+      if (sentences.some((v) => s.no.includes(sentenceHash(v)))) { error = "a sentence of it was turned down or retired before"; return false }
+      s.t[id] = { s: "draft", h, n: 0, at: null, by: null, d: null, w: null, rb: null, ra: null }
+      this.db.prepare(`INSERT INTO situation_learned_templates (id, base, title, when_text, rule_during, rule_ending, rule_ended, note_guidance, evidence, evidence_summary, why, status, created_at)
+        VALUES (@id, @base, @title, @when_text, @rule_during, @rule_ending, @rule_ended, @note_guidance, @evidence, @evidence_summary, @why, @status, @created_at)`).run(r)
+      return true
+    })
+    return ok ? { ok: true, id } : { ok: false, error: error || "the sealed state could not be written" }
   }
 
   get(id: string): LearnedRow | null {
     const r = this.raw(id)
-    return r ? this.toRow(r) : null
+    return r ? this.toRow(r, this.state()) : null
   }
 
-  /** Newest first. */
+  /** Newest first. A status filter goes by the sealed state. */
   list(status?: LearnedStatus): LearnedRow[] {
-    const rows = (status
-      ? this.db.prepare("SELECT * FROM situation_learned_templates WHERE status = ? ORDER BY created_at DESC, id LIMIT 200").all(status)
-      : this.db.prepare("SELECT * FROM situation_learned_templates ORDER BY created_at DESC, id LIMIT 200").all()) as Raw[]
-    return rows.map((r) => this.toRow(r))
+    const s = this.state()
+    const rows = this.db.prepare("SELECT * FROM situation_learned_templates ORDER BY created_at DESC, id LIMIT 200").all() as Raw[]
+    return rows.map((r) => this.toRow(r, s)).filter((r) => !status || (r.sealed && r.status === status))
   }
 
-  /** Drafts the approver may be asked about now: sealed by the daemon,
-   *  passing the lint, never answered, and not asked too often. */
+  /** Drafts the approver may be asked about now: drafted by the daemon,
+   *  unchanged, passing the lint, never answered, not asked too often. */
   reviewable(): LearnedRow[] {
+    const s = this.state()
+    if (!s) return []
     const now = this.now()
-    return (this.db.prepare("SELECT * FROM situation_learned_templates WHERE status = 'draft' ORDER BY created_at, rowid").all() as Raw[])
-      .filter((r) => this.draftSealed(r) && lintDraft(this.toRow(r)).length === 0)
-      .filter((r) => r.review_attempts === 0 || (r.review_attempts < MAX_REVIEW_ATTEMPTS && (r.last_review_at ?? 0) <= now - REVIEW_RETRY_MS))
-      .map((r) => this.toRow(r))
+    return (this.db.prepare("SELECT * FROM situation_learned_templates ORDER BY created_at, rowid").all() as Raw[])
+      .filter((r) => {
+        const e = this.entry(s, r)
+        return !!e && e.s === "draft" && lintDraft(this.text(r)).length === 0
+          && (e.n === 0 || (e.n < MAX_REVIEW_ATTEMPTS && (e.at ?? 0) <= now - REVIEW_RETRY_MS))
+      })
+      .map((r) => this.toRow(r, s))
   }
 
   /** Count a review attempt before the approver is asked. False: the
@@ -319,47 +422,81 @@ export class LearnedTemplateStore {
   startReview(id: string): boolean {
     const now = this.now()
     const r = this.raw(id)
-    if (!r || r.status !== "draft" || !this.draftSealed(r)) return false
-    if (r.review_attempts !== 0 && !(r.review_attempts < MAX_REVIEW_ATTEMPTS && (r.last_review_at ?? 0) <= now - REVIEW_RETRY_MS)) return false
-    const next = { ...r, review_attempts: r.review_attempts + 1 }
-    const mac = this.seal("draft", next, `${r.created_at}\n${next.review_attempts}`)
-    return this.db.prepare(`UPDATE situation_learned_templates SET review_attempts = ?, last_review_at = ?, draft_mac = ?
-      WHERE id = ? AND status = 'draft' AND review_attempts = ? AND draft_mac = ?`)
-      .run(next.review_attempts, now, mac, id, r.review_attempts, r.draft_mac).changes > 0
+    if (!r) return false
+    return this.change((s) => {
+      const e = this.entry(s, r)
+      if (!e || e.s !== "draft") return false
+      if (e.n !== 0 && !(e.n < MAX_REVIEW_ATTEMPTS && (e.at ?? 0) <= now - REVIEW_RETRY_MS)) return false
+      e.n += 1
+      e.at = now
+      this.mirror(id, e)
+      return true
+    })
   }
 
-  /** The approver said yes in its review run. Only learn.ts calls this,
-   *  in the daemon, with the verdict of the run it started. `seen` is the
-   *  draft as the approver read it: a draft changed since is not approved. */
-  approve(id: string, reviewer: string, why: string, seen?: LearnedRow): boolean {
+  /** The approver's answer, from the review run this daemon started. */
+  private decide(id: string, reviewer: string, why: string, to: "active" | "rejected", seen?: LearnedRow): boolean {
     const r = this.raw(id)
-    if (!r || r.status !== "draft" || !this.draftSealed(r) || lintDraft(this.toRow(r)).length) return false
-    if (seen && learnedContent(this.toRow(r)) !== learnedContent(seen)) return false
-    const decidedAt = this.now()
-    const mac = this.seal("active", r, `${reviewer}\n${decidedAt}`)
-    if (!mac) return false
-    return this.db.prepare(`UPDATE situation_learned_templates SET status = 'active', reviewer = ?, verdict_why = ?, decided_at = ?, approval_mac = ?
-      WHERE id = ? AND status = 'draft' AND draft_mac = ?`).run(reviewer, oneLine(why, LEARNED_LIMITS.verdictWhy), decidedAt, mac, id, r.draft_mac).changes > 0
+    if (!r) return false
+    if (seen && learnedContent(this.text(r)) !== learnedContent(seen)) return false
+    if (to === "active" && lintDraft(this.text(r)).length) return false
+    return this.change((s) => {
+      const e = this.entry(s, r)
+      if (!e || e.s !== "draft" || e.n === 0) return false
+      e.s = to
+      e.by = reviewer
+      e.d = this.now()
+      e.w = oneLine(why, LEARNED_LIMITS.verdictWhy)
+      if (to === "rejected") this.remember(s, r)
+      this.mirror(id, e)
+      return true
+    })
   }
 
-  /** The approver said no. A no needs no seal: it only keeps a draft out. */
+  private remember(s: State, r: Raw): void {
+    for (const v of [r.rule_during, r.rule_ending, r.rule_ended, r.note_guidance]) {
+      if (v && !s.no.includes(sentenceHash(v))) s.no.push(sentenceHash(v))
+    }
+    if (s.no.length > NO_MAX) s.no = s.no.slice(-NO_MAX)
+  }
+
+  /** The approver said yes. Only learn.ts calls this, in the daemon,
+   *  with the verdict of the run it started. `seen` is the draft as the
+   *  approver read it: a draft changed since is not approved. */
+  approve(id: string, reviewer: string, why: string, seen?: LearnedRow): boolean {
+    return this.decide(id, reviewer, why, "active", seen)
+  }
+
+  /** The approver said no. Sealed and final: it is never asked again. */
   reject(id: string, reviewer: string, why: string): boolean {
-    return this.db.prepare(`UPDATE situation_learned_templates SET status = 'rejected', reviewer = ?, verdict_why = ?, decided_at = ?
-      WHERE id = ? AND status = 'draft'`).run(reviewer, oneLine(why, LEARNED_LIMITS.verdictWhy), this.now(), id).changes > 0
+    return this.decide(id, reviewer, why, "rejected")
   }
 
-  /** The owner takes an approved template back (or drops a draft). */
+  /** The owner takes an approved template back (or drops a draft). Final. */
   retire(id: string, by: string): boolean {
-    return this.db.prepare(`UPDATE situation_learned_templates SET status = 'retired', retired_at = ?, retired_by = ?
-      WHERE id = ? AND status IN ('draft', 'active')`).run(this.now(), oneLine(by, 100), id).changes > 0
+    const r = this.raw(id)
+    return this.change((s) => {
+      const e = s.t[id]
+      if (!e || (e.s !== "draft" && e.s !== "active")) return false
+      e.s = "retired"
+      e.rb = oneLine(by, 100)
+      e.ra = this.now()
+      for (const [sit, t] of Object.entries(s.picks)) if (t === id) delete s.picks[sit]
+      if (r) { this.remember(s, r); this.mirror(id, e) }
+      return true
+    })
   }
 
-  /** The template as it is used: only an active row whose seals check
-   *  out and whose text still passes the lint. Null otherwise. */
+  /** The template as it is used: only one the state holds as active,
+   *  approved by the approver the owner names now, with its text
+   *  unchanged and still passing the lint. Null otherwise. */
   template(id: string): SituationTemplate | null {
     const r = this.raw(id)
-    if (!r || !this.approvalSealed(r) || r.reviewer !== this.approver()) return null
-    const row = this.toRow(r)
+    if (!r) return null
+    const s = this.state()
+    const e = this.entry(s, r)
+    if (!s || !e || e.s !== "active" || !e.by || e.by !== s.approver) return null
+    const row = this.text(r)
     if (lintDraft(row).length) return null
     const base = situationTemplate(r.base)
     if (!base || base.source === "learned" || !(LEARNED_BASES as readonly string[]).includes(base.id)) return null
@@ -374,14 +511,67 @@ export class LearnedTemplateStore {
     return this.list("active").map((r) => this.template(r.id)).filter((t): t is SituationTemplate => !!t)
   }
 
-  /** When the last weekly drafting run started. */
-  lastRunAt(): number | null {
-    const r = this.db.prepare("SELECT MAX(at) AS at FROM situation_learn_runs").get() as { at: number | null }
-    return r.at ?? null
+  /** The owner named this learned template for a talk (the closing route,
+   *  owner only). A talk uses a learned template only when picked here:
+   *  a template id written onto the talk's row by anything else is not. */
+  pick(situationId: string, templateId: string): boolean {
+    if (!this.template(templateId)) return false
+    return this.change((s) => {
+      delete s.picks[situationId]
+      s.picks[situationId] = templateId
+      const keys = Object.keys(s.picks)
+      for (const k of keys.slice(0, Math.max(0, keys.length - PICKS_MAX))) delete s.picks[k]
+      return true
+    })
   }
 
-  /** Book a drafting run, before its model call. */
-  recordRun(note: string): void {
-    this.db.prepare("INSERT INTO situation_learn_runs (at, note) VALUES (?, ?)").run(this.now(), note.slice(0, 300))
+  picked(situationId: string, templateId: string): boolean {
+    return this.state()?.picks[situationId] === templateId
+  }
+
+  /** The owner starts over (operator key, `agentx situation learned
+   *  reset`), only when the state cannot be trusted: every draft and
+   *  decision is dropped, the approver too. A newer generation than any
+   *  seen, so an older copy is still refused. */
+  reset(): boolean {
+    if (!this.sealKey() || this.problem() === null) return false
+    const gen = Math.max(this.highGen, 0) + 1
+    const s: State = { v: 1, gen, approver: null, lastRun: null, t: {}, no: [], picks: {} }
+    const value = JSON.stringify(s)
+    const mac = this.mac("state", value)
+    if (!mac) return false
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM situation_learned_templates").run()
+      this.db.prepare("INSERT INTO situation_learned_settings (name, value, mac) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, mac = excluded.mac")
+        .run(STATE_ROW, value, mac)
+    })()
+    this.highGen = gen
+    return true
+  }
+
+  /** When the last weekly drafting run started. Unknown (the state
+   *  cannot be trusted): now, so no run starts. */
+  lastRunAt(): number | null {
+    const s = this.state()
+    return s ? s.lastRun : this.now()
+  }
+
+  /** Book a drafting run, before its model call. False: not booked. */
+  recordRun(note: string): boolean {
+    const at = this.now()
+    const ok = this.change((s) => { s.lastRun = at; return true })
+    if (ok) this.db.prepare("INSERT INTO situation_learn_runs (at, note) VALUES (?, ?)").run(at, note.slice(0, 300))
+    return ok
+  }
+}
+
+/** The learned templates as the situations code sees them (templates.ts):
+ *  nothing while `on()` is false. */
+export function learnedSource(store: LearnedTemplateStore, on: () => boolean): LearnedTemplateSource {
+  return {
+    get: (id) => (on() ? store.template(id) : null),
+    list: () => (on() ? store.templates() : []),
+    picked: (situationId, id) => on() && store.picked(situationId, id),
+    pick: (situationId, id) => { if (on()) store.pick(situationId, id) },
   }
 }

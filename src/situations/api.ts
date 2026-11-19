@@ -1,7 +1,7 @@
 import type { ClosingSlots, OverrideAction, Phase, SituationRow, SituationStore } from "./store"
 import { SITUATION_CHANNELS, situationKey } from "./key"
 import { noteTargetOf } from "./closing-actions"
-import { agentTemplateIds, oneLine, situationTemplate, templateIds } from "./templates"
+import { agentTemplateIds, oneLine, recordLearnedPick, situationTemplate, templateIds } from "./templates"
 
 // --- The daemon's situation routes (#1892, phase 2) ---
 //
@@ -122,6 +122,9 @@ export function situationsClosing(store: SituationStore, body: Record<string, un
   }
   const template = str(body.template, 40) || "meeting"
   const after = store.setClosing(row.id, closing, template)
+  // A learned template (phase 8) is used on a talk only with this sealed
+  // pick, which only the owner's closing route records.
+  if (after && ctx.templatesEnabled) recordLearnedPick(row.id, template)
   return { status: 200, body: { ok: true, row: after ? situationView(after) : null } }
 }
 

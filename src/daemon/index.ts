@@ -44,10 +44,10 @@ import { agentProofShown, closingCallerRefusal, fillTurnFrom, situationsClosing,
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
-import { LearnedTemplateStore } from "@/situations/learned"
+import { LearnedTemplateStore, learnedSource } from "@/situations/learned"
 import { setSituationLearnDeps } from "@/situations/learn-actions"
 import { setLearnedTemplateSource } from "@/situations/templates"
-import { learnedRetire, learnedSetApprover, learnedView, LEARN_REVIEW_CHANNEL } from "@/situations/learned-api"
+import { learnedReset, learnedRetire, learnedSetApprover, learnedView } from "@/situations/learned-api"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
@@ -933,30 +933,26 @@ export class AgentXDaemon {
           const learnedOn = () => this.config.situations.mode !== "off" && this.config.situations.learned?.enabled === true
           const learned = new LearnedTemplateStore(db, { key: () => this.operatorKey ?? null })
           this.learnedTemplates = learned
-          setLearnedTemplateSource({
-            get: (id) => (learnedOn() ? learned.template(id) : null),
-            list: () => (learnedOn() ? learned.templates() : []),
-          })
+          setLearnedTemplateSource(learnedSource(learned, learnedOn))
           setSituationLearnDeps({
             db, learned,
             settings: () => this.config.situations,
             improve: () => this.config.improve,
             // The drafter: no tools, no MCP, no session (as the retro).
             call: (input, model, system) => reviewWithClaudeCost(input, model, undefined, system),
-            // The approver's review: isolated (only the prompt, no memory,
-            // no MCP, no write or shell tools, autonomy report), as the
-            // review gate's reviewer runs. Its answer comes back here.
-            review: async (agentId, prompt) => {
-              const res = await this.registry.execute({
-                message: prompt, agentId, freshSession: true, isolated: true, timeoutMinutes: 20,
-                context: { channel: LEARN_REVIEW_CHANNEL, chatId: `${LEARN_REVIEW_CHANNEL}:${Date.now()}`, sender: LEARN_REVIEW_CHANNEL },
-              })
-              const u = res.usage
-              const model = res.billedModel ?? this.registry.getAgent(agentId)?.model
-              return {
-                text: res.cloudSession ? "" : (res.content ?? ""),
-                usd: res.costUsd ?? (u && model ? this.registry.getTokenTracker().cost(u as any, model) : null),
-                ...(res.cloudSession ? { error: "the approver hands work to a cloud session; pick an agent that runs here" } : res.error ? { error: String(res.error) } : {}),
+            // The approver's review: a tool-less call made by the daemon in
+            // the approver's name, with the approver's fixed rules as its
+            // system prompt (learn.ts APPROVER_PROMPT), on the approver's
+            // Claude model. As the drafter: a fresh temp folder, no setting
+            // sources (no CLAUDE.md, no .claude/settings.json), hooks off,
+            // no MCP, no session. Nothing in any agent's workspace is read.
+            review: async (agentId, prompt, system) => {
+              const own = this.registry.getAgent(agentId)?.model
+              const model = typeof own === "string" && /claude|opus|sonnet|haiku/i.test(own) ? own : this.config.situations.learned.model
+              try {
+                return await reviewWithClaudeCost(prompt, model, undefined, system)
+              } catch (e: any) {
+                return { text: "", usd: null, error: String(e?.message ?? e) }
               }
             },
             isAgent: (id) => !!this.registry.getAgent(id),
@@ -5481,6 +5477,7 @@ export class AgentXDaemon {
     // machine only, with the operator key (checked in the route).
     "/situations/learned/retire",
     "/situations/learned/approver",
+    "/situations/learned/reset",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -7490,7 +7487,7 @@ export class AgentXDaemon {
       if (builtinRunMatch) {
         const name = builtinRunMatch[1]
         if (!getBuiltin(name)) { this.json(res, 404, { error: `unknown built-in: ${name}` }); return }
-        if (getBuiltin(name)?.workflowOnly) { this.json(res, 403, { error: `built-in ${name} runs only as a step of its workflow` }); return }
+        if (getBuiltin(name)?.onlyIn) { this.json(res, 403, { error: `built-in ${name} runs only as a step of ${getBuiltin(name)!.onlyIn!.join(", ")}` }); return }
         try {
           const body = await readJsonBody(req)
           const output = await runBuiltin(name, body)
@@ -8597,6 +8594,16 @@ export class AgentXDaemon {
             agentProof: agentProofShown(this.callerProof(req)),
           })
           if (r.status === 200) this.log(`[situation] learned template ${String(body.id).slice(0, 60)} retired by the owner`)
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "POST /situations/learned/reset": {
+          const r = learnedReset(this.learnedTemplates, {
+            thisMachine: isThisMachine(req.socket?.remoteAddress),
+            keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+            agentProof: agentProofShown(this.callerProof(req)),
+          })
+          if (r.status === 200) this.log(`[situation] learned templates reset by the owner (was: ${String(r.body.was).slice(0, 120)})`)
           this.json(res, r.status, r.body)
           break
         }

@@ -465,6 +465,10 @@ const actionBuiltinHandler: NodeHandler = async (ctx) => {
   if (!getBuiltin(name)) {
     return { error: `action.builtin "${ctx.node.id}": unknown built-in "${name}"` }
   }
+  const onlyIn = getBuiltin(name)?.onlyIn
+  if (onlyIn && !onlyIn.includes(ctx.workflow.id)) {
+    return { error: `action.builtin "${name}" runs only in ${onlyIn.join(", ")}` }
+  }
   try {
     const output = await runBuiltin(name, input)
     return { output: output as Record<string, unknown> }

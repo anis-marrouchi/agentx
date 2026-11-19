@@ -289,7 +289,8 @@ common(learnedCmd
     if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
     const rows = (data.templates ?? []) as Array<Record<string, any>>
     if (!data.enabled) console.log(chalk.dim("  situations.learned.enabled is off: nothing learned is used."))
-    console.log(data.approver ? `  Approver: ${data.approver}` : chalk.yellow("  No approver: drafts wait (agentx situation learned approver <agent>)."))
+    if (data.problem) console.log(chalk.red(`  ${data.problem}: nothing learned is drafted, asked or used. Start over with: agentx situation learned reset`))
+    else console.log(data.approver ? `  Approver: ${data.approver}` : chalk.yellow("  No approver: drafts wait (agentx situation learned approver <agent>)."))
     if (!rows.length) { console.log(chalk.dim("  No learned templates yet.")); return }
     for (const t of rows) {
       const state = t.inUse ? chalk.green("in use") : t.status === "active" ? chalk.yellow("approved, not in use") : t.status
@@ -311,6 +312,14 @@ common(learnedCmd
     if (!agent && !opts.clear) { console.log(chalk.red("  Give an agent id, or --clear.")); process.exit(1) }
     await call(opts, "POST", "/situations/learned/approver", opts.clear ? { clear: true } : { agent }, { ownerKey: true })
     console.log(chalk.green(opts.clear ? "  Approver removed: drafts wait, and nothing learned is used." : `  ${agent} now approves or turns down learned drafts. Templates approved by anyone else are no longer used.`))
+  })
+
+common(learnedCmd
+  .command("reset")
+  .description("start over when the sealed state of learned templates cannot be trusted (owner only: sends the operator key)"))
+  .action(async (opts: Opts) => {
+    const data = await call(opts, "POST", "/situations/learned/reset", {}, { ownerKey: true })
+    console.log(chalk.green(`  Learned templates reset (${data.was}). Every draft and decision was dropped; name the approver again.`))
   })
 
 common(learnedCmd

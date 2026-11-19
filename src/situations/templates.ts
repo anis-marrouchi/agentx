@@ -103,6 +103,10 @@ export const LEARNED_PREFIX = "learned."
 export interface LearnedTemplateSource {
   get(id: string): SituationTemplate | null
   list(): SituationTemplate[]
+  /** Did the owner name this learned template for this talk (sealed)? */
+  picked?(situationId: string, id: string): boolean
+  /** Record the owner's pick (the closing route, owner only). */
+  pick?(situationId: string, id: string): void
 }
 
 let learned: LearnedTemplateSource | null = null
@@ -123,6 +127,23 @@ function learnedTemplate(id: string): SituationTemplate | null {
 export function situationTemplate(id: string | null | undefined): SituationTemplate | null {
   if (!id) return null
   return BY_ID.get(id) ?? learnedTemplate(id)
+}
+
+/** The template a talk uses. A learned one only when the owner named it
+ *  for this talk through the closing route (a sealed pick, learned.ts):
+ *  its id written onto the talk's row by anything else is not used. */
+export function situationTemplateFor(row: { id: string; template: string | null | undefined }): SituationTemplate | null {
+  const id = row.template
+  if (!id) return null
+  if (BY_ID.has(id)) return BY_ID.get(id)!
+  const t = learnedTemplate(id)
+  try { return t && learned?.picked?.(row.id, id) ? t : null } catch { return null }
+}
+
+/** The owner named a learned template for a talk (closing route). */
+export function recordLearnedPick(situationId: string, id: string): void {
+  if (!id.startsWith(LEARNED_PREFIX) || !learnedTemplate(id)) return
+  try { learned?.pick?.(situationId, id) } catch { /* not recorded: not used */ }
 }
 
 /** The ids, for an error message: the catalog, then approved learned ones. */
@@ -154,5 +175,14 @@ export function agentTemplateIds(): string {
  *  quotes it cannot close (its own double quotes become single ones), so
  *  it cannot forge the text around it. */
 export function quoted(v: unknown, max: number): string {
-  return `"${oneLine(v, max).replace(/"/g, "'")}"`
+  return `"${oneLine(typeof v === "string" ? stripInvisible(v) : v, max).replace(/"/g, "'")}"`
+}
+
+/** Characters that change how text reads without being seen: controls,
+ *  zero-width and direction marks, variation selectors, tags. */
+const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufffb]|\udb40[\udc00-\udfff]/g
+
+/** Text with invisible, direction and control characters taken out. */
+export function stripInvisible(text: string): string {
+  return text.replace(INVISIBLE, "")
 }

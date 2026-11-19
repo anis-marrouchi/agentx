@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { BuiltinAction } from "@/actions/builtin/types"
-import { learnDraftStep, learnReviewStep, type LearnDeps } from "./learn"
+import { LEARN_WORKFLOW, learnDraftStep, learnReviewStep, type LearnDeps } from "./learn"
 
 // --- The steps of the `situation-learn` workflow (#1892 phase 8) ---
 //
@@ -11,8 +11,8 @@ import { learnDraftStep, learnReviewStep, type LearnDeps } from "./learn"
 // Neither takes an input: what is drafted, who approves and the verdict
 // never come from the workflow file or from a caller. Built-ins can also
 // be called over /api/actions/builtin by an agent on this machine; that
-// is refused (workflowOnly). An agent-written workflow that calls them
-// changes nothing either: the week's one drafting call is booked before
+// is refused, and so is a step of any other workflow (onlyIn). A workflow
+// edited to call them more changes nothing: the week's one drafting call is booked before
 // it runs, and each draft is put to the approver once.
 
 let deps: LearnDeps | null = null
@@ -40,7 +40,7 @@ export const situationLearnDraft: BuiltinAction<NoInput, DraftOutput> = {
   inputSchema: noInput,
   outputSchema: draftOutput,
   timeoutMs: 240_000,
-  workflowOnly: true,
+  onlyIn: [LEARN_WORKFLOW],
   handler: async () => {
     if (!deps) return { ran: false, why: "learned templates are not available on this node", drafted: [], skipped: [], spentUsd: 0 }
     return learnDraftStep(deps)
@@ -57,12 +57,12 @@ type ReviewOutput = z.infer<typeof reviewOutput>
 
 export const situationLearnReview: BuiltinAction<NoInput, ReviewOutput> = {
   name: "situation.learn.review",
-  description: "The weekly learned-templates run's second step: the approver the owner named (agentx situation learned approver) says yes or no to each new draft, once, in a run the daemon starts.",
+  description: "The weekly learned-templates run's second step: the approver the owner named (agentx situation learned approver) says yes or no to each new draft, once, in a call the daemon makes with fixed rules.",
   inputSchema: noInput,
   outputSchema: reviewOutput,
   // One isolated review run per draft, at most situations.learned.maxDrafts.
   timeoutMs: 45 * 60_000,
-  workflowOnly: true,
+  onlyIn: [LEARN_WORKFLOW],
   handler: async () => {
     if (!deps) return { reviewed: [], stopped: "learned templates are not available on this node", spentUsd: 0 }
     return learnReviewStep(deps)

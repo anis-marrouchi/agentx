@@ -1,23 +1,28 @@
 # Situation learn: the weekly learned-templates run (#1892, phase 8).
 #
-# Installed at daemon start while `situations.learned.enabled` is on, never
-# overwritten once it is there (situations/workflows.ts). Runs once a week
-# (the cron below); the code also refuses a second drafting run within 7
-# days, whatever starts it.
+# Installed at daemon start while `situations.learned.enabled` is on, and
+# put back at each daemon start if this file was changed or deleted
+# (situations/workflows.ts): it is not meant to be edited. Runs once a
+# week (the cron below); the code also refuses a second drafting run
+# within 6.5 days, whatever starts it. Its two steps run only in this
+# workflow.
 #
 #   1. draft:   one model call over the ended talks of the last few weeks,
-#               redacted (counts and lower-case purpose words; no messages,
-#               names, numbers or chat ids). Up to `maxDrafts` drafts in a
-#               fixed schema: prompt rules and closing-note guidance only.
-#   2. review:  each new draft goes once to the approver agent
-#               (`situations.learned.approver`), in a read-only run the
-#               daemon starts. Its yes or no is read by the daemon, not
-#               taken from this file. Nothing is used before a yes.
+#               redacted (counts and shared lower-case purpose words; no
+#               messages, names, numbers or chat ids). Up to `maxDrafts`
+#               drafts in a fixed schema: prompt rules and closing-note
+#               guidance only.
+#   2. review:  each new draft goes once to the approver the owner named
+#               (`agentx situation learned approver <agent>`), in a
+#               tool-less call the daemon makes with fixed rules. Its yes
+#               or no is read and sealed by the daemon, not taken from
+#               this file. Nothing is used before a yes.
 #   3. tell_owner: one message to the owner when something was decided.
 #
-# Cost: every call is booked against `improve.dailyUsd` and, over 7 days,
-# against `situations.learned.maxRunUsd` ($2 at most). A call that would
-# pass either is not made; the run stops there.
+# Cost (per node): every call is booked at its estimate before it starts,
+# against `improve.dailyUsd` and, over 6.5 days, against
+# `situations.learned.maxRunUsd` ($2 at most). A call that would pass
+# either is not made; the run stops there.
 #
 # Neither step takes inputs: editing this file can change when it runs,
 # not what is drafted, who approves or what the verdict is.

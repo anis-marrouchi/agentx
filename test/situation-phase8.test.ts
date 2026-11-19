@@ -490,6 +490,20 @@ describe("second review: a decision cannot be undone by a database edit", () => 
     expect(h.learned.template("learned.interview")).toBeNull()
   })
 
+  it("an edited state stops everything until the owner resets it, and the reset keeps nothing", async () => {
+    const h = harness()
+    await decided(h, ['{"verdict":"approve","why":"fits"}', '{"verdict":"reject","why":"no"}'])
+    expect(h.learned.reset()).toBe(false) // a sound state is not reset
+    h.db.prepare("UPDATE situation_learned_settings SET value = replace(value, '\"rejected\"', '\"draft\"')").run()
+    expect(h.learned.problem()).toMatch(/changed outside AgentX/)
+    expect(h.learned.template("learned.interview")).toBeNull()
+    expect(h.learned.reviewable()).toEqual([])
+    expect(h.learned.reset()).toBe(true)
+    expect(h.learned.problem()).toBeNull()
+    expect(h.learned.list()).toEqual([])
+    expect(h.learned.approver()).toBeNull()
+  })
+
   it("a no set back to draft is never asked again, even after a restart", async () => {
     const h = harness()
     await decided(h, ['{"verdict":"reject","why":"no"}', '{"verdict":"reject","why":"no"}'])
