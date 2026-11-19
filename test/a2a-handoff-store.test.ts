@@ -296,18 +296,40 @@ describe("a leftover delegation log at start (#1961)", () => {
     expect(existsSync(join(dir, "delegations.jsonl.imported"))).toBe(false)
   })
 
-  it("goes on when the rename fails: the import is kept and runs again harmlessly", () => {
+  it("removes the file instead when the rename fails, so pruned rows never come back", () => {
+    const p = join(dir, "delegations.jsonl")
+    writeFileSync(p, start("dlg-a") + "\n")
+    // A folder already where the renamed file would go: the rename fails.
+    mkdirSync(`${p}.imported`)
+    writeFileSync(join(`${p}.imported`, "x"), "x")
+    const logs: string[] = []
+    importDelegationLog(store, p, (m) => logs.push(m))
+    expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    expect(existsSync(p)).toBe(false)
+    expect(logs.join("\n")).toContain("could not rename")
+    expect(logs.join("\n")).toContain("removed after its import")
+    expect(logs.join("\n")).not.toContain("WARNING")
+    // Pruned after retention: no later start brings it back as open.
+    store.end("dlg-a", "done", 2000)
+    store.prune(3000)
+    importDelegationLog(store, p, () => {})
+    expect(store.open()).toEqual([])
+  })
+
+  it("warns, and goes on, when the file can be neither renamed nor removed", () => {
     const folder = join(dir, "a2a")
     mkdirSync(folder)
     const p = join(folder, "delegations.jsonl")
     writeFileSync(p, start("dlg-a") + "\n")
-    chmodSync(folder, 0o555) // readable, but nothing can be renamed in it
+    chmodSync(folder, 0o555) // readable, but nothing can be renamed or removed in it
     try {
       const logs: string[] = []
       importDelegationLog(store, p, (m) => logs.push(m))
       expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
       expect(existsSync(p)).toBe(true)
-      expect(logs.join("\n")).toContain("could not rename")
+      expect(logs.join("\n")).toContain("[delegation] WARNING:")
+      expect(logs.join("\n")).toContain("could not be renamed or removed")
+      expect(logs.join("\n")).toContain("fix permissions")
       // The next start merges it again: nothing changes.
       importDelegationLog(store, p, () => {})
       expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])

@@ -21,7 +21,7 @@
 // ignores a failed write, as it did for the file.
 
 import type Database from "better-sqlite3"
-import { existsSync, readFileSync, renameSync } from "fs"
+import { existsSync, readFileSync, renameSync, unlinkSync } from "fs"
 import type { DelegationRecord, DelegationResult, DelegationStatus } from "./delegation"
 
 /** The suffix a delegation log gets once it is imported (#1961). */
@@ -31,9 +31,10 @@ export const IMPORTED_SUFFIX = ".imported"
  * At start, before the DelegationManager reads the table: merge a leftover
  * old delegation log into it, then rename the file to `<path>.imported`
  * so it is never read again. No file: nothing to do. A failed import
- * leaves the file in place for the next start; a failed rename is logged
- * and the start goes on (the import is idempotent, so the next start only
- * merges it again).
+ * leaves the file in place for the next start. When the rename fails the
+ * file is removed instead; when that fails too, a warning is logged and the
+ * start goes on (the next start merges it again, which is harmless until
+ * its rows are pruned).
  */
 export function importDelegationLog(store: HandoffStore, path: string, log: (msg: string) => void): void {
   if (!existsSync(path)) return
@@ -47,8 +48,18 @@ export function importDelegationLog(store: HandoffStore, path: string, log: (msg
   try {
     renameSync(path, path + IMPORTED_SUFFIX)
     log(`[delegation] ${path} renamed to ${path + IMPORTED_SUFFIX}; it is not read again`)
+    return
   } catch (e: any) {
-    log(`[delegation] could not rename ${path} after its import: ${e?.message ?? e}; it is merged again at the next start`)
+    log(`[delegation] could not rename ${path} after its import: ${e?.message ?? e}; removing it instead`)
+  }
+  // A file imported at every start would, once its rows are pruned after
+  // requests.retentionDays, bring them back as open hand-offs and send late
+  // "lost" notices. Its lines are in the table now: remove it.
+  try {
+    unlinkSync(path)
+    log(`[delegation] ${path} removed after its import; it is not read again`)
+  } catch (e: any) {
+    log(`[delegation] WARNING: ${path} was imported but could not be renamed or removed (${e?.message ?? e}); it will be re-imported each start — fix permissions`)
   }
 }
 
