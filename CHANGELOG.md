@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.236.1](https://github.com/anis-marrouchi/agentx/compare/v0.236.0...v0.236.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **requests:** a hand-back with no proof stays open and wakes its agent ([#1970](https://github.com/anis-marrouchi/agentx/issues/1970)) ([ad60f6e](https://github.com/anis-marrouchi/agentx/commit/ad60f6e7d9a9574b9fa6ae4193229a992d3518b2))
+* **requests:** a note-met issue check keeps the note, loose patterns refused ([#1972](https://github.com/anis-marrouchi/agentx/issues/1972)) ([71c11de](https://github.com/anis-marrouchi/agentx/commit/71c11de3841a1c80fd1241849778552066c12892))
+* **situations:** empty drafted note no longer loses follow-ups ([#1975](https://github.com/anis-marrouchi/agentx/issues/1975)) ([303d9af](https://github.com/anis-marrouchi/agentx/commit/303d9af6e327c4e51c2ab77aaf641f4d82d2a659))
+
 ## [0.236.0](https://github.com/anis-marrouchi/agentx/compare/v0.235.0...v0.236.0) (2026-11-19)
 
 
