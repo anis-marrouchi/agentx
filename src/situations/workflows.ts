@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs"
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { readTemplate, type TemplateName } from "@/workflows/templates"
 import { parseYamlWorkflow } from "@/workflows/yaml"
@@ -44,6 +44,18 @@ function installed(dir: string): string[] {
   } catch { return [] }
 }
 
+/** Workflow files other than `<id>.yaml|yml|json` whose own id is `id`. */
+function otherFilesDeclaring(dir: string, id: string): string[] {
+  let names: string[] = []
+  try { names = readdirSync(dir) } catch { return [] }
+  const yamlId = new RegExp(`^id:\\s*["']?${id.replace(/[.-]/g, "\\$&")}["']?\\s*(#.*)?$`, "m")
+  const jsonId = new RegExp(`"id"\\s*:\\s*"${id.replace(/[.-]/g, "\\$&")}"`)
+  return names.filter((f) => /\.(ya?ml|json)$/.test(f) && !f.startsWith("_") && ![`${id}.yaml`, `${id}.yml`, `${id}.json`].includes(f))
+    .filter((f) => {
+      try { const t = readFileSync(resolve(dir, f), "utf-8"); return f.endsWith(".json") ? jsonId.test(t) : yamlId.test(t) } catch { return false }
+    })
+}
+
 export function ensureSituationWorkflows(store: Pick<WorkflowStore, "get" | "baseDir">, opts: { learn?: boolean } = {}): SituationWorkflowsState {
   const dir = store.baseDir
   const out: SituationWorkflowsState = { added: [], broken: [], deleted: [] }
@@ -55,6 +67,8 @@ export function ensureSituationWorkflows(store: Pick<WorkflowStore, "get" | "bas
     // notice): a file that differs from the shipped one is put back, and
     // a deleted one too. To stop it, switch situations.learned.enabled off.
     if (id === LEARN_ID) {
+      // Another file declaring the same id could take its place.
+      for (const f of otherFilesDeclaring(dir, id)) out.broken.push({ id, why: `${f} also declares id ${id}; delete it (only ${id}.yaml is used)` })
       const text = readTemplate(id)
       let same = false
       try { same = files.length === 1 && files[0] === `${id}.yaml` && readFileSync(resolve(dir, files[0]), "utf-8") === text } catch { same = false }

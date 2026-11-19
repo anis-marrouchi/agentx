@@ -175,8 +175,15 @@ export function agentTemplateIds(): string {
  *  quotes it cannot close (its own double quotes become single ones), so
  *  it cannot forge the text around it. */
 export function quoted(v: unknown, max: number): string {
-  return `"${oneLine(typeof v === "string" ? stripInvisible(v) : v, max).replace(/"/g, "'")}"`
+  return `"${oneLine(typeof v === "string" ? v.replace(QUOTE_STRIP, "") : v, max).replace(/"/g, "'")}"`
 }
+
+/** What quoting drops: bidi embeddings, overrides and isolates
+ *  (U+202A-202E, U+2066-2069) and zero-width spaces (U+200B, U+2060,
+ *  U+FEFF). Joiners (U+200C, U+200D) stay, so Arabic, Persian and emoji
+ *  read as written. */
+const QUOTE_STRIP = new RegExp(`[${[[0x202a, 0x202e], [0x2066, 0x2069], [0x200b, 0x200b], [0x2060, 0x2060], [0xfeff, 0xfeff]]
+  .map(([a, b]) => `${String.fromCharCode(a)}-${String.fromCharCode(b)}`).join("")}]`, "g")
 
 /** Characters that change how text reads without being seen: controls,
  *  zero-width and direction marks, variation selectors, tags. */

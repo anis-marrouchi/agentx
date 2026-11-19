@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3"
 import { createHash, createHmac, timingSafeEqual } from "crypto"
+import { mkdirSync, readFileSync, writeFileSync } from "fs"
+import { dirname } from "path"
 import { LEARNED_PREFIX, oneLine, situationTemplate, stripInvisible, type LearnedTemplateSource, type SituationTemplate } from "./templates"
 
 // --- Learned templates: the one home of drafts and approvals (#1892 phase 8) ---
@@ -83,7 +85,7 @@ export interface LearnedRow {
 // --- The lint ---
 
 
-const NUMBER_WORDS = "zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen"
+const NUMBER_WORDS = "zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen"
 
 /** Text a learned template may not hold. Each pattern names what it
  *  guards: the template adds sentences, nothing else. */
@@ -94,7 +96,7 @@ const LINT: Array<[RegExp, string]> = [
   [/\b(?:send|sends|sent|post|posts|posted|publish|forward|e-?mail|dm|sms|whatsapp|telegram|slack|discord|notify|text them|call them|call back|webhook|curl)\b/i, "a send to anyone"],
   [/\b(?:issue|merge request|pull request|ticket|wiki|repo|repository|home)\b/i, "a note home"],
   [/\b(?:assign|assigned|owned by|owner is|owners are|promise (?:to|for)|due (?:on|by))\b/i, "a promise owner or due time"],
-  [/\b(?:owner|owners|boss|manager|admin|administrator|the user (?:wants|says|said|asks|asked)|user wants|already (?:approved|agreed|allowed)|pre-?approved|authori[sz]ed|on behalf)\b/i, "a claim of someone's authority"],
+  [/\b(?:the owners? (?:says|said|wants|wanted|asks|asked|told|approved|allows|allowed)|owner's (?:wish|wishes|order|orders|instruction|instructions|word|words|request)|boss|manager|admin|administrator|the user (?:wants|says|said|asks|asked)|user wants|already (?:approved|agreed|allowed)|pre-?approved|authori[sz]ed|on behalf)\b/i, "a claim of someone's authority"],
   [/\b(?:ignore|disregard|override|bypass|instruction|instructions|system prompt|prompt|operator|daemon|agentx|tool|tools|approve|approved|approval|gate|permission|secret|password|token|key|reviewer|verdict)\b/i, "an instruction to the system"],
 ]
 
@@ -186,7 +188,7 @@ export class LearnedTemplateStore {
   /** The highest generation this process has seen. */
   private highGen = 0
 
-  constructor(private readonly db: Database.Database, private readonly opts: { key: () => string | null; now?: () => number }) {
+  constructor(private readonly db: Database.Database, private readonly opts: { key: () => string | null; now?: () => number; genFile?: string }) {
     this.now = opts.now ?? Date.now
     db.exec(`
       CREATE TABLE IF NOT EXISTS situation_learned_templates (
@@ -251,19 +253,52 @@ export class LearnedTemplateStore {
   // --- The sealed state ---
 
   /** The state, or null with the reason it cannot be trusted. */
+  // The highest generation is also kept outside the database, in
+  // `.agentx/learned.gen` (sealed; the guard rule `learned-gen-write`
+  // keeps agents off it), so an older copy of the database put back is
+  // noticed after a restart too.
+
+  /** The generation file: its sealed number, missing, or changed. */
+  private readGen(): { gen: number } | { missing: true } | { bad: true } | null {
+    const path = this.opts.genFile
+    if (!path) return null
+    let text: string
+    try { text = readFileSync(path, "utf-8").trim() } catch { return { missing: true } }
+    const [n, mac] = text.split(/\s+/)
+    const gen = Number(n)
+    if (!Number.isSafeInteger(gen) || gen < 0 || !this.same(mac, this.mac("gen", String(gen)))) return { bad: true }
+    return { gen }
+  }
+
+  private writeGen(gen: number): void {
+    const path = this.opts.genFile
+    const mac = this.mac("gen", String(gen))
+    if (!path || !mac) return
+    try {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, `${gen} ${mac}\n`, { mode: 0o600 })
+    } catch { /* the database still holds it; the next change tries again */ }
+  }
+
   private load(): { state: State } | { state: null; why: string } {
     if (!this.sealKey()) return { state: null, why: "no operator key on this node (.agentx/operator.key)" }
+    const file = this.readGen()
+    if (file && "bad" in file) return { state: null, why: "the generation file .agentx/learned.gen was changed outside AgentX" }
+    const floor = Math.max(this.highGen, file && "gen" in file ? file.gen : 0)
     const r = this.db.prepare("SELECT value, mac FROM situation_learned_settings WHERE name = ?").get(STATE_ROW) as { value: string; mac: string } | undefined
     if (!r) {
       const rows = (this.db.prepare("SELECT COUNT(*) AS n FROM situation_learned_templates").get() as { n: number }).n
-      if (this.highGen > 0 || rows > 0) return { state: null, why: "the sealed state is missing" }
+      if (floor > 0 || rows > 0) return { state: null, why: "the sealed state is missing (deleted, or an older copy of the database was put back)" }
       return { state: { v: 1, gen: 0, approver: null, lastRun: null, t: {}, no: [], picks: {} } }
     }
     if (!this.same(r.mac, this.mac("state", r.value))) return { state: null, why: "the sealed state was changed outside AgentX" }
     let s: State
     try { s = JSON.parse(r.value) as State } catch { return { state: null, why: "the sealed state does not read" } }
     if (s?.v !== 1 || typeof s.gen !== "number") return { state: null, why: "the sealed state does not read" }
-    if (s.gen < this.highGen) return { state: null, why: `an older sealed state was put back (generation ${s.gen}, this daemon saw ${this.highGen})` }
+    // A state with no generation file beside it: the file was removed
+    // (or both were put back from before the first change).
+    if (file && "missing" in file && s.gen > 0) return { state: null, why: "the generation file .agentx/learned.gen is missing" }
+    if (s.gen < floor) return { state: null, why: `an older sealed state was put back (generation ${s.gen}, newest seen ${floor})` }
     this.highGen = s.gen
     return { state: s }
   }
@@ -281,7 +316,7 @@ export class LearnedTemplateStore {
   /** Change the state: read, check, change, seal, all in one transaction.
    *  False when the state cannot be trusted or `fn` declined. */
   private change(fn: (s: State) => boolean): boolean {
-    return this.db.transaction(() => {
+    const ok = this.db.transaction(() => {
       const s = this.state()
       if (!s || !fn(s)) return false
       s.gen += 1
@@ -293,6 +328,10 @@ export class LearnedTemplateStore {
       this.highGen = s.gen
       return true
     })()
+    // After the commit: a file ahead of the database would read as a
+    // rollback.
+    if (ok) this.writeGen(this.highGen)
+    return ok
   }
 
   /** Copy an entry's decision onto the row, for people to read. */
@@ -535,7 +574,8 @@ export class LearnedTemplateStore {
    *  seen, so an older copy is still refused. */
   reset(): boolean {
     if (!this.sealKey() || this.problem() === null) return false
-    const gen = Math.max(this.highGen, 0) + 1
+    const file = this.readGen()
+    const gen = Math.max(this.highGen, file && "gen" in file ? file.gen : 0) + 1
     const s: State = { v: 1, gen, approver: null, lastRun: null, t: {}, no: [], picks: {} }
     const value = JSON.stringify(s)
     const mac = this.mac("state", value)
@@ -546,6 +586,7 @@ export class LearnedTemplateStore {
         .run(STATE_ROW, value, mac)
     })()
     this.highGen = gen
+    this.writeGen(gen)
     return true
   }
 

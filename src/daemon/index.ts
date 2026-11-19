@@ -931,7 +931,7 @@ export class AgentXDaemon {
           // situations.learned.enabled is on, and only once the approver
           // agent said yes in a review run this daemon started itself.
           const learnedOn = () => this.config.situations.mode !== "off" && this.config.situations.learned?.enabled === true
-          const learned = new LearnedTemplateStore(db, { key: () => this.operatorKey ?? null })
+          const learned = new LearnedTemplateStore(db, { key: () => this.operatorKey ?? null, genFile: resolve(process.cwd(), ".agentx", "learned.gen") })
           this.learnedTemplates = learned
           setLearnedTemplateSource(learnedSource(learned, learnedOn))
           setSituationLearnDeps({

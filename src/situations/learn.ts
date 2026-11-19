@@ -399,7 +399,10 @@ async function reviewStep(deps: LearnDeps): Promise<ReviewOutcome> {
   const off = on(s)
   if (off) return { ...out, stopped: off }
   const problem = deps.learned.problem()
-  if (problem) return { ...out, stopped: `${problem}: nothing learned is asked` }
+  if (problem) {
+    // Told to the owner once per run (the workflow's tell_owner step).
+    return { ...out, stopped: `${problem}: nothing learned is asked`, notice: `Learned templates stopped on this node: ${problem}. Nothing learned is drafted, asked or used. Check what changed the records, then run: agentx situation learned reset` }
+  }
   const approver = deps.learned.approver()
   if (!approver || !deps.isAgent(approver)) {
     return { ...out, stopped: `no approver: name one with \`agentx situation learned approver <agent>\`${approver ? ` (${approver} is not an agent of this node)` : ""}; drafts wait` }
