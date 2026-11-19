@@ -1,4 +1,5 @@
 import { withAgentGitlabEnv } from "@/channels/gitlab-token"
+import { TURN_SECRET_ENV, taskSecret } from "./turn-secret"
 import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
@@ -601,6 +602,9 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   // The running task, so a daemon endpoint the agent calls (agent memory)
   // can check the caller really is this agent, mid-run.
   if (task.runningTaskId) env.AGENTX_TASK_ID = task.runningTaskId
+  // This turn's secret (turn-secret.ts): the task id alone is public.
+  if (task.runningTaskId) env[TURN_SECRET_ENV] = taskSecret(task.runningTaskId)
+  else delete env[TURN_SECRET_ENV]
   if (task.context?.channel) env.AGENTX_CHANNEL = task.context.channel
   if (task.context?.chatId) env.AGENTX_CHAT_ID = task.context.chatId
   // The chat as the run queue keys it, for the mid-turn hook (mid-turn.ts).
