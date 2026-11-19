@@ -1,5 +1,6 @@
 import { callerHeaders } from "@/calls/service"
 import { PER_REQUEST_SOURCE_IDS } from "./context"
+import { SOURCES_READ_MARK } from "./sources/redact"
 
 // --- agentx_sources: read a per-request source for one request (#1892 phase 7) ---
 //
@@ -74,7 +75,8 @@ export async function runSourcesTool(args: Record<string, unknown>, deps: Source
     const answers = (r.data.answers ?? []) as Array<{ kind: string; value: unknown; reason: string }>
     const lines = answers.map((a) => a.value === "unknown" ? `${a.kind}: not read (${a.reason})` : `${a.kind}: ${String(a.value)}`)
     if (r.data.consent) lines.push(`The person's yes: ${r.data.consent}.`)
-    return lines.join("\n")
+    // The mark keeps this answer out of traces and live views (redact.ts).
+    return [SOURCES_READ_MARK, ...lines].join("\n")
   }
   return "Error: action must be ask, read or list"
 }

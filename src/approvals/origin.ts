@@ -153,6 +153,10 @@ export interface SourceConsentOrigin {
   agentId: string
   sources: string[]
   minutes: number
+  /** The asking turn's chat ("channel:chatId") and task: the yes holds
+   *  only there, and in the turn that tells the agent the answer. */
+  chat?: string
+  taskId?: string
 }
 
 /** Lines added to the result the agent is told about its source-consent
@@ -161,9 +165,10 @@ export function sourceConsentLines(origin: SourceConsentOrigin, card: { id: stri
   const yes = card.status === "decided" && card.verdict === "yes" && card.decided_from === "popup"
   if (!yes) return ["Nothing will be read for this request. Do not read it another way and do not ask again unless the person asks you to."]
   const at = Date.parse(card.decided_at ?? "")
-  const until = Number.isFinite(at) ? new Date(at + origin.minutes * 60_000).toISOString() : "its end"
+  if (!Number.isFinite(at)) return ["The answer has no time, so nothing will be read for this request."]
+  const until = new Date(at + origin.minutes * 60_000).toISOString()
   return [
-    `You may read ${origin.sources.join(", ")} for this request until ${until}: call agentx_sources with action "read", request "${card.id}" and the source. Each read is logged.`,
+    `You may read ${origin.sources.join(", ")} for this request until ${until}, from this turn or the chat you asked in: call agentx_sources with action "read", request "${card.id}" and the source. Each read is logged.`,
     "Use what you read for this request only. After that time a read is refused.",
   ]
 }

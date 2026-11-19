@@ -113,7 +113,7 @@ export function chooseArgs(title: string, prompt: string, choices: string[]): st
  * seconds, and the editable text ("" for none). Prints
  * "<button>\n<text>", or "" when it gave up.
  */
-export function dialogArgs(title: string, prompt: string, buttons: string[], seconds: number, text?: string): string[] {
+export function dialogArgs(title: string, prompt: string, buttons: string[], seconds: number, text?: string, defaultButton?: string): string[] {
   return osa([
     "on run argv",
     "set AppleScript's text item delimiters to linefeed",
@@ -128,7 +128,7 @@ export function dialogArgs(title: string, prompt: string, buttons: string[], sec
     "if (count of argv) > 5 then return (button returned of r) & linefeed & (text returned of r)",
     "return button returned of r",
     "end run",
-  ], [title, prompt, buttons.join("\n"), buttons[buttons.length - 1], String(seconds), ...(text !== undefined ? [text] : [])])
+  ], [title, prompt, buttons.join("\n"), defaultButton && buttons.includes(defaultButton) ? defaultButton : buttons[buttons.length - 1], String(seconds), ...(text !== undefined ? [text] : [])])
 }
 
 /** "<button>\n<text…>" → the button and the text (which may span lines). */
@@ -201,7 +201,9 @@ async function showDialogs(card: DecisionCard, settings: PopupSettings, exec: Ru
     return { action: "dismiss" }
   }
 
-  const r = await exec("/usr/bin/osascript", dialogArgs(title, promptFor(card), ["Not now", "No", "Yes"], seconds), limit)
+  const r = await exec("/usr/bin/osascript", dialogArgs(title, promptFor(card), ["Not now", "No", "Yes"], seconds, undefined,
+    // A screen read (#1892 phase 7) is never one Return key away.
+    card.origin?.kind === "source-consent" ? "Not now" : undefined), limit)
   const d = r.ok ? parseDialog(r.stdout) : null
   if (d?.button === "Yes") return { action: "yes" }
   if (d?.button === "No") return { action: "no" }

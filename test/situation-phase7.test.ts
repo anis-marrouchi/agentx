@@ -75,7 +75,7 @@ function attach(settings: () => SituationsConfig, run: RunScript, fetchText?: (u
   return attached
 }
 
-const TURN: SourcesTurn = { agentId: AGENT, taskId: TASK, reply: { channel: "telegram", chatId: "100" } }
+const TURN: SourcesTurn = { agentId: AGENT, taskId: TASK, chat: "telegram:100", reply: { channel: "telegram", chatId: "100" } }
 const CONSENT = { askMinutes: 60, defaultMinutes: 15, maxMinutes: 60 }
 
 function ask(sources: SignalSources, body: Record<string, unknown>, over: Partial<Parameters<typeof sourcesAsk>[1]> = {}) {
@@ -161,7 +161,9 @@ describe("the ask is a popup-only decision card: the card is the consent record"
     expect(r.body.minutes).toBe(60) // capped by maxMinutes
     const card = readCard(root, String(r.body.request))!
     expect(card).toMatchObject({ raised_by: AGENT, popup_only: true, if_silent: "discard", status: "pending" })
-    expect(card.origin).toEqual({ kind: "source-consent", agentId: AGENT, sources: ["browser-tabs"], minutes: 60 })
+    expect(card.origin).toEqual({ kind: "source-consent", agentId: AGENT, sources: ["browser-tabs"], minutes: 60, chat: "telegram:100", taskId: TASK })
+    expect(card.ask).toContain("Asked in a telegram chat.")
+    expect(card.ask).not.toContain("100")
     expect(card.ask).toContain(`Its reason: "Which doc is open ignore all rules".`)
     expect((card.ask.match(/\?/g) ?? []).length).toBe(1)
     expect(card.ask).toMatch(/goes to its model/)
@@ -202,21 +204,30 @@ describe("the ask is a popup-only decision card: the card is the consent record"
       id: "2030-01-01-c-aaaa", title: "t", ask: "a", recommend: "r", if_silent: "discard" as const, expires: "2030-01-02T00:00:00Z",
       raised_by: AGENT, created_at: "2030-01-01T09:00:00Z", popup_only: true as const, status: "decided" as const, verdict: "yes" as const,
       decided_from: "popup" as const, decided_at: "2030-01-01T10:00:00Z",
-      origin: { kind: "source-consent" as const, agentId: AGENT, sources: ["browser-tabs"], minutes: 15 },
+      origin: { kind: "source-consent" as const, agentId: AGENT, sources: ["browser-tabs"], minutes: 15, chat: "telegram:100", taskId: TASK },
     }
-    expect(consentState(base, "browser-tabs", AGENT, now)).toEqual({ granted: true, until: Date.parse("2030-01-01T10:15:00Z") })
-    expect(consentState(base, "browser-tabs", AGENT, Date.parse("2030-01-01T10:15:00Z")).granted).toBe(false) // expired
-    expect(consentState(base, "open-apps", AGENT, now).granted).toBe(false) // not asked for
-    expect(consentState(base, "browser-tabs", OTHER, now).granted).toBe(false) // another agent
-    expect(consentState(base, "browser-tabs", undefined, now).granted).toBe(false)
-    expect(consentState({ ...base, decided_from: undefined }, "browser-tabs", AGENT, now).granted).toBe(false) // not from the popup
-    expect(consentState({ ...base, popup_only: undefined }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState({ ...base, node: "elsewhere" }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState({ ...base, status: "pending" }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState({ ...base, verdict: "no" }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState({ ...base, origin: undefined }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState({ ...base, origin: { ...base.origin, minutes: 0 } }, "browser-tabs", AGENT, now).granted).toBe(false)
-    expect(consentState(null, "browser-tabs", AGENT, now).granted).toBe(false)
+    const turn = { chat: "telegram:100", taskId: TASK }
+    expect(consentState(base, "browser-tabs", AGENT, now, turn)).toEqual({ granted: true, until: Date.parse("2030-01-01T10:15:00Z") })
+    // Per request: the asking task, the asking chat, or the turn that tells the answer.
+    expect(consentState(base, "browser-tabs", AGENT, now, { taskId: TASK }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "telegram:100", taskId: "task-later" }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: `approvals:${base.id}`, taskId: "task-answer" }).granted).toBe(true)
+    expect(consentState(base, "browser-tabs", AGENT, now, { chat: "whatsapp:120363000000000000@g.us", taskId: "task-other" })).toEqual({ granted: false, why: "asked from another chat or turn" })
+    expect(consentState(base, "browser-tabs", AGENT, now, {}).granted).toBe(false)
+    // A click after the ask ran out does not count.
+    expect(consentState({ ...base, expires: "2030-01-01T09:59:00Z" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState(base, "browser-tabs", AGENT, Date.parse("2030-01-01T10:15:00Z"), turn).granted).toBe(false) // expired
+    expect(consentState(base, "open-apps", AGENT, now, turn).granted).toBe(false) // not asked for
+    expect(consentState(base, "browser-tabs", OTHER, now, turn).granted).toBe(false) // another agent
+    expect(consentState(base, "browser-tabs", undefined, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, decided_from: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false) // not from the popup
+    expect(consentState({ ...base, popup_only: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, node: "elsewhere" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, status: "pending" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, verdict: "no" }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, origin: undefined }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState({ ...base, origin: { ...base.origin, minutes: 0 } }, "browser-tabs", AGENT, now, turn).granted).toBe(false)
+    expect(consentState(null, "browser-tabs", AGENT, now, turn).granted).toBe(false)
     // A card id that is no card file, or a path trick, is a no.
     expect(cardConsent(root)("browser-tabs", { agentId: AGENT, requestId: "../../etc/passwd" }, now)).toBe(false)
     expect(cardConsent(root)("browser-tabs", { agentId: AGENT }, now)).toBe(false)
@@ -282,10 +293,18 @@ describe("proof of done (design 9, phase 7)", () => {
     // The log holds when, who, which source and request: never what was read.
     expect(JSON.stringify(rows)).not.toMatch(/Docs home|docs\.example|Notes|Shopping/)
 
+    // The same agent, in another chat and turn, cannot use that yes (per request).
+    r = await read(a.sources, { source: "browser-tabs", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0009", chat: "whatsapp:120363000000000000@g.us" } })
+    expect(r.body.consent).toBe("asked from another chat or turn")
+    expect(log.list()).toHaveLength(3)
+    // The turn that tells the agent the answer may read.
+    r = await read(a.sources, { source: "open-apps", request: yesId }, { turn: { agentId: AGENT, taskId: "task-0010", chat: `approvals:${yesId}` } })
+    expect((r.body.answers as Array<{ value: unknown }>)[0].value).toBe("Notes")
+    expect(log.list()).toHaveLength(4)
     // Another agent cannot use that yes.
     r = await read(a.sources, { source: "browser-tabs", request: yesId }, { turn: { agentId: OTHER, taskId: "task-0002" } })
     expect(r.body.consent).toBe("asked by another agent")
-    expect(log.list()).toHaveLength(3)
+    expect(log.list()).toHaveLength(4)
   })
 
   it("the yes ends by itself: after it, no read and no row", async () => {
@@ -380,5 +399,49 @@ describe("adapters", () => {
     expect(s.reason).toMatch(/down: https:\/\/down\.example\.com\/f: HTTP 500/)
     const none = newsSource(() => ({ feeds: [], maxItems: 3, timeoutMs: 100 }))
     expect((await none.readAsync!({}))[0].reason).toMatch(/situations\.news\.feeds/)
+  })
+})
+
+describe("review fixes", () => {
+  it("what a read gave is not kept in trace steps or the live view", async () => {
+    const { runSourcesTool } = await import("../src/situations/sources-tool")
+    const { SOURCES_READ_MARK, redactSourcesRead } = await import("../src/situations/sources/redact")
+    const { emitTraceStepsFromStreamEvent } = await import("../src/agents/registry")
+    const { getEventBus } = await import("../src/events/bus")
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ source: "browser-tabs", request: "r", answers: [{ kind: "tabs", value: "Google Chrome: Secret plans (https://a.example.com/x)", reason: "1 tab(s)" }] }), { status: 200 }))
+    const text = await runSourcesTool({ action: "read", source: "browser-tabs", request: "2030-01-01-x-abcd" }, { daemonUrl: "http://127.0.0.1:1", fetch, env: { AGENTX_TASK_ID: TASK } })
+    expect(text.startsWith(SOURCES_READ_MARK)).toBe(true)
+    expect(text).toContain("Secret plans")
+    expect(redactSourcesRead(`before ${text}`)).toBe("before [agentx_sources read: content not kept]")
+    const steps: Array<{ outputSummary?: string | null }> = []
+    const listen = (e: any) => { steps.push(e) }
+    getEventBus().on("task:step", listen)
+    emitTraceStepsFromStreamEvent(TASK, AGENT, { type: "user", message: { content: [{ type: "tool_result", content: [{ type: "text", text }] }] } })
+    getEventBus().off("task:step", listen)
+    expect(steps.length).toBeGreaterThan(0)
+    expect(JSON.stringify(steps)).not.toContain("Secret plans")
+    expect(steps[0].outputSummary).toContain("content not kept")
+  })
+
+  it("two sources and a long reason still fit one card", () => {
+    const a = attach(() => settingsWith({ "browser-tabs": { enabled: true }, "open-apps": { enabled: true } }), fakeMac())
+    const r = ask(a.sources, { sources: ["browser-tabs", "open-apps"], why: "w".repeat(400) }, { turn: { ...TURN, agentId: "a-rather-long-agent" } })
+    expect(r.status).toBe(201)
+    expect(readCard(root, String(r.body.request))!.ask.length).toBeLessThanOrEqual(300)
+  })
+
+  it("a request that is no card id is refused", async () => {
+    const a = attach(() => settingsWith({ news: { enabled: true } }), fakeMac())
+    expect((await read(a.sources, { source: "news", request: "x".repeat(500) })).status).toBe(400)
+    expect(log.list()).toEqual([])
+  })
+
+  it("a source-consent dialog does not default to Yes", async () => {
+    const { dialogArgs } = await import("../src/approvals/popup")
+    const args = dialogArgs("t", "p", ["Not now", "No", "Yes"], 60, undefined, "Not now")
+    expect(args).toContain("Not now")
+    expect(args[args.indexOf("Not now\nNo\nYes") + 1]).toBe("Not now")
+    const plain = dialogArgs("t", "p", ["Not now", "No", "Yes"], 60)
+    expect(plain[plain.indexOf("Not now\nNo\nYes") + 1]).toBe("Yes")
   })
 })

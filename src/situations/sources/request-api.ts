@@ -22,6 +22,8 @@ export interface SourcesTurn {
   taskId?: string
   reply?: ReplyTarget
   key?: string
+  /** The turn's chat, "channel:chatId". */
+  chat?: string
 }
 
 export interface SourcesApiReply {
@@ -49,7 +51,7 @@ export function sourcesTurnFrom(
     agentId,
     taskId: turn.taskId,
     ...(c.situationKey ? { key: c.situationKey } : {}),
-    ...(c.channel && c.chatId ? { reply: { channel: c.channel, chatId: c.chatId, ...(c.accountId ? { accountId: c.accountId } : {}) } } : {}),
+    ...(c.channel && c.chatId ? { chat: `${c.channel}:${c.chatId}`, reply: { channel: c.channel, chatId: c.chatId, ...(c.accountId ? { accountId: c.accountId } : {}) } } : {}),
   }
 }
 
@@ -81,7 +83,11 @@ export function sourcesAsk(body: Record<string, unknown>, deps: {
   if (!deps.popupOn) {
     return { status: 409, body: { error: "a yes counts only in the popup on this machine, and the popup is off here (approvals.popup.enabled): nothing can be read. Tell the person." } }
   }
-  const r = askSourceConsent(deps.root, { agentId: deps.turn.agentId, sources: ids, why: body.why, minutes: body.minutes, reply: deps.turn.reply }, {
+  const t = deps.turn
+  const r = askSourceConsent(deps.root, {
+    agentId: t.agentId, sources: ids, why: body.why, minutes: body.minutes,
+    ...(t.reply ? { reply: t.reply } : {}), ...(t.chat ? { chat: t.chat } : {}), ...(t.taskId ? { taskId: t.taskId } : {}),
+  }, {
     settings: deps.settings, ...(deps.cardSettings ? { cardSettings: deps.cardSettings } : {}), ...(deps.now !== undefined ? { now: deps.now } : {}),
   })
   if (!r.ok) return { status: 400, body: { error: r.error } }
@@ -103,9 +109,14 @@ export async function sourcesRead(body: Record<string, unknown>, deps: {
   const given = typeof body.request === "string" ? body.request.trim() : ""
   const consent = deps.sources.needsConsent(source)
   if (consent && !given) return { status: 400, body: { error: `request is required: ${source} needs the person's yes; ask first (action "ask") and use the request it gives` } }
+  // A request is a consent card's id, or this turn's own task.
+  if (given && !isValidCardId(given)) return { status: 400, body: { error: "request must be the id the ask gave" } }
   const requestId = given || deps.turn.taskId || ""
   if (!requestId) return { status: 400, body: { error: "request is required" } }
-  const answers = await deps.sources.readForRequest(source, { agentId: deps.turn.agentId, requestId, ...(deps.turn.key ? { key: deps.turn.key } : {}) })
+  const t = deps.turn
+  const answers = await deps.sources.readForRequest(source, {
+    agentId: t.agentId, requestId, ...(t.key ? { key: t.key } : {}), ...(t.chat ? { chat: t.chat } : {}), ...(t.taskId ? { taskId: t.taskId } : {}),
+  })
   const out: Record<string, unknown> = {
     source,
     request: requestId,
@@ -114,7 +125,7 @@ export async function sourcesRead(body: Record<string, unknown>, deps: {
   // Why a yes does not hold, in words the agent can pass on.
   if (consent && answers.every(isUnknown) && answers.some((s) => s.reason === "no consent")) {
     const card = isValidCardId(requestId) ? readCard(deps.root, requestId) : null
-    const state = consentState(card, source, deps.turn.agentId, deps.now ?? Date.now())
+    const state = consentState(card, source, t.agentId, deps.now ?? Date.now(), { chat: t.chat, taskId: t.taskId })
     out.consent = state.granted ? "granted" : state.why
   }
   return { status: 200, body: out }

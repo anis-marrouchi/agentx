@@ -26,6 +26,10 @@ export interface SignalScope {
   agentId?: string
   /** The request the read is for (per-request sources, consent). */
   requestId?: string
+  /** The running turn's chat ("channel:chatId") and task: a yes holds
+   *  only for the turn or chat it was asked from (phase 7). */
+  chat?: string
+  taskId?: string
 }
 
 export interface Signal {

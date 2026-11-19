@@ -1,4 +1,5 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
+import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
@@ -549,7 +550,7 @@ export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, e
           // pair via tool_use_id if they care.
           name: "tool_result",
           status: block.is_error ? "error" : "ok",
-          outputSummary: content ? clipForTrace(content) : null,
+          outputSummary: content ? clipForTrace(redactSourcesRead(content)) : null,
           at,
         } as any)
       }
@@ -599,7 +600,7 @@ function makeStreamEventFormatter(): (event: any) => string {
       const name = item.name || item.command || item.tool_name || item.id || ""
       if (t === "item.started") return `\n> codex ${label}${name ? ` ${name}` : ""}\n`
       const summary = item.output || item.result || item.text || item.error || ""
-      return `< codex ${label}${name ? ` ${name}` : ""}${summary ? `: ${clip(String(summary), 800)}` : ""}\n`
+      return `< codex ${label}${name ? ` ${name}` : ""}${summary ? `: ${clip(redactSourcesRead(String(summary)), 800)}` : ""}\n`
     }
     if (t === "error" || t === "turn.failed") {
       const msg = event.message || event.error || event.reason || JSON.stringify(event)
@@ -636,7 +637,7 @@ function makeStreamEventFormatter(): (event: any) => string {
             ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
             : typeof block.content === "string" ? block.content : ""
           const flag = block.is_error ? "← [error] " : "← "
-          out += `${flag}${clip(c, 800)}\n`
+          out += `${flag}${clip(redactSourcesRead(c), 800)}\n`
         }
       }
       return out
