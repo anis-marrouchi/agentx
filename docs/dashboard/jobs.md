@@ -141,7 +141,7 @@ Hand-offs (work one agent hands to another) are kept in their own table, `handof
 
 The old delegation log (`.agentx/a2a/delegations.jsonl`) is still written for this release, but no longer read. At every start, AgentX adds what is in it to the table, so going back to an older AgentX and forward again loses nothing. A later release stops writing it.
 
-On a machine where the database cannot open, hand-offs are kept in memory only. The daemon log says so at start with a line beginning `[delegation] WARNING: no database`. A restart then forgets every hand-off still out, and nobody is told it was lost.
+On a machine where the database cannot open, hand-offs are kept in memory only. The daemon log says so at start with a line beginning `[delegation] WARNING: no database`, you get one notice "Hand-offs kept in memory only", and `GET /health` shows `"handoffs": "memory-only"` (`"database"` otherwise). A restart then forgets every hand-off still out, and nobody is told it was lost.
 
 Jobs are kept while `requests.enabled` is on. To keep jobs on a node where requests are off, set `requests.jobs.enabled` to `true`: every run that is not your own turn gets its job, and your own requests leave no record there. Set it to `false` to keep no jobs at all.
 

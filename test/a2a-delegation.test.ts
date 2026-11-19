@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, onTestFinished } from "vitest"
 import Database from "better-sqlite3"
 import { readSignals, setSignalDb } from "../src/improve/signals"
-import { mkdtempSync, rmSync, readFileSync, appendFileSync, existsSync } from "fs"
+import { mkdtempSync, rmSync, readFileSync, appendFileSync, existsSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { DelegationManager, buildCallbackMessage, fallbackReply, resultOfRun, repeatsWritten, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
@@ -578,6 +578,88 @@ describe("after a restart", () => {
     const again = harness(n.journal())
     expect(await again.mgr.recover()).toBe(0)
     expect(n.store().statusOf("dlg-file")).toBe("lost")
+  })
+})
+
+describe("review fixes on #1962", () => {
+  const STOPPED = { content: "", error: "stopped mid-turn (registry-stop)" }
+
+  it("HIGH 1: a held reply leaves its hand-off out, so a restart reports it lost", async () => {
+    const n = node()
+    const before = harness({ ...n.journal(), injectTurn: async (turn) => { before.injected.push(turn); return STOPPED } })
+    const { taskId, record } = before.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    before.mgr.relayReply(record, "Halfway there.")
+    await flush()
+    before.mgr.stop()
+    const after = harness(n.journal())
+    expect(after.mgr.isPending(taskId)).toBe(true)
+    expect(await after.mgr.recover()).toBe(1)
+    expect(after.injected.some((t) => t.message.includes("status=lost"))).toBe(true)
+  })
+
+  it("HIGH 1: the real end after a held reply still ends it and tells listeners", async () => {
+    const n = node()
+    const done: string[] = []
+    const h = harness({ ...n.journal(), injectTurn: async (turn) => { h.injected.push(turn); return STOPPED }, onDone: (rec, r) => { done.push(`${rec.id}:${r.status}`) } })
+    const { taskId, record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    h.mgr.relayReply(record, "Halfway there.")
+    await flush()
+    expect(await h.mgr.complete(taskId, { status: "done", text: "All tests pass and the branch is pushed." })).toBe(true)
+    expect(done).toEqual([`${taskId}:done`])
+    expect(h.logs.join("\n")).not.toContain("another process ended it already")
+  })
+
+  it("HIGH 2: an answer an older daemon passed on, then compacted away, is not passed on again", async () => {
+    const n = node()
+    const before = harness({ ...n.journal(), injectTurn: async (turn) => { before.injected.push(turn); return STOPPED } })
+    const { taskId } = before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Find the report" })
+    before.local.resolve({ content: "Here is the report" })
+    await flush()
+    before.mgr.stop()
+    expect(n.store().held()).toHaveLength(1)
+    // The older daemon re-ran and delivered it, then compacted its file:
+    // only the done id is left, rewritten with the compaction's time.
+    writeFileSync(n.logPath, JSON.stringify({ type: "done", id: taskId, status: "done", ts: Date.now() + 1000 }) + "\n")
+    const back = harness(n.journal())
+    await back.mgr.recover()
+    expect(back.injected).toHaveLength(0)
+    expect(back.delivered).toHaveLength(0)
+  })
+
+  it("an answer pending its callback is not re-run when re-runs are turned off, and never reaches the file", async () => {
+    const n = node()
+    let over = false
+    onTestFinished(() => { over = true })
+    const before = harness({ ...n.journal(), isChatBusy: () => !over, busyWaitMs: 60_000, pollMs: 5 })
+    before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    before.local.resolve({ content: "answer" })
+    await flush()
+    before.mgr.stop()
+    const after = harness({ ...n.journal(), requeueRelayOnRestart: false })
+    await after.mgr.recover()
+    expect(after.injected).toHaveLength(0)
+    expect(n.lines().some((l) => l.type === "relay")).toBe(false)
+    expect(n.store().held()).toEqual([])
+  })
+
+  it("keeps the 'already wrote' wording on a callback a restart stopped", async () => {
+    const n = node()
+    let calls = 0
+    const before = harness({ ...n.journal(), injectTurn: async (turn) => { before.injected.push(turn); return ++calls === 1 ? { content: "ok" } : STOPPED } })
+    const { taskId, record } = before.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    before.mgr.relayReply(record, "On it.")
+    await flush()
+    await before.mgr.complete(taskId, { status: "done", text: "All tests pass and the branch is pushed." })
+    before.mgr.stop()
+    const after = harness(n.journal())
+    await after.mgr.recover()
+    expect(after.injected).toHaveLength(1)
+    expect(after.injected[0].message).toContain("already wrote to you")
+  })
+
+  it("says whether hand-offs survive a restart", () => {
+    expect(harness(node().journal()).mgr.journalMode()).toBe("database")
+    expect(harness().mgr.journalMode()).toBe("memory-only")
   })
 })
 

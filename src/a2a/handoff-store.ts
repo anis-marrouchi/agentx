@@ -191,10 +191,22 @@ export class HandoffStore {
   }
 
   /** Hold a callback a restart stopped (attempt 1), or its re-run (2). */
-  hold(rec: DelegationRecord, held: { result: DelegationResult; reply?: boolean }, attempt: number, at: number): void {
+  hold(rec: DelegationRecord, held: { result: DelegationResult; reply?: boolean; wrote?: boolean }, attempt: number, at: number): void {
     this.withRecord(rec, at, "db")
-    this.sql("UPDATE handoffs SET relay_json = ?, relay_attempt = ?, relay_at = ?, updated_at = ?, status = COALESCE(status, ?), ended_at = COALESCE(ended_at, ?) WHERE id = ?")
-      .run(JSON.stringify({ result: held.result, ...(held.reply ? { reply: true } : {}) }), attempt, at, at, held.result.status, at, rec.id)
+    this.setRelay(rec.id, held, attempt, at)
+  }
+
+  /** The relay columns of a held callback. Only the end of a run ends the
+   *  hand-off with it: a held reply is a progress note from a callee that
+   *  may still be working, so its hand-off stays out (review of #1962). */
+  private setRelay(id: string, held: { result: DelegationResult; reply?: boolean; wrote?: boolean }, attempt: number, at: number): void {
+    const json = JSON.stringify({ result: held.result, ...(held.reply ? { reply: true } : {}), ...(held.wrote ? { wrote: true } : {}) })
+    if (held.reply) {
+      this.sql("UPDATE handoffs SET relay_json = ?, relay_attempt = ?, relay_at = ?, updated_at = ? WHERE id = ?").run(json, attempt, at, at, id)
+    } else {
+      this.sql("UPDATE handoffs SET relay_json = ?, relay_attempt = ?, relay_at = ?, updated_at = ?, status = COALESCE(status, ?), ended_at = COALESCE(ended_at, ?) WHERE id = ?")
+        .run(json, attempt, at, at, held.result.status ?? "done", at, id)
+    }
   }
 
   /** Write the one re-run down before it starts. False when it is already
@@ -270,6 +282,8 @@ export class HandoffStore {
    *   done     ends a row still out; a done-only row for an id with none
    *   relay    held, when the line is newer than the row's last relay word
    *   relayed  passed on, when the line is at least as new
+   * A held reply never ends its hand-off. A held callback the file's
+   * compaction dropped is released (see the end of the loop).
    * Bad lines are skipped, as the old reader skipped them.
    */
   importFile(path: string): { lines: number; skipped: number } {
@@ -278,6 +292,9 @@ export class HandoffStore {
     let skipped = 0
     const text = readFileSync(path, "utf-8")
     const relayAtOf = this.sql("SELECT relay_at, relay_attempt FROM handoffs WHERE id = ?")
+    /** Per id: the newest `done` and `relay` line in the file. */
+    const lastDone = new Map<string, number>()
+    const lastRelay = new Map<string, number>()
     this.db.transaction(() => {
       for (const raw of text.split("\n")) {
         if (!raw.trim()) continue
@@ -291,18 +308,19 @@ export class HandoffStore {
           if (typeof rec.caller !== "string" || typeof rec.callee !== "string" || !rec.origin) { skipped++; continue }
           this.insert(rec as DelegationRecord, ts, "file")
         } else if (line.type === "done") {
+          lastDone.set(line.id, Math.max(lastDone.get(line.id) ?? 0, ts))
           const status = typeof line.status === "string" ? line.status : "done"
           const ended = this.sql("UPDATE handoffs SET status = ?, ended_at = ?, updated_at = ? WHERE id = ? AND status IS NULL").run(status, ts, ts, line.id).changes
           if (!ended) {
             this.sql("INSERT OR IGNORE INTO handoffs (id, status, ended_at, source, updated_at) VALUES (?, ?, ?, 'file', ?)").run(line.id, status, ts, ts)
           }
         } else if (line.type === "relay" && line.record && line.result) {
+          lastRelay.set(line.id, Math.max(lastRelay.get(line.id) ?? 0, ts))
           const row = relayAtOf.get(line.id) as { relay_at: number | null } | undefined
           if (row && row.relay_at !== null && ts <= row.relay_at) continue
           if (typeof line.record.caller === "string" && line.record.origin) this.withRecord(line.record as DelegationRecord, ts, "file")
           else if (!row) { skipped++; continue }
-          this.sql("UPDATE handoffs SET relay_json = ?, relay_attempt = ?, relay_at = ?, updated_at = ?, status = COALESCE(status, ?), ended_at = COALESCE(ended_at, ?) WHERE id = ?")
-            .run(JSON.stringify({ result: line.result, ...(line.reply === true ? { reply: true } : {}) }), Number(line.attempt) || 1, ts, ts, line.result.status ?? "done", ts, line.id)
+          this.setRelay(line.id, { result: line.result, ...(line.reply === true ? { reply: true } : {}) }, Number(line.attempt) || 1, ts)
         } else if (line.type === "relayed") {
           // Never clears an answer pending in the table: the file does not
           // know about those.
@@ -312,6 +330,22 @@ export class HandoffStore {
           lines--
           skipped++
         }
+      }
+      // A callback held in the table that an older daemon passed on, then
+      // compacted away. Its compaction keeps the starts still out, the done
+      // ids (rewritten with the compaction's time) and the relays it still
+      // holds, so the `relayed` line is gone and only a done line newer
+      // than the hold is left. A daemon of this version never writes such a
+      // file: every held relay is in its file at the hold's time (append)
+      // or later (its own compaction rewrites held relays). So: a done line
+      // newer than the hold, and no relay line at or after it, means the
+      // writer no longer held it. An answer pending in the table is left
+      // alone: the file never knew it.
+      for (const [id, doneTs] of lastDone) {
+        const row = relayAtOf.get(id) as { relay_at: number | null; relay_attempt: number | null } | undefined
+        if (!row || row.relay_attempt === null || row.relay_attempt < 1 || row.relay_at === null) continue
+        if (doneTs <= row.relay_at || (lastRelay.get(id) ?? -1) >= row.relay_at) continue
+        this.sql("UPDATE handoffs SET relay_json = NULL, relay_attempt = NULL, relay_at = ?, updated_at = ? WHERE id = ?").run(doneTs, doneTs, id)
       }
     })()
     return { lines, skipped }

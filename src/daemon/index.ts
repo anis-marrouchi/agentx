@@ -4265,6 +4265,15 @@ export class AgentXDaemon {
     void this.delegations.recover()
       .then((n) => { if (n) this.log(`[delegation] ${n} delegation(s) lost in the restart were reported to their callers`) })
       .catch((e) => this.log(`[delegation] recovery failed: ${e?.message ?? e}`))
+    // No database: the start-up warning is in the log; the owner is told
+    // too, once per cause (the notice key), on the channels now up (#1861).
+    if (this.delegations.journalMode() === "memory-only") {
+      void this.notifyOwner(
+        "Hand-offs kept in memory only",
+        `AgentX on ${this.config.node.name || this.config.node.id || "this machine"} could not open its database, so work one agent hands to another is not written down. A restart forgets every hand-off still out, and nobody is told it was lost. The daemon log line starting "[storage/sqlite]" says why; usually \`pnpm install\` fixes it.`,
+        "delegation", 4, { key: "handoffs:memory-only" },
+      ).catch((e: any) => this.log(`[delegation] could not tell the owner hand-offs are memory-only: ${e?.message ?? e}`))
+    }
   }
 
   /** Wires the workflow dispatcher + hook subscribers against the running
@@ -7655,6 +7664,9 @@ export class AgentXDaemon {
             // down and its mentions are queued rather than lost.
             deferredMesh: this.router.getDeferredMeshCounts(),
             projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
+            // "memory-only": no database, so a restart forgets every
+            // hand-off still out (#1861).
+            handoffs: this.delegations.journalMode(),
             usage: this.resolveTodayUsage(),
             // What a restart would cut off, and whether one is waiting for
             // that to reach zero (agentx daemon restart --when-idle, the

@@ -78,6 +78,21 @@ describe("the handoffs table", () => {
     expect(store.held().map((h) => h.record.id)).toEqual(["dlg-b"])
   })
 
+  it("a held reply (a progress note) does not end a hand-off still out (review HIGH 1)", () => {
+    store.insert(rec("dlg-a"), 1000)
+    store.hold(rec("dlg-a"), { result: { status: "done", text: "Halfway." }, reply: true }, 1, 1500)
+    expect(store.statusOf("dlg-a")).toBeNull()
+    expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    expect(store.end("dlg-a", "done", 2000)).toBe("ended")
+  })
+
+  it("keeps the 'already wrote' flag on a held callback", () => {
+    store.insert(rec("dlg-a"), 1000)
+    store.end("dlg-a", "done", 2000)
+    store.hold(rec("dlg-a"), { result: { status: "done", text: "end" }, wrote: true }, 1, 3000)
+    expect(store.held()).toEqual([{ record: rec("dlg-a"), result: { status: "done", text: "end" }, attempt: 1, wrote: true }])
+  })
+
   it("never lets a pending mark replace a held callback", () => {
     store.insert(rec("dlg-a"), 1000)
     store.hold(rec("dlg-a"), { result: { status: "done", text: "progress" }, reply: true }, 1, 1500)
@@ -213,6 +228,50 @@ describe("importing the old delegation log", () => {
     expect(store.held()).toEqual([{ record: rec("dlg-a"), result: { status: "done", text: "again" }, attempt: 1, reply: true }])
   })
 
+  it("does not end a hand-off still out on an imported reply hold (review HIGH 1)", () => {
+    store.importFile(file([
+      line({ type: "start", ts: 1000, ...rec("dlg-a") }),
+      line({ type: "relay", id: "dlg-a", ts: 1500, record: rec("dlg-a"), result: { status: "done", text: "Halfway." }, attempt: 1, reply: true }),
+    ]))
+    expect(store.open().map((r) => r.id)).toEqual(["dlg-a"])
+    expect(store.held()).toEqual([{ record: rec("dlg-a"), result: { status: "done", text: "Halfway." }, attempt: 1, reply: true }])
+  })
+
+  it("releases a held callback an older daemon passed on and then compacted away (review HIGH 2)", () => {
+    // The table holds dlg-a at attempt 1 (3000). The older daemon re-ran
+    // it, wrote `relayed`, then compacted: done ids are rewritten with the
+    // compaction's time, held relays only while still held.
+    store.insert(rec("dlg-a"), 1000)
+    store.end("dlg-a", "done", 2000)
+    store.hold(rec("dlg-a"), { result: { status: "done", text: "A" } }, 1, 3000)
+    store.importFile(file([
+      line({ type: "start", ts: 4000, ...rec("dlg-other") }),
+      line({ type: "done", id: "dlg-a", status: "done", ts: 9000 }),
+    ]))
+    expect(store.held()).toEqual([])
+    expect(store.statusOf("dlg-a")).toBe("done")
+  })
+
+  it("keeps a held callback through the new daemon's own files, compacted or not", () => {
+    store.insert(rec("dlg-a"), 1000)
+    store.end("dlg-a", "done", 2000)
+    store.hold(rec("dlg-a"), { result: { status: "done", text: "A" } }, 1, 3000)
+    const relay = (ts: number) => line({ type: "relay", id: "dlg-a", ts, record: rec("dlg-a"), result: { status: "done", text: "A" }, attempt: 1 })
+    // As written: start, done, relay at the hold's own time.
+    store.importFile(file([line({ type: "start", ts: 1000, ...rec("dlg-a") }), line({ type: "done", id: "dlg-a", status: "done", ts: 2000 }), relay(3000)]))
+    expect(store.held()).toHaveLength(1)
+    // As the new daemon compacts it: done and relay both at the compaction's time.
+    store.importFile(file([line({ type: "done", id: "dlg-a", status: "done", ts: 9000 }), relay(9000)]))
+    expect(store.held()).toHaveLength(1)
+  })
+
+  it("leaves an answer pending in the table alone, whatever the file says", () => {
+    store.insert(rec("dlg-a"), 1000)
+    store.end("dlg-a", "done", 2000, { result: { status: "done", text: "A" } })
+    store.importFile(file([line({ type: "done", id: "dlg-a", status: "done", ts: 9000 })]))
+    expect(store.held()).toEqual([expect.objectContaining({ pending: true })])
+  })
+
   it("does nothing without a file", () => {
     expect(store.importFile(join(dir, "none.jsonl"))).toEqual({ lines: 0, skipped: 0 })
   })
@@ -230,6 +289,14 @@ describe("the daemon builds the delegations after the database opens (#1861)", (
     // Both in the constructor: the HTTP server and the channels start later.
     expect(built).toBeLessThan(src.indexOf("await this.router.startAll()"))
     expect(built).toBeLessThan(src.indexOf("async start("))
+  })
+
+  it("shows a node without the table in /health and tells the owner once at start", () => {
+    const src = readFileSync(join(__dirname, "../src/daemon/index.ts"), "utf-8")
+    const health = src.slice(src.indexOf('case "GET /health": {'), src.indexOf('case "GET /usage":'))
+    expect(health).toContain("handoffs: this.delegations.journalMode()")
+    const started = src.slice(src.indexOf("await this.router.startAll()"))
+    expect(started.slice(0, 2500)).toMatch(/journalMode\(\) === "memory-only"[\s\S]*notifyOwner\(/)
   })
 })
 

@@ -484,6 +484,9 @@ export class DelegationManager {
   private localRuns = new Map<string, string>()
   /** Callback turns a restart stopped, by task id (see HeldRelay). */
   private heldRelays = new Map<string, HeldRelay>()
+  /** Answers back whose callback turn never started before the last
+   *  restart (#1861), until recover() re-runs them. Never in the file. */
+  private pendingCallbacks = new Map<string, HeldRelay>()
   /** Delegations whose callee said its run ends to wait (markWaiting). */
   private waiting = new Map<string, Waiting>()
   /** Delegations whose callee already wrote to the caller (relayReply),
@@ -849,7 +852,10 @@ export class DelegationManager {
    * notice instead. Returns how many were re-run.
    */
   async requeueRelays(): Promise<number> {
-    const held = [...this.heldRelays.values()]
+    // Answers whose callback never started join here, and only here: kept
+    // apart until now so the old file's compaction never writes them.
+    const held = [...this.heldRelays.values(), ...this.pendingCallbacks.values()]
+    this.pendingCallbacks.clear()
     let rerun = 0
     await Promise.all(held.map((h) => {
       const rec = h.record
@@ -859,7 +865,7 @@ export class DelegationManager {
       // Written down before it starts, and only once: a second process on
       // this database finds it taken.
       if (!this.journal("claim the re-run", (s) => s.claimRerun(rec.id, this.now()), true)) {
-        this.heldRelays.delete(rec.id)
+        if (!h.pending) this.heldRelays.delete(rec.id)
         this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} already taken by another process`)
         return Promise.resolve()
       }
@@ -981,7 +987,7 @@ export class DelegationManager {
     // the next start; a re-run stopped too is told on the start after that.
     if (stoppedByRestart(resp) && (attempt > 1 || this.deps.requeueRelayOnRestart !== false)) {
       if (attempt === 1) {
-        for (const i of items) this.holdRelay({ record: i.rec, result: i.result, attempt: 1, ...(i.reply ? { reply: true } : {}) })
+        for (const i of items) this.holdRelay({ record: i.rec, result: i.result, attempt: 1, ...(i.reply ? { reply: true } : {}), ...(i.wrote ? { wrote: true } : {}) })
         this.deps.log(`[delegation ${tag}] callback to ${rec.caller} stopped by a restart; it runs once more after the next start`)
       } else {
         this.deps.log(`[delegation ${tag}] re-run of the callback to ${rec.caller} stopped by a restart too; the person is told after the next start`)
@@ -1058,10 +1064,12 @@ export class DelegationManager {
   private holdRelay(h: HeldRelay): void {
     // Keep waiting and state: the re-run must end the hand-off the same way.
     const held: HeldRelay = { record: h.record, result: { ...h.result, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt, ...(h.reply ? { reply: true } : {}) }
-    this.heldRelays.set(h.record.id, { ...held, ...(h.wrote ? { wrote: true } : {}) })
+    const wrote = h.wrote ? { wrote: true } : {}
+    this.heldRelays.set(h.record.id, { ...held, ...wrote })
     const ts = this.now()
+    // The file gets the fields an older daemon reads, as before.
     this.append({ type: "relay", id: h.record.id, ts, ...held })
-    this.journal("hold the callback", (s) => s.hold(held.record, held, held.attempt, ts), undefined)
+    this.journal("hold the callback", (s) => s.hold(held.record, { ...held, ...wrote }, held.attempt, ts), undefined)
   }
 
   private releaseRelay(id: string): void {
@@ -1069,6 +1077,12 @@ export class DelegationManager {
     const ts = this.now()
     this.append({ type: "relayed", id, ts })
     this.journal("release the callback", (s) => s.release(id, ts), undefined)
+  }
+
+  /** "database": hand-offs survive a restart. "memory-only": this node
+   *  has no database, so a restart forgets them (shown in /health). */
+  journalMode(): "database" | "memory-only" {
+    return this.store ? "database" : "memory-only"
   }
 
   /** Delete hand-offs that ended before `before` (requests.retentionDays).
@@ -1146,7 +1160,18 @@ export class DelegationManager {
     }
     try {
       for (const rec of store.open()) this.pendingById.set(rec.id, rec)
-      for (const h of store.held()) this.heldRelays.set(h.record.id, h)
+      const dropped: string[] = []
+      for (const h of store.held()) {
+        if (!h.pending) this.heldRelays.set(h.record.id, h)
+        // An answer whose callback never started is re-run once, unless the
+        // owner turned re-runs after a restart off: then it is dropped.
+        else if (this.deps.requeueRelayOnRestart === false) dropped.push(h.record.id)
+        else this.pendingCallbacks.set(h.record.id, h)
+      }
+      if (dropped.length) {
+        store.clearPending(dropped, this.now())
+        this.deps.log(`[delegation] ${dropped.length} answer(s) a restart kept from their callback not re-run (requeueRelayOnRestart is off): ${dropped.join(", ")}`)
+      }
       for (const [id, status] of store.recentDone(MAX_DONE_IDS)) this.doneIds.set(id, status)
     } catch (e: any) {
       this.deps.log(`[delegation] could not read the handoffs table: ${e?.message ?? e}`)
