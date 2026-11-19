@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { getEventBus } from "../src/events/bus"
 import { EventBus, matches, parseKindsParam, type DaemonEvent } from "../src/daemon/event-bus"
-import { splitTaskUsageByTier, CONTEXT_TIER_THRESHOLD } from "../src/daemon/token-tracker"
+import { splitTaskUsageByTier, noteCallUsage, CONTEXT_TIER_THRESHOLD, type TaskUsage } from "../src/daemon/token-tracker"
 
 describe("event bus (legacy EventEmitter)", () => {
   beforeEach(() => {
@@ -151,6 +151,47 @@ describe("splitTaskUsageByTier", () => {
     })
     expect(tier2.tier2OutputTokens).toBe(999)
     expect(tier2.outputTokens).toBe(0)
+  })
+
+  // #1994: the tier is decided per model call, as the provider bills it.
+  it("keeps a run of small calls in base even when their sum passes 200k", () => {
+    const call = { inputTokens: 10, outputTokens: 200, cacheReadTokens: 60_000, cacheCreateTokens: 1_000 }
+    const total = { inputTokens: 40, outputTokens: 800, cacheReadTokens: 240_000, cacheCreateTokens: 4_000 }
+    const split = splitTaskUsageByTier(total, [call, call, call, call])
+    expect(split.inputTokens).toBe(40)
+    expect(split.outputTokens).toBe(800)
+    expect(split.cacheReadTokens).toBe(240_000)
+    expect(split.cacheCreateTokens).toBe(4_000)
+    expect(split.tier2InputTokens + split.tier2OutputTokens + split.tier2CacheReadTokens + split.tier2CacheCreateTokens).toBe(0)
+  })
+
+  it("puts only the calls over 200k in tier2; the run totals stay authoritative", () => {
+    const small = { inputTokens: 10, outputTokens: 100, cacheReadTokens: 50_000, cacheCreateTokens: 0 }
+    const big = { inputTokens: 20, outputTokens: 300, cacheReadTokens: CONTEXT_TIER_THRESHOLD + 1, cacheCreateTokens: 500 }
+    // Stream events can under-report output; the run total has 50 more.
+    const total = { inputTokens: 30, outputTokens: 450, cacheReadTokens: 250_001, cacheCreateTokens: 500 }
+    const split = splitTaskUsageByTier(total, [small, big])
+    expect(split.tier2InputTokens).toBe(20)
+    expect(split.tier2OutputTokens).toBe(300)
+    expect(split.tier2CacheReadTokens).toBe(CONTEXT_TIER_THRESHOLD + 1)
+    expect(split.tier2CacheCreateTokens).toBe(500)
+    expect(split.inputTokens).toBe(10)
+    expect(split.outputTokens).toBe(150)
+    expect(split.cacheReadTokens).toBe(50_000)
+    expect(split.cacheCreateTokens).toBe(0)
+  })
+
+  it("collects one usage per API message id, last event wins", () => {
+    const calls = new Map<string, TaskUsage>()
+    const usage = (out: number) => ({ input_tokens: 5, output_tokens: out, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 })
+    noteCallUsage(calls, { id: "msg_1", usage: usage(1) })
+    noteCallUsage(calls, { id: "msg_1", usage: usage(40) })
+    noteCallUsage(calls, { id: "msg_2", usage: usage(7) })
+    noteCallUsage(calls, { id: "msg_3" })
+    expect([...calls.values()]).toEqual([
+      { inputTokens: 5, outputTokens: 40, cacheReadTokens: 100, cacheCreateTokens: 0 },
+      { inputTokens: 5, outputTokens: 7, cacheReadTokens: 100, cacheCreateTokens: 0 },
+    ])
   })
 })
 

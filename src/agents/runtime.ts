@@ -29,6 +29,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
 }
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 import type { AgentDef } from "@/daemon/config"
+import { noteCallUsage } from "@/daemon/token-tracker"
 import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, SUBAGENT_MODEL_ENV, type ProcessKey } from "./process-registry"
@@ -304,6 +305,9 @@ export interface AgentResponse {
   codexSessionId?: string
   opencodeSessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
+  /** Usage of each API call inside the run, when the stream reports it.
+   *  Decides the long-context tier per call, as billed (#1994). */
+  callUsage?: TokenUsage[]
   /** End-of-turn context size: the LAST API call's (input + cacheRead +
    *  cacheCreate) inside this turn, captured from the final assistant
    *  stream event. `usage` above is CUMULATIVE across every call in the
@@ -1096,6 +1100,8 @@ export async function executeClaudeCodeStreaming(
   let streamSessionId: string | undefined
   /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
   let streamContextTokens: number | undefined
+  /** Usage of each API call in the run, by message id (#1994). */
+  const streamCalls = new Map<string, TokenUsage>()
   let streamNumTurns: number | undefined
   let streamCostUsd: number | undefined
   /** If the terminal `result` event carries is_error, we stash it here and
@@ -1178,6 +1184,7 @@ export async function executeClaudeCodeStreaming(
                 (u.cache_read_input_tokens || 0) +
                 (u.cache_creation_input_tokens || 0)
               if (callContext > 0) streamContextTokens = callContext
+              noteCallUsage(streamCalls, event.message)
             }
 
             // Claude stream-json emits different event types
@@ -1331,6 +1338,7 @@ export async function executeClaudeCodeStreaming(
         ...buildErrorEnvelope(streamApiError),
         duration: Date.now() - start,
         usage: streamUsage,
+        callUsage: [...streamCalls.values()],
         contextTokens: streamContextTokens,
         numTurns: streamNumTurns,
         billedModel: streamBilledModel,
@@ -1342,6 +1350,7 @@ export async function executeClaudeCodeStreaming(
       content: fullText,
       duration: Date.now() - start,
       usage: streamUsage,
+      callUsage: [...streamCalls.values()],
       contextTokens: streamContextTokens,
       numTurns: streamNumTurns,
       costUsd: streamCostUsd,
@@ -1354,6 +1363,7 @@ export async function executeClaudeCodeStreaming(
       ...buildErrorEnvelope(error.message),
       duration: Date.now() - start,
       usage: streamUsage,
+      callUsage: [...streamCalls.values()],
       contextTokens: streamContextTokens,
       numTurns: streamNumTurns,
       billedModel: streamBilledModel,
@@ -2135,6 +2145,7 @@ async function executeClaudeCodePersistent(
   let finalErrorKind: FriendlyError["kind"] | undefined
   let usage: TokenUsage | undefined
   let contextTokens: number | undefined
+  const calls = new Map<string, TokenUsage>()
   let numTurns: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
@@ -2203,6 +2214,7 @@ async function executeClaudeCodePersistent(
             (u.cache_read_input_tokens || 0) +
             (u.cache_creation_input_tokens || 0)
           if (callContext > 0) contextTokens = callContext
+          noteCallUsage(calls, (evt.raw as any).message)
         }
       }
 
@@ -2275,6 +2287,7 @@ async function executeClaudeCodePersistent(
     errorKind: finalErrorKind,
     duration: Date.now() - start,
     usage,
+    callUsage: [...calls.values()],
     contextTokens,
     numTurns,
     billedModel,
