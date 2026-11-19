@@ -5,7 +5,8 @@ import { applySignal } from "./apply"
 import { callsSource } from "./calls"
 import { onSignal, setSignalInterest } from "./hub"
 import { ownerBusySources } from "./owner-busy"
-import { browserTabsSource, newsSource, openAppsSource, TABS_NEED_READER, type FetchText, type RunCommand } from "./per-request"
+import { newsSource, TABS_NEED_READER, type FetchText, type RunCommand } from "./per-request"
+import { nativeScreenSources } from "@/native/signal-sources"
 import { SignalSources, type ConsentCheck, type ReadLogSink } from "./registry"
 import { TELEGRAM_MEMBERS_SOURCE } from "./telegram-members"
 import { isUnknown } from "./types"
@@ -51,9 +52,8 @@ export function attachSignalSources(opts: {
   sources.register(TELEGRAM_MEMBERS_SOURCE)
   // Phase 7: per-request sources. Loaded where they fit, read only when
   // switched on, for a request, with the person's yes where needed.
-  sources.register(openAppsSource(opts.runCommand))
-  if (opts.browserTabsReader) sources.register(browserTabsSource(opts.browserTabsReader, () => opts.settings().browserTabs?.includePaths === true))
-  else sources.skip("browser-tabs", TABS_NEED_READER)
+  for (const src of nativeScreenSources({ run: opts.runCommand, tabsReader: opts.browserTabsReader, includePaths: () => opts.settings().browserTabs?.includePaths === true })) sources.register(src)
+  if (!opts.browserTabsReader) sources.skip("browser-tabs", TABS_NEED_READER)
   sources.register(newsSource(() => opts.settings().news ?? { feeds: [], maxItems: 10, timeoutMs: 8_000 }, opts.fetchText))
 
   setSignalInterest((key) => opts.settings().mode !== "off" && opts.store.get(key)?.phase === "during")

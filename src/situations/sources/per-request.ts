@@ -5,8 +5,8 @@ import { UNKNOWN, type Signal, type SignalSource } from "./types"
 
 // --- Per-request sources (#1892 phase 7, design 2.2) ---
 //
-//   open-apps     the front app and the open apps                         sensitive, macOS
-//   browser-tabs  each open tab's title and site (Chrome, Safari);          sensitive, macOS,
+//   open-apps     the front app and the open apps                         sensitive, macOS (src/native/macos/screen-sources.ts)
+//   browser-tabs  each open tab's title and site (Chrome, Safari);          sensitive, macOS (same),
 //                 never the page's content                                 needs a separate reader
 //   news          headlines from the RSS or Atom feeds the owner named     open, any node
 //
@@ -35,74 +35,17 @@ export const runCommand: RunCommand = (cmd, args, timeoutMs) => new Promise((res
   })
 })
 
-const RUN_TIMEOUT_MS = 5_000
-const TITLE_MAX = 150
+export const RUN_TIMEOUT_MS = 5_000
+export const TITLE_MAX = 150
 const URL_MAX = 300
-const TABS_MAX = 50
-const APPS_MAX = 40
 
-function cut(s: string, n: number): string {
+export function cut(s: string, n: number): string {
   const one = s.replace(/\s+/g, " ").trim()
   return one.length > n ? `${one.slice(0, n - 1)}…` : one
 }
 
-function signal(source: string, kind: string, subject: string, value: string | typeof UNKNOWN, reason: string, now: number): Signal {
+export function signal(source: string, kind: string, subject: string, value: string | typeof UNKNOWN, reason: string, now: number): Signal {
   return { source, kind, subject, value, checkedAt: now, expiresAt: null, reason }
-}
-
-/** An app name as lsappinfo prints it: spaces as "_", sometimes a
- *  direction mark in front. */
-function appName(raw: string): string {
-  return cut(raw.replace(/[‎‏‪-‮]/g, "").replace(/_/g, " "), 60)
-}
-
-export function openAppsSource(run: RunCommand = runCommand, now: () => number = Date.now): SignalSource {
-  return {
-    id: "open-apps",
-    kind: "apps",
-    sensitivity: "sensitive",
-    platforms: ["darwin"],
-    mode: "read",
-    perRequest: true,
-    async readAsync() {
-      const asn = (await run("lsappinfo", ["front"], RUN_TIMEOUT_MS)).trim()
-      let front = ""
-      if (/^ASN:[0-9a-fx-]+:?$/i.test(asn)) {
-        const info = await run("lsappinfo", ["info", "-only", "name", asn.replace(/:$/, "")], RUN_TIMEOUT_MS)
-        front = appName(/"LSDisplayName"="([^"]*)"/.exec(info)?.[1] ?? "")
-      }
-      const list = await run("lsappinfo", ["visibleProcessList"], RUN_TIMEOUT_MS)
-      const apps = [...new Set([...list.matchAll(/"([^"]+)"/g)].map((m) => appName(m[1])).filter(Boolean))].slice(0, APPS_MAX)
-      const t = now()
-      return [
-        signal("open-apps", "front-app", "owner", front || UNKNOWN, front ? "lsappinfo" : "no front app reported", t),
-        signal("open-apps", "open-apps", "owner", apps.length ? apps.join(", ") : UNKNOWN, apps.length ? "lsappinfo" : "no app list reported", t),
-      ]
-    },
-  }
-}
-
-/** The browsers read, by their AppleScript name. Each is asked only when
- *  it is running, in its own script: one missing browser does not stop
- *  the other. */
-const BROWSERS: Array<{ app: string; titleProp: string }> = [
-  { app: "Google Chrome", titleProp: "title" },
-  { app: "Safari", titleProp: "name" },
-]
-
-function tabsScript(app: string, titleProp: string): string {
-  return `if application "${app}" is running then
-  tell application "${app}"
-    set out to ""
-    repeat with w in windows
-      repeat with t in tabs of w
-        set out to out & (${titleProp} of t) & tab & (URL of t) & linefeed
-      end repeat
-    end repeat
-    return out
-  end tell
-end if
-return ""`
 }
 
 /** A tab's address: its site only, or with the path when asked. Never
@@ -114,34 +57,6 @@ export function bareAddress(url: string, withPath = true): string {
     return cut(withPath ? `${u.origin}${u.pathname}` : u.origin, URL_MAX)
   } catch {
     return ""
-  }
-}
-
-export function browserTabsSource(run: RunCommand, includePaths: () => boolean = () => false, now: () => number = Date.now): SignalSource {
-  return {
-    id: "browser-tabs",
-    kind: "tabs",
-    sensitivity: "sensitive",
-    platforms: ["darwin"],
-    mode: "read",
-    perRequest: true,
-    async readAsync() {
-      const lines: string[] = []
-      const down: string[] = []
-      const paths = includePaths() === true
-      for (const b of BROWSERS) {
-        let out: string
-        try { out = await run("osascript", ["-e", tabsScript(b.app, b.titleProp)], RUN_TIMEOUT_MS) } catch (e: any) { down.push(`${b.app}: ${String(e?.message ?? e).slice(0, 80)}`); continue }
-        for (const row of out.split("\n")) {
-          if (!row.trim() || lines.length >= TABS_MAX) continue
-          const [title = "", url = ""] = row.split("\t")
-          lines.push(`${b.app}: ${cut(title, TITLE_MAX) || "(no title)"} (${bareAddress(url, paths) || "no address"})`)
-        }
-      }
-      const t = now()
-      if (!lines.length) return [signal("browser-tabs", "tabs", "owner", UNKNOWN, down.length ? `not read: ${down.join("; ")}` : "no open tabs in Google Chrome or Safari", t)]
-      return [signal("browser-tabs", "tabs", "owner", lines.join("\n"), `${lines.length} tab(s)${down.length ? `; not read: ${down.join("; ")}` : ""}`, t)]
-    },
   }
 }
 
