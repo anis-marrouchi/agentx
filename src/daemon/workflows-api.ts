@@ -37,11 +37,37 @@ import type { WorkflowDispatcher } from "@/workflows/dispatcher"
 // structured `{ error, issues: [...] }` body so the editor can highlight
 // which field broke, rather than a bare 400.
 
+/** A `resumeRun` that asks the daemon's POST /workflow-runs/:id/resume
+ *  (#876). The board dashboard has no dispatcher of its own. */
+export function resumeRunViaDaemon(
+  daemonUrl: string,
+  token?: string,
+  fetchImpl: typeof fetch = fetch,
+): (runId: string) => Promise<{ ok: boolean; action: string }> {
+  const base = daemonUrl.replace(/\/+$/, "")
+  return async (runId) => {
+    const headers: Record<string, string> = {}
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    const r = await fetchImpl(`${base}/workflow-runs/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    })
+    const data: any = await r.json().catch(() => ({}))
+    if (r.ok) return { ok: true, action: String(data?.action ?? "resumed") }
+    return { ok: false, action: String(data?.error ?? `daemon answered HTTP ${r.status}`) }
+  }
+}
+
 export interface WorkflowsApiDeps {
   store: WorkflowStore
   runs: RunStore
   layouts: LayoutStore
   dispatcher?: WorkflowDispatcher
+  /** Resume a run where the dispatcher lives elsewhere (#876): the board
+   *  dashboard has no dispatcher, so it hands the resume to the daemon.
+   *  Used before `dispatcher.resumeRun` when both are given. */
+  resumeRun?: (runId: string) => Promise<{ ok: boolean; action: string }>
   /** Gate the request; write the 401/403 response and return falsy on failure. */
   requireScope: (req: IncomingMessage, res: ServerResponse, scopes: string[]) => unknown
   /** Called when a run mutates — daemon exposes its broadcaster so the SSE
@@ -398,10 +424,13 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
         return sendJson(res, 400, { error: "status must be paused|running|canceled" })
       }
       if (status === "running") {
-        if (!deps.dispatcher) return sendJson(res, 501, { error: "dispatcher not enabled" })
+        const dispatcher = deps.dispatcher
+        const resume = deps.resumeRun ?? (dispatcher ? (id: string) => dispatcher.resumeRun(id) : undefined)
+        if (!resume) return sendJson(res, 501, { error: "dispatcher not enabled" })
         if (!deps.runs.get(runId)) return sendJson(res, 404, { error: "run not found" })
-        return deps.dispatcher.resumeRun(runId).then((r) =>
-          sendJson(res, r.ok ? 200 : 409, r.ok ? { ok: true, runId, status, action: r.action } : { error: r.action }))
+        return resume(runId).then(
+          (r) => sendJson(res, r.ok ? 200 : 409, r.ok ? { ok: true, runId, status, action: r.action } : { error: r.action }),
+          (e: any) => sendJson(res, 502, { error: "daemon unreachable", message: e?.message || String(e) }))
       }
       const updated = deps.runs.setStatus(runId, status)
       if (!updated) return sendJson(res, 404, { error: "run not found" })
