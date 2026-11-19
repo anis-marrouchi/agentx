@@ -234,6 +234,9 @@ export interface PromiseCatcherDeps {
   settings: () => CatchSettings
   say: (msg: string) => void
   now?: () => number
+  /** The forge a short "group/project#12" in caught words means outside a
+   *  forge chat (noqta#876 step 5). Read at each catch. */
+  defaultForge?: () => "github" | "gitlab" | null
 }
 
 export interface TurnEnd {
@@ -371,7 +374,7 @@ export class PromiseCatcher {
     // Its words link an issue or merge request (noqta#876 cause 4): it
     // closes when that item closes or a later note names it, not only by
     // hand. Before, 52 of 67 open promises had no check at all.
-    const cw = issueCloseWhen(v.what!, p.id, now)
+    const cw = issueCloseWhen(v.what!, p.id, now, { channel: r.channel, chatId: r.chatId, forge: this.deps.defaultForge?.() ?? null })
     if (cw) store.setLoop(p.id, { closeWhen: cw }, now)
     log.settle(t.runId, "promise", v.what, p.id, true)
     this.deps.say(`[requests] ${p.id}: promise caught in ${r.agentId}'s reply: ${v.what}${v.dueAt ? ` (due ${new Date(v.dueAt).toISOString()})` : ""}`)
