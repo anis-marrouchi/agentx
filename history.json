@@ -1,16 +1,5 @@
 [
   {
-    "at": "2026-11-14T19:44:33.642Z",
-    "version": "0.225.0",
-    "ok": true,
-    "run": "https://github.com/anis-marrouchi/agentx/actions/runs/43632222427",
-    "cells": {
-      "npm": "success",
-      "install.sh": "success",
-      "docker": "success"
-    }
-  },
-  {
     "at": "2026-11-14T19:59:45.434Z",
     "version": "0.226.0",
     "ok": true,
@@ -213,6 +202,17 @@
     "version": "0.232.0",
     "ok": true,
     "run": "https://github.com/anis-marrouchi/agentx/actions/runs/44407103042",
+    "cells": {
+      "npm": "success",
+      "install.sh": "success",
+      "docker": "success"
+    }
+  },
+  {
+    "at": "2026-11-19T05:16:05.238Z",
+    "version": "0.234.0",
+    "ok": true,
+    "run": "https://github.com/anis-marrouchi/agentx/actions/runs/44462278770",
     "cells": {
       "npm": "success",
       "install.sh": "success",
