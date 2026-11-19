@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "@/channels/types"
 import { askSeat, decisionsRuntime, getSeatMode, labelSeatCall, recordSeatOutcome } from "@/decisions/seat"
-import type { DecisionAction, GradedRow, SeatMode } from "@/decisions/store"
+import type { GradedRow, SeatMode } from "@/decisions/store"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   pNeedsReply, saysNoReply, seatImportance, seatPhase, SITUATION_PHASE_SEAT, situationPhaseQuestions, situationPhaseState,
@@ -13,27 +13,29 @@ import type { GateDecision, SituationGate } from "./gate"
 
 // --- The situation-phase seat at the gate (#1892, phase 5) ---
 //
-// The gate asks `consult` after `decide` and before `commit`. Nothing
-// happens unless the word list is unsure of the message, the talk is
-// ending or has ended, and the gate would not already hold it.
+// The gate asks `consult` after `decide` and before `commit`. The seat is
+// asked only when the word list is unsure of the message, the talk is
+// ending or has ended, the gate would not already hold it, and its answer
+// could change something: the gate would hold a closer here and no run
+// claims the message (or, when the seat acts, importance is on).
 //
-//   seat off      nothing (today's rule)
-//   seat shadow   the seat is asked WITHOUT waiting: the message goes on at
-//                 once. When the answer comes back and says "no reply
-//                 needed", one `would-drop` row goes in the gate log with
-//                 the seat's call id, for a person to label.
+//   seat off      nothing (today's rule). The default: like every seat, it
+//                 is off until the operator names it in
+//                 decisions.seats.situation-phase, with a hosted backend
+//                 (Jev), so no local model process is ever started for it.
+//   seat shadow   asked WITHOUT waiting: `consult` returns at once, the
+//                 message goes on. A "no reply needed" answer becomes one
+//                 `would-drop` row in the gate log with the seat call id,
+//                 for a person to label.
 //   seat active   the same as shadow, unless the calibration report passes
 //                 the owner's limit (`situations.seat.maxFalseNoReply`) and
-//                 the gate is in active mode. Then the gate waits for the
-//                 answer (at most 1.5 s) and holds the message when the
-//                 seat says no reply is needed, exactly as it holds a
-//                 "thanks" (a person gets the reaction).
+//                 the gate is in active mode. Then `consult` returns a
+//                 promise (at most 1.5 s) and the router holds a per-chat
+//                 lock around decide, consult and commit; a "no reply
+//                 needed" holds the message as a "thanks" is held.
 //
-// Any failure (seat off, backend down, credits out, timeout, a report that
-// cannot be read) gives today's rule: the message passes. Never throws.
-//
-// The mode is the seat's own (`decisions.seats.situation-phase.mode`);
-// unnamed, the seat ships in shadow once decisions are on.
+// Any failure (backend down, credits out, timeout, a report that cannot be
+// read) gives today's rule: the message passes. Never throws.
 
 export interface SeatPlan {
   mode: SeatMode
@@ -55,13 +57,15 @@ type Ask = (state: StateValue, opts: { timeoutMs: number; incumbent: Record<stri
 
 export interface SituationSeatDeps {
   settings: () => SituationsConfig
-  /** The seat's mode. Unset: decisions.seats, shadow when unnamed. */
+  /** The seat's mode. Unset: decisions.seats (off when unnamed). */
   mode?: () => SeatMode
+  /** The backend the seat uses now. Unset: its setting, else the default. */
+  backend?: () => string
   /** Ask the seat. Unset: askSeat. */
   ask?: Ask
   /** The seat's graded needsReply rows. Unset: the decisions store. */
   rows?: () => GradedRow[]
-  /** How long a calibration plan is reused. Default 10 minutes. */
+  /** How long a calibration plan is reused. Default (and at most) 60 s. */
   cacheMs?: number
   /** Share of acting answers let through anyway, to keep grading the
    *  region the seat holds. Unset: decisions.seats.situation-phase.explore. */
@@ -73,6 +77,9 @@ export interface SituationSeatDeps {
 
 /** A shadow call never waits on the routing path; this bounds it. */
 const SHADOW_TIMEOUT_MS = 10_000
+const MAX_CACHE_MS = 60_000
+
+type ConsultOpts = { replay?: boolean; chatId?: string }
 
 export class SituationSeat {
   private cached: { at: number; sig: string; plan: SeatPlan } | null = null
@@ -85,8 +92,14 @@ export class SituationSeat {
 
   mode(): SeatMode {
     try {
-      return this.deps.mode?.() ?? getSeatMode(SITUATION_PHASE_SEAT, process.env, "shadow")
+      return this.deps.mode?.() ?? getSeatMode(SITUATION_PHASE_SEAT)
     } catch { return "off" }
+  }
+
+  private backend(): string {
+    if (this.deps.backend) return this.deps.backend()
+    const rt = decisionsRuntime()
+    return rt.seats[SITUATION_PHASE_SEAT]?.backend ?? rt.defaultBackend
   }
 
   private rows(): GradedRow[] {
@@ -95,24 +108,30 @@ export class SituationSeat {
     return store ? store.gradedRows({ seat: SITUATION_PHASE_SEAT, question: "needsReply" }) : []
   }
 
-  /** The calibration report, read now. Throws when the rows cannot be read. */
+  /** The calibration report for the backend in use and the model it
+   *  answers with now (its newest row). Throws when rows cannot be read. */
   report(): SeatReport {
     const s = this.deps.settings().seat
-    return situationSeatReport(this.rows(), { below: s.noReplyBelow, limit: s.maxFalseNoReply ?? null, minLabeled: s.minLabeled })
+    const backend = this.backend()
+    const rows = this.rows()
+    let model: string | null = null
+    let newest = -Infinity
+    for (const r of rows) if (r.backend === backend && r.ts > newest) { newest = r.ts; model = r.model }
+    return situationSeatReport(rows, { below: s.noReplyBelow, limit: s.maxFalseNoReply ?? null, minLabeled: s.minLabeled, backend, model })
   }
 
   reportText(): string[] {
     return formatSeatReport(this.report())
   }
 
-  /** May the seat act now? Cached; any error means no. */
+  /** May the seat act now? Cached at most a minute; any error means no. */
   plan(): SeatPlan {
     const mode = this.mode()
     if (mode !== "active") return { mode, act: false, why: mode === "off" ? "the seat is off" : "shadow: the seat only records" }
     const s = this.deps.settings().seat
-    const sig = JSON.stringify(s)
+    const sig = JSON.stringify([s, this.backend()])
     const now = this.now()
-    const ttl = this.deps.cacheMs ?? 10 * 60_000
+    const ttl = Math.min(this.deps.cacheMs ?? MAX_CACHE_MS, MAX_CACHE_MS)
     if (this.cached && this.cached.sig === sig && now - this.cached.at < ttl) return this.cached.plan
     let plan: SeatPlan
     try {
@@ -129,6 +148,9 @@ export class SituationSeat {
     return plan
   }
 
+  /** A new label can change readiness: the next plan reads it. */
+  private invalidate(): void { this.cached = null }
+
   /** Ask the seat. Null on any failure. */
   async ask(input: SituationPhaseInput, timeoutMs: number): Promise<SeatVerdict | null> {
     try {
@@ -142,7 +164,7 @@ export class SituationSeat {
       }
       const res = this.deps.ask
         ? await this.deps.ask(state, opts)
-        : await askSeat(SITUATION_PHASE_SEAT, state, situationPhaseQuestions, { ...opts, defaultMode: "shadow" })
+        : await askSeat(SITUATION_PHASE_SEAT, state, situationPhaseQuestions, opts)
       if (!res) return null
       const below = this.deps.settings().seat.noReplyBelow
       return {
@@ -165,16 +187,14 @@ export class SituationSeat {
   /** A person re-delivered a message the seat held: it needed a reply. */
   labelRelease(callId: string, by = "release"): void {
     labelSeatCall(callId, "needsReply", "yes", { kind: "human", labeledBy: by })
+    this.invalidate()
   }
 
-  private outcome(callId: string | null, action: DecisionAction): void {
-    recordSeatOutcome(callId, action)
-  }
-
-  /** The gate's step between `decide` and `commit`. Returns the decision
-   *  to commit: `d` unchanged, or (acting) the decision the gate makes for
-   *  a closer. Never throws. */
-  async consult(gate: SituationGate, msg: IncomingMessage, d: GateDecision, opts: { replay?: boolean; chatId?: string }, messageJson: () => string): Promise<GateDecision> {
+  /** The gate's step between `decide` and `commit`. Returns `d` at once
+   *  when the seat is not waited for (off, shadow, not calibrated, not
+   *  useful, explored), else a promise of the decision to commit. Never
+   *  throws, and the promise never rejects. */
+  consult(gate: SituationGate, msg: IncomingMessage, d: GateDecision, opts: ConsultOpts, messageJson: () => string): GateDecision | Promise<GateDecision> {
     try {
       if (!d.active || d.duplicate || d.hop || d.courtesy !== "unsure" || d.unclaimed === "drop") return d
       if (d.phase !== "ending" && d.phase !== "ended") return d
@@ -182,29 +202,41 @@ export class SituationSeat {
       if (plan.mode === "off") return d
       // What the gate would do if the word list had called it a closer.
       const would = gate.decide(msg, { ...opts, courtesy: "courtesy" })
-      const wouldDrop = would.unclaimed === "drop"
+      const useful = would.unclaimed === "drop" && !would.claimed
+      const acting = plan.act && d.enforce
+      const forImportance = acting && this.deps.settings().importance.enabled
+      // The answer could change nothing: do not ask.
+      if (!useful && !forImportance) return d
       const input: SituationPhaseInput = {
         message: msg.text ?? "", senderKind: d.senderKind, channel: msg.channel, group: !!msg.group, phase: d.phase,
-        why: d.record?.why, minutesInPhase: d.record ? (this.now() - d.record.phaseChangedAt) / 60_000 : 0,
+        endReason: d.phase === "ended" ? d.record?.endReason ?? null : null,
+        minutesInPhase: d.record ? (this.now() - d.record.phaseChangedAt) / 60_000 : 0,
       }
       const explore = this.deps.explore?.() ?? decisionsRuntime().seats[SITUATION_PHASE_SEAT]?.explore ?? 0
-      const explored = plan.act && explore > 0 && (this.deps.rng ?? Math.random)() < explore
-      if (!plan.act || !d.enforce || explored) {
+      const explored = acting && useful && explore > 0 && (this.deps.rng ?? Math.random)() < explore
+      if (!acting || explored) {
         const p = this.ask(input, SHADOW_TIMEOUT_MS).then((v) => {
           if (!v) return
-          this.outcome(v.callId, v.noReply && wouldDrop ? "skip" : "review")
-          // A run that takes the message would get it anyway: no row.
-          if (!v.noReply || !wouldDrop || would.claimed) return
-          gate.logDrop(msg, { ...would, enforce: false, reason: seatReason(v, "shadow") }, messageJson(), "seat", v.callId)
+          recordSeatOutcome(v.callId, v.noReply && useful ? "skip" : "review", explored)
+          if (!v.noReply || !useful) return
+          gate.logDrop(msg, { ...would, enforce: false, reason: seatReason(v, explored ? "explored" : "shadow") }, messageJson(), "seat", v.callId)
         }).catch(() => {}).finally(() => { this.pending.delete(p) })
         this.pending.add(p)
         return d
       }
+      return this.waitFor(input, d, would, useful)
+    } catch {
+      return d
+    }
+  }
+
+  private async waitFor(input: SituationPhaseInput, d: GateDecision, would: GateDecision, useful: boolean): Promise<GateDecision> {
+    try {
       const v = await this.ask(input, Math.min(PRE_SPAWN_SEAT_TIMEOUT_MS, decisionsRuntime().seats[SITUATION_PHASE_SEAT]?.timeoutMs ?? PRE_SPAWN_SEAT_TIMEOUT_MS))
       if (!v) return d
-      this.outcome(v.callId, v.noReply && wouldDrop ? "skip" : "review")
+      recordSeatOutcome(v.callId, v.noReply && useful ? "skip" : "review")
       const seat = { callId: v.callId, pNeedsReply: v.pNeedsReply, importance: v.importance, acted: false }
-      if (!v.noReply || !wouldDrop) return { ...d, seat }
+      if (!v.noReply || !useful) return { ...d, seat }
       return { ...would, reason: `${would.reason}; ${seatReason(v, "active")}`, seat: { ...seat, acted: true } }
     } catch {
       return d
@@ -212,6 +244,6 @@ export class SituationSeat {
   }
 }
 
-function seatReason(v: SeatVerdict, mode: "shadow" | "active"): string {
+function seatReason(v: SeatVerdict, mode: "shadow" | "active" | "explored"): string {
   return `seat: no reply needed (P(needs a reply) ${v.pNeedsReply.toFixed(2)}, ${mode})`
 }

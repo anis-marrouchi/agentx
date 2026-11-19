@@ -48,6 +48,9 @@ export interface DecisionsRuntime {
   defaultBackend: string
   seats: Record<string, SeatSettings>
   store: DecisionStore | null
+  /** decisions.redactState, for every seat: one switched on by the
+   *  environment alone has no per-seat settings to carry it. */
+  redactState?: boolean
 }
 
 /** A configured seat's timeout when neither the call nor the config sets
@@ -124,6 +127,7 @@ function ensureConfigured(): void {
     runtime = {
       enabled: true,
       defaultBackend: cfg.defaultBackend,
+      redactState: cfg.redactState === true,
       store,
       seats: Object.fromEntries(
         Object.entries(cfg.seats ?? {}).map(([name, seat]: [string, any]) => [
@@ -167,7 +171,7 @@ export function seatEnvVar(seat: string): string {
  * Read every call, never cached, so an operator can flip a seat off without
  * restarting the daemon.
  */
-export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env, fallback: SeatMode = "off"): SeatMode {
+export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env): SeatMode {
   // Configure FIRST, even when the env var will decide the answer.
   //
   // This used to return on the env override before touching the config,
@@ -185,12 +189,7 @@ export function getSeatMode(seat: string, env: NodeJS.ProcessEnv = process.env, 
   const fromEnv = parseSeatMode(env[seatEnvVar(seat)])
   if (fromEnv) return fromEnv
   if (!runtime.enabled) return "off"
-  // `fallback` is for a seat the operator has not named at all: a seat
-  // that ships in shadow (situation-phase) records from day one once
-  // decisions are on. A named seat's mode, even "off", always wins.
-  const named = runtime.seats[seat]
-  if (!named) return fallback
-  return parseSeatMode(named.mode) ?? "off"
+  return parseSeatMode(runtime.seats[seat]?.mode) ?? "off"
 }
 
 export interface AskSeatOptions<Q extends Questions> {
@@ -205,8 +204,6 @@ export interface AskSeatOptions<Q extends Questions> {
   timeoutMs?: number
   backend?: string
   model?: string
-  /** The mode of a seat the operator has not named (see getSeatMode). */
-  defaultMode?: SeatMode
 }
 
 export interface SeatResult<Q extends Questions> {
@@ -258,7 +255,7 @@ export async function askSeat<Q extends Questions>(
   questions: Q,
   opts: AskSeatOptions<Q> = {},
 ): Promise<SeatResult<Q> | null> {
-  const mode = getSeatMode(seat, process.env, opts.defaultMode)
+  const mode = getSeatMode(seat)
   if (mode === "off") return null
 
   const settings = runtime.seats[seat] ?? { mode }
@@ -308,7 +305,7 @@ function record<Q extends Questions>(
       incumbent: toIncumbent(opts.incumbent),
       links: opts.links,
       features: opts.features,
-      keepState: !settings.redactState,
+      keepState: !redacted(settings),
     })
   } catch {
     // Recording is observability. It never breaks the call it observes.
@@ -348,11 +345,16 @@ function recordFailure<Q extends Questions>(
       links: opts.links,
       features: opts.features,
       error: String(err?.message ?? err).slice(0, 500),
-      keepState: !settings.redactState,
+      keepState: !redacted(settings),
     })
   } catch {
     /* observability never breaks the caller */
   }
+}
+
+/** The seat's own redaction, else the global one. */
+function redacted(settings: SeatSettings): boolean {
+  return settings.redactState ?? runtime.redactState ?? false
 }
 
 function toIncumbent(

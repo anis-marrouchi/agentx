@@ -262,24 +262,49 @@ export class MessageRouter {
     }
   }
 
+  /** Per-chat queue for gate decisions that wait for the seat (phase 5). */
+  private readonly situationLocks = new Map<string, Promise<GateDecision | null>>()
+
   /** The same as situationDecide, with the situation-phase seat asked
-   *  between decide and commit (phase 5) for a message the word list is
-   *  unsure of. Only the inbound path uses it; hops stay synchronous. A
-   *  seat that is off, in shadow, or not calibrated adds no wait. */
-  private async situationDecideWithSeat(msg: IncomingMessage, opts: { replay?: boolean }): Promise<GateDecision | null> {
+   *  between decide and commit (phase 5). Synchronous unless an acting
+   *  seat must be waited for. While one message of a chat waits, the
+   *  chat's next messages queue behind it, so two messages never decide on
+   *  the same record or overtake each other. Only the inbound path uses
+   *  it; hops stay synchronous. */
+  private situationDecideWithSeat(msg: IncomingMessage, opts: { replay?: boolean }): GateDecision | null | Promise<GateDecision | null> {
     const gate = this.situationGate
     if (!gate) return null
+    let key: string
+    try { key = gate.keyOf(msg) } catch (e) { return this.situationGateError(e) }
+    const held = this.situationLocks.get(key)
+    const run = () => this.situationGateRun(gate, msg, opts)
+    const r = held ? held.then(run, run) : run()
+    if (!(r instanceof Promise)) return r
+    this.situationLocks.set(key, r)
+    void r.finally(() => { if (this.situationLocks.get(key) === r) this.situationLocks.delete(key) })
+    return r
+  }
+
+  /** decide, consult, commit. Never throws; the promise never rejects. */
+  private situationGateRun(gate: SituationGate, msg: IncomingMessage, opts: { replay?: boolean }): GateDecision | null | Promise<GateDecision | null> {
     try {
-      let d = gate.decide(msg, opts)
-      d = await gate.consult(msg, d, opts, () => JSON.stringify(serializeIncoming(msg)))
-      gate.commit(d, msg)
-      this.situationGateFailed = false
-      return d
+      const d = gate.decide(msg, opts)
+      const r = gate.consult(msg, d, opts, () => JSON.stringify(serializeIncoming(msg)))
+      const commit = (x: GateDecision) => {
+        gate.commit(x, msg)
+        this.situationGateFailed = false
+        return x
+      }
+      return r instanceof Promise ? r.then(commit).catch((e) => this.situationGateError(e)) : commit(r)
     } catch (e: any) {
-      if (!this.situationGateFailed) this.log(`[situation] gate error, message passed unchanged: ${e?.message ?? e}`)
-      this.situationGateFailed = true
-      return null
+      return this.situationGateError(e)
     }
+  }
+
+  private situationGateError(e: any): null {
+    if (!this.situationGateFailed) this.log(`[situation] gate error, message passed unchanged: ${e?.message ?? e}`)
+    this.situationGateFailed = true
+    return null
   }
 
   private applySituationDrop(adapter: ChannelAdapter, msg: IncomingMessage, d: GateDecision, stage: "gate" | "after-hook"): boolean {
@@ -930,7 +955,8 @@ export class MessageRouter {
     // and no agent. A run that already takes the message wins (claimed).
     // Fails open: any error in the gate lets the message through unchanged.
     const gate = this.situationGate
-    const sit = gate ? await this.situationDecideWithSeat(msg, { replay: opts.replay }) : null
+    const pending = gate ? this.situationDecideWithSeat(msg, { replay: opts.replay }) : null
+    const sit = pending instanceof Promise ? await pending : pending
     if (gate && sit && sit.unclaimed === "drop" && !sit.claimed && this.applySituationDrop(adapter, msg, sit, "gate")) return
     // Shadow mode: a claimed message whose run ended before the hook, so
     // the hook started a new run for it, is a would-drop too (M1).

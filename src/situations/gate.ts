@@ -201,9 +201,15 @@ export class SituationGate {
     return d
   }
 
+  /** The record key a message belongs to (the router's per-chat lock). */
+  keyOf(msg: IncomingMessage, opts: { chatId?: string } = {}): string {
+    return situationKey(msg.channel, msg.accountId, opts.chatId ?? chatOf(msg))
+  }
+
   /** Ask the situation-phase seat about an unsure message (phase 5).
-   *  Returns the decision to commit. Never throws; without a seat, `d`. */
-  async consult(msg: IncomingMessage, d: GateDecision, opts: { replay?: boolean; chatId?: string }, messageJson: () => string): Promise<GateDecision> {
+   *  Returns the decision to commit: synchronously unless the gate must
+   *  wait for an acting seat. Never throws; without a seat, `d`. */
+  consult(msg: IncomingMessage, d: GateDecision, opts: { replay?: boolean; chatId?: string }, messageJson: () => string): GateDecision | Promise<GateDecision> {
     const seat = this.deps.seat
     return seat ? seat.consult(this, msg, d, opts, messageJson) : d
   }

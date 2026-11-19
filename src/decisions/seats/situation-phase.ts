@@ -17,9 +17,11 @@ import type { AnswersFor, ChoiceAnswer, NoulAnswer, StateValue } from "../types"
 // "no reply" rate under the limit the owner set. A missing answer (seat
 // off, backend down, credits out, timeout) is today's rule: it passes.
 //
-// The state is what is known when the message arrives: its text, who sent
-// it (person, bot, agent), the channel, whether it is a group, the talk's
-// phase and why it got there. Nothing from the agent's answer.
+// The state is what is known when the message arrives: its text, the KIND
+// of sender (person, bot, agent), the channel, whether it is a group, the
+// talk's phase and, once ended, the end reason (closed, stale, ...). No
+// sender name or id leaves the node: the record's free-text "why" can
+// name one, so it is never sent. Nothing from the agent's answer.
 
 export const SITUATION_PHASE_SEAT = "situation-phase"
 
@@ -31,8 +33,8 @@ export interface SituationPhaseInput {
   channel: string
   group: boolean
   phase: "ending" | "ended"
-  /** Why the talk is in this phase ("the goodbye was sent"). */
-  why?: string
+  /** Once ended: closed, courtesy loop, stale or person. Never a name. */
+  endReason?: string | null
   /** Minutes since the phase changed. */
   minutesInPhase?: number
 }
@@ -46,7 +48,7 @@ export function situationPhaseState(input: SituationPhaseInput): StateValue {
     channel: input.channel,
     chat: input.group ? "group" : "private",
     phase: input.phase,
-    phaseWhy: clip(input.why ?? "", 200),
+    endReason: input.endReason ?? null,
     minutesInPhase: Math.max(0, Math.round(input.minutesInPhase ?? 0)),
   }
 }

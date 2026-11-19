@@ -2198,6 +2198,7 @@ export class AgentXDaemon {
       configureDecisions({
         enabled: true,
         defaultBackend: cfg.defaultBackend,
+        redactState: cfg.redactState,
         store,
         seats: Object.fromEntries(
           Object.entries(cfg.seats).map(([name, seat]) => [

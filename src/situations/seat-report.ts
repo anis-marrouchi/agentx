@@ -14,9 +14,19 @@ import type { GradedRow } from "@/decisions/store"
 // bound, not the rate: four clean labels prove nothing, and a seat that
 // holds real messages must show it rarely does with enough evidence.
 //
+// Only the seat's current backend and model count: labels earned by one
+// model say nothing about another, so switching either resets readiness.
+// After promotion the seat's own holds are graded by releases and labels,
+// and only the `explore` share is a fresh, unbiased sample of what it
+// would hold. With no errors at all, about 190 labels are needed before
+// the upper bound falls under 2% (0 of 50 still gives 7.1%).
+//
 // Pure: rows in, report out.
 
 export interface SeatReport {
+  /** The backend and model counted; null: all rows. */
+  backend: string | null
+  model: string | null
   /** Answers recorded for the needsReply question. */
   calls: number
   /** Answers that said no reply is needed. */
@@ -40,6 +50,9 @@ export interface SeatReport {
 
 export interface SeatReportOptions {
   below: number
+  /** Count only rows of this backend, and of this model. */
+  backend?: string | null
+  model?: string | null
   limit?: number | null
   minLabeled: number
 }
@@ -66,8 +79,11 @@ function truthOf(v: string | undefined): boolean | null {
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`
 
-export function situationSeatReport(rows: GradedRow[], opts: SeatReportOptions): SeatReport {
+export function situationSeatReport(all: GradedRow[], opts: SeatReportOptions): SeatReport {
   const limit = opts.limit ?? null
+  const backend = opts.backend ?? null
+  const model = opts.model ?? null
+  const rows = all.filter((r) => (!backend || r.backend === backend) && (!model || r.model === model))
   let noReply = 0
   let labeled = 0
   let falseNoReply = 0
@@ -91,12 +107,13 @@ export function situationSeatReport(rows: GradedRow[], opts: SeatReportOptions):
     ready = true
     why = `The upper bound ${pct(upper95!)} is under the limit ${pct(limit)}.`
   }
-  return { calls: rows.length, noReply, labeled, falseNoReply, rate, upper95, below: opts.below, limit, minLabeled: opts.minLabeled, ready, why }
+  return { backend, model, calls: rows.length, noReply, labeled, falseNoReply, rate, upper95, below: opts.below, limit, minLabeled: opts.minLabeled, ready, why }
 }
 
 /** The report as lines for the terminal. */
 export function formatSeatReport(r: SeatReport): string[] {
   return [
+    `Backend: ${r.backend ?? "any"}, model ${r.model ?? "any"}`,
     `Answers: ${r.calls}; said "no reply needed" (P(needs a reply) <= ${r.below}): ${r.noReply}; labeled: ${r.labeled}`,
     r.rate === null
       ? `False "no reply" rate: unknown (no labeled "no reply" answers)`

@@ -37,12 +37,18 @@ afterEach(() => { setSendToChatStore(null); setMessageRouter(null); resetDecisio
 /** P(needs a reply) the stub gives each message. */
 const NEEDS_REPLY: Record<string, number> = { "ok": 0.05, "👍": 0.08, "thanks John": 0.1, "perfect, thanks": 0.9 }
 
-function stubBackend(fail?: Error): DecisionBackend {
+const load = { inflight: 0, max: 0 }
+
+function stubBackend(fail?: Error, delayMs = 0): DecisionBackend {
   return {
     name: "stub",
     capabilities: { probabilitySource: "synthetic", calibratedProbabilities: false, maxChoiceOptions: 255, maxStateChars: 24_000, parallelQuestions: true, images: false },
     async decide(req: any) {
       if (fail) throw fail
+      load.inflight++
+      load.max = Math.max(load.max, load.inflight)
+      if (delayMs) await new Promise((r) => setTimeout(r, delayMs))
+      load.inflight--
       const text = String(req.state.message)
       const p = NEEDS_REPLY[text] ?? 0.5
       const answers: Record<string, unknown> = {
@@ -56,10 +62,15 @@ function stubBackend(fail?: Error): DecisionBackend {
 }
 
 let n = 0
-function world(seatMode?: "shadow" | "active" | "off", fail?: Error) {
-  registerDecisionBackend("stub", () => stubBackend(fail))
+/** The seat as the operator names it: always with a hosted backend. */
+const named = (mode: "shadow" | "active" | "off", extra: Record<string, unknown> = {}) => ({ seats: { [SITUATION_PHASE_SEAT]: { mode, backend: "stub", ...extra } } })
+
+function world(seatMode?: "shadow" | "active" | "off", fail?: Error, delayMs = 0) {
+  registerDecisionBackend("stub", () => stubBackend(fail, delayMs))
   const decisions = new DecisionStore({ path: join(dir, `decisions-${++n}.sqlite`) })
-  configureDecisions({ enabled: true, defaultBackend: "stub", store: decisions, seats: seatMode ? { [SITUATION_PHASE_SEAT]: { mode: seatMode } } : {} })
+  // The default backend is the local CLI one, not registered here: a call
+  // that fell through to it would fail. The seat must use its named one.
+  configureDecisions({ enabled: true, defaultBackend: "local", store: decisions, ...(seatMode ? named(seatMode) : { seats: {} }) })
 
   const store = new SituationStore(new Database(":memory:"))
   const cfg: SituationsConfig = { ...DEFAULT_SITUATIONS_CONFIG, mode: "active", seat: { noReplyBelow: 0.2, minLabeled: 4 } }
@@ -110,10 +121,16 @@ function world(seatMode?: "shadow" | "active" | "off", fail?: Error) {
 
 describe("phase 5 proof of done: the seat in shadow, the report, then active below the owner's limit", () => {
   it("walks the whole path", async () => {
-    // 1. Shipped in shadow: decisions on, the seat not configured.
-    let w = world()
-    expect(w.seat.plan().mode).toBe("shadow")
+    // 0. Shipped off: decisions on, the seat not named. Nothing is asked.
+    const w = world()
+    expect(w.seat.plan().mode).toBe("off")
     await w.endTalk()
+    await w.say("ok")
+    expect(w.seatRows()).toHaveLength(0)
+
+    // 1. The owner names it in shadow, with a hosted backend.
+    configureDecisions(named("shadow"))
+    expect(w.seat.plan().mode).toBe("shadow")
     const turnsBefore = w.turns.length
     for (const t of ["ok", "👍", "thanks John", "perfect, thanks", "ok"]) await w.say(t)
     // Shadow changes nothing: every unsure message reached the agent.
@@ -127,6 +144,10 @@ describe("phase 5 proof of done: the seat in shadow, the report, then active bel
     const log = w.store.gateLog({ outcome: "would-drop" })
     expect(log.map((r) => r.text).sort()).toEqual(["ok", "ok", "thanks John", "👍"])
     expect(log.every((r) => r.seatCallId && /seat/.test(r.reason))).toBe(true)
+    // What left the node names no sender: only "person", never a name or id.
+    const states = (w.decisions.db.prepare("SELECT state_json FROM decision_calls").all() as Array<{ state_json: string }>).map((r) => r.state_json).join("\n")
+    expect(states).toContain("\"sender\":\"person\"")
+    expect(states).not.toMatch(/Candidate|15550111/)
 
     // 2. A person reads the would-drops and labels them: "thanks John" did
     // need a reply (it was to a colleague named John in the chat).
@@ -137,7 +158,7 @@ describe("phase 5 proof of done: the seat in shadow, the report, then active bel
     expect(w.seat.reportText().join("\n")).toContain("False \"no reply\" rate: 25.0% (1 of 4 labeled)")
 
     // 3. Switched to active with no limit set: it still only records.
-    configureDecisions({ seats: { [SITUATION_PHASE_SEAT]: { mode: "active" } } })
+    configureDecisions(named("active"))
     expect(w.seat.plan()).toMatchObject({ mode: "active", act: false })
     let before = w.turns.length
     await w.say("ok")
@@ -151,6 +172,7 @@ describe("phase 5 proof of done: the seat in shadow, the report, then active bel
     expect(w.turns.length).toBe(before + 1)
 
     // 5. Enough clean labels bring the bound under the limit: the seat acts.
+    // (Labels from another backend would not count: see the unit test.)
     for (let i = 0; i < 60; i++) {
       const id = w.decisions.recordCall({
         seat: SITUATION_PHASE_SEAT, mode: "shadow", backend: "stub", model: "stub-1",
@@ -179,7 +201,7 @@ describe("phase 5 proof of done: the seat in shadow, the report, then active bel
     expect(truth).toBe("yes")
 
     // 6. The owner switches the seat off: today's rule again.
-    configureDecisions({ seats: { [SITUATION_PHASE_SEAT]: { mode: "off" } } })
+    configureDecisions(named("off"))
     await w.endTalk()
     before = w.turns.length
     await w.say("ok")
@@ -202,6 +224,66 @@ describe("phase 5 proof of done: the seat in shadow, the report, then active bel
     await w.say("ok")
     expect(w.turns.length).toBe(before + 1) // passed, as without the seat
     expect(w.store.gateLog({ outcome: "drop" })).toHaveLength(0)
+  })
+
+  it("switching the backend resets readiness", async () => {
+    const w = world("active")
+    w.cfg.seat = { ...w.cfg.seat, maxFalseNoReply: 0.9, minLabeled: 1 }
+    const id = w.decisions.recordCall({
+      seat: SITUATION_PHASE_SEAT, mode: "active", backend: "stub", model: "stub-1",
+      meta: { structureMode: "mock", answerMode: "probabilities", retries: 0, stateTruncated: false, latencyMs: 1 } as any,
+      state: { message: "ok" }, questions: { needsReply: { type: "noul" } } as any, answers: { needsReply: { type: "noul", noul: 0.05 } } as any,
+    })
+    labelSeatCall(id, "needsReply", "no")
+    expect(w.seat.plan().act).toBe(true)
+    expect(w.seat.report()).toMatchObject({ backend: "stub", model: "stub-1" })
+    configureDecisions(named("active", { backend: "other" }))
+    expect(w.seat.plan()).toMatchObject({ act: false })
+    expect(w.seat.report()).toMatchObject({ backend: "other", calls: 0 })
+  })
+
+  it("an explored answer passes and is recorded as explored", async () => {
+    const w = world("active")
+    configureDecisions(named("active", { explore: 1 }))
+    w.cfg.seat = { ...w.cfg.seat, maxFalseNoReply: 0.9, minLabeled: 1 }
+    const id = w.decisions.recordCall({
+      seat: SITUATION_PHASE_SEAT, mode: "active", backend: "stub", model: "stub-1",
+      meta: { structureMode: "mock", answerMode: "probabilities", retries: 0, stateTruncated: false, latencyMs: 1 } as any,
+      state: { message: "ok" }, questions: { needsReply: { type: "noul" } } as any, answers: { needsReply: { type: "noul", noul: 0.05 } } as any,
+    })
+    labelSeatCall(id, "needsReply", "no")
+    await w.endTalk()
+    const before = w.turns.length
+    await w.say("ok")
+    expect(w.turns.length).toBe(before + 1)
+    const fresh = w.seatRows().find((r) => r.callId !== id)
+    expect(fresh).toMatchObject({ action: "skip", explored: true })
+  })
+
+  it("two messages for one chat wait for the seat one after the other", async () => {
+    const w = world("active", undefined, 30)
+    w.cfg.seat = { ...w.cfg.seat, maxFalseNoReply: 0.9, minLabeled: 1 }
+    const id = w.decisions.recordCall({
+      seat: SITUATION_PHASE_SEAT, mode: "active", backend: "stub", model: "stub-1",
+      meta: { structureMode: "mock", answerMode: "probabilities", retries: 0, stateTruncated: false, latencyMs: 1 } as any,
+      state: { message: "ok" }, questions: { needsReply: { type: "noul" } } as any, answers: { needsReply: { type: "noul", noul: 0.05 } } as any,
+    })
+    labelSeatCall(id, "needsReply", "no")
+    await w.endTalk()
+    load.max = 0
+    const before = w.turns.length
+    await Promise.all([w.say("ok"), w.say("👍")])
+    expect(load.max).toBe(1)
+    expect(w.turns.length).toBe(before)
+    expect(w.store.gateLog({ outcome: "drop" })).toHaveLength(2)
+  })
+
+  it("is not asked when its answer could change nothing", async () => {
+    const w = world("shadow")
+    const key = situationKey("whatsapp", "default", GROUP)
+    w.store.create(key, "ending", "set up for the test") // ending, slot free: a closer would pass too
+    await w.say("ok")
+    expect(w.seatRows()).toHaveLength(0)
   })
 
   it("is never asked about a clear message, or before the talk is ending", async () => {
