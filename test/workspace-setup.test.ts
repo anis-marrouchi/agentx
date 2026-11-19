@@ -238,14 +238,15 @@ describe("destructive-action guardrails wiring", () => {
     }
   })
 
-  it("generated settings.json wires the PreToolUse guard hook on Bash + Write/Edit", () => {
+  it("generated settings.json wires the PreToolUse guard hook on Bash + Write/Edit/Read", () => {
     setupWorkspace("devops-agent", baseAgent({ workspace }), "18800", () => {})
     const s = readSettings()
     const pre = s.hooks.PreToolUse
     expect(Array.isArray(pre)).toBe(true)
     const matchers = pre.map((e: any) => e.matcher)
     expect(matchers).toContain("Bash")
-    expect(matchers).toContain("Write|Edit")
+    // Read too (#1979): the guard keeps agents off .agentx/operator.key.
+    expect(matchers).toContain("Write|Edit|Read")
 
     const cmds: string[] = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
     for (const c of cmds) {
@@ -261,7 +262,7 @@ describe("destructive-action guardrails wiring", () => {
       expect(c).toContain("guard check --rules-only")
       expect(c).toContain('[ "$AGENTX_GUARD" = required ]')
     }
-    for (const e of pre.filter((e: any) => e.matcher === "Bash" || e.matcher === "Write|Edit")) {
+    for (const e of pre.filter((e: any) => e.matcher === "Bash" || e.matcher === "Write|Edit|Read")) {
       expect(e.hooks[0].timeout).toBe(75)
     }
   })
@@ -311,7 +312,7 @@ describe("destructive-action guardrails wiring", () => {
 
     expect(cmds.some((c) => c.includes("echo user-hook"))).toBe(true) // user hook preserved
     expect(cmds.some((c) => c.includes("dist/cli.js"))).toBe(false) // stale form gone
-    expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(2) // Bash + Write|Edit, no dupes
+    expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(2) // Bash + Write|Edit|Read, no dupes
     expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
   })
 

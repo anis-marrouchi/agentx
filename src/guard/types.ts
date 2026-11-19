@@ -61,6 +61,11 @@ export const guardRuleSchema = z.object({
   /** Phase 3: gates that must hold before an `allow`/`escalate` proceeds,
    *  e.g. "fresh_backup(production)". Carried but NOT evaluated in Phase 1. */
   preconditions: z.array(z.string()).default([]),
+  /** This rule's own posture, over the policy's (#1979): `enforce` makes
+   *  it block while the rest of the policy only warns. For rules whose
+   *  false positives cost nothing, such as keeping agents off a secret. The
+   *  policy's `off` still turns every rule off. */
+  mode: guardModeSchema.optional(),
   /** Free-form labels. A rule a retro asked for carries `retro:<taskId>`,
    *  so its monthly review can find it (src/retro/checks.ts). */
   tags: z.array(z.string()).optional(),

@@ -2,6 +2,9 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { loadDaemonConfig } from "@/daemon/config"
 import { SITUATION_TEMPLATES } from "@/situations/templates"
+import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
+import { isLoopbackUrl } from "@/daemon/situations-panel"
+import { basename, dirname, resolve } from "path"
 
 // --- agentx situation — the courtesy-close gate (#1892) ---
 //
@@ -45,10 +48,36 @@ function resolveDaemon(opts: Opts): { baseUrl: string; token: string } {
   return { baseUrl: baseUrl.replace(/\/+$/, ""), token }
 }
 
-async function call(opts: Opts, method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<any> {
+/** Where the operator key may be: the folder the command runs in, then
+ *  the one the config file belongs to (`agentx.json` or
+ *  `.agentx/config.json`). */
+export function operatorKeyRoots(configPath: string | undefined, cwd: string = process.cwd()): string[] {
+  const roots = [cwd]
+  if (configPath) {
+    const dir = dirname(resolve(cwd, configPath))
+    const root = basename(dir) === ".agentx" ? dirname(dir) : dir
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
+/** The operator key header (#1979), for owner-only routes such as
+ *  POST /situations/closing. Sent only to a daemon on this machine: the
+ *  key is this node's secret and never leaves it. */
+export function ownerKeyHeaders(baseUrl: string, roots: string[]): Record<string, string> {
+  if (!isLoopbackUrl(baseUrl)) return {}
+  for (const root of roots) {
+    const key = loadOperatorKey(root)
+    if (key) return { [OPERATOR_HEADER]: key }
+  }
+  return {}
+}
+
+async function call(opts: Opts, method: "GET" | "POST", path: string, body?: Record<string, unknown>, extra: { ownerKey?: boolean } = {}): Promise<any> {
   const { baseUrl, token } = resolveDaemon(opts)
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (token) headers.Authorization = `Bearer ${token}`
+  if (extra.ownerKey) Object.assign(headers, ownerKeyHeaders(baseUrl, operatorKeyRoots(opts.config)))
   let res: Response
   try {
     res = await fetch(`${baseUrl}${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) })
@@ -197,7 +226,7 @@ common(situationCmd
     if (opts.channel) body.channel = opts.channel
     if (opts.chat) body.chatId = opts.chat
     if (opts.account) body.account = opts.account
-    const data = await call(opts, "POST", "/situations/closing", body)
+    const data = await call(opts, "POST", "/situations/closing", body, { ownerKey: true })
     const r = data.row
     if (opts.clear) { console.log(chalk.green(`  Closing steps removed from ${String(r?.id ?? id).slice(0, 8)}.`)); return }
     console.log(chalk.green(`  Closing steps set on ${String(r?.id ?? "").slice(0, 8)} (${r?.channel} ${r?.chatId}): note at ${r?.closing?.home}.`))

@@ -924,6 +924,10 @@ Report one finished run of a registered session; sends the last 90 KB of its tra
 
 `agentx guard`: Destructive-action guardrails — policy, checks, audit.
 
+The guard checks each agent's Bash, Write, Edit and Read calls. A policy in `warn` mode only records what it would block. A rule can carry its own `mode: enforce`: that rule blocks even while the rest of the policy warns. The policy's `mode: off` still turns every rule off. The built-in rules `operator-key-read` and `operator-key-file` use it: they keep agents from reading or changing `.agentx/operator.key`, the secret that proves a call is yours (see [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends)).
+
+To check it worked: **Terminal:** `agentx guard test "cat .agentx/operator.key"` shows `deny` with the rule `operator-key-read`.
+
 ### `agentx guard check`
 
 PreToolUse hook entrypoint: read a tool-call payload on stdin, emit a Claude Code decision.
@@ -3721,6 +3725,8 @@ Forget a chat's record. Its next message starts a new one.
 ### `agentx situation closing [id]`
 
 Give a talk closing steps: when it ends, its agent drafts one note (read only) that is posted at its home, each follow-up becomes an open promise with an owner, and you get one message. Needs `situations.closing.enabled` (otherwise it answers HTTP 409). See [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends).
+
+Only you may set closing steps. Run the command from the AgentX folder (or give `--config`): it sends the daemon your operator key, read from `.agentx/operator.key`. The key is sent only to a daemon on this machine. Without it, the daemon answers HTTP 403. With `--node` on another machine, the command needs a mesh token (`--token`) instead.
 
 | Flag | Default | Meaning |
 |---|---|---|

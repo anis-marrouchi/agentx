@@ -93,6 +93,39 @@ export const CATALOG_RULES: GuardRule[] = [
     preconditions: [],
   },
 
+  // ---- The operator key (#1979) ------------------------------------------
+  // `.agentx/operator.key` proves a call to the daemon is the owner's (the
+  // CLI shows it on owner-only routes such as POST /situations/closing).
+  // An agent that read it could pass as the owner, so these two rules block
+  // in every mode but `off`: no agent work needs the key. They stop the
+  // plain reads; a shell can get around any pattern, so this is a second
+  // lock, not the only one.
+  {
+    id: "operator-key-read",
+    match: {
+      tool: "Bash",
+      // The path (`.agentx/operator.key`), or the bare file name as a word
+      // (`cd .agentx && cat operator.key`). A quoted search pattern such as
+      // `grep "operator.key" src` is left alone.
+      command_regex: "(\\.agentx/+operator\\.key|(^|[\\s;&|(<>])operator\\.key($|[\\s;&|)<>]))",
+    },
+    action: "deny",
+    mode: "enforce",
+    severity: "critical",
+    message: "The operator key proves a call is the owner's; agents may not read or change it.",
+    preconditions: [],
+  },
+  {
+    id: "operator-key-file",
+    // Read, Write and Edit name the file in file_path.
+    match: { path_regex: "(^|/)\\.agentx/+operator\\.key$" },
+    action: "deny",
+    mode: "enforce",
+    severity: "critical",
+    message: "The operator key proves a call is the owner's; agents may not read or change it.",
+    preconditions: [],
+  },
+
   // ---- Containers / volumes ---------------------------------------------
   {
     id: "container-volume-destroy",

@@ -263,7 +263,8 @@ function guardPreToolUseHooks(
   const command = guardHookCommand(agentId, daemonPort)
   const entries: unknown[] = [
     { matcher: "Bash", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
-    { matcher: "Write|Edit", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
+    // Read too (#1979): the catalog keeps agents off .agentx/operator.key.
+    { matcher: "Write|Edit|Read", hooks: [{ type: "command", command, timeout: GUARD_HOOK_TIMEOUT_S }] },
   ]
   const mcpMatcher = allowListHookMatcher(mcp)
   if (mcpMatcher) {

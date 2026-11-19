@@ -96,6 +96,14 @@ function applyMode(action: GuardAction, mode: ResolvedPolicy["mode"]): Effective
   }
 }
 
+/** The posture a matched rule is judged in: its own `mode` when set
+ *  (#1979), else the policy's. The policy's `off` is the kill switch and
+ *  wins over a rule's own mode. */
+function ruleMode(rule: GuardRule, mode: ResolvedPolicy["mode"]): ResolvedPolicy["mode"] {
+  if (mode === "off") return "off"
+  return rule.mode ?? mode
+}
+
 /** Evaluate a proposed tool call against the resolved policy. */
 export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
   const command = input.command ?? ""
@@ -145,12 +153,15 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
   }
 
   // Highest-precedence action wins; an explicit deny can never be downgraded.
-  hits.sort((a, b) => ACTION_RANK[b.rule.action] - ACTION_RANK[a.rule.action])
+  // Between equal actions, a rule that enforces on its own wins, so a
+  // warn-only match never hides it (#1979).
+  const enforces = (h: RuleHit) => (h.rule.mode === "enforce" ? 1 : 0)
+  hits.sort((a, b) => ACTION_RANK[b.rule.action] - ACTION_RANK[a.rule.action] || enforces(b) - enforces(a))
   const winner = hits[0]
   return {
     matched: true,
     action: winner.rule.action,
-    effectiveAction: applyMode(winner.rule.action, policy.mode),
+    effectiveAction: applyMode(winner.rule.action, ruleMode(winner.rule, policy.mode)),
     ruleId: winner.rule.id,
     severity: winner.rule.severity ?? null,
     message: winner.rule.message ?? null,
