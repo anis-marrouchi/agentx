@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -194,28 +194,32 @@ describe("buildMeshAnalytics", () => {
   })
 
   it("days:0 means since local midnight, not the last 24 hours", () => {
-    const db = openTmp()
-    const tzOffsetMinutes = 0
-    const now = Date.now()
-    const midnight = Math.floor(now / 86_400_000) * 86_400_000
-    // Just before local midnight — yesterday, and must be excluded by days:0.
-    //
-    // Clamped into the rolling 24h window that days:1 uses, or the last
-    // assertion is a time-of-day flake: a fixed "midnight - 30min" falls
-    // outside `now - 24h` whenever the suite runs after 23:30 UTC, which
-    // is 00:30 local in UTC+1. It failed exactly that way at 23:51 UTC.
-    const yesterday = Math.max(midnight - 30 * 60_000, now - 86_400_000 + 60_000)
-    db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
-                VALUES ('Y','a','cron','ok',?,1000)`).run(yesterday)
-    // 30 minutes after local midnight — today.
-    db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
-                VALUES ('N','a','cron','ok',?,1000)`).run(midnight + 30 * 60_000)
-    const today = buildMeshAnalytics(db, { days: 0, tzOffsetMinutes })
-    expect(today.totals.runs).toBe(1)
-    expect(today.days).toHaveLength(1)
-    expect(today.days[0].day).toBe(new Date(midnight).toISOString().slice(0, 10))
-    // The 24-hour window would have caught both — that is the bug it avoids.
-    expect(buildMeshAnalytics(db, { days: 1, tzOffsetMinutes }).totals.runs).toBe(2)
+    // The clock is fixed at noon UTC. With the real clock this test was a
+    // time-of-day flake twice: "midnight - 30min" fell outside the rolling
+    // 24h window after 23:30 UTC, and the clamp added for that put the
+    // "yesterday" row after midnight in the last minute of the UTC day
+    // (failed at 23:59:06 UTC on the 0.233.0 release run).
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(new Date("2026-03-10T12:00:00Z"))
+      const db = openTmp()
+      const tzOffsetMinutes = 0
+      const midnight = Date.parse("2026-03-10T00:00:00Z")
+      // Just before local midnight: yesterday, excluded by days:0, inside the last 24 hours.
+      db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
+                  VALUES ('Y','a','cron','ok',?,1000)`).run(midnight - 30 * 60_000)
+      // 30 minutes after local midnight: today.
+      db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, status, started_at, duration_ms)
+                  VALUES ('N','a','cron','ok',?,1000)`).run(midnight + 30 * 60_000)
+      const today = buildMeshAnalytics(db, { days: 0, tzOffsetMinutes })
+      expect(today.totals.runs).toBe(1)
+      expect(today.days).toHaveLength(1)
+      expect(today.days[0].day).toBe("2026-03-10")
+      // The 24-hour window would have caught both: that is the bug it avoids.
+      expect(buildMeshAnalytics(db, { days: 1, tzOffsetMinutes }).totals.runs).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
