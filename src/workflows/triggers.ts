@@ -76,6 +76,9 @@ export function startWorkflowTriggers(args: {
            *  POST /webhook/n8n/<topic>. Without it EVERY workflow listening
            *  on on:n8n runs for every call, whatever the caller meant. */
           topic?: string[]
+          /** Restrict on:situation to these new phases ("during",
+           *  "ending", "ended", "cleared"), #1892 phase 4. */
+          phase?: string[]
           /** Restrict to specific actions (gitlab-issue / gitlab-mr).
            *  Example: ["open", "reopen"] keeps the workflow off update/close events. */
           action?: string[]
@@ -138,6 +141,11 @@ export function startWorkflowTriggers(args: {
             if (Array.isArray(cfg.filter.topic) && cfg.filter.topic.length > 0) {
               const topic = typeof ctx.topic === "string" ? ctx.topic.toLowerCase() : undefined
               if (!topic || !cfg.filter.topic.map((t) => t.toLowerCase()).includes(topic)) return {}
+            }
+            // filter.phase — on:situation new-phase gate (#1892 phase 4).
+            if (Array.isArray(cfg.filter.phase) && cfg.filter.phase.length > 0) {
+              const phase = typeof ctx.phase === "string" ? ctx.phase : undefined
+              if (!phase || !cfg.filter.phase.includes(phase)) return {}
             }
             // filter.action — gitlab-issue / gitlab-mr action gate.
             if (Array.isArray(cfg.filter.action) && cfg.filter.action.length > 0) {

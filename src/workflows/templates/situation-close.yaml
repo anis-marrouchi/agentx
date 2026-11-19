@@ -1,0 +1,160 @@
+# Situation close: the closing steps of a talk that ended (#1892, phase 4).
+#
+# Started by the situation record itself, once per end of a talk that has
+# closing steps (`agentx situation closing <id> ...`), never by a chat
+# message, by hand or as a subProcess of another workflow: the dispatcher
+# refuses any other start. A workflow that runs a meeting ends the
+# situation, and the record starts this run.
+#
+#   1. transcript: a bounded excerpt of the talk (its recent messages, at
+#                 most 6000 characters), read on this node.
+#   2. notes:     the talk's agent drafts one note and lists the follow-ups
+#                 that were agreed. Its turn is read only (`autonomy:
+#                 report`): it cannot write files, post or send to any
+#                 channel, so it cannot message the other side.
+#   3. post_note: the note is posted as one comment at the talk's home (a
+#                 GitHub or GitLab issue, pull or merge request).
+#   4. promises:  each follow-up becomes an open promise with an owner.
+#                 None when the node kept no messages of the talk (the
+#                 agent had nothing to read, so its list would be a guess).
+#                 Steps 3 and 4 run once per end, even when retried.
+#   5. tell_owner: one message to the owner. It goes through the owner's
+#                 hold, so it waits while the owner is in Focus or a call.
+#   6. tell_other_side: only when the talk has a closing message for the
+#                 other side. It is outward, so the owner is asked first
+#                 (`approval: step`: always a card, never sent on its own).
+#
+# A talk that ended for lack of activity ("stale") runs the inward steps
+# only (1 to 4): no owner message and nothing outward. A talk another
+# organisation's agent said was over starts no close at all.
+#
+# Every message from this run carries the talk's end generation: if the
+# talk was opened again since, the message is not sent (S7).
+
+id: situation-close
+version: 2
+title: Situation close
+description: Closing steps of a talk that ended. One note at its home, each follow-up an open promise with an owner, one message to the owner. Started by the situation record, once per end.
+autoStart: false
+approval: step
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config:
+      inputSchema:
+        type: object
+        properties:
+          situationId:   { type: string, description: "The situation record's id" }
+          endGeneration: { type: number, description: "Which end of the talk this close is for" }
+          reason:        { type: string, description: "Why the talk ended: closed, courtesy loop, stale, person" }
+          inwardOnly:    { type: string, description: "yes: notes and promises only (a stale end)" }
+          agent:         { type: string, description: "The agent that drafts the note and owns the follow-ups" }
+          purpose:       { type: string, description: "What the talk was" }
+          home:          { type: string, description: "The issue or merge request the note goes on" }
+          channel:       { type: string }
+          chatId:        { type: string }
+          accountId:     { type: string }
+          message:       { type: string, description: "A closing message to the other side (asked first)" }
+        required: [situationId, endGeneration, agent, purpose, home, channel, chatId]
+
+  - id: transcript
+    type: action.builtin
+    config:
+      name: situation.transcript
+      input:
+        channel: "{{start.channel}}"
+        chatId: "{{start.chatId}}"
+
+  - id: notes
+    type: agent
+    config:
+      agentId: "{{start.agent}}"
+      autonomy: report
+      resultParser: json
+      prompt: |
+        The talk "{{start.purpose}}" ({{start.channel}}) has ended (reason: {{start.reason}}).
+        Its recent messages, oldest first (an excerpt; older messages may be missing):
+        ---
+        {{transcript.text}}
+        ---
+        Draft one short note about the talk for its home ({{start.home}}). Do not post it and do not message anyone: the workflow posts it.
+        If no messages are shown above, say so in the note, list no follow-ups (an empty list) and do not guess any.
+        Then list each follow-up that was agreed: what it is, who owes it (an agent id, or "owner"), who waits on it, and a due time only if a person gave one.
+        End your reply with one JSON block, and nothing after it:
+        {"note": "<the note, in plain text>", "followUps": [{"what": "...", "owner": "...", "waitsOn": "...", "due": ""}]}
+
+  - id: post_note
+    type: action.builtin
+    config:
+      name: situation.note
+      input:
+        situationId: "{{start.situationId}}"
+        endGeneration: "{{start.endGeneration}}"
+        home: "{{start.home}}"
+        agent: "{{start.agent}}"
+        purpose: "{{start.purpose}}"
+        note: "{{notes.json.note}}"
+
+  - id: promises
+    type: action.builtin
+    config:
+      name: situation.promises
+      input:
+        situationId: "{{start.situationId}}"
+        endGeneration: "{{start.endGeneration}}"
+        agent: "{{start.agent}}"
+        channel: "{{start.channel}}"
+        chatId: "{{start.chatId}}"
+        home: "{{start.home}}"
+        followUps: "{{notes.json.followUps}}"
+        transcriptMessages: "{{transcript.messages}}"
+
+  - id: inward_only
+    type: branch
+    config:
+      cases:
+        - when: { kind: equals, params: { path: start.inwardOnly, value: "yes" } }
+          to: done
+      default: tell_owner
+
+  - id: tell_owner
+    type: owner.notify
+    config:
+      situation: { id: "{{start.situationId}}", endGeneration: "{{start.endGeneration}}" }
+      text: "About {{start.purpose}}: the talk ended ({{start.reason}}). Note: {{post_note.noteAt}}. {{promises.summary}}"
+
+  - id: outward
+    type: branch
+    config:
+      cases:
+        - when: { kind: exists, params: { path: start.message } }
+          to: tell_other_side
+      default: done
+
+  - id: tell_other_side
+    type: person.message
+    config:
+      channel: "{{start.channel}}"
+      chatId: "{{start.chatId}}"
+      accountId: "{{start.accountId}}"
+      situation: { id: "{{start.situationId}}", endGeneration: "{{start.endGeneration}}" }
+      text: "{{start.message}}"
+
+  - id: done
+    type: end
+    config:
+      status: completed
+
+edges:
+  - { from: start, to: transcript }
+  - { from: transcript, to: notes }
+  - { from: notes, to: post_note }
+  - { from: post_note, to: promises }
+  - { from: promises, to: inward_only }
+  - { from: inward_only, fromPort: done, to: done }
+  - { from: inward_only, fromPort: tell_owner, to: tell_owner }
+  - { from: tell_owner, to: outward }
+  - { from: outward, fromPort: tell_other_side, to: tell_other_side }
+  - { from: outward, fromPort: done, to: done }
+  - { from: tell_other_side, to: done }

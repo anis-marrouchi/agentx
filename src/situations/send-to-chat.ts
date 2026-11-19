@@ -70,6 +70,26 @@ export function staleSituationSend(msg: Pick<OutgoingMessage, "channel" | "chatI
   return null
 }
 
+/** A situation tag from a workflow step's rendered config (phase 4): the
+ *  template renders the generation as text. Undefined when absent or
+ *  malformed. */
+export function situationTagFromConfig(v: unknown): SituationTag | undefined {
+  const t = v as { id?: unknown; endGeneration?: unknown } | null | undefined
+  if (!t || typeof t.id !== "string" || !t.id.trim()) return undefined
+  const gen = typeof t.endGeneration === "number" ? t.endGeneration : typeof t.endGeneration === "string" && /^\d+$/.test(t.endGeneration.trim()) ? Number(t.endGeneration) : NaN
+  return Number.isInteger(gen) ? { id: t.id.trim(), endGeneration: gen } : undefined
+}
+
+/** Why a tagged step that does not go to the talk's chat (the owner
+ *  message of a close) must not go out: the talk reopened since (S7). */
+export function staleSituationTag(tag: SituationTag | undefined): string | null {
+  if (!tag || !store) return null
+  const row = store.getById(tag.id)
+  if (!row) return `situation ${tag.id} no longer exists; not sent`
+  if (row.endGeneration !== tag.endGeneration) return `situation ${tag.id} was reopened (end generation ${row.endGeneration}, this was for ${tag.endGeneration}); not sent`
+  return null
+}
+
 /** Tell the record a counted reply left for this chat. Never throws. */
 export function noteCountedSend(msg: Pick<OutgoingMessage, "channel" | "chatId" | "agentId"> & { accountId?: string; text?: string }): void {
   if (!store || !SITUATION_CHANNELS.has(msg.channel)) return

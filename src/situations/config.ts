@@ -9,6 +9,7 @@ import { z } from "zod"
 //       reaction: "🙏"
 //     backstop: { count: 6, windowMinutes: 10 }
 //     maxAge: { duringHours: 12, endingMinutes: 60 }
+//     closing: { enabled: false }   # phase 4: closing steps
 //
 // `shadow` (the default) keeps the record of each chat and writes every
 // message the gate WOULD drop to the gate log, but drops nothing and sends
@@ -51,6 +52,15 @@ export const situationsConfigSchema = z.object({
     agents: z.array(z.string()).optional(),
     consent: z.enum(["none", "person"]).optional(),
   })).default({}),
+  /** Closing steps (phase 4). Off by default. When on, a talk that was
+   *  given closing steps (`agentx situation closing`) gets the workflow
+   *  runs `situation-expiry` (ends it as stale at `maxAge`) and, when it
+   *  ends, `situation-close` (one note at its home, each follow-up an open
+   *  promise, one message to the owner). A talk without closing steps is
+   *  unchanged: no run starts for it. */
+  closing: z.object({
+    enabled: z.boolean().default(false),
+  }).default({}),
 }).default({})
 
 export type SituationsConfig = z.infer<typeof situationsConfigSchema>

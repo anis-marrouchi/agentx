@@ -505,6 +505,12 @@ export class MessageRouter {
     return this.channels.get(name)
   }
 
+  /** The recent messages of a group chat (the group log, at most 30), for
+   *  a talk's closing note (#1892 phase 4). Read only. */
+  groupMessages(chatId: string): Array<{ sender: string; text: string; timestamp: number }> {
+    return this.groupLog.getEntries(chatId)
+  }
+
   addChannel(adapter: ChannelAdapter): void {
     this.channels.set(adapter.name, adapter)
     adapter.onMessage((msg) => this.handleMessage(adapter, msg))

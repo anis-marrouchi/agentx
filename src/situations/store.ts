@@ -22,11 +22,21 @@ import { getEventBus } from "@/events/bus"
 // one `situation:phase` bus event, after the row is written. A person can
 // override the phase (`override`: end, not this, clear); a "not this" is
 // kept on the record so the word list does not undo it.
+//
+// Phase 4: closing steps. A record can carry `closing` (what the talk is
+// about, where its note goes, who writes it). For such a record, after a
+// committed change, the attached SituationRuns (runs.ts) starts the
+// `situation-expiry` run of the new phase and, on an end, the
+// `situation-close` run, and stores their run ids here with conditional
+// writes (3.4, S13): the generation is written first (the move), then the
+// run is started, then its id is stored.
 
 export type Phase = "during" | "ending" | "ended"
 export type EndReason = "closed" | "courtesy loop" | "stale" | "person"
 export type Slot = "free" | "taken" | "used"
-export type SetBy = "rule" | "person"
+/** "peer": another organisation's agent said the talk ended (Q4). It may
+ *  only make ours go quiet: such an end starts no closing steps. */
+export type SetBy = "rule" | "person" | "peer"
 /** A person's override that the recogniser must not undo. */
 export type Override = "not-this"
 export type OverrideAction = "end" | "not-this" | "clear"
@@ -48,6 +58,37 @@ export interface SituationRow {
   /** Set by a person's "not this": closers no longer move the talk to
    *  `ending` until its phase changes another way. */
   override: Override | null
+  /** Closing steps for this talk (phase 4), or null: none. */
+  closing: ClosingSlots | null
+  /** The live `situation-expiry` run of the current phase (phase 4). */
+  expiryRunId: string | null
+  /** The `situation-close` run, and the end generation it belongs to. */
+  closeRunId: string | null
+  closeGeneration: number | null
+}
+
+/** What the closing steps of a talk need (design 3.1 slots, phase 4). Set
+ *  by a person or a workflow step (`agentx situation closing`), never by
+ *  a chat message. */
+export interface ClosingSlots {
+  /** What the talk is, in a few words: "job interview with a candidate". */
+  purpose: string
+  /** Where the note goes: an issue or merge request link, a wiki page. */
+  home: string
+  /** The agent that writes the note and owns the follow-ups. Default: the
+   *  chat's agent. */
+  agent?: string
+  /** A message to the other side of the talk once it ended. Outward: the
+   *  owner is always asked first (`outward: ask first`, fail closed). */
+  message?: string
+  /** The chat as its channel names it, for that message. The record's key
+   *  holds a normalised id (a WhatsApp group id without its "@g.us"
+   *  ending), which the channel cannot send to. */
+  chatId?: string
+  /** Other agents of this node that may own a follow-up of this talk.
+   *  The talk's agent and the owner always may; anyone else named by the
+   *  note's agent is not given the promise (the talk's agent keeps it). */
+  agents?: string[]
 }
 
 export interface GateLogRow {
@@ -111,11 +152,16 @@ export function ensureSituationTables(db: Database.Database): void {
   // Phase 2 (#1892): a person's override. Added to tables made by phase 1.
   const cols = db.prepare("PRAGMA table_info(situations)").all() as Array<{ name: string }>
   if (!cols.some((c) => c.name === "override")) db.exec("ALTER TABLE situations ADD COLUMN override TEXT")
+  // Phase 4: closing steps and the runs the store started.
+  for (const [name, type] of [["closing", "TEXT"], ["expiry_run_id", "TEXT"], ["close_run_id", "TEXT"], ["close_generation", "INTEGER"], ["note_at", "TEXT"], ["note_generation", "INTEGER"]]) {
+    if (!cols.some((c) => c.name === name)) db.exec(`ALTER TABLE situations ADD COLUMN ${name} ${type}`)
+  }
 }
 
 const COLS = `id, key, template, phase, end_reason AS endReason, end_generation AS endGeneration,
   entered_at AS enteredAt, phase_changed_at AS phaseChangedAt, set_by AS setBy, why, slot,
-  slot_by AS slotBy, owner_agent AS ownerAgent, override`
+  slot_by AS slotBy, owner_agent AS ownerAgent, override, closing,
+  expiry_run_id AS expiryRunId, close_run_id AS closeRunId, close_generation AS closeGeneration`
 
 const LOG_COLS = `id, at, key, situation_id AS situationId, message_id AS messageId, channel,
   chat_id AS chatId, sender_id AS senderId, sender_name AS senderName, sender_kind AS senderKind,
@@ -164,11 +210,32 @@ export function clipGateMessage(json: string): string {
 type StatementName =
   | "get" | "getById" | "byPrefix" | "list" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
   | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
+  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing" | "noteFor" | "setNote"
+
+/** A row as SQLite returns it: `closing` is JSON text. */
+type RawRow = Omit<SituationRow, "closing"> & { closing: string | null }
+
+function parseClosing(v: string | null): ClosingSlots | null {
+  if (!v) return null
+  try {
+    const c = JSON.parse(v) as ClosingSlots
+    return c && typeof c.purpose === "string" && typeof c.home === "string" ? c : null
+  } catch { return null }
+}
+
+function toRow(r: RawRow | undefined): SituationRow | null {
+  return r ? { ...r, closing: parseClosing(r.closing) } : null
+}
+
+/** Told after every committed change (the runs part, phase 4). `row` is
+ *  the record after the write; for a cleared record, the record before. */
+export type SituationChangeListener = (change: { row: SituationRow; from: Phase | null; cleared: boolean }) => void
 
 export class SituationStore {
   /** Prepared once (#1921): better-sqlite3 statements are reusable. */
   private readonly q: Record<StatementName, Database.Statement>
   private lastPrune = 0
+  private changeListener: SituationChangeListener | null = null
 
   constructor(private readonly db: Database.Database, private readonly now: () => number = Date.now) {
     ensureSituationTables(db)
@@ -203,11 +270,36 @@ export class SituationStore {
       markReleased: db.prepare("UPDATE situation_gate_log SET released_at = ? WHERE id = ? AND released_at IS NULL"),
       pruneLog: db.prepare("DELETE FROM situation_gate_log WHERE at < ?"),
       pruneSituations: db.prepare("DELETE FROM situations WHERE phase_changed_at < ?"),
+      // Steps set on an ended talk are for its next end: this end counts as
+      // handled, so no close starts for it, not even after a restart.
+      setClosing: db.prepare(`UPDATE situations SET closing = ?, template = ?,
+        close_generation = CASE WHEN phase = 'ended' AND ? = 1 THEN end_generation ELSE close_generation END WHERE id = ?`),
+      noteFor: db.prepare("SELECT note_at AS noteAt FROM situations WHERE id = ? AND note_generation = ?"),
+      setNote: db.prepare("UPDATE situations SET note_at = ?, note_generation = ? WHERE id = ?"),
+      // S9: only for the phase it was started for.
+      setExpiryRun: db.prepare("UPDATE situations SET expiry_run_id = ? WHERE id = ? AND phase_changed_at = ?"),
+      // One close per end generation (S3).
+      setCloseRun: db.prepare(
+        `UPDATE situations SET close_run_id = ?, close_generation = ?
+         WHERE id = ? AND phase = 'ended' AND end_generation = ? AND close_generation IS NOT ?`,
+      ),
+      openWithClosing: db.prepare(`SELECT ${COLS} FROM situations WHERE phase != 'ended' AND closing IS NOT NULL`),
+      endedWithClosing: db.prepare(`SELECT ${COLS} FROM situations WHERE phase = 'ended' AND closing IS NOT NULL AND phase_changed_at >= ?
+        AND (close_generation IS NULL OR close_generation != end_generation)`),
     }
   }
 
+  /** Attach the runs part (daemon start). Null detaches it. */
+  onChange(fn: SituationChangeListener | null): void {
+    this.changeListener = fn
+  }
+
   get(key: string): SituationRow | null {
-    return (this.q.get.get(key) as SituationRow | undefined) ?? null
+    return toRow(this.q.get.get(key) as RawRow | undefined)
+  }
+
+  getById(id: string): SituationRow | null {
+    return toRow(this.q.getById.get(id) as RawRow | undefined)
   }
 
   /** First message on a chat: a record in `during` (or straight to
@@ -249,6 +341,12 @@ export class SituationStore {
         at: new Date(this.now()).toISOString(),
       })
     } catch { /* observability never breaks a write */ }
+    this.tellListener(cleared ?? this.get(key), from, !!cleared)
+  }
+
+  private tellListener(row: SituationRow | null, from: Phase | null, cleared: boolean): void {
+    if (!row || !this.changeListener) return
+    try { this.changeListener({ row, from, cleared }) } catch { /* the runs part never breaks a write */ }
   }
 
   /** The routed agent owns the chat's record (3.2): set at the first
@@ -262,18 +360,81 @@ export class SituationStore {
   resolve(ref: string): SituationRow | null {
     const r = String(ref ?? "").trim()
     if (!r) return null
-    const byId = this.q.getById.get(r) as SituationRow | undefined
+    const byId = this.getById(r)
     if (byId) return byId
     if (r.includes("|")) return this.get(r)
     if (r.length < 6) return null
-    const hits = this.q.byPrefix.all(r.length, r) as SituationRow[]
-    return hits.length === 1 ? hits[0] : null
+    const hits = this.q.byPrefix.all(r.length, r) as RawRow[]
+    return hits.length === 1 ? toRow(hits[0]) : null
   }
 
   /** Newest change first. */
   list(opts: { agent?: string; phase?: Phase; limit?: number } = {}): SituationRow[] {
     const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
-    return this.q.list.all({ agent: opts.agent ?? null, phase: opts.phase ?? null, limit }) as SituationRow[]
+    return (this.q.list.all({ agent: opts.agent ?? null, phase: opts.phase ?? null, limit }) as RawRow[]).map((r) => toRow(r)!)
+  }
+
+  // --- Phase 4: closing steps ---
+
+  /** Give a talk closing steps (or remove them with null). `template`
+   *  names the kind of talk, for example "meeting". The runs part is told,
+   *  so the expiry run of the current phase starts at once. */
+  setClosing(id: string, closing: ClosingSlots | null, template?: string): SituationRow | null {
+    const row = this.getById(id)
+    if (!row) return null
+    // Steps given to an ended talk that had none: this end is marked handled.
+    const fresh = closing && !row.closing ? 1 : 0
+    this.q.setClosing.run(closing ? JSON.stringify(closing) : null, (template || row.template).slice(0, 40), fresh, id)
+    const after = this.getById(id)
+    this.tellListener(after, after?.phase ?? null, false)
+    return after
+  }
+
+  /** The link of the closing note already posted for end generation
+   *  `gen`. Null: none yet. */
+  noteFor(id: string, gen: number): string | null {
+    const r = this.q.noteFor.get(id, gen) as { noteAt: string | null } | undefined
+    return r?.noteAt ?? null
+  }
+
+  /** Record that the closing note of end generation `gen` was posted. */
+  setNote(id: string, gen: number, link: string): void {
+    this.q.setNote.run(link, gen, id)
+  }
+
+  /** Store the expiry run started for the phase that changed at
+   *  `phaseChangedAt`. False: the phase moved meanwhile (cancel the run). */
+  setExpiryRun(id: string, phaseChangedAt: number, runId: string): boolean {
+    return this.q.setExpiryRun.run(runId, id, phaseChangedAt).changes > 0
+  }
+
+  /** Store the close run of end generation `gen`. False: the talk is not
+   *  ended in that generation, or a close for it is already stored. */
+  setCloseRun(id: string, gen: number, runId: string): boolean {
+    return this.q.setCloseRun.run(runId, gen, id, gen, gen).changes > 0
+  }
+
+  /** The `situation-expiry` run's step: end the talk as stale, only if
+   *  its phase has not changed since the run started (S9). A missed
+   *  cancel is harmless. */
+  expire(id: string, phaseChangedAt: number): { ended: boolean; why: string } {
+    const row = this.getById(id)
+    if (!row) return { ended: false, why: "the record is gone" }
+    if (row.phase === "ended") return { ended: false, why: "the talk has already ended" }
+    if (row.phaseChangedAt !== phaseChangedAt) return { ended: false, why: "the phase changed since this run started" }
+    const ok = this.move(row.key, { phase: row.phase, since: row.phaseChangedAt }, "ended", { why: `no change for longer than the ${row.phase} phase's max age`, endReason: "stale" })
+    return ok ? { ended: true, why: "ended as stale" } : { ended: false, why: "the phase changed meanwhile" }
+  }
+
+  /** Open talks with closing steps (S14: their expiry runs at start). */
+  openWithClosing(): SituationRow[] {
+    return (this.q.openWithClosing.all() as RawRow[]).map((r) => toRow(r)!)
+  }
+
+  /** Talks with closing steps that ended since `since` and have no close
+   *  run for that end yet (a close missed while the daemon was down). */
+  endedWithClosing(since: number): SituationRow[] {
+    return (this.q.endedWithClosing.all(since) as RawRow[]).map((r) => toRow(r)!)
   }
 
   /** A person's override (design 8, "How a person overrides"), from the

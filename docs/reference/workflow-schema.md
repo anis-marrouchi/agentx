@@ -177,6 +177,7 @@ A `trigger.hook` node subscribes to an `on:*` event, such as `on:gitlab-mr` or `
 | Filter | Events | Fires only when |
 |---|---|---|
 | `topic` | `on:n8n` | The topic in `/webhook/n8n/<topic>` is listed |
+| `phase` | `on:situation` | The talk's new phase is listed: `during`, `ending`, `ended` or `cleared` (see [Stop goodbye loops](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends)) |
 | `action` | GitLab issue and MR events | The action, such as `open`, is listed |
 | `mentions` | `on:gitlab-note` | The comment @-mentions a listed username |
 | `noteableType` | `on:gitlab-note` | The comment is on a listed type: `merge_request` or `issue` |

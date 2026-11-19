@@ -570,6 +570,7 @@ The courtesy gate: after a talk in a chat has ended with a goodbye, more "thanks
 | `backstop.windowMinutes` | `10` | The window for `backstop.count`. |
 | `maxAge.duringHours` | `12` | A talk with no change this long is treated as over. |
 | `maxAge.endingMinutes` | `60` | A talk waiting for the agent's goodbye this long is treated as over. |
+| `closing.enabled` | `false` | Closing steps: a talk given closing steps (`agentx situation closing`) gets a note, promises and one message to you when it ends, and is ended as stale at its max age. A talk without closing steps is unchanged. See [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends). |
 
 ```json
 "situations": { "mode": "active", "courtesy": { "onPerson": "react" } }

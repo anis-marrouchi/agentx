@@ -299,7 +299,8 @@ export interface AgentXEvents {
     /** "cleared": a person removed the record. */
     to: "during" | "ending" | "ended" | "cleared"
     cause: string
-    setBy: "rule" | "person"
+    /** "peer": another organisation's agent said it ended (it only makes us quiet). */
+    setBy: "rule" | "person" | "peer"
     endReason?: string
     /** The chat's owner agent, when known. */
     agentId?: string
