@@ -6046,6 +6046,7 @@ export class AgentXDaemon {
             log: this.log,
           },
           dueTimes: this.dueTimes(requests),
+          numbers: requests.numbers,
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

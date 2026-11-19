@@ -201,6 +201,15 @@ describe("a turn that ends asking the owner", () => {
     expect(store.get(id)?.state).toBe("in_progress")
   })
 
+  it("keeps a standing order it opened open when the owner answers (noqta#807)", async () => {
+    answer = JSON.stringify({ kind: "waiting_owner", question: "Which account?" })
+    const id = await turn("Which account should it go to?")
+    expect(store.setStanding(id, { rhythm: "daily", numberId: "n-1", cronId: null, since: clock })).toBe(true)
+    answer = JSON.stringify({ kind: "none" })
+    await turn("Sent.")
+    expect(store.get(id)?.state).toBe("in_progress")
+  })
+
   it("is left alone with waitingOwner off", async () => {
     catching.waitingOwner = false
     answer = JSON.stringify({ kind: "waiting_owner", question: "Which account?" })
