@@ -1628,8 +1628,9 @@ export const requestsConfigSchema = z.object({
   /** An open request with no activity for this long comes back to the owner. */
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
   /** A request in progress whose handed work all came back done, quiet
-   *  for staleAfterHours, closes as done with its delegate's link (or
-   *  marked unproven) instead of coming back to the owner (#1138). */
+   *  for staleAfterHours, closes as done with its delegate's link instead
+   *  of coming back to the owner (#1138). Without a link it stays open and
+   *  its agent is woken once to bring one (noqta#884). */
   settleHandedBack: z.boolean().default(true),
   /** A request whose last reply asks the owner with tap answers, and no
    *  answer came, is not settled (retro 01M6VAK5). "warn" leaves it open

@@ -120,7 +120,7 @@ Agents often forget to close a request after the work they handed on comes back.
 
 - It applies to a request that is in progress, has had no activity for `staleAfterHours` (default 24), and whose handed-on work **all** came back done.
 - It is closed as **done**. Its proof is the first link in the other agent's answer, for example a pull request or a deploy page. Nothing opens that link to check it, so the request is marked `unverified`.
-- With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
+- With no link in the answer, it is **not** closed. It stays in progress, and the agent is woken once with "the hand-off came back with no proof: bring the link for each thing asked", and the list of what was asked when the request has one. If no link comes, it returns to you as quiet after `staleAfterHours`.
 - Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. Only work handed on and done after that can close it. If none comes back, the request returns to you as before.
 - You are not told. It simply leaves your list.
 - A due time does not stop it. The agent sets that time itself, for example from its own estimate of how long the work takes. Once the work came back done, the request is not sent to you as "Past its due time"; it waits to be closed this way.
@@ -711,7 +711,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its post on the Hub is titled with a few plain words and shows **Needed from you**, and your words are behind the headline. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
-14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
+14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet with its link; asks for one without`. A day after an agent hands work on and gets a done answer with a link, without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link as its evidence. Without a link, the log has a `not settled: handed work came back with no proof` line instead, and the request stays open.
 15. Ask an agent to make a change and mark it as needing QA, then ask a second agent to check it and give its verdict.
 16. **Terminal:** run `agentx requests --qa awaiting` before the verdict. The request is listed with `Awaiting QA`. After the verdict, run `agentx requests show <id>`. It shows `QA: PASS by <agent>, <time>` (or `BLOCK` or `RISK` with the note).
 17. Ask an agent for some work and tell it the goal, for example: "this is for the shop relaunch goal".

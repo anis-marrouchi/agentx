@@ -470,13 +470,70 @@ describe("the minute check", () => {
       expect(logs.join("\n")).toContain("req-t1 settled: handed work came back with https://example.test/deploys/7")
     })
 
-    it("marks it unproven when the answer gave no link", async () => {
-      handed("done", "all good")
-      clock += 25 * HOUR
-      await sweep()
-      const r = store.get("req-t1")!
-      expect(r).toMatchObject({ state: "done", verifyState: "unverified" })
-      expect(r.evidence).toMatch(/^unproven: The work it handed on came back done without a link to proof/)
+    describe("when the answer gave no link (noqta#884)", () => {
+      it("keeps it open and wakes its agent once to bring the proof", async () => {
+        handed("done", "all good")
+        clock += 25 * HOUR
+        const wakes: string[] = []
+        const wakeJob = (id: string, note: string) => { wakes.push(`${id}|${note}`); return true }
+        const { result, told } = await sweep({ wakeJob })
+        expect(result).toMatchObject({ settled: 0, quiet: 0, notified: 0 })
+        expect(told).toEqual([])
+        const r = store.get("req-t1")!
+        expect(r.state).toBe("in_progress")
+        expect(r.evidence ?? "").not.toMatch(/^unproven:/)
+        expect(wakes).toHaveLength(1)
+        expect(wakes[0]).toContain("req-t1|")
+        expect(wakes[0]).toContain("the hand-off came back with no proof: bring the link for each thing asked")
+        expect(logs.join("\n")).toContain("req-t1 not settled: handed work came back with no proof; coder woken")
+        // Repeated checks do not wake it again.
+        clock += HOUR
+        await sweep({ wakeJob })
+        clock += 25 * HOUR
+        await sweep({ wakeJob })
+        expect(wakes).toHaveLength(1)
+        expect(store.get("req-t1")?.state).not.toBe("done")
+      })
+
+      it("names each thing asked, through a turn when the job wake does not take it", async () => {
+        handed("done", "all good")
+        store.setDeliverables("req-t1", ["the report", "the deploy"])
+        clock += 25 * HOUR
+        const turns: string[] = []
+        await sweep({ wakeJob: () => false, tellAgent: async (agent, text) => { turns.push(`${agent}|${text}`) } })
+        expect(turns).toHaveLength(1)
+        expect(turns[0]).toMatch(/^coder\|/)
+        expect(turns[0]).toContain("1. the report")
+        expect(turns[0]).toContain("2. the deploy")
+        expect(store.get("req-t1")?.state).toBe("in_progress")
+      })
+
+      it("asks again for a later hand-back that also has no link", async () => {
+        handed("done", "all good")
+        clock += 25 * HOUR
+        const wakes: string[] = []
+        const wakeJob = (id: string) => { wakes.push(id); return true }
+        await sweep({ wakeJob })
+        store.link("req-t1", "delegation", "dlg-2", clock)
+        tracker.delegationDone(dlg("dlg-2"), "done", "still no link")
+        clock += 25 * HOUR
+        await sweep({ wakeJob })
+        expect(wakes).toEqual(["req-t1", "req-t1"])
+      })
+
+      it("raises it to the owner when its agent cannot be woken", async () => {
+        handed("done", "all good")
+        clock += 25 * HOUR
+        const { result } = await sweep()
+        expect(result).toMatchObject({ settled: 0, quiet: 1 })
+        expect(store.get("req-t1")?.state).toBe("needs_attention")
+      })
+
+      it("is never written done by settle() itself", () => {
+        handed("done", "all good")
+        expect(store.settle("req-t1", null, "no link", clock + 25 * HOUR)).toBe(false)
+        expect(store.get("req-t1")?.state).toBe("in_progress")
+      })
     })
 
     it("waits for every delegation: one still out keeps it, and it comes back as quiet", async () => {
