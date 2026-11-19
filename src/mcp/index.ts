@@ -1155,13 +1155,17 @@ const TOOLS = [
       "When the work must be signed off by QA before it counts, pass needsQa:true on accept, wait, promise or describe. " +
       "A QA agent records its verdict with qa: {action:'qa', id, verdict:'block'|'risk'|'pass', note}; block and risk need the note (what is wrong). It works on any agent's request, open or closed, and sends nothing. " +
       "On accept, wait or promise, give headline (what it is, in a few plain words: it titles the owner's card, push and Desk line instead of their own transcript) and need (the one thing you need from them, or 'Nothing, just so you know.'); describe changes them later. " +
+      "When the owner gives a standing order ('every day', 'every week'), it is a recurring job, not a one-off: mark it with standing (number: the tracked number that proves each period, cron: the cron that runs it). A standing order cannot be closed with done or decline: report each period's number instead; only the owner ends it. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
       "Describe example: {action:'accept', work:'research', estimateMinutes:20, headline:'Compare three hosting offers', need:'Nothing, just so you know.'}. " +
       "Plan example: {action:'accept', steps:[{name:'Build the fix', done:'PR merged'}, {name:'Deploy', agent:'devops', kind:'deploy', done:'release live', check:{url:'https://example.com/version', contains:'1.2.3'}}, {name:'Tell the client', kind:'message', message:'The fix is live.', to:{channel:'telegram', chatId:'123'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction) or flow (the daily flow rate: requests closed out of those asked, per day)." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow", "standing"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction), flow (the daily flow rate: requests closed out of those asked, per day) or standing (mark a recurring order: see number)." },
+        number: { type: "string", description: "standing: the id of the tracked number (agentx_numbers) that proves each period. Its rhythm is the order's." },
+        cron: { type: "string", description: "standing, optional: the id of the cron that runs the work." },
+        rhythm: { type: "string", enum: ["daily", "weekly", "monthly"], description: "standing, optional: must match the number's rhythm." },
         goalAction: { type: "string", enum: ["show", "create", "close", "drop"], description: "goal: show (default; give id), create (give goal {id, title}, doneWhen, optional check), close (give id and evidence) or drop (give id and reason). Only the goal's owner closes or drops it." },
         doneWhen: { type: "string", description: "goal create: what done means, in words (at most 300 characters)." },
         check: { type: "object", description: "goal create, optional: what the daemon checks to close the goal by itself: a closeWhen spec, or {kind:'count', provider:'github'|'gitlab', project:'owner/repo', what:'issues'|'prs'|'all', max:0}, or {kind:'number', number:'<number id>', atLeast:1000} (or atMost): the newest reading of a tracked number (agentx_numbers) crosses it." },

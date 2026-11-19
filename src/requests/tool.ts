@@ -38,6 +38,10 @@ import { describeDue } from "./due-times"
 //            drop (reason). A goal with a check closes by itself when it
 //            is met; a cron that names it stops running then
 //   flow     the daily flow rate: today's, then one line per day (#1542)
+//   standing a standing order (noqta#807): "every day/week" work. Names
+//            the number that proves each period (number, its rhythm,
+//            optional cron). Its agent can no longer close it: only the
+//            owner ends it
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
 
@@ -225,6 +229,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
         priority: args.priority, dueSource: args.dueSource, makeRoom: args.makeRoom,
         headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict, goal: args.goal,
+        number: args.number, cron: args.cron, rhythm: args.rhythm,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
@@ -258,6 +263,11 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     }
     if (action === "done" && data.verify === "unverified") {
       return `Request ${r.id} stays open: its check could not say whether it is finished (${data.detail}). It is marked unverified; the daemon checks again, and the owner can close it by hand.`
+    }
+    if (action === "standing") {
+      const s = r.standing
+      return `Request ${r.id} is a standing order now (${s?.rhythm}, proved by number "${s?.numberId}"${s?.cronId ? `, run by cron ${s.cronId}` : ""}). ` +
+        "It stays open: only the owner ends it. Each period, record its number with agentx_numbers."
     }
     if (action === "done") {
       const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""

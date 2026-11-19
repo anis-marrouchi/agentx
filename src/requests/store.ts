@@ -6,6 +6,7 @@ import { readCloseWhen, type CloseWhen } from "./checkers"
 import type { Proof } from "./promise"
 import type { QaFilter, QaRecord, QaVerdict } from "./qa"
 import type { GoalRequest, GoalSummary, RequestGoal } from "./goals"
+import { readStanding, type StandingOrder } from "./standing"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -27,6 +28,8 @@ export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropp
 /** `by` of a close the owner made (dashboard, CLI outside an agent run,
  *  a card or chat answer): never checked against the owner's words. */
 export const OWNER_BY = "owner"
+/** SQL: the row is not a standing order (noqta#807). */
+const NOT_STANDING = "standing IS NULL"
 
 export type LinkKind = "run" | "step_run" | "delegation" | "card" | "workflow" | "watcher" | "comment" | HomeLinkKind
 
@@ -179,6 +182,9 @@ export interface RequestRecord {
   proofAskedAt?: number | null
   /** When the close_proof_missing signal was written. Once. */
   proofSignalledAt?: number | null
+  /** A standing order (noqta#807): its rhythm, the number that proves it
+   *  and its cron. Only the owner closes it. Null: an ordinary request. */
+  standing?: StandingOrder | null
 }
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
@@ -291,7 +297,8 @@ export function ensureRequestTables(db: Database.Database): void {
     ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"],
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
     ["goal_id", "TEXT"], ["goal_title", "TEXT"],
-    ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"]]) {
+    ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"],
+    ["standing", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -336,6 +343,7 @@ function toRecord(r: any): RequestRecord {
     ownerCheckAt: r.owner_check_at ?? null, sentBackAt: r.sent_back_at ?? null,
     deliverables: readDeliverables(r.deliverables), deliverableProofs: readProofs(r.deliverable_proofs),
     proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
+    standing: readStanding(r.standing),
   }
 }
 
@@ -709,7 +717,7 @@ export class RequestStore {
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?,
          closed_by = 'check', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)}) AND ${NOT_STANDING}`,
     ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
     if (closed) this.done(id)
     return closed
@@ -942,7 +950,7 @@ export class RequestStore {
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")}))`,
+       WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")})) AND ${NOT_STANDING}`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
@@ -1073,6 +1081,14 @@ export class RequestStore {
     recordSignal(this.db, { kind, agentId, ref: id, detail }, now)
   }
 
+  /** Mark it a standing order (noqta#807): from then on only the owner
+   *  closes it. Open requests only. Not a touch. */
+  setStanding(id: string, order: StandingOrder): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET standing = ? WHERE id = ? AND state NOT IN ('candidate', 'job', ${placeholders(CLOSED_STATES.length)})`,
+    ).run(JSON.stringify(order), id, ...CLOSED_STATES).changes > 0
+  }
+
   /** Close it: done needs evidence, declined and dropped need a reason.
    *  A done may carry a typed proof (#1138 D), kept beside the evidence. */
   close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: string | null = null): boolean {
@@ -1081,10 +1097,11 @@ export class RequestStore {
     const kept = state === "done" && proof ? JSON.stringify(proof) : null
     // A close not made by the owner waits for the owner-words check.
     const check = by && by !== OWNER_BY ? "pending" : null
+    // A standing order (noqta#807) is ended by the owner alone.
     const res = this.db.prepare(
       `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?,
          closed_by = ?, owner_check = ?, owner_check_at = NULL, owner_check_note = NULL
-       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+       WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})${by === OWNER_BY ? "" : ` AND ${NOT_STANDING}`}`,
     ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept,
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0

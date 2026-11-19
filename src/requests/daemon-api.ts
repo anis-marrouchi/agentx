@@ -14,6 +14,7 @@ import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from
 import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./flow"
 import { ESTIMATE_TOO_LONG, planDue, readDueFields, type DueGiven, type DuePlan, type DueTimesCtx } from "./due-times"
 import { MAX_ESTIMATE_MINUTES } from "./slots"
+import { parseStanding, standingRefusal, type StandingNumbers } from "./standing"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -105,6 +106,9 @@ export interface RequestsApiDeps {
   /** Due times from the queue (due-times.ts, #1909). Unset or mode off:
    *  as before. */
   dueTimes?: DueTimesCtx
+  /** The tracked numbers (src/numbers), for a standing order's number
+   *  (noqta#807). Unset: the rhythm must be given and is not checked. */
+  numbers?: StandingNumbers
   now?: number
 }
 
@@ -167,7 +171,7 @@ export interface ApiReply {
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
-const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa"]
+const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "standing"]
 
 /** The furthest a step's owner may put off its nudges (#1764). */
 export const MAX_STEP_WAIT_MS = 7 * 24 * 60 * 60 * 1000
@@ -493,7 +497,7 @@ export function handleRequestsApi(
     const action = str(input.action).toLowerCase()
     if (action === "drop") return { status: 403, body: { error: OWNER_ONLY } }
     if (!POST_ACTIONS.includes(action)) {
-      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise, describe or qa` } }
+      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise, describe, qa or standing` } }
     }
     // Ask for QA sign-off (#1188): a flag beside what the action does.
     const needsQa = ["accept", "wait", "promise", "describe"].includes(action) ? parseNeedsQa(input.needsQa) : undefined
@@ -611,6 +615,21 @@ export function handleRequestsApi(
     }
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
+
+    // A standing order (noqta#807): marked once by its agent, ended only
+    // by the owner. An agent's done or decline is refused with what to do
+    // instead, before any proof is kept or check is run.
+    if (action === "standing") {
+      if (request.standing) return { status: 409, body: { error: `request "${request.id}" is already a standing order (number "${request.standing.numberId}")` } }
+      const order = parseStanding(input, deps.numbers ?? null, now)
+      if (typeof order === "string") return { status: 400, body: { error: order } }
+      if (!store.setStanding(request.id, order)) return { status: 409, body: { error: `request "${request.id}" cannot be made standing in state ${request.state}` } }
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
+    if ((action === "done" || action === "decline") && request.standing) {
+      return { status: 409, body: { error: standingRefusal(request.standing), standing: true } }
+    }
+
     // Kept before the check runs: the gate reads them. The same link
     // twice is not added again, so the second pass adds nothing.
     if (action === "done" && proofs.length) store.addProofs(request.id, proofs, now)
