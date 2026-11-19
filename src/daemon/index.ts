@@ -163,7 +163,7 @@ import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/request
 import { forgeReader } from "@/requests/checkers/issue"
 import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
-import { forgeConnectorsOf, liveReader } from "@/requests/drift/live"
+import { defaultForgeOf, forgeConnectorsOf, liveReader } from "@/requests/drift/live"
 import { syncSourceIssue } from "@/business/backlog-sync"
 import { meshPeerNames } from "@/business/relations"
 import { loopChecker, parseDue } from "@/requests/loops"
@@ -3382,6 +3382,7 @@ export class AgentXDaemon {
         return res.content || ""
       },
       say: this.log,
+      defaultForge: () => defaultForgeOf(this.config),
     })
   }
 
@@ -5890,6 +5891,7 @@ export class AgentXDaemon {
           query: url.searchParams,
           checkers: this.config.requests.checkers,
           promiseSettings: promiseSettingsOf(this.config.requests),
+          defaultForge: defaultForgeOf(this.config),
           flow: this.config.requests.flow,
           check: loopChecker(() => this.requestCheckContext(requests)),
           closeProof: {

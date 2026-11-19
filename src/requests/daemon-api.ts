@@ -7,7 +7,7 @@ import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
-import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
+import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, issueCloseWhen, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
 import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
@@ -91,6 +91,9 @@ export interface RequestsApiDeps {
   checkers?: CheckerSettings
   /** One Promise (#1138 D): whether a promise's done needs a proof. */
   promiseSettings?: PromiseSettings
+  /** The forge a short "group/project#12" in a promise's words means
+   *  outside a forge chat (noqta#876 step 5). Null or absent: none. */
+  defaultForge?: "github" | "gitlab" | null
   /** Whose day the flow rate counts by, and how many days (#1542). */
   flow?: FlowSettings
   /** What the checker said about this request's closeWhen: the second
@@ -532,6 +535,13 @@ export function handleRequestsApi(
       if ("refuse" in slot) return slot.refuse
       if (slot.plan.kind === "set") loop.dueAt = slot.plan.dueAt
       const { id } = openPromise(store, { channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
+      // Its words name an issue or merge request and it gave no check of
+      // its own (noqta#876 step 5): it gets the same note checker as a
+      // caught promise. Before, only caught promises had one.
+      if (!loop.closeWhen) {
+        const cw = issueCloseWhen(text, id, now, { channel: turn.channel, chatId: turn.chatId, forge: deps.defaultForge ?? null })
+        if (cw) store.setLoop(id, { closeWhen: cw }, now)
+      }
       store.setHeadline(id, described, "agent")
       if (slot.work) store.setWork(id, slot.work)
       if (needsQa !== undefined) store.setNeedsQa(id, needsQa, now)

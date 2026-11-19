@@ -169,21 +169,74 @@ export interface OpenPromiseInput {
 
 const ITEM_LINK = /https?:\/\/[^\s<>()"'`]+?\/(?:-\/(?:issues|merge_requests)|issues|pull)\/\d+(?![\w/])/
 
-/** A checker for a promise whose words link an issue or merge request
- *  (noqta#876 cause 4): it closes when a note written after the promise
- *  opened carries the promise's id. Not on the item's state: an item
- *  already closed or merged would close the promise at its first check,
- *  and a merged MR is not a later deploy. Null when the words link none,
- *  or the link is not one the checker reads. */
-export function issueCloseWhen(text: string, id: string, now: number): CloseWhen | null {
+/** "group/project#12" or "group/project!12" in running words. */
+const SHORT_REF = /(?<![\w/.:@-])([\w-][\w.-]*(?:\/[\w-][\w.-]*)+)([#!])(\d+)(?!\w)/
+/** "issue 877", "MR 12", "PR 12": a number in the chat's own project. A
+ *  lone "#2" / "!2" is not read: promise words say "point #2" or "step #5"
+ *  far more often than they mean an issue, and a wrong checker would stop
+ *  the agent closing its own promise (daemon-api "done" needs it met). */
+const BARE_REF = /\b(issue|mr|merge request|pr|pull request)\s+#?(\d+)(?!\w)/i
+
+type Forge = "github" | "gitlab"
+
+/** Where the promise was made, so a short ref finds its forge and a bare
+ *  number its project (noqta#876 step 5). */
+export interface IssueRefContext {
+  channel?: string
+  /** A forge chat: "group/project:issue:12" (GitLab), "owner/repo:pull:3" (GitHub). */
+  chatId?: string
+  /** The forge a short "group/project#12" means outside a forge chat:
+   *  the one this node is set up for. Null: none. */
+  forge?: Forge | null
+}
+
+function chatProject(ctx: IssueRefContext): { provider: Forge; project: string } | null {
+  if (ctx.channel !== "gitlab" && ctx.channel !== "github") return null
+  const m = (ctx.chatId ?? "").match(/^(.+?):[a-z_]+:\d+$/)
+  return m ? { provider: ctx.channel, project: m[1] } : null
+}
+
+/** The issue or merge request the words name, as a ref the checker reads:
+ *  a web address first, then "group/project#12", then a bare number in a
+ *  forge chat's project. Null when they name none this node can read. */
+function itemRef(text: string, ctx: IssueRefContext): { provider: Forge; ref: string } | null {
   const m = text.match(ITEM_LINK)
-  if (!m) return null
-  const link = m[0].replace(/[.,;:]+$/, "")
-  let host: string
-  try { host = new URL(link).hostname.toLowerCase() } catch { return null }
-  const provider = host === "github.com" ? "github" : "gitlab"
-  if (!parseRef(provider, link)) return null
-  return { kind: "issue", provider, ref: link, notePattern: id, after: now }
+  if (m) {
+    const link = m[0].replace(/[.,;:]+$/, "")
+    let host: string
+    try { host = new URL(link).hostname.toLowerCase() } catch { return null }
+    const provider = host === "github.com" ? "github" : "gitlab"
+    return parseRef(provider, link) ? { provider, ref: link } : null
+  }
+  const chat = chatProject(ctx)
+  const s = text.match(SHORT_REF)
+  if (s) {
+    // "!" is a GitLab merge request; "#" is the forge of the chat, else the node's.
+    const provider: Forge | null = s[2] === "!" ? "gitlab" : chat?.provider ?? ctx.forge ?? null
+    const ref = `${s[1]}${s[2]}${s[3]}`
+    return provider && parseRef(provider, ref) ? { provider, ref } : null
+  }
+  const b = text.match(BARE_REF)
+  if (b && chat) {
+    const word = b[1].toLowerCase()
+    const mr = word !== "issue"
+    // GitHub reads issues and pull requests by "#"; GitLab merge requests by "!".
+    const ref = `${chat.project}${mr && chat.provider === "gitlab" ? "!" : "#"}${b[2]}`
+    return parseRef(chat.provider, ref) ? { provider: chat.provider, ref } : null
+  }
+  return null
+}
+
+/** A checker for a promise whose words name an issue or merge request
+ *  (noqta#876 cause 4, step 5): it closes when a note written after the
+ *  promise opened carries the promise's id. Not on the item's state: an
+ *  item already closed or merged would close the promise at its first
+ *  check, and a merged MR is not a later deploy. The words may give the
+ *  item's address, a short "group/project#12", or, in a forge chat, a
+ *  bare "issue 12". Null when they name none, or none the checker reads. */
+export function issueCloseWhen(text: string, id: string, now: number, ctx: IssueRefContext = {}): CloseWhen | null {
+  const item = itemRef(text, ctx)
+  return item ? { kind: "issue", provider: item.provider, ref: item.ref, notePattern: id, after: now } : null
 }
 
 /** Opens a promise and returns it. The one way to open one (#1138 D):

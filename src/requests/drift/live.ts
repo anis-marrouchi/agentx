@@ -50,3 +50,13 @@ export function forgeConnectorsOf(config: Pick<DaemonConfig, "channels" | "reque
     gitlab: { url: settings?.gitlab?.url ?? gl?.host ?? "https://gitlab.com", token: settings?.gitlab?.token ?? gl?.token },
   }
 }
+
+/** The forge a short "group/project#12" means outside a forge chat
+ *  (noqta#876 step 5): GitLab when this node is set up for it, else
+ *  GitHub when it is, else none. */
+export function defaultForgeOf(config: Pick<DaemonConfig, "channels" | "requests">): "github" | "gitlab" | null {
+  const settings = config.requests.checkers
+  if (config.channels.gitlab || settings?.gitlab?.url) return "gitlab"
+  if (config.channels.github || settings?.github?.token) return "github"
+  return null
+}
