@@ -17,6 +17,7 @@ import { httpFetch, httpPost } from "./http"
 import { meshDelegate } from "./mesh"
 import { ragLexical } from "./rag"
 import { signalResume } from "./signal"
+import { situationExpire, situationPromises } from "@/situations/closing-actions"
 
 /**
  * Register every shipped built-in. Idempotent — re-registering the
@@ -38,6 +39,8 @@ export function registerAllBuiltins(): void {
   registerBuiltin(meshDelegate)
   registerBuiltin(ragLexical)
   registerBuiltin(signalResume)
+  registerBuiltin(situationExpire)
+  registerBuiltin(situationPromises)
 }
 
 /** Test-only — clears the registry. Re-call registerAllBuiltins to repopulate. */

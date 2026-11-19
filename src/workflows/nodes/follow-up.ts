@@ -1,7 +1,7 @@
 import { render, renderParams } from "../template"
 import type { WorkflowRun } from "../types"
 import { DEFAULT_FOLLOW_UP, type FollowUpDefaults, type NodeContext, type NodeHandler, type NodeResult } from "./types"
-import { sendToChat, type SituationTag } from "@/situations/send-to-chat"
+import { sendToChat, situationTagFromConfig, staleSituationTag, type SituationTag } from "@/situations/send-to-chat"
 
 // --- Follow-up steps (#788) ---
 //
@@ -140,6 +140,9 @@ const ownerNotifyHandler: NodeHandler = async (ctx) => {
   const text = render(String(ctx.node.config.text ?? ""), ctxOf(ctx), { envAllow: ctx.workflow.envAllow }).trim()
   if (!text) return { error: `owner.notify "${ctx.node.id}" needs config.text` }
   if (!ctx.owner) return { error: `owner.notify "${ctx.node.id}": no owner to tell on this node` }
+  // A close step of a talk that was opened again since: not told (S7).
+  const stale = staleSituationTag(situationTagFromConfig(renderParams({ s: ctx.node.config.situation ?? null }, ctxOf(ctx)).s))
+  if (stale) return { error: `owner.notify "${ctx.node.id}": ${stale}` }
   try {
     await ctx.owner.notify(text, ctx.run)
   } catch (e: any) {
@@ -176,10 +179,13 @@ const ownerAskHandler: NodeHandler = async (ctx) => {
 
 /** The message a person.message step sends, rendered against the run. */
 export function renderPersonMessage(ctx: Pick<NodeContext, "node" | "run" | "workflow">): {
-  channel: string; chatId: string; accountId?: string; text: string; to?: string
+  channel: string; chatId: string; accountId?: string; text: string; to?: string; situation?: SituationTag
 } {
   const cfg = renderParams(ctx.node.config, ctxOf(ctx as NodeContext), { envAllow: ctx.workflow.envAllow })
+  // A close step's message (#1892 phase 4): refused if the talk reopened (S7).
+  const situation = situationTagFromConfig(cfg.situation)
   return {
+    ...(situation ? { situation } : {}),
     channel: String(cfg.channel ?? "").trim(),
     chatId: String(cfg.chatId ?? "").trim(),
     ...(typeof cfg.accountId === "string" && cfg.accountId ? { accountId: cfg.accountId } : {}),

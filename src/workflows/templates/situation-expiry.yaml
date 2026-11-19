@@ -1,0 +1,51 @@
+# Situation expiry: end a talk left too long in one phase (#1892, phase 4).
+#
+# Started by the situation record each time a talk with closing steps
+# changes phase; the run of the phase before is cancelled. It waits for
+# the phase's max age (`situations.maxAge`), then asks the record to end
+# the talk as "stale". The record does that only if the phase has not
+# changed since this run started, so a run that was not cancelled in
+# time does nothing.
+#
+# No poll and no cron: one paused run per open talk with closing steps.
+
+id: situation-expiry
+version: 2
+title: Situation expiry
+description: Ends a talk left too long in one phase, as stale. Started by the situation record on each phase change; a newer phase cancels it.
+autoStart: false
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config:
+      inputSchema:
+        type: object
+        properties:
+          situationId:    { type: string, description: "The situation record's id" }
+          phaseChangedAt: { type: number, description: "When the phase this run is for started (ms)" }
+          after:          { type: string, description: "The phase's max age, as an ISO duration (PT60M)" }
+        required: [situationId, phaseChangedAt, after]
+
+  - id: wait
+    type: timer.boundary
+    config:
+      after: "{{start.after}}"
+
+  - id: expire
+    type: action.builtin
+    config:
+      name: situation.expire
+      input:
+        situationId: "{{start.situationId}}"
+        phaseChangedAt: "{{start.phaseChangedAt}}"
+
+  - id: done
+    type: end
+    config:
+      status: completed
+
+edges:
+  - { from: start, to: wait }
+  - { from: wait, to: expire }
+  - { from: expire, to: done }

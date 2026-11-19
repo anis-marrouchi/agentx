@@ -24,6 +24,10 @@ export type TemplateName =
   | "extract"
   | "retry"
   | "release-follow-up"
+  // Installed by the situation record (#1892 phase 4), not offered by
+  // `agentx workflow new`: they are not in TEMPLATES below.
+  | "situation-close"
+  | "situation-expiry"
 
 export interface TemplateMeta {
   name: TemplateName

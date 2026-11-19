@@ -39,7 +39,11 @@ import { localNumber, numberLine, peerNumbers, yesterday, type NodeNumber } from
 import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { setSituationContextSource } from "@/situations/context"
-import { situationsList, situationsOverride } from "@/situations/api"
+import { situationsClosing, situationsList, situationsOverride } from "@/situations/api"
+import { SituationRuns } from "@/situations/runs"
+import { ensureSituationWorkflows } from "@/situations/workflows"
+import { setSituationClosingDeps } from "@/situations/closing-actions"
+import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
@@ -396,6 +400,9 @@ export class AgentXDaemon {
   private situationGate?: SituationGate
   /** This node's signal sources (#1892 phase 3). */
   private signalSources?: AttachedSources
+  /** Closing steps (#1892 phase 4): the store's expiry and close runs. */
+  private situationRuns?: SituationRuns
+  private situationHookOff?: () => void
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
@@ -879,6 +886,30 @@ export class AgentXDaemon {
           // The [Situation] prompt layer reads the same record (phase 2).
           setSituationContextSource({ store: situations, settings: () => this.config.situations })
           this.log(`  Courtesy gate: ${this.config.situations.mode}`)
+          // Closing steps (phase 4): for a talk given closing steps, the
+          // store starts and cancels the situation-expiry and
+          // situation-close workflow runs itself (no hook, no cron). Off
+          // unless situations.closing.enabled. The on:situation hook event
+          // is fired from the store's one bus event, for user workflows.
+          this.situationRuns?.detach()
+          this.situationRuns = new SituationRuns({
+            store: situations,
+            settings: () => this.config.situations,
+            dispatcher: () => this.workflowDispatcher ?? null,
+            ensureWorkflows: () => {
+              if (!this.workflowStore) return
+              const added = ensureSituationWorkflows(this.workflowStore)
+              if (added.length) this.log(`  Situations: installed workflow(s) ${added.join(", ")}`)
+            },
+            runStatus: (id) => this.workflowRuns?.get(id)?.status ?? null,
+            log: (m) => this.log(m),
+          })
+          this.situationRuns.attach()
+          setSituationClosingDeps({ store: situations, requests: () => this.requests?.store ?? null })
+          this.situationHookOff?.()
+          this.situationHookOff = attachSituationHook(this.hooks)
+          // S14: open talks get their expiry run back, once the engine runs.
+          if (this.workflowDispatcher) void this.situationRuns.resumeOnStart()
           // Signal sources (phase 3): adapters that fit this node; a leave
           // reported by a channel or the call store moves the record.
           // Signals stay on this node (not on the event bus).
@@ -4472,6 +4503,9 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // S14 (#1892 phase 4): open talks with closing steps get a missing
+    // expiry run back. Does nothing unless situations.closing.enabled.
+    void this.situationRuns?.resumeOnStart()
     // workflows.required (#858): wrapped tasks keep their run here too.
     // Runs whose turn was cut off by the last stop are closed first.
     this.registry.setWorkflowRunStore(runs)
@@ -5328,6 +5362,8 @@ export class AgentXDaemon {
     // CLI or the same-host dashboard (owner-checked) over loopback, or a
     // mesh token. Never a chat participant.
     "/situations/override",
+    // Gives a talk closing steps (#1892 phase 4): same callers as above.
+    "/situations/closing",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8387,6 +8423,15 @@ export class AgentXDaemon {
           const body = await readBody(req)
           const r = situationsOverride(this.situationGate.store, body)
           if (r.status === 200) this.log(`[situation] ${String(body.action)} on ${String(body.id).slice(0, 80)} by ${String(body.by || "a person").slice(0, 80)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+
+        case "POST /situations/closing": {
+          if (!this.situationGate) { this.json(res, 503, { error: "the courtesy gate is not available on this node" }); break }
+          const body = await readBody(req)
+          const r = situationsClosing(this.situationGate.store, body)
+          if (r.status === 200) this.log(`[situation] closing steps ${body.clear === true ? "removed from" : "set on"} ${String(body.id || `${body.channel} ${body.chatId}`).slice(0, 80)}`)
           this.json(res, r.status, r.body)
           break
         }

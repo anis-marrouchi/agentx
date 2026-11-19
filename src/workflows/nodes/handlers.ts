@@ -28,7 +28,10 @@ const triggerHandler: NodeHandler = async (ctx) => {
 
 const agentHandler: NodeHandler = async (ctx) => {
   const cfg = ctx.node.config
-  const agentId = String(cfg.agentId ?? "")
+  // A template may name the agent from the run's inputs ("{{start.agent}}",
+  // the situation-close workflow, #1892 phase 4).
+  const rawAgent = String(cfg.agentId ?? "")
+  const agentId = rawAgent.includes("{{") ? render(rawAgent, ctx.run.context as unknown as Record<string, unknown>).trim() : rawAgent
   const promptTemplate = String(cfg.prompt ?? "")
   if (!agentId) return { error: `agent node "${ctx.node.id}" missing config.agentId` }
 
@@ -787,7 +790,8 @@ function findUpstreamAgentId(ctx: NodeContext): string | undefined {
     const entry = ctx.run.history[i]
     const node = ctx.workflow.nodes.find((n) => n.id === entry.nodeId)
     if (node?.type === "agent") {
-      return (node.config.agentId as string | undefined) ?? undefined
+      const id = (node.config.agentId as string | undefined) ?? undefined
+      return id?.includes("{{") ? render(id, ctx.run.context as unknown as Record<string, unknown>).trim() || undefined : id
     }
   }
   return undefined

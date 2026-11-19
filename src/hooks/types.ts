@@ -36,6 +36,10 @@ export const HOOK_EVENTS = [
   // filters on `topic`. Keeps the 400+ integrations n8n already maintains
   // on the n8n side, and the agents on ours.
   "on:n8n",
+  // A chat's situation changed phase (#1892 phase 4): fired once per
+  // committed change by one listener on the store's `situation:phase` bus
+  // event (situations/hook.ts). For user workflows; `filter.phase`.
+  "on:situation",
   // External-service events — fired by the generic webhook handler after
   // signature verification. Workflows subscribe via trigger.hook.
   "on:stripe-event",

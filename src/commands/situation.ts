@@ -15,6 +15,8 @@ import { loadDaemonConfig } from "@/daemon/config"
 //       a person's override (phase 2)
 //   agentx situation sources
 //       the signal sources on this node and what each answers (phase 3)
+//   agentx situation closing <id> --purpose <text> --home <link> [--message <text>]
+//       closing steps for a talk: a note, promises, one owner message (phase 4)
 //
 // Settings: `agentx config set situations.mode shadow|active|off`.
 
@@ -144,6 +146,38 @@ for (const [action, description, done] of OVERRIDES) {
       console.log(chalk.green(`  Situation ${id} ${done}.`))
     })
 }
+
+// Phase 4: closing steps (#1892).
+common(situationCmd
+  .command("closing [id]")
+  .description("give a talk closing steps: when it ends, one note at its home, each follow-up an open promise, one message to you (needs situations.closing.enabled)")
+  .option("--purpose <text>", "what the talk is, e.g. \"the job interview with a candidate\"")
+  .option("--home <link>", "where the note goes: an issue, a merge request or a wiki page")
+  .option("--agent <id>", "the agent that writes the note (default: the chat's agent)")
+  .option("--message <text>", "a closing message to the other side; you are always asked before it is sent")
+  .option("--channel <name>", "with --chat, for a talk that has no record yet: telegram, whatsapp, discord or slack")
+  .option("--chat <id>", "the chat id as the channel names it (needed with --message on WhatsApp)")
+  .option("--account <id>", "the channel account, when it has several")
+  .option("--clear", "remove the closing steps"))
+  .action(async (id: string | undefined, opts) => {
+    if (!id && !(opts.channel && opts.chat)) {
+      console.log(chalk.red("  Give a situation id (from `situation list`), or --channel and --chat."))
+      process.exit(1)
+    }
+    const body: Record<string, unknown> = opts.clear ? { clear: true } : {
+      purpose: opts.purpose, home: opts.home,
+      ...(opts.agent ? { agent: opts.agent } : {}),
+      ...(opts.message ? { message: opts.message } : {}),
+    }
+    if (id) body.id = id
+    if (opts.channel) body.channel = opts.channel
+    if (opts.chat) body.chatId = opts.chat
+    if (opts.account) body.account = opts.account
+    const data = await call(opts, "POST", "/situations/closing", body)
+    const r = data.row
+    if (opts.clear) { console.log(chalk.green(`  Closing steps removed from ${String(r?.id ?? id).slice(0, 8)}.`)); return }
+    console.log(chalk.green(`  Closing steps set on ${String(r?.id ?? "").slice(0, 8)} (${r?.channel} ${r?.chatId}): note at ${r?.closing?.home}.`))
+  })
 
 common(situationCmd
   .command("release <id>")
