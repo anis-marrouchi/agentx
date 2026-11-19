@@ -57,7 +57,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.templates.enabled` | `false` | `true` adds each talk's template rules to your agent's `[Situation]` line and to its closing note, and accepts only templates from `agentx situation templates` (see [Templates](#templates-what-kind-of-talk-it-is)). |
 | `situations.templates.agentFill` | `false` | `true` lets the chat's own agent name its talk with `agentx_situation`, within the limits in [Templates](#templates-what-kind-of-talk-it-is). Needs `situations.templates.enabled`. |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
-| `situations.sources.open-apps` / `browser-tabs` / `news` | off | Per-request sources: read only when an agent asks for one request, and for open apps and tabs only after your yes in the popup. See [Let an agent see your open apps and tabs for one request](/jobs/screen-for-a-request), which also lists `situations.consent.*` and `situations.news.*`. |
+| `situations.sources.open-apps` / `browser-tabs` / `news` | off | Per-request sources: read only when an agent asks for one request, and for open apps only after your yes in the popup; browser tabs are not read yet. See [Let an agent see your open apps for one request](/jobs/screen-for-a-request), which also lists `situations.consent.*`, `situations.browserTabs.*` and `situations.news.*`. |
 
 ## Turn it on
 

@@ -1,4 +1,4 @@
-// How an agent reads your open apps or browser tabs for one request, only
+// How an agent reads your open apps for one request, only
 // after your yes: the picture at the top of docs/jobs/screen-for-a-request.md.
 import { C, createDiagram } from "./kit.mjs"
 
@@ -11,7 +11,7 @@ const d = createDiagram({
   title: "How an agent reads your screen for one request",
   desc:
     "Your agent needs to see what is open on your computer for the request it works on. It asks you with one card that says what it wants to read, why, and for how long. " +
-    "The card opens as a popup on your Mac, the only place a yes counts. After your yes, the agent reads your open apps or your browser tabs, each read is logged, and the yes ends by itself. " +
+    "The card opens as a popup on your Mac, the only place a yes counts. After your yes, the agent reads your open apps, each read is logged, and the yes ends by itself. " +
     "A no, or no answer, and nothing is read.",
 })
 
@@ -41,7 +41,7 @@ d.band(band, ROW + 64, "WHILE THE YES LASTS", { tint: C.tintGrey, dx: 48 })
 d.wrap(yes.at(-1), d.x0 + 26, y, { label: "Yes" })
 d.row(
   [
-    { title: ["It reads"], note: ["open apps, or tab", "titles and addresses"], who: "ink" },
+    { title: ["It reads"], note: ["your open apps,", "a few times at most"], who: "ink" },
     { title: ["Each read is logged"], note: ["when, which agent,", "which request"], who: "ink" },
     { title: ["The yes ends"], note: ["after the minutes", "on the card"], who: "ink" },
   ],
@@ -61,7 +61,7 @@ d.list(d.x0, y + ROW + 56, {
     ["The ask is refused", "Turn on the approvals popup."],
     ["A read says off", "Switch the source on."],
     ["A read says no consent", "No yes yet, or it ended."],
-    ["Tabs are not read", "Allow automation in System Settings."],
+    ["Tabs are not loaded", "Expected: no separate reader yet."],
   ],
   delay: end + 1.2,
 })

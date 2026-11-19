@@ -3760,7 +3760,7 @@ List the signal sources on this machine: the owner's Focus, call and widget hold
 
 ### `agentx situation reads`
 
-List each read of a per-request source (`open-apps`, `browser-tabs`, `news`), newest first: when, which source, which agent, how it went and for which request (the consent card's id). Never what was read. Works only on the machine itself. See [Let an agent see your open apps and tabs for one request](/jobs/screen-for-a-request).
+List each read of a per-request source (`open-apps`, `browser-tabs`, `news`), newest first: when, which source, which agent, how it went and for which request (the consent card's id). Never what was read. Works only on the machine itself. See [Let an agent see your open apps for one request](/jobs/screen-for-a-request).
 
 | Flag | Default | Meaning |
 |---|---|---|

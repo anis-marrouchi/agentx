@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 900" width="920" height="900" role="img" aria-labelledby="t d" style="--cycle:4.9s">
 <title id="t">How an agent reads your screen for one request</title>
-<desc id="d">Your agent needs to see what is open on your computer for the request it works on. It asks you with one card that says what it wants to read, why, and for how long. The card opens as a popup on your Mac, the only place a yes counts. After your yes, the agent reads your open apps or your browser tabs, each read is logged, and the yes ends by itself. A no, or no answer, and nothing is read.</desc>
+<desc id="d">Your agent needs to see what is open on your computer for the request it works on. It asks you with one card that says what it wants to read, why, and for how long. The card opens as a popup on your Mac, the only place a yes counts. After your yes, the agent reads your open apps, each read is logged, and the yes ends by itself. A no, or no answer, and nothing is read.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -90,8 +90,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="70" cy="564" r="15" fill="#0B0D12"/>
 <text x="70" y="569" class="num" text-anchor="middle">5</text>
 <text x="60" y="608" class="title" text-anchor="start">It reads</text>
-<text x="60" y="630" class="note" text-anchor="start">open apps, or tab</text>
-<text x="60" y="647" class="note" text-anchor="start">titles and addresses</text>
+<text x="60" y="630" class="note" text-anchor="start">your open apps,</text>
+<text x="60" y="647" class="note" text-anchor="start">a few times at most</text>
 </g>
 <g class="rise" style="animation-delay:1.92s">
 <rect x="328" y="536" width="264" height="136" rx="14" class="card"/>
@@ -118,5 +118,5 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <g class="rise" style="animation-delay:3.64s"><circle cx="49" cy="754.5" r="4" fill="#B45309"/><text x="62" y="760" class="symptom" text-anchor="start">The ask is refused</text><text x="62" y="780" class="note" text-anchor="start">Turn on the approvals popup.</text></g>
 <g class="rise" style="animation-delay:3.89s"><circle cx="465" cy="754.5" r="4" fill="#B45309"/><text x="478" y="760" class="symptom" text-anchor="start">A read says off</text><text x="478" y="780" class="note" text-anchor="start">Switch the source on.</text></g>
 <g class="rise" style="animation-delay:4.14s"><circle cx="49" cy="806.5" r="4" fill="#B45309"/><text x="62" y="812" class="symptom" text-anchor="start">A read says no consent</text><text x="62" y="832" class="note" text-anchor="start">No yes yet, or it ended.</text></g>
-<g class="rise" style="animation-delay:4.39s"><circle cx="465" cy="806.5" r="4" fill="#B45309"/><text x="478" y="812" class="symptom" text-anchor="start">Tabs are not read</text><text x="478" y="832" class="note" text-anchor="start">Allow automation in System Settings.</text></g>
+<g class="rise" style="animation-delay:4.39s"><circle cx="465" cy="806.5" r="4" fill="#B45309"/><text x="478" y="812" class="symptom" text-anchor="start">Tabs are not loaded</text><text x="478" y="832" class="note" text-anchor="start">Expected: no separate reader yet.</text></g>
 </svg>
