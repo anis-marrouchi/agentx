@@ -1081,12 +1081,20 @@ export class RequestStore {
 
   /** The check found the close does not match the owner's words: the
    *  request opens again as needing attention, so the requests check tells
-   *  the owner once. How it was closed stays in evidence / close_reason. */
+   *  the owner once. How it was closed stays in evidence / close_reason.
+   *
+   *  retro:01M7RHM4763Q09HY7ATFT77DX1 — the proof links of the close just
+   *  judged are cleared, so the next close is judged on its own links only
+   *  (KSI 562 was reopened 3 times on an earlier close's stale links).
+   *  Cleared here, not on done: links given by `step` after this reopen and
+   *  before the next done belong to the new round and stay. The read
+   *  deliverables stay (the owner's words did not change); the signal mark
+   *  stays (once per request). */
   reopenForOwnerCheck(id: string, reason: string, now: number): boolean {
     const why = reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
     const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'needs_attention', closed_at = NULL, updated_at = ?, attention_reason = ?, notified_at = NULL,
-         owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?
+         owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?, deliverable_proofs = NULL, proof_asked_at = NULL
        WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("needs_attention", now, now, why, now, why, id, ...CLOSED_STATES).changes > 0
     if (reopened) this.signal("owner_check_mismatch", id, why, now)
