@@ -3772,6 +3772,10 @@ Name the agent that says yes or no to each learned draft. Owner only: run it in 
 |---|---|---|
 | `--clear` | — | Remove the approver: drafts wait and nothing learned is used. |
 
+### `agentx situation learned reset`
+
+Start over when the sealed record of learned templates cannot be trusted (`agentx situation learned` says it was changed outside AgentX, or an older copy was put back). Drops every draft and decision, and the approver. Owner only: it sends your operator key. Refused while the record is sound.
+
 ### `agentx situation learned retire <id>`
 
 Take back a learned template (or drop a draft): it is no longer used. Owner only: run it in the AgentX folder on the daemon's machine; it sends your operator key. There is no command that approves a draft.
