@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.234.0](https://github.com/anis-marrouchi/agentx/compare/v0.233.0...v0.234.0) (2026-11-19)
+
+
+### Features
+
+* **situations:** signal sources behind one interface ([#1892](https://github.com/anis-marrouchi/agentx/issues/1892) phase 3) ([#1944](https://github.com/anis-marrouchi/agentx/issues/1944)) ([f6f8c9b](https://github.com/anis-marrouchi/agentx/commit/f6f8c9b3cbbbf024ece0e772da40e9e59f04516e))
+
+
+### Bug Fixes
+
+* **situations:** limit push-source leaves to the listed agents ([#1945](https://github.com/anis-marrouchi/agentx/issues/1945)) ([#1947](https://github.com/anis-marrouchi/agentx/issues/1947)) ([64c468e](https://github.com/anis-marrouchi/agentx/commit/64c468ea5c3f614331ad5369436d4ad67da6eea4))
+
 ## [0.233.0](https://github.com/anis-marrouchi/agentx/compare/v0.232.0...v0.233.0) (2026-11-18)
 
 
