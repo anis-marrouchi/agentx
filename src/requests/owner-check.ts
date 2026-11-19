@@ -19,7 +19,7 @@
 // close is marked unclear. Closes older than `maxAgeHours` are left alone.
 
 import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
-import { deliverablesOf, missingProofs, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
+import { deliverablesOf, missingProofs, oneLine, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
 
 export interface OwnerCheckSettings {
   enabled: boolean
@@ -63,11 +63,13 @@ export const CHECK_BY = "check"
  *  reviewer judged the rest of the request on the check alone. */
 function metCheckLines(evidence: string): string {
   const { check, agent } = splitCheckEvidence(evidence)
+  // The assistant chose the check (closeWhen), so it is not called
+  // independent; its words are on one line and quoted (#1943 review).
   return [
-    `Closed as DONE: the daemon's own close check was met: ${clip(check)}`,
+    `Closed as DONE: the request's close check (set by the assistant) was met: ${clip(oneLine(check))}`,
     "That check proves only what it checks (for example that a merge request is merged), and a deliverable it covers needs no other link. " +
       "It says nothing about the other things the owner asked: judge those on the assistant's evidence and proof links below.",
-    `Evidence given by the assistant: ${agent ? clip(agent) : "(none)"}`,
+    `Evidence given by the assistant (its own words, quoted): ${agent ? `"${clip(oneLine(agent))}"` : "(none)"}`,
   ].join("\n")
 }
 
@@ -110,6 +112,10 @@ export function wokenAgent(r: { state: string; attentionReason?: string | null }
  *  cleared: there only the ones still without a link are asked for. */
 export function mismatchText(r: RequestRecord, why: string, d: Deliverables | null): string {
   const missing = !d ? [] : d.fromPlan ? missingProofs(r, d) : allProofsAsked(d)
+  // No list was read, but a check closes it (#1943 review): the same
+  // check result is held (#692 B1) until a new proof link, so the agent
+  // is told it can give them.
+  const byCheck = !d && (!!r.closeWhen || r.closedBy === CHECK_BY)
   const how = r.state === "done" ? "closed it as done" : `closed it as ${r.state}`
   return [
     `[agentx:request-reopened id=${r.id}] You ${how}, but the close does not do what the owner asked, so the request is open again.`,
@@ -122,9 +128,10 @@ export function mismatchText(r: RequestRecord, why: string, d: Deliverables | nu
     ...(missing.length
       ? ["", d?.fromPlan ? "Still without a proof link:" : "Give a proof link for each (the earlier links were cleared with the reopen):", ...missing.map((m) => `- ${m}`)]
       : []),
+    ...(byCheck ? ["", "Its check alone does not close it again: give a proof link for each thing the owner asked, numbered in the order they asked."] : []),
     "",
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
-    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length || byCheck ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
       `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
       `If it cannot be done, decline it with the reason in the owner's terms. The owner is told it is open again and that it is yours.`,
   ].join("\n")
@@ -142,8 +149,8 @@ export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deli
   const how = r.state === "done" && r.closedBy === CHECK_BY && r.evidence
     ? metCheckLines(r.evidence)
     : r.state === "done"
-    ? `Closed as DONE by ${r.closedBy}. Evidence given: ${clip(r.evidence ?? "(none)")}`
-    : `Closed as ${r.state.toUpperCase()} by ${r.closedBy}. Reason given: ${clip(r.closeReason ?? "(none)")}`
+    ? `Closed as DONE by ${r.closedBy}. Evidence given: ${clip(oneLine(r.evidence ?? "(none)"))}`
+    : `Closed as ${r.state.toUpperCase()} by ${r.closedBy}. Reason given: ${clip(oneLine(r.closeReason ?? "(none)"))}`
   return [
     "The owner asked for this (their own words, possibly a voice transcript):",
     clip(r.text),

@@ -1,7 +1,7 @@
 import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
-import { closeByCheckNow, deliverablesOf, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
+import { checkEvidence, closeByCheckNow, deliverablesOf, oneLine, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
@@ -131,7 +131,7 @@ export function parseProofs(v: unknown, r: RequestRecord, hasPlan: boolean): Arr
       if (list && raw > list.length) return `${at}.deliverable: there are ${list.length} deliverables: ${list.map((n, j) => `${j + 1}. ${n}`).join("; ")}`
       deliverable = String(raw)
     } else {
-      deliverable = str(raw)
+      deliverable = oneLine(str(raw))
       if (!deliverable || deliverable.length > DELIVERABLE_NAME_MAX) return `${at}.deliverable must be the item's number (1 is the first) or its name`
       if (list && !list.some((n, j) => n.toLowerCase() === deliverable.toLowerCase() || String(j + 1) === deliverable)) {
         return `${at}.deliverable "${deliverable}" is not one of: ${list.map((n, j) => `${j + 1}. ${n}`).join("; ")}`
@@ -666,10 +666,14 @@ export function handleRequestsApi(
         // The agent's evidence and its typed proof are kept beside the
         // check's words (#1943): the check proves only what it checks, and
         // the reviewer judges the rest on these and the proofs[] links.
-        const ev = str(input.evidence)
-        const extra = proof && input.proof != null && !ev.includes(proof.value) ? describeProof(proof) : ""
+        // All of it on one line, and an agent's own "check" proof is not
+        // written as "check:": only the daemon's check ran here.
+        const ev = oneLine(str(input.evidence))
+        const extra = proof && input.proof != null && !ev.includes(oneLine(proof.value))
+          ? oneLine(proof.kind === "check" ? `the assistant says it checked: ${proof.value}` : describeProof(proof))
+          : ""
         const said = [ev, extra].filter(Boolean).join("; ")
-        const out = closeByCheckNow(store, request.id, v.detail, said && said !== v.detail ? `${v.detail} (agent: ${said})` : v.detail, now, deps.closeProof ?? PROOF_OFF)
+        const out = closeByCheckNow(store, request.id, v.detail, checkEvidence(v.detail, said), now, deps.closeProof ?? PROOF_OFF)
         if (out.outcome === "held") return { status: 409, body: { error: `Not closed: its check gives the same result the owner already found does not match their words (${out.detail}).`, held: true } }
         if (out.outcome === "blocked") {
           // The refusal is the telling (#692 S5): the sweep does not ask again.

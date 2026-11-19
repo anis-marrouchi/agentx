@@ -52,12 +52,44 @@ const cut = (t: string) => t.trim().slice(0, DETAIL_MAX) || "the check was met"
  *  agent's words on done; home-check: the plan's steps left). */
 const SUFFIXES = [" (agent: ", "; its plan stopped with steps left: "]
 
+/** Agent-supplied text on one line (#1943 review): a line break in the
+ *  agent's evidence, proof or label must not start a line of its own in
+ *  the reviewer's prompt, where it could read as the check's. */
+export const oneLine = (t: string) => t.replace(/\s+/g, " ").trim()
+
+/** At most this much of the agent's words is kept beside a long check
+ *  detail; the detail is cut first, down to CHECK_KEEP_MIN. */
+const AGENT_KEEP_MAX = 300
+const CHECK_KEEP_MIN = 120
+const ELLIPSIS = "…"
+
+/** What a close by a met check keeps as its evidence: the checker's
+ *  detail, then the agent's words (#1943). Near the 500-character cut the
+ *  detail is shortened (ending in "…"), not the agent's words: the
+ *  reviewer judges the rest of the request on them. */
+export function checkEvidence(detail: string, said: string): string {
+  const d = detail.trim()
+  const s = oneLine(said)
+  if (!s || s === d) return d
+  const full = `${d}${SUFFIXES[0]}${s})`
+  if (full.length <= DETAIL_MAX) return full
+  const agent = s.length > AGENT_KEEP_MAX ? s.slice(0, AGENT_KEEP_MAX - 1) + ELLIPSIS : s
+  const room = Math.max(CHECK_KEEP_MIN, DETAIL_MAX - SUFFIXES[0].length - agent.length - 1)
+  const check = d.length > room ? d.slice(0, room - 1) + ELLIPSIS : d
+  return `${check}${SUFFIXES[0]}${agent})`.slice(0, DETAIL_MAX)
+}
+
 /** The kept evidence holds this checker detail, and nothing else of the
  *  checker's (#692 B1). The agent's words on done are never new. */
 export function sameCheckDetail(evidence: string | null, detail: string): boolean {
   if (evidence == null) return false
   const d = cut(detail)
   if (evidence === d) return true
+  // A detail shortened to keep the agent's words (checkEvidence).
+  const { check, agent } = splitCheckEvidence(evidence)
+  if (agent != null && check.endsWith(ELLIPSIS) && check.length >= CHECK_KEEP_MIN && check.length < d.length) {
+    return d.startsWith(check.slice(0, -ELLIPSIS.length))
+  }
   if (!evidence.startsWith(d)) return false
   const rest = evidence.slice(d.length)
   // A suffix cut short at the 500 characters still counts.
@@ -264,6 +296,9 @@ export function askForProof(store: RequestStore, id: string, missing: string[], 
   })
 }
 
+const LABELS_SHOWN = 20
+const LINKS_SHOWN = 5
+
 /** A met check's kept evidence, split into the checker's own words and
  *  the agent's words on done (#1943). Null `agent`: it gave none. */
 export function splitCheckEvidence(evidence: string): { check: string; agent: string | null } {
@@ -281,14 +316,24 @@ export function splitCheckEvidence(evidence: string): { check: string; agent: st
 export function proofBlock(d: Deliverables | null, kept: DeliverableProof[] = []): string[] {
   if (!d) {
     if (!kept.length) return []
-    const labels = [...new Set(kept.map((p) => p.deliverable))]
-    const lines = labels.map((l) => `${/^\d+$/.test(l) ? `${l}.` : `${l}:`} ${kept.filter((p) => p.deliverable === l).map((p) => p.link).join(" ")}`)
-    return ["", "Proof per deliverable (one link or more each, given by the assistant, numbered as it counted what was asked):", ...lines]
+    // addProofs has no total cap: the block has one (#1943 review).
+    const labels = [...new Set(kept.map((p) => oneLine(p.deliverable)))]
+    const shown = labels.slice(0, LABELS_SHOWN)
+    const lines = shown.map((l) => {
+      const links = kept.filter((p) => oneLine(p.deliverable) === l).map((p) => oneLine(p.link))
+      const more = links.length > LINKS_SHOWN ? ` (${links.length - LINKS_SHOWN} more)` : ""
+      // A number as given; a name the assistant wrote, quoted.
+      return `${/^\d+$/.test(l) ? `${l}.` : `- "${l}":`} ${links.slice(0, LINKS_SHOWN).join(" ")}${more}`
+    })
+    return [
+      "", "Proof per deliverable (one link or more each, given by the assistant, numbered or named as it counted what was asked):", ...lines,
+      ...(labels.length > shown.length ? [`(${labels.length - shown.length} more not shown)`] : []),
+    ]
   }
   if (d.names.length <= 1 && !d.proofs.length) return []
   const lines = d.names.map((name, i) => {
-    const links = d.proofs.filter((p) => proves(p, i, name)).map((p) => p.link)
-    return `${i + 1}. ${name}: ${links.length ? links.join(" ") : "(no link)"}`
+    const links = d.proofs.filter((p) => proves(p, i, name)).map((p) => oneLine(p.link))
+    return `${i + 1}. ${oneLine(name)}: ${links.length ? links.join(" ") : "(no link)"}`
   })
   return ["", "Proof per deliverable (one link or more each, given by the assistant):", ...lines]
 }
