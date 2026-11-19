@@ -120,6 +120,23 @@ describe("the old request status tables", () => {
     expect(logs.join("\n")).toMatch(/kept/i)
   })
 
+  it("writes one export only when the drop keeps failing, and reuses it once the drop works", () => {
+    makeOld()
+    addRow()
+    const agentxDir = join(dir, ".agentx")
+    // A read-only connection: the rows read, the drop fails.
+    const ro = new Database(join(dir, "db.sqlite"), { readonly: true })
+    try {
+      expect(retireStatusTables(ro, agentxDir, log, 1_000)).toBe("kept")
+      expect(retireStatusTables(ro, agentxDir, log, 2_000)).toBe("kept")
+    } finally { ro.close() }
+    const exports = () => readdirSync(agentxDir).filter((f) => f.startsWith("request-status-export-"))
+    expect(exports()).toHaveLength(1)
+    expect(retireStatusTables(db, agentxDir, log, 3_000)).toBe("exported")
+    expect(exports()).toHaveLength(1)
+    expect(logs[logs.length - 1]).toContain(exports()[0])
+  })
+
   it("is done once: a second start finds nothing", () => {
     makeOld()
     addRow()

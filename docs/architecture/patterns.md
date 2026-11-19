@@ -150,7 +150,7 @@ The epic [#1138](https://github.com/anis-marrouchi/agentx/issues/1138) had seven
 | C. One Desk | one list and one count of what waits on the owner, routed by three settings | `src/desk/owner-list.ts`, `src/desk/route.ts` | Met. |
 | D. Promise → Fact | one promise path; closing with a proof writes a fact | `src/requests/promise.ts` | Met, with tests. |
 | E. Catch "I'll do X" | reads a firm promise from a reply | `src/requests/catch.ts` | Precision met (1.00 on a held-out set, see `bench/README.md`). On by default since #1806, after a day live on one node. |
-| F. Status follows the work | tells when an issue's status label is behind the work | `src/requests/status-board.ts` | Met. |
+| F. Status follows the work | tells when an issue's status label is behind the work | `src/requests/drift/check.ts` | Met. |
 
 One switch is the owner's choice, not open work:
 

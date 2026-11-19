@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs"
+import { createHash } from "crypto"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import type Database from "better-sqlite3"
 
@@ -10,7 +11,9 @@ import type Database from "better-sqlite3"
 //   - empty tables are dropped;
 //   - otherwise the rows are written to .agentx/request-status-export-<time>.json
 //     first, and dropped only once that file is written;
-//   - a node that cannot write the file keeps the tables and says why.
+//   - a node that cannot write the file keeps the tables and says why;
+//   - an export of the same rows already there (a drop that failed on an
+//     earlier start) is reused, so retries do not pile up files.
 // After the first start that drops them there is nothing left to do.
 
 /** Children first: request_status is the parent of the other two. */
@@ -28,11 +31,14 @@ export function retireStatusTables(db: Database.Database, agentxDir: string, log
 
   let file = ""
   if (total > 0) {
-    file = join(agentxDir, `request-status-export-${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`)
+    const digest = createHash("sha256").update(JSON.stringify(rows)).digest("hex")
+    file = earlierExport(agentxDir, digest) ?? join(agentxDir, `request-status-export-${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`)
     try {
-      mkdirSync(agentxDir, { recursive: true })
-      // "wx": never overwrite an earlier export.
-      writeFileSync(file, JSON.stringify({ exportedAt: new Date(now).toISOString(), reason: "request status was removed (#1950)", tables: rows }, null, 2) + "\n", { flag: "wx" })
+      if (!existsSync(file)) {
+        mkdirSync(agentxDir, { recursive: true })
+        // "wx": never overwrite an earlier export.
+        writeFileSync(file, JSON.stringify({ exportedAt: new Date(now).toISOString(), reason: "request status was removed (#1950)", digest, tables: rows }, null, 2) + "\n", { flag: "wx" })
+      }
     } catch (e: any) {
       log(`  Request status tables: kept, ${total} row(s) could not be exported to ${agentxDir} (${e?.message ?? e})`)
       return "kept"
@@ -49,4 +55,15 @@ export function retireStatusTables(db: Database.Database, agentxDir: string, log
     ? `  Request status tables: removed; ${total} row(s) exported to ${file}`
     : "  Request status tables: removed (they were empty)")
   return file ? "exported" : "dropped"
+}
+
+/** An export already written for exactly these rows, if any. */
+function earlierExport(agentxDir: string, digest: string): string | null {
+  let names: string[]
+  try { names = readdirSync(agentxDir) } catch { return null }
+  for (const name of names.filter((n) => n.startsWith("request-status-export-") && n.endsWith(".json")).sort()) {
+    const path = join(agentxDir, name)
+    try { if (JSON.parse(readFileSync(path, "utf-8")).digest === digest) return path } catch { /* not ours, or unreadable */ }
+  }
+  return null
 }
