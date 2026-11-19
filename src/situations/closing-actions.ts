@@ -130,8 +130,14 @@ const noteInput = z.object({
   note: z.string().max(20_000).optional(),
 })
 type NoteInput = z.infer<typeof noteInput>
+/** `noteAt`: the posted note's link, or NO_NOTE when the agent drafted none. */
 const noteOutput = z.object({ noteAt: z.string() })
 type NoteOutput = z.infer<typeof noteOutput>
+
+/** An empty draft posts nothing and does not stop the run: the follow-ups
+ *  still become promises (#1973). Words, not a link, because the installed
+ *  template reads "Note: {{post_note.noteAt}}." and is never rewritten. */
+export const NO_NOTE = "none, the agent drafted no note"
 
 export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
   name: "situation.note",
@@ -146,7 +152,7 @@ export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
     const had = deps.store.noteFor(input.situationId, input.endGeneration)
     if (had) return { noteAt: had }
     const body = (input.note ?? "").trim()
-    if (!body) throw new Error("the agent drafted no note")
+    if (!body) return { noteAt: NO_NOTE }
     const key = `situation:${input.situationId}:${input.endGeneration}:note`
     const link = (await deps.postNote(target, body, input.agent || undefined, input.home, key)) ?? input.home
     deps.store.setNote(input.situationId, input.endGeneration, link)

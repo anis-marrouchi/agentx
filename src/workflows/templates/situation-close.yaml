@@ -13,7 +13,8 @@
 #                 report`): it cannot write files, post or send to any
 #                 channel, so it cannot message the other side.
 #   3. post_note: the note is posted as one comment at the talk's home (a
-#                 GitHub or GitLab issue, pull or merge request).
+#                 GitHub or GitLab issue, pull or merge request). An empty
+#                 draft posts nothing; the run goes on to the promises.
 #   4. promises:  each follow-up becomes an open promise with an owner.
 #                 None when the node kept no messages of the talk (the
 #                 agent had nothing to read, so its list would be a guess).
