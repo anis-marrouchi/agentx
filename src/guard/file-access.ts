@@ -297,6 +297,29 @@ function expandGlob(abs: string, b: Budget): string[] {
   return paths
 }
 
+/** Files a `file_access_regex` rule guards, as folder and file name. */
+const GUARDED: [string, string][] = [[".agentx", "operator.key"]]
+
+/** Does a glob segment match a name, as a shell would (dot names only for
+ *  a segment that starts with a dot)? */
+const segMatches = (seg: string, name: string) =>
+  (!name.startsWith(".") || seg.startsWith(".")) && globToRegex(seg).test(name)
+
+/** A glob left unexpanded past the budget is judged by its own text, which
+ *  a rule's path regex never matches (`.agentx/op*.key`). So name each
+ *  guarded file it could reach: its last two segments as folder and file,
+ *  or, for a folder tool, its last segment as the folder (#1983). */
+function guardedReach(abs: string, folders: boolean): string[] {
+  const parts = abs.split("/").filter(Boolean)
+  const n = parts.length
+  const out: string[] = []
+  for (const [dir, file] of GUARDED) {
+    if (n >= 2 && segMatches(parts[n - 2], dir) && segMatches(parts[n - 1], file)) out.push(join("/", ...parts.slice(0, -2), dir, file))
+    if (folders && n >= 1 && segMatches(parts[n - 1], dir)) out.push(join("/", ...parts.slice(0, -1), dir, file))
+  }
+  return out
+}
+
 /** A folder's files, two levels down (`tar czf a.tgz .` holds `.agentx/operator.key`). */
 /** This folder's entries first, then its sub-folders', dot folders (where
  *  settings and secrets live, and which are small) before the others, so a
@@ -323,6 +346,7 @@ function pathsOf(arg: string, cwd: string, out: string[], folders: boolean, b: B
     if (!arg || arg.length > 4096) return
     const abs = resolve(cwd, expandHome(arg))
     const found = hasGlob(arg) ? [abs, ...expandGlob(abs, b)] : [abs]
+    if (hasGlob(arg) && b.spent) out.push(...guardedReach(abs, folders))
     for (const p of found) {
       out.push(p)
       if (!existsSync(p)) continue

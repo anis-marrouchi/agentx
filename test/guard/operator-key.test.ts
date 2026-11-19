@@ -7,6 +7,7 @@ import { resolveInMemory } from "../../src/guard/policy"
 import { payloadToInput } from "../../src/guard/check"
 import { guardPolicySchema, type GuardInput, type GuardMode } from "../../src/guard/types"
 import { bashFileAccesses } from "../../src/guard/file-access"
+import { CATALOG_RULES } from "../../src/guard/catalog"
 
 // #1979: agents may not read or change `.agentx/operator.key`, the secret
 // that proves a daemon call is the owner's. The rule blocks even while the
@@ -202,5 +203,22 @@ describe("file access: odd arguments, tar and cp options, and a time budget (#19
     // A folder walk reads dot folders before big ones: the key is found
     // although `big` alone holds more entries than the budget.
     expect(bashFileAccesses("tar czf /tmp/x.tgz .", root, { maxEntries: 20 })).toContain(join(root, ".agentx/operator.key"))
+  })
+
+  it("a glob left unexpanded past the budget still counts as the key it could name (#1983)", () => {
+    const big = join(root, "big1983")
+    for (let a = 0; a < 20; a++) for (let b = 0; b < 20; b++) mkdirSync(join(big, `a${a}`, `b${b}`), { recursive: true })
+    const rule = CATALOG_RULES.find((r) => r.id === "operator-key-read")!
+    const re = new RegExp(rule.match.file_access_regex!)
+    const judged = (c: string) => bashFileAccesses(c, root, { maxEntries: 50 }).some((p) => re.test(p))
+    for (const g of [".agentx/op*.key", ".agentx/*", ".agent?/operator.key", ".*/operator.key"]) {
+      expect(judged(`cat ${big}/*/nomatch* ${root}/${g}`), g).toBe(true)
+    }
+    expect(judged(`tar czf /tmp/x.tgz ${big}/* ${root}/.agent*`)).toBe(true)
+    // Globs that cannot name the key stay allowed past the budget.
+    for (const g of ["src/*.key", "*/operator.key", ".agentx/*.json", "lib/op*.key"]) {
+      expect(judged(`cat ${big}/*/nomatch* ${root}/${g}`), g).toBe(false)
+    }
+    expect(run({ command: "grep -rn operator.key src" }).effectiveAction).toBe("allow")
   })
 })
