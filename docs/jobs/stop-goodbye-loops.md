@@ -44,6 +44,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.backstop.windowMinutes` | `10` | The window for the count above, in minutes. |
 | `situations.maxAge.duringHours` | `12` | A talk with no change for this long is treated as over. |
 | `situations.maxAge.endingMinutes` | `60` | A talk left in **ending** this long (your agent never said goodbye) is treated as over. |
+| `situations.closing.enabled` | `false` | `true` runs the closing steps of talks you gave closing steps (see [Closing steps](#closing-steps-after-a-talk-ends)). Other talks are not changed. |
 | `situations.sources.<id>.enabled` | on | `false` switches one signal source off (see [Signals: who left, who is busy](#signals-who-left-who-is-busy)). |
 | `situations.sources.<id>.agents` | all agents | A list of agent ids: the source is used only for these agents. For `whatsapp-groups` and `telegram-members`, a leave counts only in a talk one of these agents has answered in; in other talks it is ignored. |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
@@ -65,7 +66,7 @@ The gate starts in **shadow** mode, so you can see what it would do before it do
 
 ## See each talk and end it by hand
 
-Each chat's record is also called its **situation**: what kind of talk it is (for now always a **conversation**) and its phase. You can see it, and change it, on the agent's page or in the terminal.
+Each chat's record is also called its **situation**: what kind of talk it is (a **conversation**, or a **meeting** once you give it closing steps) and its phase. You can see it, and change it, on the agent's page or in the terminal.
 
 ![The agent page's Activity tab, panel "Conversations now": three chats, each with a chip such as "Conversation · ending", the reason the phase changed, and End and Not this buttons.](/screenshots/agents/situation-chip.png)
 
@@ -132,6 +133,38 @@ These facts stay on the machine that runs the chat. Mesh peers only see the phas
 2. A leave in a WhatsApp group now moves a talk only when the agent `helper` has answered in it. Talks of your other agents, and talks no agent has answered in yet, stay as they are.
 3. **Terminal:** to use the source for all agents again, `agentx config set situations.sources.whatsapp-groups.agents '[]'`.
 
+## Closing steps after a talk ends
+
+Some talks need work after they end: after an interview or a client call, someone writes the notes, the follow-ups need an owner, and you want to hear how it went. **Closing steps** do this for a talk you mark.
+
+When a talk with closing steps ends, AgentX runs the workflow **Situation close**:
+
+1. **Note.** The talk's agent writes one note about the talk at its **home**: the issue, merge request or wiki page you named.
+2. **Follow-ups.** Each follow-up the agent lists becomes an **open promise** with an owner (an agent, or you). A follow-up gets a due time only if a person gave one. Open promises show with your other requests (`agentx requests list`).
+3. **Your message.** You get one message, for example "About the job interview with a candidate: the talk ended (closed). Note: (link). 2 follow-ups, owners named: …". It goes through your hold: while you are in Focus or on a call, it waits.
+4. **Message to the other side (optional).** If you gave a closing message, you are asked first, on a card, every time. Nothing reaches the other side without your yes.
+
+Two more rules keep it safe:
+
+- **Talk opened again.** If a real message opens the talk again before the close is done, nothing more from that close is sent (not your message, not the message to the other side). The note and promises already made stay. When the talk ends again, a new close runs.
+- **Talk left idle.** The workflow **Situation expiry** waits for the phase's maximum age (`situations.maxAge`), then ends the talk as **stale**. A stale talk gets its note and promises, but no message to you and nothing to the other side.
+
+If another organisation's agent says the talk is over, your agent only goes quiet. No closing steps run on its word alone.
+
+Both workflows are in your workflow folder and show on the **Workflows** page with their runs, like any other workflow. They are added the first time they are needed. You can edit them, for example to change what the note asks for; AgentX does not overwrite them.
+
+A talk without closing steps is not changed: no workflow runs for it.
+
+**Turn closing steps on:**
+
+1. **Terminal:** `agentx config set situations.closing.enabled true`.
+2. **Terminal:** find the talk: `agentx situation list`. Each row starts with a short id, for example `3f2a9c1b`.
+3. **Terminal:** give it closing steps: `agentx situation closing 3f2a9c1b --purpose "the job interview with a candidate" --home https://git.example.com/hiring/issues/7`.
+4. To also thank the other side after the talk, add `--message "Thank you for your time today."`. On WhatsApp, also add `--chat` with the chat id ending in `@g.us`.
+5. **Terminal:** for a talk that has not started yet, use `--channel whatsapp --chat <chat id>` instead of the short id.
+
+**For your own workflows:** each change of phase also fires the hook event `on:situation`. A workflow with a `trigger.hook` step on `on:situation` runs on each change; `filter: { phase: [ended] }` limits it to talks that ended. The hook context has the situation id, channel, chat id, the kind of talk (`template`), `from`, `to` (also as `phase`), `endReason` and who made the change (`setBy`).
+
 ## Commands
 
 | Command | What it does |
@@ -142,6 +175,7 @@ These facts stay on the machine that runs the chat. Mesh peers only see the phas
 | `agentx situation end <id>` | Ends a talk by hand. `<id>` is the first column of `situation list`. |
 | `agentx situation not-this <id>` | Says a talk is not ending: back to **during**, and thanks or goodbyes no longer end it. |
 | `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
+| `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home`, and optionally `--agent`, `--message`. `--clear` removes them. See [Closing steps](#closing-steps-after-a-talk-ends). |
 | `agentx situation sources` | Lists the signal sources on this machine, what each answers now, and those not loaded here with the reason. `--json` prints JSON. |
 
 All these commands take `--node <url>` and `--token <token>` to reach another machine, like other daemon commands. The gate log holds the text of chat messages, so from another machine both commands need the mesh token (`--token`); on the same machine no token is needed.
@@ -170,6 +204,16 @@ To check the signal sources:
 4. On the test phone, leave the group.
 5. **Terminal:** run `agentx situation list`. The group's talk shows **ending**, with the reason "the last other party left (whatsapp-groups)".
 
+To check closing steps:
+
+1. **Terminal:** `agentx config set situations.closing.enabled true`.
+2. In a test chat, send your agent a question and let it answer.
+3. **Terminal:** `agentx situation list`, then `agentx situation closing <id> --purpose "a test talk" --home <a test issue link>`.
+4. **Browser:** open the **Workflows** page. **Situation expiry** has one run waiting.
+5. **Terminal:** `agentx situation end <id>`.
+6. **Browser:** on the **Workflows** page, **Situation close** has one run. When it is done, the test issue has one note from your agent.
+7. You got one message that starts with "About a test talk". **Terminal:** `agentx requests list` lists the follow-ups as open promises, each with an owner.
+
 ## If something is wrong
 
 - **The log stays empty:** check that `situations.mode` is not `off` and that the chat is on Telegram, WhatsApp, Discord or Slack. Shadow and active modes only list messages after a talk has ended.
@@ -186,4 +230,7 @@ To check the signal sources:
 - **A person left the group but the talk stayed in during:** someone else is still in the group, the count could not be read (the daemon log says `group read after a leave failed` or `member count after a leave failed`), or the talk was not in **during**. Also check that `situations.sources.whatsapp-groups.enabled` (or `telegram-members`) is not `false`, and that `situations.mode` is not `off`.
 - **Telegram leaves are never seen:** the bot sees the "left the group" message only when Telegram posts one in the chat. To get every member change, make the bot an admin of the group.
 - **`agentx situation sources` shows `macos-focus` as unknown on a Mac:** the daemon may not read the Focus file. Give the app that runs AgentX **Full Disk Access** in System Settings. Until then, Focus does not hold your notices.
+- **A talk with closing steps ended but no Situation close run started:** check `situations.closing.enabled` is `true` and `situations.mode` is not `off`. A talk ended by another organisation's agent runs no closing steps. The daemon log says why with a line starting `[situation]`, for example `no agent to write the closing note` when the chat has no agent yet (give one with `--agent`).
+- **You got no message after a close:** the talk ended as **stale** (no message on purpose), it was opened again before the message went out, or you are in Focus or on a call (the message waits for the hold to end).
+- **`agentx situation closing` answers "a closing message on WhatsApp needs chatId":** add `--chat` with the chat id as WhatsApp names it, ending in `@g.us` for a group.
 - **`agentx situation sources --node <url>` answers HTTP 401:** the list says whether you are busy and with whom, so from another machine it needs the mesh token (`--token`).

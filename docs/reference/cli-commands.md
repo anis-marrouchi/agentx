@@ -3728,6 +3728,20 @@ Say a talk is not ending: it goes back to **during**, and thanks or goodbyes no 
 
 Forget a chat's record. Its next message starts a new one.
 
+### `agentx situation closing [id]`
+
+Give a talk closing steps: when it ends, its agent writes one note at its home, each follow-up becomes an open promise with an owner, and you get one message. Needs `situations.closing.enabled`. See [Closing steps](/jobs/stop-goodbye-loops#closing-steps-after-a-talk-ends).
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--purpose <text>` | — | What the talk is, for example "the job interview with a candidate". Required. |
+| `--home <link>` | — | Where the note goes: an issue, a merge request or a wiki page. Required. |
+| `--agent <id>` | the chat's agent | The agent that writes the note and owns the follow-ups. |
+| `--message <text>` | — | A closing message to the other side. You are always asked before it is sent. |
+| `--channel <name>`, `--chat <id>` | — | For a talk with no record yet, instead of `[id]`. `--chat` is also needed with `--message` on WhatsApp (the id ending in `@g.us`). |
+| `--account <id>` | — | The channel account, when it has several. |
+| `--clear` | — | Remove the closing steps. |
+
 ### `agentx situation sources`
 
 List the signal sources on this machine: the owner's Focus, call and widget hold, calls, and who left a WhatsApp or Telegram group. Shows what each answers now (**unknown** with a reason when it cannot tell), and which sources are not loaded here and why (for example, macOS Focus on a Linux machine).
