@@ -1,17 +1,21 @@
 import type { LearnedRow, LearnedTemplateStore } from "./learned"
+import type { LearnedCards } from "./learned-card"
 
-// --- The owner's view of learned templates (#1892 phase 8) ---
+// --- The owner's view of learned templates (#1892 phase 8, #1990) ---
 //
-//   GET  /situations/learned          the drafts and their verdicts
+//   GET  /situations/learned          the drafts, the owner's answers, the
+//                                     open card and whether learning paused
+//   POST /situations/learned/answer   the owner's yes or no to a draft on
+//                                     this week's card ({"id", "answer"})
 //   POST /situations/learned/retire   take one back ({"id": "learned.x"})
-//   POST /situations/learned/approver name the approver ({"agent": "x"})
+//   POST /situations/learned/resume   start learning again after a pause
 //   POST /situations/learned/reset    start over when the sealed state
 //                                     cannot be trusted
 //
 // All answer callers on this machine only. The POSTs also need the
-// operator key (the CLI sends it), and no agent turn's headers. There is
-// no route that approves: only the approver's review, made by the daemon,
-// does (learn.ts).
+// operator key (the CLI sends it), and no agent turn's headers. Only the
+// owner approves: here with the operator key, or in the daemon's own
+// popup (learned-card.ts). No agent and no model does.
 
 interface Reply { status: number; body: Record<string, unknown> }
 
@@ -20,8 +24,8 @@ export function learnedRowView(r: LearnedRow, inUse: boolean): Record<string, un
     id: r.id, base: r.base, title: r.title, when: r.when, rules: r.rules, noteGuidance: r.noteGuidance || null,
     status: r.status, inUse, evidence: r.evidence.length, why: r.why,
     createdAt: new Date(r.createdAt).toISOString(),
-    reviewer: r.reviewer, verdictWhy: r.verdictWhy, decidedAt: r.decidedAt ? new Date(r.decidedAt).toISOString() : null,
-    reviewAttempts: r.reviewAttempts, retiredAt: r.retiredAt ? new Date(r.retiredAt).toISOString() : null, retiredBy: r.retiredBy,
+    decidedBy: r.reviewer, decidedAt: r.decidedAt ? new Date(r.decidedAt).toISOString() : null,
+    retiredAt: r.retiredAt ? new Date(r.retiredAt).toISOString() : null, retiredBy: r.retiredBy,
     sealed: r.sealed,
   }
 }
@@ -32,23 +36,41 @@ export function learnedView(store: LearnedTemplateStore | undefined, ctx: { this
   const rows = store.list()
   return {
     status: 200,
-    body: { enabled: ctx.enabled, approver: store.approver(), problem: store.problem(), templates: rows.map((r) => learnedRowView(r, ctx.enabled && !!store.template(r.id))) },
+    body: {
+      enabled: ctx.enabled, problem: store.problem(), card: store.openCard(), paused: store.paused() ? new Date(store.paused()!).toISOString() : null,
+      unansweredCards: store.unansweredCards(), templates: rows.map((r) => learnedRowView(r, ctx.enabled && !!store.template(r.id))),
+    },
   }
 }
 
-/** The owner names the approver ({"agent": "<id>"}, or {"clear": true}).
- *  Same caller rules as retire. Sealed with the operator key: an agent
- *  that edits the database or agentx.json cannot name itself. */
-export function learnedSetApprover(store: LearnedTemplateStore | undefined, body: Record<string, unknown>, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean; isAgent: (id: string) => boolean }): Reply {
+/** The owner's yes or no to one draft on this week's card ({"id":
+ *  "learned.x", "answer": "yes" | "no"}). Same caller rules as retire:
+ *  this machine, the operator key, no agent turn. Once every draft of the
+ *  card is answered, the card closes. */
+export function learnedAnswer(store: LearnedTemplateStore | undefined, body: Record<string, unknown>, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean; cards?: LearnedCards }): Reply {
   if (!ctx.thisMachine) return { status: 403, body: { error: "learned templates answer only on this machine" } }
-  if (ctx.agentProof) return { status: 403, body: { error: "only the owner names the approver" } }
-  if (!ctx.keyShown) return { status: 403, body: { error: "run `agentx situation learned approver <agent>` from the AgentX folder (it sends the operator key in .agentx/operator.key)" } }
+  if (ctx.agentProof) return { status: 403, body: { error: "only the owner answers learned drafts" } }
+  if (!ctx.keyShown) return { status: 403, body: { error: "run `agentx situation learned answer <id> yes|no` from the AgentX folder (it sends the operator key in .agentx/operator.key)" } }
   if (!store) return { status: 503, body: { error: "learned templates are not available on this node" } }
-  if (body.clear === true) { store.setApprover(null); return { status: 200, body: { ok: true, approver: null } } }
-  const agent = typeof body.agent === "string" ? body.agent.trim() : ""
-  if (!agent || !ctx.isAgent(agent)) return { status: 400, body: { error: `not an agent of this node: ${agent.slice(0, 60) || "(none)"}` } }
-  if (!store.setApprover(agent)) return { status: 409, body: { error: store.problem() ?? "the approver could not be saved" } }
-  return { status: 200, body: { ok: true, approver: agent } }
+  const id = typeof body.id === "string" ? body.id.trim() : ""
+  const answer = typeof body.answer === "string" ? body.answer.trim().toLowerCase() : ""
+  if (answer !== "yes" && answer !== "no") return { status: 400, body: { error: "answer must be yes or no" } }
+  const r = store.answer(id, answer === "yes")
+  if (!r.ok) return { status: r.status, body: { error: r.error } }
+  if (r.cardDone) ctx.cards?.close(r.cardId, "answered")
+  return { status: 200, body: { ok: true, id, answer, cardDone: r.cardDone } }
+}
+
+/** The owner starts learning again after it paused itself. Same caller
+ *  rules as retire. */
+export function learnedResume(store: LearnedTemplateStore | undefined, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean }): Reply {
+  if (!ctx.thisMachine) return { status: 403, body: { error: "learned templates answer only on this machine" } }
+  if (ctx.agentProof) return { status: 403, body: { error: "only the owner resumes learning" } }
+  if (!ctx.keyShown) return { status: 403, body: { error: "run `agentx situation learned resume` from the AgentX folder (it sends the operator key in .agentx/operator.key)" } }
+  if (!store) return { status: 503, body: { error: "learned templates are not available on this node" } }
+  const was = store.paused()
+  if (!store.resume()) return { status: 409, body: { error: store.problem() ?? "could not be saved" } }
+  return { status: 200, body: { ok: true, wasPaused: was !== null } }
 }
 
 export function learnedRetire(store: LearnedTemplateStore | undefined, body: Record<string, unknown>, ctx: { thisMachine: boolean; keyShown: boolean; agentProof: boolean }): Reply {

@@ -47,7 +47,8 @@ import { ensureSituationWorkflows } from "@/situations/workflows"
 import { LearnedTemplateStore, learnedSource } from "@/situations/learned"
 import { setSituationLearnDeps } from "@/situations/learn-actions"
 import { setLearnedTemplateSource } from "@/situations/templates"
-import { learnedReset, learnedRetire, learnedSetApprover, learnedView } from "@/situations/learned-api"
+import { learnedAnswer, learnedReset, learnedResume, learnedRetire, learnedView } from "@/situations/learned-api"
+import { answeredLine, LEARNED_CARD_KIND, learnedCardAnswer, learnedCardShown, learnedCards, type LearnedCards } from "@/situations/learned-card"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
@@ -415,6 +416,7 @@ export class AgentXDaemon {
   private situationRuns?: SituationRuns
   private situationHookOff?: () => void
   private learnedTemplates?: LearnedTemplateStore
+  private learnedCards?: LearnedCards
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
@@ -926,13 +928,15 @@ export class AgentXDaemon {
               return typeof id === "string" && forge ? commentUrl(forge, id, gitlabUrl) : null
             },
           })
-          // Learned templates (phase 8): drafts and approvals live in one
-          // table, sealed with a key from the operator key. Used only while
-          // situations.learned.enabled is on, and only once the approver
-          // agent said yes in a review run this daemon started itself.
+          // Learned templates (phase 8, #1990): drafts and decisions live
+          // in one table, sealed with a key from the operator key. Used
+          // only while situations.learned.enabled is on, and only after
+          // the owner's yes on the weekly card (the popup this daemon
+          // shows, or the operator-key route). No agent approves.
           const learnedOn = () => this.config.situations.mode !== "off" && this.config.situations.learned?.enabled === true
           const learned = new LearnedTemplateStore(db, { key: () => this.operatorKey ?? null, genFile: resolve(process.cwd(), ".agentx", "learned.gen") })
           this.learnedTemplates = learned
+          this.learnedCards = learnedCards(process.cwd(), { settings: () => this.config.approvals })
           setLearnedTemplateSource(learnedSource(learned, learnedOn))
           setSituationLearnDeps({
             db, learned,
@@ -940,22 +944,7 @@ export class AgentXDaemon {
             improve: () => this.config.improve,
             // The drafter: no tools, no MCP, no session (as the retro).
             call: (input, model, system) => reviewWithClaudeCost(input, model, undefined, system),
-            // The approver's review: a tool-less call made by the daemon in
-            // the approver's name, with the approver's fixed rules as its
-            // system prompt (learn.ts APPROVER_PROMPT), on the approver's
-            // Claude model. As the drafter: a fresh temp folder, no setting
-            // sources (no CLAUDE.md, no .claude/settings.json), hooks off,
-            // no MCP, no session. Nothing in any agent's workspace is read.
-            review: async (agentId, prompt, system) => {
-              const own = this.registry.getAgent(agentId)?.model
-              const model = typeof own === "string" && /claude|opus|sonnet|haiku/i.test(own) ? own : this.config.situations.learned.model
-              try {
-                return await reviewWithClaudeCost(prompt, model, undefined, system)
-              } catch (e: any) {
-                return { text: "", usd: null, error: String(e?.message ?? e) }
-              }
-            },
-            isAgent: (id) => !!this.registry.getAgent(id),
+            cards: this.learnedCards,
             log: (m) => this.log(m),
           })
           this.situationHookOff?.()
@@ -2902,7 +2891,17 @@ export class AgentXDaemon {
           // The screen gate (#394): a card not shown goes back to its author.
           returnToAuthor: (card, text) => card.node
             ? this.log(`[approvals] ${card.id}: not shown; its author ${card.raised_by} is on ${card.node}, not told`)
-            : this.tellAgentCardResult(card, text),
+            : card.origin?.kind === LEARNED_CARD_KIND
+              ? this.log(`[situation] learned card ${card.id} not shown: ${text.slice(0, 200)}`)
+              : this.tellAgentCardResult(card, text),
+          // The learned-templates card (#1990): shown as the sealed state
+          // says, and the owner's answer sealed here, in this process.
+          daemonCard: (file) => this.learnedTemplates ? learnedCardShown(this.learnedTemplates, file) : { refused: "learned templates are not available on this node" },
+          onDaemonAnswer: (shown, verdict, choice) => {
+            if (!this.learnedTemplates) return
+            const rows = learnedCardAnswer(this.learnedTemplates, shown, verdict, choice, this.learnedCards)
+            this.log(`[situation] learned card ${shown.id} answered by the owner in the popup: ${answeredLine(rows) || "nothing sealed"}`)
+          },
           // Through the speaking queue, never straight to `say`: the line
           // waits while the owner is dictating (#493).
           speak: (text) => this.voiceTalk.speech.say({
@@ -5473,10 +5472,12 @@ export class AgentXDaemon {
     // agent's MCP tool) with the running turn's proof headers, checked in
     // the route.
     "/situations/fill",
-    // The owner takes a learned template back (#1892 phase 8): this
-    // machine only, with the operator key (checked in the route).
+    // The owner answers, takes back, resumes or resets learned templates
+    // (#1892 phase 8, #1990): this machine only, with the operator key
+    // (checked in the route).
+    "/situations/learned/answer",
     "/situations/learned/retire",
-    "/situations/learned/approver",
+    "/situations/learned/resume",
     "/situations/learned/reset",
   ])
 
@@ -8577,9 +8578,9 @@ export class AgentXDaemon {
           break
         }
 
-        // Phase 8 (#1892): learned templates. Read and retire, on this
-        // machine only; retiring needs the operator key. Nothing approves
-        // here: only the approver's own review run does (learn.ts).
+        // Phase 8 (#1892, #1990): learned templates. Read, answer, retire,
+        // resume and reset, on this machine only; every POST needs the
+        // operator key. Only the owner approves: here, or in the popup.
         case "GET /situations/learned": {
           const sit = this.config.situations
           const r = learnedView(this.learnedTemplates, { thisMachine: isThisMachine(req.socket?.remoteAddress), enabled: sit.mode !== "off" && sit.learned?.enabled === true })
@@ -8607,15 +8608,25 @@ export class AgentXDaemon {
           this.json(res, r.status, r.body)
           break
         }
-        case "POST /situations/learned/approver": {
+        case "POST /situations/learned/answer": {
           const body = await readBody(req)
-          const r = learnedSetApprover(this.learnedTemplates, body, {
+          const r = learnedAnswer(this.learnedTemplates, body, {
             thisMachine: isThisMachine(req.socket?.remoteAddress),
             keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
             agentProof: agentProofShown(this.callerProof(req)),
-            isAgent: (id) => !!this.registry.getAgent(id),
+            cards: this.learnedCards,
           })
-          if (r.status === 200) this.log(`[situation] learned-template approver ${r.body.approver ? `set to ${String(r.body.approver)}` : "cleared"} by the owner`)
+          if (r.status === 200) this.log(`[situation] learned template ${String(body.id).slice(0, 60)}: the owner said ${String(r.body.answer)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "POST /situations/learned/resume": {
+          const r = learnedResume(this.learnedTemplates, {
+            thisMachine: isThisMachine(req.socket?.remoteAddress),
+            keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+            agentProof: agentProofShown(this.callerProof(req)),
+          })
+          if (r.status === 200) this.log("[situation] learned templates resumed by the owner")
           this.json(res, r.status, r.body)
           break
         }

@@ -1,23 +1,28 @@
 import { z } from "zod"
 import type { BuiltinAction } from "@/actions/builtin/types"
-import { LEARN_WORKFLOW, learnDraftStep, learnReviewStep, type LearnDeps } from "./learn"
+import { LEARN_WORKFLOW, learnCardStep, learnDraftStep, type LearnDeps } from "./learn"
 
-// --- The steps of the `situation-learn` workflow (#1892 phase 8) ---
+// --- The steps of the `situation-learn` workflow (#1892 phase 8, #1990) ---
 //
-//   situation.learn.draft    drafts templates from ended talks, once a
-//                            week, within the cost caps (learn.ts)
-//   situation.learn.review   asks the approver about each new draft, once
+//   situation.learn.draft    starts the week (closes last week's card,
+//                            drops its unanswered drafts, retires unused
+//                            templates, pauses after two unanswered
+//                            cards), then drafts templates from ended
+//                            talks within the cost caps (learn.ts)
+//   situation.learn.card     one owner-only card with the week's drafts,
+//                            or a notice when there is no card to say
+//                            something on
 //
-// Neither takes an input: what is drafted, who approves and the verdict
-// never come from the workflow file or from a caller. Built-ins can also
-// be called over /api/actions/builtin by an agent on this machine; that
-// is refused, and so is a step of any other workflow (onlyIn). A workflow
-// edited to call them more changes nothing: the week's one drafting call is booked before
-// it runs, and each draft is put to the approver once.
+// Neither takes an input: what is drafted, what the card holds and the
+// owner's answer never come from the workflow file or from a caller.
+// Built-ins can also be called over /api/actions/builtin by an agent on
+// this machine; that is refused, and so is a step of any other workflow
+// (onlyIn). A workflow edited to call them more changes nothing: a week
+// starts once in 6.5 days and there is one card a week.
 
 let deps: LearnDeps | null = null
 
-/** Attach the stores and the two calls (daemon start). Null detaches. */
+/** Attach the stores, the drafting call and the card files (daemon start). Null detaches. */
 export function setSituationLearnDeps(d: LearnDeps | null): void {
   deps = d
 }
@@ -30,41 +35,42 @@ const draftOutput = z.object({
   why: z.string().optional(),
   drafted: z.array(z.string()),
   skipped: z.array(z.string()),
+  dropped: z.array(z.string()),
+  retired: z.array(z.string()),
   spentUsd: z.number(),
 })
 type DraftOutput = z.infer<typeof draftOutput>
 
 export const situationLearnDraft: BuiltinAction<NoInput, DraftOutput> = {
   name: "situation.learn.draft",
-  description: "The weekly learned-templates run's first step: draft templates from ended talks (redacted), within situations.learned.maxRunUsd and improve.dailyUsd. Once a week.",
+  description: "The weekly learned-templates run's first step: close last week's card (unanswered drafts are dropped), retire templates unused for 8 weeks, pause after two unanswered cards, then draft templates from ended talks (redacted), within situations.learned.maxRunUsd and improve.dailyUsd. Once a week.",
   inputSchema: noInput,
   outputSchema: draftOutput,
   timeoutMs: 240_000,
   onlyIn: [LEARN_WORKFLOW],
   handler: async () => {
-    if (!deps) return { ran: false, why: "learned templates are not available on this node", drafted: [], skipped: [], spentUsd: 0 }
+    if (!deps) return { ran: false, why: "learned templates are not available on this node", drafted: [], skipped: [], dropped: [], retired: [], spentUsd: 0 }
     return learnDraftStep(deps)
   },
 }
 
-const reviewOutput = z.object({
-  reviewed: z.array(z.object({ id: z.string(), verdict: z.enum(["approve", "reject", "none"]), why: z.string() })),
+const cardOutput = z.object({
+  card: z.string().optional(),
+  drafts: z.array(z.string()),
   stopped: z.string().optional(),
   notice: z.string().optional(),
-  spentUsd: z.number(),
 })
-type ReviewOutput = z.infer<typeof reviewOutput>
+type CardOutput = z.infer<typeof cardOutput>
 
-export const situationLearnReview: BuiltinAction<NoInput, ReviewOutput> = {
-  name: "situation.learn.review",
-  description: "The weekly learned-templates run's second step: the approver the owner named (agentx situation learned approver) says yes or no to each new draft, once, in a call the daemon makes with fixed rules.",
+export const situationLearnCard: BuiltinAction<NoInput, CardOutput> = {
+  name: "situation.learn.card",
+  description: "The weekly learned-templates run's second step: one owner-only decision card with this week's drafts (none when nothing is new). Only the owner's answer, in the popup or with agentx situation learned answer, approves a draft.",
   inputSchema: noInput,
-  outputSchema: reviewOutput,
-  // One isolated review run per draft, at most situations.learned.maxDrafts.
-  timeoutMs: 45 * 60_000,
+  outputSchema: cardOutput,
+  timeoutMs: 60_000,
   onlyIn: [LEARN_WORKFLOW],
   handler: async () => {
-    if (!deps) return { reviewed: [], stopped: "learned templates are not available on this node", spentUsd: 0 }
-    return learnReviewStep(deps)
+    if (!deps) return { drafts: [], stopped: "learned templates are not available on this node" }
+    return learnCardStep(deps)
   },
 }

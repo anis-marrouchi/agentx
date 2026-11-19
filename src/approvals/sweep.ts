@@ -171,6 +171,9 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       if (card.origin?.kind === "merge-policy") continue
       // An MCP write card (#1736): the waiting tool call got the answer.
       if (card.origin?.kind === "mcp-write") continue
+      // Learned templates (#1990): the daemon sealed the owner's answer
+      // itself; no agent raised the card.
+      if (card.origin?.kind === "learned-drafts") continue
       if (!settings.notifyAgent || !deps.tellAgent) continue
       if (deps.hasAgent && !deps.hasAgent(card.raised_by)) {
         log(`[approvals] ${card.id}: agent "${card.raised_by}" isn't on this node; result not delivered`)

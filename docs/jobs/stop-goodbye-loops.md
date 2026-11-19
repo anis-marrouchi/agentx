@@ -56,7 +56,7 @@ All settings sit under `situations` in the daemon config. They are read for each
 | `situations.importance.enabled` | `false` | `true` works out each talk's importance (see [Importance](#importance)). |
 | `situations.templates.enabled` | `false` | `true` adds each talk's template rules to your agent's `[Situation]` line and to its closing note, and accepts only templates from `agentx situation templates` (see [Templates](#templates-what-kind-of-talk-it-is)). |
 | `situations.templates.agentFill` | `false` | `true` lets the chat's own agent name its talk with `agentx_situation`, within the limits in [Templates](#templates-what-kind-of-talk-it-is). Needs `situations.templates.enabled`. |
-| `situations.learned.*` | off | Learned templates: once a week AgentX drafts templates from ended talks and an approver agent you name says yes or no. See [Learn templates from ended talks](/jobs/learned-templates). |
+| `situations.learned.*` | off | Learned templates: once a week AgentX drafts templates from ended talks and you say yes or no to each on one card a week. See [Learn templates from ended talks](/jobs/learned-templates). |
 | `situations.sources.<id>.consent` | `none` | `person`: the source is read only after the person it reads has said yes. A source marked sensitive always needs that yes, whatever this says. |
 | `situations.sources.open-apps` / `browser-tabs` / `news` | off | Per-request sources: read only when an agent asks for one request, and for open apps only after your yes in the popup; browser tabs are not read yet. See [Let an agent see your open apps for one request](/jobs/screen-for-a-request), which also lists `situations.consent.*`, `situations.browserTabs.*` and `situations.news.*`. |
 
@@ -295,7 +295,7 @@ It is off by default. **Terminal:** `agentx config set situations.importance.ena
 | `agentx situation clear <id>` | Forgets a chat's record. Its next message starts a new one. |
 | `agentx situation closing <id>` | Gives a talk closing steps: `--purpose`, `--home` (a GitHub or GitLab issue, pull request or merge request), and optionally `--agent`, `--agents`, `--message`. `--clear` removes them. `--template <id>` names the kind of talk (default `meeting`). See [Closing steps](#closing-steps-after-a-talk-ends). |
 | `agentx situation templates` | Lists the templates, the sentences each adds for each phase, and whether your agent may pick it. `--json` prints JSON. |
-| `agentx situation learned` | Lists the learned templates: the weekly drafts, the approver's yes or no, and which are in use. `agentx situation learned retire <id>` takes one back. See [Learn templates from ended talks](/jobs/learned-templates). |
+| `agentx situation learned` | Lists the learned templates: the weekly drafts, your yes or no, and which are in use. `agentx situation learned answer <id> yes` (or `no`) answers the weekly card; `agentx situation learned retire <id>` takes one back. See [Learn templates from ended talks](/jobs/learned-templates). |
 | `agentx situation seat` | Shows the decision seat `situation-phase`: its mode, whether it holds messages now, and its calibration report with the false "no reply" rate. `--json` prints JSON. |
 | `agentx situation sources` | Lists the signal sources on this machine, what each answers now, and those not loaded here with the reason. `--json` prints JSON. |
 
