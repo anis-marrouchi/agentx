@@ -101,9 +101,10 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
  *  prompts naming any other tool. */
 export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state", "agentx_situation", "agentx_sources"]
 
-/** The tools the `[Context on demand]` line names; kept whenever a lean
- *  start relies on that line. */
-export const AGENTX_ON_DEMAND_TOOLS: readonly string[] = ["agentx_agents", "agentx_recent", "agentx_wiki_query", "agentx_lookup"]
+/** The tools the `[Context on demand]` line names, and agentx_numbers,
+ *  which a standing order's refusal points to (noqta#807); kept whenever
+ *  a lean start relies on that line. */
+export const AGENTX_ON_DEMAND_TOOLS: readonly string[] = ["agentx_agents", "agentx_recent", "agentx_wiki_query", "agentx_lookup", "agentx_numbers"]
 
 /** The built-in tools a lean session on `channel` gets: the channel's own
  *  list when one is set, else the shared `tools` list. Empty means every
