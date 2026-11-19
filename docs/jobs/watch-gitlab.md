@@ -46,6 +46,8 @@ If your team names its GitLab bot accounts with a common prefix, for example `te
 
 ## 4. Optional: show the state of each request in the issue
 
+> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
+
 Without this, an issue is silent between the request and the agent's answer. With it, AgentX keeps one comment per request up to date: queued, working, waiting, done, failed, timed out, or cut off by a restart.
 
 1. **Terminal:** open the folder that holds `agentx.json`.

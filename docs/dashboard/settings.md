@@ -58,6 +58,8 @@ A set-up connection does not mean it is live: it shows **on** only when the chan
 
 ## Show request status in GitLab or GitHub
 
+> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](./jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
+
 People who ask an agent for work in an issue or a merge request can see the state of that request in the same thread: queued, working, waiting, done, failed, timed out, or cut off by a restart. AgentX posts one comment per request and edits it. It is off until you turn it on.
 
 1. **Browser:** in **Settings**, select **Channels**.

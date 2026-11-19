@@ -29,7 +29,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
 | `people` | The humans who talk to your agents, one entry per person whatever channel they use; empty by default ([Tell agents who is who](../jobs/people.md)) |
 | `requests` | Records what you asked agents for and follows it until it is closed; off by default ([Configuration: automation](./config-automation.md#requests)) |
-| `requestStatus` | Shows each person the state of their request in the GitLab or GitHub thread where they asked; off by default ([Configuration: automation](./config-automation.md#requeststatus)) |
+| `requestStatus` | Deprecated, removed in a later release; use the [Jobs page](../dashboard/jobs.md). Shows each person the state of their request in the GitLab or GitHub thread where they asked; off by default ([Configuration: automation](./config-automation.md#requeststatus)) |
 
 Every field, with its type, default and what it does, is listed on four pages:
 
