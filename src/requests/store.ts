@@ -207,6 +207,9 @@ export function firstLink(text: string): string | null {
 
 export const TEXT_MAX = 4000
 const REASON_MAX = 500
+/** A met check's evidence (closeVerified): a matched note's link and its
+ *  first 600 characters fit (#885). close-proof cuts the same. */
+export const CHECK_EVIDENCE_MAX = 1000
 
 /** Creates the tables when missing. Named, not numbered, so it cannot
  *  clash with a migration number another branch claimed. */
@@ -686,7 +689,7 @@ export class RequestStore {
   /** The checker found the evidence: closed as done, with its words. Its
    *  proof is the check that ran (#1138 D). */
   closeVerified(id: string, evidence: string, now: number): boolean {
-    const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
+    const text = evidence.trim().slice(0, CHECK_EVIDENCE_MAX) || "the check was met"
     const proof: Proof = { kind: "check", value: text, ranAt: now }
     const closed = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
