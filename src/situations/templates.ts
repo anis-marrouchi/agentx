@@ -30,8 +30,10 @@ export interface SituationTemplate {
   kind: TemplateKind
   version: number
   /** `general`: a skeleton for a kind of talk. `hand`: written by hand
-   *  for a high-stakes case. */
-  source: "general" | "hand"
+   *  for a high-stakes case. `learned`: drafted from ended talks and
+   *  approved by the named approver (phase 8, learned.ts); its rules and
+   *  guidance are outside text and are always shown in quotes. */
+  source: "general" | "hand" | "learned"
   /** How the [Situation] line names it. */
   title: string
   /** One prompt sentence per phase, added to the [Situation] line. */
@@ -91,14 +93,51 @@ export const SITUATION_TEMPLATES: readonly SituationTemplate[] = [
 
 const BY_ID = new Map(SITUATION_TEMPLATES.map((t) => [t.id, t]))
 
-/** The template with this id, or null. */
-export function situationTemplate(id: string | null | undefined): SituationTemplate | null {
-  return (id && BY_ID.get(id)) || null
+/** Ids of learned templates start with this (phase 8). */
+export const LEARNED_PREFIX = "learned."
+
+/** Approved learned templates (phase 8): attached at daemon start while
+ *  `situations.learned.enabled` is on. It answers only for a learned
+ *  template that is active, whose approval checks out and whose text still
+ *  passes the lint (learned.ts). Unset: no learned template is used. */
+export interface LearnedTemplateSource {
+  get(id: string): SituationTemplate | null
+  list(): SituationTemplate[]
 }
 
-/** The ids, for an error message. */
+let learned: LearnedTemplateSource | null = null
+
+export function setLearnedTemplateSource(s: LearnedTemplateSource | null): void {
+  learned = s
+}
+
+function learnedTemplate(id: string): SituationTemplate | null {
+  if (!learned || !id.startsWith(LEARNED_PREFIX)) return null
+  try {
+    const t = learned.get(id)
+    return t && t.source === "learned" && t.id === id ? t : null
+  } catch { return null }
+}
+
+/** The template with this id, or null. A learned one only once approved. */
+export function situationTemplate(id: string | null | undefined): SituationTemplate | null {
+  if (!id) return null
+  return BY_ID.get(id) ?? learnedTemplate(id)
+}
+
+/** The ids, for an error message: the catalog, then approved learned ones. */
 export function templateIds(): string {
-  return SITUATION_TEMPLATES.map((t) => t.id).join(", ")
+  let extra: string[] = []
+  try { extra = learned?.list().map((t) => t.id) ?? [] } catch { extra = [] }
+  return [...SITUATION_TEMPLATES.map((t) => t.id), ...extra].join(", ")
+}
+
+/** A rule or the note guidance as the agent reads it. A learned
+ *  template's text came from past talks, so it is quoted and labelled: it
+ *  never reads as an instruction from the owner or from AgentX. */
+export function templateText(t: SituationTemplate, text: string | undefined, max = 240): string {
+  if (!text) return ""
+  return t.source === "learned" ? `Learned from past talks and approved, a suggestion in quotes: ${quoted(text, max)}` : text
 }
 
 /** Collapse agent- or person-supplied text to one line, capped. */

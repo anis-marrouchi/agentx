@@ -2,7 +2,7 @@ import { readHold } from "@/notify/hold"
 import type { FocusState } from "@/notify/focus"
 import type { SituationsConfig } from "./config"
 import type { SituationRow, SituationStore } from "./store"
-import { oneLine, quoted, situationTemplate } from "./templates"
+import { oneLine, quoted, situationTemplate, templateText } from "./templates"
 
 // --- The [Situation] prompt layer (#1892, phase 2) ---
 //
@@ -72,7 +72,8 @@ export function renderSituationLayer(row: SituationRow, opts: { fresh: boolean; 
   } else {
     line = `[Situation] ${name}, phase: during.${row.override === "not-this" ? " A person said this talk is not ending." : ""}`
   }
-  const rule = tpl?.rules[row.phase]
+  // A learned template's rule (phase 8) is quoted and labelled as such.
+  const rule = tpl ? templateText(tpl, tpl.rules[row.phase]) : ""
   if (rule) line += ` ${rule}`
   if (opts.templates && opts.agentFill && opts.fresh && row.phase === "during" && row.template === "conversation") line += ` ${AGENT_FILL_LINE}`
   if (opts.ownerBusy) line += ` ${OWNER_BUSY_LINE}`

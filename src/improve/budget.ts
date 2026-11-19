@@ -14,14 +14,27 @@ import { findConfigPath } from "@/daemon/config-mutator"
 import { expandEnvVars, improveConfigSchema } from "@/daemon/config"
 
 export type ImproveSettings = z.infer<typeof improveConfigSchema>
-export type SpendStage = "merge" | "retro"
+/** `learn` and `learn-review`: the weekly learned-templates run (#1892
+ *  phase 8), drafting and the approver's reviews. */
+export type SpendStage = "merge" | "retro" | "learn" | "learn-review"
 
 const DAY_MS = 86_400_000
 
 /** What one call is booked at before it runs, and after it when the CLI
  *  reports no cost. Deliberately high: a merge on a small model costs cents;
  *  a retro on the reviewer model a few dollars. */
-export const CALL_ESTIMATE_USD: Record<SpendStage, number> = { merge: 0.1, retro: 2 }
+export const CALL_ESTIMATE_USD: Record<SpendStage, number> = { merge: 0.1, retro: 2, learn: 1, "learn-review": 0.5 }
+
+/** Dollars booked for these stages since `since`. */
+export function spentSince(db: Database.Database, stages: SpendStage[], since: number): number {
+  try {
+    const r = db.prepare(`SELECT SUM(usd) AS usd FROM improve_spend WHERE at > ? AND stage IN (${stages.map(() => "?").join(", ")})`)
+      .get(since, ...stages) as { usd: number | null }
+    return Math.round((r.usd ?? 0) * 10_000) / 10_000
+  } catch {
+    return 0 // nothing booked on this node yet
+  }
+}
 
 export function readImproveSettings(configPath?: string): ImproveSettings {
   const path = findConfigPath(configPath)

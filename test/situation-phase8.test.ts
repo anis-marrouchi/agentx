@@ -140,7 +140,8 @@ describe("learning input is redacted", () => {
   })
 
   it("keeps only lower-case words of a purpose", () => {
-    expect(redactPurpose("Call with Ana about invoice 2026-114 ana@example.com https://x.example")).toBe("call with about invoice")
+    // A capital at the start may be a name too ("Ana's interview"): dropped.
+    expect(redactPurpose("Call with Ana about invoice 2026-114 ana@example.com https://x.example")).toBe("with about invoice")
     expect(redactPurpose("مقابلة مع سامي")).toBe("")
   })
 })

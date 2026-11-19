@@ -4,7 +4,7 @@ import { handleLookup } from "@/daemon/lookup-api"
 import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
 import { codexProcessPool } from "@/agents/codex-process"
-import { SessionMonitor, discoverClis, readMonitorBody } from "./session-monitor"
+import { SessionMonitor, discoverClis, readMonitorBody, reviewWithClaudeCost } from "./session-monitor"
 import { workflowHealth, scanRuns } from "./workflow-health"
 import { AssistantStore } from "./assistant-store"
 import { resolveClient, parseWorkRef, listClients, type BusinessShape } from "@/business/clients"
@@ -40,10 +40,14 @@ import { SituationStore } from "@/situations/store"
 import { SituationGate } from "@/situations/gate"
 import { SituationSeat } from "@/situations/seat"
 import { setSituationContextSource } from "@/situations/context"
-import { closingCallerRefusal, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
+import { agentProofShown, closingCallerRefusal, fillTurnFrom, situationsClosing, situationsFill, situationsList, situationsOverride } from "@/situations/api"
 import { SituationRuns, situationStartGuard } from "@/situations/runs"
 import { commentUrl, forgeHomeOf } from "./wall-forge-state"
 import { ensureSituationWorkflows } from "@/situations/workflows"
+import { LearnedTemplateStore } from "@/situations/learned"
+import { setSituationLearnDeps } from "@/situations/learn-actions"
+import { setLearnedTemplateSource } from "@/situations/templates"
+import { learnedRetire, learnedView, LEARN_REVIEW_CHANNEL } from "@/situations/learned-api"
 import { setSituationClosingDeps } from "@/situations/closing-actions"
 import { attachSituationHook } from "@/situations/hook"
 import { attachSignalSources, sourcesView, type AttachedSources } from "@/situations/sources/node"
@@ -410,6 +414,7 @@ export class AgentXDaemon {
   /** Closing steps (#1892 phase 4): the store's expiry and close runs. */
   private situationRuns?: SituationRuns
   private situationHookOff?: () => void
+  private learnedTemplates?: LearnedTemplateStore
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
@@ -920,6 +925,42 @@ export class AgentXDaemon {
               const forge = forgeHomeOf({ home: { link: home }, group: { channel: "", chatId: "" } } as never, gitlabUrl)
               return typeof id === "string" && forge ? commentUrl(forge, id, gitlabUrl) : null
             },
+          })
+          // Learned templates (phase 8): drafts and approvals live in one
+          // table, sealed with a key from the operator key. Used only while
+          // situations.learned.enabled is on, and only once the approver
+          // agent said yes in a review run this daemon started itself.
+          const learnedOn = () => this.config.situations.mode !== "off" && this.config.situations.learned?.enabled === true
+          const learned = new LearnedTemplateStore(db, { key: () => this.operatorKey ?? null })
+          this.learnedTemplates = learned
+          setLearnedTemplateSource({
+            get: (id) => (learnedOn() ? learned.template(id) : null),
+            list: () => (learnedOn() ? learned.templates() : []),
+          })
+          setSituationLearnDeps({
+            db, learned,
+            settings: () => this.config.situations,
+            improve: () => this.config.improve,
+            // The drafter: no tools, no MCP, no session (as the retro).
+            call: (input, model, system) => reviewWithClaudeCost(input, model, undefined, system),
+            // The approver's review: isolated (only the prompt, no memory,
+            // no MCP, no write or shell tools, autonomy report), as the
+            // review gate's reviewer runs. Its answer comes back here.
+            review: async (agentId, prompt) => {
+              const res = await this.registry.execute({
+                message: prompt, agentId, freshSession: true, isolated: true, timeoutMinutes: 20,
+                context: { channel: LEARN_REVIEW_CHANNEL, chatId: `${LEARN_REVIEW_CHANNEL}:${Date.now()}`, sender: LEARN_REVIEW_CHANNEL },
+              })
+              const u = res.usage
+              const model = res.billedModel ?? this.registry.getAgent(agentId)?.model
+              return {
+                text: res.cloudSession ? "" : (res.content ?? ""),
+                usd: res.costUsd ?? (u && model ? this.registry.getTokenTracker().cost(u as any, model) : null),
+                ...(res.cloudSession ? { error: "the approver hands work to a cloud session; pick an agent that runs here" } : res.error ? { error: String(res.error) } : {}),
+              }
+            },
+            isAgent: (id) => !!this.registry.getAgent(id),
+            log: (m) => this.log(m),
           })
           this.situationHookOff?.()
           this.situationHookOff = attachSituationHook(this.hooks)
@@ -4660,6 +4701,18 @@ export class AgentXDaemon {
     // workflows that declare them. Channel-triggered workflows (gitlab-issue,
     // whatsapp-message, ...) are already wired via the hooks registered
     // above.
+    // Learned templates (#1892 phase 8): the weekly situation-learn
+    // workflow is installed before the cron triggers are read, while
+    // situations.learned.enabled is on (a restart after switching it on).
+    if (this.config.situations.mode !== "off" && this.config.situations.learned?.enabled) {
+      try {
+        const state = ensureSituationWorkflows(store, { learn: true })
+        if (state.added.length) this.log(`  Situations: installed workflow(s) ${state.added.join(", ")}`)
+        for (const b of state.broken) this.log(`  Situations: workflow ${b.id} not used: ${b.why}`)
+      } catch (e: any) {
+        this.log(`  Situations: the learning workflow was not installed (${e?.message ?? e})`)
+      }
+    }
     const { cronTimers, hookSubscribers } = startWorkflowTriggers({
       store, dispatcher, hooks: this.hooks, log: (m) => this.log(m),
       // Loop guard: an agent's configured forge usernames are its "own bot
@@ -5424,6 +5477,9 @@ export class AgentXDaemon {
     // agent's MCP tool) with the running turn's proof headers, checked in
     // the route.
     "/situations/fill",
+    // The owner takes a learned template back (#1892 phase 8): this
+    // machine only, with the operator key (checked in the route).
+    "/situations/learned/retire",
   ])
 
   /** Wraps decideMeshAuth (daemon/mesh-auth.ts) with token collection,
@@ -8518,6 +8574,27 @@ export class AgentXDaemon {
             gitlabUrl: forgeConnectorsOf(this.config).gitlab?.url ?? null,
           })
           if (r.status === 200) this.log(`[situation] closing steps ${body.clear === true ? "removed from" : "set on"} ${String(body.id || `${body.channel} ${body.chatId}`).slice(0, 80)}`)
+          this.json(res, r.status, r.body)
+          break
+        }
+
+        // Phase 8 (#1892): learned templates. Read and retire, on this
+        // machine only; retiring needs the operator key. Nothing approves
+        // here: only the approver's own review run does (learn.ts).
+        case "GET /situations/learned": {
+          const sit = this.config.situations
+          const r = learnedView(this.learnedTemplates, { thisMachine: isThisMachine(req.socket?.remoteAddress), enabled: sit.mode !== "off" && sit.learned?.enabled === true })
+          this.json(res, r.status, r.body)
+          break
+        }
+        case "POST /situations/learned/retire": {
+          const body = await readBody(req)
+          const r = learnedRetire(this.learnedTemplates, body, {
+            thisMachine: isThisMachine(req.socket?.remoteAddress),
+            keyShown: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+            agentProof: agentProofShown(this.callerProof(req)),
+          })
+          if (r.status === 200) this.log(`[situation] learned template ${String(body.id).slice(0, 60)} retired by the owner`)
           this.json(res, r.status, r.body)
           break
         }

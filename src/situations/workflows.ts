@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
-import { readTemplate } from "@/workflows/templates"
+import { readTemplate, type TemplateName } from "@/workflows/templates"
 import { parseYamlWorkflow } from "@/workflows/yaml"
 import { workflowSchema } from "@/workflows/types"
 import type { WorkflowStore } from "@/workflows/store"
@@ -24,6 +24,10 @@ import { CLOSE_WORKFLOW, EXPIRY_WORKFLOW } from "./runs"
 
 const MARKER = "_situation-workflows.json"
 const IDS = [CLOSE_WORKFLOW, EXPIRY_WORKFLOW] as const
+/** Phase 8: the weekly learning run, installed only while
+ *  `situations.learned.enabled` is on (at daemon start, before the cron
+ *  triggers are registered). */
+const LEARN_ID = "situation-learn"
 
 export interface SituationWorkflowsState {
   added: string[]
@@ -40,11 +44,12 @@ function installed(dir: string): string[] {
   } catch { return [] }
 }
 
-export function ensureSituationWorkflows(store: Pick<WorkflowStore, "get" | "baseDir">): SituationWorkflowsState {
+export function ensureSituationWorkflows(store: Pick<WorkflowStore, "get" | "baseDir">, opts: { learn?: boolean } = {}): SituationWorkflowsState {
   const dir = store.baseDir
   const out: SituationWorkflowsState = { added: [], broken: [], deleted: [] }
   const done = installed(dir)
-  for (const id of IDS) {
+  const ids: readonly TemplateName[] = opts.learn ? [LEARN_ID] : IDS
+  for (const id of ids) {
     const files = [`${id}.yaml`, `${id}.yml`, `${id}.json`].filter((f) => existsSync(resolve(dir, f)))
     if (files.length > 0) {
       if (files.length > 1) { out.broken.push({ id, why: `both ${files.join(" and ")} exist; delete one` }); continue }
