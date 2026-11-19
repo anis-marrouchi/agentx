@@ -2702,11 +2702,19 @@ Pause an active run.
 
 ### `agentx workflow resume <runId>`
 
-Resume a paused run. A run that a pause signal stopped at an agent's step is refused here: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
+Resume a stopped run through the daemon, so the run moves and not only its status changes:
+
+- A run paused with `agentx workflow pause`, or left running with steps pending and nothing walking it, is walked again from its pending steps.
+- A run waiting on a sub-workflow step whose child run completed moves on. If the child failed or was canceled, the step runs again and starts a new child. If the child is still going, the child is resumed the same way.
+- A run waiting on something else (a timer, a reply, an agent's step) is refused, with what it waits for. A run that a pause signal stopped at an agent's step is refused too: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
+
+Without a running daemon it refuses and says why.
+
+When the daemon starts, it also picks up runs a stop left behind: runs left running with steps pending are walked again, and a run waiting on a child run that has already ended gets that child's result.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--node <id>` | — | Home-node id. |
+| `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
 
 ### `agentx workflow cancel <runId>`
 
