@@ -20,6 +20,15 @@ Your `agentx.json`, your commands and your scripts keep working when you upgrade
 
 Before you upgrade, read the changelog entries since your version for **⚠ BREAKING CHANGES**.
 
+## Deprecated, removed in a later release
+
+A deprecated feature still works, but says so when you use it, and is removed in a later release. Its removal is a breaking change and is announced as one.
+
+| Feature | Use instead | Since |
+|---|---|---|
+| Request status: `agentx request-status` and the [`requestStatus`](./config-automation.md#requeststatus) setting | The [Jobs page](../dashboard/jobs.md) | 2026-11-19 |
+| `agentx chat` | `agentx attach` | 2026-08-11 |
+
 ## Install matrix
 
 Each release is installed in every supported way, on Linux and macOS, by the **Install matrix** workflow:

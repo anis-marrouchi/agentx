@@ -59,6 +59,7 @@ These are callable but hidden from `agentx --help` (its footer names them all). 
 | `migrate` | Import configuration from another tool |
 | `exec` | Run one task through an agent and exit, for scripts |
 | `chat` | Deprecated; use `attach` |
+| `request-status` | Deprecated; use the [Jobs page](../dashboard/jobs.md) |
 
 `agentx monitor` is hook plumbing for external CLI-session reviews; it does not open the **Monitor** dashboard tab. `agentx chat` is deprecated in favor of `attach`.
 
@@ -197,6 +198,8 @@ agentx attach as helper
 Start with the [visual workflow guide](../tutorials/first-workflow.md) before enabling a live automation.
 
 ## Request status
+
+> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
 
 One comment per request in a GitLab or GitHub thread, kept up to date by AgentX: [`requestStatus`](./config-automation.md#requeststatus).
 

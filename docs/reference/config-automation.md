@@ -465,6 +465,8 @@ Tracked numbers and their readings. See [Track numbers over time](/jobs/numbers)
 
 ## `requestStatus`
 
+> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
+
 Request status: a person who asks an agent for work in a GitLab or GitHub thread sees the state of that request in the same thread. Off by default. It works on its own; `requests.enabled` does not have to be on.
 
 When it is on for a channel, AgentX posts one comment for each request and edits that same comment as the work moves. It is never posted twice. The comment shows one of these states:

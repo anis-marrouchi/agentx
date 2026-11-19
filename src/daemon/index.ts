@@ -168,6 +168,7 @@ import { syncSourceIssue } from "@/business/backlog-sync"
 import { meshPeerNames } from "@/business/relations"
 import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
+import { requestStatusDeprecationLog } from "@/requests/status-deprecation"
 import { popNext } from "@/approvals/popup-runner"
 import { HUB_NEEDS_YOU } from "./ui/hub-name"
 import { readOwnerList } from "@/desk/owner-list"
@@ -958,6 +959,9 @@ export class AgentXDaemon {
             },
             log: this.log,
           })
+          // Deprecated (#1861): said once at start, only when it is on.
+          const deprecated = requestStatusDeprecationLog(this.config.requestStatus.channels)
+          if (deprecated) this.log(deprecated)
         } catch (e: any) {
           this.log(`  Request status: not available (${e?.message ?? e})`)
         }
