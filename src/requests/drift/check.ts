@@ -3,7 +3,7 @@ import type { CheckerSettings } from "../checkers"
 import type { ForgeReader } from "../checkers/issue"
 import { issueLinks, issueRef, type Provider } from "./refs"
 import type { DriftForge, MergedChange } from "./forge"
-import { STATUS_TAG } from "../status"
+import { STATUS_TAG } from "@/channels/status-tag"
 
 // --- Status follows the work: find the drift (#1138 step F) ---
 //

@@ -113,7 +113,6 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST|PATCH|DELETE /api/admin/wall/settings/channels/telegram, POST …/telegram/toggle
 //   POST|DELETE /api/admin/wall/settings/channels/email, POST …/email/toggle
 //   POST   /api/admin/wall/settings/channels/{slack,discord,gitlab}[/toggle]
-//   POST   /api/admin/wall/settings/channels/request-status  {channel, enabled}
 //   POST   /api/admin/wall/settings/agent/<id>/handovers   hand a chat over
 //   DELETE /api/admin/wall/settings/agent/<id>/handovers   release one
 // (those two are the classic agent page's, served by agent-panel.ts)
@@ -139,7 +138,7 @@ const WALL_SETTINGS_WRITES = new Set([
   "POST /channels/telegram", "PATCH /channels/telegram", "DELETE /channels/telegram", "POST /channels/telegram/toggle",
   "POST /channels/email", "DELETE /channels/email", "POST /channels/email/toggle",
   "POST /channels/slack", "POST /channels/slack/toggle", "POST /channels/discord", "POST /channels/discord/toggle",
-  "POST /channels/gitlab", "POST /channels/gitlab/toggle", "POST /channels/request-status",
+  "POST /channels/gitlab", "POST /channels/gitlab/toggle",
   // Phase 2: WhatsApp (sweep, watched chats) and Inbox (notification routing).
   "POST /channels/whatsapp/ingest", "POST /whatsapp-triage", "POST /whatsapp-triage/rules", "PATCH /whatsapp-triage/rules", "DELETE /whatsapp-triage/rules",
   "POST /notifications",

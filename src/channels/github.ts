@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { isStatusComment } from "@/requests/status"
+import { isStatusComment } from "@/channels/status-tag"
 import { noWakeLabelIn } from "./no-wake"
 import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
@@ -696,7 +696,8 @@ export class GitHubAdapter implements ChannelAdapter {
       this.log(`AgentX comment from ${sourceAgent}, skipping its own echo (comment ${comment.id})`)
       return
     }
-    // A request-status comment is never a hand-off, whichever agent signed it (#383).
+    // A status comment (the drift check's proof, an old request status
+    // comment) is never a hand-off, whichever agent signed it (#383, #1719).
     if (trusted && isStatusComment(comment.body)) {
       this.log(`AgentX status comment, skipping (comment ${comment.id})`)
       return

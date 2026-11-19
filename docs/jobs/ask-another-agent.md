@@ -179,7 +179,7 @@ A message that must start soon, such as a battery or disk alert, can be sent wit
 
 ### When the helper's run ends before the work does
 
-Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or another agent. Its reply then is not the end of the work. The helper says so with the `agentx_waiting` tool before it ends the run, giving what it waits for (`on`) and, if it knows, when the wait should be over (`due`, an ISO time). The answer that comes back to the asking agent then says the work is **not finished** and what it waits for, with status `waiting`, instead of "finished". An open request stays "waiting on another agent",, due at that time. A request status comment that reads "waiting" reads timed out once the due time (or 120 minutes from the end of the run, if none was given) plus 30 minutes has passed.
+Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or another agent. Its reply then is not the end of the work. The helper says so with the `agentx_waiting` tool before it ends the run, giving what it waits for (`on`) and, if it knows, when the wait should be over (`due`, an ISO time). The answer that comes back to the asking agent then says the work is **not finished** and what it waits for, with status `waiting`, instead of "finished". An open request stays "waiting on another agent",, due at that time.
 
 The tool works only from inside the helper's own run (`POST /runs/waiting` on its own machine).
 

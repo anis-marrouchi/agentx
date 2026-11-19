@@ -44,25 +44,13 @@ If your team names its GitLab bot accounts with a common prefix, for example `te
 
 ![The Webhooks form in a GitLab project: URL, Secret token and the Trigger checkboxes](/screenshots/gitlab/webhooks-form.png)
 
-## 4. Optional: show the state of each request in the issue
-
-> **Deprecated.** Request status will be removed in a later release. Use the [Jobs page](../dashboard/jobs.md) instead: it shows every piece of assigned work and what it is doing now. While it is still here, `agentx request-status` prints a one-line notice and then works as before, and the daemon writes one line in its start log when a channel has it on.
-
-Without this, an issue is silent between the request and the agent's answer. With it, AgentX keeps one comment per request up to date: queued, working, waiting, done, failed, timed out, or cut off by a restart.
-
-1. **Terminal:** open the folder that holds `agentx.json`.
-2. Run `agentx request-status gitlab on`.
-3. Run `agentx request-status` and check that `gitlab` shows `on`.
-
-To turn it off again, run `agentx request-status gitlab off`. Details: [`requestStatus`](../reference/config-automation.md#requeststatus).
-
 ## Check it worked
 
 1. **Browser, in GitLab:** on the webhook, select **Test › Issues events**. GitLab shows `HTTP 200`.
 2. **Browser, in GitLab:** in a test issue, add a comment that @-mentions the agent's GitLab username.
 3. Within a minute or two, the agent replies in the issue.
 4. **Browser, in AgentX:** open **Activity**. The request appears under the agent.
-5. If request status is on: a comment that starts with `Request status:` appears in the issue when the agent starts, and the same comment changes to **Done** when it ends. There is still only one such comment.
+5. **Browser, in AgentX:** to follow the work while it runs, open the [Jobs page](../dashboard/jobs.md) (**Hub › Jobs**). An issue assigned to the agent is listed there, and the agent first writes a short comment in the issue to say it took the work.
 6. **Terminal:** run `agentx daemon status`. No red `GitLab:` line appears. A red line means GitLab refused one of your tokens (see below).
 
 ## If something is wrong

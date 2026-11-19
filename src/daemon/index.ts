@@ -172,8 +172,7 @@ import { defaultForgeOf, forgeConnectorsOf, liveReader } from "@/requests/drift/
 import { syncSourceIssue } from "@/business/backlog-sync"
 import { meshPeerNames } from "@/business/relations"
 import { loopChecker, parseDue } from "@/requests/loops"
-import { attachStatus, type AttachedStatus } from "@/requests/status-board"
-import { requestStatusDeprecationLog } from "@/requests/status-deprecation"
+import { retireStatusTables } from "@/requests/status-retire"
 import { popNext } from "@/approvals/popup-runner"
 import { HUB_NEEDS_YOU } from "./ui/hub-name"
 import { readOwnerList } from "@/desk/owner-list"
@@ -975,27 +974,12 @@ export class AgentXDaemon {
           })
           this.registry.setDueTimeGate((run, askAgent) => dueGate.runEnded(run, askAgent))
         }
-        // Request status where the request was made (#383). Attached the
-        // same way; it does nothing for a channel that is not listed in
-        // `requestStatus.channels`.
+        // Request status was removed (#1950): its old tables leave the
+        // database once, their rows exported to .agentx first.
         try {
-          this.status = attachStatus(db, () => ({
-            channels: this.config.requestStatus.channels,
-            retentionDays: this.config.requests.retentionDays,
-          }), {
-            post: async (row, text) =>
-              (await this.router.getChannel(row.channel)?.send({ channel: row.channel, chatId: row.chatId, text, agentId: row.agentId })) || "",
-            edit: async (row, ref, text) => {
-              const adapter = this.router.getChannel(row.channel) as { editComment?: GitLabAdapter["editComment"] } | undefined
-              return adapter?.editComment ? adapter.editComment(row.chatId, ref, text, row.agentId) : false
-            },
-            log: this.log,
-          })
-          // Deprecated (#1861): said once at start, only when it is on.
-          const deprecated = requestStatusDeprecationLog(this.config.requestStatus.channels)
-          if (deprecated) this.log(deprecated)
+          retireStatusTables(db, resolve(process.cwd(), ".agentx"), this.log)
         } catch (e: any) {
-          this.log(`  Request status: not available (${e?.message ?? e})`)
+          this.log(`  Request status tables: kept (${e?.message ?? e})`)
         }
         // Typed-decision seats. Registering a backend is lazy and opening
         // the shadow store is cheap, but neither happens unless the
@@ -1039,12 +1023,10 @@ export class AgentXDaemon {
       onStarted: (rec) => {
         this.requests?.tracker.delegationStarted(rec)
         this.requests?.doors.delegationStarted(rec)
-        this.status?.board.delegationStarted(rec)
       },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
         this.requests?.doors.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
-        this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
       },
       callbackNote: (rec) => this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
@@ -2146,7 +2128,6 @@ export class AgentXDaemon {
       })
       for (const o of outcomes) {
         this.requests?.tracker.resumeOutcome(o)
-        this.status?.board.resumeOutcome(o)
       }
       const count = (d: string) => outcomes.filter((o) => o.decision === d).length
       this.log(`  Resume: ${count("resumed")} resumed, ${count("reported")} reported, ${count("skipped")} skipped, ${count("resume-failed")} failed`)
@@ -2632,7 +2613,6 @@ export class AgentXDaemon {
   private driftAt = 0
   private driftSweeping = false
   private readonly driftLiveCache = new Map<string, boolean>()
-  private status: AttachedStatus | null = null
   /** Estimate rows of due times, kept a minute across calls (#1920). */
   private readonly dueEstimates = new EstimateCache()
 
@@ -2771,7 +2751,6 @@ export class AgentXDaemon {
           hasAgent: (id) => !!this.registry.getAgent(id),
           onCardResult: (card) => {
             this.requests?.tracker.cardResolved(card)
-            this.status?.board.cardResolved(card)
             this.workflowCardResult(card)
             void this.mergePolicy?.onCard(card)
             // An org chart proposal (#1678): the daemon applies it on yes.
@@ -2843,7 +2822,6 @@ export class AgentXDaemon {
         // Beside the tick, never inside it: a peer may take seconds to answer.
         if (jobsOn(this.config.requests)) void this.jobMesh?.refresh()
         this.statusDriftTick()
-        this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS
         // task app can take seconds to answer.
         this.mirrorTick()
@@ -3976,7 +3954,6 @@ export class AgentXDaemon {
         this.log,
         this.hooks,
       )
-      gitlab.setStatusComments(() => this.config.requestStatus.channels.some((c) => c.toLowerCase() === "gitlab"))
       // Wire up mesh reaction forwarder — for agents hosted on remote peers
       if (this.mesh) {
         // Generic cross-mesh mention resolution — when an @-mention doesn't
@@ -5827,7 +5804,6 @@ export class AgentXDaemon {
             this.log(`[org] ${card.raised_by} proposed an org chart change: card ${card.id}`)
             const turn = this.provenTurn(card.raised_by, this.callerProof(req))
             this.requests?.tracker.cardRaised(card, turn)
-            this.status?.board.cardRaised(card, turn)
           },
         })
         this.json(res, reply2.status, reply2.body)
@@ -5851,7 +5827,6 @@ export class AgentXDaemon {
           if (!r.ok) { this.json(res, r.status, { error: r.error }); return }
           this.log(`[approvals] ${r.card.id}: result back from ${this.config.approvals.forwardTo} for ${r.card.raised_by}: ${r.card.status === "decided" ? r.card.verdict : `expired, ${r.card.outcome}`}`)
           this.requests?.tracker.cardResolved(r.card)
-          this.status?.board.cardResolved(r.card)
           if (this.config.approvals.notifyAgent) this.tellAgentCardResult(r.card)
           this.json(res, 202, { ok: true })
           return
@@ -5864,7 +5839,6 @@ export class AgentXDaemon {
           const card = (reply.body as { card: DecisionCard }).card
           const turn = this.provenTurn(card.raised_by, this.callerProof(req))
           this.requests?.tracker.cardRaised(card, turn)
-          this.status?.board.cardRaised(card, turn)
         }
         // With approvals.forwardTo, a card raised here goes to the
         // operator's node; only an agent of this node may raise one.
@@ -5924,7 +5898,6 @@ export class AgentXDaemon {
             const step = remote.via ? ` (workflow step ${remote.via.nodeId} of run ${remote.via.runId})` : ""
             this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}${step}`)
             this.requests?.tracker.cardResolved(card)
-            this.status?.board.cardResolved(card)
           }
           this.json(res, remote.status, remote.body)
           return
@@ -5933,7 +5906,6 @@ export class AgentXDaemon {
           const card = (reply.body as { card: DecisionCard }).card
           this.log(`[approvals] ${card.id} closed by ${card.raised_by}: ${card.resolution}`)
           this.requests?.tracker.cardResolved(card)
-          this.status?.board.cardResolved(card)
         }
         raised(reply)
         this.json(res, reply.status, reply.body)

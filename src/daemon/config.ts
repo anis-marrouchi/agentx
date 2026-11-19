@@ -1959,12 +1959,6 @@ export const membersConfigSchema = z.object({
   logRetentionDays: z.number().int().min(1).max(3650).default(90),
 }).default({})
 
-export const requestStatusConfigSchema = z.object({
-  /** Channels that show it. On gitlab and github: one comment per request,
-   *  kept up to date by the daemon. Empty: off. */
-  channels: z.array(z.string().min(1)).default([]),
-}).default({})
-
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
 
 /** The weekly quality report on the epic issue (src/quality, #994). */
@@ -2555,10 +2549,6 @@ export const daemonConfigSchema = z.object({
   numbers: numbersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
-  /** Request status where the request was made (src/requests/status-board,
-   *  #383): each person sees the state of their own request in the place
-   *  they asked. Off by default. */
-  requestStatus: requestStatusConfigSchema,
   /** Weekly quality report posted on the epic issue (src/quality, #994).
    *  Off by default. */
   qualityReport: qualityReportConfigSchema,
@@ -3240,6 +3230,12 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Invalid JSON in ${foundPath}: ${e.message}`)
   }
 
+  for (const line of removedSettingNotes(parsed)) {
+    if (warnedRemoved.has(line)) continue
+    warnedRemoved.add(line)
+    console.warn(`⚠ ${foundPath}: ${line}`)
+  }
+
   const literal = literalSecretProblems(parsed)
   if (literal.length) throw new Error(`Config validation failed (${foundPath}):\n${literal.map((p) => `  ${p}`).join("\n")}`)
 
@@ -3261,6 +3257,20 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
   if (crossed.length) throw new Error(`Config validation failed (${foundPath}):\n${crossed.map((p) => `  ${p}`).join("\n")}`)
 
   return withSummariesJob(withContributionJobs(result.data))
+}
+
+/** Settings that were removed but must not stop an agentx.json that still
+ *  has them from loading: the schema drops them, and the loader says so in
+ *  one line, once per process. */
+const REMOVED_SETTINGS: Record<string, string> = {
+  requestStatus: "requestStatus is ignored: request status was removed (#1950). The Jobs page (Hub › Jobs) replaces it; delete the setting.",
+}
+const warnedRemoved = new Set<string>()
+
+/** One line for each removed setting this raw agentx.json still has. */
+export function removedSettingNotes(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") return []
+  return Object.keys(REMOVED_SETTINGS).filter((k) => k in (raw as Record<string, unknown>)).map((k) => REMOVED_SETTINGS[k])
 }
 
 /** Secrets that must stay in .env, checked on agentx.json before `${VAR}`

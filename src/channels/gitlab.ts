@@ -5,7 +5,7 @@ import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
 import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeBody, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
-import { isStatusComment } from "@/requests/status"
+import { isStatusComment } from "@/channels/status-tag"
 import { WAKE_SELF_MARK, type WorkActivity } from "@/workflows/wake"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
@@ -292,7 +292,6 @@ export class GitLabAdapter implements ChannelAdapter {
   private reactForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, noteId: number, agentId: string, name: string) => Promise<void>
   private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
   private editCommentForwarder?: (node: string, chatId: string, noteId: string, agentId: string, text: string) => Promise<boolean>
-  private statusComments: () => boolean = () => false
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
   private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>
   private setLabelsForwarder?: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>
@@ -323,12 +322,6 @@ export class GitLabAdapter implements ChannelAdapter {
   /** How an edit reaches the peer that holds the agent's token (#383). */
   setEditCommentForwarder(fn: (node: string, chatId: string, noteId: string, agentId: string, text: string) => Promise<boolean>): void {
     this.editCommentForwarder = fn
-  }
-
-  /** While true, assignment prompts stop asking the agent to acknowledge
-   *  in a comment: the daemon's status comment is the acknowledgement. */
-  setStatusComments(on: () => boolean): void {
-    this.statusComments = on
   }
 
   setLogTimeForwarder(fn: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>): void {
@@ -727,8 +720,9 @@ export class GitLabAdapter implements ChannelAdapter {
     // the signature, and it must not hide their note or relabel it (#287).
     const trusted = this.postsAs(user.username) || this.isBotUser(user.username)
     const sourceAgent = trusted ? detectAgentxMarker(note) : null
-    // A request-status note is never a hand-off, whichever agent signed it
-    // or mentioned (#383, as in the GitHub channel).
+    // A status note (the drift check's proof, an old request status
+    // comment) is never a hand-off, whichever agent signed it or mentioned
+    // (#383, #1719, as in the GitHub channel).
     if (trusted && isStatusComment(note)) {
       this.log(`AgentX status note, skipping (note ${noteId})`)
       res.writeHead(200); res.end("ok"); return
@@ -1257,7 +1251,7 @@ export class GitLabAdapter implements ChannelAdapter {
         // agent can navigate to it.
         const change = describeIssueChange(event)
         const text = t.trigger === "assignee-added"
-          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${change}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\n${this.statusComments() ? "Start" : "Please acknowledge this assignment in a comment, then start"} working on the issue.`
+          ? `[GitLab ${project} Issue #${attrs.iid} assigned to you: ${stripAgentxMarkers(attrs.title)}]\n${change}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge this assignment in a comment, then start working on the issue.`
           : `[GitLab ${project} Issue #${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\n${change}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {
@@ -1513,7 +1507,7 @@ export class GitLabAdapter implements ChannelAdapter {
 
         const isAssignmentTrigger = t.trigger === "assignee-added" || t.trigger === "reviewer-added"
         const text = isAssignmentTrigger
-          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${stripAgentxMarkers(attrs.title)}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease ${this.statusComments() ? "" : "acknowledge in a comment, then "}${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
+          ? `[GitLab ${project} MR !${attrs.iid} ${t.trigger === "reviewer-added" ? "review requested" : "assigned to you"}: ${stripAgentxMarkers(attrs.title)}]\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 1500) || ""}\nURL: ${attrs.url}\n\nPlease acknowledge in a comment, then ${t.trigger === "reviewer-added" ? "review this MR" : "start working on it"}.`
           : `[GitLab ${project} MR !${attrs.iid} ${attrs.action}]: ${stripAgentxMarkers(attrs.title)}\nBranch: ${attrs.source_branch} -> ${attrs.target_branch}\n${forgeBody(attrs.description, this.bodyTrusted(event))?.slice(0, 500) || ""}\nURL: ${attrs.url}`
 
         const incoming: IncomingMessage = {

@@ -26,7 +26,6 @@ A deprecated feature still works, but says so when you use it, and is removed in
 
 | Feature | Use instead | Since |
 |---|---|---|
-| Request status: `agentx request-status` and the [`requestStatus`](./config-automation.md#requeststatus) setting | The [Jobs page](../dashboard/jobs.md) | 2026-11-19 |
 | `agentx chat` | `agentx attach` | 2026-08-11 |
 
 ## Install matrix

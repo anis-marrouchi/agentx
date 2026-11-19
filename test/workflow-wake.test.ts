@@ -5,7 +5,7 @@ import { RunStore, WorkflowDispatcher, WorkflowStore, workflowSchema, type Agent
 import { TimerService } from "../src/workflows/timers"
 import { parseWorkActivity, wakeConfig, wakeTarget, WAKE_SELF_MARK, type WorkActivity } from "../src/workflows/wake"
 import { GitLabAdapter } from "../src/channels/gitlab"
-import { STATUS_TAG } from "../src/requests/status"
+import { STATUS_TAG } from "../src/channels/status-tag"
 
 const TEST_DIR = resolve(__dirname, "../.test-workflow-wake")
 const HOUR = 3_600_000

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import Database from "better-sqlite3"
 import { issueLinks } from "../src/requests/drift/refs"
-import { STATUS_TAG } from "../src/requests/status"
+import { STATUS_TAG } from "../src/channels/status-tag"
 import { checkProject, DEFAULT_DRIFT_SETTINGS, proofNote, statusOf, type DriftCheckDeps, type DriftProject, type DriftSettings } from "../src/requests/drift/check"
 import { driftForge, sameCommit, type DriftForge, type MergedChange } from "../src/requests/drift/forge"
 import { liveReader } from "../src/requests/drift/live"

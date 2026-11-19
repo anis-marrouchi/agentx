@@ -14,7 +14,7 @@ import {
   ownText,
 } from "../src/channels/outbound-marker"
 import { classifyInitiator } from "../src/a2a/initiator"
-import { STATUS_TAG } from "../src/requests/status"
+import { STATUS_TAG } from "../src/channels/status-tag"
 import { recordsFromEntries } from "../src/wiki/facts/sources/entries"
 import { MessageRouter } from "../src/channels/router"
 import { fromIncoming } from "../src/channels/inbound/envelope"
