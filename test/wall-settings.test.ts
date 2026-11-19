@@ -654,7 +654,6 @@ describe("Wall Settings: Channels (#1428 phase 2)", () => {
     email: { enabled: false, accounts: [{ id: "hello", address: "hello@example.com", agent: "cx", imap: "imap.example.com:993", smtp: "smtp.example.com:465", allowFrom: ["*"], send: "approve", passwordRef: "${EMAIL_PW}" }] },
     slack: { enabled: false },
     gitlab: { enabled: true, host: "https://gitlab.example.com", tokenRef: "${GITLAB_TOKEN}", webhookPort: 18810, routeCount: 2, agentMappingCount: 1 },
-    requestStatus: ["gitlab"],
   }
   const openChannels = (route?: Route) => openWall({ hash: "#page=settings&section=channels", route: (u, i) => route?.(u, i) ?? (u === "/api/admin/state" ? { status: 200, body: CH_STATE } : undefined) })
 
@@ -703,14 +702,15 @@ describe("Wall Settings: Channels (#1428 phase 2)", () => {
     expect(w.el("st-n-em-add").textContent).toBe("Not saved: address is required")
   })
 
-  it("connects GitLab with the classic call and shows its request status switch", async () => {
+  it("connects GitLab with the classic call, with no request status switch (#1950)", async () => {
     const w = openChannels()
     await w.settle()
     await w.click({ "data-st-act": "ch", "data-ch": "gitlab" })
     const html = settingsHtml(w)
     expect(html).toContain("2 route(s) · 1 agent mapping(s)")
     expect(html).toContain('value="GITLAB_TOKEN"')
-    expect(html).toContain('data-st-rs="gitlab" checked')
+    expect(html).not.toContain("data-st-rs")
+    expect(html).not.toContain("Request status")
     w.el("st-gl-host").value = "https://gitlab.example.com"; w.el("st-gl-env").value = "GITLAB_TOKEN"; w.el("st-gl-port").value = "18810"
     await w.submit({ "data-st-form": "gitlab" })
     expect(w.writes()).toEqual([{ url: "/api/admin/wall/settings/channels/gitlab", method: "POST", body: { host: "https://gitlab.example.com", tokenEnv: "GITLAB_TOKEN", webhookPort: 18810 } }])
@@ -1049,13 +1049,15 @@ describe("/wall gives Settings to the owner only (#1428)", () => {
     expect((await fetch(`${base}/api/admin/wall/settings/agents/integrations`, { method: "PATCH", headers: auth, body: "{}" })).status).toBe(404)
     // Phase 2: Schedules and Webhooks reach their classic handlers.
     for (const [method, path] of [["POST", "crons"], ["DELETE", "crons"], ["POST", "crons/preview"], ["POST", "webhooks"], ["PATCH", "webhooks"], ["DELETE", "webhooks"], ["POST", "webhooks/triggers"],
-      ["POST", "channels/telegram"], ["PATCH", "channels/telegram"], ["DELETE", "channels/email"], ["POST", "channels/slack/toggle"], ["POST", "channels/request-status"],
+      ["POST", "channels/telegram"], ["PATCH", "channels/telegram"], ["DELETE", "channels/email"], ["POST", "channels/slack/toggle"],
       // WhatsApp watch rules and Inbox: an empty body is refused by the handler, so nothing is written
       // (the sweep and the triage switch are left out: one calls the daemon, the other would write).
       ["POST", "whatsapp-triage/rules"], ["PATCH", "whatsapp-triage/rules"], ["DELETE", "whatsapp-triage/rules"], ["POST", "notifications"]]) {
       expect((await fetch(`${base}/api/admin/wall/settings/${path}`, { method, headers: auth, body: "{}" })).status, `${method} ${path}`).not.toBe(404)
     }
     expect((await fetch(`${base}/api/admin/wall/settings/agents`, { method: "PUT", headers: auth, body: "{}" })).status).toBe(404)
+    // Request status was removed (#1950): its switch has no route any more.
+    expect((await fetch(`${base}/api/admin/wall/settings/channels/request-status`, { method: "POST", headers: auth, body: "{}" })).status).toBe(404)
     // Handovers go to the classic agent page's handler: a release with no chat is its own 400.
     const ho = await fetch(`${base}/api/admin/wall/settings/agent/cx/handovers`, { method: "DELETE", headers: auth, body: "{}" })
     expect(ho.status).toBe(400)

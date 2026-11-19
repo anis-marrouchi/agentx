@@ -5,7 +5,6 @@ import { mutateAgentxConfig } from "./config-mutate"
 import { HIDDEN_SECRET, hideConfigSecrets, restoreConfigSecrets } from "./config-hidden"
 import { configRelationsProblem, memberKey } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
-import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
 import { providerFor } from "@/integrations/providers"
@@ -97,7 +96,6 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
-      "POST /api/admin/channels/request-status": () => toggleRequestStatus(body),
       "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
       // WebRTC bot history — active calls + ring buffer of recently-completed
       // sessions. Lives on the daemon (BotManager owns it); the dashboard
@@ -473,7 +471,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
 }
 
 // ========================================================================

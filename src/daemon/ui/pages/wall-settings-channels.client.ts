@@ -12,7 +12,6 @@
 //   WhatsApp  pairing, chats, watched chats (wall-settings-whatsapp.client.ts)
 //   Email     the connector on/off, mailboxes (add, delete)
 //   Slack, Discord, GitLab   connect or edit, on/off
-//   GitLab, GitHub           request status comments on/off
 //   GitHub    its webhooks (added on Webhooks)
 //   Calls     active and recent calls (reads only)
 // A secret is never shown or sent: each form takes the NAME of the .env
@@ -132,12 +131,6 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
         '<label>Default agent <small>(optional)</small><select id="st-dc-agent">' + stOptions([['', '(none)']], d.agentBinding || '') + stAgentOptions(d.agentBinding || '') + '</select></label>',
       hint: 'The bot needs the <code>MESSAGE_CONTENT</code> intent in the Discord Developer Portal. It answers when @-mentioned in channels, and always in direct messages.' });
   }
-  function stRequestStatusHtml(channel, label) {
-    var on = ((S.st.data && S.st.data.requestStatus) || []).indexOf(channel) >= 0;
-    return '<section class="wsc"><h3>Request status</h3><p class="wsj__sub">When someone asks an agent for work on ' + esc(label) +
-      ', AgentX posts one comment with the state of that request (queued, working, waiting, done, failed, timed out, cut off by a restart) and edits it as the work moves.</p>' +
-      '<label class="wsf__check"><input type="checkbox" data-st-rs="' + esc(channel) + '"' + (on ? ' checked' : '') + '> Request status comments on ' + esc(label) + '</label></section>';
-  }
   function stGitLabHtml() {
     var g = (S.st.data && S.st.data.gitlab) || {};
     return stOneHtml({ label: 'GitLab', form: 'gitlab', toggle: 'gitlab/toggle', on: g.enabled, configured: !!g.tokenRef,
@@ -146,8 +139,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
       fields: stChField('st-gl-host', 'Host', g.host || 'https://gitlab.com', 'https://gitlab.com') +
         stChField('st-gl-env', 'Admin token (api scope), as an environment variable name', stEnvName(g.tokenRef), 'GITLAB_TOKEN') +
         stChField('st-gl-port', 'Webhook listen port', String(g.webhookPort || 18810), '18810'),
-      hint: 'Routes per project and tokens per agent are set in Advanced. GitLab webhooks are added on <a href="' + esc(stHref('webhooks')) + '">Webhooks</a>, source GitLab.',
-      extra: stRequestStatusHtml('gitlab', 'GitLab') });
+      hint: 'Routes per project and tokens per agent are set in Advanced. GitLab webhooks are added on <a href="' + esc(stHref('webhooks')) + '">Webhooks</a>, source GitLab.' });
   }
   function stGitHubHtml() {
     var hooks = ((S.st.data && S.st.data.webhooks) || []).filter(function (w) { return w.source === 'github'; });
@@ -155,7 +147,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
       (hooks.length ? '<ul class="wsj">' + hooks.map(function (w) {
         return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(w.id) + '</b> ' + stChState(w.enabled) + '<p class="wsj__url"><code>' + esc(stHookUrl(w)) + '</code></p><p class="wsj__sub">goes to @' + esc(w.agentId) + '</p></div></li>';
       }).join('') + '</ul>' : '<p class="ax-wall__empty">No GitHub webhook yet.</p>') +
-      '<a class="ax-btn" href="' + esc(stHref('webhooks')) + '">Add a GitHub webhook</a></section>' + stRequestStatusHtml('github', 'GitHub');
+      '<a class="ax-btn" href="' + esc(stHref('webhooks')) + '">Add a GitHub webhook</a></section>';
   }
 
   // --- Calls: reads only ---
@@ -214,9 +206,6 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
     if (t.hasAttribute('data-st-ch-toggle')) {
       var path = t.getAttribute('data-st-ch-toggle'), on = !!t.checked;
       stChSave('ch', 'POST', path, { enabled: on }, path.split('/')[0] + (on ? ' is on.' : ' is off.')).then(function (ok) { if (!ok) t.checked = !on; });
-    } else if (t.hasAttribute('data-st-rs')) {
-      var channel = t.getAttribute('data-st-rs'), rs = !!t.checked;
-      stChSave('ch', 'POST', 'request-status', { channel: channel, enabled: rs }, 'Request status comments are ' + (rs ? 'on.' : 'off.')).then(function (ok) { if (!ok) t.checked = !rs; });
     }
   });
   document.addEventListener('submit', function (ev) {
