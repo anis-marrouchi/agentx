@@ -15,6 +15,9 @@
 #   3. post_note: the note is posted as one comment at the talk's home (a
 #                 GitHub or GitLab issue, pull or merge request).
 #   4. promises:  each follow-up becomes an open promise with an owner.
+#                 None when the node kept no messages of the talk (the
+#                 agent had nothing to read, so its list would be a guess).
+#                 Steps 3 and 4 run once per end, even when retried.
 #   5. tell_owner: one message to the owner. It goes through the owner's
 #                 hold, so it waits while the owner is in Focus or a call.
 #   6. tell_other_side: only when the talk has a closing message for the
@@ -76,6 +79,7 @@ nodes:
         {{transcript.text}}
         ---
         Draft one short note about the talk for its home ({{start.home}}). Do not post it and do not message anyone: the workflow posts it.
+        If no messages are shown above, say so in the note, list no follow-ups (an empty list) and do not guess any.
         Then list each follow-up that was agreed: what it is, who owes it (an agent id, or "owner"), who waits on it, and a due time only if a person gave one.
         End your reply with one JSON block, and nothing after it:
         {"note": "<the note, in plain text>", "followUps": [{"what": "...", "owner": "...", "waitsOn": "...", "due": ""}]}
@@ -86,6 +90,7 @@ nodes:
       name: situation.note
       input:
         situationId: "{{start.situationId}}"
+        endGeneration: "{{start.endGeneration}}"
         home: "{{start.home}}"
         agent: "{{start.agent}}"
         purpose: "{{start.purpose}}"
@@ -103,6 +108,7 @@ nodes:
         chatId: "{{start.chatId}}"
         home: "{{start.home}}"
         followUps: "{{notes.json.followUps}}"
+        transcriptMessages: "{{transcript.messages}}"
 
   - id: inward_only
     type: branch

@@ -63,6 +63,8 @@ interface H {
   /** The talk's recent messages (the group log). */
   transcript: Array<{ sender: string; text: string; timestamp: number }>
   logs: string[]
+  /** The idempotency key each note post carried. */
+  noteKeys: string[]
   told: string[]
   cards: Array<{ cardId: string; input: OwnerCardInput; runId: string; nodeId: string }>
   sends: Array<{ channel: string; chatId: string; text: string }>
@@ -81,7 +83,7 @@ function setup(opts: { closing?: boolean } = {}): H {
   const workflows = new WorkflowStore({ baseDir: dir })
   const runs = new RunStore({ baseDir: dir, nodeId: "node-a" })
   const timers = new TimerService({ baseDir: resolve(dir, "_timers") })
-  const x = { dir, db, situations, requests, workflows, runs, timers, notes: new Map(), told: [], cards: [], sends: [], turns: [], logs: [] } as unknown as H
+  const x = { dir, db, situations, requests, workflows, runs, timers, notes: new Map(), told: [], cards: [], sends: [], turns: [], logs: [], noteKeys: [] } as unknown as H
   x.followUps = [
     { what: "Send the candidate the written offer terms", owner: "recruiter", waitsOn: "owner" },
     { what: "Decide the start date", owner: "owner", waitsOn: "recruiter" },
@@ -129,7 +131,8 @@ function setup(opts: { closing?: boolean } = {}): H {
     isAgent: (id) => AGENTS.has(id),
     transcript: () => x.transcript,
     gitlabUrl: () => "https://git.example.com",
-    postNote: async (target, text) => {
+    postNote: async (target, text, _agent, _home, key) => {
+      x.noteKeys.push(key)
       x.notes.set(target.chatId, [...(x.notes.get(target.chatId) ?? []), text])
       return `${HOME}#note_1`
     },
@@ -523,6 +526,63 @@ describe("review fixes", () => {
     expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(1)
     await h.sitRuns.resumeOnStart()
     expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(1)
+  })
+})
+
+describe("re-check fixes", () => {
+  const ended = async () => {
+    moveTo(h, "ending")
+    h.situations.noteSent(KEY, "recruiter")
+    await h.sitRuns.idle()
+  }
+  const doneClose = () => until(() => h.runsOf(CLOSE_WORKFLOW).some((r) => r.status === "completed" || r.status === "failed"))
+
+  it("F1: closing steps set on an ended talk start no close at the next daemon start", async () => {
+    h.situations.create(KEY, "during", "first message")
+    h.situations.claimOwner(KEY, "recruiter")
+    moveTo(h, "ended")
+    h.situations.setClosing(h.situations.get(KEY)!.id, { purpose: "p", home: HOME, message: "Thanks.", chatId: GROUP })
+    await h.sitRuns.idle()
+    await h.sitRuns.resumeOnStart()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(0)
+    expect(h.told).toHaveLength(0)
+    expect(h.cards).toHaveLength(0)
+    // Its next end still closes.
+    moveTo(h, "during", "a real message")
+    moveTo(h, "ended")
+    await h.sitRuns.idle()
+    expect(h.runsOf(CLOSE_WORKFLOW)).toHaveLength(1)
+  })
+
+  it("L-a: with no messages of the talk kept, the run opens no promises", async () => {
+    h.transcript = []
+    interview(h)
+    await ended()
+    await doneClose()
+    expect(h.requests.listOpen().filter((r) => r.promise)).toHaveLength(0)
+    expect(h.turns[0].message).toContain("no messages of this talk are kept")
+    expect(h.told[0]).toMatch(/No follow-ups/)
+  })
+
+  it("L-b: the note is posted once per end, with a stable key, even when the step runs again", async () => {
+    interview(h)
+    await ended()
+    await doneClose()
+    const row = h.situations.get(KEY)!
+    expect(h.noteKeys).toEqual([`situation:${row.id}:0:note`])
+    const { runBuiltin } = await import("../src/actions/builtin")
+    const again = await runBuiltin("situation.note", { situationId: row.id, endGeneration: "0", home: HOME, agent: "recruiter", note: "Interview notes" }) as { noteAt: string }
+    expect(again.noteAt).toBe(`${HOME}#note_1`)
+    expect(h.notes.get(NOTE_CHAT)).toHaveLength(1)
+  })
+
+  it("L-c: an allowed agent named in other letter case owns the promise under its registry id", async () => {
+    h.followUps = [{ what: "Book the second interview", owner: "HELPER" }]
+    interview(h, { agents: ["helper"] })
+    await ended()
+    await doneClose()
+    const [p] = h.requests.listOpen().filter((r) => r.promise)
+    expect(p.agentId).toBe("helper")
   })
 })
 

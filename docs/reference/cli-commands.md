@@ -3735,7 +3735,7 @@ Give a talk closing steps: when it ends, its agent drafts one note (read only) t
 | Flag | Default | Meaning |
 |---|---|---|
 | `--purpose <text>` | — | What the talk is, for example "the job interview with a candidate". Required. |
-| `--home <link>` | — | Where the note goes: a GitHub or GitLab issue, pull request or merge request link. Required. |
+| `--home <link>` | — | Where the note goes: a GitHub or GitLab issue, pull request or merge request link. Use one in a private repository: the note is posted there as a comment. Required. |
 | `--agent <id>` | the chat's agent | The agent that drafts the note and owns the follow-ups. Must be an agent of this node. |
 | `--agents <ids>` | none | Other agents of this node that may own a follow-up, comma-separated. A follow-up named to anyone else is kept by the talk's agent. |
 | `--message <text>` | — | A closing message to the other side. You are always asked before it is sent. |

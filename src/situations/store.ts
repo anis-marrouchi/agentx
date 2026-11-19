@@ -153,7 +153,7 @@ export function ensureSituationTables(db: Database.Database): void {
   const cols = db.prepare("PRAGMA table_info(situations)").all() as Array<{ name: string }>
   if (!cols.some((c) => c.name === "override")) db.exec("ALTER TABLE situations ADD COLUMN override TEXT")
   // Phase 4: closing steps and the runs the store started.
-  for (const [name, type] of [["closing", "TEXT"], ["expiry_run_id", "TEXT"], ["close_run_id", "TEXT"], ["close_generation", "INTEGER"]]) {
+  for (const [name, type] of [["closing", "TEXT"], ["expiry_run_id", "TEXT"], ["close_run_id", "TEXT"], ["close_generation", "INTEGER"], ["note_at", "TEXT"], ["note_generation", "INTEGER"]]) {
     if (!cols.some((c) => c.name === name)) db.exec(`ALTER TABLE situations ADD COLUMN ${name} ${type}`)
   }
 }
@@ -210,7 +210,7 @@ export function clipGateMessage(json: string): string {
 type StatementName =
   | "get" | "getById" | "byPrefix" | "list" | "remove" | "create" | "move" | "setOwner" | "takeSlot" | "freeSlot" | "logGate" | "gateRow"
   | "gateLog" | "gateLogByOutcome" | "markReleased" | "pruneLog" | "pruneSituations"
-  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing"
+  | "setClosing" | "setExpiryRun" | "setCloseRun" | "openWithClosing" | "endedWithClosing" | "noteFor" | "setNote"
 
 /** A row as SQLite returns it: `closing` is JSON text. */
 type RawRow = Omit<SituationRow, "closing"> & { closing: string | null }
@@ -270,7 +270,12 @@ export class SituationStore {
       markReleased: db.prepare("UPDATE situation_gate_log SET released_at = ? WHERE id = ? AND released_at IS NULL"),
       pruneLog: db.prepare("DELETE FROM situation_gate_log WHERE at < ?"),
       pruneSituations: db.prepare("DELETE FROM situations WHERE phase_changed_at < ?"),
-      setClosing: db.prepare("UPDATE situations SET closing = ?, template = ? WHERE id = ?"),
+      // Steps set on an ended talk are for its next end: this end counts as
+      // handled, so no close starts for it, not even after a restart.
+      setClosing: db.prepare(`UPDATE situations SET closing = ?, template = ?,
+        close_generation = CASE WHEN phase = 'ended' AND ? = 1 THEN end_generation ELSE close_generation END WHERE id = ?`),
+      noteFor: db.prepare("SELECT note_at AS noteAt FROM situations WHERE id = ? AND note_generation = ?"),
+      setNote: db.prepare("UPDATE situations SET note_at = ?, note_generation = ? WHERE id = ?"),
       // S9: only for the phase it was started for.
       setExpiryRun: db.prepare("UPDATE situations SET expiry_run_id = ? WHERE id = ? AND phase_changed_at = ?"),
       // One close per end generation (S3).
@@ -377,10 +382,24 @@ export class SituationStore {
   setClosing(id: string, closing: ClosingSlots | null, template?: string): SituationRow | null {
     const row = this.getById(id)
     if (!row) return null
-    this.q.setClosing.run(closing ? JSON.stringify(closing) : null, (template || row.template).slice(0, 40), id)
+    // Steps given to an ended talk that had none: this end is marked handled.
+    const fresh = closing && !row.closing ? 1 : 0
+    this.q.setClosing.run(closing ? JSON.stringify(closing) : null, (template || row.template).slice(0, 40), fresh, id)
     const after = this.getById(id)
     this.tellListener(after, after?.phase ?? null, false)
     return after
+  }
+
+  /** The link of the closing note already posted for end generation
+   *  `gen`. Null: none yet. */
+  noteFor(id: string, gen: number): string | null {
+    const r = this.q.noteFor.get(id, gen) as { noteAt: string | null } | undefined
+    return r?.noteAt ?? null
+  }
+
+  /** Record that the closing note of end generation `gen` was posted. */
+  setNote(id: string, gen: number, link: string): void {
+    this.q.setNote.run(link, gen, id)
   }
 
   /** Store the expiry run started for the phase that changed at

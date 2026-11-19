@@ -33,7 +33,7 @@ import type { SituationStore } from "./store"
 export interface NoteTarget { channel: "github" | "gitlab"; chatId: string }
 
 export interface SituationClosingDeps {
-  store: Pick<SituationStore, "expire" | "getById">
+  store: Pick<SituationStore, "expire" | "getById" | "noteFor" | "setNote">
   requests: () => RequestStore | null
   /** Closing steps on? (`situations.mode` not off, `closing.enabled`). */
   settings?: () => SituationsConfig
@@ -44,7 +44,8 @@ export interface SituationClosingDeps {
   /** This node's GitLab address, for GitLab homes. */
   gitlabUrl?: () => string | null
   /** Post one comment at the home. Returns its link, or null. */
-  postNote?: (target: NoteTarget, text: string, agentId: string | undefined, home: string) => Promise<string | null>
+  /** `key`: the post's idempotency key, one per talk and end. */
+  postNote?: (target: NoteTarget, text: string, agentId: string | undefined, home: string, key: string) => Promise<string | null>
 }
 
 let deps: SituationClosingDeps | null = null
@@ -121,6 +122,7 @@ export const situationTranscript: BuiltinAction<TranscriptInput, TranscriptOutpu
 
 const noteInput = z.object({
   situationId: z.string().min(1),
+  endGeneration: num,
   home: z.string().min(1).max(500),
   /** The talk's agent: the comment is posted as it. */
   agent: z.string().max(100).optional(),
@@ -140,10 +142,15 @@ export const situationNote: BuiltinAction<NoteInput, NoteOutput> = {
     if (!deps?.postNote) throw new Error("posting notes is not running in this process")
     const target = noteTargetOf(input.home, deps.gitlabUrl?.() ?? null)
     if (!target) throw new Error(`the home ${input.home} is not a GitHub or GitLab issue, pull or merge request of this node`)
+    // One note per end: a re-run or a retry of this step posts nothing new.
+    const had = deps.store.noteFor(input.situationId, input.endGeneration)
+    if (had) return { noteAt: had }
     const body = (input.note ?? "").trim()
     if (!body) throw new Error("the agent drafted no note")
-    const link = await deps.postNote(target, body, input.agent || undefined, input.home)
-    return { noteAt: link ?? input.home }
+    const key = `situation:${input.situationId}:${input.endGeneration}:note`
+    const link = (await deps.postNote(target, body, input.agent || undefined, input.home, key)) ?? input.home
+    deps.store.setNote(input.situationId, input.endGeneration, link)
+    return { noteAt: link }
   },
 }
 
@@ -168,6 +175,9 @@ const promisesInput = z.object({
   /** The note step's list, as JSON text (a template renders an array so)
    *  or as an array. Empty or missing: no follow-ups. */
   followUps: z.union([z.string(), z.array(z.unknown())]).optional(),
+  /** How many messages of the talk the agent read. 0: it read none, so
+   *  any follow-up it lists is a guess and no promise is opened. */
+  transcriptMessages: num.optional(),
 })
 type PromisesInput = z.infer<typeof promisesInput>
 const promisesOutput = z.object({ opened: z.number(), ids: z.array(z.string()), summary: z.string() })
@@ -192,10 +202,11 @@ export function readFollowUps(v: unknown): FollowUp[] {
 /** Who may own a follow-up: the talk's agent, the owner, and the agents of
  *  this node the closing steps allow. The note's agent writes the names;
  *  they are never trusted beyond that list. */
-function allowedOwners(situationId: string, agent: string): Set<string> {
-  const allowed = new Set([agent.toLowerCase(), OWED_TO_OWNER])
+/** By lower-case name, the id as this node spells it. */
+function allowedOwners(situationId: string, agent: string): Map<string, string> {
+  const allowed = new Map([[agent.toLowerCase(), agent], [OWED_TO_OWNER, OWED_TO_OWNER]])
   const extra = deps?.store.getById(situationId)?.closing?.agents ?? []
-  for (const a of extra) if (!deps?.isAgent || deps.isAgent(a)) allowed.add(a.toLowerCase())
+  for (const a of extra) if (!deps?.isAgent || deps.isAgent(a)) allowed.set(a.toLowerCase(), a)
   return allowed
 }
 
@@ -222,6 +233,9 @@ export const situationPromises: BuiltinAction<PromisesInput, PromisesOutput> = {
       }
       return { opened: 0, ids, summary: `${ids.length} follow-up${ids.length === 1 ? "" : "s"} already opened for this end.` }
     }
+    if (input.transcriptMessages === 0) {
+      return { opened: 0, ids: [], summary: "No follow-ups: no messages of this talk are kept on this node." }
+    }
     const allowed = allowedOwners(input.situationId, input.agent)
     const ids: string[] = []
     const named: string[] = []
@@ -231,8 +245,9 @@ export const situationPromises: BuiltinAction<PromisesInput, PromisesOutput> = {
       const byOwner = said.toLowerCase() === OWED_TO_OWNER
       // M2: a name the closing steps do not allow is not an owner: the
       // talk's agent keeps the promise, and the name stays in its words.
-      const ok = allowed.has(said.toLowerCase())
-      const owner = ok ? said : input.agent
+      const known = allowed.get(said.toLowerCase())
+      const ok = known !== undefined
+      const owner = known ?? input.agent
       const text = ok ? f.what : `${f.what} (named owner: ${said})`.slice(0, 600)
       // Who waits: as said, else the owner; the owner never waits on itself.
       let owedTo = f.waitsOn || OWED_TO_OWNER

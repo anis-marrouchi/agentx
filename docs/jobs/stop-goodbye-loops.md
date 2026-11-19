@@ -140,7 +140,7 @@ Some talks need work after they end: after an interview or a client call, someon
 When a talk with closing steps ends, AgentX runs the workflow **Situation close**:
 
 1. **Note.** The talk's agent reads the talk's recent messages (at most the last 30, up to 6000 characters) and drafts one note. Its turn is **read only**: it cannot post, write files or send to any chat, so it cannot message the other side. The workflow then posts the note as one comment on the talk's **home**: the GitHub or GitLab issue, pull request or merge request you named.
-2. **Follow-ups.** Each follow-up the agent lists becomes an **open promise** with an owner: the talk's agent, you, or an agent you allowed with `--agents`. A follow-up the agent gave to anyone else (the other side, or an agent you did not allow) is kept by the talk's agent, with the named owner in its words, for example "Send the portfolio (named owner: candidate)". A follow-up gets a due time only if a person gave one. One set of promises per end: a re-run opens none. Open promises show with your other requests (`agentx requests list`).
+2. **Follow-ups.** Each follow-up the agent lists becomes an **open promise** with an owner: the talk's agent, you, or an agent you allowed with `--agents`. A follow-up the agent gave to anyone else (the other side, or an agent you did not allow) is kept by the talk's agent, with the named owner in its words, for example "Send the portfolio (named owner: candidate)". A follow-up gets a due time only if a person gave one. One set of promises per end: a re-run opens none. If this node kept no messages of the talk, no promise is opened (the agent had nothing to read), and your message says "No follow-ups". Open promises show with your other requests (`agentx requests list`).
 3. **Your message.** You get one message, for example "About the job interview with a candidate: the talk ended (closed). Note: (link). 2 follow-ups, owners named: …". It goes through your hold: while you are in Focus or on a call, it waits.
 4. **Message to the other side (optional).** If you gave a closing message, you are asked first, on a card, every time. Nothing reaches the other side without your yes.
 
@@ -153,7 +153,7 @@ If another organisation's agent says the talk is over, your agent only goes quie
 
 Both workflows are in your workflow folder and show on the **Workflows** page with their runs, like any other workflow. They are added once, the first time they are needed. You can edit them, for example to change what the note asks for; AgentX never overwrites them, even when your edit does not load. A workflow that does not load, or that you deleted, is not written again: no run of it starts, and the daemon log says so once. Only the situation record starts these two workflows: a run started by hand or by an agent is refused.
 
-**What it does not cover yet:** the agent sees only the messages this node kept for the chat (its recent group messages). A talk held mostly elsewhere, or older than the last 30 messages, gives the agent a partial excerpt, and the note may miss things. A talk that ended while the daemon was down gets its close at the next start only if it ended in the last 24 hours.
+**What it does not cover yet:** the agent sees only the messages this node kept for the chat: its recent **group** messages. A private one-to-one chat (a typical interview) gives no excerpt today, so its note says no messages were kept and no promises are opened; add the follow-ups yourself. A talk held mostly elsewhere, or older than the last 30 messages, gives the agent a partial excerpt, and the note may miss things. A talk that ended while the daemon was down gets its close at the next start only if it ended in the last 24 hours.
 
 A talk without closing steps is not changed: no workflow runs for it.
 
@@ -161,7 +161,7 @@ A talk without closing steps is not changed: no workflow runs for it.
 
 1. **Terminal:** `agentx config set situations.closing.enabled true`. Until it is on, step 3 answers that closing steps are off.
 2. **Terminal:** find the talk: `agentx situation list`. Each row starts with a short id, for example `3f2a9c1b`.
-3. **Terminal:** give it closing steps: `agentx situation closing 3f2a9c1b --purpose "the job interview with a candidate" --home https://git.example.com/team/hiring/-/issues/7`. The home must be a GitHub or GitLab issue, pull request or merge request.
+3. **Terminal:** give it closing steps: `agentx situation closing 3f2a9c1b --purpose "the job interview with a candidate" --home https://git.example.com/team/hiring/-/issues/7`. The home must be a GitHub or GitLab issue, pull request or merge request. **Choose a private one:** the note is written from a private talk, and on an issue of a public repository everyone can read it.
 4. To let another agent own some follow-ups, add `--agents helper-agent`.
 5. To also thank the other side after the talk, add `--message "Thank you for your time today."`. On WhatsApp, also add `--chat` with the chat id ending in `@g.us`.
 6. **Terminal:** for a talk that has not started yet, use `--channel whatsapp --chat <chat id>` instead of the short id.

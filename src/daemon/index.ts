@@ -924,10 +924,10 @@ export class AgentXDaemon {
             gitlabUrl: () => forgeConnectorsOf(this.config).gitlab?.url ?? null,
             // The note: one comment on the home, posted as the talk's agent
             // through the router (the same path as channel.reply).
-            postNote: async (target, text, agentId, home) => {
+            postNote: async (target, text, agentId, home, key) => {
               const router = getMessageRouter()
               if (!router) throw new Error("message router not wired")
-              const id = await router.sendOutbound({ channel: target.channel, chatId: target.chatId, text, agentId }, { idempotencyKey: "", dedupeWindowMs: 60_000 })
+              const id = await router.sendOutbound({ channel: target.channel, chatId: target.chatId, text, agentId }, { idempotencyKey: key, dedupeWindowMs: 3_600_000 })
               const gitlabUrl = forgeConnectorsOf(this.config).gitlab?.url ?? null
               const forge = forgeHomeOf({ home: { link: home }, group: { channel: "", chatId: "" } } as never, gitlabUrl)
               return typeof id === "string" && forge ? commentUrl(forge, id, gitlabUrl) : null
