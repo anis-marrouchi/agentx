@@ -166,6 +166,13 @@ describe("isControlPost — daemon control routes need a mesh token off-box", ()
     }
   })
 
+  it("gates the dashboard's run status change (#876): running resumes the run", () => {
+    expect(isControlPost("/api/workflows/runs/abc/status")).toBe(true)
+    for (const p of ["/api/workflows/runs/abc", "/api/workflows/runs", "/api/workflows/runs//status", "/api/workflows/runs/abc/status/x", "/api/workflows/runs/abc/stream"]) {
+      expect(isControlPost(p)).toBe(false)
+    }
+  })
+
   it("does not gate look-alike or read paths", () => {
     for (const p of ["/api/tasks","/api/tasks/t-1", "/api/tasks/t-1/cancel/x", "/api/tasks//cancel", "/api/processes", "/sendx", "/reload/x", "/health", "/crons", "/crons/a/enabled/x", "/crons//enabled"]) {
       expect(isControlPost(p)).toBe(false)

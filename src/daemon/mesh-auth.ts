@@ -148,6 +148,8 @@ export function isControlPost(path: string): boolean {
     // Stopping a workflow run (#788), or resuming one (#876): resume walks
     // the run and can re-run a sub-workflow step.
     /^\/workflow-runs\/[^/]+\/(cancel|resume)$/.test(path) ||
+    // Dashboard pause/resume/cancel of a run (#876): `running` calls resumeRun.
+    /^\/api\/workflows\/runs\/[^/]+\/status$/.test(path) ||
     // Stop and resume signals (#857).
     path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
     // Stopping every task on this node, ahead of a restart (#1271).
