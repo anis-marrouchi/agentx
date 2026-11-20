@@ -23,6 +23,11 @@ export const SIGNAL_KINDS = [
   "same_work_waited",
   "close_proof_missing",
   "job_stalled",
+  // Cost signals (#1995): token waste, ranked like failures.
+  "job_cost_high",
+  "start_no_cache_reuse",
+  "context_rewrite",
+  "model_switch",
 ] as const
 export type SignalKind = (typeof SIGNAL_KINDS)[number]
 
@@ -37,6 +42,10 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   same_work_waited: "a run waited for another run of the same agent on the same request",
   close_proof_missing: "a close by check went through with deliverables that have no proof link (closeProof warn)",
   job_stalled: "a run of agent work ended without stating its job's state, even when asked once (jobState)",
+  job_cost_high: "a run used 3 times or more the usual tokens of its job type (agent + channel + workflow or cron job)",
+  start_no_cache_reuse: "a new session wrote its whole start again although the same agent ran on the same model minutes before",
+  context_rewrite: "a call wrote 80% or more of its context to the cache again, instead of reading it",
+  model_switch: "the main thread changed model inside a run, or a resumed session went on with another model",
 }
 
 export const DEDUPE_MS = 10 * 60_000
@@ -102,6 +111,11 @@ let sinkDb: Database.Database | null = null
 
 export function setSignalDb(db: Database.Database | null): void {
   sinkDb = db
+}
+
+/** The daemon's database, for readers on the emit path (cost signals). */
+export function signalDb(): Database.Database | null {
+  return sinkDb
 }
 
 /** Record through the daemon's database. A no-op when none is set. */

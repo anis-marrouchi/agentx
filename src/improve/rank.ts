@@ -17,6 +17,7 @@ import type Database from "better-sqlite3"
 import { createHash } from "crypto"
 import { z } from "zod"
 import { SIGNAL_KINDS, type SignalKind } from "./signals"
+import { COST_KIND_SET, COST_ROWS_PER_DAY } from "./cost"
 import { canSpend, recordSpend, type ImproveSettings } from "./budget"
 
 /** The owner's own actions weigh most (principle 2 of #1783); a refused or
@@ -33,6 +34,12 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   close_proof_missing: 2,
   // Work nobody can tell is done, waiting or blocked.
   job_stalled: 2,
+  // Token waste (#1995). A run far above its job type's usual cost is
+  // worth more than one rewrite or switch; none weighs like the owner's.
+  job_cost_high: 2,
+  start_no_cache_reuse: 1,
+  context_rewrite: 1,
+  model_switch: 1,
 }
 
 /** Kinds whose detail is the owner's or a checker's own words: never the
@@ -89,21 +96,46 @@ export interface SignalGroup {
 
 interface Acc { g: SignalGroup; refs: Set<string> }
 
-/** Every group in the window, before the `minRefs` cut. */
-export function groupSignals(db: Database.Database, since: number, until = Number.MAX_SAFE_INTEGER): SignalGroup[] {
-  let rows: Array<{ id: number; at: number; kind: SignalKind; agentId: string | null; ref: string | null; detail: string | null }>
+type Row = { id: number; at: number; kind: SignalKind; agentId: string | null; ref: string | null; detail: string | null }
+
+/** The window's signal rows of known kinds, newest first, each with the
+ *  key of the group it belongs to. */
+function keyedRows(db: Database.Database, since: number, until: number): Array<Row & { key: string; pattern: string }> {
+  let rows: Row[]
   try {
     rows = db.prepare(
       "SELECT id, at, kind, agent_id AS agentId, ref, detail FROM improve_signals WHERE at >= ? AND at < ? ORDER BY at DESC, id DESC LIMIT ?",
-    ).all(since, until, MAX_ROWS) as typeof rows
+    ).all(since, until, MAX_ROWS) as Row[]
   } catch {
     return [] // no signals table yet: nothing recorded on this node
   }
-  const acc = new Map<string, Acc>()
-  for (const r of rows) {
-    if (!(SIGNAL_KINDS as readonly string[]).includes(r.kind)) continue
+  return rows.filter((r) => (SIGNAL_KINDS as readonly string[]).includes(r.kind)).map((r) => {
     const pattern = normalizeDetail(r.kind, r.detail)
-    const key = groupKey(r.kind, r.agentId, pattern)
+    return { ...r, pattern, key: groupKey(r.kind, r.agentId, pattern) }
+  })
+}
+
+/** Every signal row of the groups `keys` in the window, uncapped. The
+ *  held check reads a cost problem's runs from these, not from the five
+ *  saved sample refs (#1995, C1). */
+export function rowsOfGroups(db: Database.Database, keys: Set<string>, since: number, until: number): Row[] {
+  return keyedRows(db, since, until).filter((r) => keys.has(r.key))
+}
+
+/** Every group in the window, before the `minRefs` cut. Cost rows count
+ *  at most COST_ROWS_PER_DAY per group and UTC day, so a day of rewrites
+ *  cannot push the owner's failures out of the nightly hand-off (#1995). */
+export function groupSignals(db: Database.Database, since: number, until = Number.MAX_SAFE_INTEGER): SignalGroup[] {
+  const acc = new Map<string, Acc>()
+  const perDay = new Map<string, number>()
+  for (const r of keyedRows(db, since, until)) {
+    const { key, pattern } = r
+    if (COST_KIND_SET.has(r.kind)) {
+      const day = `${key}|${Math.floor(r.at / 86_400_000)}`
+      const n = perDay.get(day) ?? 0
+      if (n >= COST_ROWS_PER_DAY) continue
+      perDay.set(day, n + 1)
+    }
     let a = acc.get(key)
     if (!a) {
       a = { g: { key, kind: r.kind, agentId: r.agentId, pattern, rows: 0, refs: 0, score: 0, firstAt: r.at, lastAt: r.at, sample: r.detail, sampleRefs: [], members: [key] }, refs: new Set() }

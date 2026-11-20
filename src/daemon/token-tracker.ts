@@ -226,10 +226,19 @@ export interface TaskUsage {
   cacheCreateTokens: number
 }
 
+/** One API call's usage, with the model that answered it and whether a
+ *  subagent made it (the stream event's `parent_tool_use_id`). The cost
+ *  signals judge the main thread only (#1995). */
+export interface CallUsage extends TaskUsage {
+  model?: string
+  sub?: boolean
+}
+
 /** Keep one usage per API call from a Claude message envelope
- *  (`{ id, usage }`). The stream repeats a message once per content block,
- *  each with the same id, so the last event per id wins (#1994). */
-export function noteCallUsage(calls: Map<string, TaskUsage>, message: any): void {
+ *  (`{ id, model, usage }`). The stream repeats a message once per content
+ *  block, each with the same id, so the last event per id wins (#1994).
+ *  `parentToolUseId` is set on a subagent's events. */
+export function noteCallUsage(calls: Map<string, CallUsage>, message: any, parentToolUseId?: unknown): void {
   const u = message?.usage
   if (!u) return
   calls.set(typeof message.id === "string" ? message.id : `call-${calls.size}`, {
@@ -237,6 +246,8 @@ export function noteCallUsage(calls: Map<string, TaskUsage>, message: any): void
     outputTokens: u.output_tokens || 0,
     cacheReadTokens: u.cache_read_input_tokens || 0,
     cacheCreateTokens: u.cache_creation_input_tokens || 0,
+    ...(typeof message.model === "string" && message.model ? { model: message.model } : {}),
+    ...(parentToolUseId ? { sub: true } : {}),
   })
 }
 

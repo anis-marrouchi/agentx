@@ -13,8 +13,9 @@
 import type Database from "better-sqlite3"
 import { listCards, type DecisionCard } from "@/approvals/cards"
 import { RETRO_NONE } from "@/approvals/origin"
-import { groupSignals } from "./rank"
+import { groupSignals, rowsOfGroups } from "./rank"
 import { PROBLEM_PREFIX } from "./handoff"
+import { COST_KIND_SET, jobTypesOfTraces, ownerReopens, reopensWithin, tokensPerRun } from "./cost"
 
 export const HELD_WINDOW_DAYS = 7
 const DAY_MS = 86_400_000
@@ -34,6 +35,22 @@ export interface HeldCheck {
   verdict: "held" | "not-held" | "waiting"
   /** Days left while waiting. */
   daysLeft?: number
+  /** Set for a cost problem (#1995): the verdict comes from these two
+   *  numbers, not from the row counts. */
+  cost?: CostHeld
+}
+
+export interface CostHeld {
+  /** Job types found from the problem's runs before the pick. */
+  jobTypes: number
+  tokensBefore: number
+  tokensAfter: number
+  runsBefore: number
+  runsAfter: number
+  reopensBefore: number
+  reopensAfter: number
+  /** Which of the two numbers failed; empty when the fix held. */
+  failed: Array<"tokens" | "reopens">
 }
 
 /** Picked fixes on self-improvement cards: decided yes, a fix chosen. */
@@ -59,7 +76,24 @@ function rowsIn(db: Database.Database, members: Set<string>, from: number, to: n
   return groupSignals(db, from, to).filter((g) => members.has(g.key)).reduce((n, g) => n + g.rows, 0)
 }
 
-/** Before and after for every picked fix. Newest pick first. */
+/** A cost problem's two numbers (#1995): tokens per run of its job types,
+ *  and the owner's reopens for its agent, before and after the pick. */
+function costCheck(db: Database.Database, agentId: string, refs: string[], pickedAt: number, end: number, span: number): CostHeld {
+  const jobTypes = jobTypesOfTraces(db, refs)
+  const tb = tokensPerRun(db, jobTypes, pickedAt - span, pickedAt)
+  const ta = tokensPerRun(db, jobTypes, pickedAt, end)
+  const reopensBefore = ownerReopens(db, agentId, pickedAt - span, pickedAt)
+  const reopensAfter = ownerReopens(db, agentId, pickedAt, end)
+  const failed: CostHeld["failed"] = []
+  // No run after the pick shows no saving: it does not count as one.
+  if (!(tb.runs > 0 && ta.runs > 0 && ta.perRun < tb.perRun)) failed.push("tokens")
+  if (!reopensWithin(reopensBefore, reopensAfter)) failed.push("reopens")
+  return { jobTypes: jobTypes.length, tokensBefore: tb.perRun, tokensAfter: ta.perRun, runsBefore: tb.runs, runsAfter: ta.runs, reopensBefore, reopensAfter, failed }
+}
+
+/** Before and after for every picked fix. Newest pick first. A fix on a
+ *  cost problem holds only when tokens per run went down AND the owner's
+ *  reopens did not go up; a failure problem's when its rows went down. */
 export function checkHeld(db: Database.Database, root: string, now = Date.now()): HeldCheck[] {
   const span = HELD_WINDOW_DAYS * DAY_MS
   return pickedFixes(root).map((c) => {
@@ -73,8 +107,22 @@ export function checkHeld(db: Database.Database, root: string, now = Date.now())
     const after = rowsIn(db, set, pickedAt, end)
     const base = { cardId: c.id, key, agentId: c.raised_by, choice: c.choice!, pickedAt, members, before, after }
     if (now < pickedAt + span) return { ...base, verdict: "waiting" as const, daysLeft: Math.ceil((pickedAt + span - now) / DAY_MS) }
+    // The runs come from every signal row of the problem before the pick,
+    // not from the five refs the ranking saved as a sample (C1).
+    const rows = rowsOfGroups(db, set, pickedAt - span, pickedAt)
+    if (rows.some((r) => COST_KIND_SET.has(r.kind))) {
+      const refs = rows.map((r) => r.ref).filter((r): r is string => !!r)
+      const cost = costCheck(db, c.raised_by, refs, pickedAt, end, span)
+      return { ...base, cost, verdict: cost.failed.length ? "not-held" as const : "held" as const }
+    }
     return { ...base, verdict: after < before ? "held" as const : "not-held" as const }
   }).sort((a, b) => b.pickedAt - a.pickedAt)
+}
+
+/** "200k before, 100k after; owner reopens 1 before, 3 after" */
+export function costLine(c: CostHeld): string {
+  const k = (n: number) => `${Math.round(n / 1000)}k`
+  return `tokens per run ${k(c.tokensBefore)} before, ${k(c.tokensAfter)} after; owner reopens ${c.reopensBefore} before, ${c.reopensAfter} after`
 }
 
 /** The note for the next card about a problem whose latest picked fix did
@@ -85,5 +133,10 @@ export function notHeldNote(checks: HeldCheck[], keys: string[]): string | undef
   const last = checks.find((h) => h.verdict !== "waiting" && h.members.some((k) => mine.has(k)))
   if (!last || last.verdict !== "not-held") return undefined
   const day = new Date(last.pickedAt).toISOString().slice(0, 10)
-  return `The fix picked on card:${last.cardId} (${day}, "${last.choice.slice(0, 60)}") did not lower this: ${last.before} in the ${HELD_WINDOW_DAYS} days before, ${last.after} in the ${HELD_WINDOW_DAYS} after.`
+  const head = `The fix picked on card:${last.cardId} (${day}, "${last.choice.slice(0, 60)}") did not lower this: `
+  if (last.cost) {
+    const why = last.cost.failed.map((f) => (f === "tokens" ? "tokens per run did not go down" : "reopens went up")).join(" and ")
+    return `${head}${costLine(last.cost)} (${why}).`
+  }
+  return `${head}${last.before} in the ${HELD_WINDOW_DAYS} days before, ${last.after} in the ${HELD_WINDOW_DAYS} after.`
 }
