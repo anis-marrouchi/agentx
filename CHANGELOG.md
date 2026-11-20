@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.246.0](https://github.com/anis-marrouchi/agentx/compare/v0.245.0...v0.246.0) (2026-11-20)
+
+
+### Features
+
+* **a2a:** one run per hand-off message, duplicates join the open one ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007) piece 3) ([#2041](https://github.com/anis-marrouchi/agentx/issues/2041)) ([989afaa](https://github.com/anis-marrouchi/agentx/commit/989afaaa0e77c7fe13cb41432b987781f472c3d5))
+
+
+### Bug Fixes
+
+* **a2a:** an empty hand-off answer is an error only when nothing was said ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007) piece 4a) ([#2039](https://github.com/anis-marrouchi/agentx/issues/2039)) ([e25fa8b](https://github.com/anis-marrouchi/agentx/commit/e25fa8b519b6a953b0832d1a86449600a9eebfb2))
+
 ## [0.245.0](https://github.com/anis-marrouchi/agentx/compare/v0.244.2...v0.245.0) (2026-11-20)
 
 
