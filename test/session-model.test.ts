@@ -129,11 +129,13 @@ describe("condition 3: which warm sessions may hold an upgrade", () => {
   })
 })
 
-describe("condition 4: the model stored is the one the turn ran on", () => {
-  it("prefers the billed model when it is another model", () => {
+describe("condition 4: the model stored is the one the turn asked for", () => {
+  it("stores the asked model, even when a side model was billed the most", () => {
     expect(modelToStore(AGENT, `${AGENT}-20261001`)).toBe(AGENT)
     expect(modelToStore(AGENT, undefined)).toBe(AGENT)
-    expect(modelToStore(AGENT, CHEAP)).toBe(CHEAP)
+    // modelUsage's most expensive entry can be a side or sub-agent model.
+    expect(modelToStore(AGENT, CHEAP)).toBe(AGENT)
+    expect(modelToStore(AGENT, EDGE)).toBe(AGENT)
   })
   it("stores nothing for an agent with no model named", () => {
     expect(modelToStore(undefined, AGENT)).toBeUndefined()

@@ -29,6 +29,16 @@ vi.mock("../src/agents/edge-routing", async (importOriginal) => {
   const real: any = await importOriginal()
   return { ...real, edgeSeatOn: () => true, routeTaskEdge: seat.route }
 })
+const gate = vi.hoisted(() => ({ slow: undefined as Record<string, unknown> | undefined }))
+vi.mock("../src/agents/request-planner", async (importOriginal) => {
+  const real: any = await importOriginal()
+  return {
+    ...real,
+    evaluateRequest: (...args: any[]) => gate.slow
+      ? new Promise((res) => setTimeout(() => res(gate.slow), 30))
+      : real.evaluateRequest(...args),
+  }
+})
 vi.mock("../src/agents/rotation-memo", () => ({
   extractRotationMemo: async () => ({ memo: undefined, reason: "test", durationMs: 0 }),
 }))
@@ -62,6 +72,7 @@ beforeEach(() => {
   calls.length = 0
   billed.model = undefined
   billed.n = 0
+  gate.slow = undefined
   lines = []
   rotations = []
   seat.route.mockReset()
@@ -191,12 +202,29 @@ describe("one model per session (#2001)", () => {
     expect(sessions.getSessionModel("ops", "telegram", "chat-1")).toBe(AGENT)
   })
 
-  it("stores the model the turn was billed on when it differs from the one asked", async () => {
+  it("stores the asked model when a side model dominated the turn's billing", async () => {
     const r = registry()
     const sessions = stored(r, AGENT, 5 * MIN)
-    billed.model = CHEAP
+    // billedModel is modelUsage's most expensive entry: here a sub-agent's.
+    billed.model = EDGE
     await turn(r)
-    expect(sessions.getSessionModel("ops", "telegram", "chat-1")).toBe(CHEAP)
+    expect(sessions.getSessionModel("ops", "telegram", "chat-1")).toBe(AGENT)
+    billed.model = undefined
+    await turn(r)
+    expect(calls[1]).toMatchObject({ model: AGENT, resume: "native-1" })
+  })
+
+  it("request-gate holdout on a cold resume: early seat answers are dropped and the stored model holds", async () => {
+    // The gate is still out at the check, so the seats start without it;
+    // it then turns out active without preprocessing (the holdout arm).
+    gate.slow = { active: true, preprocess: false, arm: "holdout" }
+    const r = registry()
+    stored(r, AGENT, 90 * MIN)
+    seat.route.mockResolvedValueOnce(keep({ subagents: true, subagentsHelp: 0.9 }))
+    await turn(r)
+    expect(modelRotations()).toHaveLength(0)
+    expect(calls[0]).toMatchObject({ model: AGENT, resume: "native-1" })
+    expect(calls[0].turnNote).toBeUndefined()
   })
 
   it("a fresh session always names its model", async () => {
