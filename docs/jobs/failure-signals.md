@@ -20,6 +20,23 @@ AgentX now records each of them as a **failure signal**: one line with what happ
 
 The same signal about the same request or hand-off within 10 minutes is counted once. Signals are kept for 90 days.
 
+## What is counted for cost
+
+Some runs cost far more tokens than the same work needs. A **token** is the unit AI models are billed in. AgentX records four **cost signals** the same way as failures, right after each run ends, with no AI model call:
+
+| Signal | When it is recorded |
+|---|---|
+| `job_cost_high` | A run used 3 times or more the usual tokens of its **job type**, and at least 50,000 tokens. A job type is one agent on one channel, for one workflow or one scheduled job when the run belongs to one. "Usual" is the middle value of that job type's last 30 successful runs in 14 days; a job type needs 10 such runs first. |
+| `start_no_cache_reuse` | A new conversation started by writing 20,000 tokens or more to the model's **cache** (the copy of the conversation's start the model can reuse for a few minutes at a lower price) and reading nothing from it, although the same agent finished a run on the same model less than 5 minutes before. |
+| `context_rewrite` | A call inside a run wrote 80% or more of a context of at least 20,000 tokens to the cache again, instead of reading it. The first call of a new conversation has to write it, so it is not counted. |
+| `model_switch` | The agent changed model inside a run, or a continued conversation went on with another model than its previous run. A new model cannot reuse the cache. |
+
+Each cost signal names the job type first, for example `job cron nightly-report: rewrite 60k of 61k`, so the same waste in the same job is one problem. A **helper agent** (a subagent the run starts) writes a fresh context on purpose to save tokens, so its calls are left out of the last three signals. They still count in `job_cost_high`, because they are paid.
+
+Cost signals need the per-call numbers that Claude Code reports. Agents on other runtimes get `job_cost_high` only.
+
+The limits (3 times, 50,000 tokens, 20,000 tokens, 80%, 5 minutes) are first guesses. They will be tuned after a week of real signals.
+
 ## See the counts
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
@@ -30,6 +47,7 @@ The same signal about the same request or hand-off within 10 minutes is counted 
 3. **Terminal:** to look further back, add `--since 7d` (or `48h`, `30m`, or a date such as `2026-11-01`).
 4. **Terminal:** to list the lines of one kind, add `--kind <kind>`, for example `agentx improve signals --kind owner_reopened --since 7d`.
 5. **Terminal:** for a script, add `--json`.
+6. **Terminal:** to see every kind with its weight and what it means, run `agentx improve kinds`. Cost signals end with `(cost)`.
 
 ## Rank what keeps coming back
 
@@ -38,6 +56,7 @@ One failure is noise; the same failure again and again is worth fixing. Every ni
 - Signals of the same kind, from the same agent, that say the same thing are one problem. Numbers, request ids and links are left out when comparing, so "timed out after 612s" and "timed out after 30s" count as the same problem. Requests you reopened are grouped by agent only, because your words differ each time.
 - A problem is kept only when it came from at least 3 separate requests, hand-offs or runs.
 - The worst comes first. Each signal counts by how much it tells about you: a request you reopened, or a close that did not do what you asked, counts 3; a request that stalled or a hand-off that failed counts 2; the rest count 1.
+- Cost signals rank in the same list: `job_cost_high` counts 2, the other three count 1. At most 5 cost signals of one problem count per day, so a busy day of token waste cannot push a request you reopened out of the list.
 
 Ranking uses no AI model. When `improve.enabled` is on, one small AI call a day may merge problems that say the same thing in different words. It counts against `improve.dailyUsd` (see [settings](../reference/config-automation.md#improve)).
 
@@ -68,10 +87,17 @@ A fix only counts if the problem comes back less often. For each fix you picked 
 - **Did not hold:** the same number or more. No separate card is raised about it. The next card about the same problem opens with a line naming the earlier card and both counts, so you see it next to the new choices.
 - **Waiting:** the 7 days after the pick are not over yet.
 
+A fix for a cost problem must pass two checks instead:
+
+1. **Tokens per run went down** for the problem's job types. The job types are found from every run behind the problem in the 7 days before the pick.
+2. **Your reopens did not go up** for that agent: requests you reopened plus closes that did not do what you asked. One more is allowed, or 25% more when there were 4 or more before, so a single reopen does not fail a fix that saved tokens.
+
+If either fails, the fix did not hold, and the note on the next card says which one.
+
 The count starts on the day you pick, not the day the fix is deployed. A slow deploy can only make a fix look worse, never better, so a fix marked held did lower the count.
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
-2. **Terminal:** run `agentx improve held`. Each picked fix is listed with its card, the agent, the counts before and after, and `held`, `did not hold` or `waiting, N day(s) left`.
+2. **Terminal:** run `agentx improve held`. Each picked fix is listed with its card, the agent, the counts before and after, and `held`, `did not hold` or `waiting, N day(s) left`. A cost problem adds a line `cost problem: tokens per run …k before, …k after; owner reopens … before, … after`.
 3. **Terminal:** the nightly `agentx retro sweep` prints the same verdict for each fix whose 7 days are over.
 
 ## How the stages fit
@@ -85,12 +111,16 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 3. **Terminal:** run `agentx improve signals --since 7d`. The totals by kind and by agent are shown, or `none in this window` on a quiet install.
 4. **Terminal:** run `agentx improve rank --since 7d`. It prints `Recurring problems:` with a count, and a line `Merge call: not run (preview)`.
 5. **Terminal:** run `agentx improve held`. It lists the fixes you picked, or `No fix picked on a self-improvement card yet.`
+6. **Terminal:** run `agentx improve kinds`. The list ends with `job_cost_high`, `start_no_cache_reuse`, `context_rewrite` and `model_switch`, each marked `(cost)`.
+7. **Terminal:** after a day of work, run `agentx improve signals --kind context_rewrite --since 24h`. Each line names the run and its job type, or `none in this window`.
 
 ## If something is wrong
 
 - **`no agentx.json here`:** run the command from the install folder, the one that holds `agentx.json`.
 - **Every count is zero:** signals are only recorded since this version. Check with `agentx --version`, then wait for some work to happen.
 - **No hand-off signals appear:** hand-off signals are recorded by the running daemon. Restart it after updating so the new version records them.
+- **No cost signals at all:** they are recorded by the running daemon, from this version on. Restart it after updating. `start_no_cache_reuse`, `context_rewrite` and `model_switch` need an agent on Claude Code.
+- **`job_cost_high` never appears for a job:** its job type needs 10 successful runs in the last 14 days first. Workflow steps count as one job type only from this version on.
 - **`--since must look like …`:** use a number with `d`, `h` or `m` (for example `7d`), or a date.
 - **`Recurring problems: 0` but signals are counted:** no problem came from 3 separate requests yet. Look at a longer stretch with `--since 7d`, or lower `improve.minRefs`.
 - **`Merge call: not run (daily budget: …)`:** the day's `improve.dailyUsd` is used up. It frees as the 24 hours roll on.

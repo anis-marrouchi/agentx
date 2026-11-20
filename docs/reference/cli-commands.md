@@ -3544,13 +3544,17 @@ Forget the session for each issue, written `owner/repo#number`, so the next comm
 
 ### `agentx improve signals`
 
-Count the failure signals: requests you reopened, closes that did not do what you asked, refused or failed hand-offs, and repeats. No AI model is used. See [See what keeps going wrong](../jobs/failure-signals.md).
+Count the failure and cost signals: requests you reopened, closes that did not do what you asked, refused or failed hand-offs, repeats, and token waste. No AI model is used. See [See what keeps going wrong](../jobs/failure-signals.md).
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--since <when>` | `24h` | How far back: `24h`, `7d`, `30m` or a date. |
 | `--kind <kind>` | — | List the lines of one kind instead of the counts. |
 | `--json` | — | Print as JSON. |
+
+### `agentx improve kinds`
+
+List every signal kind with its weight in the ranking and what it means. The four cost kinds (`job_cost_high`, `start_no_cache_reuse`, `context_rewrite`, `model_switch`) end with `(cost)`. No flags. See [What is counted for cost](../jobs/failure-signals.md#what-is-counted-for-cost).
 
 ### `agentx improve rank`
 
@@ -3564,7 +3568,7 @@ Rank the problems that keep coming back, worst first: signals of the same kind, 
 
 ### `agentx improve held`
 
-For each fix picked on a self-improvement card, compare the problem's count in the 7 days after the pick with the 7 days before: `held`, `did not hold`, or `waiting`. No AI model is used. See [Check that a picked fix held](../jobs/failure-signals.md#check-that-a-picked-fix-held).
+For each fix picked on a self-improvement card, compare the problem's count in the 7 days after the pick with the 7 days before: `held`, `did not hold`, or `waiting`. A cost problem holds only when tokens per run went down and your reopens did not go up. No AI model is used. See [Check that a picked fix held](../jobs/failure-signals.md#check-that-a-picked-fix-held).
 
 | Flag | Default | What it does |
 |---|---|---|
