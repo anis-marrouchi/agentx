@@ -270,7 +270,10 @@ export function onDemandContextNote(channel: string, chatId: string): string {
     `today's other chats of yours (agentx_recent without chatId), ` +
     `stored knowledge (agentx_wiki_query), ` +
     `a colleague's or a work item's status (agentx_lookup, before asking them), ` +
-    `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory).`,
+    `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory). ` +
+    // The miss path (#2009 condition 4): a tool or fact left out of the
+    // start is named and looked up, not guessed around.
+    `If you need a tool or fact that is not loaded, say which and look it up.`,
   ].join("\n")
 }
 
