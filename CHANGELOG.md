@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.240.0](https://github.com/anis-marrouchi/agentx/compare/v0.239.0...v0.240.0) (2026-11-20)
+
+
+### Features
+
+* **requests:** standing orders that only the owner ends (noqta[#807](https://github.com/anis-marrouchi/agentx/issues/807)) ([#1993](https://github.com/anis-marrouchi/agentx/issues/1993)) ([08858fb](https://github.com/anis-marrouchi/agentx/commit/08858fb48ab209e8f40d08ca3c8c0214782cfb58))
+* **rules:** each run gets the Rules Registry rows that fit it (noqta[#809](https://github.com/anis-marrouchi/agentx/issues/809)) ([#2015](https://github.com/anis-marrouchi/agentx/issues/2015)) ([357455d](https://github.com/anis-marrouchi/agentx/commit/357455d852737f03d85400bab79519737005f146))
+
+
+### Bug Fixes
+
+* **daemon:** start every log line with its UTC time ([#2014](https://github.com/anis-marrouchi/agentx/issues/2014)) ([8eee95e](https://github.com/anis-marrouchi/agentx/commit/8eee95e4ac04e1f0972ce8e2623172d116d75658)), closes [#2006](https://github.com/anis-marrouchi/agentx/issues/2006)
+* **schedule:** keep the colon in --notify chat ids ([#2008](https://github.com/anis-marrouchi/agentx/issues/2008)) ([02fa5fc](https://github.com/anis-marrouchi/agentx/commit/02fa5fc8749d6032d086c66014124ef58f7fb62f))
+
 ## [0.239.0](https://github.com/anis-marrouchi/agentx/compare/v0.238.0...v0.239.0) (2026-11-19)
 
 
