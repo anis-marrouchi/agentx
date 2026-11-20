@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.243.0](https://github.com/anis-marrouchi/agentx/compare/v0.242.0...v0.243.0) (2026-11-20)
+
+
+### Features
+
+* **improve:** one fix rule per agent, budget of 3 ([#1996](https://github.com/anis-marrouchi/agentx/issues/1996)) ([#2026](https://github.com/anis-marrouchi/agentx/issues/2026)) ([ca0a10d](https://github.com/anis-marrouchi/agentx/commit/ca0a10d5385693b988a9bad5c7a312b4fbaf01f4))
+
 ## [0.242.0](https://github.com/anis-marrouchi/agentx/compare/v0.241.0...v0.242.0) (2026-11-20)
 
 
