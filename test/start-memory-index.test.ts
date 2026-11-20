@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { mkdirSync, mkdtempSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -22,7 +22,20 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
   }
 })
 
+// A home folder of the test's own for Claude Code's auto-memory, so no real
+// ~/.claude file is read or written.
+const fakeHome = vi.hoisted(() => ({ path: "" }))
+vi.mock("../src/agents/claude-md-chain", async (importOriginal) => {
+  const real: any = await importOriginal()
+  return {
+    ...real,
+    withClaudeMdFiles: (task: any, ws: any, sources: any, _home: any, ...rest: any[]) =>
+      real.withClaudeMdFiles(task, ws, sources, fakeHome.path || undefined, ...rest),
+  }
+})
+
 import { AgentRegistry } from "../src/agents/registry"
+import { autoMemoryPath } from "../src/agents/claude-md-chain"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { getEventBus } from "../src/events/bus"
 
@@ -38,6 +51,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   process.chdir(prevCwd)
+  fakeHome.path = ""
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -94,5 +108,24 @@ describe("agent memory index at the start (#2009 B1)", () => {
     expect(calls[0].resume).toBeUndefined()
     expect(count(calls[0].context)).toBe(1)
     expect(count(calls[0].system)).toBe(0)
+  })
+})
+
+// Review of PR #2035, item 1: Claude Code's auto-memory MEMORY.md lists its
+// newest notes last, and many are 15-21k characters. A top-kept cap hid
+// them, so only the agent memory index is capped by default; auto-memory
+// keeps Claude Code's own 200-line rule until #2002 step 4's hand trim.
+describe("auto-memory at the start (review item 1)", () => {
+  it("a large auto-memory index is rendered whole by default", async () => {
+    fakeHome.path = join(dir, "home")
+    const file = autoMemoryPath(dir, fakeHome.path)
+    mkdirSync(join(file, ".."), { recursive: true })
+    const lines = Array.from({ length: 150 }, (_, i) => `- [Note ${i + 1}](note_${i + 1}.md) — what the agent learned about topic ${i + 1}, with some detail`)
+    writeFileSync(file, lines.join("\n") + "\n")
+    expect(lines.join("\n").length).toBeGreaterThan(12_000)
+    await run(registry())
+    expect(calls[0].context).toContain("- [Note 1](note_1.md)")
+    expect(calls[0].context).toContain("- [Note 150](note_150.md)")
+    expect(calls[0].context).not.toContain("more notes not shown here")
   })
 })

@@ -5,7 +5,8 @@ import { join } from "path"
 import { onDemandContextNote } from "../src/agents/session-profile"
 
 // #2009 part 1, step 5: a full Claude Code fresh start gets the landscape
-// on demand too, behind the existing session.lean.contextOnDemand switch.
+// on demand too, behind its own switch, session.fullContextOnDemand (off by
+// default; review of PR #2035).
 // Its chat history stays pushed, so its note does not offer it.
 
 const calls = vi.hoisted(() => [] as Array<{ context: string; resume?: string }>)
@@ -39,11 +40,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function registry(contextOnDemand?: boolean): AgentRegistry {
+function registry(session?: Record<string, unknown>): AgentRegistry {
   const config = daemonConfigSchema.parse({
     jobState: { enabled: false },
     node: { id: "test", name: "test" },
-    ...(contextOnDemand === undefined ? {} : { session: { lean: { contextOnDemand } } }),
+    ...(session ? { session } : {}),
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir } },
   })
   const r = new AgentRegistry(config, () => {})
@@ -54,16 +55,26 @@ function registry(contextOnDemand?: boolean): AgentRegistry {
 // telegram is a full-profile channel.
 const run = (r: AgentRegistry) => r.execute({ message: "hello", agentId: "ops", context: { channel: "telegram", chatId: "chat-1" } })
 
-describe("landscape on demand for full fresh starts (#2009)", () => {
-  it("a full fresh start has the on-demand note and no landscape", async () => {
+describe("session.fullContextOnDemand (#2009, its own switch)", () => {
+  it("defaults to false", () => {
+    expect(daemonConfigSchema.parse({ node: { id: "n", name: "N" } }).session.fullContextOnDemand).toBe(false)
+  })
+
+  it("off (the default): a full fresh start pushes the landscape as before, even with lean on demand on", async () => {
     await run(registry())
+    expect(calls[0].context).toContain(LANDSCAPE)
+    expect(calls[0].context).not.toContain("[Context on demand]")
+  })
+
+  it("on: a full fresh start has the on-demand note and no landscape", async () => {
+    await run(registry({ fullContextOnDemand: true }))
     expect(calls[0].context).toContain("[Context on demand]")
     expect(calls[0].context).toContain("agentx_agents with landscape=true")
     expect(calls[0].context).not.toContain(LANDSCAPE)
   })
 
-  it("a resumed full session has neither", async () => {
-    const r = registry()
+  it("on: a resumed full session has neither", async () => {
+    const r = registry({ fullContextOnDemand: true })
     ;(r as any).sessions.setClaudeSessionId("ops", "telegram", "chat-1", "sess-1")
     await run(r)
     expect(calls[0].resume).toBe("sess-1")
@@ -71,10 +82,10 @@ describe("landscape on demand for full fresh starts (#2009)", () => {
     expect(calls[0].context).not.toContain(LANDSCAPE)
   })
 
-  it("with the switch off, the landscape is pushed as before", async () => {
-    await run(registry(false))
-    expect(calls[0].context).toContain(LANDSCAPE)
-    expect(calls[0].context).not.toContain("[Context on demand]")
+  it("on, with lean on demand off: still on demand (the two switches are separate)", async () => {
+    await run(registry({ fullContextOnDemand: true, lean: { contextOnDemand: false } }))
+    expect(calls[0].context).not.toContain(LANDSCAPE)
+    expect(calls[0].context).toContain("[Context on demand]")
   })
 })
 

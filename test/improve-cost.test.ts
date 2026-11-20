@@ -10,7 +10,7 @@ import { KIND_WEIGHT, normalizeDetail } from "../src/improve/rank"
 import { readFileSync } from "fs"
 import {
   costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory, queueCostSignals, CACHE_LIFETIME_MS,
-  COST_KINDS, START_BUDGET_TOKENS, START_WRITE_MIN, startTokens,
+  COST_KINDS, START_ALERT_TOKENS, START_BUDGET_TOKENS, START_WRITE_MIN, startTokens,
   baselineQuery, lastAgentRunQuery, chatPrevQuery, jobRunsQuery,
   type CostRun, type CostHistory,
 } from "../src/improve/cost"
@@ -268,7 +268,7 @@ describe("emission after the reply (review item 1)", () => {
     queueCostSignals(run([call(40_000, 1_000), call(0, 60_000)]), NOW)
     expect(readSignals(db, 0)).toEqual([])
     await new Promise((r) => setImmediate(r))
-    expect(readSignals(db, 0).map((s) => s.kind).sort()).toEqual(["context_rewrite", "start_over_budget"])
+    expect(readSignals(db, 0).map((s) => s.kind)).toEqual(["context_rewrite"])
   })
 
   it("the registry queues cost signals after the reply is recorded, and never runs them inline", () => {
@@ -283,7 +283,7 @@ describe("emitCostSignals", () => {
   it("records through the signal sink, with the trace id as ref, and never throws", () => {
     setSignalDb(db)
     emitCostSignals(run([call(40_000, 1_000), call(0, 60_000)]), NOW)
-    expect(readSignals(db, 0).map((r) => [r.kind, r.ref]).sort()).toEqual([["context_rewrite", "01TRACE"], ["start_over_budget", "01TRACE"]])
+    expect(readSignals(db, 0).map((r) => [r.kind, r.ref])).toEqual([["context_rewrite", "01TRACE"]])
     setSignalDb(null)
     expect(() => emitCostSignals(run([call(0, 60_000)]), NOW)).not.toThrow()
   })
@@ -326,27 +326,29 @@ describe("start_over_budget (#2009)", () => {
     expect(KIND_WEIGHT.start_over_budget).toBe(1)
   })
 
-  it("the budget is a constant next to START_WRITE_MIN: 15k tokens", () => {
+  it("the budget is a constant next to START_WRITE_MIN: 15k tokens; the alert line is 64k until part 2", () => {
     expect(START_BUDGET_TOKENS).toBe(15_000)
+    expect(START_ALERT_TOKENS).toBe(64_000)
     expect(START_WRITE_MIN).toBeGreaterThan(0)
   })
 
-  it("fires once on a fresh start whose first main call is over budget, naming its size", () => {
-    const s = costSignals(run([call(30_000, 18_000), call(48_000, 500)])).filter((x) => x.kind === "start_over_budget")
+  it("fires once on a fresh start whose first main call is over the alert line, naming its size and the budget", () => {
+    const s = costSignals(run([call(50_000, 20_000), call(70_000, 500)])).filter((x) => x.kind === "start_over_budget")
     expect(s).toHaveLength(1)
     expect(s[0]).toMatchObject({ agentId: "builder", ref: "01TRACE" })
-    expect(s[0].detail).toBe("job cron nightly-report: fresh start 48k, budget 15k")
+    expect(s[0].detail).toBe("job cron nightly-report: fresh start 70k, budget 15k")
   })
 
-  it("is silent under budget, on a resumed run, and with no per-call numbers", () => {
+  it("is silent at today's usual full start (48k), on a resumed run, and with no per-call numbers (review item 2: no flood)", () => {
     const has = (r: CostRun) => costSignals(r).some((x) => x.kind === "start_over_budget")
-    expect(has(run([call(0, 14_000), call(14_000, 500)]))).toBe(false)
-    expect(has(run([call(60_000, 500)], { resumed: true }))).toBe(false)
+    expect(has(run([call(30_000, 18_000), call(48_000, 500)]))).toBe(false)
+    expect(has(run([call(0, 64_000)]))).toBe(false)
+    expect(has(run([call(90_000, 500)], { resumed: true }))).toBe(false)
     expect(has({ ...run([]), calls: undefined })).toBe(false)
   })
 
   it("measures the first main call, not a subagent's", () => {
-    const r = run([call(0, 40_000, { sub: true }), call(0, 12_000)])
+    const r = run([call(0, 70_000, { sub: true }), call(0, 12_000)])
     expect(startTokens(r)).toBe(12_010)
     expect(costSignals(r).some((x) => x.kind === "start_over_budget")).toBe(false)
   })

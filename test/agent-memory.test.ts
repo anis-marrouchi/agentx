@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { execFileSync } from "child_process"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { AgentMemory, parseMemoryFile } from "../src/agents/agent-memory"
@@ -165,6 +166,46 @@ describe("AgentMemory.syncToWorkspace", () => {
     expect(claude).toBe("# Briefing\n\nUser content.\n\n## After\n")
     s.syncToWorkspace("a", ws)
     expect(readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")).toBe(claude)
+  })
+
+  // Review of PR #2035, item 4: only the marked text and at most one
+  // adjoining blank line change; the rest of the file is left as written.
+  it("changes only the marked block and one adjoining blank line", () => {
+    const head = "# Briefing  \n\n\n\nText\n\n"
+    const tail = "\n## After\n\n\n"
+    writeFileSync(resolve(ws, "CLAUDE.md"), `${head}${START}\n- **old** — d\n${END}\n\n${tail}`)
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "p1", description: "d1", body: "b1" })
+    s.syncToWorkspace("a", ws)
+    expect(readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")).toBe(`${head}${tail}`)
+  })
+
+  it("leaves an empty CLAUDE.md, not a deleted one, when the block was all it held", () => {
+    writeFileSync(resolve(ws, "CLAUDE.md"), `${START}\n- **old** — d\n${END}\n`)
+    const s = store()
+    s.save({ agentId: "a", type: "user", name: "p1", description: "d1", body: "b1" })
+    s.syncToWorkspace("a", ws)
+    expect(existsSync(resolve(ws, "CLAUDE.md"))).toBe(true)
+    expect(readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")).toBe("")
+  })
+
+  it("leaves a CLAUDE.md that git tracks untouched, and says so once", () => {
+    const original = `# Repo rules\n\n${START}\n- **old** — d\n${END}\n`
+    writeFileSync(resolve(ws, "CLAUDE.md"), original)
+    execFileSync("git", ["init", "-q"], { cwd: ws })
+    execFileSync("git", ["add", "CLAUDE.md"], { cwd: ws })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const s = store()
+      s.save({ agentId: "a", type: "user", name: "p1", description: "d1", body: "b1" })
+      s.syncToWorkspace("a", ws)
+      s.syncToWorkspace("a", ws)
+      expect(readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")).toBe(original)
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("tracked by git"))).toHaveLength(1)
+      expect(existsSync(resolve(ws, ".agentx-memory.md"))).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it("removes .agentx-memory.md and any old block when all memories are deleted", () => {
