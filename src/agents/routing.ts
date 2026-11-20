@@ -71,7 +71,7 @@ export function channelKeepsConfiguredModel(channel: string | null | undefined):
 /** How long a cached prefix is assumed to live. Anthropic's default TTL is
  *  five minutes with a one-hour option; an hour is assumed here because it
  *  is the assumption whose error is cheap — see the note above. */
-const CACHE_TTL_MS = 60 * 60 * 1000
+export const CACHE_TTL_MS = 60 * 60 * 1000
 
 /** Resolve only models compatible with the agent's CLI engine. An omitted
  *  model leaves the agent on its configured default. */
@@ -97,6 +97,11 @@ export interface RouteResult {
   downgraded: boolean
   /** P(needs the strongest model), or null when nothing was asked. */
   needsFlagship: number | null
+  /** "answered": an active seat gave an answer. "failed": the seat was
+   *  asked and threw or timed out. Unset: not asked, or in shadow. A cold
+   *  resume moves a session's model only on answers, never on a failure
+   *  (#2001). */
+  seat?: "answered" | "failed"
   reason: string
 }
 
@@ -118,8 +123,8 @@ export interface RouteOptions extends TaskTierInput {
  * stop a task from running.
  */
 export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
-  const keep = (reason: string, p: number | null = null): RouteResult => ({
-    downgraded: false, needsFlagship: p, reason,
+  const keep = (reason: string, p: number | null = null, seat?: "answered" | "failed"): RouteResult => ({
+    downgraded: false, needsFlagship: p, reason, ...(seat ? { seat } : {}),
   })
 
   if (channelKeepsConfiguredModel(opts.channel)) {
@@ -159,10 +164,10 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
       },
     )
   } catch {
-    return keep("routing seat threw — keeping the flagship")
+    return keep("routing seat threw — keeping the flagship", null, "failed")
   }
 
-  if (!result) return keep("routing seat unavailable — keeping the flagship")
+  if (!result) return keep("routing seat unavailable — keeping the flagship", null, "failed")
 
   const p = needsFlagship(result.answers as TaskTierAnswers)
 
@@ -175,12 +180,13 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
   }
 
   const threshold = opts.threshold ?? DOWNGRADE_BELOW
-  if (p >= threshold) return keep(`needs the flagship (${p.toFixed(2)})`, p)
+  if (p >= threshold) return keep(`needs the flagship (${p.toFixed(2)})`, p, "answered")
 
   return {
     model: opts.cheapModel,
     downgraded: true,
     needsFlagship: p,
+    seat: "answered",
     reason: `mechanical task (${p.toFixed(2)} below ${threshold}) → ${opts.cheapModel}`,
   }
 }

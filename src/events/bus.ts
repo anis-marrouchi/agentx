@@ -279,7 +279,8 @@ export interface AgentXEvents {
     agentId: string
     channel: string
     chatId: string
-    reason: "stale" | "max-turns" | "tier-2" | "continuity" | "cost"
+    /** "model": the turn needs another model than the session runs on (#2001). */
+    reason: "stale" | "max-turns" | "tier-2" | "continuity" | "cost" | "model"
     lastTurnInputTokens?: number
     at: string
   }
