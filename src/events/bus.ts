@@ -142,6 +142,9 @@ export interface AgentXEvents {
     requestText?: string
     at: string
     taskId?: string
+    /** The workflow a workflow step belongs to (its run id is in the
+     *  chatId): stored as task_traces.workflow_id (#1995). */
+    workflowId?: string
     /** Resume after restart (#103): how to re-enter the run (JSON), its
      *  attempt number, and the cut-off run it continues. */
     resumeOrigin?: string | null

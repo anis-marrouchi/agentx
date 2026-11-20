@@ -18,6 +18,8 @@ export interface AgentExecuteRequest {
   agentId: string
   message: string
   workflowRunId?: string
+  /** The run's workflow, so the step's trace records it (#1995). */
+  workflowId?: string
   timeoutMinutes?: number
   /** Step autonomy (report | propose | act). Unset = act. */
   autonomy?: "report" | "propose" | "act"

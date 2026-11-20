@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import Database from "better-sqlite3"
 import { recordSignal } from "../src/improve/signals"
-import { applyMerge, groupSignals, normalizeDetail, rankSignals, readRanking, saveRanking } from "../src/improve/rank"
+import { COST_SCORE_CAP } from "../src/improve/cost"
+import { applyMerge, byRank, groupSignals, KIND_WEIGHT, normalizeDetail, rankSignals, readRanking, saveRanking } from "../src/improve/rank"
 import { canSpend, recordSpend, spentToday, CALL_ESTIMATE_USD } from "../src/improve/budget"
 import { improvePass } from "../src/improve/nightly"
 import { improveConfigSchema } from "../src/daemon/config"
@@ -152,5 +153,35 @@ describe("improvePass", () => {
     saveRanking(db, [g], T)
     saveRanking(db, [{ ...g, key: "k2", members: ["k2"] }], T + 1000)
     expect(readRanking(db, "2026-11-08").map((r) => r.key)).toEqual(["k2"])
+  })
+})
+
+describe("cost score cap per window (#1995, S1, review item 3)", () => {
+  const reopens = () => { for (let i = 0; i < 3; i++) recordSignal(db, { kind: "owner_reopened", agentId: "builder", ref: `req-r${i}`, detail: `no ${i}` }, T + i) }
+
+  it("a cost group scores at most COST_SCORE_CAP, below 3 owner reopens, whatever its weight", () => {
+    expect(COST_SCORE_CAP).toBeLessThan(3 * KIND_WEIGHT.owner_reopened)
+    for (let i = 0; i < 40; i++) recordSignal(db, { kind: "context_rewrite", agentId: "builder", ref: `01RUN${i}`, detail: "job cron nightly: rewrite 60k of 61k" }, T + i * 60_000)
+    for (let i = 0; i < 5; i++) recordSignal(db, { kind: "job_cost_high", agentId: "builder", ref: `01BIG${i}`, detail: `job cron nightly: ${4 + i}.1x median` }, T + i * 60_000)
+    reopens()
+    const groups = groupSignals(db, T - 1)
+    expect(groups.find((g) => g.kind === "context_rewrite")).toMatchObject({ rows: 40, score: COST_SCORE_CAP })
+    expect(groups.find((g) => g.kind === "job_cost_high")).toMatchObject({ rows: 5, score: COST_SCORE_CAP })
+    expect(groups.sort(byRank)[0].kind).toBe("owner_reopened")
+  })
+
+  it("a 24-hour window across midnight is capped the same", () => {
+    const night = Date.parse("2026-11-08T23:00:00Z")
+    for (let i = 0; i < 10; i++) recordSignal(db, { kind: "job_cost_high", agentId: "builder", ref: `01BIG${i}`, detail: "job cron nightly: 5.1x median" }, night + i * 15 * 60_000)
+    const g = groupSignals(db, night - 3_600_000, night + 23 * 3_600_000).find((x) => x.kind === "job_cost_high")
+    expect(g).toMatchObject({ rows: 10, score: COST_SCORE_CAP })
+  })
+
+  it("a merge of two cost groups stays capped; failure groups are not capped", () => {
+    const a = { key: "a", kind: "context_rewrite" as const, agentId: "builder", pattern: "p", rows: 8, refs: 8, score: 8, firstAt: T, lastAt: T, sample: null, sampleRefs: [], members: ["a"] }
+    const b = { ...a, key: "b", pattern: "q", members: ["b"] }
+    expect(applyMerge([a, b], JSON.stringify({ merge: [["a", "b"]] }))[0]).toMatchObject({ rows: 16, score: COST_SCORE_CAP })
+    for (let i = 0; i < 6; i++) recordSignal(db, { kind: "request_stalled", agentId: "builder", ref: `req-${i}`, detail: "went quiet" }, T + i)
+    expect(groupSignals(db, T - 1).find((g) => g.kind === "request_stalled")).toMatchObject({ rows: 6, score: 12 })
   })
 })

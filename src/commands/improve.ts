@@ -5,7 +5,9 @@ import { openDb } from "@/storage/sqlite"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { readSignals, SIGNAL_KINDS, SIGNAL_MEANING, summarizeSignals, type SignalKind } from "@/improve/signals"
 import { improvePass, type ImprovePassResult } from "@/improve/nightly"
-import { checkHeld, HELD_WINDOW_DAYS } from "@/improve/held"
+import { checkHeld, costLine, HELD_WINDOW_DAYS } from "@/improve/held"
+import { KIND_WEIGHT } from "@/improve/rank"
+import { COST_KIND_SET } from "@/improve/cost"
 import { reviewWithClaudeCost } from "@/daemon/session-monitor"
 
 // --- agentx improve — self-improvement, stage 1: count failure signals (#1783) ---
@@ -22,9 +24,22 @@ export function parseSince(value: string | undefined, now = Date.now()): number 
   return Number.isNaN(at) ? null : at
 }
 
+/** Every kind with its weight in the ranking and what it means. */
+export function kindLines(): string[] {
+  return SIGNAL_KINDS.map((k) => `  ${k.padEnd(24)} ${String(KIND_WEIGHT[k]).padStart(2)}  ${SIGNAL_MEANING[k]}${COST_KIND_SET.has(k) ? " (cost)" : ""}`)
+}
+
+improve
+  .command("kinds")
+  .description("list every signal kind, its weight in the ranking and what it means")
+  .action(() => {
+    console.log(chalk.bold(`\n  ${"Kind".padEnd(24)} ${"Wt".padStart(2)}  Recorded when`))
+    for (const line of kindLines()) console.log(line)
+  })
+
 improve
   .command("signals")
-  .description("count the failure signals: reopened requests, owner-words mismatches, refused or failed hand-offs, repeats")
+  .description("count the failure and cost signals: reopened requests, owner-words mismatches, refused or failed hand-offs, repeats, token waste")
   .option("--since <when>", "how far back: 24h, 7d, 30m or a date", "24h")
   .option("--kind <kind>", `list the rows of one kind: ${SIGNAL_KINDS.join(", ")}`)
   .option("--json", "print the counts as JSON")
@@ -48,7 +63,7 @@ improve
 
     const s = summarizeSignals(db, since)
     if (opts.json) { console.log(JSON.stringify(s, null, 2)); return }
-    console.log(chalk.bold(`\n  Failure signals since ${new Date(since).toISOString().slice(0, 16).replace("T", " ")} UTC: ${s.total}`))
+    console.log(chalk.bold(`\n  Signals since ${new Date(since).toISOString().slice(0, 16).replace("T", " ")} UTC: ${s.total}`))
     if (!s.total) { console.log(chalk.dim("  none in this window")); return }
     console.log(chalk.bold("\n  By kind"))
     for (const k of s.byKind) console.log(`  ${String(k.count).padStart(5)}  ${k.kind.padEnd(24)} ${chalk.dim(SIGNAL_MEANING[k.kind])}`)
@@ -80,7 +95,7 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
   if (r.savedDay) console.log(chalk.green(`  ✓ ranking saved for ${r.savedDay}`))
   for (const h of r.held ?? []) {
     if (h.verdict === "waiting") continue
-    const line = `  ${h.verdict === "held" ? "✓ held" : "✗ did not hold"}: card:${h.cardId} "${h.choice.slice(0, 50)}" (${h.agentId}): ${h.before} before, ${h.after} after`
+    const line = `  ${h.verdict === "held" ? "✓ held" : "✗ did not hold"}: card:${h.cardId} "${h.choice.slice(0, 50)}" (${h.agentId}): ${h.cost ? costLine(h.cost) : `${h.before} before, ${h.after} after`}`
     console.log(h.verdict === "held" ? chalk.green(line) : chalk.yellow(line))
   }
   if (r.handoff) {
@@ -129,6 +144,7 @@ improve
       const day = new Date(h.pickedAt).toISOString().slice(0, 10)
       const verdict = h.verdict === "held" ? chalk.green("held") : h.verdict === "not-held" ? chalk.yellow("did not hold") : chalk.dim(`waiting, ${h.daysLeft} day(s) left`)
       console.log(`  ${day}  card:${h.cardId}  ${h.agentId.padEnd(18)} ${String(h.before).padStart(4)} before  ${String(h.after).padStart(4)} after  ${verdict}`)
+      if (h.cost) console.log(chalk.dim(`      cost problem: ${costLine(h.cost)}`))
       console.log(chalk.dim(`      ${h.choice.slice(0, 110)}`))
     }
   })

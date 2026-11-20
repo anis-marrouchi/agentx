@@ -4424,6 +4424,7 @@ export class AgentXDaemon {
             agentId: req.agentId,
             message: req.message,
             workflowRunId: req.workflowRunId,
+            ...(req.workflowId ? { workflowId: req.workflowId } : {}),
             timeoutMinutes: req.timeoutMinutes,
             autonomy: req.autonomy,
             context: {

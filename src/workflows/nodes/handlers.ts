@@ -71,6 +71,7 @@ const agentHandler: NodeHandler = async (ctx) => {
       agentId,
       message: prompt,
       workflowRunId: ctx.run.id,
+      workflowId: ctx.run.workflowId,
       timeoutMinutes,
       ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
     })

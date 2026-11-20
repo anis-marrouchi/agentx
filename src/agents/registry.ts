@@ -37,6 +37,7 @@ import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJ
 import { isQuietAnswer } from "@/crons/quiet"
 import { withoutExitMarker } from "@/crons/exit-check"
 import { emitSignal } from "@/improve/signals"
+import { queueCostSignals } from "@/improve/cost"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -2582,6 +2583,7 @@ export class AgentRegistry {
       requestText: task.requestText,
       at: new Date(taskStartedAt).toISOString(),
       taskId: traceTaskId,
+      ...(task.workflowId ? { workflowId: task.workflowId } : {}),
       resumeOrigin: serializeOrigin(task.origin ?? {
         kind: "direct",
         context: task.context as Record<string, unknown> | undefined,
@@ -3943,6 +3945,23 @@ export class AgentRegistry {
         billedModel: response.billedModel || task.model || state.def.model || undefined,
         at: new Date().toISOString(),
       })
+      // Token waste, ranked like failures (#1995): judged after the reply
+      // below is recorded (see the end of this block).
+      const costRun = response.usage && !interruptedBy && !stoppedBy
+        ? {
+          taskId: traceTaskId,
+          agentId: task.agentId,
+          channel,
+          chatId,
+          workflowId: task.workflowId ?? null,
+          startedAt: taskStartedAt,
+          resumed: Boolean(resumeSessionId),
+          resumeSessionId: resumeSessionId || null,
+          model: response.billedModel || task.model || state.def.model || null,
+          usage: response.usage,
+          calls: response.callUsage,
+        }
+        : null
 
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal
@@ -4105,6 +4124,11 @@ export class AgentRegistry {
             (response.tokensUsed ? ` (${response.tokensUsed} tokens)` : "") + ` ${runTag()}`,
         )
       }
+
+      // Cost signals (#1995) read task_traces: on a later tick, after the
+      // reply is recorded, so they never delay a reply or /health. A run a
+      // shutdown or a stop cut short is not judged. Never throws.
+      if (costRun) queueCostSignals(costRun)
 
       return response
     } catch (error: any) {

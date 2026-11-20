@@ -193,6 +193,17 @@ describe("splitTaskUsageByTier", () => {
       { inputTokens: 5, outputTokens: 7, cacheReadTokens: 100, cacheCreateTokens: 0 },
     ])
   })
+
+  it("keeps each call's model, and marks a subagent's call (#1995)", () => {
+    const calls = new Map<string, TaskUsage>()
+    const usage = { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 9 }
+    noteCallUsage(calls, { id: "msg_1", model: "model-a", usage })
+    noteCallUsage(calls, { id: "msg_2", model: "model-b", usage }, "toolu_1")
+    expect([...calls.values()]).toEqual([
+      { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheCreateTokens: 9, model: "model-a" },
+      { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheCreateTokens: 9, model: "model-b", sub: true },
+    ])
+  })
 })
 
 describe("EventBus (daemon)", () => {

@@ -30,7 +30,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 import { withOwnClaudeMd } from "./claude-md-chain"
 import type { AgentDef } from "@/daemon/config"
-import { noteCallUsage } from "@/daemon/token-tracker"
+import { noteCallUsage, type CallUsage } from "@/daemon/token-tracker"
 import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, SUBAGENT_MODEL_ENV, type ProcessKey } from "./process-registry"
@@ -98,6 +98,10 @@ export interface AgentTask {
    *  an agent as part of a state transition, this carries the run id so
    *  post:response can re-enter the engine with an agentResult condition. */
   workflowRunId?: string
+  /** The workflow the run belongs to, next to its run id: written to
+   *  task_traces.workflow_id, so runs of one workflow are one job type for
+   *  the cost signals (#1995). */
+  workflowId?: string
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
   /** Model for the sub-agents this run starts, when the run was moved to
@@ -312,7 +316,7 @@ export interface AgentResponse {
   usage?: TokenUsage  // Real token counts from Claude's JSON output
   /** Usage of each API call inside the run, when the stream reports it.
    *  Decides the long-context tier per call, as billed (#1994). */
-  callUsage?: TokenUsage[]
+  callUsage?: CallUsage[]
   /** End-of-turn context size: the LAST API call's (input + cacheRead +
    *  cacheCreate) inside this turn, captured from the final assistant
    *  stream event. `usage` above is CUMULATIVE across every call in the
@@ -1106,7 +1110,7 @@ export async function executeClaudeCodeStreaming(
   /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
   let streamContextTokens: number | undefined
   /** Usage of each API call in the run, by message id (#1994). */
-  const streamCalls = new Map<string, TokenUsage>()
+  const streamCalls = new Map<string, CallUsage>()
   let streamNumTurns: number | undefined
   let streamCostUsd: number | undefined
   /** If the terminal `result` event carries is_error, we stash it here and
@@ -1189,7 +1193,7 @@ export async function executeClaudeCodeStreaming(
                 (u.cache_read_input_tokens || 0) +
                 (u.cache_creation_input_tokens || 0)
               if (callContext > 0) streamContextTokens = callContext
-              noteCallUsage(streamCalls, event.message)
+              noteCallUsage(streamCalls, event.message, event.parent_tool_use_id)
             }
 
             // Claude stream-json emits different event types
@@ -2151,7 +2155,7 @@ async function executeClaudeCodePersistent(
   let finalErrorKind: FriendlyError["kind"] | undefined
   let usage: TokenUsage | undefined
   let contextTokens: number | undefined
-  const calls = new Map<string, TokenUsage>()
+  const calls = new Map<string, CallUsage>()
   let numTurns: number | undefined
   let billedModel: string | undefined
   let sessionId: string | undefined
@@ -2220,7 +2224,7 @@ async function executeClaudeCodePersistent(
             (u.cache_read_input_tokens || 0) +
             (u.cache_creation_input_tokens || 0)
           if (callContext > 0) contextTokens = callContext
-          noteCallUsage(calls, (evt.raw as any).message)
+          noteCallUsage(calls, (evt.raw as any).message, (evt.raw as any).parent_tool_use_id)
         }
       }
 
