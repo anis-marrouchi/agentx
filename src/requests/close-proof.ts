@@ -1,5 +1,5 @@
 import { CHECK_EVIDENCE_MAX, type DeliverableProof, type RequestRecord, type RequestStore } from "./store"
-import type { PlanStep } from "./plan-store"
+import type { PlanStep, PlanStore } from "./plan-store"
 import { parseRef } from "./checkers/issue"
 
 // --- Proof per deliverable before a close by check, and reopen once ---
@@ -115,6 +115,15 @@ export function planDeliverables(steps: PlanStep[], linkOf: (text: string) => st
     if (link) proofs.push({ deliverable: s.name, link, at: s.updatedAt })
   }
   return { names: kept.map((s) => s.name), proofs, fromPlan: true }
+}
+
+/** Only an active plan stands in for the deliverables (#2020). A closed
+ *  or done plan on a reopened request leaves the request's own list and
+ *  its kept proofs, as for a request without a plan. */
+export const hasActivePlan = (plans: Pick<PlanStore, "get">, id: string): boolean => plans.get(id)?.state === "active"
+
+export function activePlanDeliverables(plans: Pick<PlanStore, "get" | "steps">, id: string, linkOf: (text: string) => string | null): Deliverables | null {
+  return hasActivePlan(plans, id) ? planDeliverables(plans.steps(id), linkOf) : null
 }
 
 /** What a request is held to. Null: its words are not read yet. */

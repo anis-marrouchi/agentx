@@ -11,9 +11,9 @@ import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsCall } from "../src/requests/daemon-api"
 import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, ownerCheckPrompt } from "../src/requests/owner-check"
 import { DeliverablesReader, readDeliverables } from "../src/requests/deliverables-reader"
-import { closeByCheckNow, HELD_TEXT, planDeliverables, sameCheckDetail, type CloseProofCtx } from "../src/requests/close-proof"
+import { activePlanDeliverables, closeByCheckNow, HELD_TEXT, planDeliverables, sameCheckDetail, type CloseProofCtx } from "../src/requests/close-proof"
 import { readSignals } from "../src/improve/signals"
-import type { PlanStep } from "../src/requests/plan-store"
+import { PlanStore, type PlanStep } from "../src/requests/plan-store"
 
 // retro:01M70Z38BBZYRBBCZW2T1S3T3K — neutral fixture: a release with six
 // stages the owner asked to see confirmed one by one, closed by a check on
@@ -209,6 +209,47 @@ describe("a tracked plan's steps are the deliverables (B6)", () => {
       runningTurn: () => ({ channel: "telegram", chatId: "chat-1" }), plans: { get: () => ({ state: "active" }) } as any,
     }, { taskId: "t1" })
     expect((await res).status).toBe(400)
+  })
+})
+
+// retro:2020 — a reopened request whose plan is closed: the proofs kept on
+// the request count, as for a request without a plan.
+describe("only an active plan stands in for the deliverables (#2020)", () => {
+  const link = (t: string) => t.match(/https?:\/\/\S+/)?.[0] ?? null
+  let plans: PlanStore
+  beforeEach(() => {
+    store.setDeliverables(ID, STAGES)
+    plans = new PlanStore(db)
+    plans.create(ID, "coder", ["old build", "old review"].map((name) => ({ name, kind: "task", agentId: "coder", doneWhen: "done", needsApproval: false })), 5_600)
+  })
+  const proof = (): CloseProofCtx => ({ mode: "block", ownerCheckOn: false, plan: (id) => activePlanDeliverables(plans, id, link) })
+  const call = (body: Record<string, unknown>, now: number) => handleRequestsCall("POST", "/requests", { agentId: "coder", ...body }, {
+    store, tracker: undefined as any, enabled: true, hasAgent: () => true, now,
+    runningTurn: () => ({ channel: "telegram", chatId: "chat-1" }), plans, closeProof: proof(), check: met,
+  }, { taskId: "t1" })
+
+  it("closed plan: kept proofs given on step with no step number count, and done closes", async () => {
+    expect(plans.finish(ID, "closed", 5_700)).toBe(true)
+    const proofs = STAGES.map((n, i) => ({ deliverable: n, link: noteLink(i) }))
+    expect((await call({ action: "step", id: ID, proofs }, 6_000)).status).toBe(200)
+    expect((await call({ action: "done", id: ID, evidence: "all stages done" }, 7_000)).status).toBe(200)
+    expect(store.get(ID)!.state).toBe("done")
+  })
+
+  it("active plan: its steps are still the list", async () => {
+    const res = await call({ action: "done", id: ID, evidence: "all done" }, 7_000)
+    expect(res.status).toBe(409)
+    expect((res.body as any).missing).toEqual(["1. old build", "2. old review"])
+  })
+
+  it("closed plan, no kept proofs: the refusal names the request's deliverables, not the old steps", async () => {
+    expect(plans.finish(ID, "done", 5_700)).toBe(true)
+    const res = await call({ action: "done", id: ID, evidence: "all done" }, 7_000)
+    expect(res.status).toBe(409)
+    const missing = (res.body as any).missing as string[]
+    expect(missing).toHaveLength(6)
+    for (const n of STAGES) expect(missing.join(" ")).toContain(n)
+    expect(missing.join(" ")).not.toContain("old")
   })
 })
 
