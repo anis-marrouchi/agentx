@@ -33,6 +33,11 @@ export interface Session {
   claudeSessionId?: string  // Claude Code native session ID (for --resume)
   codexSessionId?: string   // Codex CLI thread/session ID (for exec resume)
   opencodeSessionId?: string // OpenCode native session ID (for run --session)
+  /** The model the native session runs on (#2001). Stored with the session
+   *  id, cleared with it: a session keeps one model, and a change of model
+   *  starts a new session. Absent for sessions stored before #2001 and for
+   *  agents with no model named. */
+  sessionModel?: string
   messages: SessionMessage[]
   createdAt: string
   updatedAt: string
@@ -55,6 +60,13 @@ export interface Session {
   /** Hash of the Rules Registry block this native session last got (#809).
    *  A resumed session gets the block again only when it differs. */
   rulesHash?: string
+}
+
+/** Store the session's model, or drop one left from an earlier session:
+ *  a stale model would make the next turn rotate for nothing. */
+function setModel(session: Session, model: string | undefined): void {
+  if (model) session.sessionModel = model
+  else delete session.sessionModel
 }
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
@@ -410,6 +422,8 @@ export class SessionStore {
       updatedAt: prev?.updatedAt ?? new Date().toISOString(),
       claudeSessionId: prev?.claudeSessionId,
       codexSessionId: prev?.codexSessionId,
+      opencodeSessionId: prev?.opencodeSessionId,
+      sessionModel: prev?.sessionModel,
       turnCount: prev?.turnCount,
       lastTurnInputTokens: prev?.lastTurnInputTokens,
       lastTurnContextTokens: prev?.lastTurnContextTokens,
@@ -513,9 +527,10 @@ export class SessionStore {
   /**
    * Store the Claude Code session ID after first invocation.
    */
-  setClaudeSessionId(agentId: string, channel: string, chatId: string, claudeSessionId: string): void {
+  setClaudeSessionId(agentId: string, channel: string, chatId: string, claudeSessionId: string, model?: string): void {
     const session = this.getSession(agentId, channel, chatId)
     session.claudeSessionId = claudeSessionId
+    setModel(session, model)
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -540,6 +555,7 @@ export class SessionStore {
     dst.claudeSessionId = src.claudeSessionId
     dst.codexSessionId = src.codexSessionId
     dst.opencodeSessionId = src.opencodeSessionId
+    dst.sessionModel = src.sessionModel
     dst.turnCount = src.turnCount
     dst.lastTurnInputTokens = src.lastTurnInputTokens
     dst.lastTurnContextTokens = src.lastTurnContextTokens
@@ -549,14 +565,20 @@ export class SessionStore {
     return true
   }
 
+  /** The model the chat's native session runs on (#2001), if stored. */
+  getSessionModel(agentId: string, channel: string, chatId: string): string | undefined {
+    return this.getSession(agentId, channel, chatId).sessionModel
+  }
+
   getCodexSessionId(agentId: string, channel: string, chatId: string): string | undefined {
     const session = this.getSession(agentId, channel, chatId)
     return session.codexSessionId
   }
 
-  setCodexSessionId(agentId: string, channel: string, chatId: string, codexSessionId: string): void {
+  setCodexSessionId(agentId: string, channel: string, chatId: string, codexSessionId: string, model?: string): void {
     const session = this.getSession(agentId, channel, chatId)
     session.codexSessionId = codexSessionId
+    setModel(session, model)
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -566,9 +588,10 @@ export class SessionStore {
     return session.opencodeSessionId
   }
 
-  setOpenCodeSessionId(agentId: string, channel: string, chatId: string, opencodeSessionId: string): void {
+  setOpenCodeSessionId(agentId: string, channel: string, chatId: string, opencodeSessionId: string, model?: string): void {
     const session = this.getSession(agentId, channel, chatId)
     session.opencodeSessionId = opencodeSessionId
+    setModel(session, model)
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }
@@ -1027,6 +1050,7 @@ export class SessionStore {
     delete session.claudeSessionId
     delete session.codexSessionId
     delete session.opencodeSessionId
+    delete session.sessionModel
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens
@@ -1055,6 +1079,7 @@ export class SessionStore {
     delete session.claudeSessionId
     delete session.codexSessionId
     delete session.opencodeSessionId
+    delete session.sessionModel
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens

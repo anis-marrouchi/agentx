@@ -1,7 +1,8 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
-import { cheapModelForEngine, triageModelFor } from "./routing"
+import { cheapModelForEngine, triageModelFor, type RouteResult } from "./routing"
+import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
@@ -2862,6 +2863,160 @@ export class AgentRegistry {
       resumeSessionId = undefined
     }
 
+    // The model seats, as one start. `gate` is the request gate's answer:
+    // awaited on a fresh start, read only when already settled on a cold
+    // resume (#2001, condition 5), so the gate never runs in series with
+    // a seat at the model check.
+    const startModelSeats = (gate: { active: boolean; preprocess?: boolean }) => {
+      // Route mechanical work to a cheaper model, when the seat is active
+      // and sure. Everything that is not an explicit confident "no" keeps
+      // the agent's own model — see agents/routing.ts for why the failure
+      // has to land on the expensive side.
+      //
+      // Started before the context selection and awaited after it: neither
+      // reads the other's answer, so the two seat calls overlap instead of
+      // queueing (#455). The answer is still in hand before the task runs.
+      // A run started only by triage events (a label, a close) goes to the
+      // configured triage model first: a fixed rule, no seat asked (#615).
+      const triage = !task.model
+        ? triageModelFor({
+            tier: state.def.tier,
+            channel,
+            eventActions: task.context?.channelMeta?.eventActions,
+            triage: this.config.session.triage,
+            isFollowUp: Boolean(resumeSessionId),
+            sessionIdleMs: resumeSessionId ? priorIdleMs : null,
+          })
+        : undefined
+      if (triage?.downgraded) this.log(`[${task.agentId}] ${triage.reason}`)
+      const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
+      // The downgrade seat's whole answer: a cold resume needs to know
+      // whether it answered or failed, not only the model (#2001).
+      const routeResultPending: Promise<RouteResult | undefined> =
+        triage?.downgraded
+          ? Promise.resolve(undefined)
+          : !task.model && cheapModel && (!gate.active || gate.preprocess)
+            ? (async () => {
+                try {
+                  const { routeTaskModel } = await import("./routing")
+                  const route = await step("route-model", () => routeTaskModel({
+                    message: task.message,
+                    agent: task.agentId,
+                    channel,
+                    isFollowUp: Boolean(resumeSessionId),
+                    // Idle time decides whether the cache this would give up still
+                    // exists. See routing.ts for the arithmetic.
+                    sessionIdleMs: resumeSessionId ? priorIdleMs : null,
+                    cheapModel,
+                  }))
+                  if (route.downgraded) this.log(`[${task.agentId}] ${route.reason}`)
+                  return route
+                } catch {
+                  /* routing is an optimisation; never let it stop a task */
+                  return { downgraded: false, needsFlagship: null, reason: "routing threw", seat: "failed" as const }
+                }
+              })()
+            : Promise.resolve(undefined)
+      const routedModelPending: Promise<string | undefined> = triage?.downgraded
+        ? Promise.resolve(triage.model)
+        : routeResultPending.then((r) => r?.downgraded ? r.model : undefined)
+
+      // The other direction: a job the task-edge seat is sure about moves UP
+      // to the edge model for this job only, and may be told to use
+      // sub-agents (agents/edge-routing.ts). Asked alongside the downgrade
+      // above, with the same exclusions: a model named on the task (a cron
+      // override), a triage run and an isolated run are left alone.
+      const edgeRoutePending: Promise<EdgeRouteResult | undefined> =
+        !task.model && !triage?.downgraded && !isolated
+        && (state.def.tier === "claude-code" || state.def.tier === "codex-cli")
+        && edgeSeatOn()
+        && (!gate.active || gate.preprocess)
+          ? (async () => {
+              try {
+                return await step("route-edge", () => routeTaskEdge({
+                  message: task.message,
+                  agent: task.agentId,
+                  channel,
+                  tier: state.def.tier,
+                  isFollowUp: Boolean(resumeSessionId),
+                  agentPrompt: state.def.systemPrompt ?? null,
+                  edgeModel: edgeModelForEngine(state.def.tier, this.config.decisions.routing),
+                  currentModel: state.def.model ?? null,
+                  // Only a message a person wrote is read for implied work:
+                  // a cron, a webhook or another agent says what it wants.
+                  impliedWork: isHumanFacingTurn(task.context as any)
+                    ? this.config.decisions.routing.impliedWork
+                    : "off",
+                }))
+              } catch {
+                /* never let this decision stop a task */
+                return {
+                  upgraded: false, subagents: false, needsEdge: null, subagentsHelp: null,
+                  reason: "edge seat threw — keeping the agent's model", seat: "failed" as const,
+                }
+              }
+            })()
+          : Promise.resolve(undefined)
+      return { triage, routeResultPending, routedModelPending, edgeRoutePending }
+    }
+    let earlySeats: ReturnType<typeof startModelSeats> | undefined
+
+    // --- One model per session (#2001) ----------------------------------
+    //
+    // The session keeps the model it started on. Here, with the other
+    // rotation rules and before the history and memo are built for a new
+    // session, a turn that needs another model rotates (reason "model").
+    // Rules in session-model.ts: a model named on the task that differs
+    // rotates; a warm resume keeps its model (an edge upgrade is held,
+    // unless the session sits on a cheap or triage model); a cold resume
+    // asks the seats and rotates only on an answer, never on a failure.
+    const storedModel = resumeSessionId
+      ? this.sessions.getSessionModel(task.agentId, channel, chatId)
+      : undefined
+    const warmResume = isWarm(priorIdleMs)
+    let modelRotatedTo: string | undefined
+    if (resumeSessionId && storedModel) {
+      let target: string | undefined
+      if (task.model) {
+        if (namedModelRotates(storedModel, task.model)) target = task.model
+      } else if (!warmResume || !canHoldUpgrade(storedModel, state.def.model, edgeModelForEngine(state.def.tier, this.config.decisions.routing))) {
+        // Started now, without waiting for the request gate: its answer
+        // is read only if it is already in (#2001, condition 5).
+        const gate = requestGateSettled
+          ? await requestGatePending
+          : { active: false, preprocess: false }
+        earlySeats = startModelSeats(gate)
+        traceStep("model-check")
+        const [routed, edge] = await Promise.all([earlySeats.routeResultPending, earlySeats.edgeRoutePending])
+        if (!warmResume) {
+          const choice = coldResumeChoice({
+            stored: storedModel,
+            agentModel: state.def.model,
+            triage: earlySeats.triage,
+            routed,
+            edge,
+          })
+          if (choice.rotate) target = choice.model
+        } else {
+          target = warmEdgeRotates(storedModel, state.def.model, edgeModelForEngine(state.def.tier, this.config.decisions.routing), edge)
+        }
+      }
+      if (target) {
+        this.log(`[${task.agentId}] model changed for ${channel}:${chatId} (${storedModel} → ${target}): new session`)
+        if (state.def.tier === "claude-code") {
+          void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "model")
+        }
+        this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+        getEventBus().emit("session:rotated", {
+          agentId: task.agentId, channel, chatId,
+          reason: "model",
+          at: new Date().toISOString(),
+        })
+        resumeSessionId = undefined
+        modelRotatedTo = target
+      }
+    }
+
     // Resume or start fresh (#621, step 3): a price comparison in code, not
     // a model. Like the continuity seat below it can only rotate earlier
     // than the rules above, never keep a session they dropped.
@@ -3441,91 +3596,26 @@ export class AgentRegistry {
       } satisfies Partial<ContextInput>)
     }
 
-    // Route mechanical work to a cheaper model, when the seat is active
-    // and sure. Everything that is not an explicit confident "no" keeps
-    // the agent's own model — see agents/routing.ts for why the failure
-    // has to land on the expensive side.
-    //
-    // Started before the context selection and awaited after it: neither
-    // reads the other's answer, so the two seat calls overlap instead of
-    // queueing (#455). The answer is still in hand before the task runs.
-    // A run started only by triage events (a label, a close) goes to the
-    // configured triage model first: a fixed rule, no seat asked (#615).
-    const triage = !task.model
-      ? triageModelFor({
-          tier: state.def.tier,
-          channel,
-          eventActions: task.context?.channelMeta?.eventActions,
-          triage: this.config.session.triage,
-          isFollowUp: Boolean(resumeSessionId),
-          sessionIdleMs: resumeSessionId ? priorIdleMs : null,
-        })
-      : undefined
-    if (triage?.downgraded) this.log(`[${task.agentId}] ${triage.reason}`)
-    const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
-    const routedModelPending: Promise<string | undefined> =
-      triage?.downgraded
-        ? Promise.resolve(triage.model)
-        : !task.model && cheapModel && (!requestGate.active || requestGate.preprocess)
-          ? (async () => {
-              try {
-                const { routeTaskModel } = await import("./routing")
-                const route = await step("route-model", () => routeTaskModel({
-                  message: task.message,
-                  agent: task.agentId,
-                  channel,
-                  isFollowUp: Boolean(resumeSessionId),
-                  // Idle time decides whether the cache this would give up still
-                  // exists. See routing.ts for the arithmetic.
-                  sessionIdleMs: resumeSessionId ? priorIdleMs : null,
-                  cheapModel,
-                }))
-                if (route.downgraded) {
-                  this.log(`[${task.agentId}] ${route.reason}`)
-                  return route.model
-                }
-              } catch {
-                /* routing is an optimisation; never let it stop a task */
-              }
-              return undefined
-            })()
-          : Promise.resolve(undefined)
+    // The three model seats (triage rule, downgrade, edge). Started here on
+    // a fresh start, as before (#455). A cold resume, or a warm one on a
+    // cheap or triage model, started them already at the model check in
+    // the rotation block (#2001), so the answers are reused, not asked twice.
+    // Unless the gate, unread then, turned out active without preprocessing
+    // (the holdout arm): no seat is asked on that arm, so the early answers
+    // are dropped and the session keeps its stored model, as with the seats
+    // off. The triage rule is no seat and stays.
+    const gateDropsEarlySeats = Boolean(earlySeats) && requestGate.active && !requestGate.preprocess
+    if (gateDropsEarlySeats) this.log(`[${task.agentId}] request gate active without preprocessing: early model seat answers dropped for ${channel}:${chatId}`)
+    const seats = gateDropsEarlySeats && earlySeats
+      ? {
+          triage: earlySeats.triage,
+          routedModelPending: Promise.resolve(earlySeats.triage?.downgraded ? earlySeats.triage.model : undefined),
+          edgeRoutePending: Promise.resolve(undefined),
+        }
+      : earlySeats ?? startModelSeats(requestGate)
+    const { triage, routedModelPending, edgeRoutePending } = seats
     let routedModelSettled = false
     routedModelPending.then(() => { routedModelSettled = true })
-
-    // The other direction: a job the task-edge seat is sure about moves UP
-    // to the edge model for this job only, and may be told to use
-    // sub-agents (agents/edge-routing.ts). Asked alongside the downgrade
-    // above, with the same exclusions: a model named on the task (a cron
-    // override), a triage run and an isolated run are left alone.
-    const edgeRoutePending: Promise<EdgeRouteResult | undefined> =
-      !task.model && !triage?.downgraded && !isolated
-      && (state.def.tier === "claude-code" || state.def.tier === "codex-cli")
-      && edgeSeatOn()
-      && (!requestGate.active || requestGate.preprocess)
-        ? (async () => {
-            try {
-              return await step("route-edge", () => routeTaskEdge({
-                message: task.message,
-                agent: task.agentId,
-                channel,
-                tier: state.def.tier,
-                isFollowUp: Boolean(resumeSessionId),
-                agentPrompt: state.def.systemPrompt ?? null,
-                edgeModel: edgeModelForEngine(state.def.tier, this.config.decisions.routing),
-                currentModel: state.def.model ?? null,
-                // Only a message a person wrote is read for implied work:
-                // a cron, a webhook or another agent says what it wants.
-                impliedWork: isHumanFacingTurn(task.context as any)
-                  ? this.config.decisions.routing.impliedWork
-                  : "off",
-              }))
-            } catch {
-              /* never let this decision stop a task */
-              return undefined
-            }
-          })()
-        : Promise.resolve(undefined)
     let edgeRouteSettled = false
     edgeRoutePending.then(() => { edgeRouteSettled = true })
 
@@ -3629,9 +3719,22 @@ export class AgentRegistry {
     // mistake is the stronger model. That holds when the agent is already
     // configured on the edge model too (#1864): the downgrade is dropped.
     if (!edgeRouteSettled) traceStep("route-edge")
-    const edgeRoute = await edgeRoutePending
+    const askedEdgeRoute = await edgeRoutePending
+    // A session that goes on keeps its model (#2001): the edge answer's
+    // model is dropped, its implied-work line and sub-agent hint stay.
+    const heldUpgrade = Boolean(resumeSessionId && storedModel && askedEdgeRoute?.model && !sameModel(askedEdgeRoute.model, storedModel))
+    if (heldUpgrade) {
+      this.log(`[${task.agentId}] edge upgrade held for ${channel}:${chatId} (${warmResume ? "warm" : "cold"}, idle ${Math.round((priorIdleMs ?? 0) / 1000)}s, stored=${storedModel}, wanted=${askedEdgeRoute!.model}, task ${traceTaskId})`)
+    }
+    const edgeRoute = heldUpgrade ? heldEdgeRoute(askedEdgeRoute!) : askedEdgeRoute
     const edgePlan = edgePlanFor(edgeRoute, { tier: state.def.tier, claudeArgs })
     const jobModel = jobModelFor(edgeRoute, routedModel)
+    // The turn always names its model, so a warm process on another model
+    // is respawned (staleHandleReason) and the model is stored with the
+    // session. A resume runs on the session's model (#2001, condition 1);
+    // a new session on the model the check chose, else as routed.
+    const turnModel = task.model
+      ?? (resumeSessionId ? resumeModel(storedModel, jobModel, state.def.model) : modelRotatedTo ?? jobModel ?? state.def.model)
     const downgradeDropped = Boolean(routedModel) && jobModel !== routedModel
     if (edgeRoute && (edgeRoute.upgraded || edgeRoute.subagents || downgradeDropped || (edgeRoute.impliedP ?? 0) >= IMPLIED_AT)) {
       this.log(`[${task.agentId}] ${edgeRouteLog(edgeRoute, routedModel)}`)
@@ -3641,7 +3744,7 @@ export class AgentRegistry {
       ...task, systemPromptAppend,
       ...(claudeArgs ? { claudeArgs } : {}),
       ...(ownClaudeMd ? { ownClaudeMd } : {}),
-      ...(jobModel ? { model: jobModel } : {}),
+      ...(turnModel ? { model: turnModel } : {}),
       ...(edgePlan.subagentModel ? { subagentModel: edgePlan.subagentModel } : {}),
       ...(edgePlan.turnNote ? { turnNote: edgePlan.turnNote } : {}),
     }
@@ -4013,15 +4116,17 @@ export class AgentRegistry {
         this.sessions.addAgentMessage(task.agentId, channel, chatId, response.content)
         onAgentReply({ agent: task.agentId, channel, chatId, request: task.message, reply: response.content, taskId: traceTaskId })
 
-        // Store native CLI session IDs for future resume.
+        // Store native CLI session IDs for future resume, with the model
+        // the turn asked for (#2001).
+        const ranOn = modelToStore(taskWithSystemPrompt.model, response.billedModel)
         if (response.claudeSessionId) {
-          this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId)
+          this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId, ranOn)
         }
         if (response.codexSessionId) {
-          this.sessions.setCodexSessionId(task.agentId, channel, chatId, response.codexSessionId)
+          this.sessions.setCodexSessionId(task.agentId, channel, chatId, response.codexSessionId, ranOn)
         }
         if (response.opencodeSessionId) {
-          this.sessions.setOpenCodeSessionId(task.agentId, channel, chatId, response.opencodeSessionId)
+          this.sessions.setOpenCodeSessionId(task.agentId, channel, chatId, response.opencodeSessionId, ranOn)
         }
 
         // Record this turn's usage so next task can decide whether to rotate:

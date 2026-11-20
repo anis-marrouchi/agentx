@@ -91,10 +91,10 @@ db
 
 db
   .command("rotations")
-  .description("session rotation events (stale | tier-2 | max-turns)")
+  .description("session rotation events (stale | tier-2 | max-turns | continuity | cost | model)")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("-a, --agent <id>", "filter by agent id")
-  .option("-r, --reason <r>", "stale | tier-2 | max-turns")
+  .option("-r, --reason <r>", "stale | tier-2 | max-turns | continuity | cost | model")
   .option("-n, --limit <n>", "max rows", "20")
   .option("--summary", "group by agent + reason")
   .option("--json", "emit JSON")

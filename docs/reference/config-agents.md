@@ -544,6 +544,29 @@ To try it without changing anything:
 4. If the lines that say `would start fresh` are conversations you would not miss, set the mode to `"active"` and save.
 5. **Terminal:** after a few days, run `agentx usage channels --from <first day> --to <last day> --baseline before.json` and compare the cost per task on the busy channels.
 
+### One model per session
+
+An agent's *session* is the conversation the engine (Claude Code, Codex or OpenCode) keeps for one chat, and picks up again on the next message. Each session runs on one model from start to end. Changing the model in the middle would make the engine read the whole conversation again at full price, because the provider's cache (its short-term store of the conversation) belongs to one model.
+
+The model is chosen when a session starts and saved with it. On later messages:
+
+- **Picked up within the hour** (the cache is still there): the session keeps its model. If the task-edge decision says the message needs the edge model, the move is *held*: the agent answers on its current model, and the daemon log says so. Its other advice (the implied-request line, the sub-agent hint) still applies.
+- **Picked up after more than an hour** (the cache has expired): the model decisions are asked again. When they answer with another model, a new session starts on that model. When a decision fails or times out, the session keeps its model.
+- **A model named on the task** (`agentx exec -m`, a schedule's `model`) that differs from the session's: a new session starts on that model.
+- **A session on a cheaper model** (from a triage event or the task-tier decision) whose next message the task-edge decision is sure needs the edge model: a new session starts on the edge model, even within the hour.
+
+A new session for a model change is a *rotation* with the reason `model`. Like every rotation, it starts with a short note on the earlier conversation and its recent messages, so the agent does not start blind.
+
+When you change an agent's `model` in `agentx.json`, open sessions keep their model until they rotate for any reason (an hour of silence followed by a decision, `session.staleMinutes`, size or turn limits). A session that sits idle for `session.staleMinutes` (12 hours by default) always starts fresh, on the model configured then.
+
+There is no setting: the rule is always on.
+
+To see it work:
+
+1. **Terminal:** run `agentx db rotations --reason model`. Each row is a session that started fresh because the model changed.
+2. **Terminal:** run `agentx daemon logs | grep "model changed for"`. Each line names the chat and the old and new model, for example `model changed for telegram:chat-1 (claude-opus-5-5 → claude-fable-5-2): new session`.
+3. **Terminal:** run `agentx daemon logs | grep "edge upgrade held"`. Each line is a message that stayed on its session's model although the task-edge decision wanted the edge model. It shows whether the cache was warm, how long the chat was idle, the session's model (`stored=`), the model that was wanted and the task id.
+
 ## processPool
 
 How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and OpenCode use fixed limits.
@@ -578,6 +601,7 @@ A process is not stopped for being quiet while it still has work of its own: a b
 9. **Terminal:** with `headersEnv` or `allowTools` on a tool server, run `agentx doctor`. A line `N MCP server(s) with header variables, all set` shows the keys were found. Open the agent's `.mcp.json`: the header reads `${CONNECTOR_API_KEY}`, not the key itself.
 10. **Terminal:** after a `claude-code` agent calls a write tool of a server with `allowTools`, run `agentx daemon logs`. A line `guard: <agent> asked to run mcp__<server>__<tool>: card <card id> waits for the owner` shows the card was raised. The card is in **Approvals** on the dashboard.
 11. **Terminal:** after an agent proposed an org chart change and you said yes, run `agentx daemon logs`. A line `[org] <card id>: applied: …` shows the daemon applied it, and `.agentx/org-proposals/<card id>.json` says `"status": "applied"`.
+12. **Terminal:** after a chat that had been quiet for more than an hour gets a hard message, run `agentx daemon logs | grep -E "model changed for|edge upgrade held"`. A `model changed for` line shows a new session started on the edge model; an `edge upgrade held` line shows a session kept its model. `agentx db rotations --reason model` lists the new sessions.
 
 ## If something is wrong
 
@@ -593,7 +617,9 @@ A process is not stopped for being quiet while it still has work of its own: a b
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **An agent's background work stops halfway, and the daemon log shows `killed idle` for that agent a few minutes after its last reply:** update AgentX. Earlier versions stopped a warm process `maxIdleSeconds` after the last question, even while its background tasks were still running. If the log shows `killed stale` with `stale with background work`, the work ran longer than `processPool.maxBackgroundSeconds` (3 hours by default): raise it.
-- **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
+- **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`. After the restart, a chat that already has a session keeps its old model until that session rotates (see [One model per session](#one-model-per-session)).
+- **A hard message stayed on the agent's usual model:** look for `edge upgrade held` in `agentx daemon logs`. The chat was picked up within the hour, so the session kept its model on purpose. The next message after an hour of silence can move it. If a task needs the stronger model now, run it with the model named: `agentx exec -a <agent id> -m <model> "<task>"`.
+- **`model changed for` lines appear on every message of one chat:** something names a different model on each task, for example a schedule with `model` set and a person writing in the same chat. Give the schedule its own chat, or remove its `model`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
 - **A label or close event still runs on the agent's own model:** check the daemon log. A run that used the triage model logs `triage event (labeled) → <model>`. If it is missing, the run also collected another action (such as `opened`), the issue's conversation ran within the last hour, or the model does not start with `claude-` (for `claude-code` agents) or `gpt-` (for `codex-cli` agents).
 - **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.

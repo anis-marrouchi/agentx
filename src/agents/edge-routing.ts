@@ -16,16 +16,15 @@ import { channelKeepsConfiguredModel } from "./routing"
 // otherwise. Seat off, seat in shadow, backend unreachable, an answer
 // under the threshold, no edge model named: all of them change nothing.
 //
-// The edge model is set on the task, not on the agent, so there is no
-// "switch back" step to forget: the next job is built from the agent's
-// own model again. A warm process is respawned when the model differs
-// (process-registry.ts staleHandleReason), in both directions.
-//
-// Follow-ups are not excluded, unlike the downgrade in routing.ts. The
-// prompt cache is per model, so the edge model reads the session once at
-// the uncached price. That is the cost of a job the seat is sure about,
-// and the downgrade's arithmetic (save money or do nothing) does not
-// apply to a move made for quality.
+// One model per session (#2001): the model is fixed when a session starts
+// and stored with it (sessions.ts sessionModel). On a warm resume this
+// seat is still asked, for the implied-work line and the sub-agent hint,
+// but its model answer is held: the session keeps its model and the
+// registry logs "edge upgrade held". The move up happens only when a new
+// session starts: a fresh chat, a cold resume (idle past the cache
+// lifetime) where the seat answered, or a warm session that sits on a
+// cheap or triage model. The registry decides that in its rotation block
+// (session-model.ts); this file only answers the question.
 //
 // Sub-agents: Claude Code can already start them, and AgentX never asked
 // it to. When the seat says the job splits into independent parts, the
@@ -120,6 +119,9 @@ export interface EdgeRouteResult {
   impliedP?: number | null
   /** P(the fix needs a design change), or null when not asked. */
   designChange?: number | null
+  /** "answered": an active seat gave an answer. "failed": the seat was
+   *  asked and threw or timed out. Unset: not asked, or in shadow (#2001). */
+  seat?: "answered" | "failed"
   reason: string
 }
 
@@ -145,8 +147,9 @@ export interface EdgeRouteOptions extends TaskEdgeInput {
 export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteResult> {
   let pImplied: number | null = null
   let pDesign: number | null = null
-  const keep = (reason: string, pEdge: number | null = null, pSub: number | null = null): EdgeRouteResult => ({
+  const keep = (reason: string, pEdge: number | null = null, pSub: number | null = null, seat?: "answered" | "failed"): EdgeRouteResult => ({
     upgraded: false, subagents: false, needsEdge: pEdge, subagentsHelp: pSub,
+    ...(seat ? { seat } : {}),
     ...(pImplied !== null || pDesign !== null ? { impliedWork: false, impliedP: pImplied, designChange: pDesign } : {}),
     reason,
   })
@@ -172,9 +175,9 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
       },
     )
   } catch {
-    return keep("edge seat threw — keeping the agent's model")
+    return keep("edge seat threw — keeping the agent's model", null, null, "failed")
   }
-  if (!result) return keep("edge seat unavailable — keeping the agent's model")
+  if (!result) return keep("edge seat unavailable — keeping the agent's model", null, null, "failed")
 
   const answers = result.answers as Record<string, { noul?: unknown } | undefined>
   const pEdge = probability(answers.needsEdge?.noul)
@@ -217,10 +220,11 @@ export async function routeTaskEdge(opts: EdgeRouteOptions): Promise<EdgeRouteRe
     const why = !wantsEdge
       ? "the agent's model is enough"
       : "needs the edge model, but none is configured"
-    return keep(`${why} (${shown})${impliedShadow}`, pEdge, pSub)
+    return keep(`${why} (${shown})${impliedShadow}`, pEdge, pSub, "answered")
   }
 
   return {
+    seat: "answered",
     ...(edgeModel ? { model: edgeModel } : {}),
     upgraded: canUpgrade,
     subagents: wantsSubagents,
