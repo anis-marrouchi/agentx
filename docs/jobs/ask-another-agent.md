@@ -126,7 +126,7 @@ If the agent on this machine is busy with other work, a queued message waits in 
 
 Add `"async": false` to the request body to wait for the answer, as in older versions. Such a request waits up to 25 minutes for a busy agent to be free.
 
-Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`.
+Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`. A hand-off with a `dlg-` id uses a finer check instead: the same message from the same conversation, on the same home, joins the first one while it is still running, and a new run starts once it has ended. See [What happens when the same message is sent twice](../reference/a2a.md#what-happens-when-the-same-message-is-sent-twice).
 
 An agent working for another agent sees a chat ID such as `a2a:helper-a:helper-b:dlg-…`: the agent that asked comes first, then the one asked. A message posted to `POST /send` with `"channel": "a2a"` and that chat ID goes to the other agent in it, exactly as a `/send/agent` would. Put the sending agent in `"agentId"`; without it, the message goes to the agent that asked. For example, from a script run by `helper-b` (terminal):
 

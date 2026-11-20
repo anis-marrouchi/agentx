@@ -75,6 +75,36 @@ Who may read a hand-off:
 
 `GET /a2a/delegations/<id>/reply` is something else: the reply the asking agent sent back to a person on the phone app, kept for a day for the conversation thread.
 
+## What happens when the same message is sent twice
+
+An agent sometimes sends the same hand-off again, for example after its tool call timed out. AgentX runs it only once.
+
+Two sends count as **the same** when all five match:
+
+- the agent that asks,
+- the agent that does the work,
+- the work's home (the issue or merge request named in `home`, or none),
+- the conversation the asking agent sends from,
+- the full message text.
+
+While the first hand-off is still `running`, the second send starts nothing. It gets back the first hand-off's id, with `"duplicate": true`:
+
+```json
+{ "accepted": true, "mode": "callback", "taskId": "dlg-example", "agent": "helper", "duplicate": true,
+  "note": "Already handed off as task dlg-example; this repeat started nothing. ..." }
+```
+
+The answer still comes back once, to the conversation that asked. A duplicate does not count against the [hand-off budget](../jobs/ask-another-agent.md) and adds nothing to the Activity page.
+
+When the work is new:
+
+- **A different message** is new work, even on the same home. It gets its own hand-off, and the two run one after the other, as before.
+- **The same text from another conversation** of the same agent runs again. The daemon log says so once for each such send: `same text already open from another chat (...) as dlg-...; runs again (N since start)`. N counts these sends since the daemon started.
+- **A hand-off that has ended** frees its message: sending it again starts a new run. This includes a hand-off that ended `waiting` on something, such as a review.
+- **One exception:** a hand-off that ended `waiting` with `kind` `continue` (the agent carries on later by itself) keeps its message until its due time, or for 10 minutes after it ended when it gave no due time. A resend inside that time gets the same id with `"duplicate": true`, so the same job does not run twice.
+
+This applies to hand-offs with a `dlg-` id. A machine without the database (`/health` shows `handoffs: "memory-only"`) keeps the older check: the same message from the same sender to the same agent within 10 minutes gets the first task id back.
+
 ## Serve the standalone A2A protocol
 
 The standalone command starts a separate provider-backed server. It does not select a named daemon agent. Configure and authenticate the chosen provider first:
@@ -109,7 +139,8 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 3. **Terminal:** send the `POST /task` request above. It prints the agent's answer as JSON.
 4. **Terminal:** run `curl -s http://127.0.0.1:18800/a2a/delegations`. The newest hand-offs are listed, also after AgentX restarts. Take an `id` and its `caller` from the list and run `curl -s "http://127.0.0.1:18800/a2a/delegations/<id>?as=<caller>"`. It prints the status and, once it has ended, the answer in `text`.
 5. **Terminal:** for a hand-off that ended `error`, read it as in step 4. The text `empty answer from <agent>` means that agent ended its run with nothing at all. Any other text is the real failure.
-6. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
+6. **Terminal:** while a hand-off from an agent is still `running`, have that agent send the same message again from the same conversation. The answer has the same `taskId` and `"duplicate": true`, and `GET /a2a/delegations` lists only one hand-off for it. The daemon log shows `the same message again ... joined`.
+7. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 
 ## If something is wrong
 
@@ -123,4 +154,6 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **A hand-off ended `error` with `empty answer from <agent>`:** that agent ended its run without an answer, a job state, a waiting note or a message back. Open its run on the Hub's **Activity** page to see why it stopped. Then ask it again, or check that its instructions tell it to answer or to state its job's state.
 - **A hand-off ended `done` but its text is `(empty answer)`:** the agent that did the work wrote back to the asking agent during the work, or stated `done`, and then ended without a final answer. What it wrote earlier is the answer: look for it in the asking agent's conversation.
 - **A hand-off has no `text`:** it is still `running`, or it ended before this version of AgentX kept answers.
+- **A resend got `"duplicate": true` but you wanted a second run:** the first hand-off with that exact message is still `running` (or carries on as `continue`). Wait for it to end, or change the message.
+- **The same message ran twice:** check that both sends came from the same conversation and named the same `home`. A different conversation or home is new work. If they match, look in the daemon log for `duplicate guard off for this send`: the database could not record the hand-off, so the check was skipped for that send.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.
