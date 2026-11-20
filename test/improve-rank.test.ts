@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import Database from "better-sqlite3"
 import { recordSignal } from "../src/improve/signals"
-import { applyMerge, groupSignals, normalizeDetail, rankSignals, readRanking, saveRanking } from "../src/improve/rank"
+import { applyMerge, byRank, groupSignals, normalizeDetail, rankSignals, readRanking, saveRanking } from "../src/improve/rank"
 import { canSpend, recordSpend, spentToday, CALL_ESTIMATE_USD } from "../src/improve/budget"
 import { improvePass } from "../src/improve/nightly"
 import { improveConfigSchema } from "../src/daemon/config"
@@ -152,5 +152,23 @@ describe("improvePass", () => {
     saveRanking(db, [g], T)
     saveRanking(db, [{ ...g, key: "k2", members: ["k2"] }], T + 1000)
     expect(readRanking(db, "2026-11-08").map((r) => r.key)).toEqual(["k2"])
+  })
+})
+
+describe("cost rows per group per day (#1995, S1)", () => {
+  it("6 cost rows of one group in a day count as 5; failure rows are not capped", () => {
+    for (let i = 0; i < 6; i++) recordSignal(db, { kind: "context_rewrite", agentId: "builder", ref: `01RUN${i}`, detail: `job cron nightly: rewrite ${60 + i}k of ${61 + i}k` }, T + i * 60_000)
+    // The next day is a day of its own.
+    recordSignal(db, { kind: "context_rewrite", agentId: "builder", ref: "01RUNX", detail: "job cron nightly: rewrite 70k of 71k" }, T + 86_400_000)
+    for (let i = 0; i < 6; i++) recordSignal(db, { kind: "request_stalled", agentId: "builder", ref: `req-${i}`, detail: "went quiet" }, T + i)
+    expect(groupSignals(db, T - 1, T + 3_600_000).find((g) => g.kind === "context_rewrite")).toMatchObject({ rows: 5, score: 5 })
+    expect(groupSignals(db, T - 1).find((g) => g.kind === "context_rewrite")).toMatchObject({ rows: 6, score: 6 })
+    expect(groupSignals(db, T - 1).find((g) => g.kind === "request_stalled")).toMatchObject({ rows: 6 })
+  })
+
+  it("3 owner reopens still rank above a day of rewrites", () => {
+    for (let i = 0; i < 40; i++) recordSignal(db, { kind: "context_rewrite", agentId: "builder", ref: `01RUN${i}`, detail: "job cron nightly: rewrite 60k of 61k" }, T + i * 60_000)
+    for (let i = 0; i < 3; i++) recordSignal(db, { kind: "owner_reopened", agentId: "builder", ref: `req-r${i}`, detail: `no ${i}` }, T + i)
+    expect(groupSignals(db, T - 1).sort(byRank)[0].kind).toBe("owner_reopened")
   })
 })

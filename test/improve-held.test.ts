@@ -10,7 +10,7 @@ import type { ApprovalSettings } from "../src/approvals/sweep"
 import { approvalsConfigSchema, improveConfigSchema } from "../src/daemon/config"
 import type { RetroProposal } from "../src/retro/retro"
 import { recordSignal } from "../src/improve/signals"
-import { groupKey, normalizeDetail } from "../src/improve/rank"
+import { groupKey, groupSignals, normalizeDetail, readRanking, saveRanking } from "../src/improve/rank"
 import { problemSignature } from "../src/improve/handoff"
 import { checkHeld, notHeldNote, pickedFixes } from "../src/improve/held"
 import { improvePass } from "../src/improve/nightly"
@@ -45,11 +45,11 @@ function stalls(n: number, from: number, tag: string) {
 }
 
 /** A self-improvement card for the problem, its first fix picked at `pickedAt`. */
-function picked(pickedAt: number, choice: 1 | 2 = 1) {
+function picked(pickedAt: number, choice: 1 | 2 = 1, key = KEY) {
   const r = createCard(tmp, {
     title: "Builder requests go quiet", ask: "What should change so this can't happen again?", recommend: "A watchdog",
     choices: ["Watchdog on quiet requests", "None of these"], if_silent: "discard", raised_by: "builder",
-  }, { settings: approvals, origin: { kind: "retro", taskId: "T-x", signature: problemSignature(KEY) } })
+  }, { settings: approvals, origin: { kind: "retro", taskId: "T-x", signature: problemSignature(key) } })
   if (!r.ok) throw new Error(r.error)
   const d = decideCard(tmp, r.card.id, "yes", { choice, now: pickedAt })
   if (!d.ok) throw new Error(d.error)
@@ -126,5 +126,87 @@ describe("the nightly pass", () => {
     const next = listCards(tmp, "pending")
     expect(next).toHaveLength(1)
     expect(next[0].context).toMatch(new RegExp(`^The fix picked on card:${first} .* did not lower this: 2 in the 7 days before, 2 in the 7 after\\. again$`))
+  })
+})
+
+// #1995: a fix picked on a cost problem holds only when tokens per run of
+// the problem's job types went down AND the owner's reopens did not go up.
+
+const REWRITE = "job workflow release-notes: rewrite 60k of 61k"
+const COST_KEY = groupKey("context_rewrite", "builder", normalizeDetail("context_rewrite", REWRITE))
+
+/** A finished run of `workflowId` with `total` tokens, started at `at`. */
+function run(workflowId: string, total: number, at: number): string {
+  const id = recordTraceStart(db, { agentId: "builder", channel: "workflow", chatId: `workflow:run-${at}`, workflowId })
+  recordTraceEnd(db, id, { status: "ok", inputTokens: 10, outputTokens: 0, cacheReadTokens: total - 10, cacheCreateTokens: 0 })
+  db.prepare("UPDATE task_traces SET started_at = ?, finished_at = ? WHERE task_id = ?").run(at, at + 60_000, id)
+  return id
+}
+
+function rewrites(refs: string[], from: number) {
+  refs.forEach((ref, i) => recordSignal(db, { kind: "context_rewrite", agentId: "builder", ref, detail: REWRITE }, from + i * 60_000))
+}
+
+function reopens(n: number, from: number) {
+  for (let i = 0; i < n; i++) recordSignal(db, { kind: "owner_reopened", agentId: "builder", ref: `req-o${from}-${i}`, detail: "not done" }, from + i)
+}
+
+describe("checkHeld for a cost problem", () => {
+  it("holds when tokens per run went down and reopens went from 0 to 1", () => {
+    const now = Date.now()
+    const pick = now - 8 * DAY
+    const before = [0, 1, 2].map((i) => run("release-notes", 200_000, pick - (3 + i) * DAY))
+    for (let i = 0; i < 3; i++) run("release-notes", 100_000, pick + (1 + i) * DAY)
+    rewrites(before, pick - 2 * DAY)
+    reopens(1, pick + DAY)
+    picked(pick, 1, COST_KEY)
+    const [h] = checkHeld(db, tmp, now)
+    expect(h).toMatchObject({ verdict: "held", cost: { jobTypes: 1, tokensBefore: 200_000, tokensAfter: 100_000, reopensBefore: 0, reopensAfter: 1, failed: [] } })
+  })
+
+  it("does not hold when tokens went down but reopens went up, and the note says which", () => {
+    const now = Date.now()
+    const pick = now - 8 * DAY
+    const before = [0, 1, 2].map((i) => run("release-notes", 200_000, pick - (3 + i) * DAY))
+    for (let i = 0; i < 3; i++) run("release-notes", 100_000, pick + (1 + i) * DAY)
+    rewrites(before, pick - 2 * DAY)
+    reopens(1, pick - DAY)
+    reopens(3, pick + DAY)
+    const id = picked(pick, 1, COST_KEY)
+    const checks = checkHeld(db, tmp, now)
+    expect(checks[0]).toMatchObject({ verdict: "not-held", cost: { reopensBefore: 1, reopensAfter: 3, failed: ["reopens"] } })
+    expect(notHeldNote(checks, [COST_KEY])).toMatch(new RegExp(`^The fix picked on card:${id} .* did not lower this: tokens per run 200k before, 100k after; owner reopens 1 before, 3 after \\(reopens went up\\)\\.$`))
+  })
+
+  it("does not hold when tokens per run did not go down", () => {
+    const now = Date.now()
+    const pick = now - 8 * DAY
+    const before = [0, 1, 2].map((i) => run("release-notes", 100_000, pick - (3 + i) * DAY))
+    for (let i = 0; i < 3; i++) run("release-notes", 120_000, pick + (1 + i) * DAY)
+    rewrites(before, pick - 2 * DAY)
+    picked(pick, 1, COST_KEY)
+    expect(checkHeld(db, tmp, now)[0]).toMatchObject({ verdict: "not-held", cost: { failed: ["tokens"] } })
+  })
+
+  it("finds the job types from every signal row in the before window, not only the saved sample (C1)", () => {
+    const now = Date.now()
+    const pick = now - 8 * DAY
+    // Five newest refs: release-notes, flat. Oldest ref: weekly-digest, which fell a lot.
+    const flat = [0, 1, 2, 3, 4].map((i) => run("release-notes", 100_000, pick - (2 + i * 0.1) * DAY))
+    for (let i = 0; i < 5; i++) run("release-notes", 100_000, pick + (1 + i * 0.1) * DAY)
+    const old = run("weekly-digest", 700_000, pick - 6 * DAY)
+    run("weekly-digest", 100_000, pick + 2 * DAY)
+    rewrites([old], pick - 5 * DAY)
+    rewrites(flat, pick - DAY)
+    // The night before the pick saved the group with its five newest refs.
+    saveRanking(db, groupSignals(db, pick - 7 * DAY, pick), pick - 2 * 3_600_000)
+    const [saved] = readRanking(db)
+    expect(saved.refs).toBe(6)
+    expect(saved.sampleRefs).toHaveLength(5)
+    expect(saved.sampleRefs).not.toContain(old)
+    picked(pick, 1, COST_KEY)
+    const [h] = checkHeld(db, tmp, now)
+    expect(h).toMatchObject({ verdict: "held", cost: { jobTypes: 2, failed: [] } })
+    expect(h.cost!.tokensAfter).toBeLessThan(h.cost!.tokensBefore)
   })
 })
