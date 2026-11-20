@@ -7,8 +7,10 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd, listTraces } from "../src/storage/traces"
 import { readSignals, setSignalDb, SIGNAL_KINDS, SIGNAL_MEANING } from "../src/improve/signals"
 import { KIND_WEIGHT, normalizeDetail } from "../src/improve/rank"
+import { readFileSync } from "fs"
 import {
-  costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory,
+  costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory, queueCostSignals, CACHE_LIFETIME_MS,
+  baselineQuery, lastAgentRunQuery, chatPrevQuery, jobRunsQuery,
   type CostRun, type CostHistory,
 } from "../src/improve/cost"
 import type { CallUsage } from "../src/daemon/token-tracker"
@@ -56,7 +58,7 @@ describe("the four kinds", () => {
   })
 
   it("a normal run is silent, with every history a run can have", () => {
-    expect(kinds(normal(), { pastTotals: past(20, 130_000), lastAgentRun: { finishedAt: NOW - 2 * MIN, model: OPUS }, sessionPrevModel: OPUS })).toEqual([])
+    expect(kinds(normal(), { pastTotals: past(20, 130_000), lastAgentRun: { finishedAt: NOW - 2 * MIN, model: OPUS }, chatPrev: { finishedAt: NOW - 2 * MIN, model: OPUS } })).toEqual([])
   })
 })
 
@@ -74,6 +76,13 @@ describe("job_cost_high", () => {
     expect(kinds(run([call(20_000, 1_000)]), { pastTotals: past(10, 5_000) })).toEqual([])
     expect(kinds(big(), { pastTotals: past(9, 100_000) })).toEqual([])
   })
+
+  it("is judged only for a job with an identity, a cron job or a workflow, never a chat (review item 4)", () => {
+    const chat = { ...big(), channel: "telegram", chatId: "12345" }
+    expect(kinds(chat, { pastTotals: past(10, 10_000) })).toEqual([])
+    const wf = { ...big(), channel: "workflow", chatId: "workflow:run-1", workflowId: "release-notes" }
+    expect(kinds(wf, { pastTotals: past(10, 100_000) })).toEqual(["job_cost_high"])
+  })
 })
 
 describe("start_no_cache_reuse", () => {
@@ -86,9 +95,10 @@ describe("start_no_cache_reuse", () => {
     expect(s[0].detail).toBe("job cron nightly-report: fresh start wrote 40k, last run 2 min ago")
   })
 
-  it("is silent when resumed, when the last run is older than 5 min, on another model, or when it read from cache", () => {
+  it("is silent when resumed, when the last run is older than the 60 min cache lifetime, on another model, or when it read from cache", () => {
     expect(kinds({ ...fresh(), resumed: true }, recent)).not.toContain("start_no_cache_reuse")
-    expect(kinds(fresh(), { lastAgentRun: { finishedAt: NOW - 7 * MIN, model: OPUS } })).toEqual([])
+    expect(kinds(fresh(), { lastAgentRun: { finishedAt: NOW - 70 * MIN, model: OPUS } })).toEqual([])
+    expect(kinds(fresh(), { lastAgentRun: { finishedAt: NOW - 31 * MIN, model: OPUS } })).toEqual(["start_no_cache_reuse"])
     expect(kinds(fresh(), { lastAgentRun: { finishedAt: NOW - 3 * MIN, model: HAIKU } })).toEqual([])
     expect(kinds(fresh(), { lastAgentRun: null })).toEqual([])
     expect(kinds(run([call(5_000, 40_000)]), recent)).toEqual([])
@@ -102,9 +112,22 @@ describe("context_rewrite", () => {
     expect(s[0].detail).toBe("job cron nightly-report: rewrite 60k of 60k")
   })
 
-  it("counts the first call of a resumed run, not of a new one", () => {
-    expect(kinds(run([call(0, 50_000)], { resumed: true }))).toEqual(["context_rewrite"])
-    expect(kinds(run([call(0, 50_000)]))).toEqual([])
+  it("counts the first call of a resumed run within the cache lifetime of the chat's previous run, not of a new one", () => {
+    const warm = { chatPrev: { finishedAt: NOW - 20 * MIN, model: OPUS } }
+    expect(kinds(run([call(0, 50_000)], { resumed: true }), warm)).toEqual(["context_rewrite"])
+    expect(kinds(run([call(0, 50_000)]), warm)).toEqual([])
+  })
+
+  it("does not count a resumed run's first call after the cache expired, or with no previous run known (review item 2)", () => {
+    expect(kinds(run([call(0, 50_000)], { resumed: true }), { chatPrev: { finishedAt: NOW - 90 * MIN, model: OPUS } })).toEqual([])
+    expect(kinds(run([call(0, 50_000)], { resumed: true }), { chatPrev: null })).toEqual([])
+    expect(kinds(run([call(0, 50_000)], { resumed: true }))).toEqual([])
+    // A later call that rewrites is still waste, whatever the gap.
+    expect(kinds(run([call(0, 50_000), call(0, 52_000)], { resumed: true }), { chatPrev: { finishedAt: NOW - 90 * MIN, model: OPUS } })).toEqual(["context_rewrite"])
+  })
+
+  it("uses one cache lifetime of 60 minutes", () => {
+    expect(CACHE_LIFETIME_MS).toBe(60 * MIN)
   })
 
   it("is silent for a small context or a partial write", () => {
@@ -121,8 +144,8 @@ describe("model_switch", () => {
   })
 
   it("fires when a resumed run is on another model than the session's previous run", () => {
-    expect(kinds(run([call(40_000, 500)], { resumed: true }), { sessionPrevModel: HAIKU })).toEqual(["model_switch"])
-    expect(kinds(run([call(40_000, 500)], { resumed: true }), { sessionPrevModel: OPUS })).toEqual([])
+    expect(kinds(run([call(40_000, 500)], { resumed: true }), { chatPrev: { finishedAt: NOW - 90 * MIN, model: HAIKU } })).toEqual(["model_switch"])
+    expect(kinds(run([call(40_000, 500)], { resumed: true }), { chatPrev: { finishedAt: NOW - 2 * MIN, model: OPUS } })).toEqual([])
   })
 })
 
@@ -209,7 +232,46 @@ describe("readCostHistory", () => {
     const fresh = run([call(0, 40_000)], { channel: "telegram", chatId: "c-2" })
     expect(readCostHistory(db, fresh, NOW).lastAgentRun).toMatchObject({ model: HAIKU })
     const resumed = run([call(40_000, 500)], { channel: "telegram", chatId: "c-1", resumed: true, resumeSessionId: "sess-a" })
-    expect(readCostHistory(db, resumed, NOW).sessionPrevModel).toBe(HAIKU)
+    expect(readCostHistory(db, resumed, NOW).chatPrev).toMatchObject({ model: HAIKU })
+  })
+
+  it("does not read a chat job type's baseline, and looks back at most a day for the previous run", () => {
+    trace({ channel: "telegram", chat: "c-1", total: 50_000, ago: 2 * 86_400_000, model: HAIKU })
+    const big = run([call(400_000, 2_000)], { channel: "telegram", chatId: "c-1", resumed: true })
+    const h = readCostHistory(db, big, NOW)
+    expect(h.pastTotals).toBeUndefined()
+    expect(h.chatPrev).toBeNull()
+  })
+})
+
+describe("the cost queries use the agent index (review item 1)", () => {
+  const plan = (q: { sql: string; args: unknown[] }) =>
+    (db.prepare(`EXPLAIN QUERY PLAN ${q.sql}`).all(...q.args) as Array<{ detail: string }>).map((r) => r.detail).join(" | ")
+
+  it("every query reads idx_traces_agent_started, bounded by started_at", () => {
+    const r = run([call(0, 40_000)], { resumed: true, chatId: "cron:nightly-report" })
+    const jt = jobTypeOf("builder", "cron", "cron:nightly-report", null)
+    for (const q of [baselineQuery(r, NOW), lastAgentRunQuery(r), chatPrevQuery(r), jobRunsQuery(jt, NOW - 86_400_000, NOW)]) {
+      expect(q.sql).toMatch(/started_at >= \?/)
+      expect(plan(q)).toMatch(/idx_traces_agent_started/)
+    }
+  })
+})
+
+describe("emission after the reply (review item 1)", () => {
+  it("queueCostSignals records nothing in the caller's turn, and records on the next tick", async () => {
+    setSignalDb(db)
+    queueCostSignals(run([call(40_000, 1_000), call(0, 60_000)]), NOW)
+    expect(readSignals(db, 0)).toEqual([])
+    await new Promise((r) => setImmediate(r))
+    expect(readSignals(db, 0).map((s) => s.kind)).toEqual(["context_rewrite"])
+  })
+
+  it("the registry queues cost signals after the reply is recorded, and never runs them inline", () => {
+    const src = readFileSync(path.join(__dirname, "../src/agents/registry.ts"), "utf8")
+    expect(src).not.toMatch(/\bemitCostSignals\(/)
+    const queued = src.indexOf("queueCostSignals(")
+    expect(queued).toBeGreaterThan(src.indexOf("onAgentReply({ agent: task.agentId"))
   })
 })
 

@@ -188,14 +188,28 @@ describe("checkHeld for a cost problem", () => {
     expect(checkHeld(db, tmp, now)[0]).toMatchObject({ verdict: "not-held", cost: { failed: ["tokens"] } })
   })
 
+  it("compares the median of the runs that were not flagged, so picking the costly runs does not make a fix look good (review item 5)", () => {
+    const now = Date.now()
+    const pick = now - 8 * DAY
+    const flagged = [0, 1, 2].map((i) => run("release-notes", 300_000, pick - (3 + i) * DAY))
+    for (let i = 0; i < 3; i++) run("release-notes", 100_000, pick - (3.5 + i) * DAY)
+    for (let i = 0; i < 3; i++) run("release-notes", 100_000, pick + (1 + i) * DAY)
+    run("release-notes", 900_000, pick + 4 * DAY) // one outlier after: the median ignores it
+    rewrites(flagged, pick - 2 * DAY)
+    picked(pick, 1, COST_KEY)
+    expect(checkHeld(db, tmp, now)[0]).toMatchObject({ verdict: "not-held", cost: { tokensBefore: 100_000, tokensAfter: 100_000, failed: ["tokens"] } })
+  })
+
   it("finds the job types from every signal row in the before window, not only the saved sample (C1)", () => {
     const now = Date.now()
     const pick = now - 8 * DAY
     // Five newest refs: release-notes, flat. Oldest ref: weekly-digest, which fell a lot.
     const flat = [0, 1, 2, 3, 4].map((i) => run("release-notes", 100_000, pick - (2 + i * 0.1) * DAY))
-    for (let i = 0; i < 5; i++) run("release-notes", 100_000, pick + (1 + i * 0.1) * DAY)
+    for (let i = 0; i < 2; i++) run("release-notes", 100_000, pick - (3 + i * 0.1) * DAY)
+    for (let i = 0; i < 2; i++) run("release-notes", 100_000, pick + (1 + i * 0.1) * DAY)
     const old = run("weekly-digest", 700_000, pick - 6 * DAY)
-    run("weekly-digest", 100_000, pick + 2 * DAY)
+    for (let i = 0; i < 3; i++) run("weekly-digest", 400_000, pick - (5 + i * 0.1) * DAY)
+    for (let i = 0; i < 3; i++) run("weekly-digest", 50_000, pick + (2 + i * 0.1) * DAY)
     rewrites([old], pick - 5 * DAY)
     rewrites(flat, pick - DAY)
     // The night before the pick saved the group with its five newest refs.
