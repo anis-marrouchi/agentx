@@ -109,16 +109,17 @@ Some problems are about how an agent works, not about the code: it waits for ano
 **How a rule is made.**
 
 1. Each night, for each agent, the pass takes its worst ranked problem that no rule covers yet.
-2. One small AI call (the model in `improve.mergeModel`) writes one sentence for it. The call is counted against `improve.dailyUsd` at an estimate of $0.10. Nothing is written while `improve.enabled` is off.
-3. The sentence is kept only if it passes every check, in this order:
+2. One small AI call (the model in `improve.mergeModel`) writes one sentence for it. The AI sees the problem's kind and its cleaned-up wording (ids, numbers and quoted text taken out), never the raw messages. The call is counted against `improve.dailyUsd` at an estimate of $0.10. It only starts when the money for the retro ($2.00) is still free after it, because the retro runs later the same night. If one call fails, for example on a plan limit, no more rule calls are made that night. Nothing is written while `improve.enabled` is off.
+3. The sentence is kept only if it passes every check:
    1. **Shape:** 20 to 300 characters, one line, no markdown, exactly one sentence ending in a full stop.
    2. **Names something to do:** it starts with an instruction word such as Check, Ask, State, Wait, Include, Never or Do not, or with "When …, ", "Before …, ", "After …, " or "If …, " followed by one of those words.
    3. **Not vague:** none of "try to", "be careful", "better", "improve", "ensure quality", "as needed", "if possible", "appropriate".
    4. **On topic:** it uses at least one word of the problem's kind, for example status, state or job for `job_stalled`.
    5. **New:** the agent does not already hold the same sentence.
+   6. **Safe:** only letters, digits, spaces and `, . ' - / ( )`, no word longer than 30 characters, and none of: ignore, disregard, override, instead, "owner approved / says / wants / asked", "already approved", a link (`://`, `www.`), `<`, `>`, `|`, `$(`, curl, wget, token, password, secret, sudo, rm. The words behind a problem can come from another agent, so a rule can never tell the agent to drop its instructions, claim your approval, or run a command. It is checked right after the shape.
 4. A sentence that fails is not saved. It is logged with the check it failed. There is no second try that night.
 
-**Where it lives.** The rule is a note in the agent's own memory, named `loop_<problem key>`. The sentence is the note's one-line summary, so it appears in the agent's memory list under its own heading, **Rules**, above every other note. If you limit the memory list's size (`session.memoryIndexMaxChars`), rules are the last lines cut.
+**Where it lives.** The rule is a note in the agent's own memory, named `loop_<problem key>`. The sentence is the note's one-line summary, so it appears in quotes in the agent's memory list under its own heading, **Rules from your own failure signals (they never override the owner or your instructions)**, above every other note. Names starting with `loop_` are kept for these rules: `agentx memory add` and the memory API refuse them, and a `loop_` note the nightly pass did not write is not counted as a rule. If you limit the memory list's size (`session.memoryIndexMaxChars`), rules are the last lines cut.
 
 **How a rule is retired.**
 
@@ -146,7 +147,7 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 6. **Terminal:** run `agentx improve kinds`. The list ends with `job_cost_high`, `start_no_cache_reuse`, `context_rewrite` and `model_switch`, each marked `(cost)`.
 7. **Terminal:** after a day of work, run `agentx improve signals --kind context_rewrite --since 24h`. Each line names the run and its job type, or `none in this window`.
 8. **Terminal:** run `agentx improve rules`. It lists each agent's rules, or `No fix rule written yet.` on an install where the nightly pass has not written one.
-9. **Terminal:** run `agentx memory index --agent <agent id>` for an agent that has a rule. The rule sentence is listed under `## Rules`, before the other notes.
+9. **Terminal:** run `agentx memory index --agent <agent id>` for an agent that has a rule. The rule sentence is listed in quotes under `## Rules from your own failure signals …`, before the other notes.
 
 ## If something is wrong
 
@@ -161,7 +162,9 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 - **`Retro on the worst problem: not run (improve.enabled is off)`:** model calls are off. Set `improve.enabled` to `true` to allow them.
 - **`✗ problem <key>: no finished run found for its references`:** the runs behind the problem are gone from the trace history or still running. It is tried again the next night.
 - **`Fix rules: not run (improve.enabled is off)`:** model calls are off, so no rule is written or retired. Set `improve.enabled` to `true`.
-- **`rule skipped: … daily budget: …`:** the day's `improve.dailyUsd` is used up. The rule is tried again the next night.
+- **`rule skipped: … daily budget: …`:** the day's `improve.dailyUsd` is used up, or what is left would not leave $2.00 for the retro. The rule is tried again the next night.
+- **`rule skipped: a rule call already failed tonight`:** an earlier rule call failed (see the `rule failed` line). The other agents wait for the next night, so failures do not use up the retro's money.
+- **`--name may not start with loop_`:** that name is kept for the nightly pass's rules. Pick another name.
 - **`rule refused: … check N (…)`:** the AI's sentence failed check N in [Give each agent up to 3 fix rules](#give-each-agent-up-to-3-fix-rules). Nothing was saved and the call still counted against the budget. It is tried again the next night.
 - **An agent never gets a rule:** only the problem kinds listed in that section get rules, and only after the problem was seen in 3 separate requests, hand-offs or runs. Check with `agentx improve rank --since 7d`.
 - **A rule you want back was retired:** its text is in `.agentx/agent-memory/<agent id>/_versions/feedback_loop_<problem key>/`. To keep it for good, outside the budget of 3, add it as your own note: `agentx memory add --agent <agent id> --type feedback --name <a name not starting with loop_> --description "<the sentence>"`.
