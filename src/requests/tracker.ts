@@ -9,6 +9,7 @@ import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from
 import type { OwnerCheckSettings } from "./owner-check"
 import type { CloseProofSettings } from "./close-proof"
 import type { JobWakeSettings } from "@/jobs/wake"
+import { queueOwnerSubjectSignal } from "@/improve/bayan"
 import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
@@ -246,7 +247,13 @@ export class RequestTracker {
       }
       if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender, p.operator === true) || this.isListedOwner(p))) return
       // The owner writing again answers a question caught in the last reply.
-      this.catcher?.ownerTurnStarted(p.agentId, p.channel, p.chatId, p.taskId!)
+      const waitingQuestions = this.catcher?.ownerTurnStarted(p.agentId, p.channel, p.chatId, p.taskId!) ?? 0
+      // "What is this about?" after the agent's reply (#1998): checked on a
+      // later tick, never in this turn's way.
+      queueOwnerSubjectSignal({
+        taskId: p.taskId!, agentId: p.agentId, channel: p.channel, chatId: p.chatId,
+        text: p.requestText ?? p.fullMessage ?? p.messagePreview, startedAt: now, waitingQuestions,
+      })
       // So does a wait the agent set itself, with no caught question (#1520).
       if (this.settings().releaseOnOwnerTurn !== false) {
         for (const id of this.store.releaseOwnerWaits(p.agentId, p.channel, p.chatId, now)) {

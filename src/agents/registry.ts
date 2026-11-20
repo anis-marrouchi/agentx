@@ -38,6 +38,8 @@ import { isQuietAnswer } from "@/crons/quiet"
 import { withoutExitMarker } from "@/crons/exit-check"
 import { emitSignal } from "@/improve/signals"
 import { queueCostSignals } from "@/improve/cost"
+import { queueAwarenessSignals, type RunEnd } from "@/improve/awareness"
+import { queueBayanSignals } from "@/improve/bayan"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
@@ -1537,17 +1539,46 @@ export class AgentRegistry {
     if (needsJobState(this.config.jobState, channel) && !task.jobStateAsk) {
       task = { ...task, message: JOB_STATE_RULE + task.message }
     }
-    if (!key) return this.runWithRecovery(task, onDelta, onThinking, onEvent)
+    if (!key) {
+      const startedAt = Date.now()
+      const response = await this.runWithRecovery(task, onDelta, onThinking, onEvent)
+      this.queueRunSignals(task, response, startedAt)
+      return response
+    }
     const entry = await this.workLanes.enter(task.agentId, key, currentRoot()?.rootId, task.callerSignal)
     let response: AgentResponse = { content: "", error: "run did not end" }
+    let run = task
+    const startedAt = Date.now()
     try {
-      const run = entry.note ? { ...task, message: entry.note + task.message } : task
+      run = entry.note ? { ...task, message: entry.note + task.message } : task
       response = await this.runWithRecovery(run, onDelta, onThinking, onEvent)
-      return response
     } finally {
       const queued = !!response.error && isQueued(response.error)
       entry.release({ text: response.error ? response.error : response.content ?? "", ok: !response.error, ran: !queued })
     }
+    // Outside the finally: nothing here can change the lane's release.
+    this.queueRunSignals(run, response, startedAt)
+    return response
+  }
+
+  /** Awareness (#1997) and Bayan (#1998) checks of a finished run, on a
+   *  later tick, after the reply. An errored run, a run answered by a
+   *  peer, and the job-state question are not judged. Never throws. */
+  private queueRunSignals(task: AgentTask, response: AgentResponse, startedAt: number): void {
+    try {
+      if (response.error || response.viaMesh || task.jobStateAsk) return
+      const taskId = task.taskId ?? task.runningTaskId
+      if (!taskId) return
+      const ctx = (task.context ?? {}) as Record<string, unknown>
+      const str = (v: unknown) => (typeof v === "string" ? v : undefined)
+      const run: RunEnd = {
+        taskId, agentId: task.agentId, channel: str(ctx.channel), chatId: str(ctx.chatId), sender: str(ctx.sender),
+        content: response.content, jobState: response.jobState, startedAt,
+      }
+      const isAgent = (id: string) => !!this.getAgent(id)
+      queueAwarenessSignals(run, isAgent)
+      queueBayanSignals(run, isAgent)
+    } catch { /* a signal never changes the reply */ }
   }
 
   private async runWithRecovery(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {

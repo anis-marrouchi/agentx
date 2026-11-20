@@ -10,7 +10,7 @@ import { KIND_WEIGHT } from "@/improve/rank"
 import { COST_KIND_SET } from "@/improve/cost"
 import { reviewWithClaudeCost } from "@/daemon/session-monitor"
 import { AgentMemory } from "@/agents/agent-memory"
-import { RULE_BUDGET, rulesReport } from "@/improve/rules"
+import { RULE_BUDGET, retireRulesOfKinds, rulesReport } from "@/improve/rules"
 
 // --- agentx improve — self-improvement, stage 1: count failure signals (#1783) ---
 
@@ -165,10 +165,19 @@ improve
   .description(`the fix rules the nightly pass wrote into each agent's memory (at most ${RULE_BUDGET} per agent), with their signal and verdict, and the last retirements`)
   .option("--agent <id>", "one agent only")
   .option("--json", "print as JSON")
-  .action((opts: { agent?: string; json?: boolean }) => {
+  .option("--retire-kind <kind>", "retire every rule written for this signal kind, on every agent (the rollback of a kind)")
+  .action((opts: { agent?: string; json?: boolean; retireKind?: string }) => {
     if (!existsSync(findConfigPath())) { console.error(chalk.red("  no agentx.json here: run this from the install folder, the one that holds agentx.json")); process.exitCode = 1; return }
     const db = openDb()
     if (!db) { process.exitCode = 1; return }
+    if (opts.retireKind) {
+      if (!(SIGNAL_KINDS as readonly string[]).includes(opts.retireKind)) { console.error(chalk.red(`  unknown kind "${opts.retireKind}": see agentx improve kinds`)); process.exitCode = 1; return }
+      const out = retireRulesOfKinds(db, new AgentMemory(), [opts.retireKind])
+      if (opts.json) { console.log(JSON.stringify(out, null, 2)); return }
+      if (!out.length) { console.log(chalk.dim(`  No rule written for ${opts.retireKind}.`)); return }
+      for (const r of out) console.log(`  retired ${r.agentId} ${r.key}`)
+      return
+    }
     const report = rulesReport(db, new AgentMemory(), Date.now(), opts.agent)
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
     if (!report.length) { console.log(chalk.dim(opts.agent ? `  No fix rule for ${opts.agent} yet.` : "  No fix rule written yet.")); return }

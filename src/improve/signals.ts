@@ -28,6 +28,13 @@ export const SIGNAL_KINDS = [
   "start_no_cache_reuse",
   "context_rewrite",
   "model_switch",
+  // Awareness signals (#1997): an agent acted without knowing the state.
+  "duplicate_session",
+  "stale_status_told",
+  // Bayan signals (#1998): an unclear hand-off or reply, on its sender.
+  "a2a_extra_rounds",
+  "clarification_asked",
+  "owner_asked_subject",
 ] as const
 export type SignalKind = (typeof SIGNAL_KINDS)[number]
 
@@ -36,7 +43,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   owner_reopened: "the owner reopened a closed request",
   owner_check_mismatch: "a close did not do what the owner asked (owner-words check)",
   request_stalled: "a request needs attention: failed, timed out, cut off or quiet",
-  handoff_refused: "a hand-off was refused (budget, cycle or permissions)",
+  handoff_refused: "a hand-off was refused (budget, cycle or permissions), or its receiver was blocked by missing information",
   delegation_failed: "a hand-off ended in error, timeout or lost",
   callback_repeat_skipped: "a helper's end repeated what it had already written",
   same_work_waited: "a run waited for another run of the same agent on the same request",
@@ -46,6 +53,11 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   start_no_cache_reuse: "a new session wrote its whole start again although the same agent ran on the same model minutes before",
   context_rewrite: "a call wrote 80% or more of its context to the cache again, instead of reading it",
   model_switch: "the main thread changed model inside a run, or a resumed session went on with another model",
+  duplicate_session: "two runs of one agent went ahead on the same request at once: the lane wait ran out",
+  stale_status_told: "an agent said it waits on another agent whose hand-off had already ended done",
+  a2a_extra_rounds: "a hand-off took more than one round before the receiver started the work",
+  clarification_asked: "the receiver of a hand-off asked back what was meant or missing instead of starting",
+  owner_asked_subject: "the owner asked what a reply was about",
 }
 
 export const DEDUPE_MS = 10 * 60_000

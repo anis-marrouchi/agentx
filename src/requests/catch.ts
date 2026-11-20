@@ -279,12 +279,16 @@ export class PromiseCatcher {
    *  closes (the new turn is followed on its own); one that was open
    *  before goes back to work, and so does a standing order (noqta#807):
    *  the owner's next turn answers its question, it does not end it. */
-  ownerTurnStarted(agentId: string, channel: string, chatId: string, runId: string): void {
+  ownerTurnStarted(agentId: string, channel: string, chatId: string, runId: string): number {
     const now = this.now()
-    for (const w of this.deps.log.waitingIn(agentId, channel, chatId)) {
+    // Read before they are closed: the count tells the Bayan check (#1998)
+    // that "which one?" answers the agent's own question.
+    const waits = this.deps.log.waitingIn(agentId, channel, chatId)
+    for (const w of waits) {
       if (w.opened && !this.deps.store.get(w.requestId)?.standing) this.deps.store.close(w.requestId, "done", `the owner answered in chat (run ${runId})`, now, null, OWNER_BY)
       else this.deps.store.progress(w.requestId, now)
     }
+    return waits.length
   }
 
   private async read(t: TurnEnd, reply: string, settings: CatchSettings): Promise<CatchKind | null> {

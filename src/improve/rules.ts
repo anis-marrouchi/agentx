@@ -33,10 +33,9 @@ const DAY_MS = 86_400_000
 /** A rule is at 0 when its group had no row for at least this long. */
 const ZERO_MS = DAY_MS
 
-// The two sources of rules share one budget. Kinds not recorded yet
-// (#1997 awareness, #1998 Bayan) are listed so a rule follows them the day
-// they land in SIGNAL_KINDS; the cost kinds (#1995) are fixed by code, not
-// by rules, and are in neither list.
+// The two sources of rules share one budget: awareness (#1997) and Bayan
+// (#1998). The cost kinds (#1995) are fixed by code, not by rules, and are
+// in neither list.
 export const AWARENESS_KINDS = ["duplicate_session", "stale_status_told", "same_work_waited", "callback_repeat_skipped", "job_stalled"] as const
 /** Bayan rules go to the sender: these kinds are recorded on the agent that
  *  sent the hand-off or the message. */
@@ -409,6 +408,27 @@ async function ruleForAgent(opts: RuleStageOptions, agentId: string, eligible: S
   memory.save({ agentId, type: "feedback", name: `${RULE_PREFIX}${g.key}`, description: check.text, body: ruleBody(signal), author: RULE_AUTHOR })
   logRule(db, { at: now, agentId, action: "add", key: g.key, reason: retired ? `replaces ${retired}` : null })
   outcomes.push({ agentId, key: g.key, result: "added", ...(retired ? { retired } : {}) })
+}
+
+// --- Rollback of a kind (#1997, #1998) ---
+
+/** Retire every rule whose signal counts one of `kinds`, on every agent
+ *  that ever took a rule, and log each one. For the rollback of a kind:
+ *  once its rows stop, checkRule would judge its rule "held" and keep it
+ *  in the agent's start context. */
+export function retireRulesOfKinds(db: Database.Database, memory: AgentMemory, kinds: string[], now = Date.now()): Array<{ agentId: string; key: string }> {
+  const wanted = new Set(kinds)
+  const out: Array<{ agentId: string; key: string }> = []
+  for (const agentId of ruleAgents(db)) {
+    for (const rule of listRules(memory, agentId, now)) {
+      const hit = rule.signal.kinds.find((k) => wanted.has(k))
+      if (!hit) continue
+      memory.remove(agentId, rule.name, undefined, "feedback")
+      logRule(db, { at: now, agentId, action: "retire", key: rule.signal.key, reason: `rollback: kind ${hit} retired` })
+      out.push({ agentId, key: rule.signal.key })
+    }
+  }
+  return out
 }
 
 // --- agentx improve rules ---

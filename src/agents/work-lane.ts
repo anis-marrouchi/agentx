@@ -81,6 +81,11 @@ export class WorkLanes {
       if (!h || (rootId && h.rootId === rootId)) break
       if (signal?.aborted || this.now() - start > waitMs) {
         this.opts.log?.(`[${agentId}] ${key}: going ahead beside a run still on it (waited ${Math.round((this.now() - start) / 1000)}s)`)
+        // The wait ran out: two runs now do the same work (#1997). A wait
+        // the caller cut short (abort) starts no second run of its own.
+        if (!signal?.aborted) {
+          emitSignal({ kind: "duplicate_session", agentId, ref: key, detail: `two runs on one request: the lane wait ran out after ${Math.round(waitMs / 60_000)} min` })
+        }
         break
       }
       if (!waited) {
