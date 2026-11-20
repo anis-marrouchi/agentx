@@ -13,7 +13,7 @@
 //   context_rewrite       a call wrote most of its context to the cache again
 //   model_switch          the main thread changed model
 //   start_over_budget     a fresh start's first call read more than
-//                         START_BUDGET_TOKENS: the start-size guard (#2009).
+//                         START_ALERT_TOKENS: the start-size guard (#2009).
 //                         It reports; it never blocks a run
 //
 // A job type is agent + channel + (workflow id | cron job id | nothing).
@@ -52,6 +52,12 @@ export const START_WRITE_MIN = 20_000
  *  write (#2009). Named exceptions (full starts about 20k until #2002
  *  step 3) live on the issue, not in config. */
 export const START_BUDGET_TOKENS = 15_000
+/** The line start_over_budget fires above, for now. Full starts are about
+ *  48-62k today, so a signal at the budget would fire on nearly every chat
+ *  start (about 400 rows a day, review of PR #2035). Until #2009 part 2
+ *  lands it catches regressions only; it is then lowered to
+ *  START_BUDGET_TOKENS. start_tokens is recorded for every fresh start. */
+export const START_ALERT_TOKENS = 64_000
 export const REWRITE_SHARE = 0.8
 export const REWRITE_MIN_CONTEXT = 20_000
 /** The most one cost problem scores in a ranking window, whatever its
@@ -200,7 +206,7 @@ export function costSignals(run: CostRun, history: CostHistory = {}): Signal[] {
   }
 
   const start = startTokens(run)
-  if (start !== null && start > START_BUDGET_TOKENS) add("start_over_budget", `fresh start ${k(start)}, budget ${k(START_BUDGET_TOKENS)}`)
+  if (start !== null && start > START_ALERT_TOKENS) add("start_over_budget", `fresh start ${k(start)}, budget ${k(START_BUDGET_TOKENS)}`)
   return out
 }
 

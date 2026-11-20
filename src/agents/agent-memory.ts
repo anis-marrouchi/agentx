@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs"
+import { execFileSync } from "child_process"
 import { resolve } from "path"
 import { atomicWrite, checkCondition, etagOf, readVersions, snapshot, type WriteCondition } from "./memory-versions"
 
@@ -89,6 +90,9 @@ export interface AgentMemoryOptions {
 
 export class AgentMemory {
   readonly baseDir: string
+  /** Workspace CLAUDE.md files git tracks, found once and logged once
+   *  (the daemon holds one AgentMemory). */
+  private readonly trackedClaudeMds = new Set<string>()
 
   constructor(opts: AgentMemoryOptions = {}) {
     const root = opts.baseDir ?? resolve(process.cwd(), ".agentx")
@@ -259,8 +263,10 @@ export class AgentMemory {
    *     CLAUDE.md is read into the cached system prompt, where a block that
    *     changes on every memory write rewrote the cache, and codex-cli,
    *     opencode and task worktrees never saw it. The index now reaches
-   *     each fresh start once, in the task text. Nothing outside the
-   *     markers is touched; a file without them is left as it is.
+   *     each fresh start once, in the task text. Only the marked text and
+   *     at most one adjoining blank line change; a file that held only the
+   *     block is left empty, not deleted. A file without the markers, or
+   *     one git tracks in that workspace (logged once), is left as it is.
    *
    *  Safe to call on any save / delete. */
   syncToWorkspace(agentId: string, workspacePath: string): void {
@@ -280,10 +286,21 @@ export class AgentMemory {
     const startIdx = existing.indexOf(MEMORY_BLOCK_START)
     const endIdx = existing.indexOf(MEMORY_BLOCK_END, startIdx)
     if (startIdx < 0 || endIdx < 0) return
-    const before = existing.slice(0, startIdx).replace(/\n+$/, "")
-    const after = existing.slice(endIdx + MEMORY_BLOCK_END.length).replace(/^\n+/, "").replace(/\n+$/, "")
-    const rest = [before, after].filter(Boolean).join("\n\n")
-    writeFileSync(claudePath, rest ? rest + "\n" : "")
+    // A tracked file is the repository's to change, not the daemon's.
+    // Checked once per daemon: a tracked file is not asked about again.
+    if (this.trackedClaudeMds.has(claudePath)) return
+    if (isGitTracked(workspacePath, "CLAUDE.md")) {
+      this.trackedClaudeMds.add(claudePath)
+      console.warn(`[agent-memory] ${claudePath} is tracked by git: its old AGENTX-MEMORY block was left in place; remove it by hand`)
+      return
+    }
+    let before = existing.slice(0, startIdx)
+    let after = existing.slice(endIdx + MEMORY_BLOCK_END.length)
+    // The end marker's own line break, then one adjoining blank line.
+    if (after.startsWith("\n")) after = after.slice(1)
+    if (after.startsWith("\n")) after = after.slice(1)
+    else if (before.endsWith("\n\n")) before = before.slice(0, -1)
+    writeFileSync(claudePath, before + after)
   }
 
   /** Regenerate MEMORY.md from the on-disk files. Called automatically
@@ -353,6 +370,17 @@ export function trimMemoryIndex(markdown: string, maxChars: number, note = MEMOR
   const left = total - entries
   const out = left > 0 ? [...kept, "", noteFor(left)] : kept
   return out.join("\n").replace(/^\n+/, "")
+}
+
+/** Whether git tracks `file` in `dir`. False when `dir` is not a git
+ *  checkout or git is not installed. */
+function isGitTracked(dir: string, file: string): boolean {
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", file], { cwd: dir, stdio: "ignore", timeout: 5_000 })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** The markers of the block older versions merged into a workspace

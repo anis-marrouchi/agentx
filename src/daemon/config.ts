@@ -3058,14 +3058,20 @@ export const daemonConfigSchema = z.object({
        *  `pullRequestActions` (or a project rule) let it through. */
       actions: z.array(z.string().min(1)).default(["labeled", "unlabeled", "closed"]),
     }).default({}),
-    /** Longest each memory index block may be in a fresh start's task
-     *  text (#615, #2009): the agent-memory index and Claude Code's
-     *  auto-memory MEMORY.md. Default 4000 characters; 0 shows them whole.
+    /** Longest the agent-memory index block may be in a fresh start's
+     *  task text (#615, #2009). Default 4000 characters; 0 shows it whole.
      *  Cut whole lines only; a closing line counts the entries left out
-     *  and names the file that holds them all (`.agentx-memory.md` in the
-     *  workspace, or the auto-memory MEMORY.md and its folder). Only the
-     *  rendered block is cut; the files stay whole. Read on every start. */
+     *  and names `.agentx-memory.md` in the workspace, which holds them
+     *  all. Only the rendered block is cut; the file stays whole. Claude
+     *  Code's auto-memory MEMORY.md is not cut (its newest notes come
+     *  last). Read on every start. */
     memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(4000),
+    /** Full claude-code starts fetch the agent landscape on demand
+     *  (#2009): a fresh start gets the [Context on demand] note instead of
+     *  the landscape; history and other chats stay pushed. Separate from
+     *  `lean.contextOnDemand`, which keeps its meaning for lean starts.
+     *  Off by default; takes a daemon restart. */
+    fullContextOnDemand: z.boolean().default(false),
     /** Resume or start fresh (#621, step 3). Before a claude-code session
      *  is resumed, compare what the coming turn costs when it replays the
      *  transcript with what a fresh lean start costs, and start fresh when

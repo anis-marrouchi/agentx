@@ -2564,10 +2564,11 @@ export class AgentRegistry {
     // demand: only its own message.
     const isolated = task.isolated === true
     const leanOnDemand = !isolated && sessionProfile === "lean" && lean.contextOnDemand
-    // A full Claude Code start fetches the landscape on demand too (#2009),
-    // behind the same switch; its history and other chats stay pushed.
-    // Only Claude Code: the full profile adds the agentx tools to it.
-    const fullLandscapeOnDemand = !isolated && sessionProfile === "full" && state.def.tier === "claude-code" && lean.contextOnDemand
+    // A full Claude Code start can fetch the landscape on demand too
+    // (#2009), behind its own switch (off by default); its history and
+    // other chats stay pushed. Only Claude Code: the full profile adds the
+    // agentx tools to it.
+    const fullLandscapeOnDemand = !isolated && sessionProfile === "full" && state.def.tier === "claude-code" && this.config.session.fullContextOnDemand
 
     // Improvement plan #8 — caller-driven session reset. Honour it before
     // seeding or recording the current inbound message; otherwise the fresh
@@ -4004,7 +4005,10 @@ export class AgentRegistry {
           if (gated) return gated
         }
         const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
-        const own = withClaudeMdFiles(local.task, local.def.workspace, claudeSources, undefined, this.config.session.memoryIndexMaxChars)
+        // Claude Code's auto-memory is not cut: it lists its newest notes
+        // last, and Claude Code's own 200-line rule is kept until the hand
+        // trim of #2002 step 4 (review of PR #2035).
+        const own = withClaudeMdFiles(local.task, local.def.workspace, claudeSources)
         // The two memory indexes, volatile, go first in the task text and
         // only on a fresh start: a resumed session already has them.
         const startMemory = local.fresh || !resumeSessionId ? [own.autoMemory, agentMemoryStart] : []

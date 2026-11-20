@@ -131,7 +131,8 @@ export const AUTO_MEMORY_MAX_LINES = 200
 /** MEMORY.md as Claude Code renders it, for the task text. Empty when the
  *  file does not exist. With `maxChars` > 0 only the rendered text is cut
  *  further (#2009, whole lines); its closing line names the file and the
- *  notes folder. The file itself stays whole. */
+ *  notes folder. The file itself stays whole. A start passes no cap: the
+ *  newest notes come last and a top-kept cut would hide them. */
 export function autoMemoryBlock(cwd: string, home = homedir(), maxChars = 0): string {
   const path = autoMemoryPath(cwd, home)
   const content = readText(path)
@@ -147,11 +148,11 @@ export function autoMemoryBlock(cwd: string, home = homedir(), maxChars = 0): st
  *  worktree when there is one, else the workspace) in front of its system
  *  prompt, and return MEMORY.md for the task text. Other tasks pass through. */
 export function withClaudeMdFiles<T extends { cwd?: string; systemPromptAppend?: string; ownClaudeMd?: boolean }>(
-  task: T, workspace: string | undefined, sources: SettingSource[], home = homedir(), memoryMaxChars = 0,
+  task: T, workspace: string | undefined, sources: SettingSource[], home = homedir(),
 ): { task: T; autoMemory: string } {
   const cwd = task.cwd ?? workspace
   if (!task.ownClaudeMd || !cwd) return { task, autoMemory: "" }
   const systemPromptAppend = [claudeMdBlock(cwd, sources, home), task.systemPromptAppend ?? ""]
     .filter((s) => s.trim().length > 0).join("\n\n") || undefined
-  return { task: { ...task, systemPromptAppend }, autoMemory: autoMemoryBlock(cwd, home, memoryMaxChars) }
+  return { task: { ...task, systemPromptAppend }, autoMemory: autoMemoryBlock(cwd, home) }
 }

@@ -342,7 +342,7 @@ describe("start_over_budget (#2009)", () => {
   it("is silent at today's usual full start (48k), on a resumed run, and with no per-call numbers (review item 2: no flood)", () => {
     const has = (r: CostRun) => costSignals(r).some((x) => x.kind === "start_over_budget")
     expect(has(run([call(30_000, 18_000), call(48_000, 500)]))).toBe(false)
-    expect(has(run([call(0, 64_000)]))).toBe(false)
+    expect(has(run([call(0, 63_000)]))).toBe(false)
     expect(has(run([call(90_000, 500)], { resumed: true }))).toBe(false)
     expect(has({ ...run([]), calls: undefined })).toBe(false)
   })
