@@ -68,7 +68,7 @@ The answer has these fields:
 Who may read a hand-off:
 
 - On this machine: a request that names the hand-off's asking agent or the agent that did the work in `as`.
-- Another machine: it needs the mesh token, and it can read only hand-offs given to one of its own agents (`as` names that agent).
+- Another machine: it needs a mesh token, and `as` names one of its own agents. With its own per-peer token it can read only hand-offs given to that machine. With the shared mesh token, the daemon cannot tell machines apart, so it can read any hand-off that went to another machine and was given to the agent it names. Give each machine its own token if that matters to you.
 - A request with the operator key (`.agentx/operator.key`, sent as the `X-AgentX-Operator` header) reads every hand-off.
 
 `GET /a2a/delegations/<id>/reply` is something else: the reply the asking agent sent back to a person on the phone app, kept for a day for the conversation thread.
