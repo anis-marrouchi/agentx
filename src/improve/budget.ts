@@ -15,15 +15,16 @@ import { expandEnvVars, improveConfigSchema } from "@/daemon/config"
 
 export type ImproveSettings = z.infer<typeof improveConfigSchema>
 /** `learn`: the weekly learned-templates run's drafting call (#1892
- *  phase 8). */
-export type SpendStage = "merge" | "retro" | "learn"
+ *  phase 8). `rule`: the nightly call that writes one agent's fix rule
+ *  (#1996). */
+export type SpendStage = "merge" | "retro" | "learn" | "rule"
 
 const DAY_MS = 86_400_000
 
 /** What one call is booked at before it runs, and after it when the CLI
  *  reports no cost. Deliberately high: a merge on a small model costs cents;
  *  a retro on the reviewer model a few dollars. */
-export const CALL_ESTIMATE_USD: Record<SpendStage, number> = { merge: 0.1, retro: 2, learn: 1 }
+export const CALL_ESTIMATE_USD: Record<SpendStage, number> = { merge: 0.1, retro: 2, learn: 1, rule: 0.1 }
 
 /** Book a call at its estimate before it starts (learned templates, #1892
  *  phase 8): a crash or a second caller during the call still sees it.

@@ -64,6 +64,16 @@ export interface MemoryVersion {
 
 const TYPES: MemoryType[] = ["user", "feedback", "project", "reference"]
 
+/** A `feedback` memory named `loop_…` is a fix rule written by the nightly
+ *  self-improvement pass (#1996). The index lists it once, under its own
+ *  `## Rules` section before every other one, so a capped index cuts the
+ *  rules last. */
+export const RULE_PREFIX = "loop_"
+
+export function isRuleMemory(r: Pick<MemoryRecord, "name" | "type">): boolean {
+  return r.type === "feedback" && r.name.startsWith(RULE_PREFIX)
+}
+
 export interface AgentMemoryOptions {
   baseDir?: string
 }
@@ -302,17 +312,18 @@ export class AgentMemory {
     const grouped: Record<MemoryType, MemoryRecord[]> = {
       user: [], feedback: [], project: [], reference: [],
     }
-    for (const r of entries) grouped[r.type].push(r)
+    const rules = entries.filter(isRuleMemory)
+    for (const r of entries) if (!isRuleMemory(r)) grouped[r.type].push(r)
 
     const lines: string[] = []
     lines.push(`# Memory — ${agentId}`, "")
     lines.push("This is the agent's experiential memory: user preferences,")
     lines.push("feedback, project-specific context, and external references.")
     lines.push("Updated via `agentx memory` CLI or by the agent itself.")
-    for (const type of TYPES) {
-      const group = grouped[type]
+    const sections: Array<[string, MemoryRecord[]]> = [["Rules", rules], ...TYPES.map((t) => [titleCase(t), grouped[t]] as [string, MemoryRecord[]])]
+    for (const [title, group] of sections) {
       if (!group.length) continue
-      lines.push("", `## ${titleCase(type)}`, "")
+      lines.push("", `## ${title}`, "")
       for (const r of group) {
         lines.push(`- **${r.name}** — ${r.description} _(updated ${r.updatedAt.slice(0, 10)})_`)
       }

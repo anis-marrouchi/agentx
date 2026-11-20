@@ -9,6 +9,8 @@ import { checkHeld, costLine, HELD_WINDOW_DAYS } from "@/improve/held"
 import { KIND_WEIGHT } from "@/improve/rank"
 import { COST_KIND_SET } from "@/improve/cost"
 import { reviewWithClaudeCost } from "@/daemon/session-monitor"
+import { AgentMemory } from "@/agents/agent-memory"
+import { RULE_BUDGET, rulesReport } from "@/improve/rules"
 
 // --- agentx improve — self-improvement, stage 1: count failure signals (#1783) ---
 
@@ -98,6 +100,13 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
     const line = `  ${h.verdict === "held" ? "✓ held" : "✗ did not hold"}: card:${h.cardId} "${h.choice.slice(0, 50)}" (${h.agentId}): ${h.cost ? costLine(h.cost) : `${h.before} before, ${h.after} after`}`
     console.log(h.verdict === "held" ? chalk.green(line) : chalk.yellow(line))
   }
+  if (r.rules) {
+    if (r.rules.why) console.log(chalk.dim(`  Fix rules: not run (${r.rules.why}).`))
+    for (const o of r.rules.outcomes) {
+      const line = `  rule ${o.result}: ${o.agentId} ${o.key}${o.retired ? ` (retired ${o.retired} to make room)` : ""}${o.why ? `: ${o.why.slice(0, 120)}` : ""}`
+      console.log(o.result === "added" || o.result === "kept" ? chalk.green(line) : o.result === "retired" ? chalk.yellow(line) : chalk.dim(line))
+    }
+  }
   if (r.handoff) {
     if (r.handoff.why) console.log(chalk.dim(`  Retro on the worst problem: not run (${r.handoff.why}).`))
     else console.log(chalk.dim(`  Retro on the worst problem: room for ${r.handoff.room} card(s) today (improve.maxCardsPerDay ${r.settings.maxCardsPerDay}).`))
@@ -146,5 +155,30 @@ improve
       console.log(`  ${day}  card:${h.cardId}  ${h.agentId.padEnd(18)} ${String(h.before).padStart(4)} before  ${String(h.after).padStart(4)} after  ${verdict}`)
       if (h.cost) console.log(chalk.dim(`      cost problem: ${costLine(h.cost)}`))
       console.log(chalk.dim(`      ${h.choice.slice(0, 110)}`))
+    }
+  })
+
+// --- agentx improve rules — one fix rule per agent, at most 3 (#1996) ---
+
+improve
+  .command("rules")
+  .description(`the fix rules the nightly pass wrote into each agent's memory (at most ${RULE_BUDGET} per agent), with their signal and verdict, and the last retirements`)
+  .option("--agent <id>", "one agent only")
+  .option("--json", "print as JSON")
+  .action((opts: { agent?: string; json?: boolean }) => {
+    if (!existsSync(findConfigPath())) { console.error(chalk.red("  no agentx.json here: run this from the install folder, the one that holds agentx.json")); process.exitCode = 1; return }
+    const db = openDb()
+    if (!db) { process.exitCode = 1; return }
+    const report = rulesReport(db, new AgentMemory(), Date.now(), opts.agent)
+    if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
+    if (!report.length) { console.log(chalk.dim(opts.agent ? `  No fix rule for ${opts.agent} yet.` : "  No fix rule written yet.")); return }
+    for (const a of report) {
+      console.log(chalk.bold(`\n  ${a.agentId}: ${a.rules.length} of ${RULE_BUDGET} rules`))
+      for (const r of a.rules) {
+        const verdict = r.verdict === "held" ? chalk.green("held") : r.verdict === "not-held" ? chalk.yellow(`did not hold (${r.why})`) : chalk.dim(`waiting, ${r.daysLeft} day(s) left`)
+        console.log(`  ${new Date(r.addedAt).toISOString().slice(0, 10)}  ${r.key}  ${r.before} before, ${r.after} after; owner signals ${r.ownerBefore}→${r.ownerAfter}  ${verdict}`)
+        console.log(chalk.dim(`      ${r.text}`))
+      }
+      for (const l of a.retired) console.log(chalk.dim(`  retired ${new Date(l.at).toISOString().slice(0, 10)}  ${l.key}: ${l.reason ?? ""}`))
     }
   })
