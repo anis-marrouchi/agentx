@@ -28,6 +28,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
   return { error: renderFriendlyError(friendly), errorKind: friendly.kind }
 }
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
+import { withOwnClaudeMd } from "./claude-md-chain"
 import type { AgentDef } from "@/daemon/config"
 import { noteCallUsage } from "@/daemon/token-tracker"
 import type { SeededMessage } from "@/channels/types"
@@ -216,6 +217,10 @@ export interface AgentTask {
    *  see agents/session-profile.ts). Spawn-per-task and persistent
    *  processes carry them alike. Ignored by other tiers. */
   claudeArgs?: string[]
+  /** The registry put Claude Code's instruction files in the prompt itself
+   *  (#2000, agents/claude-md-chain.ts), so the `claude` process must not
+   *  load them again. Spawn-per-task and persistent processes alike. */
+  ownClaudeMd?: boolean
   /** Routine autonomy level (cron job / workflow agent step). `report` and
    *  `propose` are enforced for THIS task only via a per-spawn guard hook
    *  (see guard/autonomy-enforce.ts); unset or `act` = the agent's normal
@@ -947,7 +952,7 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
+      const childEnv = withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd)
       let killed = false
       const proc = execFile("claude", args, {
         cwd: task.cwd ?? agent.workspace,
@@ -1110,7 +1115,7 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const spawnEnv = claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing)
+    const spawnEnv = withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd)
     const proc = execa("claude", args, {
       cwd: task.cwd ?? agent.workspace,
       timeout: streamTimeoutMs,
@@ -2121,6 +2126,7 @@ async function executeClaudeCodePersistent(
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
       extraArgs: task.claudeArgs,
+      ownClaudeMd: task.ownClaudeMd,
       subagentModel: task.subagentModel,
     })
     wasFreshSpawn = registry.list().length > before

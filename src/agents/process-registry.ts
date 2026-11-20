@@ -106,6 +106,9 @@ export interface SpawnOptions {
    *  session profile (AgentTask.claudeArgs). The process key already
    *  carries the channel, so one process never mixes profiles. */
   extraArgs?: string[]
+  /** AgentTask.ownClaudeMd: the prompt already carries the instruction
+   *  files, so the process must not load them (#2000). */
+  ownClaudeMd?: boolean
   /** Model for the sub-agents this process starts, set with an edge-model
    *  job (agents/edge-routing.ts). Unset: Claude Code's own choice. */
   subagentModel?: string
