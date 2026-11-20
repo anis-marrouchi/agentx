@@ -239,35 +239,34 @@ export class AgentMemory {
     return this.save({ agentId, type, name, description, body, ...by })
   }
 
-  /** The content of MEMORY.md — used at prompt-build time to inline into
-   *  the agent's system prompt. Returns "" when the agent has no
-   *  memories (so the prompt builder can no-op). With `maxChars` > 0 the
-   *  index is cut to that size (#615): whole lines only, and a closing line
-   *  says how many memories were left out and where the full index is. */
+  /** The content of MEMORY.md. Returns "" when the agent has no memories
+   *  (so the prompt builder can no-op). With `maxChars` > 0 the index is
+   *  cut to that size (#615): whole lines only, and a closing line says how
+   *  many memories were left out and where the full index is. A fresh
+   *  start shows it through `agentMemoryStartBlock` (#2009). */
   indexMarkdown(agentId: string, maxChars = 0): string {
     const path = this.indexPath(agentId)
     return trimMemoryIndex(safeRead(path) ?? "", maxChars)
   }
 
-  /** Push the agent's memory into its workspace so Claude Code sessions
-   *  pick it up automatically. Does two things:
+  /** Push the agent's memory into its workspace:
    *
-   *  1. Writes `<workspace>/.agentx-memory.md` — full MEMORY.md content,
-   *     explicit file the skill can `Read` at session start.
-   *  2. Merges that same content into `<workspace>/CLAUDE.md` between
-   *     sentinel comments so Claude Code auto-loads it into the cached
-   *     system context on every session. Idempotent: subsequent syncs
-   *     replace the sentinel block.
+   *  1. Writes `<workspace>/.agentx-memory.md`, the full MEMORY.md
+   *     content. It is what the capped block in a fresh start's task text
+   *     points at, and what the `remember` skill reads.
+   *  2. Removes the block older versions merged into `<workspace>/CLAUDE.md`
+   *     between the AGENTX-MEMORY markers (#2009 B1). The workspace
+   *     CLAUDE.md is read into the cached system prompt, where a block that
+   *     changes on every memory write rewrote the cache, and codex-cli,
+   *     opencode and task worktrees never saw it. The index now reaches
+   *     each fresh start once, in the task text. Nothing outside the
+   *     markers is touched; a file without them is left as it is.
    *
-   *  Never touches content outside the sentinel block — if the file
-   *  doesn't exist, creates it with just the sentinels. Safe to call
-   *  on any save / delete. */
-  syncToWorkspace(agentId: string, workspacePath: string, maxChars = 0): void {
+   *  Safe to call on any save / delete. */
+  syncToWorkspace(agentId: string, workspacePath: string): void {
     if (!workspacePath) return
     const full = this.indexMarkdown(agentId).trim()
 
-    // 1. Explicit file for the `remember` skill to Read if it wants to.
-    //    Always the whole index: it is what the capped block points at.
     const explicitPath = resolve(workspacePath, ".agentx-memory.md")
     if (full) {
       writeFileSync(explicitPath, full + "\n")
@@ -275,39 +274,16 @@ export class AgentMemory {
       unlinkSync(explicitPath)
     }
 
-    // 2. Sentinel-merged into CLAUDE.md for auto-inject, capped when the
-    //    operator set session.memoryIndexMaxChars (#615).
-    const memory = trimMemoryIndex(full, maxChars)
     const claudePath = resolve(workspacePath, "CLAUDE.md")
-    const start = "<!-- AGENTX-MEMORY-START — auto-managed by agentx; edit via `agentx memory` -->"
-    const end   = "<!-- AGENTX-MEMORY-END -->"
-    const block = memory
-      ? `${start}\n${memory}\n${end}`
-      : ""
-
-    const existing = safeRead(claudePath) ?? ""
-    const startIdx = existing.indexOf(start)
-    const endIdx   = existing.indexOf(end)
-
-    let next: string
-    if (startIdx >= 0 && endIdx > startIdx) {
-      // Replace existing sentinel block (or remove it if memory is empty).
-      const before = existing.slice(0, startIdx).replace(/\n+$/, "")
-      const after  = existing.slice(endIdx + end.length).replace(/^\n+/, "")
-      next = block
-        ? [before, block, after].filter(Boolean).join("\n\n") + "\n"
-        : [before, after].filter(Boolean).join("\n\n") + (before || after ? "\n" : "")
-    } else if (block) {
-      // No prior block — append to the end of CLAUDE.md (creates the file
-      // if needed). Keeps any existing content untouched.
-      next = existing
-        ? existing.replace(/\n+$/, "") + "\n\n" + block + "\n"
-        : block + "\n"
-    } else {
-      // Empty memory + no prior block → nothing to do.
-      return
-    }
-    writeFileSync(claudePath, next)
+    const existing = safeRead(claudePath)
+    if (existing === null) return
+    const startIdx = existing.indexOf(MEMORY_BLOCK_START)
+    const endIdx = existing.indexOf(MEMORY_BLOCK_END, startIdx)
+    if (startIdx < 0 || endIdx < 0) return
+    const before = existing.slice(0, startIdx).replace(/\n+$/, "")
+    const after = existing.slice(endIdx + MEMORY_BLOCK_END.length).replace(/^\n+/, "").replace(/\n+$/, "")
+    const rest = [before, after].filter(Boolean).join("\n\n")
+    writeFileSync(claudePath, rest ? rest + "\n" : "")
   }
 
   /** Regenerate MEMORY.md from the on-disk files. Called automatically
@@ -354,13 +330,13 @@ export const MEMORY_INDEX_CUT_NOTE = "memories not shown here. The full index is
  *  until the budget is spent; a type heading left with no entry under it
  *  is dropped; the closing note counts the entries left out. The budget
  *  includes that note, so the result never exceeds `maxChars`. */
-export function trimMemoryIndex(markdown: string, maxChars: number): string {
+export function trimMemoryIndex(markdown: string, maxChars: number, note = MEMORY_INDEX_CUT_NOTE): string {
   if (!maxChars || maxChars <= 0 || markdown.length <= maxChars) return markdown
   const lines = markdown.replace(/\n+$/, "").split("\n")
   const isEntry = (line: string) => line.startsWith("- ")
   const total = lines.filter(isEntry).length
   // The note is longest when every entry is left out; reserve for that.
-  const noteFor = (left: number) => `_(${left} more ${MEMORY_INDEX_CUT_NOTE})_`
+  const noteFor = (left: number) => `_(${left} more ${note})_`
   const reserve = noteFor(total).length + 2
   const kept: string[] = []
   let used = 0
@@ -377,6 +353,26 @@ export function trimMemoryIndex(markdown: string, maxChars: number): string {
   const left = total - entries
   const out = left > 0 ? [...kept, "", noteFor(left)] : kept
   return out.join("\n").replace(/^\n+/, "")
+}
+
+/** The markers of the block older versions merged into a workspace
+ *  CLAUDE.md. `syncToWorkspace` removes that block (#2009). */
+export const MEMORY_BLOCK_START = "<!-- AGENTX-MEMORY-START"
+export const MEMORY_BLOCK_END = "<!-- AGENTX-MEMORY-END -->"
+
+/** The default cap of a rendered memory index block, in characters
+ *  (#2009 Q4, `session.memoryIndexMaxChars`). The files stay whole. */
+export const MEMORY_INDEX_RENDER_MAX = 4000
+
+/** The agent memory index as a fresh start's task text shows it (#2009
+ *  B1): once, next to Claude Code's auto-memory block, for every engine.
+ *  Only this rendered block is capped, at `maxChars` (0 = whole); its
+ *  closing line names `fullPath`, the workspace's .agentx-memory.md. */
+export function agentMemoryStartBlock(index: string, fullPath: string, maxChars = MEMORY_INDEX_RENDER_MAX): string {
+  const md = index.trim()
+  if (!md) return ""
+  const body = trimMemoryIndex(md, maxChars, `memories not shown here. Read ${fullPath} for the full index.`)
+  return `<system-reminder>\nAgent memory index (your agentx memory; the full index is ${fullPath}):\n\n${body}\n</system-reminder>`
 }
 
 // --- Serialisation helpers ---------------------------------------------

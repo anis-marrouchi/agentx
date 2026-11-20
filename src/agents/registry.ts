@@ -29,7 +29,7 @@ import { injectedContextOf } from "./injected-context"
 import { Classifier, GraphStore, type ClassifyResult } from "@/graph"
 import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
-import { AgentMemory } from "./agent-memory"
+import { AgentMemory, agentMemoryStartBlock } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
@@ -3409,10 +3409,16 @@ export class AgentRegistry {
     // append-text and a new Claude cache key; that's by design — the rare
     // switch is worth a one-time cache-create cost.
     // AgentMemory — structured per-agent memory (user / feedback /
-    // project / reference). Inlined into the cacheable system prompt so
-    // it survives --resume and shows up on every turn. Empty when the
-    // agent has no memories yet — no prompt bloat for fresh agents.
-    const agentMemoryBlock = isolated ? "" : this.agentMemory.indexMarkdown(task.agentId, this.config.session.memoryIndexMaxChars)
+    // project / reference). Its index changes on every memory write, so it
+    // stays out of the cached system prompt and the workspace CLAUDE.md
+    // (#2009 B1): one copy, in the task text of a fresh start next to
+    // Claude Code's auto-memory block, for every engine. Empty when the
+    // agent has no memories yet. Rendered capped; the file stays whole.
+    const agentMemoryStart = isolated ? "" : agentMemoryStartBlock(
+      this.agentMemory.indexMarkdown(task.agentId),
+      state.def.workspace ? resolve(state.def.workspace, ".agentx-memory.md") : "`agentx memory index`",
+      this.config.session.memoryIndexMaxChars,
+    )
 
     // Context Surgery — Fix 4: code-first operating principle for coding-tier
     // agents. Cacheable (lives in the system-prompt prefix). Empty for non-
@@ -3508,7 +3514,6 @@ export class AgentRegistry {
       projectClaudeMd,
       projectRunbook,
       bootstrapContextText || "",
-      agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
 
     // Read here, after the planner may have dropped the session above.
@@ -3989,8 +3994,11 @@ export class AgentRegistry {
           if (gated) return gated
         }
         const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
-        const own = withClaudeMdFiles(local.task, local.def.workspace, claudeSources)
-        return executeTask(local.def, own.task, this.providers, wrappedOnDeltaWithThinkingClose, [local.fresh || !resumeSessionId ? own.autoMemory : "", historyContext].filter(Boolean).join("\n\n") || undefined, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        const own = withClaudeMdFiles(local.task, local.def.workspace, claudeSources, undefined, this.config.session.memoryIndexMaxChars)
+        // The two memory indexes, volatile, go first in the task text and
+        // only on a fresh start: a resumed session already has them.
+        const startMemory = local.fresh || !resumeSessionId ? [own.autoMemory, agentMemoryStart] : []
+        return executeTask(local.def, own.task, this.providers, wrappedOnDeltaWithThinkingClose, [...startMemory, historyContext].filter(Boolean).join("\n\n") || undefined, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
       }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
