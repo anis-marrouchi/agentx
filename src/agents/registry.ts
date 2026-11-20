@@ -3600,7 +3600,19 @@ export class AgentRegistry {
     // a fresh start, as before (#455). A cold resume, or a warm one on a
     // cheap or triage model, started them already at the model check in
     // the rotation block (#2001), so the answers are reused, not asked twice.
-    const seats = earlySeats ?? startModelSeats(requestGate)
+    // Unless the gate, unread then, turned out active without preprocessing
+    // (the holdout arm): no seat is asked on that arm, so the early answers
+    // are dropped and the session keeps its stored model, as with the seats
+    // off. The triage rule is no seat and stays.
+    const gateDropsEarlySeats = Boolean(earlySeats) && requestGate.active && !requestGate.preprocess
+    if (gateDropsEarlySeats) this.log(`[${task.agentId}] request gate active without preprocessing: early model seat answers dropped for ${channel}:${chatId}`)
+    const seats = gateDropsEarlySeats && earlySeats
+      ? {
+          triage: earlySeats.triage,
+          routedModelPending: Promise.resolve(earlySeats.triage?.downgraded ? earlySeats.triage.model : undefined),
+          edgeRoutePending: Promise.resolve(undefined),
+        }
+      : earlySeats ?? startModelSeats(requestGate)
     const { triage, routedModelPending, edgeRoutePending } = seats
     let routedModelSettled = false
     routedModelPending.then(() => { routedModelSettled = true })
@@ -4105,7 +4117,7 @@ export class AgentRegistry {
         onAgentReply({ agent: task.agentId, channel, chatId, request: task.message, reply: response.content, taskId: traceTaskId })
 
         // Store native CLI session IDs for future resume, with the model
-        // the turn ran on (#2001).
+        // the turn asked for (#2001).
         const ranOn = modelToStore(taskWithSystemPrompt.model, response.billedModel)
         if (response.claudeSessionId) {
           this.sessions.setClaudeSessionId(task.agentId, channel, chatId, response.claudeSessionId, ranOn)

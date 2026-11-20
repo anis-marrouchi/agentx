@@ -127,14 +127,14 @@ export function heldEdgeRoute(route: EdgeRouteResult): EdgeRouteResult {
 }
 
 /**
- * The model to store for a session after a turn: the one it ran on. That is
- * the billed model when the CLI reports another model than the one asked
- * (a fallback), else the name the turn asked for, so a dated id or an alias
- * does not look like a change next turn. Nothing is stored for an agent
- * with no model named: the engine default runs, as before.
+ * The model to store for a session after a turn: the one the turn asked
+ * for. Never the billed model: that is the most expensive entry of the
+ * CLI's usage report, which can be a side or sub-agent model, and storing
+ * it would pin every warm turn of the session to that model. `sameModel`
+ * handles dated ids and aliases where models are compared. Nothing is
+ * stored for an agent with no model named: the engine default runs, as
+ * before.
  */
-export function modelToStore(asked: string | undefined, billed: string | undefined): string | undefined {
-  if (!asked) return undefined
-  if (!billed || sameModel(asked, billed)) return asked
-  return billed
+export function modelToStore(asked: string | undefined, _billed?: string): string | undefined {
+  return asked || undefined
 }
