@@ -3478,7 +3478,7 @@ List recent traces (newest first).
 
 ### `agentx trace show <taskId>`
 
-Show one trace with its full ordered step log.
+Show one trace with its full ordered step log. For a new Claude Code conversation, a `start` line shows how many tokens its first call read (`startTokens` in `--json`); see [The size of a start](../jobs/failure-signals.md#the-size-of-a-start).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -3554,7 +3554,7 @@ Count the failure and cost signals: requests you reopened, closes that did not d
 
 ### `agentx improve kinds`
 
-List every signal kind with its weight in the ranking and what it means. The four cost kinds (`job_cost_high`, `start_no_cache_reuse`, `context_rewrite`, `model_switch`) end with `(cost)`. No flags. See [What is counted for cost](../jobs/failure-signals.md#what-is-counted-for-cost).
+List every signal kind with its weight in the ranking and what it means. The five cost kinds (`job_cost_high`, `start_no_cache_reuse`, `context_rewrite`, `model_switch`, `start_over_budget`) end with `(cost)`. No flags. See [What is counted for cost](../jobs/failure-signals.md#what-is-counted-for-cost).
 
 ### `agentx improve rank`
 
