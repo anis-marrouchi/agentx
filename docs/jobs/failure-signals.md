@@ -52,6 +52,14 @@ Some problems are not failures of the work but of what an agent knew or said. An
 
 A **hand-off** is one agent giving work to another. The hand-off signals are only recorded when both agents run on this install, and only for a hand-off AgentX tracks, with its own chat (`a2a:<sender>:<receiver>:dlg-…`). A message from an agent on another machine, or from a guest, is never counted against anyone.
 
+**Not counted yet.** In this version, these stay silent:
+
+- **Install with the end-of-run state off.** If `jobState` is off, nothing records `clarification_asked`, `handoff_refused` (missing information) or `a2a_extra_rounds`. These signals read the state the run ends with. See [Say where the work stands when a run ends](./end-of-run-state.md).
+- **Direct messages between agents.** About 3 in 10 agent-to-agent runs are direct messages, sent and answered at once, with no tracked hand-off. Their chat is the sender's name or `a2a:<sender>:<receiver>`, without `dlg-…`, and none of them is counted.
+- **A second round inside the same hand-off.** A round is only counted when the answer to a question back comes as a new hand-off. If the question and its answer stay inside the same hand-off's chat, the extra round is not counted.
+- **Claims that something is merged or live.** `stale_status_told` only checks waits on another agent.
+- **A wait while another hand-off is still out.** If the same two agents have any other hand-off still open or waiting from the last 24 hours, `stale_status_told` is not recorded. Even an older one counts, because the wait may be about that one.
+
 The phrases for "what is this about" are fixed in the code, in English, French, Arabic and Tunisian, for example "what is this about", "c'est quoi ça", "chnowa hedha", "شنوة هذا" and "ما هذا". A one-word form such as "which one?" counts only when it is the whole message.
 
 ## See the counts
@@ -163,7 +171,7 @@ A retired rule is removed from the agent's memory list. Its text is kept in the 
 **Retire every rule of one signal.** When a signal is taken out of the code, its rules must go too: with no more signals, a rule would look as if it worked and stay in the agent's start text.
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
-2. **Terminal:** run `agentx improve rules --retire-kind <signal>`, for example `agentx improve rules --retire-kind stale_status_told`. Each rule removed is printed as `retired <agent id> <problem key>`, or `No rule written for <signal>.` when there was none. Each one is a `retire` line in the rule log, with the reason `rollback: kind <signal> retired`.
+2. **Terminal:** run `agentx improve rules --retire-kind <signal>`, for example `agentx improve rules --retire-kind stale_status_told`. Each rule removed is printed as `retired <agent id> <problem key>`, or `No rule written for <signal>.` when there was none. Each one is a `retire` line in the rule log, with the reason `rollback: kind <signal> retired`. This always covers every agent: if you also pass `--agent`, a warning says it is ignored.
 
 ## How the stages fit
 
