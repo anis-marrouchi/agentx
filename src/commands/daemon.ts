@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import { AgentXDaemon } from "@/daemon"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
+import { installLogTimestamps } from "@/daemon/log-timestamps"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
@@ -106,6 +107,10 @@ daemon
       }
       return
     }
+
+    // Every stdout/stderr line from here on starts with its UTC time (#2006).
+    installLogTimestamps(process.stdout)
+    installLogTimestamps(process.stderr)
 
     // Single-instance guard — only one daemon can run at a time.
     // If another process is alive with the recorded PID, exit immediately.
