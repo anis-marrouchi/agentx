@@ -1319,3 +1319,69 @@ describe("the job's state a callee's run ended with (#1861)", () => {
     expect(readSignals(db, 0)).toEqual([])
   })
 })
+
+// #2007 B3: an empty answer is an error only when the callee stated no job
+// state, did not say it was waiting, and wrote nothing back to the caller.
+describe("an empty answer is an error only when nothing was said (#2007 B3)", () => {
+  it("is an error when the run is truly empty", () => {
+    expect(resultOfRun({ content: "" }, { callee: "worker" })).toEqual({ status: "error", text: "empty answer from worker" })
+    expect(resultOfRun({ content: "  \n " }, { callee: "worker" })).toEqual({ status: "error", text: "empty answer from worker" })
+    expect(resultOfRun({ content: "" }, { callee: "worker", peer: true, wrote: false })).toEqual({ status: "error", text: "empty answer from worker" })
+  })
+
+  it("is not an error when the run wrote an answer", () => {
+    expect(resultOfRun({ content: "ok" }, { callee: "worker" })).toEqual({ status: "done", text: "ok" })
+  })
+
+  it("is not an error when the run stated a job state", () => {
+    const r = resultOfRun({ content: "", jobState: { state: "done", proof: "PR #9" } }, { callee: "worker" })
+    expect(r).toMatchObject({ status: "done", state: { state: "done" } })
+    expect(r.text).not.toContain("empty answer from")
+  })
+
+  it("is not an error when the run said it was waiting", () => {
+    expect(resultOfRun({ content: "" }, { callee: "worker", said: { on: "the build" } })).toMatchObject({ status: "waiting", waiting: { on: "the build" } })
+  })
+
+  it("is not an error when the callee already wrote back to the caller", () => {
+    expect(resultOfRun({ content: "" }, { callee: "worker", wrote: true })).toMatchObject({ status: "done" })
+  })
+
+  it("a truly empty run comes back as an error and a failure signal", async () => {
+    const db = new Database(":memory:")
+    setSignalDb(db)
+    onTestFinished(() => { setSignalDb(null); db.close() })
+    const ends: any[] = []
+    const h = harness({ onDone: (rec, result) => ends.push({ id: rec.id, ...result }) })
+    const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Review this", kind: "send" })
+    h.local.resolve({ content: "" })
+    await flush()
+    expect(ends).toEqual([{ id: taskId, status: "error", text: "empty answer from builder" }])
+    expect(h.injected[0].message).toContain("status=error")
+    expect(readSignals(db, 0).map((r) => r.kind)).toEqual(["delegation_failed"])
+  })
+
+  it("a callee that wrote back, then ended empty, is done and said so", async () => {
+    const ends: any[] = []
+    const h = harness({ onDone: (rec, result) => ends.push({ id: rec.id, ...result }) })
+    const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Review this", kind: "send" })
+    h.mgr.relayReply(record, "Verdict: approved.")
+    await flush()
+    h.local.resolve({ content: "" })
+    await flush()
+    expect(ends[0].status).toBe("done")
+    expect(h.injected).toHaveLength(2)
+    expect(h.injected[1].message).toContain("status=done")
+    expect(h.injected[1].message).toContain("already wrote to you during the work")
+  })
+
+  it("a callee that said it waits, then ended empty, is waiting", async () => {
+    const ends: any[] = []
+    const h = harness({ onDone: (rec, result) => ends.push({ id: rec.id, ...result }) })
+    h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Build S07", kind: "send" })
+    h.mgr.markWaiting("callee-run-1", { on: "the S07 build" })
+    h.local.resolve({ content: "" })
+    await flush()
+    expect(ends[0]).toMatchObject({ status: "waiting", waiting: { on: "the S07 build" } })
+  })
+})
