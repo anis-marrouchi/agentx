@@ -22,20 +22,20 @@ The same signal about the same request or hand-off within 10 minutes is counted 
 
 ## What is counted for cost
 
-Some runs cost far more tokens than the same work needs. A **token** is the unit AI models are billed in. AgentX records four **cost signals** the same way as failures, right after each run ends, with no AI model call:
+Some runs cost far more tokens than the same work needs. A **token** is the unit AI models are billed in. AgentX records four **cost signals** the same way as failures, just after each run's reply is recorded, with no AI model call:
 
 | Signal | When it is recorded |
 |---|---|
-| `job_cost_high` | A run used 3 times or more the usual tokens of its **job type**, and at least 50,000 tokens. A job type is one agent on one channel, for one workflow or one scheduled job when the run belongs to one. "Usual" is the middle value of that job type's last 30 successful runs in 14 days; a job type needs 10 such runs first. |
-| `start_no_cache_reuse` | A new conversation started by writing 20,000 tokens or more to the model's **cache** (the copy of the conversation's start the model can reuse for a few minutes at a lower price) and reading nothing from it, although the same agent finished a run on the same model less than 5 minutes before. |
-| `context_rewrite` | A call inside a run wrote 80% or more of a context of at least 20,000 tokens to the cache again, instead of reading it. The first call of a new conversation has to write it, so it is not counted. |
+| `job_cost_high` | A run of a workflow or a scheduled job used 3 times or more the usual tokens of its **job type**, and at least 50,000 tokens. A job type is one agent on one channel, for one workflow or one scheduled job. Chat runs are not judged: one chat channel mixes unrelated conversations, so their usual cost means little. "Usual" is the middle value of that job type's last 30 successful runs in 14 days; a job type needs 10 such runs first. |
+| `start_no_cache_reuse` | A new conversation started by writing 20,000 tokens or more to the model's **cache** (the copy of the conversation's start the model can reuse for up to an hour at a lower price) and reading nothing from it, although the same agent finished a run on the same model less than 60 minutes before. |
+| `context_rewrite` | A call inside a run wrote 80% or more of a context of at least 20,000 tokens to the cache again, instead of reading it. The first call of a new conversation has to write it, and so does the first call of a continued conversation whose previous run ended more than 60 minutes before (the cache has expired by then), so neither is counted. |
 | `model_switch` | The agent changed model inside a run, or a continued conversation went on with another model than its previous run. A new model cannot reuse the cache. |
 
 Each cost signal names the job type first, for example `job cron nightly-report: rewrite 60k of 61k`, so the same waste in the same job is one problem. A **helper agent** (a subagent the run starts) writes a fresh context on purpose to save tokens, so its calls are left out of the last three signals. They still count in `job_cost_high`, because they are paid.
 
-Cost signals need the per-call numbers that Claude Code reports. Agents on other runtimes get `job_cost_high` only.
+`start_no_cache_reuse`, `context_rewrite` and the in-run part of `model_switch` need the per-call numbers that Claude Code reports. Agents on other runtimes get `job_cost_high`, and `model_switch` when a continued conversation changes model.
 
-The limits (3 times, 50,000 tokens, 20,000 tokens, 80%, 5 minutes) are first guesses. They will be tuned after a week of real signals.
+The limits (3 times, 50,000 tokens, 20,000 tokens, 80%, 60 minutes) are first guesses. They will be tuned after a week of real signals.
 
 ## See the counts
 
@@ -56,7 +56,7 @@ One failure is noise; the same failure again and again is worth fixing. Every ni
 - Signals of the same kind, from the same agent, that say the same thing are one problem. Numbers, request ids and links are left out when comparing, so "timed out after 612s" and "timed out after 30s" count as the same problem. Requests you reopened are grouped by agent only, because your words differ each time.
 - A problem is kept only when it came from at least 3 separate requests, hand-offs or runs.
 - The worst comes first. Each signal counts by how much it tells about you: a request you reopened, or a close that did not do what you asked, counts 3; a request that stalled or a hand-off that failed counts 2; the rest count 1.
-- Cost signals rank in the same list: `job_cost_high` counts 2, the other three count 1. At most 5 cost signals of one problem count per day, so a busy day of token waste cannot push a request you reopened out of the list.
+- Cost signals rank in the same list: `job_cost_high` counts 2, the other three count 1. A cost problem scores at most 8 in any ranking, however many signals it has, so token waste always ranks below 3 requests you reopened (3 x 3 = 9).
 
 Ranking uses no AI model. When `improve.enabled` is on, one small AI call a day may merge problems that say the same thing in different words. It counts against `improve.dailyUsd` (see [settings](../reference/config-automation.md#improve)).
 
@@ -89,7 +89,7 @@ A fix only counts if the problem comes back less often. For each fix you picked 
 
 A fix for a cost problem must pass two checks instead:
 
-1. **Tokens per run went down** for the problem's job types. The job types are found from every run behind the problem in the 7 days before the pick.
+1. **Tokens per run went down** for the problem's job types: the middle value of the runs after the pick against the middle value of the runs before. The job types are found from every run behind the problem in the 7 days before the pick. Those flagged runs are left out of the before side, because they were picked for being costly; when every run before was flagged, all of them count.
 2. **Your reopens did not go up** for that agent: requests you reopened plus closes that did not do what you asked. One more is allowed, or 25% more when there were 4 or more before, so a single reopen does not fail a fix that saved tokens.
 
 If either fails, the fix did not hold, and the note on the next card says which one.
