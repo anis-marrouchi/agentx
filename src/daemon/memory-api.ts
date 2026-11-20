@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http"
-import type { AgentMemory, MemoryProvenance } from "@/agents/agent-memory"
+import { isReservedRuleName, RULE_PREFIX, type AgentMemory, type MemoryProvenance } from "@/agents/agent-memory"
 import { MemoryConflictError, type WriteCondition } from "@/agents/memory-versions"
 
 // --- Agent-memory HTTP API ---
@@ -96,6 +96,10 @@ function resync(deps: MemoryApiDeps, agentId: string): boolean {
   return !!ws
 }
 
+/** `loop_` notes are the nightly pass's fix rules (#1996): no caller writes
+ *  or restores one, so an agent cannot forge or rewrite its own rules. */
+const RESERVED_NAME_ERROR = `names starting with ${RULE_PREFIX} are reserved for the fix rules the nightly pass writes`
+
 /** Handles /api/memory*. Returns false for a path it doesn't own. */
 export async function handleMemoryApi(
   req: IncomingMessage, res: ServerResponse, path: string, url: URL, deps: MemoryApiDeps,
@@ -136,6 +140,7 @@ export async function handleMemoryApi(
     if (!agentId || !type || !name || !description || !newBody) {
       send(res, 400, { error: "required fields: agentId, type, name, description, body" }); return true
     }
+    if (isReservedRuleName(name)) { send(res, 400, { error: RESERVED_NAME_ERROR }); return true }
     const caller = resolveCaller(req, agentId, deps)
     if (!caller.ok) { send(res, caller.status, { error: caller.error }); return true }
     try {
@@ -163,6 +168,7 @@ export async function handleMemoryApi(
     if (typeof body?.version !== "string" || !body.version) {
       send(res, 400, { error: "required field: version" }); return true
     }
+    if (isReservedRuleName(decodeURIComponent(restoreMatch[1]))) { send(res, 400, { error: RESERVED_NAME_ERROR }); return true }
     const caller = resolveCaller(req, agentQ, deps)
     if (!caller.ok) { send(res, caller.status, { error: caller.error }); return true }
     const rec = mem.restore(agentQ, decodeURIComponent(restoreMatch[1]), body.version, caller.provenance)

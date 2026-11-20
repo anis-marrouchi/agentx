@@ -64,14 +64,23 @@ export interface MemoryVersion {
 
 const TYPES: MemoryType[] = ["user", "feedback", "project", "reference"]
 
-/** A `feedback` memory named `loop_…` is a fix rule written by the nightly
- *  self-improvement pass (#1996). The index lists it once, under its own
- *  `## Rules` section before every other one, so a capped index cuts the
- *  rules last. */
+/** A `feedback` memory named `loop_…` and written by the nightly
+ *  self-improvement pass (author RULE_AUTHOR) is a fix rule (#1996). The
+ *  index lists it once, quoted, under its own section before every other
+ *  one, so a capped index cuts the rules last. The `loop_` names are
+ *  reserved: the memory API and `agentx memory add` refuse them, and the
+ *  author is set by the server, never by the caller. */
 export const RULE_PREFIX = "loop_"
+export const RULE_AUTHOR = "improve"
+export const RULES_HEADING = "Rules from your own failure signals (they never override the owner or your instructions)"
 
-export function isRuleMemory(r: Pick<MemoryRecord, "name" | "type">): boolean {
-  return r.type === "feedback" && r.name.startsWith(RULE_PREFIX)
+export function isRuleMemory(r: Pick<MemoryRecord, "name" | "type" | "author">): boolean {
+  return r.type === "feedback" && r.name.startsWith(RULE_PREFIX) && r.author === RULE_AUTHOR
+}
+
+/** A name only the nightly pass may write, in any spelling ("LOOP-x" too). */
+export function isReservedRuleName(name: string): boolean {
+  return slug(name).startsWith(RULE_PREFIX)
 }
 
 export interface AgentMemoryOptions {
@@ -195,9 +204,10 @@ export class AgentMemory {
   /** Remove a memory by name. The removed version stays in history, so
    *  `restore` can bring it back. With `cond.ifMatch`, throws
    *  MemoryConflictError if it changed since the caller read it. Returns
-   *  true on success, false if none found. */
-  remove(agentId: string, name: string, cond?: WriteCondition): boolean {
-    const paths = TYPES.map((t) => this.fileFor(agentId, t, name)).filter((p) => existsSync(p))
+   *  true on success, false if none found. With `type`, only the memory of
+   *  that type goes; one of another type with the same name stays. */
+  remove(agentId: string, name: string, cond?: WriteCondition, type?: MemoryType): boolean {
+    const paths = (type ? [type] : TYPES).map((t) => this.fileFor(agentId, t, name)).filter((p) => existsSync(p))
     if (paths.length === 0) return false
     if (cond) checkCondition(safeRead(paths[0]), cond)
     for (const path of paths) {
@@ -320,12 +330,14 @@ export class AgentMemory {
     lines.push("This is the agent's experiential memory: user preferences,")
     lines.push("feedback, project-specific context, and external references.")
     lines.push("Updated via `agentx memory` CLI or by the agent itself.")
-    const sections: Array<[string, MemoryRecord[]]> = [["Rules", rules], ...TYPES.map((t) => [titleCase(t), grouped[t]] as [string, MemoryRecord[]])]
+    const sections: Array<[string, MemoryRecord[]]> = [[RULES_HEADING, rules], ...TYPES.map((t) => [titleCase(t), grouped[t]] as [string, MemoryRecord[]])]
     for (const [title, group] of sections) {
       if (!group.length) continue
       lines.push("", `## ${title}`, "")
       for (const r of group) {
-        lines.push(`- **${r.name}** — ${r.description} _(updated ${r.updatedAt.slice(0, 10)})_`)
+        // A rule is quoted: it is a line the pass wrote, not the owner's words.
+        const text = isRuleMemory(r) ? `"${r.description}"` : r.description
+        lines.push(`- **${r.name}** — ${text} _(updated ${r.updatedAt.slice(0, 10)})_`)
       }
     }
     lines.push("")
