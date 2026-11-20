@@ -638,6 +638,17 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 
 The two contribution jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute`, `wiki-contribute-merge` or `wiki-summarize`) replaces the built-in one.
 
+## `rules`
+
+Give each run the rows of your rules page that fit it. Off by default. See [Send each run the rules that fit it](/jobs/agent-memory#send-each-run-the-rules-that-fit-it-optional).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `enabled` | boolean | `false` | Each run gets the rules that fit it, and the rules page leaves the newest-decisions block. |
+| `registryAgent` | string | `"pm-agent"` | The agent whose wiki holds the rules page. |
+| `registryPage` | string | `"decisions/rules-registry.md"` | The page, relative to that agent's wiki. |
+| `maxTokens` | number (200–4000) | `1200` | Most tokens the rules may take in one run. When they do not fit, each rule is cut to its id and title, so every id is still sent. |
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
