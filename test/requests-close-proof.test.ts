@@ -9,9 +9,9 @@ import { checkLoops } from "../src/requests/loops"
 import { checkHomes } from "../src/requests/home-check"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsCall } from "../src/requests/daemon-api"
-import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, ownerCheckPrompt } from "../src/requests/owner-check"
+import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, ownerCheckPrompt, PLAN_BY } from "../src/requests/owner-check"
 import { DeliverablesReader, readDeliverables } from "../src/requests/deliverables-reader"
-import { activePlanDeliverables, closeByCheckNow, HELD_TEXT, planDeliverables, sameCheckDetail, type CloseProofCtx } from "../src/requests/close-proof"
+import { activePlanDeliverables, closeByCheckNow, deliverablesOf, judgedPlanDeliverables, HELD_TEXT, planDeliverables, sameCheckDetail, type CloseProofCtx } from "../src/requests/close-proof"
 import { readSignals } from "../src/improve/signals"
 import { PlanStore, type PlanStep } from "../src/requests/plan-store"
 
@@ -250,6 +250,44 @@ describe("only an active plan stands in for the deliverables (#2020)", () => {
     expect(missing).toHaveLength(6)
     for (const n of STAGES) expect(missing.join(" ")).toContain(n)
     expect(missing.join(" ")).not.toContain("old")
+  })
+})
+
+describe("the owner-words check judges the close's own list (#2022)", () => {
+  const link = (t: string) => t.match(/https?:\/\/\S+/)?.[0] ?? null
+  let plans: PlanStore
+  beforeEach(() => {
+    store.setDeliverables(ID, STAGES)
+    plans = new PlanStore(db)
+    plans.create(ID, "coder", ["old build", "old review"].map((name) => ({ name, kind: "task", agentId: "coder", doneWhen: "done", needsApproval: false })), 5_600)
+  })
+  const prompt = () => {
+    const r = store.get(ID)!
+    return ownerCheckPrompt(r, deliverablesOf(r, judgedPlanDeliverables(plans, r, link)))
+  }
+
+  it("plan finished, then the request reopened and closed on kept proofs: the request's list is judged", () => {
+    expect(plans.finish(ID, "done", 5_700)).toBe(true)
+    expect(store.close(ID, "done", "plan: 2 of 2 steps finished", 5_700, null, PLAN_BY)).toBe(true)
+    expect(store.reopen(ID, "not every stage has a note", 6_000)).toBe(true)
+    expect(store.close(ID, "done", "all stages noted", 7_000)).toBe(true)
+    expect(judgedPlanDeliverables(plans, store.get(ID)!, link)).toBeNull()
+    const p = prompt()
+    for (const n of STAGES) expect(p).toContain(n)
+    expect(p).not.toContain("old build")
+  })
+
+  it("the plan's own done closed the request (#1908): its steps are judged", () => {
+    expect(plans.finish(ID, "done", 5_700)).toBe(true)
+    expect(store.close(ID, "done", "plan: 2 of 2 steps finished", 5_700, null, PLAN_BY)).toBe(true)
+    expect(judgedPlanDeliverables(plans, store.get(ID)!, link)?.fromPlan).toBe(true)
+    expect(prompt()).toContain("old build")
+  })
+
+  it("closed while the plan was active: its steps are judged", () => {
+    expect(store.close(ID, "done", "all done", 5_700)).toBe(true)
+    expect(plans.finish(ID, "closed", 5_800)).toBe(true)
+    expect(judgedPlanDeliverables(plans, store.get(ID)!, link)?.fromPlan).toBe(true)
   })
 })
 

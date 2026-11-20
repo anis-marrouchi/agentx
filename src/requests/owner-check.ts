@@ -191,8 +191,9 @@ export interface OwnerCheckDeps {
   generate: (prompt: string, signal: AbortSignal) => Promise<string>
   log?: (line: string) => void
   now?: () => number
-  /** The request's tracked plan as deliverables (#692 B6). */
-  plan?: (requestId: string) => Deliverables | null
+  /** The request's tracked plan as deliverables (#692 B6), for this close
+   *  (#2022). */
+  plan?: (r: RequestRecord) => Deliverables | null
   /** Starts a turn on the request's agent with `text` (#1908): a plan's
    *  close judged a mismatch wakes it. Fire and forget. Unset: only the
    *  owner is told. */
@@ -231,7 +232,7 @@ export class OwnerWordsCheck {
         }
         this.tries.delete(r.id)
         if (v.verdict === "mismatch") {
-          const d = deliverablesOf(r, this.deps.plan?.(r.id) ?? null)
+          const d = deliverablesOf(r, this.deps.plan?.(r) ?? null)
           const target = this.wakeTarget(r, s)
           const reason = `${MISMATCH_PREFIX} (closed as ${r.state} by ${r.closedBy}): ${v.why || "the close does not match your words"}`
           // Before, only a plan's close woke anyone (#1908); a held close
@@ -286,7 +287,7 @@ export class OwnerWordsCheck {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), s.timeoutSeconds * 1000)
     try {
-      return readVerdict(await this.deps.generate(ownerCheckPrompt(r, deliverablesOf(r, this.deps.plan?.(r.id) ?? null)), ac.signal))
+      return readVerdict(await this.deps.generate(ownerCheckPrompt(r, deliverablesOf(r, this.deps.plan?.(r) ?? null)), ac.signal))
     } catch (e: any) {
       this.deps.log?.(`[requests] ${r.id}: owner-words check call failed: ${e?.message ?? e}`)
       return null

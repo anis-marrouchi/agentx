@@ -126,6 +126,17 @@ export function activePlanDeliverables(plans: Pick<PlanStore, "get" | "steps">, 
   return hasActivePlan(plans, id) ? planDeliverables(plans.steps(id), linkOf) : null
 }
 
+/** The plan the owner-words check judges a close by (#2022): its steps
+ *  when the plan was active at this close or its own done made it (#1908).
+ *  A plan finished before this close, so the request was reopened and closed
+ *  again, leaves the request's own list and kept proofs. */
+export function judgedPlanDeliverables(plans: Pick<PlanStore, "get" | "steps">, r: Pick<RequestRecord, "id" | "closedAt">, linkOf: (text: string) => string | null): Deliverables | null {
+  const p = plans.get(r.id)
+  if (!p) return null
+  if (p.state !== "active" && p.finishedAt != null && r.closedAt != null && p.finishedAt < r.closedAt) return null
+  return planDeliverables(plans.steps(r.id), linkOf)
+}
+
 /** What a request is held to. Null: its words are not read yet. */
 export function deliverablesOf(r: RequestRecord, plan: Deliverables | null): Deliverables | null {
   if (plan) return plan
