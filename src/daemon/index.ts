@@ -217,6 +217,7 @@ import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
+import { readHandoff } from "@/a2a/handoff-read"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -6513,6 +6514,22 @@ export class AgentXDaemon {
         const reply = this.callbackReplies.get(decodeURIComponent(callbackReplyMatch[1]))
         if (!reply) { this.json(res, 404, { error: "no reply waiting for this delegation" }); return }
         this.json(res, 200, reply)
+        return
+      }
+
+      // #2007: one hand-off by its id, from the handoffs table, with its
+      // answer. Mesh-gated; then only its caller or callee (?as=), or the
+      // operator key (handoff-read.ts).
+      const handoffMatch = req.method === "GET" ? path.match(/^\/a2a\/delegations\/([^/]+)$/) : null
+      if (handoffMatch) {
+        const local = isLoopback(req.socket?.remoteAddress || "")
+        const a = readHandoff(this.delegations.journalReader(), decodeURIComponent(handoffMatch[1]), {
+          operator: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+          local,
+          as: url.searchParams.get("as")?.trim() || null,
+          peer: local ? null : peerOfToken(String(req.headers["authorization"] || ""), this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+        })
+        this.json(res, a.status, a.body)
         return
       }
 
