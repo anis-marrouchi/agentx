@@ -30,7 +30,7 @@ Some runs cost far more tokens than the same work needs. A **token** is the unit
 | `start_no_cache_reuse` | A new conversation started by writing 20,000 tokens or more to the model's **cache** (the copy of the conversation's start the model can reuse for up to an hour at a lower price) and reading nothing from it, although the same agent finished a run on the same model less than 60 minutes before. |
 | `context_rewrite` | A call inside a run wrote 80% or more of a context of at least 20,000 tokens to the cache again, instead of reading it. The first call of a new conversation has to write it, and so does the first call of a continued conversation whose previous run ended more than 60 minutes before (the cache has expired by then), so neither is counted. |
 | `model_switch` | The agent changed model inside a run, or a continued conversation went on with another model than its previous run. A new model cannot reuse the cache. |
-| `start_over_budget` | A new conversation's first call read more than 15,000 tokens: what the agent was given before it read the task. See [The size of a start](#the-size-of-a-start). |
+| `start_over_budget` | A new conversation's first call read more than 64,000 tokens: what the agent was given before it read the task. That is far over the 15,000-token target, so it marks a start that grew by mistake. See [The size of a start](#the-size-of-a-start). |
 
 Each cost signal names the job type first, for example `job cron nightly-report: rewrite 60k of 61k`, so the same waste in the same job is one problem. A **helper agent** (a subagent the run starts) writes a fresh context on purpose to save tokens, so its calls are left out of the last four signals. They still count in `job_cost_high`, because they are paid.
 
@@ -44,14 +44,14 @@ Cost signals are ranked with the others, but they never become one of an agent's
 
 Every new conversation starts with what the agent is given before it reads the task: Claude Code's own instructions and tool list, the `CLAUDE.md` files, the skill list, the memory lists, and what AgentX adds. The model reads all of it again on every call of the run, so a large start is paid many times over.
 
-AgentX writes the size of each new conversation's start next to the run, in the `start_tokens` column of the run's trace (`task_traces` in `.agentx/db.sqlite`). It is the first call's tokens: new input, plus what the call read from the cache, plus what it wrote to the cache. The target is 15,000 tokens. A start over it records one `start_over_budget` signal, for example `job telegram chat: fresh start 48k, budget 15k`. The signal only reports: the run goes on as usual.
+AgentX writes the size of each new conversation's start next to the run, in the `start_tokens` column of the run's trace (`task_traces` in `.agentx/db.sqlite`). It is the first call's tokens: new input, plus what the call read from the cache, plus what it wrote to the cache. The target is 15,000 tokens. Most starts are above it today, so for now only a start over 64,000 tokens records a `start_over_budget` signal, for example `job telegram chat: fresh start 70k, budget 15k`. That catches a start that suddenly grew without flagging every chat. The line moves down to 15,000 once the start is trimmed. The signal only reports: the run goes on as usual. `start_tokens` is written for every new conversation, whatever its size.
 
 `start_tokens` is empty (NULL) when nothing was measured: a conversation that was picked up again, an agent on another engine than Claude Code, or a run from before this version.
 
 To read the sizes:
 
-1. **Terminal:** run `agentx improve signals --kind start_over_budget --since 24h`. Each line names a run, its job type and the size of its start.
-2. **Terminal:** run `agentx trace show <task id>` for one of those runs. A `start` line shows the size in tokens.
+1. **Terminal:** run `agentx improve signals --kind start_over_budget --since 24h`. Each line names a run over 64,000 tokens, its job type and the size of its start, or the command prints `none in this window`.
+2. **Terminal:** run `agentx trace show <task id>` for any new conversation of a Claude Code agent. A `start` line shows the size in tokens.
 3. **Terminal:** for the range of sizes per agent over the last day, run:
 
    ```sh
@@ -216,7 +216,7 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 10. **Terminal:** after a few days of hand-offs, run `agentx improve signals --kind clarification_asked --since 7d`. Each line names the agent that sent the hand-off, the hand-off id and `<agent> asked back before starting`, or `none in this window`.
 11. **Phone or chat:** a few minutes after an agent replies to you, write "what is this about?". Then, in the **terminal**, run `agentx improve signals --kind owner_asked_subject --since 1h`. The agent is listed with `the owner asked what the reply was about (<channel>)`.
 12. **Terminal:** run `agentx improve rules --retire-kind owner_asked_subject`. It prints the rules it retired, or `No rule written for owner_asked_subject.`
-13. **Terminal:** after a new conversation with a Claude Code agent, run `agentx improve signals --kind start_over_budget --since 1h`. The run is listed with `fresh start <size>, budget 15k` when its start was over 15,000 tokens, or the command prints `none in this window`.
+13. **Terminal:** after a new conversation with a Claude Code agent, run `agentx trace list --agent <agent id>`, then `agentx trace show <task id>` for that run. A `start` line shows the size of its start. `agentx improve signals --kind start_over_budget --since 1h` lists it only when that size is over 64,000 tokens.
 
 ## If something is wrong
 
@@ -228,7 +228,8 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 - **No `stale_status_told` rows although an agent waited on a finished helper:** the helper's own run must end with `State: done — …` in its answer, and its answer must have been passed on before the waiting run started. A helper on another machine is not checked.
 - **No `owner_asked_subject` row:** your message must be 80 characters or fewer and use one of the fixed phrases. The agent must have replied in the same chat in the last 6 hours, and must not have asked you a question that is still waiting.
 - **No `start_over_budget` row and no `start` line for a run:** the run continued an earlier conversation, or the agent is not on Claude Code. Only a new Claude Code conversation is measured. Restart the daemon after updating.
-- **`start_over_budget` on every chat conversation:** expected for now; full sessions start well above 15,000 tokens. Watch the sizes fall as the start is trimmed, rather than the count.
+- **`start_over_budget` rows appear:** a new conversation read more than 64,000 tokens before its task. Compare its `start` size with earlier runs of the same agent (`agentx trace show`): a jump points to something newly added to its start, such as a large `CLAUDE.md`, a new tool server or many new skills.
+- **No `start_over_budget` row although starts are above 15,000:** expected for now. Only starts over 64,000 tokens are signalled until the start is trimmed. Read the sizes from `start_tokens` instead.
 - **`unknown kind "…"` from `--retire-kind`:** use a name from `agentx improve kinds`.
 - **`job_cost_high` never appears for a job:** its job type needs 10 successful runs in the last 14 days first. Workflow steps count as one job type only from this version on.
 - **`--since must look like …`:** use a number with `d`, `h` or `m` (for example `7d`), or a date.
