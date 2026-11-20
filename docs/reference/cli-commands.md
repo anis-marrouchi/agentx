@@ -3881,13 +3881,21 @@ Recent task_history rows (one per agent task).
 
 ### `agentx db rotations`
 
-Session rotation events (stale \| tier-2 \| max-turns).
+Session rotation events (stale \| tier-2 \| max-turns \| continuity \| cost \| model).
+
+A rotation ends a conversation's agent session and starts a new one, carrying a short note and the recent messages over. The reason says why:
+
+- `stale`: nobody wrote for longer than `session.staleMinutes`.
+- `tier-2` and `max-turns`: the session grew too large or ran too many turns.
+- `continuity`: the message started a new subject.
+- `cost`: starting fresh was cheaper than picking the session up (`session.resumeGate`).
+- `model`: the turn needed another model than the one the session runs on. A session keeps one model; see [One model per session](config-agents.md#one-model-per-session).
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--cwd <cwd>` | current folder | Working directory. |
 | `-a, --agent <id>` | — | Filter by agent id. |
-| `-r, --reason <r>` | — | Stale \| tier-2 \| max-turns. |
+| `-r, --reason <r>` | — | Stale \| tier-2 \| max-turns \| continuity \| cost \| model. |
 | `-n, --limit <n>` | `20` | Max rows. |
 | `--summary` | — | Group by agent + reason. |
 | `--json` | — | Emit JSON. |
