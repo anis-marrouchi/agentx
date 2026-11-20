@@ -315,8 +315,8 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
-import { a2aSendBody, duplicateBody, queueSend, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { a2aSendBody, duplicateBody, queueSend, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -4864,7 +4864,8 @@ export class AgentXDaemon {
     const priority = requestedPriorityOf(body.priority)
     const wait = body.async === false
     const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
-    const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
+    // A callback start is left to the hand-off's join key (#2007 S2).
+    const seen = wait ? null : repeatOf(this.sendAgentDedupe.get(dedupeKey), this.delegations.journalMode() === "database")
     if (seen) {
       this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
       this.json(res, 202, duplicateBody(seen))
@@ -5032,9 +5033,20 @@ export class AgentXDaemon {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return refused(why, "cycle")
     }
+    const plan = opts.callback === false ? null : this.callbackPlan(body, caller, target, { send: opts.send === true })
+    // The same message again while the first is open (#2007 piece 3, C2):
+    // it joins that hand-off before the budget counts a hop or the ledger
+    // records a dispatch, so a duplicate spends neither.
+    if (plan) {
+      const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: plan.caller, callee: target.callee, home: homeOfBody(body), message: target.message }))
+      if (joined) {
+        this.log(`[delegation ${joined}] ${plan.caller.agentId} -> ${target.callee}: the same message again; joined, no hop counted`)
+        return { accepted: joinedBody(joined, target.callee, plan.peer, plan.send) }
+      }
+    }
     const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
     if (over) return refused(over, "budget")
-    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
+    const accepted = plan ? this.startCallback(body, target, plan) : null
     if (accepted) return { accepted }
     let runId: string | undefined
     return {
@@ -5064,12 +5076,14 @@ export class AgentXDaemon {
     return over
   }
 
-  private startCallback(
+  /** Whether this hop goes the callback way (a dlg- hand-off), and how:
+   *  null when it stays synchronous. Reads only; nothing is counted. */
+  private callbackPlan(
     body: Record<string, unknown>,
     caller: ReturnType<typeof resolveCallerTurn>,
-    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    target: { callee: string; peer?: string },
     opts: { send?: boolean } = {},
-  ): Record<string, unknown> | null {
+  ): { caller: NonNullable<ReturnType<typeof resolveCallerTurn>>; send: boolean; peer?: string } | null {
     const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
     // An agent's send that no person waits on still calls its asker back
     // (#1100). A send that asked to wait (async:false) never gets here.
@@ -5082,6 +5096,15 @@ export class AgentXDaemon {
       if (!found?.healthy) return null
       peer = found.peer
     }
+    return { caller, send, ...(peer ? { peer } : {}) }
+  }
+
+  private startCallback(
+    body: Record<string, unknown>,
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    plan: { caller: NonNullable<ReturnType<typeof resolveCallerTurn>>; send: boolean; peer?: string },
+  ): Record<string, unknown> {
+    const { caller, send, peer } = plan
     const extras: Record<string, unknown> = {}
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
@@ -5096,7 +5119,7 @@ export class AgentXDaemon {
       )
       if (intentRef) extras.intentRef = intentRef
     }
-    const { taskId } = this.delegations.start({
+    const { taskId, duplicate } = this.delegations.start({
       caller,
       callee: target.callee,
       peer,
@@ -5108,6 +5131,8 @@ export class AgentXDaemon {
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
     })
+    // Joined at the insert: the same send raced in after the gate's check.
+    if (duplicate) return joinedBody(taskId, target.callee, peer, send)
     return acceptedBody(taskId, target.callee, peer, send)
   }
 

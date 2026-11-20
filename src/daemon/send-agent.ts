@@ -120,6 +120,20 @@ export function queuedBody(taskId: string, agent: string, peer?: string): Record
   }
 }
 
+/**
+ * The earlier answer a repeat gets from the dedupe window, or null to go
+ * on. With the hand-off table (`journal`), a send that started a callback
+ * hand-off is left to its join key (#2007 piece 3, S2): that key knows the
+ * caller's chat and home, and frees as soon as the hand-off ends, so a
+ * retry after an error starts fresh. Queued sends and relayed replies keep
+ * the window, as does a node with no table.
+ */
+export function repeatOf(seen: Record<string, unknown> | null, journal: boolean): Record<string, unknown> | null {
+  if (!seen) return null
+  if (journal && seen.mode === "callback") return null
+  return seen
+}
+
 /** What a duplicate send gets back: the first send's body, marked. */
 export function duplicateBody(first: Record<string, unknown>): Record<string, unknown> {
   return {

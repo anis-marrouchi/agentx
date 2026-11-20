@@ -96,8 +96,8 @@ const PENDING_ATTEMPT = 0
 export const RESULT_TEXT_CAP = 12_000
 
 /**
- * Columns added for #2007 (piece 1). Nothing writes `join_key` or
- * `way_home` yet; later pieces do.
+ * Columns added for #2007 (piece 1). `join_key` is written by start()
+ * (piece 3); nothing writes `way_home` yet.
  *   join_key      what makes two sends the same work; unique while open
  *   way_home      how the answer goes home; NULL is a callback, as every
  *                 older row is
@@ -177,6 +177,9 @@ export function ensureHandoffTable(db: Database.Database): void {
   // #1962 import's stubs) never clash: NULLs are distinct in SQLite. An
   // insert that clashes is ignored by INSERT OR IGNORE, like an id clash.
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_join ON handoffs(join_key) WHERE status IS NULL")
+  // The newest row for a key, open or ended (#2007 piece 3, Q6): a
+  // "continue" row keeps its key for a while after it ended.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_handoffs_join_newest ON handoffs(join_key, started_at) WHERE join_key IS NOT NULL")
 }
 
 /** The hand-off store for this node's database, or null with a loud
@@ -262,15 +265,58 @@ export class HandoffStore {
     return s
   }
 
-  /** A hand-off goes out. A row already there (imported) is kept. */
-  insert(rec: DelegationRecord, at: number, source: "db" | "file" = "db"): void {
-    this.sql(`
-      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  /** A hand-off goes out. A row already there (imported) is kept, and so
+   *  is an open row with the same join key (#2007 piece 3): false when
+   *  nothing was inserted. */
+  insert(rec: DelegationRecord, at: number, source: "db" | "file" = "db"): boolean {
+    return this.sql(`
+      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at, join_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       rec.id, rec.caller, rec.callee, rec.peer ?? null, rec.kind ?? null, rec.depth ?? null, rec.home ?? null,
       rec.taskType ?? null, rec.request, JSON.stringify(rec.origin), JSON.stringify(rec.root ?? null), rec.startedAt, source, at,
-    )
+      rec.joinKey ?? null,
+    ).changes > 0
+  }
+
+  /** The open hand-off with this join key, or null. */
+  openByJoin(key: string): string | null {
+    const row = this.sql("SELECT id FROM handoffs WHERE join_key = ? AND status IS NULL").get(key) as { id: string } | undefined
+    return row?.id ?? null
+  }
+
+  /** The newest hand-off with this join key, open or ended. */
+  newestByJoin(key: string): { id: string; status: DelegationStatus | null; endedAt: number | null; waiting: { kind: string; dueAt?: number } | null } | null {
+    const r = this.sql(`
+      SELECT id, status, ended_at, waiting_json FROM handoffs WHERE join_key = ?
+      ORDER BY started_at DESC, rowid DESC LIMIT 1
+    `).get(key) as Pick<Row, "id" | "status" | "ended_at" | "waiting_json"> | undefined
+    if (!r) return null
+    let waiting: { kind: string; dueAt?: number } | null = null
+    if (r.waiting_json) {
+      try {
+        const w = JSON.parse(r.waiting_json)
+        waiting = { kind: String(w.kind ?? "waiting"), ...(Number(w.dueAt) > 0 ? { dueAt: Number(w.dueAt) } : {}) }
+      } catch { /* unreadable: no wait kind */ }
+    }
+    return { id: r.id, status: (r.status as DelegationStatus | null) ?? null, endedAt: r.ended_at ?? null, waiting }
+  }
+
+  /** Other open hand-offs with the same text, caller, callee and home,
+   *  from another chat of the caller (B2): `pattern` is the LIKE form of
+   *  the key with its chat part left open. */
+  openSameText(pattern: string, except: string): Array<{ id: string; origin: string }> {
+    const rows = this.sql(`
+      SELECT id, origin_json FROM handoffs WHERE status IS NULL AND join_key LIKE ? AND join_key != ?
+    `).all(pattern, except) as Array<{ id: string; origin_json: string | null }>
+    return rows.map((r) => {
+      let origin = "?"
+      try {
+        const o = JSON.parse(r.origin_json ?? "null")
+        if (o?.channel) origin = `${o.channel}:${o.chatId}`
+      } catch { /* unreadable: shown as ? */ }
+      return { id: r.id, origin }
+    })
   }
 
   /**
