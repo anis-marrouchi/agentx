@@ -66,7 +66,7 @@ In a source checkout, type `node dist/cli.js` instead of `agentx`.
 
 ## If something is wrong
 
-- **The daemon won't stay running:** run `agentx daemon logs` in a terminal and read the last lines. A configuration error names the setting at fault.
+- **The daemon won't stay running:** run `agentx daemon logs` in a terminal and read the last lines. Each line starts with the UTC time it was written, such as `2026-11-20T01:37:11.414Z`, so you can find what happened at a given hour. A configuration error names the setting at fault.
 - **A Telegram bot stays silent:** send it a fresh message; earlier messages are not replayed. Then run `agentx daemon logs`. A line ending in `not in allowlist` means the bot is set up but your Telegram account isn't allowed to talk to it yet. See [Connect Telegram](../connect-telegram.md).
 - **A GitLab message gets no reply:** in GitLab, open the project's webhook settings and check the recent deliveries. A failed delivery means GitLab can't reach the daemon's address.
 - **The agent answers, but Monitor shows failed reviews:** that is the separate reviewer described on the [Monitor page](../dashboard/monitor.md), not the agent itself.
