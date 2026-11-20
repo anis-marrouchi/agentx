@@ -152,3 +152,23 @@ describe("memory API — history", () => {
     expect(r.status).toBe(404)
   })
 })
+
+describe("memory API — fix rules are the nightly pass's own (#1996)", () => {
+  it("refuses a loop_ name, in any spelling, on save and on restore", async () => {
+    for (const name of ["loop_abc", "LOOP-abc"]) {
+      const r = await post(memory({ name }))
+      expect(r.status).toBe(400)
+    }
+    expect(mem.list("atlas")).toEqual([])
+    const r = await fetch(`${base}/api/memory/loop_abc/restore?agent=atlas`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "any" }),
+    })
+    expect(r.status).toBe(400)
+  })
+
+  it("never takes the author from the request body", async () => {
+    running.set("t-9", "atlas")
+    await post(memory({ author: "improve" }), { "X-AgentX-Task": "t-9" })
+    expect(mem.get("atlas", "no-mock-db")!.author).toBe("atlas")
+  })
+})
