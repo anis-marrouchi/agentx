@@ -40,6 +40,7 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   start_no_cache_reuse: 1,
   context_rewrite: 1,
   model_switch: 1,
+  start_over_budget: 1,
   // Awareness (#1997): the work runs twice, or the reader is misled.
   duplicate_session: 2,
   stale_status_told: 2,

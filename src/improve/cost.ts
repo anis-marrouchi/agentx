@@ -2,7 +2,7 @@
 //
 // The owner's goal (2026-11-19) is half the tokens for the same work. The
 // self-improvement loop ranked failures every night but never saw cost.
-// Four kinds are recorded here, once per run, after the run's reply is
+// Five kinds are recorded here, once per run, after the run's reply is
 // recorded, with no model call:
 //
 //   job_cost_high         a cron or workflow run used 3x or more its job
@@ -12,6 +12,9 @@
 //                         cache lifetime
 //   context_rewrite       a call wrote most of its context to the cache again
 //   model_switch          the main thread changed model
+//   start_over_budget     a fresh start's first call read more than
+//                         START_ALERT_TOKENS: the start-size guard (#2009).
+//                         It reports; it never blocks a run
 //
 // A job type is agent + channel + (workflow id | cron job id | nothing).
 // Its baseline is read from task_traces, the usage the daemon already
@@ -29,7 +32,7 @@ import type Database from "better-sqlite3"
 import type { CallUsage, TaskUsage } from "@/daemon/token-tracker"
 import { emitSignal, signalDb, type Signal, type SignalKind } from "./signals"
 
-export const COST_KINDS = ["job_cost_high", "start_no_cache_reuse", "context_rewrite", "model_switch"] as const satisfies readonly SignalKind[]
+export const COST_KINDS = ["job_cost_high", "start_no_cache_reuse", "context_rewrite", "model_switch", "start_over_budget"] as const satisfies readonly SignalKind[]
 export const COST_KIND_SET = new Set<SignalKind>(COST_KINDS)
 
 /** Past runs a job type needs before job_cost_high can fire. */
@@ -45,6 +48,16 @@ export const BASELINE_DAYS = 14
  *  kinds that depend on it. */
 export const CACHE_LIFETIME_MS = 60 * 60_000
 export const START_WRITE_MIN = 20_000
+/** The budget of a fresh start's first call: input + cache read + cache
+ *  write (#2009). Named exceptions (full starts about 20k until #2002
+ *  step 3) live on the issue, not in config. */
+export const START_BUDGET_TOKENS = 15_000
+/** The line start_over_budget fires above, for now. Full starts are about
+ *  48-62k today, so a signal at the budget would fire on nearly every chat
+ *  start (about 400 rows a day, review of PR #2035). Until #2009 part 2
+ *  lands it catches regressions only; it is then lowered to
+ *  START_BUDGET_TOKENS. start_tokens is recorded for every fresh start. */
+export const START_ALERT_TOKENS = 64_000
 export const REWRITE_SHARE = 0.8
 export const REWRITE_MIN_CONTEXT = 20_000
 /** The most one cost problem scores in a ranking window, whatever its
@@ -110,6 +123,15 @@ export function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+/** What a fresh start's first main call read: input + cache read + cache
+ *  write. Null for a resumed run, or when the runtime reports no per-call
+ *  numbers (only Claude Code does). Stored in task_traces.start_tokens. */
+export function startTokens(run: Pick<CostRun, "resumed" | "calls">): number | null {
+  if (run.resumed) return null
+  const first = (run.calls ?? []).find((c) => !c.sub)
+  return first ? context(first) : null
 }
 
 export interface CostRun {
@@ -182,6 +204,9 @@ export function costSignals(run: CostRun, history: CostHistory = {}): Signal[] {
   else if (run.resumed && prev?.model && run.model && prev.model !== run.model) {
     add("model_switch", `${prev.model} → ${run.model}`)
   }
+
+  const start = startTokens(run)
+  if (start !== null && start > START_ALERT_TOKENS) add("start_over_budget", `fresh start ${k(start)}, budget ${k(START_BUDGET_TOKENS)}`)
   return out
 }
 

@@ -519,7 +519,8 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
     layers.push({
       name: "on-demand",
       priority: 7,
-      maxTokens: budget("on-demand", 150),
+      // 170: the miss line (#2009) added about 18 tokens to the note.
+      maxTokens: budget("on-demand", 170),
       content: input.contextOnDemand,
       tags: ["history", "on-demand", "lean"],
     })

@@ -96,6 +96,9 @@ export interface TraceEndInput {
   model?: string | null
   /** What the run cost in USD (#1162). Omitted leaves the column untouched. */
   costUsd?: number | null
+  /** What a fresh start's first call read (#2009). Omitted leaves the
+   *  column untouched; NULL means not measured. */
+  startTokens?: number | null
 }
 
 /** Ids of the lessons injected into one task's prompt. Memory facts and
@@ -158,6 +161,8 @@ export interface TraceRecord {
   /** NULL on rows recorded before lesson-impact capture (#98) or when the
    *  runtime does not report a turn count. */
   numTurns: number | null
+  /** What a fresh start's first call read (#2009). NULL: not measured. */
+  startTokens: number | null
   /** NULL on rows recorded before lesson-impact capture (#98). */
   injectedContext: InjectedContext | null
   error: string | null
@@ -272,6 +277,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       final_response = COALESCE(?, final_response),
       model = COALESCE(?, model),
       cost_usd = COALESCE(?, cost_usd),
+      start_tokens = COALESCE(?, start_tokens),
       finished_at = ?,
       duration_ms = ? - started_at
     WHERE task_id = ?
@@ -295,6 +301,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.finalResponse ?? null,
     input.model ?? null,
     input.costUsd ?? null,
+    input.startTokens ?? null,
     finishedAt,
     finishedAt,
     taskId,
@@ -376,6 +383,7 @@ function rowToTrace(row: Record<string, unknown>): TraceRecord {
     resumed: row.resumed == null ? null : row.resumed === 1,
     jevArm: (row.jev_arm as string) ?? null,
     numTurns: (row.num_turns as number) ?? null,
+    startTokens: (row.start_tokens as number) ?? null,
     injectedContext: parseInjectedContext(row.injected_context),
     error: (row.error as string) ?? null,
     messagePreview: (row.message_preview as string) ?? null,

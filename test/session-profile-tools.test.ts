@@ -91,11 +91,11 @@ describe("describeProfile with tools", () => {
 })
 
 describe("config", () => {
-  it("defaults to no tool list and no memory index cap", () => {
+  it("defaults to no tool list and a 4000-character memory index block (#2009 Q4)", () => {
     const parsed = daemonConfigSchema.parse({ node: { id: "n", name: "N" } })
     expect(parsed.session.lean.tools).toEqual([])
     expect(parsed.session.lean.toolsByChannel).toEqual({})
-    expect(parsed.session.memoryIndexMaxChars).toBe(0)
+    expect(parsed.session.memoryIndexMaxChars).toBe(4000)
     expect(leanConfig(parsed.session)).toEqual(DEFAULT_LEAN)
   })
 

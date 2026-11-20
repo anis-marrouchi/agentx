@@ -194,6 +194,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           // at its own rate (workflow pilot-report, #928).
           model: p.billedModel ?? null,
           costUsd: p.costUsd ?? null,
+          startTokens: p.startTokens ?? null,
         })
       } catch { /* */ }
     }

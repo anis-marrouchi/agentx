@@ -27,10 +27,16 @@ describe("context on demand layer", () => {
     expect(full).toContain("Conversation history")
   })
 
+  it("tells the agent what to do on a miss (#2009 condition 4)", () => {
+    expect(onDemandContextNote("github", "acme/widgets:issue:12")).toContain(
+      "If you need a tool or fact that is not loaded, say which and look it up.",
+    )
+  })
+
   it("stays short: one line never grows past its budget", () => {
     const out = buildAgentContext({ ...base, contextOnDemand: onDemandContextNote("a2a", "a2a:pm:coder") })
     const note = out.slice(out.indexOf("[Context on demand]"))
-    expect(note.length).toBeLessThan(150 * 4)
+    expect(note.length).toBeLessThan(170 * 4)
     expect(note.endsWith("...")).toBe(false)
   })
 })

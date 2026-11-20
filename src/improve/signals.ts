@@ -28,6 +28,8 @@ export const SIGNAL_KINDS = [
   "start_no_cache_reuse",
   "context_rewrite",
   "model_switch",
+  // The start-size guard (#2009), a cost kind too.
+  "start_over_budget",
   // Awareness signals (#1997): an agent acted without knowing the state.
   "duplicate_session",
   "stale_status_told",
@@ -53,6 +55,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   start_no_cache_reuse: "a new session wrote its whole start again although the same agent ran on the same model minutes before",
   context_rewrite: "a call wrote 80% or more of its context to the cache again, instead of reading it",
   model_switch: "the main thread changed model inside a run, or a resumed session went on with another model",
+  start_over_budget: "a new session's first call read more than 64,000 tokens, far over the 15,000 start budget (#2009)",
   duplicate_session: "two runs of one agent went ahead on the same request at once: the lane wait ran out",
   stale_status_told: "an agent said it waits on another agent whose hand-off had already ended done",
   a2a_extra_rounds: "a hand-off took more than one round before the receiver started the work",

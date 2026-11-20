@@ -10105,9 +10105,9 @@ export class AgentXDaemon {
             this.log(`  memory-skill: updated remember.md → ${agent.id}`)
           }
         }
-        // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
-        // sentinel block from whatever is currently on disk.
-        this.agentMemory.syncToWorkspace(agent.id, ws, this.config.session.memoryIndexMaxChars)
+        // Always re-sync: rewrites .agentx-memory.md from whatever is on
+        // disk, and removes an old merged block from CLAUDE.md (#2009).
+        this.agentMemory.syncToWorkspace(agent.id, ws)
       } catch (e: any) {
         this.log(`  memory-skill: ${agent.id} install failed — ${e?.message ?? e}`)
       }
@@ -10175,7 +10175,6 @@ export class AgentXDaemon {
       mem: this.agentMemory,
       workspaceFor: (id) => this.workspaceFor(id),
       runningTaskOwner: (id) => this.registry.runningTaskOwner(id),
-      indexMaxChars: () => this.config.session.memoryIndexMaxChars,
     })
   }
 

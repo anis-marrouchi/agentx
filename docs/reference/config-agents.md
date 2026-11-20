@@ -294,7 +294,8 @@ When a conversation's memory is rotated or treated as stale.
 | `session.profileByChannel` | object of channel → `"full"` \| `"lean"` | `{}` | How much a session is given when it starts, per channel. A channel you do not list keeps the built-in default: `github`, `a2a`, `workflow` and `cron` are `lean`, every other channel is `full`. See [Lean sessions](#lean-sessions). |
 | `session.lean.mcpServers` | list of string | `["agentx"]` | Tool servers from the workspace's `.mcp.json` that a lean session keeps, by name. `agentx` is always kept. |
 | `session.lean.settingSources` | list of `"user"` \| `"project"` \| `"local"` | `["project", "local"]` | Which Claude Code settings a lean session reads. Without `user`, the global `CLAUDE.md`, user skills, plugins and user-level tool servers stay out. `project` is the agent's workspace. |
-| `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
+| `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. Lean sessions only; full sessions have `session.fullContextOnDemand`. |
+| `session.fullContextOnDemand` | boolean | `false` | Leave the agent landscape out of a new full `claude-code` session and name the tool that fetches it instead. History and other chats stay in the prompt. Takes a daemon restart; `false` puts the landscape back. See [The landscape on full sessions](#the-landscape-on-full-sessions). |
 | `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
 | `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
 | `session.lean.agentxTools` | list of string | `[]` | The `agentx_` tools a lean session is told about, such as `agentx_channel_reply`. Empty lists every `agentx` tool. Saves little while `ToolSearch` is on. A name that is not an `agentx` tool fails `agentx config check`. `agentx_approval`, `agentx_request`, `agentx_events`, `agentx_attach_next`, `agentx_workflow`, `agentx_waiting`, `agentx_job_state` and `agentx_situation` are always kept, and so are `agentx_agents`, `agentx_recent`, `agentx_wiki_query` and `agentx_lookup` while `session.lean.contextOnDemand` is on. `claude-code` agents only. See [Fewer agentx tools](#fewer-agentx-tools). |
@@ -303,7 +304,7 @@ When a conversation's memory is rotated or treated as stale.
 | `session.triage.models.claude-code` | string | unset (off) | A cheaper Claude model, such as `claude-haiku-4-5-20251001`, for runs a GitHub triage event started. See [A cheaper model for triage events](#a-cheaper-model-for-triage-events). |
 | `session.triage.models.codex-cli` | string | unset (off) | The same for `codex-cli` agents, such as a `gpt-` model. |
 | `session.triage.actions` | list of string | `["labeled", "unlabeled", "closed"]` | GitHub issue and pull request actions that count as triage. A run uses the triage model only when every event it collected is in this list. |
-| `session.memoryIndexMaxChars` | number | `0` | Longest the agent-memory index may be where every session loads it: in the workspace `CLAUDE.md` and in the system prompt. `0` keeps the whole index. The cut keeps whole lines and ends with a line counting the entries left out; the full index stays in `.agentx-memory.md` in the workspace. See [A shorter memory index](#a-shorter-memory-index). |
+| `session.memoryIndexMaxChars` | number | `4000` | Longest the agent's own memory list may be where a new session shows it. `0` shows it whole. The cut keeps whole lines and ends with a line counting the entries left out and naming `.agentx-memory.md`, which holds them all. Only what the session shows is cut; the file stays whole. Claude Code's auto-memory list is not cut. See [The memory list at the start](#the-memory-list-at-the-start). |
 | `session.observationPack.enabled` | boolean | `false` | Keep large tool results out of the conversation: the agent sees the start and the end of the result and the path of a file with the exact original. See [Large tool results](#large-tool-results). Turning it on takes a daemon restart; turning it off applies on save. |
 | `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
 | `session.observationPack.headBytes` | number (0–65536) | `1024` | Bytes of the start of the original the agent sees. |
@@ -411,15 +412,49 @@ To tell lean sessions about fewer `agentx` tools:
 
 The list applies to `claude-code` agents on lean channels only. It works when the `agentx` tool server is started as a command, which is the default. If the workspace's `.mcp.json` points `agentx` at a web address (`"type": "http"`) instead, the session still gets every `agentx` tool.
 
-#### A shorter memory index
+#### The memory list at the start
 
-The index of what an agent remembers (`agentx memory index`) is loaded on every session, twice: merged into the agent's workspace `CLAUDE.md`, and inlined in the system prompt. An agent with many memories pays for the whole list on every task. `session.memoryIndexMaxChars` caps it:
+An agent keeps a list of what it remembers (`agentx memory index`). Claude Code keeps its own list too, called **auto-memory** (the `MEMORY.md` file in Claude Code's project folder). Both lists change many times a day.
+
+A new session shows both lists **once**, at the top of the first message the agent reads, before the task. This holds for every engine (`claude-code`, `codex-cli`, `opencode`) and for a task that runs in its own copy of a repository (a task worktree).
+
+A conversation that is picked up again does not get the lists again: it already has them from its start. So a memory saved while a conversation is going on reaches that conversation only when it starts fresh, for example after a long silence or when it grows too large.
+
+The lists are no longer added to the cached part of the start (the system prompt) or to the workspace `CLAUDE.md`. The cached part is reused from one call to the next at a lower price; a list that changes there makes the model write the whole start again.
+
+Older versions kept a copy of the agent's list in the workspace `CLAUDE.md`, between an `AGENTX-MEMORY-START` line and an `AGENTX-MEMORY-END` line. The daemon removes that block once, at its next start or the next memory change:
+
+- Only the lines between and including the two markers change, plus at most one blank line next to them. The rest of the file stays exactly as it was.
+- A `CLAUDE.md` that held nothing but the block is left as an empty file. It is not deleted.
+- A `CLAUDE.md` that git tracks in that workspace is not changed. The daemon log says so once: `… is tracked by git: its old AGENTX-MEMORY block was left in place; remove it by hand`. Remove the block yourself and commit the change.
+
+The agent's own list is cut to `session.memoryIndexMaxChars` characters, 4000 by default. Only what the session shows is cut; the file stays whole. Claude Code's auto-memory list is not cut: it lists its newest notes last, and Claude Code shows its first 200 lines. To change the cut:
 
 1. **Terminal:** run `agentx memory index --agent <agent id>` and look at its length.
-2. **Terminal:** open `agentx.json` and set the cap, for example `"session": { "memoryIndexMaxChars": 4000 }`.
-3. **Terminal:** run `agentx daemon restart --when-idle`. The prompt uses the cap at once; the `CLAUDE.md` block is rewritten at the restart and after every memory change.
+2. **Terminal:** open `agentx.json` and set the cap, for example `"session": { "memoryIndexMaxChars": 6000 }`. `0` shows the list whole.
+3. **Terminal:** run `agentx daemon restart --when-idle`.
 
-The cut keeps whole lines, in the index's own order (user, feedback, project, reference), and ends with a line such as `_(12 more memories not shown here. The full index is in .agentx-memory.md in this workspace, or run \`agentx memory index\`.)_`. The file it names always holds the whole index, so the agent can read it when a task needs more.
+The cut keeps whole lines, in the list's own order, and ends with a line such as `_(12 more memories not shown here. Read /path/to/workspace/.agentx-memory.md for the full index.)_`. The agent can read that file when a task needs more.
+
+#### The landscape on full sessions
+
+The **landscape** is the list of the other agents and how to reach them. A lean session already fetches it with the `agentx_agents` tool when it needs it. A full `claude-code` session can do the same: turn on `session.fullContextOnDemand`. It is off by default, and separate from `session.lean.contextOnDemand`, which only changes lean sessions.
+
+With it on:
+
+- A new full session gets one `[Context on demand]` note in place of the landscape. The note names `agentx_agents` with `landscape: true`, and the other `agentx` tools that fetch what is not in the prompt. It does not offer the chat history: a full session still gets it.
+- A conversation that is picked up again gets neither: it already has the note.
+- Owner decisions stay in the prompt.
+
+To turn it on:
+
+1. **Terminal:** open `agentx.json` and set `"session": { "fullContextOnDemand": true }`.
+2. **Terminal:** run `agentx config check`. It prints `✓ Config valid`.
+3. **Terminal:** run `agentx daemon restart --when-idle`.
+
+To go back, set `session.fullContextOnDemand` to `false` (or remove it) and run `agentx daemon restart --when-idle`. Full sessions get the landscape pushed again; lean sessions are not affected.
+
+The note ends with one line for a miss: "If you need a tool or fact that is not loaded, say which and look it up."
 
 #### A cheaper model for triage events
 
@@ -602,6 +637,8 @@ A process is not stopped for being quiet while it still has work of its own: a b
 10. **Terminal:** after a `claude-code` agent calls a write tool of a server with `allowTools`, run `agentx daemon logs`. A line `guard: <agent> asked to run mcp__<server>__<tool>: card <card id> waits for the owner` shows the card was raised. The card is in **Approvals** on the dashboard.
 11. **Terminal:** after an agent proposed an org chart change and you said yes, run `agentx daemon logs`. A line `[org] <card id>: applied: …` shows the daemon applied it, and `.agentx/org-proposals/<card id>.json` says `"status": "applied"`.
 12. **Terminal:** after a chat that had been quiet for more than an hour gets a hard message, run `agentx daemon logs | grep -E "model changed for|edge upgrade held"`. A `model changed for` line shows a new session started on the edge model; an `edge upgrade held` line shows a session kept its model. `agentx db rotations --reason model` lists the new sessions.
+13. **Terminal:** after a daemon restart, run `grep -c AGENTX-MEMORY <workspace>/CLAUDE.md` for an agent's workspace. It prints `0`: the memory list is no longer kept in `CLAUDE.md`. A `CLAUDE.md` that git tracks keeps its old block; see below. `<workspace>/.agentx-memory.md` still holds the whole list.
+14. **Terminal:** after a new session of a `claude-code` agent on a chat channel, run `agentx trace list --agent <agent id>`, then `agentx trace show <task id>` for that run. A `start` line shows how many tokens its first call read. See [The size of a start](/jobs/failure-signals#the-size-of-a-start).
 
 ## If something is wrong
 
@@ -632,4 +669,9 @@ A process is not stopped for being quiet while it still has work of its own: a b
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.
 - **`session.resumeGate` is set and the log has no `resume gate` line:** the line only appears when a `claude-code` agent picks up an earlier conversation that no other rule ended. A conversation that is new, silent for longer than `staleMinutes`, near its size limit or past `maxTurnsPerSession` starts fresh before the gate looks at it.
 - **The gate starts conversations fresh that an agent still needed:** raise `session.resumeGate.margin`, for example to `3`, or set the mode back to `"shadow"`.
+- **An agent no longer seems to know something it remembered:** a new session shows only the first 4000 characters of the agent's own memory list. The last line of the list says how many entries were left out and names the file with all of them, which the agent can read. Raise `session.memoryIndexMaxChars`, or set it to `0`, and run `agentx daemon restart --when-idle`.
+- **An agent does not know a memory saved earlier in the same conversation:** a conversation that is picked up again does not get the memory list again. The new memory reaches it when the conversation starts fresh. Ask the agent to read `.agentx-memory.md`, or start a new conversation.
+- **A workspace `CLAUDE.md` still has an `AGENTX-MEMORY-START` block:** if `agentx daemon logs` shows `is tracked by git` for that file, remove the block by hand and commit. Otherwise the block is removed at the next daemon start or memory change: restart the daemon, or save any memory with `agentx memory add`.
+- **A workspace `CLAUDE.md` is empty after the update:** it held only the old memory block, which was removed. The file is kept so nothing that expects it breaks; delete it if no one needs it.
+- **A full session still gets the landscape with `session.fullContextOnDemand` on:** the agent's `tier` is not `claude-code`, or the daemon has not been restarted since the change.
 - **Every line says `resume: no context reading`:** the agent's last task ran without per-step usage, so there is nothing to compare. The conversation is picked up as before.

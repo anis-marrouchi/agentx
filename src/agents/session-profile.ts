@@ -261,16 +261,24 @@ export function fullClaudeArgs(
 /** The one line a lean prompt carries in place of the landscape, the chat
  *  history and the cross-chat context. Names the tool for each so the
  *  agent fetches only what the task turns out to need. */
-export function onDemandContextNote(channel: string, chatId: string): string {
+export function onDemandContextNote(channel: string, chatId: string, opts: { historyPushed?: boolean } = {}): string {
+  // A full start (#2009) still pushes the chat history and other chats,
+  // so its note offers only what it left out.
+  const history = opts.historyPushed
+    ? ""
+    : `earlier messages on this chat (agentx_recent with channel="${channel}", chatId="${chatId}"), ` +
+      `today's other chats of yours (agentx_recent without chatId), `
   return [
     "[Context on demand]",
     `Not pushed into this prompt, fetch with agentx MCP tools when the task needs them: ` +
     `the agent landscape (agentx_agents with landscape=true), ` +
-    `earlier messages on this chat (agentx_recent with channel="${channel}", chatId="${chatId}"), ` +
-    `today's other chats of yours (agentx_recent without chatId), ` +
+    history +
     `stored knowledge (agentx_wiki_query), ` +
     `a colleague's or a work item's status (agentx_lookup, before asking them), ` +
-    `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory).`,
+    `and this machine, its programs, Claude usage limits and running work (agentx_node: answer from it with its check time, never from memory). ` +
+    // The miss path (#2009 condition 4): a tool or fact left out of the
+    // start is named and looked up, not guessed around.
+    `If you need a tool or fact that is not loaded, say which and look it up.`,
   ].join("\n")
 }
 

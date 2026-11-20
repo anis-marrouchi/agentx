@@ -10,6 +10,7 @@ import { KIND_WEIGHT, normalizeDetail } from "../src/improve/rank"
 import { readFileSync } from "fs"
 import {
   costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory, queueCostSignals, CACHE_LIFETIME_MS,
+  COST_KINDS, START_ALERT_TOKENS, START_BUDGET_TOKENS, START_WRITE_MIN, startTokens,
   baselineQuery, lastAgentRunQuery, chatPrevQuery, jobRunsQuery,
   type CostRun, type CostHistory,
 } from "../src/improve/cost"
@@ -40,7 +41,10 @@ function run(calls: CallUsage[], over: Partial<CostRun> = {}): CostRun {
   }
 }
 
-const kinds = (r: CostRun, h: CostHistory = {}) => costSignals(r, h).map((s) => s.kind)
+/** The four kinds of #1995. start_over_budget (#2009) fires on every fresh
+ *  start over the budget, so it has its own block below. */
+const four = (r: CostRun, h: CostHistory = {}) => costSignals(r, h).filter((s) => s.kind !== "start_over_budget")
+const kinds = (r: CostRun, h: CostHistory = {}) => four(r, h).map((s) => s.kind)
 /** A normal run: a warm start that reads its prefix, then small turns. */
 const normal = () => run([call(40_000, 1_000), call(41_000, 1_500), call(42_500, 900)])
 const past = (n: number, total: number) => Array.from({ length: n }, () => total)
@@ -66,7 +70,7 @@ describe("job_cost_high", () => {
   const big = () => run([call(400_000, 2_000), call(402_000, 2_000)])
 
   it("fires at 3x the job type's median with 10 past runs, naming the job type", () => {
-    const s = costSignals(big(), { pastTotals: past(10, 100_000) })
+    const s = four(big(), { pastTotals: past(10, 100_000) })
     expect(s).toEqual([expect.objectContaining({ kind: "job_cost_high", agentId: "builder", ref: "01TRACE" })])
     expect(s[0].detail).toMatch(/^job cron nightly-report: 8(\.\d)?x median/)
   })
@@ -90,7 +94,7 @@ describe("start_no_cache_reuse", () => {
   const recent = { lastAgentRun: { finishedAt: NOW - 3 * MIN, model: OPUS } }
 
   it("fires on a new session that wrote its prefix again minutes after the same agent's run", () => {
-    const s = costSignals(fresh(), recent)
+    const s = four(fresh(), recent)
     expect(s.map((x) => x.kind)).toEqual(["start_no_cache_reuse"])
     expect(s[0].detail).toBe("job cron nightly-report: fresh start wrote 40k, last run 2 min ago")
   })
@@ -107,7 +111,7 @@ describe("start_no_cache_reuse", () => {
 
 describe("context_rewrite", () => {
   it("fires when a later call writes 80% or more of a 20k+ context", () => {
-    const s = costSignals(run([call(40_000, 1_000), call(0, 60_000)]))
+    const s = four(run([call(40_000, 1_000), call(0, 60_000)]))
     expect(s.map((x) => x.kind)).toEqual(["context_rewrite"])
     expect(s[0].detail).toBe("job cron nightly-report: rewrite 60k of 60k")
   })
@@ -138,7 +142,7 @@ describe("context_rewrite", () => {
 
 describe("model_switch", () => {
   it("fires when the main thread changes model inside a run", () => {
-    const s = costSignals(run([call(40_000, 500), call(40_000, 500, { model: HAIKU })]))
+    const s = four(run([call(40_000, 500), call(40_000, 500, { model: HAIKU })]))
     expect(s.map((x) => x.kind)).toEqual(["model_switch"])
     expect(s[0].detail).toBe(`job cron nightly-report: ${OPUS} → ${HAIKU}`)
   })
@@ -175,8 +179,8 @@ describe("job type (B1, B4)", () => {
   })
 
   it("every detail starts with the job key and survives normalisation as one group", () => {
-    const a = costSignals(run([call(40_000, 1_000), call(0, 60_000)]))[0].detail!
-    const b = costSignals(run([call(90_000, 1_000), call(0, 95_000)], { taskId: "01OTHER" }))[0].detail!
+    const a = four(run([call(40_000, 1_000), call(0, 60_000)]))[0].detail!
+    const b = four(run([call(90_000, 1_000), call(0, 95_000)], { taskId: "01OTHER" }))[0].detail!
     expect(normalizeDetail("context_rewrite", a)).toBe(normalizeDetail("context_rewrite", b))
     expect(normalizeDetail("context_rewrite", a)).toMatch(/^job cron nightly-report: /)
   })
@@ -216,7 +220,7 @@ describe("readCostHistory", () => {
     const h = readCostHistory(db, r, NOW)
     expect(h.pastTotals).toHaveLength(10)
     expect(h.pastTotals!.every((t) => t === 100_000)).toBe(true)
-    expect(costSignals(r, h).map((s) => s.kind)).toEqual(["job_cost_high"])
+    expect(four(r, h).map((s) => s.kind)).toEqual(["job_cost_high"])
   })
 
   it("leaves out runs older than 14 days and zero-usage runs (S2)", () => {
@@ -309,5 +313,83 @@ describe("agentx improve kinds", () => {
     const text = kindLines().join("\n")
     for (const k of SIGNAL_KINDS) expect(text).toContain(k)
     expect(text).toContain(SIGNAL_MEANING.context_rewrite)
+  })
+})
+
+// --- #2009 part 1: the start-size guard ---
+
+describe("start_over_budget (#2009)", () => {
+  it("is a cost kind with a meaning and a low weight, so it never feeds a fix rule", () => {
+    expect(SIGNAL_KINDS).toContain("start_over_budget")
+    expect(COST_KINDS).toContain("start_over_budget")
+    expect(SIGNAL_MEANING.start_over_budget.length).toBeGreaterThan(10)
+    expect(KIND_WEIGHT.start_over_budget).toBe(1)
+  })
+
+  it("the budget is a constant next to START_WRITE_MIN: 15k tokens; the alert line is 64k until part 2", () => {
+    expect(START_BUDGET_TOKENS).toBe(15_000)
+    expect(START_ALERT_TOKENS).toBe(64_000)
+    expect(START_WRITE_MIN).toBeGreaterThan(0)
+  })
+
+  it("fires once on a fresh start whose first main call is over the alert line, naming its size and the budget", () => {
+    const s = costSignals(run([call(50_000, 20_000), call(70_000, 500)])).filter((x) => x.kind === "start_over_budget")
+    expect(s).toHaveLength(1)
+    expect(s[0]).toMatchObject({ agentId: "builder", ref: "01TRACE" })
+    expect(s[0].detail).toBe("job cron nightly-report: fresh start 70k, budget 15k")
+  })
+
+  it("is silent at today's usual full start (48k), on a resumed run, and with no per-call numbers (review item 2: no flood)", () => {
+    const has = (r: CostRun) => costSignals(r).some((x) => x.kind === "start_over_budget")
+    expect(has(run([call(30_000, 18_000), call(48_000, 500)]))).toBe(false)
+    expect(has(run([call(0, 63_000)]))).toBe(false)
+    expect(has(run([call(90_000, 500)], { resumed: true }))).toBe(false)
+    expect(has({ ...run([]), calls: undefined })).toBe(false)
+  })
+
+  it("measures the first main call, not a subagent's", () => {
+    const r = run([call(0, 70_000, { sub: true }), call(0, 12_000)])
+    expect(startTokens(r)).toBe(12_010)
+    expect(costSignals(r).some((x) => x.kind === "start_over_budget")).toBe(false)
+  })
+
+  it("startTokens is input + cache read + cache write of the first main call, null when not a fresh start", () => {
+    expect(startTokens(run([call(30_000, 18_000)]))).toBe(48_010)
+    expect(startTokens(run([call(30_000, 18_000)], { resumed: true }))).toBeNull()
+    expect(startTokens({ ...run([]), calls: undefined })).toBeNull()
+  })
+})
+
+describe("task_traces.start_tokens (#2009)", () => {
+  it("is a nullable column: written at the end of a run, null when not measured", () => {
+    const a = recordTraceStart(db, { agentId: "builder", channel: "cron", chatId: "cron:x" })
+    recordTraceEnd(db, a, { status: "ok", startTokens: 48_010 })
+    const b = recordTraceStart(db, { agentId: "builder", channel: "cron", chatId: "cron:y" })
+    recordTraceEnd(db, b, { status: "ok" })
+    const get = (id: string) => (db.prepare("SELECT start_tokens AS s FROM task_traces WHERE task_id = ?").get(id) as { s: number | null }).s
+    expect(get(a)).toBe(48_010)
+    expect(get(b)).toBeNull()
+    expect(listTraces(db, { agentId: "builder" }).find((t) => t.taskId === a)?.startTokens).toBe(48_010)
+  })
+
+  it("task:completed carries startTokens into the trace row", async () => {
+    const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
+    const { getEventBus } = await import("../src/events/bus")
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const dispose = attachSqliteSubscribers(db)
+    try {
+      const taskId = recordTraceStart(db, { agentId: "builder", channel: "cron", chatId: "cron:z" })
+      bus.emit("task:completed", { taskId, agentId: "builder", channel: "cron", chatId: "cron:z", durationMs: 5, startTokens: 21_000, at: new Date().toISOString() })
+      expect(db.prepare("SELECT start_tokens AS s FROM task_traces WHERE task_id = ?").get(taskId)).toEqual({ s: 21_000 })
+    } finally {
+      dispose()
+      bus.removeAllListeners()
+    }
+  })
+
+  it("the registry writes start_tokens from the cost path's first call", () => {
+    const src = readFileSync(path.join(__dirname, "../src/agents/registry.ts"), "utf8")
+    expect(src).toMatch(/startTokens: startTokens\(/)
   })
 })

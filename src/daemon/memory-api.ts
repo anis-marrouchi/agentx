@@ -26,13 +26,10 @@ import { MemoryConflictError, type WriteCondition } from "@/agents/memory-versio
 
 export interface MemoryApiDeps {
   mem: AgentMemory
-  /** Agent workspace, to re-sync MEMORY.md into CLAUDE.md after a change. */
+  /** Agent workspace, to re-sync .agentx-memory.md after a change. */
   workspaceFor(agentId: string): string | null | undefined
   /** The agent running `taskId` now, or null. */
   runningTaskOwner(taskId: string): { agentId: string } | null
-  /** `session.memoryIndexMaxChars` (#615): the cap on the index block
-   *  merged into CLAUDE.md. Absent or 0 keeps the whole index. */
-  indexMaxChars?: () => number
 }
 
 const MEMORY_ITEM = /^\/api\/memory\/([^/?]+)$/
@@ -92,7 +89,7 @@ export function resolveCaller(
 
 function resync(deps: MemoryApiDeps, agentId: string): boolean {
   const ws = deps.workspaceFor(agentId)
-  if (ws) { try { deps.mem.syncToWorkspace(agentId, ws, deps.indexMaxChars?.() ?? 0) } catch { /* best effort */ } }
+  if (ws) { try { deps.mem.syncToWorkspace(agentId, ws) } catch { /* best effort */ } }
   return !!ws
 }
 

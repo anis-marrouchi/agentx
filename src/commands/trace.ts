@@ -184,6 +184,8 @@ function printTrace(t: TraceRecord, steps: TraceStepRecord[]): void {
       `cache_read=${t.cacheReadTokens ?? 0} cache_create=${t.cacheCreateTokens ?? 0}`)
   }
   if (t.numTurns != null) console.log(`  ${chalk.dim("turns")}    ${t.numTurns}`)
+  // What the fresh start's first call read (#2009); absent when not measured.
+  if (t.startTokens != null) console.log(`  ${chalk.dim("start")}    ${t.startTokens} tokens`)
   if (t.injectedContext) {
     const { memory, procedures, wiki } = t.injectedContext
     const parts = [

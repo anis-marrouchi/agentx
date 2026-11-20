@@ -3058,15 +3058,20 @@ export const daemonConfigSchema = z.object({
        *  `pullRequestActions` (or a project rule) let it through. */
       actions: z.array(z.string().min(1)).default(["labeled", "unlabeled", "closed"]),
     }).default({}),
-    /** Longest the agent-memory index (MEMORY.md) may be where it is
-     *  loaded on every session: merged into each workspace's CLAUDE.md
-     *  and inlined in the system prompt (#615). 0, the default, keeps the
-     *  whole index. Cut whole lines only; a closing line counts the
-     *  entries left out and points at `.agentx-memory.md`, which always
-     *  holds the full index, and at `agentx memory index`. Applies to the
-     *  prompt on save; the CLAUDE.md block follows at the next daemon
-     *  start or memory change. */
-    memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(0),
+    /** Longest the agent-memory index block may be in a fresh start's
+     *  task text (#615, #2009). Default 4000 characters; 0 shows it whole.
+     *  Cut whole lines only; a closing line counts the entries left out
+     *  and names `.agentx-memory.md` in the workspace, which holds them
+     *  all. Only the rendered block is cut; the file stays whole. Claude
+     *  Code's auto-memory MEMORY.md is not cut (its newest notes come
+     *  last). Read on every start. */
+    memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(4000),
+    /** Full claude-code starts fetch the agent landscape on demand
+     *  (#2009): a fresh start gets the [Context on demand] note instead of
+     *  the landscape; history and other chats stay pushed. Separate from
+     *  `lean.contextOnDemand`, which keeps its meaning for lean starts.
+     *  Off by default; takes a daemon restart. */
+    fullContextOnDemand: z.boolean().default(false),
     /** Resume or start fresh (#621, step 3). Before a claude-code session
      *  is resumed, compare what the coming turn costs when it replays the
      *  transcript with what a fresh lean start costs, and start fresh when

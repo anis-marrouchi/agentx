@@ -251,6 +251,9 @@ export interface AgentXEvents {
     jevArm?: "treatment" | "holdout"
     /** Runtime-reported turn count, when the runtime reports one. */
     numTurns?: number
+    /** What a fresh start's first call read, input + cache read + cache
+     *  write (#2009); absent when not measured. task_traces.start_tokens. */
+    startTokens?: number
     /** What the run cost in USD: the runtime's own figure when reported,
      *  else its tokens at the billed model's rate. Feeds the monthly
      *  budget (#1162) and task_traces.cost_usd. */

@@ -100,6 +100,21 @@ describe("autoMemoryBlock (#2000)", () => {
   it("is empty without MEMORY.md", () => {
     expect(autoMemoryBlock(ws, home)).toBe("")
   })
+
+  it("caps only the rendered block, naming the file and the notes folder for the rest (#2009)", () => {
+    const memDir = join(home, ".claude", "projects", ws.replace(/[^a-zA-Z0-9]/g, "-"), "memory")
+    mkdirSync(memDir, { recursive: true })
+    const lines = Array.from({ length: 150 }, (_, i) => `- [Note ${i + 1}](note_${i + 1}.md) — what the agent learned about topic ${i + 1}`)
+    writeFileSync(join(memDir, "MEMORY.md"), lines.join("\n") + "\n")
+    const block = autoMemoryBlock(ws, home, 4000)
+    const body = block.slice(block.indexOf("- [Note 1]"), block.lastIndexOf("</system-reminder>"))
+    expect(body.length).toBeLessThanOrEqual(4001)
+    expect(block).toContain("- [Note 1](note_1.md)")
+    expect(block).not.toContain("- [Note 150](")
+    expect(block).toMatch(new RegExp(`_\\(\\d+ more notes not shown here\\. Read ${join(memDir, "MEMORY.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} for the full index; the notes are in `))
+    // No cap: the 200-line render as before.
+    expect(autoMemoryBlock(ws, home)).toContain("- [Note 150](")
+  })
 })
 
 describe("withOwnClaudeMd", () => {
