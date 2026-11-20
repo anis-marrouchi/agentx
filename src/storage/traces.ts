@@ -105,6 +105,8 @@ export interface InjectedContext {
   memory: string[]
   procedures: string[]
   wiki: boolean
+  /** Rule ids from the Rules Registry block of this run (#809). */
+  rules?: string[]
 }
 
 export interface TraceStepInput {
@@ -338,7 +340,8 @@ export function parseInjectedContext(raw: unknown): InjectedContext | null {
     const v = JSON.parse(raw)
     if (!v || typeof v !== "object") return null
     const ids = (x: unknown) => (Array.isArray(x) ? x.filter((i): i is string => typeof i === "string") : [])
-    return { memory: ids(v.memory), procedures: ids(v.procedures), wiki: v.wiki === true }
+    const rules = ids(v.rules)
+    return { memory: ids(v.memory), procedures: ids(v.procedures), wiki: v.wiki === true, ...(rules.length ? { rules } : {}) }
   } catch {
     return null
   }

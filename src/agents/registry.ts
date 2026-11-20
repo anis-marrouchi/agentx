@@ -57,6 +57,8 @@ import { newEventId } from "@/intent/ulid"
 import { currentRoot } from "@/events/envelope"
 import { buildOwnerDecisions } from "./owner-decisions"
 import { decisionPagesFor, decisionsForBlock } from "@/wiki/decision-approvals"
+import { buildRulesBlock, parseRegistry, rulesForRun, rulesHash, wallProjectsOf, type RunFacts } from "./rules-registry"
+import { repoOfChat } from "@/daemon/wall-projects"
 import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
@@ -1013,6 +1015,72 @@ export class AgentRegistry {
     return this.memberLog.store
   }
   private memberLog?: { days: number; store: MemberStore }
+
+  /**
+   * The Rules Registry block for this run (noqta#809), when `rules.enabled`.
+   * Sent on a fresh session, and on a resumed one only when the block
+   * differs from the one this session last got (`Session.rulesHash`). Never
+   * throws: the block is optional. Codex runs get it too.
+   */
+  private rulesForRun(
+    task: { agentId: string; workflowRunId?: string },
+    channel: string,
+    chatId: string,
+    fresh: boolean,
+  ): { block?: string; ids: string[] } {
+    const cfg = this.config.rules
+    if (!cfg?.enabled) return { ids: [] }
+    try {
+      const store = this.wikiHub.getAgentWiki(cfg.registryAgent)
+      const page = store.readArticle(cfg.registryPage)
+      if (!page) return { ids: [] }
+      const required = this.config.wiki?.decisionApprovals?.required === true
+      const [readable] = decisionsForBlock([page], store.baseDir, required)
+      if (!readable) return { ids: [] }
+
+      const workflowRunId = task.workflowRunId
+        ?? (chatId.startsWith("workflow:") ? chatId.slice(9) || undefined : undefined)
+      let cronSpec: string | undefined
+      let scheduled = false
+      if (chatId.startsWith("cron:")) {
+        scheduled = true
+        cronSpec = this.config.crons?.[chatId.slice(5)]?.schedule
+      } else if (workflowRunId) {
+        // A workflow node run (#803 R3, #813 R8): its schedule is the
+        // workflow's own trigger.cron, not a `cron:<jobId>` chat.
+        const run = this.workflowRuns?.get(workflowRunId)
+        const wf = run ? new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) }).get(run.workflowId) : null
+        const trigger = wf?.nodes.find((n) => n.type === "trigger.cron")
+        const spec = (trigger?.config as { spec?: unknown } | undefined)?.spec
+        if (typeof spec === "string" && spec.trim()) { scheduled = true; cronSpec = spec }
+      }
+      const agentDef = this.config.agents[task.agentId]
+      const facts: RunFacts = {
+        agentId: task.agentId,
+        nodeName: this.config.node.name,
+        projects: wallProjectsOf(this.config.dashboard?.wall?.projects as any, {
+          agentId: task.agentId,
+          repo: repoOfChat(chatId),
+          workspace: agentDef?.workspace,
+        }),
+        ...(workflowRunId ? { workflowRunId } : {}),
+        scheduled,
+        ...(cronSpec ? { cronSpec } : {}),
+      }
+      const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name }))
+      const rows = rulesForRun(parseRegistry(readable.content), facts, agents)
+      const block = buildRulesBlock(rows, { maxTokens: cfg.maxTokens })
+      if (!block) return { ids: [] }
+      const hash = rulesHash(block)
+      const session = this.sessions.getSession(task.agentId, channel, chatId)
+      if (!fresh && session.rulesHash === hash) return { ids: [] }
+      this.sessions.setRulesHash(task.agentId, channel, chatId, hash)
+      return { block, ids: rows.map((r) => r.id) }
+    } catch (e: any) {
+      this.log(`[${task.agentId}] rules registry failed (non-fatal): ${e?.message || e}`)
+      return { ids: [] }
+    }
+  }
 
   /**
    * If there's an active handover routing TO this agent for this (channel,
@@ -2868,7 +2936,15 @@ export class AgentRegistry {
     if (!resumeSessionId && !isCodexCli) {
       try {
         const required = this.config.wiki?.decisionApprovals?.required === true
-        const pages = decisionsForBlock(decisionPagesFor(agentWiki, task.agentId), agentWiki.baseDir, required)
+        let candidates = decisionPagesFor(agentWiki, task.agentId)
+        // With the Rules Registry on, the registry page reaches runs through
+        // its own scoped block, not here (#809). Filtered in the caller so
+        // `wiki decisions list` still offers the page for approval.
+        if (this.config.rules?.enabled) {
+          const registryPath = resolve(this.wikiHub.getAgentWiki(this.config.rules.registryAgent).baseDir, this.config.rules.registryPage)
+          candidates = candidates.filter((a) => resolve(agentWiki.baseDir, a.path) !== registryPath)
+        }
+        const pages = decisionsForBlock(candidates, agentWiki.baseDir, required)
         ownerDecisions = buildOwnerDecisions(pages, Date.now()) || undefined
       } catch { /* the block is optional */ }
     }
@@ -3234,6 +3310,9 @@ export class AgentRegistry {
       agentMemoryBlock || "",
     ].filter((s) => s.trim().length > 0).join("\n\n") || undefined
 
+    // Read here, after the planner may have dropped the session above.
+    const runRules = this.rulesForRun(task, channel, chatId, !resumeSessionId)
+
     const contextInput: ContextInput = {
       channel,
       chatId,
@@ -3281,6 +3360,7 @@ export class AgentRegistry {
       // Kept on an isolated run too: it is about this run, not its context.
       rotationMemo,
       ownerDecisions,
+      rulesBlock: runRules.block,
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
       // How to show a file on the phone: once, when the session starts.
@@ -3436,6 +3516,7 @@ export class AgentRegistry {
       memory: memoryFacts,
       procedures: procedureCandidates,
       wikiContext: selectedContext.input.wikiContext,
+      rules: runRules.ids,
     })
 
     // Context-size telemetry. Bytes we control: the layered context string +

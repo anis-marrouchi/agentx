@@ -141,6 +141,9 @@ export interface ContextInput {
   groupHistory?: string              // from GroupLog.buildContext()
   sessionHistory?: string            // from SessionStore.buildHistoryContext()
   ownerDecisions?: string            // from buildOwnerDecisions() — fresh sessions only
+  /** The Rules Registry rows that fit this run (rules-registry.ts, #809).
+   *  Already fitted to its own budget by the builder. */
+  rulesBlock?: string
   crossChatContext?: string           // from SessionStore.getCrossSessionSummary()
   /** Long-memory recall pre-fetched by the registry when the user message
    *  contains an explicit long-memory cue ("yesterday", "last week",
@@ -458,6 +461,19 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("memory", 400),
       content: input.memoryContext,
       tags: ["memory", "persistent"],
+    })
+  }
+
+  // 2.6 Rules for this run, from the Rules Registry (#809). The builder
+  //     fits the block under `rules.maxTokens` itself, so the layer cap is
+  //     its own length and fitLayer never cuts a rule id off.
+  if (input.rulesBlock) {
+    layers.push({
+      name: "rules",
+      priority: 2.6,
+      maxTokens: Math.ceil(input.rulesBlock.length / CHARS_PER_TOKEN) + 1,
+      content: input.rulesBlock,
+      tags: ["rules", "owner", "wiki"],
     })
   }
 
