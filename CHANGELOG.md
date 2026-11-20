@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.244.1](https://github.com/anis-marrouchi/agentx/compare/v0.244.0...v0.244.1) (2026-11-20)
+
+
+### Performance Improvements
+
+* **agents:** keep one model per session ([#2001](https://github.com/anis-marrouchi/agentx/issues/2001)) ([#2032](https://github.com/anis-marrouchi/agentx/issues/2032)) ([be90ed7](https://github.com/anis-marrouchi/agentx/commit/be90ed7a7b6e0d3b7320fd2db6bfcbdb86f46eab))
+
 ## [0.244.0](https://github.com/anis-marrouchi/agentx/compare/v0.243.0...v0.244.0) (2026-11-20)
 
 
