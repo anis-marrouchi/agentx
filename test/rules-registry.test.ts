@@ -113,6 +113,23 @@ describe("the live page (fixture mirrors 2026-11-20, 21 rows)", () => {
     expect(ids(rulesForRun(rows, run({ agentId: "pm-agent", ...daily }), AGENTS))).not.toContain("R3")
   })
 
+  it("on a node without the named agent, R3 and R8 reach no run (review B1)", () => {
+    // clawd-like: no marketing-agent, no pm-agent.
+    const CLAWD = [
+      { id: "pm-ksi", name: "PM KSI" },
+      { id: "devops-hasanah", name: "DevOps Hasanah" },
+      { id: "ops-main", name: "Ops Main" },
+    ]
+    const onClawd = (agentId: string, cronSpec: string) =>
+      ids(rulesForRun(rows, run({ agentId, nodeName: "Clawd Server", scheduled: true, cronSpec }), CLAWD))
+    for (const a of CLAWD) {
+      expect(onClawd(a.id, "0 8 * * 1")).not.toContain("R8")
+      expect(onClawd(a.id, "0 6 * * *")).not.toContain("R3")
+      // Fleet rows and clawd's own mesh row still reach them.
+      expect(onClawd(a.id, "0 6 * * *")).toEqual(expect.arrayContaining(["R4", "decision-add-verifiable-success-criteria-rule-to"]))
+    }
+  })
+
   it("a rule removed from the page stops being sent on the next run", () => {
     const without = PAGE.split("\n").filter((l) => !l.includes("**R4**")).join("\n")
     expect(ids(rulesForRun(parseRegistry(PAGE), run(), AGENTS))).toContain("R4")
@@ -131,9 +148,23 @@ describe("matching details", () => {
   })
 
   it("project: also fits a run the wall projects put there", () => {
-    const rows = parseRegistry("| Rule | Scope | Applies to |\n|---|---|---|\n| Post daily | project:Channel One | the channel team |")
+    const rows = parseRegistry("| Rule | Scope | Applies to |\n|---|---|---|\n| Post daily | project:Channel One | |")
     expect(rulesForRun(rows, run(), AGENTS)).toHaveLength(0)
     expect(rulesForRun(rows, run({ projects: ["Channel One"] }), AGENTS)).toHaveLength(1)
+  })
+
+  it("a filled Applies to that names no agent here sends only fleet, mesh and agent terms", () => {
+    const rows = parseRegistry([
+      "| Rule | Scope | Applies to |", "|---|---|---|",
+      "| P | project:Channel One | the channel team |",
+      "| D | run:daily | every agent |",
+      "| F | fleet | everyone |",
+      "| M | mesh:Clawd Server | clawd agents |",
+      "| A | agent:dev-session | the developer seat |",
+    ].join("\n"))
+    const daily = { scheduled: true, cronSpec: "0 6 * * *" }
+    expect(ids(rulesForRun(rows, run({ nodeName: "Clawd Server", projects: ["Channel One"], ...daily }), AGENTS)).sort())
+      .toEqual(["a", "f", "m"])
   })
 
   it("wallProjectsOf counts every matching entry, by agent, repo or workspace", () => {

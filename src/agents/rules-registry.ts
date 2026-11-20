@@ -15,7 +15,9 @@
 // A run gets a row only when both hold:
 //   Who:   "Applies to" names no agent, or names this run's agent (agent id
 //          or display name, whole word, any case).
-//   Where: one Scope term fits the run.
+//   Where: one Scope term fits the run. When a filled "Applies to" names no
+//          agent of this node, only fleet, mesh and agent terms count: the
+//          name may be an agent on another node.
 //
 // Off unless `rules.enabled`. Pure functions here; the registry wires them.
 
@@ -221,11 +223,23 @@ export function termFits(term: ScopeTerm, run: RunFacts, named: string[]): boole
   }
 }
 
+/** Scope terms that stay safe when "Applies to" names nobody on this node:
+ *  fleet and mesh rows are meant for every agent where they fit, and an
+ *  agent: term names its agent by id itself. */
+const UNNAMED_OK = new Set<ScopeTerm["kind"]>(["fleet", "mesh", "agent"])
+
 export function rowFits(row: RuleRow, run: RunFacts, agents: AgentName[]): boolean {
   if (row.error) return false
   const named = namedAgents(row.appliesTo, agents)
   if (named.length > 0 && !named.includes(run.agentId)) return false
-  return row.terms.some((t) => termFits(t, run, named))
+  // A filled "Applies to" that names no agent of this node may name one on
+  // another node (R8 "Hakim" on a node without pm-agent). Falling open would
+  // send it to every run its Scope fits, so then only fleet, mesh and agent
+  // terms count (#2015 review B1). An empty cell still means everyone.
+  const terms = named.length === 0 && cleanCell(row.appliesTo)
+    ? row.terms.filter((t) => UNNAMED_OK.has(t.kind))
+    : row.terms
+  return terms.some((t) => termFits(t, run, named))
 }
 
 export function rulesForRun(rows: RuleRow[], run: RunFacts, agents: AgentName[]): RuleRow[] {
