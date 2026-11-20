@@ -100,9 +100,41 @@ The count starts on the day you pick, not the day the fix is deployed. A slow de
 2. **Terminal:** run `agentx improve held`. Each picked fix is listed with its card, the agent, the counts before and after, and `held`, `did not hold` or `waiting, N day(s) left`. A cost problem adds a line `cost problem: tokens per run …k before, …k after; owner reopens … before, … after`.
 3. **Terminal:** the nightly `agentx retro sweep` prints the same verdict for each fix whose 7 days are over.
 
+## Give each agent up to 3 fix rules
+
+Some problems are about how an agent works, not about the code: it waits for another run of itself, says nothing about whether its job is done, or hands work over without the information the helper needs. For these, the nightly pass writes the agent a **fix rule**: one sentence the agent reads at the start of every session. Each agent holds at most **3** fix rules, so its start text never grows past that.
+
+**Which problems get a rule.** Problems where the agent waited for itself (`same_work_waited`), repeated what it had already written (`callback_repeat_skipped`), ended without saying its job's state (`job_stalled`), or had a hand-off refused for missing information (`handoff_refused`). A rule for a hand-off goes to the agent that sent it. Cost problems never get a rule: they are fixed in the code.
+
+**How a rule is made.**
+
+1. Each night, for each agent, the pass takes its worst ranked problem that no rule covers yet.
+2. One small AI call (the model in `improve.mergeModel`) writes one sentence for it. The call is counted against `improve.dailyUsd` at an estimate of $0.10. Nothing is written while `improve.enabled` is off.
+3. The sentence is kept only if it passes every check, in this order:
+   1. **Shape:** 20 to 300 characters, one line, no markdown, exactly one sentence ending in a full stop.
+   2. **Names something to do:** it starts with an instruction word such as Check, Ask, State, Wait, Include, Never or Do not, or with "When …, ", "Before …, ", "After …, " or "If …, " followed by one of those words.
+   3. **Not vague:** none of "try to", "be careful", "better", "improve", "ensure quality", "as needed", "if possible", "appropriate".
+   4. **On topic:** it uses at least one word of the problem's kind, for example status, state or job for `job_stalled`.
+   5. **New:** the agent does not already hold the same sentence.
+4. A sentence that fails is not saved. It is logged with the check it failed. There is no second try that night.
+
+**Where it lives.** The rule is a note in the agent's own memory, named `loop_<problem key>`. The sentence is the note's one-line summary, so it appears in the agent's memory list under its own heading, **Rules**, above every other note. If you limit the memory list's size (`session.memoryIndexMaxChars`), rules are the last lines cut.
+
+**How a rule is retired.**
+
+- **To make room:** a 4th rule first retires one of the 3. The rule whose problem has had no signal for the longest goes first (a problem counts as quiet after a full day without a signal). If none is quiet, the oldest rule goes.
+- **When it did not work:** 7 days after a rule was added, its problem's signals in those 7 days are compared with the 7 days before. The rule stays only if the count went down **and** your reopens did not rise. Reopens here means requests you reopened plus closes that did not do what you asked, for that agent. They rise when the 7 days after have at least 2 more than the 7 days before, so one extra reopen does not retire a working rule.
+
+A retired rule is removed from the agent's memory list. Its text is kept in the note's history, in `.agentx/agent-memory/<agent id>/_versions/feedback_loop_<problem key>/`. Every rule added, kept, retired or refused is one line in the rule log. A retirement for not working also shows on the next self-improvement card about the same problem.
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx improve rules`. For each agent you see how many of its 3 rules are used, then each rule with the day it was added, the problem key, the counts before and after, your reopens before and after, and `held`, `did not hold` or `waiting, N day(s) left`. The sentence is on the line below. The last retirements follow, with their reason.
+3. **Terminal:** to see one agent, run `agentx improve rules --agent <agent id>`. Add `--json` for the full data.
+4. **Terminal:** the nightly `agentx retro sweep --commit` prints a `rule added`, `rule kept`, `rule retired` or `rule refused` line for each change it made.
+
 ## How the stages fit
 
-Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, and the check that a picked fix held stage 4. Only stages 3 and 2's merge use an AI model, and only when `improve.enabled` is on, within `improve.dailyUsd`.
+Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, and the check that a picked fix held stage 4. Fix rules run in the same nightly pass, after the ranking and before the retro. Only stage 3, stage 2's merge and the fix-rule sentence use an AI model, and only when `improve.enabled` is on, within `improve.dailyUsd`.
 
 ## Check it worked
 
@@ -113,6 +145,8 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 5. **Terminal:** run `agentx improve held`. It lists the fixes you picked, or `No fix picked on a self-improvement card yet.`
 6. **Terminal:** run `agentx improve kinds`. The list ends with `job_cost_high`, `start_no_cache_reuse`, `context_rewrite` and `model_switch`, each marked `(cost)`.
 7. **Terminal:** after a day of work, run `agentx improve signals --kind context_rewrite --since 24h`. Each line names the run and its job type, or `none in this window`.
+8. **Terminal:** run `agentx improve rules`. It lists each agent's rules, or `No fix rule written yet.` on an install where the nightly pass has not written one.
+9. **Terminal:** run `agentx memory index --agent <agent id>` for an agent that has a rule. The rule sentence is listed under `## Rules`, before the other notes.
 
 ## If something is wrong
 
@@ -126,4 +160,9 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 - **`Merge call: not run (daily budget: …)`:** the day's `improve.dailyUsd` is used up. It frees as the 24 hours roll on.
 - **`Retro on the worst problem: not run (improve.enabled is off)`:** model calls are off. Set `improve.enabled` to `true` to allow them.
 - **`✗ problem <key>: no finished run found for its references`:** the runs behind the problem are gone from the trace history or still running. It is tried again the next night.
+- **`Fix rules: not run (improve.enabled is off)`:** model calls are off, so no rule is written or retired. Set `improve.enabled` to `true`.
+- **`rule skipped: … daily budget: …`:** the day's `improve.dailyUsd` is used up. The rule is tried again the next night.
+- **`rule refused: … check N (…)`:** the AI's sentence failed check N in [Give each agent up to 3 fix rules](#give-each-agent-up-to-3-fix-rules). Nothing was saved and the call still counted against the budget. It is tried again the next night.
+- **An agent never gets a rule:** only the problem kinds listed in that section get rules, and only after the problem was seen in 3 separate requests, hand-offs or runs. Check with `agentx improve rank --since 7d`.
+- **A rule you want back was retired:** its text is in `.agentx/agent-memory/<agent id>/_versions/feedback_loop_<problem key>/`. To keep it for good, outside the budget of 3, add it as your own note: `agentx memory add --agent <agent id> --type feedback --name <a name not starting with loop_> --description "<the sentence>"`.
 - **`✗ problem <key>: no candidate fix points to a moment in the run`:** the retro's ideas could not be tied to the run, so no card was raised. The call was still counted against the budget.
