@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.245.0](https://github.com/anis-marrouchi/agentx/compare/v0.244.2...v0.245.0) (2026-11-20)
+
+
+### Features
+
+* **a2a:** hand-off result and read by handle on the journal ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007) piece 1) ([#2037](https://github.com/anis-marrouchi/agentx/issues/2037)) ([211e73b](https://github.com/anis-marrouchi/agentx/commit/211e73bfe9887f55c740a8276ae4ec8556a1ef05))
+
 ## [0.244.2](https://github.com/anis-marrouchi/agentx/compare/v0.244.1...v0.244.2) (2026-11-20)
 
 
