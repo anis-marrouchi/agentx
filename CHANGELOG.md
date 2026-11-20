@@ -2,6 +2,23 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.241.0](https://github.com/anis-marrouchi/agentx/compare/v0.240.0...v0.241.0) (2026-11-20)
+
+
+### Features
+
+* **schedule:** run-once schedules that switch themselves off ([#2004](https://github.com/anis-marrouchi/agentx/issues/2004)) ([#2016](https://github.com/anis-marrouchi/agentx/issues/2016)) ([e6b43da](https://github.com/anis-marrouchi/agentx/commit/e6b43da7a9916ec7d132d20f18a18d2e702a462b))
+
+
+### Bug Fixes
+
+* **requests:** only an active plan stands in for deliverables ([#2020](https://github.com/anis-marrouchi/agentx/issues/2020)) ([#2021](https://github.com/anis-marrouchi/agentx/issues/2021)) ([50cd3bf](https://github.com/anis-marrouchi/agentx/commit/50cd3bf067a2561c5171d94602ceba9562e2d260))
+
+
+### Performance Improvements
+
+* **agents:** put Claude Code's instruction files in the cached system prompt ([#2000](https://github.com/anis-marrouchi/agentx/issues/2000)) ([#2017](https://github.com/anis-marrouchi/agentx/issues/2017)) ([72a134a](https://github.com/anis-marrouchi/agentx/commit/72a134ac0c0339f95b3f0313b820bddf357bd0f5))
+
 ## [0.240.0](https://github.com/anis-marrouchi/agentx/compare/v0.239.0...v0.240.0) (2026-11-20)
 
 
