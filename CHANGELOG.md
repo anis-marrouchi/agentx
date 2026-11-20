@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.246.1](https://github.com/anis-marrouchi/agentx/compare/v0.246.0...v0.246.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **situations:** refuse IPv4-compatible, 6to4 and 192.0.0.0/24 feed addresses ([#1988](https://github.com/anis-marrouchi/agentx/issues/1988)) ([43b970c](https://github.com/anis-marrouchi/agentx/commit/43b970cb76095cb915df5ab60f19751d7aa53139))
+
 ## [0.246.0](https://github.com/anis-marrouchi/agentx/compare/v0.245.0...v0.246.0) (2026-11-20)
 
 
