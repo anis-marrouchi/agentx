@@ -268,7 +268,7 @@ describe("emission after the reply (review item 1)", () => {
     queueCostSignals(run([call(40_000, 1_000), call(0, 60_000)]), NOW)
     expect(readSignals(db, 0)).toEqual([])
     await new Promise((r) => setImmediate(r))
-    expect(readSignals(db, 0).map((s) => s.kind)).toEqual(["context_rewrite", "start_over_budget"])
+    expect(readSignals(db, 0).map((s) => s.kind).sort()).toEqual(["context_rewrite", "start_over_budget"])
   })
 
   it("the registry queues cost signals after the reply is recorded, and never runs them inline", () => {
@@ -283,7 +283,7 @@ describe("emitCostSignals", () => {
   it("records through the signal sink, with the trace id as ref, and never throws", () => {
     setSignalDb(db)
     emitCostSignals(run([call(40_000, 1_000), call(0, 60_000)]), NOW)
-    expect(readSignals(db, 0).map((r) => [r.kind, r.ref])).toEqual([["context_rewrite", "01TRACE"], ["start_over_budget", "01TRACE"]])
+    expect(readSignals(db, 0).map((r) => [r.kind, r.ref]).sort()).toEqual([["context_rewrite", "01TRACE"], ["start_over_budget", "01TRACE"]])
     setSignalDb(null)
     expect(() => emitCostSignals(run([call(0, 60_000)]), NOW)).not.toThrow()
   })

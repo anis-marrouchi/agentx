@@ -38,7 +38,7 @@ import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJ
 import { isQuietAnswer } from "@/crons/quiet"
 import { withoutExitMarker } from "@/crons/exit-check"
 import { emitSignal } from "@/improve/signals"
-import { queueCostSignals } from "@/improve/cost"
+import { queueCostSignals, startTokens } from "@/improve/cost"
 import { queueAwarenessSignals, type RunEnd } from "@/improve/awareness"
 import { queueBayanSignals } from "@/improve/bayan"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
@@ -3676,7 +3676,10 @@ export class AgentRegistry {
     recordPromptSize(sizeKey, agentxContextBytes, sizeParts)
     const driftWarning = warnIfPromptGrowing(sizeKey)
     if (driftWarning) this.log(`[${task.agentId}] ${driftWarning}`)
-    if (agentxContextBytes > 16_000) {
+    // Claude Code starts are measured whole, from the first call's usage
+    // (task_traces.start_tokens, start_over_budget, #2009); this count of
+    // AgentX's own part stays for the other engines.
+    if (state.def.tier !== "claude-code" && agentxContextBytes > 16_000) {
       this.log(`[${task.agentId}] large context for ${channel}:${chatId}: ${agentxContextBytes} bytes (history=${sizeParts.history}, sysPrompt=${sizeParts.sysPrompt}, message=${sizeParts.message})`)
     }
 
@@ -4069,6 +4072,9 @@ export class AgentRegistry {
         resumeSessionId: resumeSessionId || undefined,
         jevArm: requestGate.arm,
         numTurns: response.numTurns,
+        // The start-size guard (#2009): the same first-call usage the cost
+        // signals below judge, so the column and start_over_budget agree.
+        startTokens: startTokens({ resumed: Boolean(resumeSessionId), calls: response.callUsage }) ?? undefined,
         costUsd: costUsd !== undefined && Number.isFinite(costUsd) && costUsd > 0 ? costUsd : undefined,
         injectedContext,
         finalResponse: response.content || undefined,
