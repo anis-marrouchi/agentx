@@ -95,11 +95,12 @@ export function isPrivateAddress(ip: string): boolean {
     const w = v6Words(s)
     // ::/96 IPv4-compatible (deprecated; also :: and ::1): refused outright.
     if (w.slice(0, 6).every((x) => x === 0)) return true
-    // ::ffff:a.b.c.d IPv4-mapped and 2002::/16 6to4 carry an IPv4 address.
+    // ::ffff:a.b.c.d IPv4-mapped, 64:ff9b::/96 NAT64 and 2002::/16 6to4 carry an IPv4 address.
     if (w.slice(0, 5).every((x) => x === 0) && w[5] === 0xffff) return isPrivateAddress(v4Of(w[6], w[7]))
+    if (w[0] === 0x64 && w[1] === 0xff9b && w.slice(2, 6).every((x) => x === 0)) return isPrivateAddress(v4Of(w[6], w[7]))
     if (w[0] === 0x2002) return isPrivateAddress(v4Of(w[1], w[2]))
-    // ULA, link-local, multicast, and NAT64 (64:ff9b::/96 reaches IPv4 inside).
-    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff") || s.startsWith("64:ff9b:")
+    // ULA, link-local, multicast.
+    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff")
   }
   return true
 }
