@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs"
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -74,6 +74,16 @@ describe("one-time cron jobs (#2004)", () => {
     expect(job.totalRuns).toBe(1)
     expect(job.enabled).toBe(false)
     expect(writes).toContainEqual({ crons: { check: { enabled: false } } })
+  })
+
+  it("records its run on disk before the run starts", async () => {
+    const s = scheduler(new Date(Date.now() - 1000).toISOString())
+    s.executeCommandJob = vi.fn(async () => {
+      const saved = JSON.parse(readFileSync(join(dir, ".agentx/cron/last-runs.json"), "utf8"))
+      expect(saved.check).toBeTruthy()
+    })
+    await s.executeJob("check")
+    expect(s.executeCommandJob).toHaveBeenCalled()
   })
 
   it("runs a time missed while the daemon was down once, at start", () => {

@@ -106,6 +106,8 @@ function parseRawCron(text: string): string | null {
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 const MONTH_RE = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
 const ONE_TIME_RE = new RegExp(`\\b(once|today|tomorrow|${MONTH_RE})\\b|\\d{4}-\\d{2}-\\d{2}`)
+// "once a day", "once per week", "once every month" repeat; they are not one-time.
+const RECURRING_ONCE_RE = /\bonce\s+(a|per|every)\s+(day|week|month)\b/
 
 /** Wall-clock date and time in `timeZone` → the UTC instant. */
 function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, timeZone: string): Date {
@@ -201,7 +203,7 @@ export function parseEnglishToCron(raw: string, opts: NlCronOptions = {}): NlCro
   if (/^[\d*,\-/]+(\s+[\d*,\-/]+){4}$/.test(text)) return null // cron-shaped but out of range
 
   // A one-time phrase is a single run or nothing, never daily (#2004).
-  if (ONE_TIME_RE.test(text) || /^\d{4}-\d{2}-\d{2}t/.test(text)) {
+  if (!RECURRING_ONCE_RE.test(text) && (ONE_TIME_RE.test(text) || /^\d{4}-\d{2}-\d{2}t/.test(text))) {
     return parseOneTime(raw, text, opts.now ?? new Date(), opts.timezone ?? "UTC")
   }
 

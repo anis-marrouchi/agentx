@@ -26,6 +26,8 @@ describe("parseEnglishToCron", () => {
     ["every 2 hours",              "0 */2 * * *"],
     ["1st of every month at 9am",  "0 9 1 * *"],
     ["15th of every month at noon","0 12 15 * *"],
+    ["once a day at 9",            "0 9 * * *"],   // recurring, not one-time (#2004)
+    ["once a week on monday at 9", "0 9 * * 1"],
   ]
 
   for (const [input, expectedCron] of cases) {

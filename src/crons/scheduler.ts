@@ -623,6 +623,9 @@ export class CronScheduler {
     const startedAt = firedAt
     job.lastRun = startedAt
     job.totalRuns++
+    // A one-time job records its run before it starts, so a crash mid-run
+    // cannot make it run a second time on the next start (#2004).
+    if (job.runAt) this.saveLastRuns()
 
     // A command job never reaches a model. Branch before the ledger
     // dispatch record, because nothing is being dispatched TO.
