@@ -86,6 +86,24 @@ To take back an approval, run `agentx wiki decisions revoke <agent> "<title>"`.
 
 Approve from your own terminal. The commands refuse to run inside an agent's work, so an agent cannot approve its own page.
 
+#### Send each run the rules that fit it (optional)
+
+If you keep your standing rules as one table on a wiki page, with the columns **Rule**, **Scope** and **Applies to**, AgentX can send each run only the rows that fit it. Off by default. To turn it on, set this in `agentx.json` and restart the daemon:
+
+```json
+{ "rules": { "enabled": true, "registryAgent": "pm-agent", "registryPage": "decisions/rules-registry.md" } }
+```
+
+- **Scope** lists one or more terms, separated by `;`: `fleet`, `team`, `mesh:<machine name>`, `agent:<id>`, `project:<name>`, `run:workflow`, `run:schedule`, `run:daily` or `run:weekly`. A comma is an error, and the row is reported as not read.
+- **Applies to** names the agents the row is for. Empty means every agent.
+- A row reaches a run when one Scope term fits the run. Which terms count depends on Applies to:
+  - **Empty:** every term counts, for every agent.
+  - **Names the run's agent:** every term counts, and a `project:` term fits every run of that agent, whatever project the run is in.
+  - **Names other agents of this machine only:** the row reaches none of this agent's runs.
+  - **Filled, but names no agent of this machine** (for example "everyone", or a person or agent on another machine): only `fleet`, `mesh:` and `agent:` terms count; `project:` and `run:` terms are ignored. So `run:daily` with Applies to "everyone" reaches no run; leave Applies to empty instead.
+- `run:daily` and `run:weekly` read the schedule of a scheduled job, or of the workflow the run belongs to. `team` fits no run yet.
+- The rules page then leaves the newest-decisions block, so it is not sent twice. With approvals on, an unapproved rules page sends nothing.
+
 ### When two facts disagree
 
 A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.

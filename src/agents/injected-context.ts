@@ -17,10 +17,14 @@ export interface InjectionCandidates {
   procedures?: Array<{ id: string; title: string }>
   /** The wiki catalog block offered to the prompt, if any. */
   wikiContext?: string
+  /** Rule ids of the Rules Registry block offered to the prompt (#809). */
+  rules?: string[]
 }
 
 /** The first line of the wiki catalog block; see buildWikiContext. */
 const WIKI_MARKER = "[Institutional Wiki"
+/** The first line of the rules block; see buildRulesBlock (#809). */
+const RULES_MARKER = "[Rules for this run"
 
 function capIds(ids: string[]): string[] {
   return [...new Set(ids)].slice(0, MAX_INJECTED_IDS).map((id) => id.slice(0, MAX_ID_LENGTH))
@@ -34,10 +38,16 @@ export function injectedContextOf(assembled: string, candidates: InjectionCandid
       (candidates.procedures ?? []).filter((p) => text.includes(`[Known procedure: ${p.title}]`)).map((p) => p.id),
     ),
     wiki: Boolean(candidates.wikiContext) && text.includes(WIKI_MARKER),
+    ...(candidates.rules?.length && text.includes(RULES_MARKER) ? { rules: capIds(candidates.rules) } : {}),
   }
 }
 
 /** Clamp an InjectedContext from any source to the recorded bounds. */
 export function boundInjectedContext(ctx: InjectedContext): InjectedContext {
-  return { memory: capIds(ctx.memory), procedures: capIds(ctx.procedures), wiki: ctx.wiki === true }
+  return {
+    memory: capIds(ctx.memory),
+    procedures: capIds(ctx.procedures),
+    wiki: ctx.wiki === true,
+    ...(ctx.rules?.length ? { rules: capIds(ctx.rules) } : {}),
+  }
 }

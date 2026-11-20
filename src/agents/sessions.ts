@@ -52,6 +52,9 @@ export interface Session {
    *  window actually is. This is the tier-2 rotation metric. Absent when
    *  the turn ran through a non-streaming path (no per-call usage). */
   lastTurnContextTokens?: number
+  /** Hash of the Rules Registry block this native session last got (#809).
+   *  A resumed session gets the block again only when it differs. */
+  rulesHash?: string
 }
 
 const MAX_HISTORY_CHARS = 12000  // Keep last ~12k chars of history to fit in context
@@ -410,6 +413,7 @@ export class SessionStore {
       turnCount: prev?.turnCount,
       lastTurnInputTokens: prev?.lastTurnInputTokens,
       lastTurnContextTokens: prev?.lastTurnContextTokens,
+      rulesHash: prev?.rulesHash,
     }
 
     this.cache.set(key, session)
@@ -539,6 +543,7 @@ export class SessionStore {
     dst.turnCount = src.turnCount
     dst.lastTurnInputTokens = src.lastTurnInputTokens
     dst.lastTurnContextTokens = src.lastTurnContextTokens
+    dst.rulesHash = src.rulesHash
     dst.updatedAt = src.updatedAt
     this.save(dst)
     return true
@@ -1025,7 +1030,16 @@ export class SessionStore {
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens
+    delete session.rulesHash
     session.updatedAt = new Date().toISOString()
+    this.save(session)
+  }
+
+  /** Record the Rules Registry block hash this session got (#809). */
+  setRulesHash(agentId: string, channel: string, chatId: string, hash: string): void {
+    const session = this.getSession(agentId, channel, chatId)
+    if (session.rulesHash === hash) return
+    session.rulesHash = hash
     this.save(session)
   }
 
@@ -1044,6 +1058,7 @@ export class SessionStore {
     delete session.turnCount
     delete session.lastTurnInputTokens
     delete session.lastTurnContextTokens
+    delete session.rulesHash
     session.updatedAt = new Date().toISOString()
     this.save(session)
   }

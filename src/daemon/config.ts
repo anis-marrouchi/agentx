@@ -2795,6 +2795,19 @@ export const daemonConfigSchema = z.object({
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
   wall: wallConfigSchema,
+  /** The Rules Registry per run (noqta#809). When enabled, each run gets
+   *  the rows of the registry page whose Scope and "Applies to" fit it, as
+   *  one context block (agents/rules-registry.ts), and the page leaves the
+   *  owner-decisions block. Off by default. */
+  rules: z.object({
+    enabled: z.boolean().default(false),
+    /** The agent whose wiki holds the page. */
+    registryAgent: z.string().min(1).default("pm-agent"),
+    /** The page, relative to that agent's wiki. */
+    registryPage: z.string().min(1).default("decisions/rules-registry.md"),
+    /** Most tokens the block may take; the builder fits it under this. */
+    maxTokens: z.number().int().min(200).max(4000).default(1200),
+  }).default({}),
   graph: graphConfigSchema,
   decisions: decisionsConfigSchema,
   /** The courtesy-close gate (#1892): stops two agents, or an agent and a
