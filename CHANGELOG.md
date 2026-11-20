@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.244.2](https://github.com/anis-marrouchi/agentx/compare/v0.244.1...v0.244.2) (2026-11-20)
+
+
+### Performance Improvements
+
+* **agents:** start-size signal and one memory index per start ([#2009](https://github.com/anis-marrouchi/agentx/issues/2009) part 1) ([#2035](https://github.com/anis-marrouchi/agentx/issues/2035)) ([1f99180](https://github.com/anis-marrouchi/agentx/commit/1f9918029b4c650973334daf22f9de5c6b5df2e8))
+
 ## [0.244.1](https://github.com/anis-marrouchi/agentx/compare/v0.244.0...v0.244.1) (2026-11-20)
 
 
