@@ -75,7 +75,7 @@ import { budgetProjectResolver } from "./budget-projects"
 import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { situationContextFor } from "@/situations/context"
-import { autoMemoryBlock, claudeMdBlock, type SettingSource } from "./claude-md-chain"
+import { withClaudeMdFiles, type SettingSource } from "./claude-md-chain"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
@@ -3306,16 +3306,14 @@ export class AgentRegistry {
     // cache mark and were written again on every start. The stable files go
     // in the cached system prompt; MEMORY.md, rewritten many times a day,
     // goes in the task text. The process is told not to load them itself.
+    // Both are read after inTaskWorktree, from the folder the process
+    // really starts in (withClaudeMdFiles).
     const ownClaudeMd = state.def.tier === "claude-code"
-    const claudeCwd = task.cwd ?? state.def.workspace
     const claudeSources: SettingSource[] = isolated
       ? ["project", "local"]
       : sessionProfile === "lean" ? lean.settingSources : ["user", "project", "local"]
-    const claudeInstructions = ownClaudeMd && claudeCwd ? claudeMdBlock(claudeCwd, claudeSources) : ""
-    const claudeAutoMemory = ownClaudeMd && claudeCwd ? autoMemoryBlock(claudeCwd) : ""
 
     const systemPromptAppend = [
-      claudeInstructions,
       state.def.systemPrompt || "",
       codeFirstInstruction,
       richReplyInstruction,
@@ -3852,7 +3850,8 @@ export class AgentRegistry {
           if (gated) return gated
         }
         const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
-        return executeTask(local.def, local.task, this.providers, wrappedOnDeltaWithThinkingClose, [local.fresh || !resumeSessionId ? claudeAutoMemory : "", historyContext].filter(Boolean).join("\n\n") || undefined, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+        const own = withClaudeMdFiles(local.task, local.def.workspace, claudeSources)
+        return executeTask(local.def, own.task, this.providers, wrappedOnDeltaWithThinkingClose, [local.fresh || !resumeSessionId ? own.autoMemory : "", historyContext].filter(Boolean).join("\n\n") || undefined, local.fresh ? undefined : resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
       }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent

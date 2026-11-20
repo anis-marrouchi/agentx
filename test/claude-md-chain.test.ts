@@ -8,6 +8,8 @@ import {
   CLAUDE_MDS_OFF_ENV,
   claudeMdBlock,
   claudeMdFiles,
+  AUTO_MEMORY_MAX_LINES,
+  withClaudeMdFiles,
   withOwnClaudeMd,
 } from "../src/agents/claude-md-chain"
 
@@ -85,6 +87,16 @@ describe("autoMemoryBlock (#2000)", () => {
     )
   })
 
+  it("keeps Claude Code's 200-line cap", () => {
+    const memDir = join(home, ".claude", "projects", ws.replace(/[^a-zA-Z0-9]/g, "-"), "memory")
+    mkdirSync(memDir, { recursive: true })
+    const lines = Array.from({ length: AUTO_MEMORY_MAX_LINES + 5 }, (_, i) => `- line ${i + 1}`)
+    writeFileSync(join(memDir, "MEMORY.md"), lines.join("\n") + "\n")
+    const block = autoMemoryBlock(ws, home)
+    expect(block).toContain(`- line ${AUTO_MEMORY_MAX_LINES}\n</system-reminder>`)
+    expect(block).not.toContain(`- line ${AUTO_MEMORY_MAX_LINES + 1}`)
+  })
+
   it("is empty without MEMORY.md", () => {
     expect(autoMemoryBlock(ws, home)).toBe("")
   })
@@ -94,5 +106,37 @@ describe("withOwnClaudeMd", () => {
   it("turns Claude Code's own loading off only when asked", () => {
     expect(withOwnClaudeMd({}, true)[CLAUDE_MDS_OFF_ENV]).toBe("1")
     expect(withOwnClaudeMd({}, undefined)[CLAUDE_MDS_OFF_ENV]).toBeUndefined()
+  })
+})
+
+describe("withClaudeMdFiles (#2000 B1)", () => {
+  const sources: Array<"user" | "project" | "local"> = ["user", "project", "local"]
+
+  it("a worktree start renders the repo's files and no workspace-only file", () => {
+    const wt = join(root, "repo-worktree")
+    mkdirSync(wt, { recursive: true })
+    writeFileSync(join(wt, "CLAUDE.md"), "# Repo rules\n")
+    const memDir = join(home, ".claude", "projects", wt.replace(/[^a-zA-Z0-9]/g, "-"), "memory")
+    mkdirSync(memDir, { recursive: true })
+    writeFileSync(join(memDir, "MEMORY.md"), "- repo memory\n")
+    const { task, autoMemory } = withClaudeMdFiles({ cwd: wt, ownClaudeMd: true, systemPromptAppend: "agent prompt" }, ws, sources, home)
+    expect(task.systemPromptAppend).toContain(join(wt, "CLAUDE.md"))
+    expect(task.systemPromptAppend).not.toContain(join(ws, "CLAUDE.md"))
+    expect(task.systemPromptAppend).not.toContain(join(ws, ".claude", "rules"))
+    expect(task.systemPromptAppend?.startsWith(HEADER)).toBe(true)
+    expect(task.systemPromptAppend?.endsWith("\n\nagent prompt")).toBe(true)
+    expect(autoMemory).toContain("- repo memory")
+  })
+
+  it("a start without a worktree uses the workspace", () => {
+    const { task } = withClaudeMdFiles({ ownClaudeMd: true }, ws, sources, home)
+    expect(task.systemPromptAppend).toBe(claudeMdBlock(ws, sources, home))
+  })
+
+  it("leaves other tasks as they are", () => {
+    const input = { cwd: ws, systemPromptAppend: "agent prompt" }
+    const out = withClaudeMdFiles(input, ws, sources, home)
+    expect(out.task).toBe(input)
+    expect(out.autoMemory).toBe("")
   })
 })

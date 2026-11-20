@@ -124,6 +124,9 @@ export function autoMemoryPath(cwd: string, home = homedir()): string {
   return join(home, ".claude", "projects", resolve(cwd).replace(/[^a-zA-Z0-9]/g, "-"), "memory", "MEMORY.md")
 }
 
+/** Claude Code reads only the first 200 lines of MEMORY.md. */
+export const AUTO_MEMORY_MAX_LINES = 200
+
 /** MEMORY.md as Claude Code renders it, for the task text. Empty when the
  *  file does not exist. */
 export function autoMemoryBlock(cwd: string, home = homedir()): string {
@@ -131,5 +134,20 @@ export function autoMemoryBlock(cwd: string, home = homedir()): string {
   const content = readText(path)
   if (content === null) return ""
   // Claude Code drops the file's final newline before closing the block.
-  return `<system-reminder>${section(path, AUTO_MEMORY, content.trimEnd())}${FOOTER}`
+  const capped = content.trimEnd().split("\n").slice(0, AUTO_MEMORY_MAX_LINES).join("\n")
+  return `<system-reminder>${section(path, AUTO_MEMORY, capped)}${FOOTER}`
+}
+
+/** For a task the registry owns the files of (`ownClaudeMd`): put the
+ *  instruction files of the folder the process really starts in (the task
+ *  worktree when there is one, else the workspace) in front of its system
+ *  prompt, and return MEMORY.md for the task text. Other tasks pass through. */
+export function withClaudeMdFiles<T extends { cwd?: string; systemPromptAppend?: string; ownClaudeMd?: boolean }>(
+  task: T, workspace: string | undefined, sources: SettingSource[], home = homedir(),
+): { task: T; autoMemory: string } {
+  const cwd = task.cwd ?? workspace
+  if (!task.ownClaudeMd || !cwd) return { task, autoMemory: "" }
+  const systemPromptAppend = [claudeMdBlock(cwd, sources, home), task.systemPromptAppend ?? ""]
+    .filter((s) => s.trim().length > 0).join("\n\n") || undefined
+  return { task: { ...task, systemPromptAppend }, autoMemory: autoMemoryBlock(cwd, home) }
 }
