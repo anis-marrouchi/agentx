@@ -160,6 +160,12 @@ improve
 
 // --- agentx improve rules — one fix rule per agent, at most 3 (#1996) ---
 
+/** A rollback retires a kind's rules on every agent: `--agent` does not
+ *  narrow it, so say so. */
+export function retireKindWarning(opts: { retireKind?: string; agent?: string }): string | null {
+  return opts.retireKind && opts.agent ? `--agent ${opts.agent} is ignored: --retire-kind retires the rules of ${opts.retireKind} on every agent` : null
+}
+
 improve
   .command("rules")
   .description(`the fix rules the nightly pass wrote into each agent's memory (at most ${RULE_BUDGET} per agent), with their signal and verdict, and the last retirements`)
@@ -172,6 +178,8 @@ improve
     if (!db) { process.exitCode = 1; return }
     if (opts.retireKind) {
       if (!(SIGNAL_KINDS as readonly string[]).includes(opts.retireKind)) { console.error(chalk.red(`  unknown kind "${opts.retireKind}": see agentx improve kinds`)); process.exitCode = 1; return }
+      const warning = retireKindWarning(opts)
+      if (warning) console.error(chalk.yellow(`  ${warning}`))
       const out = retireRulesOfKinds(db, new AgentMemory(), [opts.retireKind])
       if (opts.json) { console.log(JSON.stringify(out, null, 2)); return }
       if (!out.length) { console.log(chalk.dim(`  No rule written for ${opts.retireKind}.`)); return }

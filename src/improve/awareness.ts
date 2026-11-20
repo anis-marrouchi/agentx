@@ -10,7 +10,7 @@
 // "merged" and "live" claims are the follow-up (#2029).
 //
 // The check runs on a later tick, after the reply, like the cost signals
-// (#2024). At most two indexed reads, bounded by time, and only for a run
+// (#2024). At most three indexed reads, bounded by time, and only for a run
 // that waits on a known agent. Never throws.
 
 import type Database from "better-sqlite3"
@@ -43,6 +43,9 @@ export interface HandoffRow {
 export interface StaleHistory {
   /** The caller's latest hand-offs to the callee, newest first. */
   handoffs: HandoffRow[]
+  /** Any hand-off from the caller to the callee in the window is still
+   *  open (status NULL or waiting), not only the newest. */
+  openInWindow?: boolean
   /** The callee's final answer in the latest hand-off's own chat. */
   calleeAnswer?: string | null
 }
@@ -66,6 +69,8 @@ export function staleStatus(run: RunEnd, callee: string, h: StaleHistory): Signa
   const latest = h.handoffs[0]
   // Open (status NULL or waiting), failed, or a newer one still out: silent.
   if (!latest || latest.status !== "done") return null
+  // An older hand-off still out: the wait may be on that one.
+  if (h.openInWindow) return null
   if (latest.peer) return null // the callee ran on a peer: no local trace
   // The answer is still held for relay: the caller could not know yet.
   if (latest.relayAttempt !== null && latest.relayAttempt !== undefined) return null
@@ -84,6 +89,12 @@ export function readStaleHistory(db: Database.Database, run: RunEnd, callee: str
   ).all(run.startedAt - HANDOFF_LOOKBACK_MS, run.agentId, callee) as HandoffRow[]
   const latest = handoffs[0]
   if (!latest || latest.status !== "done" || latest.peer || latest.startedAt === null || latest.endedAt === null) return { handoffs }
+  // Any open hand-off to the callee in the same window, older ones too.
+  const open = db.prepare(
+    `SELECT 1 FROM handoffs INDEXED BY idx_handoffs_started WHERE started_at >= ? AND caller = ? AND callee = ?
+     AND (status IS NULL OR status = 'waiting') LIMIT 1`,
+  ).get(run.startedAt - HANDOFF_LOOKBACK_MS, run.agentId, callee)
+  if (open) return { handoffs, openInWindow: true }
   // The callee's run of this hand-off, by its own chat (delegationIdOfChat's shape).
   const row = db.prepare(
     `SELECT final_response AS answer FROM task_traces INDEXED BY idx_traces_agent_started
