@@ -3574,6 +3574,15 @@ For each fix picked on a self-improvement card, compare the problem's count in t
 |---|---|---|
 | `--json` | — | Print as JSON. |
 
+### `agentx improve rules`
+
+List the fix rules the nightly pass wrote into each agent's memory: at most 3 per agent. Each rule shows the day it was added, its problem key, the problem's count before and after, your reopens before and after, its verdict (`held`, `did not hold` or `waiting`) and the sentence. The last retirements follow, with their reason. No AI model is used. See [Give each agent up to 3 fix rules](../jobs/failure-signals.md#give-each-agent-up-to-3-fix-rules).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | One agent only. |
+| `--json` | — | Print as JSON. |
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).

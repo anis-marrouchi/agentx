@@ -18,6 +18,11 @@ import { PROBLEM_PREFIX } from "./handoff"
 import { COST_KIND_SET, jobTypesOfTraces, ownerReopens, reopensWithin, tokensPerRun } from "./cost"
 
 export const HELD_WINDOW_DAYS = 7
+/** A fix rule (#1996) is retired when the owner's reopens and owner-words
+ *  mismatches for its agent, counted together, rose by at least this many
+ *  in the 7 days after it was added against the 7 days before. One extra
+ *  reopen does not retire a working rule. */
+export const ROSE_FLOOR = 2
 const DAY_MS = 86_400_000
 
 export interface HeldCheck {

@@ -3,7 +3,7 @@ import chalk from "chalk"
 import { readFileSync } from "fs"
 import { existsSync, readdirSync } from "fs"
 import { resolve } from "path"
-import { AgentMemory, type MemoryType } from "@/agents/agent-memory"
+import { AgentMemory, isReservedRuleName, RULE_PREFIX, type MemoryType } from "@/agents/agent-memory"
 import { MemoryStore } from "@/agents/memory-store"
 
 // --- agentx memory — audit + edit an agent's structured memory ---
@@ -36,6 +36,10 @@ memory
   .action(async (opts: { agent: string; type: string; name: string; description: string; body?: string; file?: string }) => {
     if (!VALID_TYPES.includes(opts.type as MemoryType)) {
       console.error(chalk.red(`  --type must be one of: ${VALID_TYPES.join(", ")}`))
+      process.exitCode = 1; return
+    }
+    if (isReservedRuleName(opts.name)) {
+      console.error(chalk.red(`  --name may not start with ${RULE_PREFIX}: those names are kept for the fix rules the nightly pass writes (see agentx improve rules)`))
       process.exitCode = 1; return
     }
     let body = opts.body ?? ""
