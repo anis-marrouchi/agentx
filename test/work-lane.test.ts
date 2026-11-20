@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
+import { mkdtempSync, rmSync } from "fs"
+import { tmpdir } from "os"
+import path from "path"
 import { WorkLanes, workKeyOf, takesNotices, SAME_WORK_MARKER } from "../src/agents/work-lane"
+import { openDb, closeDb } from "../src/storage/sqlite"
+import { readSignals, setSignalDb } from "../src/improve/signals"
 
 const REQ = "req-01M6TKA0XQ92ADP3408JTM88S6"
 
@@ -72,5 +77,48 @@ describe("WorkLanes", () => {
     a.release({ text: "", ok: true, ran: false })
     const b = await lanes.enter("devops", REQ)
     expect(b.note).toBe("")
+  })
+})
+
+// #1997: the lane gave up waiting, so two runs of one agent go on the same request.
+describe("duplicate_session", () => {
+  let tmp = ""
+  afterEach(() => {
+    setSignalDb(null)
+    closeDb()
+    if (tmp) rmSync(tmp, { recursive: true, force: true })
+  })
+  function withDb() {
+    closeDb()
+    tmp = mkdtempSync(path.join(tmpdir(), "agentx-work-lane-"))
+    const db = openDb({ path: path.join(tmp, "db.sqlite") })!
+    setSignalDb(db)
+    return () => readSignals(db, 0).map((r) => [r.kind, r.agentId, r.ref, r.detail])
+  }
+
+  it("is recorded once when the wait runs out beside a holder", async () => {
+    const rows = withDb()
+    let t = 0
+    const lanes = new WorkLanes({ now: () => t, sleep: async () => { t += 5 * 60_000 }, waitMs: 15 * 60_000 })
+    await lanes.enter("devops", REQ, "a")
+    await lanes.enter("devops", REQ, "b")
+    expect(rows()).toContainEqual(["duplicate_session", "devops", REQ, "two runs on one request: the lane wait ran out after 15 min"])
+    expect(rows().filter((r) => r[0] === "duplicate_session")).toHaveLength(1)
+  })
+
+  it("is not recorded for the same root, an aborted wait, or a holder that ends in time", async () => {
+    const rows = withDb()
+    const lanes = new WorkLanes({ waitMs: 60_000 })
+    const held = await lanes.enter("devops", REQ, "root-a")
+    await lanes.enter("devops", REQ, "root-a")
+    const ac = new AbortController()
+    ac.abort()
+    await lanes.enter("devops", REQ, "root-b", ac.signal)
+    const waiting = lanes.enter("devops", REQ, "root-c")
+    await new Promise((r) => setTimeout(r, 20))
+    held.release({ text: "", ok: true })
+    await waiting
+    expect(rows().map((r) => r[0])).not.toContain("duplicate_session")
+    expect(rows().map((r) => r[0])).toContain("same_work_waited")
   })
 })

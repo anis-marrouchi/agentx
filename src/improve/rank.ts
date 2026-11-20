@@ -40,6 +40,13 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   start_no_cache_reuse: 1,
   context_rewrite: 1,
   model_switch: 1,
+  // Awareness (#1997): the work runs twice, or the reader is misled.
+  duplicate_session: 2,
+  stale_status_told: 2,
+  // Bayan (#1998): a round costs tokens; the owner's own friction costs more.
+  a2a_extra_rounds: 1,
+  clarification_asked: 1,
+  owner_asked_subject: 2,
 }
 
 /** Kinds whose detail is the owner's or a checker's own words: never the
