@@ -17,7 +17,7 @@ import type Database from "better-sqlite3"
 import { createHash } from "crypto"
 import { z } from "zod"
 import { SIGNAL_KINDS, type SignalKind } from "./signals"
-import { COST_KIND_SET, COST_ROWS_PER_DAY } from "./cost"
+import { COST_KIND_SET, COST_SCORE_CAP } from "./cost"
 import { canSpend, recordSpend, type ImproveSettings } from "./budget"
 
 /** The owner's own actions weigh most (principle 2 of #1783); a refused or
@@ -122,20 +122,18 @@ export function rowsOfGroups(db: Database.Database, keys: Set<string>, since: nu
   return keyedRows(db, since, until).filter((r) => keys.has(r.key))
 }
 
-/** Every group in the window, before the `minRefs` cut. Cost rows count
- *  at most COST_ROWS_PER_DAY per group and UTC day, so a day of rewrites
- *  cannot push the owner's failures out of the nightly hand-off (#1995). */
+/** rows × weight; a cost group's score is capped at COST_SCORE_CAP, so in
+ *  any window token waste ranks below 3 owner reopens (#1995). */
+export function scoreOf(kind: SignalKind, rows: number): number {
+  const s = rows * KIND_WEIGHT[kind]
+  return COST_KIND_SET.has(kind) ? Math.min(s, COST_SCORE_CAP) : s
+}
+
+/** Every group in the window, before the `minRefs` cut. */
 export function groupSignals(db: Database.Database, since: number, until = Number.MAX_SAFE_INTEGER): SignalGroup[] {
   const acc = new Map<string, Acc>()
-  const perDay = new Map<string, number>()
   for (const r of keyedRows(db, since, until)) {
     const { key, pattern } = r
-    if (COST_KIND_SET.has(r.kind)) {
-      const day = `${key}|${Math.floor(r.at / 86_400_000)}`
-      const n = perDay.get(day) ?? 0
-      if (n >= COST_ROWS_PER_DAY) continue
-      perDay.set(day, n + 1)
-    }
     let a = acc.get(key)
     if (!a) {
       a = { g: { key, kind: r.kind, agentId: r.agentId, pattern, rows: 0, refs: 0, score: 0, firstAt: r.at, lastAt: r.at, sample: r.detail, sampleRefs: [], members: [key] }, refs: new Set() }
@@ -150,7 +148,7 @@ export function groupSignals(db: Database.Database, since: number, until = Numbe
       if (r.ref && a.g.sampleRefs.length < 5) a.g.sampleRefs.push(r.ref)
     }
   }
-  return [...acc.values()].map(({ g, refs }) => ({ ...g, refs: refs.size, score: g.rows * KIND_WEIGHT[g.kind] }))
+  return [...acc.values()].map(({ g, refs }) => ({ ...g, refs: refs.size, score: scoreOf(g.kind, g.rows) }))
 }
 
 /** Worst first: score, then separate references, then the most recent. */
@@ -187,7 +185,7 @@ export function applyMerge(groups: SignalGroup[], answer: string): SignalGroup[]
       // share a request, and an overlap only makes the group look bigger
       // than it is by the shared few.
       refs: m.refs + g.refs,
-      score: m.score + g.score,
+      score: COST_KIND_SET.has(m.kind) ? Math.min(m.score + g.score, COST_SCORE_CAP) : m.score + g.score,
       firstAt: Math.min(m.firstAt, g.firstAt),
       lastAt: Math.max(m.lastAt, g.lastAt),
       sampleRefs: [...m.sampleRefs, ...g.sampleRefs].slice(0, 5),

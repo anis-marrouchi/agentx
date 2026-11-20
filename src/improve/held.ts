@@ -76,12 +76,15 @@ function rowsIn(db: Database.Database, members: Set<string>, from: number, to: n
   return groupSignals(db, from, to).filter((g) => members.has(g.key)).reduce((n, g) => n + g.rows, 0)
 }
 
-/** A cost problem's two numbers (#1995): tokens per run of its job types,
+/** A cost problem's two numbers (#1995): median tokens per run of its job
+ *  types, leaving out the runs the problem flagged (they were picked for
+ *  being costly, which would bias "before" upwards),
  *  and the owner's reopens for its agent, before and after the pick. */
 function costCheck(db: Database.Database, agentId: string, refs: string[], pickedAt: number, end: number, span: number): CostHeld {
   const jobTypes = jobTypesOfTraces(db, refs)
-  const tb = tokensPerRun(db, jobTypes, pickedAt - span, pickedAt)
-  const ta = tokensPerRun(db, jobTypes, pickedAt, end)
+  const flagged = new Set(refs)
+  const tb = tokensPerRun(db, jobTypes, pickedAt - span, pickedAt, flagged)
+  const ta = tokensPerRun(db, jobTypes, pickedAt, end, flagged)
   const reopensBefore = ownerReopens(db, agentId, pickedAt - span, pickedAt)
   const reopensAfter = ownerReopens(db, agentId, pickedAt, end)
   const failed: CostHeld["failed"] = []
