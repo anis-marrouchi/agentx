@@ -20,6 +20,8 @@ Timing can be written the way you'd say it: "every morning at 9", "weekdays at 6
 agentx schedule parse "weekdays at 6pm"
 ```
 
+For a job that runs only once, give a date and a time: "tomorrow at 9:05", "once on 20 November at 09:05", "on 2026-11-20 at 21:05" or "2026-11-20T09:05". The time is read in the schedule's time zone. After its run the job switches itself off; `agentx schedule list` still shows it, as "done or off". If AgentX was not running at that time, the job runs once when AgentX starts again. A date or time that is missing, does not exist or is already past is refused; it never becomes a daily job. A cron written as five fields, such as `5 9 20 11 *`, is taken as written.
+
 By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). You can also ask to hear only about problems ("tell me only if something is wrong"): then a run that finds nothing wrong sends nothing. See [Report only when something is wrong](../jobs/daily-report.md#report-only-when-something-is-wrong). Without a chat, the results stay in the run history in the dashboard.
 
 If you asked from the AgentX phone app, the answer appears in the same conversation, marked unread. If you asked by voice, it arrives as a push notification on your phone (this needs push notifications set up on this computer). A long answer is shortened to fit the notification; ask the agent by voice and it reads you the full answer.

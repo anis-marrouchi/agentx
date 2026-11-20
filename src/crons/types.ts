@@ -44,6 +44,8 @@ export interface CronJobState {
   requireSources?: boolean
   /** Fail the run unless the answer ends with `EXIT=0` (#1540). */
   expectExitZero?: boolean
+  /** One-time job (#2004): its single run time (ISO). Off after it runs. */
+  runAt?: string
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date

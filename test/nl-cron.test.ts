@@ -65,3 +65,55 @@ describe("slugifyScheduleId", () => {
     expect(id.endsWith("-bob")).toBe(true)
   })
 })
+
+// #2004: one-time schedules. 2026-11-19 12:00 UTC is a Thursday.
+describe("parseEnglishToCron one-time (#2004)", () => {
+  const opts = { now: new Date("2026-11-19T12:00:00Z"), timezone: "UTC" }
+
+  it('"tomorrow at 09:05" runs once, not daily', () => {
+    const r = parseEnglishToCron("tomorrow at 09:05", opts)
+    expect(r?.runAt).toBe("2026-11-20T09:05:00.000Z")
+    expect(r?.cron).toBe("5 9 20 11 *")
+  })
+
+  it('"once on 20 november at 09:05" runs once, not daily', () => {
+    const r = parseEnglishToCron("once on 20 november at 09:05", opts)
+    expect(r?.runAt).toBe("2026-11-20T09:05:00.000Z")
+    expect(r?.cron).toBe("5 9 20 11 *")
+  })
+
+  it("reads month-first dates, ISO dates and ISO times", () => {
+    expect(parseEnglishToCron("on nov 20 at 9:05am", opts)?.runAt).toBe("2026-11-20T09:05:00.000Z")
+    expect(parseEnglishToCron("on 2026-11-20 at 21:05", opts)?.runAt).toBe("2026-11-20T21:05:00.000Z")
+    expect(parseEnglishToCron("2026-11-20T09:05", opts)?.runAt).toBe("2026-11-20T09:05:00.000Z")
+    expect(parseEnglishToCron("2026-11-20T09:05:00Z", opts)?.runAt).toBe("2026-11-20T09:05:00.000Z")
+    expect(parseEnglishToCron("2026-11-20T10:05:00+01:00", opts)?.runAt).toBe("2026-11-20T09:05:00.000Z")
+  })
+
+  it("reads the wall-clock time in the schedule's timezone", () => {
+    const r = parseEnglishToCron("tomorrow at 09:05", { ...opts, timezone: "Africa/Tunis" })
+    expect(r?.runAt).toBe("2026-11-20T08:05:00.000Z")
+    expect(r?.cron).toBe("5 9 20 11 *")
+  })
+
+  it("a day-month date already past this year means next year", () => {
+    expect(parseEnglishToCron("on 1 march at 9am", opts)?.runAt).toBe("2027-03-01T09:00:00.000Z")
+  })
+
+  it("refuses ambiguous or past one-time text instead of making it daily", () => {
+    expect(parseEnglishToCron("tomorrow", opts)).toBeNull()             // no time
+    expect(parseEnglishToCron("once at 9am", opts)).toBeNull()          // no date
+    expect(parseEnglishToCron("today at 9am", opts)).toBeNull()         // already past
+    expect(parseEnglishToCron("on 2026-11-01 at 9am", opts)).toBeNull() // past
+    expect(parseEnglishToCron("on 31 november at 9am", opts)).toBeNull() // no such day
+    expect(parseEnglishToCron("every day tomorrow at 9", opts)).toBeNull() // both
+  })
+
+  it("accepts a raw 5-field cron as given", () => {
+    const r = parseEnglishToCron("5 9 20 11 *")
+    expect(r?.cron).toBe("5 9 20 11 *")
+    expect(r?.runAt).toBeUndefined()
+    expect(parseEnglishToCron("*/10 8-18 * * 1-5")?.cron).toBe("*/10 8-18 * * 1-5")
+    expect(parseEnglishToCron("61 9 * * *")).toBeNull()
+  })
+})

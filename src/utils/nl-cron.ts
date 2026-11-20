@@ -16,6 +16,16 @@ export interface NlCronResult {
   human: string
   /** The bit of input that matched (useful for error messages + id generation). */
   matched: string
+  /** One-time schedule (#2004): the single run, as an ISO UTC time. The
+   *  job runs once at this time and then switches itself off. */
+  runAt?: string
+}
+
+export interface NlCronOptions {
+  /** "Now" for "today"/"tomorrow" and past checks. Default: the clock. */
+  now?: Date
+  /** IANA timezone the wall-clock time is read in. Default: UTC. */
+  timezone?: string
 }
 
 interface Time { h: number; m: number }
@@ -71,12 +81,129 @@ function extractTime(text: string): Time | null {
   return null
 }
 
+// ── Raw cron (#2004) ─────────────────────────────────────────────────
+
+const CRON_RANGES: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]]
+
+/** A plain 5-field cron (numbers, `*`, `,`, `-`, `/`) with every number in range. */
+function parseRawCron(text: string): string | null {
+  const fields = text.split(/\s+/)
+  if (fields.length !== 5) return null
+  for (let i = 0; i < 5; i++) {
+    if (!/^[\d*,\-/]+$/.test(fields[i])) return null
+    const [lo, hi] = CRON_RANGES[i]
+    for (const n of fields[i].match(/\d+/g) ?? []) {
+      const v = parseInt(n, 10)
+      // After "/" is a step, not a value.
+      if (fields[i].includes(`/${n}`) ? v < 1 : v < lo || v > hi) return null
+    }
+  }
+  return fields.join(" ")
+}
+
+// ── One-time (#2004) ─────────────────────────────────────────────────
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+const MONTH_RE = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+const ONE_TIME_RE = new RegExp(`\\b(once|today|tomorrow|${MONTH_RE})\\b|\\d{4}-\\d{2}-\\d{2}`)
+
+/** Wall-clock date and time in `timeZone` → the UTC instant. */
+function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, timeZone: string): Date {
+  const guess = Date.UTC(y, mo - 1, d, h, mi)
+  const offset = (at: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric",
+    }).formatToParts(new Date(at)).map((x) => [x.type, Number(x.value)]))
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - at
+  }
+  const first = guess - offset(guess)
+  return new Date(guess - offset(first))
+}
+
+/** Today's date in `timeZone`. */
+function zonedDate(now: Date, timeZone: string): { y: number; mo: number; d: number } {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "numeric", day: "numeric",
+  }).formatToParts(now).map((x) => [x.type, Number(x.value)]))
+  return { y: p.year, mo: p.month, d: p.day }
+}
+
+function oneTime(at: Date, wall: { mo: number; d: number; h: number; mi: number }, now: Date): NlCronResult | null {
+  if (Number.isNaN(at.getTime()) || at.getTime() <= now.getTime()) return null
+  const cron = `${wall.mi} ${wall.h} ${wall.d} ${wall.mo} *`
+  return { cron, human: `once, ${at.toISOString()}`, matched: `once ${at.toISOString().slice(0, 16)}`, runAt: at.toISOString() }
+}
+
+/**
+ * "tomorrow at 9", "once on 20 november at 09:05", "on nov 20 at 9am",
+ * "on 2026-11-20 at 21:05", or an ISO time. Returns null when the date or
+ * time is missing, does not exist, or is already past: a one-time phrase is
+ * never turned into a daily schedule.
+ */
+function parseOneTime(raw: string, text: string, now: Date, timeZone: string): NlCronResult | null {
+  // An ISO time with its own offset needs no timezone.
+  const iso = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})[t ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(z|[+-]\d{2}:?\d{2})?$/i)
+  if (iso) {
+    const [, y, mo, d, h, mi, zone] = iso
+    if (!validDay(+y, +mo, +d) || +h > 23 || +mi > 59) return null
+    if (!zone) return oneTime(zonedToUtc(+y, +mo, +d, +h, +mi, timeZone), { mo: +mo, d: +d, h: +h, mi: +mi }, now)
+    // With its own offset, the cron shows the time in UTC.
+    const at = new Date(raw.trim())
+    return oneTime(at, { mo: at.getUTCMonth() + 1, d: at.getUTCDate(), h: at.getUTCHours(), mi: at.getUTCMinutes() }, now)
+  }
+
+  // Recurring words and one-time words together are ambiguous.
+  if (/\b(every|each|daily|hourly|weekdays?|weekends?)\b/.test(text)) return null
+  const time = extractTime(text)
+  if (!time) return null
+
+  const today = zonedDate(now, timeZone)
+  let date: { y: number; mo: number; d: number } | null = null
+  let m: RegExpMatchArray | null
+  if (/\btoday\b/.test(text)) date = today
+  else if (/\btomorrow\b/.test(text)) {
+    const t = new Date(Date.UTC(today.y, today.mo - 1, today.d + 1))
+    date = { y: t.getUTCFullYear(), mo: t.getUTCMonth() + 1, d: t.getUTCDate() }
+  } else if ((m = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/))) {
+    date = { y: +m[1], mo: +m[2], d: +m[3] }
+  } else {
+    let mo = 0, d = 0
+    if ((m = text.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_RE}\\b`)))) {
+      d = +m[1]; mo = MONTHS.indexOf(m[2].slice(0, 3)) + 1
+    } else if ((m = text.match(new RegExp(`\\b${MONTH_RE}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`)))) {
+      mo = MONTHS.indexOf(m[1].slice(0, 3)) + 1; d = +m[2]
+    }
+    if (!mo) return null
+    // No year given: this year, or next year when the date has passed.
+    date = { y: today.y, mo, d }
+    if (validDay(date.y, mo, d) && zonedToUtc(date.y, mo, d, time.h, time.m, timeZone) <= now) date.y++
+  }
+  if (!validDay(date.y, date.mo, date.d)) return null
+  const at = zonedToUtc(date.y, date.mo, date.d, time.h, time.m, timeZone)
+  return oneTime(at, { mo: date.mo, d: date.d, h: time.h, mi: time.m }, now)
+}
+
+function validDay(y: number, mo: number, d: number): boolean {
+  if (mo < 1 || mo > 12 || d < 1) return false
+  return d <= new Date(Date.UTC(y, mo, 0)).getUTCDate()
+}
+
 /**
  * Main entry. Returns `null` if we don't recognize the phrasing.
  */
-export function parseEnglishToCron(raw: string): NlCronResult | null {
+export function parseEnglishToCron(raw: string, opts: NlCronOptions = {}): NlCronResult | null {
   const text = raw.trim().toLowerCase()
   if (!text) return null
+
+  // A raw cron is taken as given (#2004).
+  const rawCron = parseRawCron(text)
+  if (rawCron) return { cron: rawCron, human: humanize(rawCron), matched: rawCron }
+  if (/^[\d*,\-/]+(\s+[\d*,\-/]+){4}$/.test(text)) return null // cron-shaped but out of range
+
+  // A one-time phrase is a single run or nothing, never daily (#2004).
+  if (ONE_TIME_RE.test(text) || /^\d{4}-\d{2}-\d{2}t/.test(text)) {
+    return parseOneTime(raw, text, opts.now ?? new Date(), opts.timezone ?? "UTC")
+  }
 
   // ── every N minutes / every minute ─────────────────────────────────
   let m: RegExpMatchArray | null

@@ -34,7 +34,8 @@ export const DEFAULT_SCHEDULE_TIMEOUT = 600
 
 export const SUPPORTED_PHRASES_HINT =
   'Try: "every morning at 9", "weekdays at 6pm", "every 15 minutes", "every monday at 10am", ' +
-  '"1st of every month at noon", "daily at 9:30am", "every hour"'
+  '"1st of every month at noon", "daily at 9:30am", "every hour"; once: "tomorrow at 9:05", ' +
+  '"once on 20 november at 09:05", "2026-11-20T09:05"; or a raw cron "5 9 20 11 *"'
 
 /** Cron ids become a dot-path segment (`crons.<id>`), so dots and other
  *  separators are refused rather than silently nesting the config. */
@@ -95,6 +96,7 @@ export function buildScheduleJob(input: ScheduleJobInput): Record<string, unknow
     timeout: input.timeout ?? DEFAULT_SCHEDULE_TIMEOUT,
     onError,
   }
+  if (input.parsed.runAt) job.runAt = input.parsed.runAt
   if (input.model) job.model = input.model
   if (input.notify) job.notify = input.notify
   if (input.notify && input.deliverResult === false) job.deliverResult = false

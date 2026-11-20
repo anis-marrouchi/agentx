@@ -547,7 +547,9 @@ Reject an agent's pending create/delete request (drops the request).
 
 Preview a natural-language parse without writing anything.
 
-No flags.
+| Flag | Default | What it does |
+|---|---|---|
+| `--timezone <tz>` | `Africa/Tunis` | IANA timezone a one-time date and time are read in (default: this machine's). |
 
 ## team
 

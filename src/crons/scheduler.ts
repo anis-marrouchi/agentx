@@ -243,6 +243,7 @@ export class CronScheduler {
         report: def.report,
         requireSources: def.requireSources,
         expectExitZero: def.expectExitZero,
+        runAt: def.runAt,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -414,7 +415,21 @@ export class CronScheduler {
     if (existing) clearTimeout(existing)
 
     try {
-      const nextRun = getNextCronDate(job.schedule, new Date(), job.timezone)
+      let nextRun: Date
+      if (job.runAt) {
+        // One-time job (#2004). Once its run is over (retries included),
+        // it switches itself off. A time that passed while the daemon was
+        // down runs now, once.
+        const due = Date.parse(job.runAt)
+        const last = job.lastRun?.getTime() ?? Date.parse(this.loadLastRuns()?.[jobId] ?? "")
+        if (last >= due) {
+          void this.retireOnce(job)
+          return
+        }
+        nextRun = new Date(Math.max(due, Date.now()))
+      } else {
+        nextRun = getNextCronDate(job.schedule, new Date(), job.timezone)
+      }
       job.nextRun = nextRun
       job.retryPending = false
       const delay = nextRun.getTime() - Date.now()
@@ -747,7 +762,8 @@ export class CronScheduler {
     if (!lastRuns) return missed // First boot — no history
 
     for (const [jobId, job] of this.jobs) {
-      if (!job.enabled) continue
+      // A one-time job's missed run is handled by scheduleNext (#2004).
+      if (!job.enabled || job.runAt) continue
 
       const lastRunStr = lastRuns[jobId]
       if (!lastRunStr) continue // Never ran before
@@ -864,18 +880,33 @@ export class CronScheduler {
       // Persist to agentx.json so a daemon restart doesn't resurrect the
       // broken cron (previously this was in-memory only — a repeatedly
       // failing cron would keep burning money across restarts).
-      try {
-        const res = await applyConfigMutation(
-          (cfg) => setAtPath(cfg, `crons.${job.id}.enabled`, false),
-          { reload: false },
-        )
-        if (!res.success) {
-          this.log(`Failed to persist disable for "${job.id}": ${res.error}`)
-        }
-      } catch (e: any) {
-        this.log(`Failed to persist disable for "${job.id}": ${e.message}`)
-      }
+      await this.persistDisabled(job)
       await this.notifyDisabled(job)
+    }
+  }
+
+  /** A one-time job has run: switch it off, here and in agentx.json (#2004). */
+  private async retireOnce(job: CronJobState): Promise<void> {
+    job.enabled = false
+    job.nextRun = undefined
+    const timer = this.timers.get(job.id)
+    if (timer) clearTimeout(timer)
+    this.timers.delete(job.id)
+    this.log(`One-time job "${job.id}" ran (due ${job.runAt}); switched off`)
+    await this.persistDisabled(job)
+  }
+
+  private async persistDisabled(job: CronJobState): Promise<void> {
+    try {
+      const res = await applyConfigMutation(
+        (cfg) => setAtPath(cfg, `crons.${job.id}.enabled`, false),
+        { reload: false },
+      )
+      if (!res.success) {
+        this.log(`Failed to persist disable for "${job.id}": ${res.error}`)
+      }
+    } catch (e: any) {
+      this.log(`Failed to persist disable for "${job.id}": ${e.message}`)
     }
   }
 
