@@ -2,12 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
-import { AgentMemory, MEMORY_INDEX_CUT_NOTE, trimMemoryIndex } from "../src/agents/agent-memory"
+import { AgentMemory, agentMemoryStartBlock, MEMORY_INDEX_CUT_NOTE, MEMORY_INDEX_RENDER_MAX, trimMemoryIndex } from "../src/agents/agent-memory"
 
-// #615 — the agent-memory index is loaded on every session twice: merged
-// into the workspace CLAUDE.md and inlined in the system prompt.
-// `session.memoryIndexMaxChars` caps it; .agentx-memory.md keeps the whole
-// index for the agent to Read on demand.
+// #615, #2009 — the agent-memory index is shown once per fresh start, in
+// the task text. `session.memoryIndexMaxChars` caps that rendered block;
+// .agentx-memory.md keeps the whole index for the agent to Read on demand.
 
 const ROOT = resolve(tmpdir(), `agentx-memory-cap-${process.pid}`)
 
@@ -93,28 +92,43 @@ describe("AgentMemory with the cap", () => {
     expect(s.indexMarkdown("a", 0)).toBe(full)
   })
 
-  it("caps the CLAUDE.md block but keeps the full index in .agentx-memory.md", () => {
+  it("keeps the full index in .agentx-memory.md and writes no capped copy anywhere (#2009)", () => {
     const s = filled()
     writeFileSync(resolve(ws, "CLAUDE.md"), "# Project rules\n\nKeep tests green.\n")
-    s.syncToWorkspace("a", ws, 800)
-    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
+    s.syncToWorkspace("a", ws)
+    expect(readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")).toBe("# Project rules\n\nKeep tests green.\n")
     const explicit = readFileSync(resolve(ws, ".agentx-memory.md"), "utf-8")
-    expect(claude).toContain("# Project rules")
-    expect(claude).toContain("Keep tests green.")
-    const block = claude.slice(claude.indexOf("AGENTX-MEMORY-START"), claude.indexOf("AGENTX-MEMORY-END"))
-    expect(block.length).toBeLessThan(1000)
-    expect(block).toContain(MEMORY_INDEX_CUT_NOTE)
     expect(explicit.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(30)
     expect(explicit).not.toContain(MEMORY_INDEX_CUT_NOTE)
   })
+})
 
-  it("restores the whole block when the cap is lifted (idempotent re-sync)", () => {
-    const s = filled()
-    s.syncToWorkspace("a", ws, 800)
-    s.syncToWorkspace("a", ws)
-    const claude = readFileSync(resolve(ws, "CLAUDE.md"), "utf-8")
-    expect(claude).not.toContain(MEMORY_INDEX_CUT_NOTE)
-    expect(claude.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(30)
-    expect(claude.split("AGENTX-MEMORY-START")).toHaveLength(2)
+// #2009 part 1, condition 3: only the rendered block is capped, at 4000
+// characters by default, and it names the file that holds the whole index.
+describe("agentMemoryStartBlock (#2009)", () => {
+  const FULL = "/work/space/.agentx-memory.md"
+
+  it("is empty with no index", () => {
+    expect(agentMemoryStartBlock("", FULL)).toBe("")
+    expect(agentMemoryStartBlock("  \n", FULL)).toBe("")
+  })
+
+  it("renders a small index whole, with one header naming the full file", () => {
+    const md = index(3)
+    const block = agentMemoryStartBlock(md, FULL)
+    expect(block).toContain(md.trim())
+    expect(block).toContain(FULL)
+    expect(block.match(/Agent memory index/g)).toHaveLength(1)
+  })
+
+  it("caps the index at 4000 characters by default and points at the full file for the rest", () => {
+    expect(MEMORY_INDEX_RENDER_MAX).toBe(4000)
+    const md = index(200)
+    expect(md.length).toBeGreaterThan(8000)
+    const block = agentMemoryStartBlock(md, FULL)
+    const body = block.slice(block.indexOf("# Memory — a"))
+    expect(body.length).toBeLessThanOrEqual(4000 + "\n</system-reminder>".length)
+    expect(block).toMatch(/_\(\d+ more memories not shown here\. Read \/work\/space\/\.agentx-memory\.md for the full index\.\)_/)
+    expect(agentMemoryStartBlock(md, FULL, 0)).toContain("- **fact_199**")
   })
 })
