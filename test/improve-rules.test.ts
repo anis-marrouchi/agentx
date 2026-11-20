@@ -12,7 +12,7 @@ import { CALL_ESTIMATE_USD, spentToday } from "../src/improve/budget"
 import { improvePass } from "../src/improve/nightly"
 import {
   RULE_BUDGET, RULE_PREFIX, checkRuleText, listRules, pickRetire, readRuleLog,
-  ruleEligible, ruleRetiredNote, ruleStage, rulesReport, type RuleCheck,
+  ruleEligible, ruleRetiredNote, ruleStage, rulesReport, retireRulesOfKinds, type RuleCheck,
 } from "../src/improve/rules"
 
 // #1996: the nightly pass turns each agent's worst group into one rule in
@@ -466,5 +466,17 @@ describe("review fixes (PR #2026)", () => {
     await ruleStage({ db, memory, groups: [], settings: ON, call: goodCall, now: T0 + 8 * DAY, commit: true })
     expect(listRules(memory, AGENT, T0 + 8 * DAY)).toHaveLength(0)
     expect(memory.list(AGENT).map((m) => `${m.type}:${m.name}`)).toEqual([`project:${name}`])
+  })
+})
+
+describe("retireRulesOfKinds: the rollback of a kind (#1997, #1998 C7)", () => {
+  it("retires every rule whose kinds include the kind, and logs each retirement", async () => {
+    stalls("build", 3, T0 - DAY)
+    await addRule("build", T0)
+    expect(listRules(memory, AGENT, T0)).toHaveLength(1)
+    expect(retireRulesOfKinds(db, memory, ["stale_status_told"], T0 + 1)).toEqual([])
+    expect(retireRulesOfKinds(db, memory, ["job_stalled"], T0 + 1)).toEqual([{ agentId: AGENT, key: keyOf("build") }])
+    expect(listRules(memory, AGENT, T0 + 1)).toHaveLength(0)
+    expect(readRuleLog(db, { agentId: AGENT, action: "retire" }).at(-1)?.reason).toBe("rollback: kind job_stalled retired")
   })
 })
