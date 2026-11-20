@@ -128,11 +128,18 @@ function stateFirst(text: string, callee: string, state: EndState): string {
  * when asked (stalled), is not "done" (#1861). `said`: what the run said
  * it waits for with agentx_waiting (markWaiting). `peer`: the answer came
  * back as text from another node, so its state is read from its last lines.
+ * `wrote`: the callee already wrote to the caller during the work
+ * (relayReply).
+ *
+ * An empty answer is an error only when nothing else was said (#2007 B3):
+ * no job state, no agentx_waiting, nothing written to the caller. A callee
+ * that said any of those ended empty on purpose.
  */
-export function resultOfRun(r: CalleeRun, o: { callee: string; said?: Waiting; peer?: boolean }): DelegationResult {
+export function resultOfRun(r: CalleeRun, o: { callee: string; said?: Waiting; peer?: boolean; wrote?: boolean }): DelegationResult {
   if (r.error) return { status: "error", text: r.error }
   const text = r.content || "(empty answer)"
   const state = r.jobState ?? (o.peer ? endStateInAnswer(r.content) : null) ?? undefined
+  if (!r.content?.trim() && !state && !o.said && !o.wrote) return { status: "error", text: `empty answer from ${o.callee}` }
   if (o.said) return { status: "waiting", text, waiting: o.said, ...(state?.state === "waiting" ? { state } : {}) }
   if (!state) return { status: "done", text }
   switch (state.state) {
@@ -685,7 +692,8 @@ export class DelegationManager {
         // (#1861).
         const said = this.waiting.get(id)
         this.waiting.delete(id)
-        return this.complete(id, resultOfRun(r, { callee: record.callee, said, peer: !!record.peer }))
+        const wrote = !!this.answered.get(id)?.length
+        return this.complete(id, resultOfRun(r, { callee: record.callee, said, peer: !!record.peer, wrote }))
       })
       .catch((e: any) => this.complete(id, { status: "error", text: e?.message ?? String(e) }))
 

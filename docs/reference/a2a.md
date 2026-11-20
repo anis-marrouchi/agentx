@@ -65,6 +65,8 @@ The answer has these fields:
 | `waiting` | For `waiting`: what it waits for (`on`), until when (`dueAt`, when given), and `kind`: `waiting` (it waits on something) or `continue` (it carries on later by itself) |
 | `startedAt`, `endedAt` | When it started and ended |
 
+**An empty answer.** Sometimes the agent that did the work ends its run without writing an answer. The hand-off then ends `error` with the text `empty answer from <agent>`, but only when that agent said nothing else either. It did not state its job's state ([Say where the work stands when a run ends](../jobs/end-of-run-state.md)), did not say it was waiting (`agentx_waiting`), and did not write back to the asking agent during the work. If it did any of those, the empty end is on purpose, and the hand-off ends as that says: `done`, `waiting`, or `error` for a blocked job.
+
 Who may read a hand-off:
 
 - On this machine: a request that names the hand-off's asking agent or the agent that did the work in `as`.
@@ -106,7 +108,8 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 2. **Terminal:** send the hello task above. The reply prints in the terminal, and the work shows on the Hub's **Activity** page.
 3. **Terminal:** send the `POST /task` request above. It prints the agent's answer as JSON.
 4. **Terminal:** run `curl -s http://127.0.0.1:18800/a2a/delegations`. The newest hand-offs are listed, also after AgentX restarts. Take an `id` and its `caller` from the list and run `curl -s "http://127.0.0.1:18800/a2a/delegations/<id>?as=<caller>"`. It prints the status and, once it has ended, the answer in `text`.
-5. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
+5. **Terminal:** for a hand-off that ended `error`, read it as in step 4. The text `empty answer from <agent>` means that agent ended its run with nothing at all. Any other text is the real failure.
+6. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 
 ## If something is wrong
 
@@ -117,5 +120,7 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **Reading a hand-off gives `400`:** add `?as=<agent>` with the asking agent or the agent that did the work.
 - **Reading a hand-off gives `404`:** the id is wrong, the agent in `as` is neither of the two agents, or the hand-off is older than `requests.retentionDays` and was deleted. Check the id in `GET /a2a/delegations`.
 - **Reading a hand-off gives `409`, or the list is empty after a restart:** the database did not open on this machine, so hand-offs are kept in memory only. `curl -s http://127.0.0.1:18800/health | jq .handoffs` prints `"memory-only"`. See [When an agent asks another agent](../jobs/ask-another-agent.md) for the fix.
+- **A hand-off ended `error` with `empty answer from <agent>`:** that agent ended its run without an answer, a job state, a waiting note or a message back. Open its run on the Hub's **Activity** page to see why it stopped. Then ask it again, or check that its instructions tell it to answer or to state its job's state.
+- **A hand-off ended `done` but its text is `(empty answer)`:** the agent that did the work wrote back to the asking agent during the work, or stated `done`, and then ended without a final answer. What it wrote earlier is the answer: look for it in the asking agent's conversation.
 - **A hand-off has no `text`:** it is still `running`, or it ended before this version of AgentX kept answers.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.

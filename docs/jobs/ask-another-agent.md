@@ -187,6 +187,8 @@ The tool works only from inside the helper's own run (`POST /runs/waiting` on it
 
 Every helper run now ends by stating its job's state: done, continue, waiting or blocked. A helper that states nothing is asked once; still nothing, the answer says the job is stalled. Only a helper that states `done` is reported as finished: `continue` and `waiting` come back with status `waiting`, and `blocked` or stalled come back with status `error`, each saying the work is not finished. See [Say where the work stands when a run ends](./end-of-run-state.md).
 
+A helper run that ends with no answer at all comes back with status `error` and the text `empty answer from <helper>`. That happens only when the helper also stated no job state, did not use `agentx_waiting`, and wrote nothing back to the asking agent during the work. If it did any of those, its empty end is not an error.
+
 A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
 
 Some requests are refused straight away with status `409`:
@@ -212,6 +214,7 @@ Some requests are refused straight away with status `409`:
 - **Your agent still waits for the helper:** check that `mesh.delegation.asyncWhenHuman` is not `false`. For the phone app, voice and dashboard chat, check that phone notifications are set up. Work started by a schedule or a workflow always waits.
 - **The update never arrives:** open the daemon log and search for `[delegation`. A line ending in `no route to …` means the machine running your agent has no connection to that chat app; set the chat app up on that machine.
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
+- **You get "empty answer from …":** the helper ended its run with nothing: no answer, no job state, no waiting note and no message back. Open its run on the Hub's **Activity** page to see why, then ask again.
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
 - **You need to go back to an older AgentX:** Roll back only to 0.235.0 or later. Rolling back further, the older daemon does not report hand-offs still out as lost, does not re-run answers on their way back, and drops a peer's late answer; those hand-offs are reported lost late after coming forward again. If you must go further back, first rename `.agentx/a2a/delegations.jsonl.imported` back to `delegations.jsonl` (restores what the older daemon can read, as of the import).
 - **The daemon log says `[delegation] WARNING: … imported but could not be renamed or removed`:** AgentX cannot change files in `.agentx/a2a/`. Fix that folder's permissions so the user that runs AgentX can write to it, then restart AgentX. Until then the old file is read again at every start.
