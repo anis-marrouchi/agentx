@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.244.0](https://github.com/anis-marrouchi/agentx/compare/v0.243.0...v0.244.0) (2026-11-20)
+
+
+### Features
+
+* **improve:** awareness and Bayan signals for fix rules ([#1997](https://github.com/anis-marrouchi/agentx/issues/1997), [#1998](https://github.com/anis-marrouchi/agentx/issues/1998)) ([#2030](https://github.com/anis-marrouchi/agentx/issues/2030)) ([3272ae1](https://github.com/anis-marrouchi/agentx/commit/3272ae1b2133c9cbe5fdbebd4c1ef4c1e9b921d1))
+
+
+### Bug Fixes
+
+* **requests:** owner-words check skips a plan finished before the close ([#2022](https://github.com/anis-marrouchi/agentx/issues/2022)) ([#2023](https://github.com/anis-marrouchi/agentx/issues/2023)) ([5dbc81b](https://github.com/anis-marrouchi/agentx/commit/5dbc81b76d2e5e0aa3349335752bd2a049cbb763))
+
 ## [0.243.0](https://github.com/anis-marrouchi/agentx/compare/v0.242.0...v0.243.0) (2026-11-20)
 
 
