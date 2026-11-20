@@ -2564,6 +2564,10 @@ export class AgentRegistry {
     // demand: only its own message.
     const isolated = task.isolated === true
     const leanOnDemand = !isolated && sessionProfile === "lean" && lean.contextOnDemand
+    // A full Claude Code start fetches the landscape on demand too (#2009),
+    // behind the same switch; its history and other chats stay pushed.
+    // Only Claude Code: the full profile adds the agentx tools to it.
+    const fullLandscapeOnDemand = !isolated && sessionProfile === "full" && state.def.tier === "claude-code" && lean.contextOnDemand
 
     // Improvement plan #8 — caller-driven session reset. Honour it before
     // seeding or recording the current inbound message; otherwise the fresh
@@ -3536,8 +3540,9 @@ export class AgentRegistry {
       // team agents) is irrelevant for focused code work on one issue/PR and
       // anchors the agent on context it shouldn't be using. Chat/orchestrator
       // agents still get the landscape — that's where peer discovery matters.
-      // Lean sessions fetch it with agentx_agents (landscape=true) instead.
-      landscape: (isCodexCli || leanOnDemand || isCodingChannelContext(channel, state.def.tier))
+      // Lean sessions, and full Claude Code ones with the switch on (#2009),
+      // fetch it with agentx_agents (landscape=true) instead.
+      landscape: (isCodexCli || leanOnDemand || fullLandscapeOnDemand || isCodingChannelContext(channel, state.def.tier))
         ? undefined
         : this.landscape?.getForAgent(task.agentId),
       channelMeta: task.context?.channelMeta,
@@ -3559,8 +3564,13 @@ export class AgentRegistry {
       crossChatContext: crossChatContext || undefined,
       longMemoryRecall: longMemoryRecall || undefined,
       // The one line that stands in for the three layers above on a fresh
-      // lean session; a resumed one already saw it.
-      contextOnDemand: leanOnDemand && !resumeSessionId ? onDemandContextNote(channel, chatId) : undefined,
+      // lean session; a resumed one already saw it. A full fresh start gets
+      // the note without the history it still pushes (#2009).
+      contextOnDemand: resumeSessionId
+        ? undefined
+        : leanOnDemand
+          ? onDemandContextNote(channel, chatId)
+          : fullLandscapeOnDemand ? onDemandContextNote(channel, chatId, { historyPushed: true }) : undefined,
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       // Kept on an isolated run too: it is about this run, not its context.
