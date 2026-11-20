@@ -12,6 +12,7 @@ import { emitAwarenessSignals, staleStatus, waitedOnAgent, type HandoffRow, type
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import type { AgentResponse, AgentTask } from "../src/agents/runtime"
+import { retireKindWarning } from "../src/commands/improve"
 
 // #1997: an agent says it waits on another agent whose hand-off already
 // ended done. Found from records AgentX owns, on a later tick.
@@ -60,6 +61,9 @@ describe("staleStatus", () => {
   it("is silent while the hand-off is open: status NULL or waiting (C2)", () => {
     expect(staleStatus(run(), "agent-b", { handoffs: [doneRow({ status: null, endedAt: null })], calleeAnswer: DONE_ANSWER })).toBeNull()
     expect(staleStatus(run(), "agent-b", { handoffs: [doneRow({ status: "waiting" })], calleeAnswer: DONE_ANSWER })).toBeNull()
+  })
+  it("is silent when any hand-off to the callee in the window is open (review 1)", () => {
+    expect(staleStatus(run(), "agent-b", { handoffs: [doneRow()], openInWindow: true, calleeAnswer: DONE_ANSWER })).toBeNull()
   })
   it("is silent when a newer hand-off to the callee is open", () => {
     const newer = doneRow({ id: "dlg-2", status: "waiting", startedAt: NOW - 5 * MIN, endedAt: NOW - 4 * MIN })
@@ -127,6 +131,23 @@ describe("emitAwarenessSignals", () => {
     expect(readSignals(db, 0).map((r) => r.kind)).toEqual(["stale_status_told"])
   })
 
+  it("stays silent when an older hand-off to the callee is still open, though the newest ended done (review 1)", () => {
+    ensureHandoffTable(db)
+    setSignalDb(db)
+    handoff({ id: "dlg-0", status: null, startedAt: NOW - 120 * MIN })
+    handoff({ id: "dlg-w", status: "waiting", startedAt: NOW - 90 * MIN, endedAt: NOW - 80 * MIN })
+    handoff({ id: "dlg-1", status: "done", startedAt: NOW - 30 * MIN, endedAt: NOW - 10 * MIN })
+    trace({ id: "t-mine", agent: "agent-b", chat: "a2a:agent-a:agent-b:dlg-1", startedAt: NOW - 29 * MIN, answer: DONE_ANSWER })
+    emitAwarenessSignals(run(), isAgent, NOW)
+    expect(readSignals(db, 0)).toEqual([])
+    db.prepare("UPDATE handoffs SET status = 'done', ended_at = ? WHERE id = 'dlg-0'").run(NOW - 100 * MIN)
+    emitAwarenessSignals(run(), isAgent, NOW)
+    expect(readSignals(db, 0)).toEqual([])
+    db.prepare("UPDATE handoffs SET status = 'done' WHERE id = 'dlg-w'").run()
+    emitAwarenessSignals(run(), isAgent, NOW)
+    expect(readSignals(db, 0).map((r) => r.kind)).toEqual(["stale_status_told"])
+  })
+
   it("stays silent when only an unrelated run of the callee stated done", () => {
     ensureHandoffTable(db)
     setSignalDb(db)
@@ -185,5 +206,13 @@ describe("registry.execute queues the check (C5)", () => {
     expect((await failed.execute({ agentId: "agent-a", message: "x", context: { channel: "a2a", chatId: "a2a:pm:agent-a" } })).error).toBe("boom")
     await tick()
     expect(readSignals(db, 0)).toEqual([])
+  })
+})
+
+describe("agentx improve rules --retire-kind (review 3)", () => {
+  it("warns that --agent does not narrow the retirement", () => {
+    expect(retireKindWarning({ retireKind: "stale_status_told", agent: "agent-a" })).toMatch(/every agent/)
+    expect(retireKindWarning({ retireKind: "stale_status_told" })).toBeNull()
+    expect(retireKindWarning({ agent: "agent-a" })).toBeNull()
   })
 })
