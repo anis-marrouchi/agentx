@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.242.0](https://github.com/anis-marrouchi/agentx/compare/v0.241.0...v0.242.0) (2026-11-20)
+
+
+### Features
+
+* **improve:** rank token waste with cost signals ([#1995](https://github.com/anis-marrouchi/agentx/issues/1995)) ([#2024](https://github.com/anis-marrouchi/agentx/issues/2024)) ([d199092](https://github.com/anis-marrouchi/agentx/commit/d19909256f3862c13a50161875b5303a64cf3505))
+
 ## [0.241.0](https://github.com/anis-marrouchi/agentx/compare/v0.240.0...v0.241.0) (2026-11-20)
 
 
