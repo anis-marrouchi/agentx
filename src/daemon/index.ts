@@ -27,7 +27,7 @@ import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/run
 import { isRestricted } from "@/guard/autonomy"
 import { writeGuardCliLink } from "@/guard/hook-command"
 import { firstLink, OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
-import { DEFAULT_CLOSE_PROOF, planDeliverables, type CloseProofCtx } from "@/requests/close-proof"
+import { activePlanDeliverables, DEFAULT_CLOSE_PROOF, hasActivePlan, planDeliverables, type CloseProofCtx } from "@/requests/close-proof"
 import { DELIVERABLES_SYSTEM, DeliverablesReader } from "@/requests/deliverables-reader"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -3378,7 +3378,7 @@ export class AgentXDaemon {
    *  plan's steps are the list; otherwise one small call reads it from the
    *  owner's words, through the provider and model of `ownerCheck`. */
   private closeProofDeps(requests: AttachedRequests): Pick<CloseProofCtx, "plan" | "read"> {
-    const plan = (id: string) => requests.plans.get(id) ? planDeliverables(requests.plans.steps(id), firstLink) : null
+    const plan = (id: string) => activePlanDeliverables(requests.plans, id, firstLink)
     return { plan, read: (r) => this.deliverablesReader(requests).read(r) }
   }
 
@@ -3390,7 +3390,7 @@ export class AgentXDaemon {
     return this.deliverables = new DeliverablesReader({
       store: requests.store,
       perCheck: () => ({ ...DEFAULT_CLOSE_PROOF, ...this.config.requests.closeProof }).perCheck,
-      hasPlan: (id) => !!requests.plans.get(id),
+      hasPlan: (id) => hasActivePlan(requests.plans, id),
       timeoutSeconds: settings().timeoutSeconds,
       generate: async (prompt, signal) => {
         const s = settings()
@@ -3416,7 +3416,9 @@ export class AgentXDaemon {
     let provider: AgentProvider | undefined
     let providerName: string | undefined
     const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
-    const plan = this.closeProofDeps(requests).plan
+    // Any plan, finished ones too: a plan's own close is judged after the
+    // plan is done (#1908). Close gates count only an active plan (#2020).
+    const plan = (id: string) => requests.plans.get(id) ? planDeliverables(requests.plans.steps(id), firstLink) : null
     return this.ownerCheck = new OwnerWordsCheck({
       store: requests.store,
       settings,
