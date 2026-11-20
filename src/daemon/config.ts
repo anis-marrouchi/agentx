@@ -962,6 +962,11 @@ const cronJobSchema = z.object({
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */
   fireToken: z.string().optional(),
+  /** One-time job (#2004): ISO time of its single run. The scheduler runs
+   *  it then and switches it off (`enabled: false`). If the daemon was down
+   *  at that time, it runs once when the daemon starts. `schedule` holds
+   *  the same time as a cron, for display only. */
+  runAt: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "runAt must be an ISO time" }).optional(),
   /** Agent id that created this job through the agent `schedule` tool.
    *  Absent for operator-created jobs. Drives the ownership rule: an agent
    *  manages only the routines it created, unless it is `admin`. */

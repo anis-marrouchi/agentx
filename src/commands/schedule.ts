@@ -98,12 +98,14 @@ schedule
       process.exit(1)
     }
 
-    const parsed = parseEnglishToCron(when)
+    const parsed = parseEnglishToCron(when, { timezone: opts.timezone })
     if (!parsed) {
       console.log(chalk.red(`  Couldn't parse: "${when}"`))
       console.log(chalk.dim(`  Try: "every morning at 9", "weekdays at 6pm", "every 15 minutes",`))
       console.log(chalk.dim(`       "every monday at 10am", "1st of every month at noon",`))
       console.log(chalk.dim(`       "daily at 9:30am", "every hour", "hourly"`))
+      console.log(chalk.dim(`  Once: "tomorrow at 9:05", "once on 20 november at 09:05", "2026-11-20T09:05"`))
+      console.log(chalk.dim(`        (a date or time already past is refused). Raw cron: "5 9 20 11 *"`))
       process.exit(1)
     }
 
@@ -149,6 +151,7 @@ schedule
     const verb = opts.dryRun ? "would add" : "Added"
     console.log(chalk.green(`  ✓ ${verb} cron ${chalk.cyan(id)}`))
     console.log(chalk.dim(`    Schedule: ${parsed.cron}  (${parsed.human}, ${opts.timezone})`))
+    if (parsed.runAt) console.log(chalk.dim(`    Runs once at ${parsed.runAt}, then switches itself off`))
     console.log(chalk.dim(`    Agent: ${opts.agent}`))
     if (notify) console.log(chalk.dim(`    Notify: ${notify.channel} ${notify.chatId} ${notifyScope(job)}`))
     if (onErrorModes.length) console.log(chalk.dim(`    On error: ${onErrorModes.join(", ")}`))
@@ -190,6 +193,7 @@ schedule
       } catch { /* keep raw */ }
       console.log(`  ${tag} ${chalk.cyan(id.padEnd(32))} ${chalk.dim(def.schedule.padEnd(14))} ${chalk.dim("→")} ${def.agent}`)
       console.log(chalk.dim(`      ${human} (${def.timezone || "UTC"})`))
+      if (def.runAt) console.log(chalk.dim(`      once at ${def.runAt}${def.enabled ? "" : " (done or off)"}`))
       if (def.notify) {
         console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId} ${notifyScope(def)}`))
         if (isBrokenAppNotify(def.notify)) {
@@ -268,9 +272,10 @@ for (const [verb, fn, desc] of [
 schedule
   .command("parse <when...>")
   .description("preview a natural-language parse without writing anything")
-  .action((words: string[]) => {
+  .option("--timezone <tz>", `IANA timezone (default: ${DEFAULT_SCHEDULE_TIMEZONE})`, DEFAULT_SCHEDULE_TIMEZONE)
+  .action((words: string[], opts) => {
     const when = words.join(" ")
-    const r = parseEnglishToCron(when)
+    const r = parseEnglishToCron(when, { timezone: opts.timezone })
     if (!r) {
       console.log(chalk.red(`  ✗ could not parse: "${when}"`))
       process.exit(1)
@@ -278,4 +283,5 @@ schedule
     console.log(chalk.green(`  "${when}"`))
     console.log(chalk.dim(`    → ${r.cron}`))
     console.log(chalk.dim(`    → ${r.human}`))
+    if (r.runAt) console.log(chalk.dim(`    → runs once, then switches itself off`))
   })

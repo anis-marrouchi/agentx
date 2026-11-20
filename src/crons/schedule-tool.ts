@@ -178,14 +178,14 @@ export async function runScheduleTool(
     const when = str(args.when)
     const prompt = str(args.prompt)
     if (!when || !prompt) return "Error: create needs `when` (plain English) and `prompt`."
-    const parsed = parseEnglishToCron(when)
+    const timezone = str(args.timezone) || DEFAULT_SCHEDULE_TIMEZONE
+    if (!isValidTimezone(timezone)) return `Error: unknown timezone "${timezone}".`
+
+    const parsed = parseEnglishToCron(when, { now, timezone })
     if (!parsed) return `Error: couldn't parse "${when}". ${SUPPORTED_PHRASES_HINT}.`
 
     const agent = str(args.agent) || caller.agentId
     if (!cfg.agents?.[agent]) return `Error: agent "${agent}" not found on this node.`
-
-    const timezone = str(args.timezone) || DEFAULT_SCHEDULE_TIMEZONE
-    if (!isValidTimezone(timezone)) return `Error: unknown timezone "${timezone}".`
 
     const jobId = id || slugifyScheduleId(parsed.matched, agent)
     if (!isValidScheduleId(jobId)) return `Error: invalid id "${jobId}" (letters, digits, "-" and "_" only).`
