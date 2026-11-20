@@ -27,7 +27,7 @@ import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/run
 import { isRestricted } from "@/guard/autonomy"
 import { writeGuardCliLink } from "@/guard/hook-command"
 import { firstLink, OPEN_STATES, type OpenState, type RequestRecord } from "@/requests/store"
-import { activePlanDeliverables, DEFAULT_CLOSE_PROOF, hasActivePlan, planDeliverables, type CloseProofCtx } from "@/requests/close-proof"
+import { activePlanDeliverables, DEFAULT_CLOSE_PROOF, hasActivePlan, judgedPlanDeliverables, type CloseProofCtx } from "@/requests/close-proof"
 import { DELIVERABLES_SYSTEM, DeliverablesReader } from "@/requests/deliverables-reader"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -3416,9 +3416,9 @@ export class AgentXDaemon {
     let provider: AgentProvider | undefined
     let providerName: string | undefined
     const settings = () => ({ ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck })
-    // Any plan, finished ones too: a plan's own close is judged after the
-    // plan is done (#1908). Close gates count only an active plan (#2020).
-    const plan = (id: string) => requests.plans.get(id) ? planDeliverables(requests.plans.steps(id), firstLink) : null
+    // A plan's own close is judged after the plan is done (#1908); a plan
+    // that finished before the close is not the list (#2022).
+    const plan = (r: RequestRecord) => judgedPlanDeliverables(requests.plans, r, firstLink)
     return this.ownerCheck = new OwnerWordsCheck({
       store: requests.store,
       settings,
