@@ -727,7 +727,7 @@ export class DelegationManager {
     // be called back is marked pending in the same write: should the daemon
     // stop before its callback turn starts, the next start runs it once.
     const pending = repeat ? undefined : { result: { ...result, text: clip(result.text, RESULT_CLIP) }, ...(written ? { wrote: true } : {}) }
-    if (this.journal("end the hand-off", (s) => s.end(id, result.status, this.now(), pending), "missing") === "taken") {
+    if (this.journal("end the hand-off", (s) => s.end(id, result.status, this.now(), pending, result), "missing") === "taken") {
       this.deps.log(`[delegation ${id}] ${result.status} dropped: another process ended it already`)
       return false
     }
@@ -853,8 +853,12 @@ export class DelegationManager {
     return rerun
   }
 
-  /** Recent delegations, newest first. Ids, agents and status only. */
+  /** Recent delegations, newest first. Ids, agents and status only. Read
+   *  from the table, so the list survives a restart (#2007); a node with
+   *  no database, or a failed read, lists this process's last 200. */
   list(limit = 50): Array<{ id: string; caller: string; callee: string; peer?: string; status: string; startedAt: string; endedAt?: string }> {
+    const stored = this.journal("list the hand-offs", (s) => s.list(limit), null)
+    if (stored) return stored
     return this.recent.slice(-limit).reverse().map((r) => ({
       id: r.id,
       caller: r.caller,
@@ -1054,6 +1058,12 @@ export class DelegationManager {
    *  has no database, so a restart forgets them (shown in /health). */
   journalMode(): "database" | "memory-only" {
     return this.store ? "database" : "memory-only"
+  }
+
+  /** What GET /a2a/delegations/:id reads (#2007): the table, or null on a
+   *  node with no database. */
+  journalReader(): Pick<HandoffStore, "read"> | null {
+    return this.store
   }
 
   /** Delete hand-offs that ended before `before` (requests.retentionDays).

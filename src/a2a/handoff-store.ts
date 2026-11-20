@@ -23,6 +23,7 @@
 import type Database from "better-sqlite3"
 import { existsSync, readFileSync, renameSync, unlinkSync } from "fs"
 import type { DelegationRecord, DelegationResult, DelegationStatus } from "./delegation"
+import { ensureColumns } from "@/storage/sqlite"
 
 /** The suffix a delegation log gets once it is imported (#1961). */
 export const IMPORTED_SUFFIX = ".imported"
@@ -90,6 +91,59 @@ export interface PendingCallback {
  *  it always did. 1 and 2 are a held callback's attempts, as in the file. */
 const PENDING_ATTEMPT = 0
 
+/** The most of a callee's answer a row keeps (#2007): the clip the
+ *  pending callback already uses (RESULT_CLIP in delegation.ts). */
+export const RESULT_TEXT_CAP = 12_000
+
+/**
+ * Columns added for #2007 (piece 1). Nothing writes `join_key` or
+ * `way_home` yet; later pieces do.
+ *   join_key      what makes two sends the same work; unique while open
+ *   way_home      how the answer goes home; NULL is a callback, as every
+ *                 older row is
+ *   result_text   the callee's answer, or the timeout or error text, as the
+ *                 hand-off ended, capped at RESULT_TEXT_CAP. For a local run
+ *                 it repeats task_traces.final_response; it is the only copy
+ *                 of a peer's answer, and it holds the outcome of a run that
+ *                 never answered. It lives as long as the row (pruned with
+ *                 requests.retentionDays).
+ *   waiting_json  for a "waiting" end: { kind, on, dueAt? }. `kind` is
+ *                 "waiting" (waits on something) or "continue" (the callee
+ *                 carries on through a job wake): a later piece frees the
+ *                 key of the first and not of the second.
+ */
+export const HANDOFF_JOURNAL_COLUMNS: Array<[string, string]> = [
+  ["join_key", "TEXT"],
+  ["way_home", "TEXT"],
+  ["result_text", "TEXT"],
+  ["waiting_json", "TEXT"],
+]
+
+/** A hand-off as GET /a2a/delegations lists it: ids, agents and status,
+ *  never the request or the answer. */
+export interface HandoffSummary {
+  id: string
+  caller: string
+  callee: string
+  peer?: string
+  status: DelegationStatus | "running"
+  startedAt: string
+  endedAt?: string
+}
+
+/** What a callee said it waits for, as a row keeps it. */
+export interface StoredWaiting {
+  kind: "waiting" | "continue"
+  on: string
+  dueAt?: string
+}
+
+/** A hand-off read by its id: the summary plus the answer. */
+export interface HandoffView extends HandoffSummary {
+  text?: string
+  waiting?: StoredWaiting
+}
+
 export function ensureHandoffTable(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS handoffs (
@@ -118,6 +172,11 @@ export function ensureHandoffTable(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_handoffs_ended   ON handoffs(ended_at)   WHERE ended_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_handoffs_started ON handoffs(started_at);
   `)
+  ensureColumns(db, "handoffs", HANDOFF_JOURNAL_COLUMNS)
+  // One open row per key. Rows with no key (every row before piece 3, the
+  // #1962 import's stubs) never clash: NULLs are distinct in SQLite. An
+  // insert that clashes is ignored by INSERT OR IGNORE, like an id clash.
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_handoffs_join ON handoffs(join_key) WHERE status IS NULL")
 }
 
 /** The hand-off store for this node's database, or null with a loud
@@ -157,6 +216,31 @@ interface Row {
   relay_json: string | null
   relay_attempt: number | null
   relay_at: number | null
+  result_text?: string | null
+  waiting_json?: string | null
+}
+
+const iso = (ms: number) => new Date(ms).toISOString()
+
+function waitingJson(result: DelegationResult | undefined): string | null {
+  if (!result || result.status !== "waiting" || !result.waiting) return null
+  return JSON.stringify({
+    kind: result.state?.state === "continue" ? "continue" : "waiting",
+    on: result.waiting.on,
+    ...(result.waiting.dueAt ? { dueAt: result.waiting.dueAt } : {}),
+  })
+}
+
+function summaryOf(r: Row): HandoffSummary {
+  return {
+    id: r.id,
+    caller: r.caller ?? "",
+    callee: r.callee ?? "",
+    ...(r.peer ? { peer: r.peer } : {}),
+    status: (r.status as DelegationStatus | null) ?? "running",
+    startedAt: iso(r.started_at ?? 0),
+    ...(r.ended_at ? { endedAt: iso(r.ended_at) } : {}),
+  }
 }
 
 type FileLine = Record<string, any>
@@ -195,17 +279,20 @@ export class HandoffStore {
    * "missing": no row (its insert failed), so the caller goes on as if the
    * table were not there. `pending` marks the answer for one re-run should
    * the daemon stop before its callback turn starts; in the same statement,
-   * so a crash cannot fall between the two.
+   * so a crash cannot fall between the two. `result` is the outcome the
+   * row keeps (#2007): its text, capped, and what a waiting callee waits
+   * for; in the same statement, so the first outcome's text wins.
    */
-  end(id: string, status: DelegationStatus, at: number, pending?: PendingCallback): "ended" | "taken" | "missing" {
+  end(id: string, status: DelegationStatus, at: number, pending?: PendingCallback, result?: DelegationResult): "ended" | "taken" | "missing" {
     const json = pending ? JSON.stringify({ result: pending.result, ...(pending.wrote ? { wrote: true } : {}) }) : null
+    const text = result ? result.text.slice(0, RESULT_TEXT_CAP) : null
     const changed = this.sql(`
-      UPDATE handoffs SET status = ?, ended_at = ?, updated_at = ?,
+      UPDATE handoffs SET status = ?, ended_at = ?, updated_at = ?, result_text = ?, waiting_json = ?,
         relay_json    = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ? ELSE relay_json END,
         relay_at      = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ? ELSE relay_at END,
         relay_attempt = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ${PENDING_ATTEMPT} ELSE relay_attempt END
       WHERE id = ? AND status IS NULL
-    `).run(status, at, at, json, json, json, at, json, id).changes
+    `).run(status, at, at, text, waitingJson(result), json, json, json, at, json, id).changes
     if (changed) return "ended"
     return this.sql("SELECT 1 FROM handoffs WHERE id = ?").get(id) ? "taken" : "missing"
   }
@@ -214,6 +301,33 @@ export class HandoffStore {
   statusOf(id: string): DelegationStatus | null {
     const row = this.sql("SELECT status FROM handoffs WHERE id = ?").get(id) as { status: string | null } | undefined
     return (row?.status as DelegationStatus | null) ?? null
+  }
+
+  /** One hand-off by its id, with its answer; null when there is no row
+   *  or it is an import stub (no caller, no start). Bounded: the answer is
+   *  capped at RESULT_TEXT_CAP when it is written. */
+  read(id: string): HandoffView | null {
+    const r = this.sql("SELECT * FROM handoffs WHERE id = ?").get(id) as Row | undefined
+    if (!r || !r.caller || !r.callee || r.started_at === null) return null
+    let waiting: StoredWaiting | undefined
+    if (r.waiting_json) {
+      try {
+        const w = JSON.parse(r.waiting_json)
+        waiting = { kind: w.kind === "continue" ? "continue" : "waiting", on: String(w.on ?? ""), ...(Number(w.dueAt) > 0 ? { dueAt: iso(Number(w.dueAt)) } : {}) }
+      } catch { /* unreadable: left out */ }
+    }
+    return { ...summaryOf(r), ...(r.result_text ? { text: r.result_text } : {}), ...(waiting ? { waiting } : {}) }
+  }
+
+  /** The newest hand-offs, newest first: ids, agents and status only.
+   *  Import stubs (no start, no callee) are left out (review C8). */
+  list(limit: number): HandoffSummary[] {
+    const rows = this.sql(`
+      SELECT id, caller, callee, peer, status, started_at, ended_at FROM handoffs
+      WHERE started_at IS NOT NULL AND callee IS NOT NULL
+      ORDER BY started_at DESC, rowid DESC LIMIT ?
+    `).all(Math.max(1, Math.min(500, Math.floor(limit) || 50))) as Row[]
+    return rows.map(summaryOf)
   }
 
   /** A row with its record: inserted, or filled in when it is a done-only
