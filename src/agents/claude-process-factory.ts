@@ -19,6 +19,7 @@ import {
 import { BackgroundTasks } from "./background-tasks"
 import { readManagedHash } from "./workspace-setup"
 import { claudeBillingEnv } from "@/utils/workspace-env"
+import { withOwnClaudeMd } from "./claude-md-chain"
 import { SITUATION_TOOL_ENV, SOURCES_TOOL_ENV, situationToolOn, sourcesToolEnvOn } from "@/situations/context"
 
 // --- Real subprocess factory for `claude` ---
@@ -174,7 +175,7 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     this.child = spawn(binary, args, {
       cwd: opts.workspace,
-      env: claudeBillingEnv(withSubagentModel(persistentCallerEnv({ ...process.env }, key), opts.subagentModel), opts.billing),
+      env: withOwnClaudeMd(claudeBillingEnv(withSubagentModel(persistentCallerEnv({ ...process.env }, key), opts.subagentModel), opts.billing), opts.ownClaudeMd),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 
