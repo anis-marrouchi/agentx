@@ -282,6 +282,17 @@ export function acceptedBody(taskId: string, callee: string, peer?: string, send
   }
 }
 
+/** What a send that joined an open hand-off gets back (#2007 piece 3):
+ *  the 202 of the first send, marked, with nothing started. */
+export function joinedBody(taskId: string, callee: string, peer?: string, send = false): Record<string, unknown> {
+  return {
+    ...acceptedBody(taskId, callee, peer, send),
+    duplicate: true,
+    note: `Already handed off as task ${taskId}; this repeat started nothing. ` +
+      `You will hear its answer once, as a new message in this conversation. Do not send it again, and do not wait or poll for it.`,
+  }
+}
+
 /** How long a called-back send to a local agent may take (#1100): the
  *  callee's own time limit (a run stopped there is continued by its job's
  *  wake, not inside this send: #1861), plus the wait for a free slot (a2a

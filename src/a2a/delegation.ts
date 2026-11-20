@@ -25,7 +25,7 @@
 // (importDelegationLog in handoff-store.ts).
 
 import { emitSignal } from "@/improve/signals"
-import { randomBytes } from "crypto"
+import { createHash, randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
 import { taskTypeOf } from "@/agents/task-context"
@@ -85,6 +85,8 @@ export interface DelegationRecord {
   depth?: number
   /** The issue or merge request it is about, in comparable form (#1100). */
   home?: string
+  /** What makes two sends the same work (#2007 piece 3, joinKey). */
+  joinKey?: string
 }
 
 export interface DelegationResult {
@@ -217,6 +219,9 @@ export interface DelegationDeps {
   /** Told when a delegation starts and how it ends (open requests, #356).
    *  Errors thrown here are the listener's to handle. */
   onStarted?(record: DelegationRecord): void
+  /** How long a "continue" end with no due time keeps its join key
+   *  (#2007 Q6). Default CONTINUE_JOIN_MS. */
+  continueJoinMs?: number
   onDone?(record: DelegationRecord, result: DelegationResult): void
   /** A line added to the callback message, e.g. how to close the open
    *  request this delegation belongs to. */
@@ -458,6 +463,31 @@ export function repeatsWritten(finalText: string, written: string[]): boolean {
 /** Share of the final answer's words already written for it to count as a repeat. */
 export const REPEAT_SHARE = 0.5
 
+/** How long after a "continue" end with no due time a resend still joins
+ *  that hand-off (#2007 Q6): the job wake's grace for a woken run to start
+ *  (jobs/wake.ts, graceMinutes 10). */
+export const CONTINUE_JOIN_MS = 10 * 60_000
+
+function sha(...parts: string[]): string {
+  const h = createHash("sha256")
+  for (const p of parts) h.update(p).update("\u0000")
+  return h.digest("hex")
+}
+
+/** The join key (#2007 B1, B2): caller, callee and home; the caller's
+ *  chat; the full message, not the clip the row keeps. Hashes only, so
+ *  the key never holds the text or the chat. The chat is its own part, so
+ *  the same text from another chat can be found (sameTextPattern). */
+export function joinKey(o: { caller: string; callee: string; home?: string; origin: Pick<DelegationOrigin, "channel" | "chatId">; message: string }): string {
+  return `j1:${sha(o.caller, o.callee, o.home ?? "").slice(0, 24)}:${sha(o.origin.channel, o.origin.chatId).slice(0, 24)}:${sha(o.message)}`
+}
+
+/** The LIKE pattern of a key with its chat part left open. */
+function sameTextPattern(key: string): string {
+  const [v, pair, , text] = key.split(":")
+  return `${v}:${pair}:%:${text}`
+}
+
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
   private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin; depth?: number }> = []
@@ -482,6 +512,9 @@ export class DelegationManager {
   private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean }>()
   /** Callee chats with a same-home run going right now: never continued. */
   private busyChats = new Set<string>()
+  /** Starts whose text was already open from another chat of the same
+   *  caller (#2007 B2): the accepted cost, counted since this process began. */
+  private sameTextCount = 0
   private readonly now: () => number
   private readonly store: HandoffStore | null
 
@@ -567,7 +600,7 @@ export class DelegationManager {
      *  callee already on the same home finishes first; this one then
      *  resumes that session instead of starting beside it. */
     home?: string
-  }): { taskId: string; record: DelegationRecord } {
+  }): { taskId: string; record: DelegationRecord; duplicate?: true } {
     const origin = originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
     const id = `dlg-${this.now().toString(36)}-${randomBytes(4).toString("hex")}`
@@ -575,6 +608,9 @@ export class DelegationManager {
     const taskType = taskTypeOf(opts.calleeContext)
     const depth = callbackDepthOf(opts.caller.context)
     const home = normalizeHome(opts.home)
+    // One run per message (#2007 piece 3): the same message from the same
+    // chat, on the same home, joins the one still open.
+    const key = this.store ? joinKey({ caller: opts.caller.agentId, callee: opts.callee, home, origin, message: opts.message }) : undefined
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -588,10 +624,115 @@ export class DelegationManager {
       ...(opts.kind ? { kind: opts.kind } : {}),
       ...(depth ? { depth } : {}),
       ...(home ? { home } : {}),
+      ...(key ? { joinKey: key } : {}),
     }
+    // The row first, before anything in memory is touched: a duplicate
+    // leaves no trace.
+    if (key) {
+      const open = this.joined(key) ?? this.claim(record)
+      if (open) {
+        this.deps.log(`[delegation ${open}] ${record.caller} -> ${record.callee}: the same message again from ${origin.channel}:${origin.chatId}; joined, nothing started`)
+        return { taskId: open, record: this.pendingById.get(open) ?? { ...record, id: open }, duplicate: true }
+      }
+      this.noteSameText(record)
+    } else {
+      this.journal("record the hand-off", (s) => s.insert(record, record.startedAt), undefined)
+    }
+    try {
+      return this.launchStarted(record, opts)
+    } catch (e: any) {
+      // Anything that throws after the insert ends the row (C3), or its key
+      // stays taken and every repeat would join a run that never started.
+      this.abandon(record, e?.message ?? String(e))
+      throw e
+    }
+  }
+
+  /** The join key a send from this caller turn would have; null when the
+   *  turn has no chat to call back to or the node has no table. */
+  joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string }): string | null {
+    const origin = originOf(o.caller.context)
+    if (!origin || !this.store) return null
+    return joinKey({ caller: o.caller.agentId, callee: o.callee, home: normalizeHome(o.home), origin, message: o.message })
+  }
+
+  /**
+   * The hand-off a send with this key joins, or null when it is new work.
+   * An open row joins. An ended row frees its key, except one whose callee
+   * carries on through a job wake (`continue`, #2007 Q6): until its due
+   * time, or CONTINUE_JOIN_MS after it ended when it gave none, a resend
+   * joins it instead of starting the same job twice.
+   */
+  joined(key: string | null): string | null {
+    if (!key) return null
+    return this.journal("look up the join key", (s) => {
+      const open = s.openByJoin(key)
+      if (open) return open
+      const last = s.newestByJoin(key)
+      if (!last || last.status !== "waiting" || last.waiting?.kind !== "continue") return null
+      const until = last.waiting.dueAt ?? (last.endedAt ?? 0) + (this.deps.continueJoinMs ?? CONTINUE_JOIN_MS)
+      return this.now() < until ? last.id : null
+    }, null)
+  }
+
+  /** Starts since this process began whose text was already open from
+   *  another chat of the same caller (#2007 B2). */
+  sameTextOtherChat(): number {
+    return this.sameTextCount
+  }
+
+  /**
+   * Insert the row with its join key (#2007 C3): null when it was
+   * inserted, or the open row's id when one with the key is there. A row
+   * that ended in between gets one more try. A failed insert (a disk or
+   * lock error, not a clash) turns the guard off for this send only.
+   */
+  private claim(record: DelegationRecord): string | null {
+    const store = this.store!
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (store.insert(record, record.startedAt)) return null
+        const open = store.openByJoin(record.joinKey!)
+        if (open) return open
+      }
+      this.deps.log(`[delegation ${record.id}] WARNING: the hand-off was not recorded with its join key; duplicate guard off for this send`)
+    } catch (e: any) {
+      this.deps.log(`[delegation ${record.id}] WARNING: could not record the hand-off (${e?.message ?? e}); duplicate guard off for this send`)
+    }
+    return null
+  }
+
+  /** The same text open from another chat of the caller (B2): it runs
+   *  twice, the accepted cost. Logged once per start, and counted. */
+  private noteSameText(record: DelegationRecord): void {
+    const others = this.journal("look up the same text", (s) => s.openSameText(sameTextPattern(record.joinKey!), record.joinKey!), [])
+    if (!others.length) return
+    this.sameTextCount++
+    const o = others[0]
+    this.deps.log(`[delegation ${record.id}] same text already open from another chat (${o.origin}) as ${o.id}; runs again (${this.sameTextCount} since start)`)
+  }
+
+  /** A start that threw after its row was written: the row ends "error"
+   *  and nothing of it is left pending. */
+  private abandon(record: DelegationRecord, why: string): void {
+    const id = record.id
+    const t = this.timers.get(id)
+    if (t) clearTimeout(t)
+    this.timers.delete(id)
+    this.pendingById.delete(id)
+    this.localRuns.delete(id)
+    for (const r of this.recent) if (r.id === id) { r.status = "error"; r.endedAt = this.now() }
+    this.journal("end the hand-off", (s) => s.end(id, "error", this.now(), undefined, { status: "error", text: `could not start: ${why}` }), "missing")
+    this.deps.log(`[delegation ${id}] could not start: ${why}`)
+  }
+
+  /** The run of a hand-off whose row is written. */
+  private launchStarted(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0]): { taskId: string; record: DelegationRecord } {
+    const { id, root, origin } = record
+    const home = record.home
+    const depth = record.depth ?? 0
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
-    this.journal("record the hand-off", (s) => s.insert(record, record.startedAt), undefined)
     try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
 
     const calleeContext: Record<string, unknown> = {
@@ -664,12 +805,19 @@ export class DelegationManager {
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
       if (homeKey) this.busyChats.add(mine)
-      return this.deps.runLocal(record.callee, opts.message, calleeContext, {
-        timeoutMs,
-        onStart: (runId) => { this.localRuns.set(id, runId) },
-        extras: opts.extras,
-        ...(resumeFrom?.length ? { resumeFrom } : {}),
-      }).finally(() => { this.busyChats.delete(mine) })
+      let started: Promise<CalleeRun>
+      try {
+        started = this.deps.runLocal(record.callee, opts.message, calleeContext, {
+          timeoutMs,
+          onStart: (runId) => { this.localRuns.set(id, runId) },
+          extras: opts.extras,
+          ...(resumeFrom?.length ? { resumeFrom } : {}),
+        })
+      } catch (e) {
+        this.busyChats.delete(mine)
+        throw e
+      }
+      return started.finally(() => { this.busyChats.delete(mine) })
     }
     // The wait is bounded by this delegation's own time limit: a run ahead
     // that never settles (stuck before it started) does not hold it forever.
