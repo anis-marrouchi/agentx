@@ -1234,7 +1234,7 @@ const TOOLS = [
           type: "object",
           description: "promise, accept, wait, optional: what proves it is finished; the daemon checks it and closes the loop when it is met, and refuses your done while it is not. " +
             "One of {kind:'url', url, contains?}, {kind:'issue', provider:'github'|'gitlab', ref:'owner/repo#12', state?:'closed'|'merged'|'open', notePattern?:<plain text a comment written after now contains, 8+ characters and not only digits, e.g. the request id>}, " +
-            "{kind:'git-ancestor', repo:<name>, commit, ref?}, {kind:'reply', channel, chatId, from:<person id>}.",
+            "{kind:'git-ancestor', repo:<name>, commit, ref?}, {kind:'reply', channel, chatId, from:<person id, or on an a2a chat one of its two agents>}.",
         },
         home: {
           type: "object",
@@ -1731,7 +1731,7 @@ async function handleToolCall(
       const data = await res.json().catch(() => ({})) as any
       // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).
       const { sendResultText } = await import("@/daemon/send-answer")
-      return { content: [{ type: "text", text: sendResultText(res.ok, data, res.statusText) }] }
+      return { content: [{ type: "text", text: sendResultText(res.ok, data, res.statusText, channel === "a2a" ? chatId : undefined) }] }
     }
 
     case "agentx_send_agent": {

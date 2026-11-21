@@ -32,7 +32,42 @@ export function sendAnswer(
 }
 
 /** The line agentx_send shows the agent for a /send answer. */
-export function sendResultText(ok: boolean, data: { messageId?: unknown; error?: unknown; warning?: unknown }, statusText = ""): string {
+export function sendResultText(
+  ok: boolean,
+  data: { messageId?: unknown; error?: unknown; warning?: unknown; accepted?: unknown; taskId?: unknown; agent?: unknown; status?: unknown; note?: unknown },
+  statusText = "",
+  /** The a2a chat the agent sent on, to say when it went as a new hand-off. */
+  chatId?: string,
+): string {
+  // An a2a send is handed to the other agent (202 + a dlg- task id), never
+  // posted with a message ID. That is a receipt, not an error (#2050).
+  if (ok && data.accepted === true && data.status === "notice") {
+    return `Kept as a notice for ${typeof data.agent === "string" && data.agent ? data.agent : "the agent"}'s next run. Do not send it again.`
+  }
+  if (ok && data.accepted === true && typeof data.taskId === "string" && data.taskId) {
+    return a2aReceiptText({ taskId: data.taskId, agent: str(data.agent), note: str(data.note), delivered: data.status === "delivered" }, chatId)
+  }
   if (!ok || !data.messageId) return `Error: ${data.error || statusText || "the message was not confirmed as sent"}`
   return `Message sent. ID: ${data.messageId}${data.warning ? `\nWarning: ${data.warning}` : ""}`
+}
+
+/** The dlg- id at the end of an a2a hand-off chat id, if any. */
+function handOffIdOf(chatId: string | undefined): string | undefined {
+  const m = chatId ? /^a2a:[^:]+:[^:]+:(dlg-[^:]+)$/.exec(chatId) : null
+  return m?.[1]
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "")
+
+/** The line agentx_send shows for an a2a send the daemon accepted (#2050):
+ *  the daemon's own note, and, when the agent sent on a hand-off chat and
+ *  the message went as another hand-off, that it is not on that chat. */
+export function a2aReceiptText(r: { taskId: string; agent: string; note: string; delivered: boolean }, chatId?: string): string {
+  const to = r.agent || "the other agent"
+  const lines = [`Message accepted for ${to} (task ${r.taskId}).${r.note ? ` ${r.note}` : " Do not send it again."}`]
+  const old = handOffIdOf(chatId)
+  if (old && old !== r.taskId && !r.delivered) {
+    lines.push(`Note: it is not posted on chat ${chatId}: hand-off ${old} is no longer open, so the message went as hand-off ${r.taskId}.`)
+  }
+  return lines.join("\n")
 }

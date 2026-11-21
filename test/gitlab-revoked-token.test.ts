@@ -126,6 +126,27 @@ describe("sendAnswer / sendResultText", () => {
     expect(sendResultText(true, { messageId: "12" })).toBe("Message sent. ID: 12")
   })
 
+  // #2050: an a2a send answers 202 with a dlg- task id and no message ID.
+  // HTTP 202's status text is "Accepted": it printed "Error: Accepted".
+  it("an a2a hand-off receipt is not an error", () => {
+    const body = { accepted: true, mode: "none", taskId: "dlg-new-1", agent: "coo-agent", note: "Sent to coo-agent (task dlg-new-1). The message is delivered; do not send it again." }
+    const text = sendResultText(true, body, "Accepted", "a2a:pm-agent:coo-agent")
+    expect(text).not.toMatch(/^Error/)
+    expect(text).toBe("Message accepted for coo-agent (task dlg-new-1). Sent to coo-agent (task dlg-new-1). The message is delivered; do not send it again.")
+    expect(sendResultText(true, { accepted: true, status: "delivered", taskId: "dlg-open-1", agent: "coo-agent" }, "Accepted", "a2a:coo-agent:pm-agent:dlg-open-1")).toBe("Message accepted for coo-agent (task dlg-open-1). Do not send it again.")
+    expect(sendResultText(true, { accepted: true, status: "notice", waiting: 1 }, "Accepted")).toMatch(/^Kept as a notice/)
+  })
+
+  it("a send on the chat of an ended hand-off says where it went instead", () => {
+    const text = sendResultText(true, { accepted: true, mode: "callback", taskId: "dlg-new-2", agent: "coo-agent" }, "Accepted", "a2a:coo-agent:pm-agent:dlg-old-1")
+    expect(text).toMatch(/Message accepted for coo-agent \(task dlg-new-2\)/)
+    expect(text).toMatch(/not posted on chat a2a:coo-agent:pm-agent:dlg-old-1: hand-off dlg-old-1 is no longer open, so the message went as hand-off dlg-new-2/)
+  })
+
+  it("a 202 with no task id and no message ID is still an error", () => {
+    expect(sendResultText(true, { accepted: true }, "Accepted")).toBe("Error: Accepted")
+  })
+
   it("says when the shared global token was used", () => {
     const a = sendAnswer("12", { channel: "gitlab", agentId: "helper-agent", identity: "global" })
     expect(a.body).toMatchObject({ ok: true, messageId: "12", identity: "global" })
