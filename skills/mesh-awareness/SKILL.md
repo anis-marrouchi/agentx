@@ -164,7 +164,8 @@ This returns `202 {accepted, mode, taskId: "dlg-…", note}` right away:
   conversation. Tell whoever asked you who you asked, then end your turn.
 - `mode: "none"`: no turn of yours can be called back. You get a short
   notice on your next run when it ends; read the answer then with
-  `agentx_lookup` or `GET /a2a/delegations/<taskId>?as=<your id>`.
+  `agentx_lookup` (`handoff: "<taskId>"`) or
+  `GET /a2a/delegations/<taskId>?as=<your id>`.
 
 Do not wait for it, poll for it, or send it again (a repeat while it runs
 returns the same `taskId` with `duplicate: true`). `stream: true` and

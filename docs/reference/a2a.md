@@ -92,7 +92,7 @@ A `none` receipt looks like this:
 
 ```json
 { "accepted": true, "mode": "none", "taskId": "dlg-…", "agent": "helper",
-  "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup or GET /a2a/delegations/dlg-…?as=<you>. Do not wait or poll for it." }
+  "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup (handoff: \"dlg-…\") or GET /a2a/delegations/dlg-…?as=<you>. Do not wait or poll for it." }
 ```
 
 Every one of these is a hand-off with a `dlg-` id. The old `snd-…` ids are gone, and `"async": false` no longer makes `/send/agent` wait. A `snd-` send that was still running when you upgraded is not reported, as on any restart before.
@@ -112,6 +112,8 @@ curl -s http://127.0.0.1:18800/a2a/delegations
 ```sh
 curl -s "http://127.0.0.1:18800/a2a/delegations/dlg-example?as=helper"
 ```
+
+An agent reads the same with the `agentx_lookup` tool (`handoff: "dlg-example"`), which names the agent it runs for as `as`. `GET /lookup?handoff=<id>&as=<agent>` gives the same row, with the same rules, plus a short `text` summary.
 
 The answer has these fields:
 
@@ -233,8 +235,8 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **A script expected an answer but got `202`:** it named an agent (`senderAgentId`, or the `X-AgentX-Task` header). An agent never waits. Read the answer by the `taskId`, or leave the agent out if a person runs the script.
 - **An agent's request still waited:** it did not name the agent, or it went to a guest host. Send `senderAgentId`, and from inside a run the `X-AgentX-Task: $AGENTX_TASK_ID` header. The daemon log line `an agent gets a receipt, never a wait` shows when a request asked to wait and got a receipt.
 - **An agent never heard about a `none` hand-off:** the notice reaches it at the start of its next run, or as a run of its own after an hour. Search the daemon log for `told with a notice`. A sender recorded as `?` named no agent of this machine, so nobody is told.
-- **You need to go back to the version before agents got receipts:** an older daemon cannot read open `none` or `deliver` hand-offs and leaves them open for good. Before you start it, close them in the database (**Terminal**, in the folder that holds `agentx.json`):
+- **You need to go back to the version before agents got receipts:** that version cannot read open `none` hand-offs and leaves them open for good (it reads `deliver` ones). Before you start it, close the `none` ones in the database (**Terminal**, in the folder that holds `agentx.json`):
   ```sh
-  sqlite3 .agentx/db.sqlite "UPDATE handoffs SET status='lost', ended_at=strftime('%s','now')*1000, updated_at=strftime('%s','now')*1000 WHERE status IS NULL AND way_home IN ('none','deliver')"
+  sqlite3 .agentx/db.sqlite "UPDATE handoffs SET status='lost', ended_at=strftime('%s','now')*1000, updated_at=strftime('%s','now')*1000 WHERE status IS NULL AND way_home = 'none'"
   ```
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.

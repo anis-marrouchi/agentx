@@ -93,12 +93,13 @@ In an office, you check the board before you interrupt a colleague. Agents can d
 
 - **`agent`:** what that agent is working on now, its open requests from you, its hand-offs still running, and what it finished in the last 48 hours, with the start of each answer. An agent on another machine of the mesh is looked up on that machine.
 - **`work`:** everything about one piece of work: an issue or merge request link, a `group/project#12` or `group/project!12` ref, or a request id (`req-…`). It lists your requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. On a large history the search stops after 5 seconds and says that older runs were not read. A short `!12` counts when the same message names the project. A bare `#12` never does.
+- **`handoff`:** one hand-off by its `dlg-` id, from a receipt or a notice: who asked whom, how it ended and the answer. The tool reads it as the agent it runs for, so it shows only hand-offs that agent asked for or worked on. The same answer is at `GET /lookup?handoff=<id>&as=<agent>`.
 
 What it never shows:
 
 - The words of a run that came from a person's own chat (the phone app, chat apps, voice, email, the dashboard), or from your answer on a decision card, with its note. Such a run shows only that it happened and what work it was about.
 - The words of an `api` run you sent (sender `operator` or `owner`), or of an older `api` run whose sender was not recorded. A script's `api` runs show.
-- Anything older than those windows, or the full text of an answer. For the full text, read the chat with `agentx_recent`.
+- Anything older than those windows, or the full text of an answer (except for one `handoff`, up to 12,000 characters). For the full text, read the chat with `agentx_recent`.
 
 The same answers are at `GET /lookup?agent=<id>` and `GET /lookup?work=<ref>` on the daemon. Another machine of the mesh needs the mesh token to read them.
 
@@ -125,11 +126,11 @@ A callback can lead to a new send, which calls back in turn. The count of such h
 Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the send is still a hand-off with a `dlg-` id, but no turn is called back. The receipt says `"mode": "none"`:
 
 ```json
-{ "accepted": true, "mode": "none", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup or GET /a2a/delegations/dlg-…?as=<you>. …" }
+{ "accepted": true, "mode": "none", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup (handoff: \"dlg-…\") or GET /a2a/delegations/dlg-…?as=<you>. …" }
 ```
 
-- When the sender is one of this machine's agents, it gets a short **notice** when the hand-off ends, at the start of its next run (or as a run of its own after an hour; see [A notice instead of a run](#a-notice-instead-of-a-run)). The notice gives the id and how it ended. The sender then reads the answer by its id: `GET /a2a/delegations/<id>?as=<sender>`.
-- A sender that names no agent of this machine is recorded as `?`. Nobody is told; the answer is read by its id with the operator key.
+- When the sender is one of this machine's agents, it gets a short **notice** when the hand-off ends, at the start of its next run (or as a run of its own after an hour; see [A notice instead of a run](#a-notice-instead-of-a-run)). The notice gives the id and how it ended. The sender then reads the answer by its id: with the `agentx_lookup` tool (`handoff: "dlg-…"`), or `GET /lookup?handoff=<id>&as=<sender>`, or `GET /a2a/delegations/<id>?as=<sender>`. All three use the same rules: an agent reads only hand-offs it asked for or worked on.
+- A sender that names no agent of this machine is recorded as `?`. Nobody is told; the answer is read by its id with the operator key. If it gave a name in `senderAgentId` (a script, say), that name keeps a session of its own with the other agent and shows as the message's sender; a sender with no name at all shares one session.
 - If the agent on this machine is busy with other work, the message waits in line for it to be free, for up to 6 hours, and then runs. The daemon log shows `busy, waiting for a slot (up to 360m)` when it starts waiting. Unlike before, the hand-off survives a restart: it then ends `lost`, and the sender is told.
 
 `"async": false` no longer makes a send wait. It is ignored, and the receipt carries `"asyncIgnored": true`.
