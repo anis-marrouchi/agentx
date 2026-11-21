@@ -97,10 +97,11 @@ export const RESULT_TEXT_CAP = 12_000
 
 /**
  * Columns added for #2007 (piece 1). `join_key` is written by start()
- * (piece 3); nothing writes `way_home` yet.
+ * (piece 3); `way_home` is 'deliver' for an async /mesh/task (piece 4b).
  *   join_key      what makes two sends the same work; unique while open
  *   way_home      how the answer goes home; NULL is a callback, as every
- *                 older row is
+ *                 older row is; 'deliver' sends the raw answer to the chat
+ *                 the request named (/mesh/task async:true)
  *   result_text   the callee's answer, or the timeout or error text, as the
  *                 hand-off ended, capped at RESULT_TEXT_CAP. For a local run
  *                 it repeats task_traces.final_response; it is the only copy
@@ -142,6 +143,8 @@ export interface StoredWaiting {
 export interface HandoffView extends HandoffSummary {
   text?: string
   waiting?: StoredWaiting
+  /** Set when the answer does not come back as a callback: "deliver". */
+  wayHome?: "deliver"
 }
 
 export function ensureHandoffTable(db: Database.Database): void {
@@ -221,6 +224,7 @@ interface Row {
   relay_at: number | null
   result_text?: string | null
   waiting_json?: string | null
+  way_home?: string | null
 }
 
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -270,12 +274,12 @@ export class HandoffStore {
    *  nothing was inserted. */
   insert(rec: DelegationRecord, at: number, source: "db" | "file" = "db"): boolean {
     return this.sql(`
-      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at, join_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at, join_key, way_home)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       rec.id, rec.caller, rec.callee, rec.peer ?? null, rec.kind ?? null, rec.depth ?? null, rec.home ?? null,
       rec.taskType ?? null, rec.request, JSON.stringify(rec.origin), JSON.stringify(rec.root ?? null), rec.startedAt, source, at,
-      rec.joinKey ?? null,
+      rec.joinKey ?? null, rec.wayHome ?? null,
     ).changes > 0
   }
 
@@ -362,7 +366,10 @@ export class HandoffStore {
         waiting = { kind: w.kind === "continue" ? "continue" : "waiting", on: String(w.on ?? ""), ...(Number(w.dueAt) > 0 ? { dueAt: iso(Number(w.dueAt)) } : {}) }
       } catch { /* unreadable: left out */ }
     }
-    return { ...summaryOf(r), ...(r.result_text ? { text: r.result_text } : {}), ...(waiting ? { waiting } : {}) }
+    return {
+      ...summaryOf(r), ...(r.result_text ? { text: r.result_text } : {}), ...(waiting ? { waiting } : {}),
+      ...(r.way_home === "deliver" ? { wayHome: "deliver" as const } : {}),
+    }
   }
 
   /** The newest hand-offs, newest first: ids, agents and status only.
@@ -571,6 +578,7 @@ export class HandoffStore {
       ...(r.kind === "send" ? { kind: "send" as const } : {}),
       ...(r.depth ? { depth: r.depth } : {}),
       ...(r.home ? { home: r.home } : {}),
+      ...(r.way_home === "deliver" ? { wayHome: "deliver" as const } : {}),
     }
   }
 }

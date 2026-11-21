@@ -42,10 +42,11 @@ describe("send list (#1892 j)", () => {
       "channels/router.ts": 24,
       "situations/send-to-chat.ts": 2, // the one adapter.send, the definition
       "daemon/delegation-wiring.ts": 5, // deliverToChat: as the caller says
-      // 16 sendOutbound (/send, /channel/send, mesh answers, alerts…) +
+      // 15 sendOutbound (/send, /channel/send, mesh answers, alerts…) +
       // deliverToChat + the closing note on a forge home (#1892 phase 4: an
-      // issue comment, not a chat reply)
-      "daemon/index.ts": 18,
+      // issue comment, not a chat reply). /mesh/task async left for the
+      // hand-off journal's deliver (#2007 S5).
+      "daemon/index.ts": 17,
       "workflows/nodes/follow-up.ts": 1, // deliver → sendToChat
       "workflows/nodes/handlers.ts": 1, // action.send: true
     })
@@ -53,7 +54,9 @@ describe("send list (#1892 j)", () => {
 
   it("the other send helpers are listed", () => {
     expect(count(/\bdeliver\(|\bdeps\.send\(/g)).toEqual({
-      "a2a/delegation.ts": 3, // callback answer: true; relay failure: false
+      // callback answer: true; relay failure: false; /mesh/task async
+      // deliver row (#2007 S5): the peer's answer true, a failure line false
+      "a2a/delegation.ts": 4,
       "agents/resume/mesh-resumer.ts": 2, // resumed answer: true; notice: false
       "channels/push-announce.ts": 1,
       "channels/streaming-message.ts": 1, // the router marks the anchor

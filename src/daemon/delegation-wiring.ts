@@ -20,7 +20,7 @@
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
 import type Database from "better-sqlite3"
-import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
+import { DelegationManager, UNNAMED_CALLER, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
 import { handoffStoreFor, importDelegationLog } from "@/a2a/handoff-store"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
@@ -293,6 +293,70 @@ export function joinedBody(taskId: string, callee: string, peer?: string, send =
   }
 }
 
+/** What /mesh/task async:true starts (#2007 S5): the peer, the agent it
+ *  names (or none: the peer picks), the message, the request's own
+ *  context (it names the chat the answer goes to), the asking agent when
+ *  it is known, and the peer call itself, made as before. */
+export interface MeshDeliver {
+  peer: string
+  agent?: string
+  message: string
+  context: Record<string, unknown>
+  caller?: string
+  run: () => Promise<string>
+}
+
+/** The callee a deliver row names when the request named none. */
+const DEFAULT_CALLEE = "default"
+
+/** The row's caller: the agent whose chat it is (the answer was sent as
+ *  that agent before), else the asking agent, else "?". */
+function meshDeliverTurn(o: Omit<MeshDeliver, "run">): CallerTurn {
+  const named = typeof o.context.agentId === "string" && o.context.agentId ? o.context.agentId : undefined
+  return { agentId: named ?? o.caller ?? UNNAMED_CALLER, context: o.context }
+}
+
+function meshDeliverBody(taskId: string, o: Omit<MeshDeliver, "run">, duplicate: boolean): Record<string, unknown> {
+  const to = `${String(o.context.channel)}:${String(o.context.chatId)}`
+  return {
+    accepted: true,
+    mode: "deliver",
+    taskId,
+    ...(o.agent ? { agent: o.agent } : {}),
+    peer: o.peer,
+    deliverTo: to,
+    ...(duplicate ? { duplicate: true } : {}),
+    note: duplicate
+      ? `Already running as task ${taskId}; this repeat started nothing. Its result goes to ${to} once.`
+      : `The result will be delivered to the originating chat when the peer finishes. Read it any time with GET /a2a/delegations/${taskId}.`,
+  }
+}
+
+/** The 202 of the open deliver row this request repeats, or null when it
+ *  is new work. Asked before the hand-off budget, so a repeat spends no
+ *  hop (as on the dlg- paths, #2007 C2). */
+export function meshDeliverJoined(delegations: DelegationManager, o: Omit<MeshDeliver, "run">): Record<string, unknown> | null {
+  const key = delegations.joinKeyOf({ caller: meshDeliverTurn(o), callee: o.agent || DEFAULT_CALLEE, peer: o.peer, wayHome: "deliver", message: o.message })
+  const open = delegations.joined(key)
+  return open ? meshDeliverBody(open, o, true) : null
+}
+
+/** Start /mesh/task async:true on the hand-off journal (#2007 S5): one
+ *  row with way_home 'deliver', its dlg- id back at once, the row ended
+ *  once (result_text), and the answer sent to the named chat as before.
+ *  The context must name channel and chatId; the caller checks that. */
+export function startMeshDeliver(delegations: DelegationManager, o: MeshDeliver): { status: 202; body: Record<string, unknown> } {
+  const r = delegations.start({
+    caller: meshDeliverTurn(o),
+    callee: o.agent || DEFAULT_CALLEE,
+    peer: o.peer,
+    message: o.message,
+    wayHome: "deliver",
+    run: o.run,
+  })
+  return { status: 202, body: meshDeliverBody(r.taskId, o, r.duplicate === true) }
+}
+
 /** How long a called-back send to a local agent may take (#1100): the
  *  callee's own time limit (a run stopped there is continued by its job's
  *  wake, not inside this send: #1861), plus the wait for a free slot (a2a
@@ -390,7 +454,9 @@ export interface ChatDelivery {
   channel: string
   chatId: string
   text: string
-  agentId: string
+  /** Absent when no agent is named (an unnamed /mesh/task async request):
+   *  nothing is recorded in a session then. */
+  agentId?: string
   accountId?: string
   /** Also add the text to the agent's session for that chat. */
   record: boolean
@@ -421,25 +487,25 @@ export async function deliverToChat(
     // Hold the reply here and say so on the bus; the dashboard (which
     // sees peers' events through the feed) fetches it and files it in
     // the conversation, unread, with its finish notification.
-    if (msg.record) {
+    if (msg.record && msg.agentId) {
       try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the thread still gets it */ }
     }
     const reply = w.replies.put({
       taskId: msg.taskId,
       channel: msg.channel,
       chatId: msg.chatId,
-      agent: msg.agentId,
+      agent: msg.agentId ?? "",
       text: msg.text,
       status: msg.outcome,
-      plain: w.config.agents[msg.agentId]?.richMessages === false,
+      plain: !!msg.agentId && w.config.agents[msg.agentId]?.richMessages === false,
     })
     getEventBus().publish({
       kind: CALLBACK_REPLY_KIND,
       type: CALLBACK_REPLY_TYPE,
-      agentId: msg.agentId,
+      agentId: msg.agentId ?? "",
       // No reply text here: events reach the mesh feed; the text stays behind
       // the mesh-gated GET /a2a/delegations/<id>/reply.
-      summary: msg.summary ?? `${msg.agentId} replied after a delegation (${msg.outcome})`,
+      summary: msg.summary ?? `${msg.agentId ?? "An agent"} replied after a delegation (${msg.outcome})`,
       ref: reply.taskId,
     })
     return
@@ -457,10 +523,10 @@ export async function deliverToChat(
   // A push is a notification about the chat, not a message in it. The full
   // text goes in the agent's session for that chat, so the next turn there
   // can read out what the push had to cut.
-  if (msg.record) {
+  if (msg.record && msg.agentId) {
     try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the push still goes */ }
   }
-  const name = w.config.agents[msg.agentId]?.name || msg.agentId
+  const name = (msg.agentId && w.config.agents[msg.agentId]?.name) || msg.agentId || "AgentX"
   await w.router.sendOutbound(
     { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${pushPreview(msg.text)}` },
     { recordInSession: false, ...dedupe },
