@@ -46,12 +46,26 @@ export async function checkReply(spec: ReplySpec, ctx: Pick<CheckContext, "inbou
 
 const INBOUND_LIMIT = 5
 
+/** The two agents of an a2a chat id (`a2a:<caller>:<callee>[:<dlg id>]`),
+ *  or null for any other chat id. */
+export function a2aPair(chatId: string): [string, string] | null {
+  const m = /^a2a:([^:]+):([^:]+)(?::[^:]+)?$/.exec(chatId)
+  return m ? [m[1], m[2]] : null
+}
+
 /** The inbound log over this node's task_traces. A channel matches with
- *  or without its account ("telegram" and "telegram@support"). */
+ *  or without its account ("telegram" and "telegram@support").
+ *
+ *  On an a2a chat, `from` may be one of its two agents (#2050). `person` on
+ *  an a2a row is the human who started the chain, never an agent, so an
+ *  agent's message is read from the other agent's turns whose `sender` is
+ *  `agent:<from>`, on any a2a chat: a hand-off chat ends when its job does,
+ *  and a later message between the same two agents starts a new one. */
 export function traceInbound(db: Database.Database): InboundLog {
   return (channel, chatId, after, person) => {
+    let rows: Array<{ person: string | null; at: number }>
     try {
-      return db.prepare(
+      rows = db.prepare(
         `SELECT person, started_at AS at FROM task_traces
          WHERE (channel = ? OR channel LIKE ? ESCAPE '\\') AND chat_id = ? AND started_at > ? AND lower(person) = lower(?)
          ORDER BY started_at LIMIT ?`,
@@ -59,6 +73,23 @@ export function traceInbound(db: Database.Database): InboundLog {
     } catch {
       // No task_traces (or no person column) here.
       return null
+    }
+    const pair = channel === "a2a" ? a2aPair(chatId) : null
+    const who = person.toLowerCase()
+    if (rows.length || !pair) return rows
+    const [a, b] = pair.map((x) => x.toLowerCase())
+    if (who !== a && who !== b) return rows
+    const other = who === a ? b : a
+    try {
+      const sent = db.prepare(
+        `SELECT started_at AS at FROM task_traces
+         WHERE channel = 'a2a' AND lower(agent_id) = ? AND lower(sender) = ? AND started_at > ?
+         ORDER BY started_at LIMIT ?`,
+      ).all(other, `agent:${who}`, after, INBOUND_LIMIT) as Array<{ at: number }>
+      return sent.map((r) => ({ person, at: r.at }))
+    } catch {
+      // No sender column on this node: only the person match can say.
+      return rows
     }
   }
 }

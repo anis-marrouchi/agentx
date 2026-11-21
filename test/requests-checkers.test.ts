@@ -285,3 +285,39 @@ describe("reply", () => {
     expect((await runCheck(s, ctx({ inbound: log }))).verdict).toBe("met")
   })
 })
+
+describe("reply on an a2a chat from an agent (#2050)", () => {
+  let db: Database.Database
+  beforeAll(() => {
+    db = new Database(":memory:")
+    db.exec("CREATE TABLE task_traces (task_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, channel TEXT, chat_id TEXT, status TEXT NOT NULL, started_at INTEGER NOT NULL, person TEXT, sender TEXT)")
+  })
+  afterAll(() => db.close())
+
+  const old = "a2a:coo-agent:pm-agent:dlg-old-1"
+  const s = spec({ kind: "reply", channel: "a2a", chatId: old, from: "pm-agent", after: NOW - 1000 })
+  const insert = () => db.prepare("INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, person, sender) VALUES (?, ?, 'a2a', ?, 'completed', ?, ?, ?)")
+
+  it("is met by the other agent's turn that pm-agent sent, on a new hand-off chat after the old one ended", async () => {
+    const log = traceInbound(db)
+    // Before the loop opened, from someone else, to someone else: none count.
+    insert().run("before", "coo-agent", "a2a:pm-agent:coo-agent:dlg-x", NOW - 5000, "owner-a", "agent:pm-agent")
+    insert().run("other-sender", "coo-agent", "a2a:secretary-agent:coo-agent:dlg-y", NOW, "owner-a", "agent:secretary-agent")
+    insert().run("other-callee", "secretary-agent", "a2a:pm-agent:secretary-agent:dlg-z", NOW, "owner-a", "agent:pm-agent")
+    expect((await runCheck(s, ctx({ inbound: log }))).verdict).toBe("not_met")
+    // person on an a2a row is the human root, never the agent: the sender says who sent it.
+    insert().run("hit", "coo-agent", "a2a:pm-agent:coo-agent:dlg-new", NOW + 1000, "owner-a", "agent:pm-agent")
+    const r = await runCheck(s, ctx({ inbound: log }))
+    expect(r.verdict).toBe("met")
+    expect(r.detail).toMatch(/pm-agent wrote on a2a chat/)
+  })
+
+  it("an agent outside the chat does not count, and a node with no sender column falls back to person", async () => {
+    const outsider = spec({ kind: "reply", channel: "a2a", chatId: old, from: "secretary-agent", after: NOW - 1000 })
+    expect((await runCheck(outsider, ctx({ inbound: traceInbound(db) }))).verdict).toBe("not_met")
+    const bare = new Database(":memory:")
+    bare.exec("CREATE TABLE task_traces (task_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, channel TEXT, chat_id TEXT, status TEXT NOT NULL, started_at INTEGER NOT NULL, person TEXT)")
+    expect((await runCheck(s, ctx({ inbound: traceInbound(bare) }))).verdict).toBe("not_met")
+    bare.close()
+  })
+})
