@@ -21,6 +21,7 @@ import { unknownAgentxTools } from "@/mcp/tool-names"
 import { isPhoneLink } from "@/notify/phone-link"
 import { situationsConfigSchema } from "@/situations/config"
 import { sensorProblems, sensorsConfigSchema } from "@/sensors/config"
+import { allowedHostJobsSchema } from "@/crons/host-jobs"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -2316,6 +2317,10 @@ export const daemonConfigSchema = z.object({
    *  `sensors.<id>` with levels that wake an agent or push to the owner.
    *  See src/sensors/config.ts. */
   sensors: sensorsConfigSchema,
+  /** What may run outside AgentX on this machine (#863), by launchd label
+   *  or crontab line: owner, why, and during the migration `until`. An
+   *  entry past its until shows on the Wall for its owner. */
+  allowedHostJobs: allowedHostJobsSchema,
   /** One message a day that lists only what is wrong: failed or missed
    *  schedules, stuck requests, paused agents (#1289). Nothing wrong,
    *  nothing sent. See src/crons/exceptions-digest.ts. */

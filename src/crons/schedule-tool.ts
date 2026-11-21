@@ -17,7 +17,7 @@ import {
 } from "./schedule-ops"
 import { rootOfConfig } from "./goal-state"
 import { retiredRefusalAt } from "./retired"
-import { changeAction, recommendAction, retireAction, type ChangeContext } from "./schedule-change"
+import { changeAction, recommendAction, retireAction, verdictAction, type ChangeContext } from "./schedule-change"
 import type Database from "better-sqlite3"
 
 // --- Agent-facing `schedule` tool ---
@@ -36,7 +36,7 @@ import type Database from "better-sqlite3"
 //   2. Ownership. Jobs record `createdBy`; an agent may touch only its own
 //      unless its config says `admin: true`.
 
-export type ScheduleAction = "list" | "create" | "pause" | "resume" | "delete" | "change" | "retire" | "recommend"
+export type ScheduleAction = "list" | "create" | "pause" | "resume" | "delete" | "change" | "retire" | "recommend" | "verdict"
 
 export interface ScheduleCaller {
   agentId: string
@@ -252,12 +252,13 @@ export async function runScheduleTool(
   if (!canManage(cfg, job, caller)) return ownershipError(id, job)
 
   // The owner's own changes and its goal-check recommendation (#863).
-  if (action === "change" || action === "retire" || action === "recommend") {
+  if (action === "change" || action === "retire" || action === "recommend" || action === "verdict") {
     const ctx: ChangeContext = {
       id, job, caller, root: rootOfConfig(deps.configPath), configPath: deps.configPath, reload: deps.reload, now, ledger: deps.ledger,
       notifyApproval: (text) => notifyApproval(cfg, deps, text),
     }
     if (action === "recommend") return recommendAction(args, ctx)
+    if (action === "verdict") return verdictAction(args, ctx)
     return action === "retire" ? retireAction(args, ctx) : changeAction(args, ctx, crons)
   }
 
@@ -320,7 +321,7 @@ export async function runScheduleTool(
     ].join("\n")
   }
 
-  return `Error: unknown action "${action}". Use list, create, pause, resume, delete, change, retire or recommend.`
+  return `Error: unknown action "${action}". Use list, create, pause, resume, delete, change, retire, recommend or verdict.`
 }
 
 /**

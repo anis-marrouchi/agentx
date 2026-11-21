@@ -143,6 +143,24 @@ export const WALL_PAGES_SCRIPT = String.raw`
     while (cells.length < 7) cells.unshift('<span class="is-none" title="No run"></span>');
     return '<span class="wjb__sq" aria-label="Last seven runs: ' + esc(runs.map(function (x) { return x.status; }).join(', ') || 'none') + '">' + cells.join('') + '</span>';
   }
+  // Sensors (#863): built-in readers with their last reading and wakes.
+  function sensorRows(n) {
+    return (n.sensors || []).map(function (x) {
+      var wakes = (x.wakes || []).map(function (w) {
+        return '<li>' + when(Date.parse(w.at)) + ' · ' + esc(w.level) + ' → @' + esc(w.target) + ' · ' + esc(w.reading) + (w.ok ? '' : ' · <span class="is-amber">' + esc(w.error || 'failed') + '</span>') + '</li>';
+      }).join('');
+      return '<details class="wjb wjb--sensor"><summary>' +
+        '<span class="wjb__n"><b>' + esc(x.id) + '</b> <small>sensor · ' + esc(x.reading) + ' every ' + esc(x.every) + (x.targets.length ? ' · wakes ' + esc(x.targets.join(', ')) : '') + '</small><span>Last reading: ' + esc(x.last) + (x.lastAt ? ' <small>' + when(x.lastAt) + '</small>' : '') + '</span></span>' +
+        '</summary><div class="wjb__d">' + (wakes ? '<ul>' + wakes + '</ul>' : '<p>No wake on record.</p>') + '</div></details>';
+    });
+  }
+  // allowedHostJobs past their until (#863): for their owner to move.
+  function hostJobRows(n) {
+    return (n.hostJobs || []).map(function (h) {
+      return '<details class="wjb is-stale"><summary><span class="wjb__n"><b>' + esc(h.label) + '</b> <small>host job · @' + esc(h.owner) + '</small><span>' + esc(h.text) + '</span></span>' +
+        '<span class="wjb__st"><span class="chip chip--warn">past until</span></span></summary></details>';
+    });
+  }
   function jobsPageHtml() {
     var nodes = S.live && S.live.nodes;
     if (!nodes) return '<p class="ax-wall__empty">Loading…</p>';
@@ -169,6 +187,8 @@ export const WALL_PAGES_SCRIPT = String.raw`
           '<span class="wjb__st">' + (stale.length ? '<span class="chip chip--warn" title="' + esc(stale.join('; ')) + '">look stale</span>' : j.enabled ? '<span class="chip chip--done">on</span>' : '<span class="chip chip--ghost">off</span>') + '</span>' +
         '</summary><div class="wjb__d">' +
           (stale.length ? '<p>Looks stale: ' + esc(stale.join('; ')) + '.</p>' : '') +
+          (j.lastVerdict ? '<p class="wjb__v">Owner says: ' + esc(j.lastVerdict.text) + ' <small>' + when(Date.parse(j.lastVerdict.at)) + '</small></p>' : '') +
+          (j.until ? '<p>Ends after ' + esc(stamp(Date.parse(j.until))) + '.</p>' : '') +
           (r && r.lastRun ? '<p>Last run ' + when(Date.parse(r.lastRun.at)) + ', ' + esc(r.lastRun.status) + (summary ? ': ' + esc(summary.slice(0, 300)) : '') + '</p>' : '<p>No run on record.</p>') +
           (last && last.taskId ? '<a href="' + esc(taskHref(last.taskId, j.agent, { daemonUrl: n.url }, true)) + '">Full log</a>' : '') +
           ' <button type="button" class="ax-btn ax-btn--ghost" disabled title="Phase 2, not built">Pause</button>' +
@@ -176,6 +196,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
         '</div></details>';
       });
       var down = !n.reachable || n.error;
+      jobs = jobs.concat(sensorRows(n), hostJobRows(n));
       return '<section class="wjm"><h3>' + esc(n.name) + ' <small>' + jobs.length + (jobs.length === 1 ? ' job' : ' jobs') +
         (n.stale ? ', as of ' + esc(stamp(Date.parse(n.staleSince))) : nodeChecking(n) ? ', checking…' : down ? ', does not answer' : '') + '</small></h3>' +
         (jobs.length ? jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';

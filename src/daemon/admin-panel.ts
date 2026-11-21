@@ -5,6 +5,8 @@ import { mutateAgentxConfig } from "./config-mutate"
 import { HIDDEN_SECRET, hideConfigSecrets, restoreConfigSecrets } from "./config-hidden"
 import { configRelationsProblem, memberKey } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
+import { cronExtras, sensorsView } from "@/crons/schedule-view"
+import { expiredHostJobs } from "@/crons/host-jobs"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
 import { providerFor } from "@/integrations/providers"
@@ -380,6 +382,8 @@ function getAdminState() {
     sessionDir: cfg.channels?.whatsapp?.sessionDir || ".agentx/whatsapp-sessions",
     routeCount: Array.isArray(cfg.channels?.whatsapp?.routes) ? cfg.channels.whatsapp.routes.length : 0,
   }
+  // Until, verdict, goal-check lines and change log per job (#863).
+  const extras = cronExtras(process.cwd(), cfg.crons)
   const crons = Object.entries(cfg.crons || {}).map(([id, c]: [string, any]) => ({
     id,
     schedule: c.schedule,
@@ -392,7 +396,11 @@ function getAdminState() {
     value: cronValueOf(c.value),
     kind: typeof c.command === "string" && c.command.trim() ? "command" : "agent",
     ...(typeof c.goal === "string" ? { goal: c.goal } : {}),
+    ...extras[id],
   }))
+  // Sensors with their last reading, and host jobs past their until (#863).
+  const sensors = sensorsView(process.cwd(), (cfg as any).sensors)
+  const hostJobs = expiredHostJobs((cfg as any).allowedHostJobs, Date.now())
   const webhooks = Array.isArray(cfg.webhooks) ? cfg.webhooks.map((w: any) => ({
     id: w.id,
     source: w.source,
@@ -471,7 +479,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, sensors, hostJobs, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
 }
 
 // ========================================================================

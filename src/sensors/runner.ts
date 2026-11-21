@@ -4,6 +4,7 @@ import { everyMs, type SensorConfig, type SensorLevel, type SensorsConfig } from
 import { checkHolds, emptyState, failed, HOLD_MS, pushed, started, step, type SensorAction, type Step } from "./levels"
 import { loadSensorStates, saveSensorStates, type SensorStates } from "./state"
 import type { OwnerPushResult } from "@/notify/owner-push"
+import { readingText, sensorJobId, type SensorRunRow } from "./run-record"
 
 // --- The sensor loop on the daemon (#863) ---
 //
@@ -37,6 +38,8 @@ export interface SensorRunnerDeps {
   push: (sensor: string, level: SensorLevel, text: string) => Promise<OwnerPushResult>
   /** One line on the Wall. */
   wall: (sensor: string, text: string) => void
+  /** Each wake as a run-history row, once it ends (run-record.ts). */
+  record?: (row: SensorRunRow) => void
   log: (msg: string) => void
   stateFile: string
   now?: () => number
@@ -177,15 +180,39 @@ export class SensorRunner {
       const cfg = this.deps.sensors()[id]
       if (cfg) await this.apply(id, cfg, fn(cfg))
     })
-    const onStart = () => { void withCfg((cfg) => started(cfg, this.stateOf(id), a.level, this.now())) }
+    const reading = readingText(this.stateOf(id).last)
+    let startedAt: number | null = null
+    const onStart = () => {
+      startedAt = this.now()
+      void withCfg((cfg) => started(cfg, this.stateOf(id), a.level, this.now()))
+    }
     this.deps.wake({ sensor: id, level: a.level, target: a.target, text: a.text, signal: ctl.signal, onStart })
       .catch((e: any) => ({ error: String(e?.message ?? e) }))
       .then((res) => {
+        const error = ctl.signal.aborted ? "dropped: held past its time, or the stretch ended" : res.error
+        this.recordRun(id, a, reading, startedAt, error)
         // A dropped wake's end is not news: the engine already let it go.
         if (ctl.signal.aborted) return
         if (this.runs.get(key)?.seq === a.seq) this.runs.delete(key)
         if (res.error) void withCfg((cfg) => failed(cfg, this.stateOf(id), a.level, a.seq, res.error!, id))
       })
+  }
+
+  /** The wake as a run row (kind "sensor"). A run that never started is
+   *  stamped when it was given up, with its error. Never throws. */
+  private recordRun(id: string, a: Extract<SensorAction, { kind: "wake" }>, reading: string, startedAt: number | null, error: string | undefined): void {
+    if (!this.deps.record) return
+    const end = this.now()
+    const start = startedAt ?? end
+    try {
+      this.deps.record({
+        jobId: sensorJobId(id), kind: "sensor", sensor: id, level: a.level, target: a.target, reading,
+        startedAt: new Date(start).toISOString(), completedAt: new Date(end).toISOString(), duration: Math.max(0, end - start),
+        success: !error && startedAt !== null, response: a.text, ...(error ? { error } : startedAt === null ? { error: "the run never started" } : {}),
+      })
+    } catch (e: any) {
+      this.deps.log(`[sensors] ${id}: run row not written: ${e?.message ?? e}`)
+    }
   }
 }
 

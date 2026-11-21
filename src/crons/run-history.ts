@@ -23,6 +23,10 @@ export interface CronRunHistoryItem {
   sessionId?: string;
   /** A report-only-exceptions run that had nothing to report (#1289). */
   quiet?: boolean;
+  /** A sensor's wake (#863, sensors/run-record.ts): its level and reading. */
+  kind?: "sensor";
+  level?: string;
+  reading?: string;
 }
 
 export interface ReadCronRunHistoryOptions {
@@ -227,6 +231,11 @@ function parseRun(
   };
 
   if (value.quiet === true && value.success === true) run.quiet = true;
+  if (value.kind === "sensor") {
+    run.kind = "sensor";
+    if (typeof value.level === "string") run.level = value.level.slice(0, 64);
+    if (typeof value.reading === "string") run.reading = value.reading.slice(0, 200);
+  }
 
   for (const field of ID_FIELDS) {
     const id = value[field];

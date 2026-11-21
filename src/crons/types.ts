@@ -49,6 +49,12 @@ export interface CronJobState {
   expectExitZero?: boolean
   /** One-time job (#2004): its single run time (ISO). Off after it runs. */
   runAt?: string
+  /** Recurring job (#863): ISO time after which it ends for good. */
+  until?: string
+  /** A one-time run missed while the daemon was down: how late, in ms. */
+  lateBy?: number
+  /** The owner's last verdict on its job (#863), for the Wall. */
+  lastVerdict?: { text: string; at: string; by: string }
   lastRun?: Date
   nextRun?: Date
   lastSuccess?: Date

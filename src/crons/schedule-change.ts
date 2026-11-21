@@ -103,10 +103,23 @@ export async function changeAction(args: Record<string, unknown>, c: ChangeConte
   const when = str(args.when)
   const goal = str(args.goal)
   const value = args.value
-  if (!prompt && !when && !goal && value === undefined) return "Error: change needs at least one of `prompt`, `when`, `goal` or `value`."
+  const untilText = str(args.until)
+  if (!prompt && !when && !goal && value === undefined && !untilText) return "Error: change needs at least one of `prompt`, `when`, `goal`, `value` or `until`."
   const g = jobGoalState(c.root, id).goalCheck
-  if (g && (goal || value !== undefined)) {
-    return `"${id}" is on goal check since ${day(g.since)}; only the operator's answer${g.cardId ? ` on card ${g.cardId}` : ""} changes its goal or value. You may pause it, or retire it with a reason.`
+  if (g && (goal || value !== undefined || untilText)) {
+    return `"${id}" is on goal check since ${day(g.since)}; only the operator's answer${g.cardId ? ` on card ${g.cardId}` : ""} changes its goal, value or end time. You may pause it, or retire it with a reason.`
+  }
+  // until (#863): an ISO time after which the job ends for good; "none" clears it.
+  let until: string | null | undefined
+  if (untilText) {
+    if (untilText === "none") until = null
+    else {
+      const at = Date.parse(untilText)
+      if (!Number.isFinite(at)) return "Error: `until` must be an ISO time, or \"none\" to clear it."
+      if (at <= c.now.getTime()) return "Error: `until` is in the past; to end the job now, retire it."
+      if (job.runAt) return "Error: `until` is for a recurring job; this one runs once."
+      until = new Date(at).toISOString()
+    }
   }
   if (goal && (goal.length > 80 || !GOAL_ID_RE.test(goal))) return "Error: `goal` must be a goal record id: letters, digits, dashes, dots or colons."
   let parsedValue: unknown
@@ -137,6 +150,8 @@ export async function changeAction(args: Record<string, unknown>, c: ChangeConte
     if (prompt) j.prompt = prompt
     if (goal) j.goal = goal
     if (parsedValue) j.value = parsedValue
+    if (until === null) delete j.until
+    else if (until) j.until = until
     if (cron) {
       // The approved time stays the bar a later change is measured against.
       j.approvedSchedule = j.approvedSchedule || j.schedule
@@ -153,6 +168,7 @@ export async function changeAction(args: Record<string, unknown>, c: ChangeConte
   if (goal && goal !== job.goal) { row(c, "goal", job.goal, goal, reason); done.push(`goal → ${goal}`) }
   if (parsedValue) { row(c, "value", job.value, parsedValue, reason); done.push("value") }
   if (cron) { row(c, "time", job.schedule, cron, reason); done.push(`time → ${humanizeCron(cron)} (${cron})`) }
+  if (until !== undefined && until !== (job.until ?? null)) { row(c, "until", job.until, until, reason); done.push(until ? `ends after ${until}` : "no end time") }
   if (done.length) payChangeOwed(c)
   const lines = [done.length ? `Changed "${id}": ${done.join("; ")}. Written to its change log.` : `Nothing changed on "${id}" yet.`]
   if (request) {
@@ -182,4 +198,19 @@ export async function retireAction(args: Record<string, unknown>, c: ChangeConte
   row(c, "retire", c.job.enabled ? "on" : "paused", "retired", reason)
   payChangeOwed(c)
   return `Retired "${c.id}": it never runs again. Bringing it back needs a new schedule the operator approves.`
+}
+
+/** The owner's one line about its job (#863): shown on the Wall and in
+ *  Settings › Schedules. Owner only, at most 200 characters. */
+export function verdictAction(args: Record<string, unknown>, c: ChangeContext): string {
+  if (c.job.agent !== c.caller.agentId) return `Not allowed: only the job's owner (agent "${c.job.agent}") writes its verdict.`
+  const text = str(args.text)?.replace(/\s+/g, " ")
+  if (!text) return "Error: verdict needs `text`: one line on how the job is doing."
+  if (text.length > WHY_MAX) return `Error: \`text\` is longer than ${WHY_MAX} characters.`
+  try {
+    updateJobGoalState(c.root, c.id, (s) => { s.lastVerdict = { text, at: c.now.toISOString(), by: c.caller.agentId } })
+  } catch (e: any) {
+    return `Error: could not record it: ${e?.message ?? e}`
+  }
+  return `Recorded the verdict for "${c.id}".`
 }

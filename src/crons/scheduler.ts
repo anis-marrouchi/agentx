@@ -19,6 +19,7 @@ import { withSourceWarning } from "@/sales/sources"
 import { cronGoalGate, withGoalFirst, type CronGoalSource } from "./goal-gate"
 import { goalCheckAtFire, goalCheckTick, type FireGate, type GoalCheckDeps } from "./goal-check"
 import { goalWallLines, readCronGoalState } from "./goal-state"
+import { endByUntil, lateLine, pastUntil, withLateFirst, type UntilDeps } from "./job-end"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -249,6 +250,7 @@ export class CronScheduler {
         requireSources: def.requireSources,
         expectExitZero: def.expectExitZero,
         runAt: def.runAt,
+        until: def.until,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -475,8 +477,21 @@ export class CronScheduler {
           return
         }
         nextRun = new Date(Math.max(due, Date.now()))
+        // Missed while the daemon was down: the brief says how late (#863).
+        job.lateBy = Date.now() - due
       } else {
+        // A recurring job ends at its until (#863), the way a one-time one ends.
+        if (pastUntil(job.until, Date.now())) {
+          void this.endAtUntil(job)
+          return
+        }
         nextRun = getNextCronDate(job.schedule, new Date(), job.timezone)
+        if (job.until && nextRun.getTime() > Date.parse(job.until)) {
+          job.nextRun = undefined
+          this.log(`Job "${jobId}" ends at its until ${job.until} before its next run`)
+          this.armTimer(jobId, Date.parse(job.until), () => { void this.endAtUntil(job) })
+          return
+        }
       }
       job.nextRun = nextRun
       job.retryPending = false
@@ -628,6 +643,11 @@ export class CronScheduler {
     if (!job || !this.running) return
 
     const isRetry = retryAttempt > 0
+    // Past its until (#863): ended, never run.
+    if (!job.runAt && pastUntil(job.until, Date.now())) {
+      await this.endAtUntil(job)
+      return
+    }
     // firedAt is captured here (rather than below at the original
     // `startedAt` declaration) so the ledger event has a stable
     // sourceEventId regardless of whether we record at the hook-block
@@ -694,11 +714,14 @@ export class CronScheduler {
     })
 
     const timeout = agentRunTimeout(job.timeout)
+    // A one-time run missed while the daemon was down (#863): said once.
+    const late = lateLine(job.lateBy)
+    job.lateBy = undefined
     try {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt)), job.report), job.expectExitZero),
+          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : withLateFirst(late, job.prompt))), job.report), job.expectExitZero),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -938,6 +961,22 @@ export class CronScheduler {
     }
   }
 
+  /** Where an until end writes: the goal check's root and ledger when set. */
+  private untilDeps(): UntilDeps {
+    const g = this.goalCheck
+    return { root: g?.root ?? process.cwd(), configPath: g?.configPath, ledger: g?.ledger, log: (m) => this.log(m) }
+  }
+
+  /** A recurring job past its until (#863): off now, ended in agentx.json. */
+  private async endAtUntil(job: CronJobState): Promise<void> {
+    job.enabled = false
+    job.nextRun = undefined
+    const timer = this.timers.get(job.id)
+    if (timer) clearTimeout(timer)
+    this.timers.delete(job.id)
+    if (job.until) await endByUntil(job.id, job.until, this.untilDeps())
+  }
+
   /** A one-time job has run: switch it off, here and in agentx.json (#2004). */
   private async retireOnce(job: CronJobState): Promise<void> {
     job.enabled = false
@@ -1111,6 +1150,9 @@ export class CronScheduler {
           const lines = state[j.id] ? goalWallLines(state[j.id], j.agent) : []
           if (lines.length) j.goalLines = lines
           else delete j.goalLines
+          // The owner's own line on its job (agentx_schedule verdict).
+          if (state[j.id]?.lastVerdict) j.lastVerdict = state[j.id].lastVerdict
+          else delete j.lastVerdict
         }
       } catch (e: any) {
         this.log(`[cron-goal] state file unreadable: ${e?.message ?? e}`)

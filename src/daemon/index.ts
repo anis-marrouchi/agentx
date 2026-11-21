@@ -119,6 +119,8 @@ import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { applyGoalAnswer } from "@/crons/goal-answer"
 import { movementReader } from "@/requests/checkers/issue-movement"
+import { writeSensorRun } from "@/sensors/run-record"
+import { schedulesExtras } from "@/crons/schedule-view"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
@@ -4907,6 +4909,8 @@ export class AgentXDaemon {
         alert: this.ownerAlert(),
       }),
       wall: (sensor, text) => { getAgentEventBus().publish({ kind: "custom", type: `sensor.${sensor}`, summary: text }) },
+      // Each wake as a run-history row with kind "sensor" (run-record.ts).
+      record: (row) => writeSensorRun(resolve(process.cwd(), ".agentx/cron/runs"), row),
       log: (m) => this.log(m),
       stateFile: resolve(process.cwd(), ".agentx/state/sensors.json"),
     })
@@ -8204,6 +8208,12 @@ export class AgentXDaemon {
 
         case "GET /crons":
           this.json(res, 200, this.cron.list())
+          break
+
+        case "GET /crons/extras":
+          // Sensors with their last reading and wakes, and host jobs past
+          // their until (#863), for the Wall's Schedules page.
+          this.json(res, 200, schedulesExtras(process.cwd(), this.config, Date.now()))
           break
 
         case "GET /crons/health":
