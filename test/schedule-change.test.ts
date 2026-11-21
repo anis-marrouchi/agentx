@@ -127,6 +127,19 @@ describe("retire", () => {
     expect(cronChanges(db, "m")).toEqual([expect.objectContaining({ field: "retire", by: "alpha", reason: "goal met" })])
     expect(await tool({ action: "resume", id: "m" })).toMatch(/retired on 2026-11-28.*operator approval/)
   })
+
+  it("withdraws a pending time-change request: no open approval is left (#2065)", async () => {
+    writeConfig({ m: monthly })
+    await tool({ action: "change", id: "m", when: "0 9 * * 1", reason: "weekly" })
+    expect(crons().m.approval).toMatchObject({ action: "change" })
+    const { listInbox } = await import("../src/approvals/inbox")
+    const open = () => listInbox({ root: dir, configPath }, { kinds: ["schedule"] }).items.filter((i) => i.key === "schedule:m")
+    expect(open()).toHaveLength(1)
+    expect(await tool({ action: "retire", id: "m", reason: "goal met" })).toMatch(/Retired "m".*time-change request \(0 9 \* \* 1\) is withdrawn/)
+    expect(crons().m.approval).toBeUndefined()
+    expect(crons().m).toMatchObject({ enabled: false, schedule: "0 9 1 * *" })
+    expect(open()).toEqual([])
+  })
 })
 
 describe("recommend", () => {

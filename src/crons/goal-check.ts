@@ -4,7 +4,7 @@ import type { MovementReader } from "@/requests/checkers/issue-movement"
 import { ownerChangedSince } from "./change-ledger"
 import { applyGoalAnswer, type GoalAnswerDeps } from "./goal-answer"
 import { raiseGoalCard, RECOMMEND_WAIT_MS } from "./goal-card"
-import { cronRunWindows, daysStill, lastMovementAt, NO_MOVEMENT_DAYS } from "./goal-movement"
+import { cronRunWindows, daysStill, lastMovementAt, NO_MOVEMENT_DAYS, type MovementCache } from "./goal-movement"
 import { addNote, dropNote, jobGoalState, readCronGoalState, updateJobGoalState, type ChangeOwed, type GoalCheckState, type JobGoalState } from "./goal-state"
 
 // --- A schedule's goal check, at each fire and on the minute tick (#863) ---
@@ -45,6 +45,8 @@ export interface GoalCheckDeps {
   /** The goal record by id; null when this node has none. */
   goal: (id: string) => GoalRecordView | null
   movement?: MovementReader
+  /** Recent good reads, so a job that runs often does not call the tracker each time. */
+  movementCache?: MovementCache
   /** Null on the operator's node; else the name of the operator's node. */
   operatorNode: () => string | null
   /** A turn on the owner agent. Resolves when that run ends. */
@@ -167,15 +169,23 @@ async function evaluateGoal(job: GoalJob & { goal: string }, s: JobGoalState, de
     return null
   }
   if (!deps.movement) return null
+  const windows = cronRunWindows(deps.runsDir, job.id, now - (NO_MOVEMENT_DAYS + 1) * DAY_MS, deps.log)
+  const kept = s.goalKeptAt ? Date.parse(s.goalKeptAt) : null
+  const createdAt = rec.createdAt
+  const still = (times: number[]) => daysStill(now, [lastMovementAt(times, windows), kept, createdAt])
+  // A recent read that says "moving" lets the job run with no tracker call;
+  // a hold is only ever decided on a fresh read (#2065).
+  const key = `${check.provider}:${check.ref}`
+  const cached = deps.movementCache?.get(key, now)
+  if (cached && still(cached) < NO_MOVEMENT_DAYS) return null
   const read = await deps.movement(check.provider, check.ref)
   if (!read.ok) {
     update(deps, job.id, (st) => { addNote(st, "read-failed", `goal check could not read ${job.goal}: ${read.error}`, iso(now)) })
     return null
   }
+  deps.movementCache?.set(key, now, read.times)
   if (s.notes?.["read-failed"] || s.notes?.["no-issue"]) update(deps, job.id, (st) => { dropNote(st, "read-failed"); dropNote(st, "no-issue") })
-  const windows = cronRunWindows(deps.runsDir, job.id, now - (NO_MOVEMENT_DAYS + 1) * DAY_MS, deps.log)
-  const kept = s.goalKeptAt ? Date.parse(s.goalKeptAt) : null
-  const days = daysStill(now, [lastMovementAt(read.times, windows), kept, rec.createdAt])
+  const days = still(read.times)
   return days >= NO_MOVEMENT_DAYS ? { reason: "no-movement", days } : null
 }
 

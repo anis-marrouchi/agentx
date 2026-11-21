@@ -119,6 +119,7 @@ import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { applyGoalAnswer } from "@/crons/goal-answer"
 import { movementReader } from "@/requests/checkers/issue-movement"
+import { MovementCache } from "@/crons/goal-movement"
 import { writeSensorRun } from "@/sensors/run-record"
 import { schedulesExtras } from "@/crons/schedule-view"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
@@ -2323,6 +2324,7 @@ export class AgentXDaemon {
         return { state: g.state, check, createdAt: g.createdAt }
       },
       movement: movementReader(forgeConnectorsOf(config)),
+      movementCache: new MovementCache(),
       operatorNode: () => config.approvals.forwardTo ?? null,
       wake: async (agentId, text, chatId) => {
         if (!this.registry.getAgent(agentId)) throw new Error(`agent "${agentId}" is not on this node`)
