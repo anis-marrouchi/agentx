@@ -156,8 +156,9 @@ function cardItem(c: DecisionCard): InboxItem {
     yes: `tell ${c.raised_by} yes`,
     no: `tell ${c.raised_by} no`,
     recommend: c.recommend,
-    if_silent: c.if_silent,
-    expires: c.expires,
+    // A schedule's goal card never expires (#863): no date, no default;
+    // its context says the job stays held until answered.
+    ...(c.origin?.kind === "cron-goal" ? {} : { if_silent: c.if_silent, expires: c.expires }),
     ...(c.source ? { source: c.source } : {}),
     raised_by: c.raised_by,
     ...(c.node ? { node: c.node } : {}),

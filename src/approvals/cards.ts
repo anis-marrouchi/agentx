@@ -504,6 +504,8 @@ export function verdictMessage(card: DecisionCard): string {
   // A schedule's goal card (#863): the daemon applied the answer; the owner
   // is told what it means for its job, and nothing generic.
   if (card.origin?.kind === "cron-goal") {
+    // Only the operator's own answer counts; these cards never expire.
+    if (card.status !== "decided") return [lines[0], `Question: ${card.ask}`, "No answer yet: the job stays held."].join("\n")
     lines.push(...cronGoalLines(card.origin, card))
     if (card.choice_suggested) lines.push("(The operator gave a plain yes, taken as the recommended option.)")
     return lines.join("\n")

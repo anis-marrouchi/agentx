@@ -115,6 +115,8 @@ import { closeForwardedCard, handleApprovalsApi } from "@/approvals/daemon-api"
 import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { applyGoalAnswer } from "@/crons/goal-answer"
+import { movementReader } from "@/requests/checkers/issue-movement"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
@@ -2298,6 +2300,29 @@ export class AgentXDaemon {
       const counts = this.requests!.store.goalCounts().find((g) => g.id === id)
       return { state: goal.state, brief: goalBrief(goal, counts ? { open: counts.open, done: counts.done } : null) }
     })
+    // The schedule goal check (#863): held jobs, the owner's one wake, the
+    // keep / change / drop card. Only on the operator's node: a card
+    // forwarded over the mesh would lose its origin.
+    cron.setGoalCheck({
+      root: process.cwd(),
+      configPath: this.configPath,
+      runsDir: resolve(process.cwd(), ".agentx/cron/runs"),
+      now: Date.now,
+      log: this.log,
+      goal: (id) => {
+        const g = this.requests?.goals.get(id)
+        if (!g) return null
+        const check = g.check?.kind === "issue" ? { kind: "issue", provider: g.check.provider, ref: g.check.ref } : g.check ? { kind: g.check.kind } : null
+        return { state: g.state, check, createdAt: g.createdAt }
+      },
+      movement: movementReader(forgeConnectorsOf(config)),
+      operatorNode: () => config.approvals.forwardTo ?? null,
+      wake: async (agentId, text, chatId) => {
+        if (!this.registry.getAgent(agentId)) throw new Error(`agent "${agentId}" is not on this node`)
+        await this.registry.execute({ agentId, message: text, context: { channel: "cron", chatId } })
+      },
+      ledger: () => this.db,
+    })
     cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
       this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
       this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
@@ -2804,6 +2829,8 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
+          // A schedule's goal card (#863): applied before the owner is told.
+          applyCronGoal: (card) => applyGoalAnswer(card, { root: process.cwd(), configPath: this.configPath, log: this.log, ledger: () => this.db }),
           onCardResult: (card) => {
             this.requests?.tracker.cardResolved(card)
             this.workflowCardResult(card)

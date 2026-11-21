@@ -131,6 +131,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
     if (Math.max(j.consecutiveErrors || 0, (r && r.consecutiveFailures) || 0) >= STALE_FAILS) why.push('failed ' + STALE_FAILS + ' times in a row');
     if (!j.value || !j.value.why || !j.value.metric) why.push('no value line');
     if (j.goal && j.goalClosed) why.push('goal ' + j.goal + ' ' + j.goalClosed.state + ', disable?');
+    (j.goalLines || []).forEach(function (l) { why.push(l); });
     return why;
   }
   function squares(r) {

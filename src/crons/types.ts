@@ -35,6 +35,9 @@ export interface CronJobState {
   /** Set when a run was skipped because its goal is closed: the Wall
    *  shows "goal done, disable?". */
   goalClosed?: { state: string; at: Date }
+  /** The goal check's lines for the Wall (#863): held, change owed, a
+   *  refused card, a forge read that failed. */
+  goalLines?: string[]
   /** Send each successful run's answer to the job's `notify` target.
    *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean

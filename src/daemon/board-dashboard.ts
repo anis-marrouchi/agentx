@@ -2109,6 +2109,8 @@ interface NodeLive {
     consecutiveErrors: number
     /** Why it runs and the number that proves it (#1183). */
     value?: CronValue
+    /** The goal check's Wall lines (#863). */
+    goalLines?: string[]
   }>
   cronRuns?: Array<{
     jobId: string
@@ -2284,6 +2286,8 @@ export async function fetchDaemonAgents(
         // The goal it serves, and whether it is closed (#1568).
         ...(typeof job.goal === "string" ? { goal: job.goal } : {}),
         ...(job.goalClosed && typeof job.goalClosed.state === "string" ? { goalClosed: { state: job.goalClosed.state } } : {}),
+        // The goal check's lines (#863): held, change owed, refused card.
+        ...(Array.isArray(job.goalLines) ? { goalLines: job.goalLines.filter((l: unknown) => typeof l === "string").slice(0, 10).map((l: string) => l.slice(0, 300)) } : {}),
       }))
     }
     if (cronRunsRes && cronRunsRes.ok) {
