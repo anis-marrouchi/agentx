@@ -84,6 +84,8 @@ export function desktopPlist(opts: { label?: string; executable: string; cwd: st
     AGENTX_MAC_HELPER: opts.helper,
     AGENTX_PASTE_COMMAND: `cd ${shellQuote(opts.cwd)} && ${shellQuote(opts.node)} ${shellQuote(opts.cli)} paste`,
   }
+  // KeepAlive only on a crash: Quit (Command–Q) exits cleanly and the app
+  // stays closed until the next login or `agentx desktop start`.
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -91,7 +93,7 @@ export function desktopPlist(opts: { label?: string; executable: string; cwd: st
 <key>ProgramArguments</key><array><string>${xml(opts.executable)}</string></array>
 <key>WorkingDirectory</key><string>${xml(opts.cwd)}</string>
 <key>EnvironmentVariables</key><dict>${Object.entries(env).map(([k,v]) => `<key>${k}</key><string>${xml(v)}</string>`).join('')}</dict>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 <key>ProcessType</key><string>Interactive</string>
 <key>StandardErrorPath</key><string>${xml(opts.log)}</string>
 </dict></plist>\n`

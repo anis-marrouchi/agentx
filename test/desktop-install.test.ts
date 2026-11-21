@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { launchdRespawn } from '../src/daemon/restart'
 import { DESKTOP_LABEL, LAUNCHD_PATH, adoptLoginItem, desktopPath, isVoiceLoginItemFile, desktopPlatformError, desktopPlist, findOnPath, isNativeExecutable, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
 
 describe('desktop installation', () => {
@@ -31,6 +32,12 @@ describe('desktop installation', () => {
     expect(plist).toContain('a&amp;b&apos;c')
     expect(plist).toContain('<key>AGENTX_MAC_HELPER</key>')
     if (process.platform === 'darwin') expect(execFileSync('plutil', ['-lint', '-'], { input: plist, encoding: 'utf8' })).toContain('OK')
+  })
+  it('restarts the app after a crash but leaves it closed after Quit', () => {
+    const plist = desktopPlist({ executable: '/a', cwd: '/b', url: 'http://x', helper: '/h', cli: '/c', node: '/n', log: '/l', path: '/usr/bin' })
+    if (process.platform !== 'darwin') { expect(plist).toContain('<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>'); return }
+    const keepAlive = JSON.parse(execFileSync('plutil', ['-extract', 'KeepAlive', 'json', '-o', '-', '-'], { input: plist, encoding: 'utf8' }))
+    expect(launchdRespawn(keepAlive)).toMatchObject({ onCleanExit: false, onErrorExit: true })
   })
   it('gives the login item a PATH that reaches the ffmpeg found at install time', () => {
     expect(desktopPath('/opt/homebrew/bin/ffmpeg')).toBe(`/opt/homebrew/bin:${LAUNCHD_PATH}`)
