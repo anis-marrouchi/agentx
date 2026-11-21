@@ -516,6 +516,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 ## If something is wrong
 
 - **No AgentX icon in the menu bar:** **Terminal:** run `agentx desktop status`. If it says it isn't running, run `agentx desktop start`. If it isn't installed, follow [Install and first run](#install-and-first-run).
+- **The app opens again right after you quit it:** it was installed before Quit kept it closed, and its login item still restarts it after every exit. **Terminal:** run `agentx desktop install` again once. To close it for now, run `agentx desktop stop`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Retry** in the menu.
 - **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Desktop**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
