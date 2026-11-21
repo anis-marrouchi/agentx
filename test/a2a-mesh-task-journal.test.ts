@@ -176,6 +176,35 @@ describe("/mesh/task async:true on the hand-off journal (#2007 S5)", () => {
     expect(done).toEqual([])
   })
 
+  it("a peer answer that states blocked or stalled is the peer's answer: delivered raw, as a reply", async () => {
+    for (const answer of ["Tried the deploy.\nState: blocked — the deploy key is missing", "Looked at it.\n[job stalled] no state given"]) {
+      const db = freshDb()
+      const { mgr, delivered } = manager(db)
+      const run = deferred()
+      const id = String(startMeshDeliver(mgr, { peer: "far", agent: "worker", message: "Deploy", context: CHAT, run: () => run.promise }).body.taskId)
+      run.resolve(answer)
+      await flush()
+      expect(rowOf(db, id)?.status).toBe("error")
+      expect(delivered).toHaveLength(1)
+      expect(delivered[0].text).not.toMatch(/^Delegation to /)
+      expect(delivered[0].text).toContain(answer.split("\n")[0])
+      expect(delivered[0].countsAsReply).toBe(true)
+    }
+  })
+
+  it("an unnamed caller is not passed on as an agent", async () => {
+    const db = freshDb()
+    const { mgr, delivered } = manager(db)
+    const run = deferred()
+    const id = String(startMeshDeliver(mgr, { peer: "far", agent: "worker", message: "x", context: { channel: "telegram", chatId: "chat-9" }, run: () => run.promise }).body.taskId)
+    expect(rowOf(db, id)?.caller).toBe("?")
+    run.resolve("ok")
+    await flush()
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0].agentId).toBeUndefined()
+    expect(delivered[0].record).toBe(false)
+  })
+
   it("a restart while open ends it 'lost' and tells the named chat once", async () => {
     const db = freshDb()
     const first = manager(db)
