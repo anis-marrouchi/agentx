@@ -210,7 +210,8 @@ export interface DelegationDeps {
     channel: string
     chatId: string
     text: string
-    agentId: string
+    /** Absent only for a deliver row whose request named no agent. */
+    agentId?: string
     accountId?: string
     record: boolean
     taskId: string
@@ -938,21 +939,26 @@ export class DelegationManager {
 
   /** A deliver row's end (#2007 S5), as /mesh/task async sent it before
    *  the row: the raw answer to the named chat, or one line saying it
-   *  failed (a notice, not the agent's reply). Sent once: complete() runs
-   *  once per id. */
+   *  failed (a notice, not the agent's reply). At most once: complete()
+   *  runs once per id, and the row ends before the send, so a crash in
+   *  between leaves the chat untold. */
   private async deliverRaw(rec: DelegationRecord, result: DelegationResult): Promise<void> {
     const ok = result.status === "done" || result.status === "waiting"
-    const text = ok ? result.text : `Delegation to ${rec.peer ?? "this node"}/${rec.callee} failed: ${result.text}`
+    // The peer answered: an answer that states blocked or stalled is still
+    // its answer, sent as it is. Only a real error, a timeout or a loss
+    // (no state) gets the failure line.
+    const answered = ok || !!result.state
+    const text = answered ? result.text : `Delegation to ${rec.peer ?? "this node"}/${rec.callee} failed: ${result.text}`
     const known = rec.caller !== UNNAMED_CALLER
-    if (!ok && known && !result.state) {
+    if (!answered && known) {
       emitSignal({ kind: "delegation_failed", agentId: rec.caller, ref: rec.id, detail: `${rec.callee}${rec.peer ? `@${rec.peer}` : ""} ${result.status}: ${result.text.slice(0, 160)}` })
     }
     const { channel, chatId } = rec.origin
     try {
       await this.deps.deliver({
-        channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId,
+        channel, chatId, text, ...(known ? { agentId: rec.caller } : {}), accountId: rec.origin.accountId,
         // As before: the text goes in the session of the agent it names.
-        record: known, taskId: rec.id, outcome: ok ? "done" : "error", countsAsReply: ok,
+        record: known, taskId: rec.id, outcome: ok ? "done" : "error", countsAsReply: answered,
       })
       this.deps.log(`[delegation ${rec.id}] ${result.status} delivered to ${channel}:${chatId}`)
     } catch (e: any) {

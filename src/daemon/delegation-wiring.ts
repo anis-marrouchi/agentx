@@ -454,7 +454,9 @@ export interface ChatDelivery {
   channel: string
   chatId: string
   text: string
-  agentId: string
+  /** Absent when no agent is named (an unnamed /mesh/task async request):
+   *  nothing is recorded in a session then. */
+  agentId?: string
   accountId?: string
   /** Also add the text to the agent's session for that chat. */
   record: boolean
@@ -485,25 +487,25 @@ export async function deliverToChat(
     // Hold the reply here and say so on the bus; the dashboard (which
     // sees peers' events through the feed) fetches it and files it in
     // the conversation, unread, with its finish notification.
-    if (msg.record) {
+    if (msg.record && msg.agentId) {
       try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the thread still gets it */ }
     }
     const reply = w.replies.put({
       taskId: msg.taskId,
       channel: msg.channel,
       chatId: msg.chatId,
-      agent: msg.agentId,
+      agent: msg.agentId ?? "",
       text: msg.text,
       status: msg.outcome,
-      plain: w.config.agents[msg.agentId]?.richMessages === false,
+      plain: !!msg.agentId && w.config.agents[msg.agentId]?.richMessages === false,
     })
     getEventBus().publish({
       kind: CALLBACK_REPLY_KIND,
       type: CALLBACK_REPLY_TYPE,
-      agentId: msg.agentId,
+      agentId: msg.agentId ?? "",
       // No reply text here: events reach the mesh feed; the text stays behind
       // the mesh-gated GET /a2a/delegations/<id>/reply.
-      summary: msg.summary ?? `${msg.agentId} replied after a delegation (${msg.outcome})`,
+      summary: msg.summary ?? `${msg.agentId ?? "An agent"} replied after a delegation (${msg.outcome})`,
       ref: reply.taskId,
     })
     return
@@ -521,10 +523,10 @@ export async function deliverToChat(
   // A push is a notification about the chat, not a message in it. The full
   // text goes in the agent's session for that chat, so the next turn there
   // can read out what the push had to cut.
-  if (msg.record) {
+  if (msg.record && msg.agentId) {
     try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the push still goes */ }
   }
-  const name = w.config.agents[msg.agentId]?.name || msg.agentId
+  const name = (msg.agentId && w.config.agents[msg.agentId]?.name) || msg.agentId || "AgentX"
   await w.router.sendOutbound(
     { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${pushPreview(msg.text)}` },
     { recordInSession: false, ...dedupe },
