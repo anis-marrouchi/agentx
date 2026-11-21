@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.248.1](https://github.com/anis-marrouchi/agentx/compare/v0.248.0...v0.248.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **a2a:** agentx_send reads a hand-off receipt as sent; reply check sees agent senders ([#2050](https://github.com/anis-marrouchi/agentx/issues/2050)) ([#2055](https://github.com/anis-marrouchi/agentx/issues/2055)) ([28fb68e](https://github.com/anis-marrouchi/agentx/commit/28fb68ec872de37318a5ecd50b3f4afa04233b4c))
+* **a2a:** join key follow-ups from review ([#2058](https://github.com/anis-marrouchi/agentx/issues/2058)) ([cd02bed](https://github.com/anis-marrouchi/agentx/commit/cd02bed25e36cad793e52bf0d952464e5f29f379))
+
+
+### Performance Improvements
+
+* **agents:** wiki block at start lists counts per type ([#2002](https://github.com/anis-marrouchi/agentx/issues/2002) step 2) ([#2053](https://github.com/anis-marrouchi/agentx/issues/2053)) ([a2c4842](https://github.com/anis-marrouchi/agentx/commit/a2c4842f64a07d87a6c3547ee1b87f4ed1f4ef90))
+
 ## [0.248.0](https://github.com/anis-marrouchi/agentx/compare/v0.247.0...v0.248.0) (2026-11-21)
 
 
