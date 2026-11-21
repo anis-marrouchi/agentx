@@ -113,6 +113,51 @@ describe("OwnerWordsCheck", () => {
     expect(store.get(ID)?.ownerCheck).toBe("unclear")
   })
 
+  // #2056: a close met again by the same proof looped 7 times.
+  it("reopens at most maxReopens times, then keeps the close and tells the owner once", async () => {
+    const told: Array<{ id: string; title: string; text: string }> = []
+    const c = new OwnerWordsCheck({
+      store,
+      settings: () => ({ ...DEFAULT_OWNER_CHECK, enabled: true, maxReopens: 2 }),
+      generate: async () => '{"verdict":"mismatch","why":"The note is not the review you asked for."}',
+      tellOwner: (r, title, text) => { told.push({ id: r.id, title, text }) },
+      now: () => t,
+    })
+    // Rounds 11 minutes apart: one signal per request per 10 minutes.
+    let t = 10_000
+    const round = 11 * 60_000
+    const signals = () => (db.prepare("SELECT detail FROM improve_signals WHERE kind = 'owner_check_mismatch' AND ref = ? ORDER BY rowid").all(ID) as Array<{ detail: string }>).map((s) => s.detail)
+    // beforeEach declined it once; reopen, close again, twice.
+    expect((await c.run()).reopened).toEqual([ID])
+    t += round
+    store.close(ID, "done", "https://example.com/mr/1", t - 1, null, "check")
+    expect((await c.run()).reopened).toEqual([ID])
+    expect(store.get(ID)?.ownerReopens).toBe(2)
+    t += round
+    store.close(ID, "done", "https://example.com/mr/1", t - 1, null, "check")
+    // Third mismatch: not reopened, owner told once.
+    expect((await c.run()).reopened).toEqual([])
+    expect(store.get(ID)).toMatchObject({ state: "done", ownerCheck: "mismatch", ownerReopens: 2 })
+    expect(told).toHaveLength(1)
+    expect(told[0]).toMatchObject({ id: ID, title: expect.stringContaining("not reopened again") })
+    expect(told[0].text).toContain("already reopened 2 times")
+    expect(told[0].text).toContain("not the review you asked for")
+    // Not judged again, not told again.
+    expect((await c.run()).checked).toBe(0)
+    expect(told).toHaveLength(1)
+    expect(signals()).toEqual([
+      expect.stringMatching(/^reopen 1: /),
+      expect.stringMatching(/^reopen 2: /),
+      expect.stringMatching(/^kept closed after 2 reopens: /),
+    ])
+  })
+
+  it("maxReopens 0 never reopens", async () => {
+    const { c } = checker('{"verdict":"mismatch","why":"x"}', { maxReopens: 0 })
+    expect((await c.run()).reopened).toEqual([])
+    expect(store.get(ID)).toMatchObject({ state: "declined", ownerCheck: "mismatch" })
+  })
+
   it("does nothing when off, and leaves old closes alone", async () => {
     expect((await checker("{}", { enabled: false }).c.run()).checked).toBe(0)
     expect((await checker('{"verdict":"mismatch","why":"x"}', { maxAgeHours: 0.0001 }).c.run()).checked).toBe(0)

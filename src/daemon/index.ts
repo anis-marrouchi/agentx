@@ -3462,6 +3462,8 @@ export class AgentXDaemon {
       // request's agent (#1908, noqta#876).
       wake: (r, text, agentId) => this.tellRequestAgent(requests, agentId ?? r.agentId, text, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
+      // A close kept after the reopen limit (#2056).
+      tellOwner: (r, title, text) => this.notifyRequestOwner(title, text, r),
       generate: async (prompt, signal) => {
         const s = settings()
         if (!provider || providerName !== s.provider) {

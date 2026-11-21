@@ -171,6 +171,8 @@ export interface RequestRecord {
   // --- Proof per deliverable (close-proof.ts). Unset on hand-built rows. ---
   /** When the owner-words check last gave its verdict. */
   ownerCheckAt?: number | null
+  /** How many times the owner-words check reopened it (#2056). */
+  ownerReopens?: number
   /** When the owner (or the resend) last sent it back to its agent. */
   sentBackAt?: number | null
   /** What the owner's words ask for, read once by the model. Null: not
@@ -298,7 +300,7 @@ export function ensureRequestTables(db: Database.Database): void {
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
     ["goal_id", "TEXT"], ["goal_title", "TEXT"],
     ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"],
-    ["standing", "TEXT"]]) {
+    ["standing", "TEXT"], ["owner_reopens", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -343,7 +345,7 @@ function toRecord(r: any): RequestRecord {
     ownerCheckAt: r.owner_check_at ?? null, sentBackAt: r.sent_back_at ?? null,
     deliverables: readDeliverables(r.deliverables), deliverableProofs: readProofs(r.deliverable_proofs),
     proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
-    standing: readStanding(r.standing),
+    standing: readStanding(r.standing), ownerReopens: r.owner_reopens ?? 0,
   }
 }
 
@@ -1140,11 +1142,26 @@ export class RequestStore {
     const why = reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
     const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'needs_attention', closed_at = NULL, updated_at = ?, attention_reason = ?, notified_at = NULL,
-         owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?, deliverable_proofs = NULL, proof_asked_at = NULL
+         owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?, deliverable_proofs = NULL, proof_asked_at = NULL,
+         owner_reopens = COALESCE(owner_reopens, 0) + 1
        WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("needs_attention", now, now, why, now, why, id, ...CLOSED_STATES).changes > 0
-    if (reopened) this.signal("owner_check_mismatch", id, why, now)
+    // The count is in the signal (#2056): a loop shows as reopen 1, 2, ...
+    if (reopened) this.signal("owner_check_mismatch", id, `reopen ${this.get(id)?.ownerReopens ?? 1}: ${why}`, now)
     return reopened
+  }
+
+  /** The check found a mismatch again after the reopen limit (#2056): the
+   *  close stands, marked a mismatch so it is not judged again. True only
+   *  for the call that marked it, so the owner is told once. */
+  holdOwnerMismatch(id: string, reason: string, now: number): boolean {
+    const why = reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
+    const held = this.db.prepare(
+      `UPDATE requests SET owner_check = 'mismatch', owner_check_at = ?, owner_check_note = ?
+       WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run(now, why, id, ...CLOSED_STATES).changes > 0
+    if (held) this.signal("owner_check_mismatch", id, `kept closed after ${this.get(id)?.ownerReopens ?? 0} reopens: ${why}`, now)
+    return held
   }
 
   /** A candidate whose turn ended with nothing left to follow. */

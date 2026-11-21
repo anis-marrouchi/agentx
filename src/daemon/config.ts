@@ -1743,6 +1743,9 @@ export const requestsConfigSchema = z.object({
      *  (or the request's agent, for a check or a settle) once, with what
      *  is missing (noqta#876). Off: reopened and the owner told only. */
     wakeOnMismatch: z.boolean().default(true),
+    /** Reopens per request (#2056). Past it, a close judged a mismatch
+     *  stays closed and the owner is told once with the reason. */
+    maxReopens: z.number().int().min(0).max(20).default(2),
   }).default({}),
   /** Proof per deliverable before a close by check (src/requests/close-proof.ts),
    *  retro:01M70Z38BBZYRBBCZW2T1S3T3K. When the mode is not "off", the
