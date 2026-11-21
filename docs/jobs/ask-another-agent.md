@@ -189,7 +189,7 @@ Every helper run now ends by stating its job's state: done, continue, waiting or
 
 A helper run that ends with no answer at all comes back with status `error` and the text `empty answer from <helper>`. That happens only when the helper also stated no job state, did not use `agentx_waiting`, and wrote nothing back to the asking agent during the work. If it did any of those, its empty end is not an error.
 
-A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
+A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs. Such a request is still a hand-off with a `dlg-` id that you can read later, and a repeat while it runs starts nothing: see [Get the answer later, in a chat](../reference/a2a.md#get-the-answer-later-in-a-chat).
 
 Some requests are refused straight away with status `409`:
 

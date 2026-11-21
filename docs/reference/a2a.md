@@ -20,7 +20,36 @@ curl http://127.0.0.1:18800/mesh/task \
   -d '{"peer":"work-machine","agent":"helper","message":"Reply with a short hello"}'
 ```
 
-Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. Reads that expose task content are protected the same way: task traces (`/traces`, `/traces/<id>`), which hold each task's full prompt and answer, recent events and agent memory. On the daemon's own machine they need no token. The daemon's `/mesh/task` endpoint also supports `stream: true`. Asynchronous delivery requires an originating `context.channel` and `context.chatId` so the result has a return destination.
+Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. Reads that expose task content are protected the same way: task traces (`/traces`, `/traces/<id>`), which hold each task's full prompt and answer, recent events and agent memory. On the daemon's own machine they need no token. The daemon's `/mesh/task` endpoint also supports `stream: true`, which sends the peer's answer back piece by piece while it is written.
+
+### Get the answer later, in a chat
+
+Add `"async": true` and a `context` that names a chat (`channel` and `chatId`). The request then returns at once, and the peer's answer is sent to that chat when it is ready:
+
+```sh
+curl http://127.0.0.1:18800/mesh/task \
+  -H 'Content-Type: application/json' \
+  -d '{"peer":"work-machine","agent":"helper","message":"Check the build",
+       "async":true,"context":{"channel":"telegram","chatId":"12345","agentId":"assistant"}}'
+```
+
+The answer comes back at once with status `202`:
+
+```json
+{ "accepted": true, "mode": "deliver", "taskId": "dlg-example", "agent": "helper", "peer": "work-machine",
+  "deliverTo": "telegram:12345",
+  "note": "The result will be delivered to the originating chat when the peer finishes. Read it any time with GET /a2a/delegations/dlg-example." }
+```
+
+What happens next:
+
+1. The peer runs the work. Nobody holds a connection open for it.
+2. When it answers, the answer is sent as it is to the chat in `context`, as the agent named in `context.agentId`.
+3. If it fails, times out (after `mesh.delegation.timeoutMinutes`, 30 by default) or AgentX restarts before it answers, that chat gets one short line instead: `Delegation to work-machine/helper failed: ...`.
+
+Each such request is a **hand-off** with a `dlg-` id, like the ones agents make. So you can read its status and answer later with `GET /a2a/delegations/<id>` ([see below](#see-the-hand-offs-and-read-one-by-its-id)), and the same request sent again while the first still runs starts nothing ([see below](#what-happens-when-the-same-message-is-sent-twice)). With no `agent`, the peer picks one, and the hand-off names it `default`.
+
+Without `async`, or without a chat in `context`, `/mesh/task` works as before: it waits for the answer, or streams it with `stream: true`. `async: true` with no chat in `context` gets `400`, because there is nowhere to send the answer.
 
 When an agent sends work from a conversation a person started, the request returns at once and the answer comes back to that agent as a new message. See [When an agent asks another agent](../jobs/ask-another-agent.md).
 
@@ -64,6 +93,7 @@ The answer has these fields:
 | `text` | What the agent answered, or why it failed. At most 12,000 characters |
 | `waiting` | For `waiting`: what it waits for (`on`), until when (`dueAt`, when given), and `kind`: `waiting` (it waits on something) or `continue` (it carries on later by itself) |
 | `startedAt`, `endedAt` | When it started and ended |
+| `wayHome` | `deliver` for a `/mesh/task` sent with `async: true`: the answer went to the chat the request named. Absent when the answer goes back to the asking agent |
 
 **An empty answer.** Sometimes the agent that did the work ends its run without writing an answer. The hand-off then ends `error` with the text `empty answer from <agent>`, but only when that agent said nothing else either. It did not state its job's state ([Say where the work stands when a run ends](../jobs/end-of-run-state.md)), did not say it was waiting (`agentx_waiting`), and did not write back to the asking agent during the work. If it did any of those, the empty end is on purpose, and the hand-off ends as that says: `done`, `waiting`, or `error` for a blocked job.
 
@@ -103,6 +133,8 @@ When the work is new:
 - **A hand-off that has ended** frees its message: sending it again starts a new run. This includes a hand-off that ended `waiting` on something, such as a review.
 - **One exception:** a hand-off that ended `waiting` with `kind` `continue` (the agent carries on later by itself) keeps its message until its due time, or for 10 minutes after it ended when it gave no due time. A resend inside that time gets the same id with `"duplicate": true`, so the same job does not run twice.
 
+For a `/mesh/task` sent with `async: true`, "the agent that asks" is the agent named in `context.agentId` (or `senderAgentId`), "the agent that does the work" includes its peer, and "the conversation" is the chat named in `context`. A repeat gets the first `taskId` with `"mode": "deliver"` and `"duplicate": true`, and the chat gets the answer once.
+
 This applies to hand-offs with a `dlg-` id. A machine without the database (`/health` shows `handoffs: "memory-only"`) keeps the older check: the same message from the same sender to the same agent within 10 minutes gets the first task id back.
 
 ## Serve the standalone A2A protocol
@@ -140,7 +172,8 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 4. **Terminal:** run `curl -s http://127.0.0.1:18800/a2a/delegations`. The newest hand-offs are listed, also after AgentX restarts. Take an `id` and its `caller` from the list and run `curl -s "http://127.0.0.1:18800/a2a/delegations/<id>?as=<caller>"`. It prints the status and, once it has ended, the answer in `text`.
 5. **Terminal:** for a hand-off that ended `error`, read it as in step 4. The text `empty answer from <agent>` means that agent ended its run with nothing at all. Any other text is the real failure.
 6. **Terminal:** while a hand-off from an agent is still `running`, have that agent send the same message again from the same conversation. The answer has the same `taskId` and `"duplicate": true`, and `GET /a2a/delegations` lists only one hand-off for it. The daemon log shows `the same message again ... joined`.
-7. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
+7. **Terminal:** send the `async: true` request above with a chat of your own in `context`. It returns at once with `"mode": "deliver"` and a `dlg-` `taskId`. The answer arrives in that chat. Then run `curl -s "http://127.0.0.1:18800/a2a/delegations/<taskId>?as=<context.agentId>"`: it shows `"wayHome": "deliver"`, the status, and the answer in `text`.
+8. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 
 ## If something is wrong
 
@@ -156,4 +189,7 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **A hand-off has no `text`:** it is still `running`, or it ended before this version of AgentX kept answers.
 - **A resend got `"duplicate": true` but you wanted a second run:** the first hand-off with that exact message is still `running` (or carries on as `continue`). Wait for it to end, or change the message.
 - **The same message ran twice:** check that both sends came from the same conversation and named the same `home`. A different conversation or home is new work. If they match, look in the daemon log for `duplicate guard off for this send`: the database could not record the hand-off, so the check was skipped for that send.
+- **`async: true` gets `400` (`async requires context.channel and context.chatId`):** add a `context` with both `channel` and `chatId`, the chat the answer should go to.
+- **An `async: true` answer never reached the chat:** read the hand-off by its `taskId`. If it ended, its `text` holds the answer or the failure, and the daemon log shows `delivery to <channel>:<chatId> failed: ...` with the reason (for example, no such channel on this machine). If it is still `running`, the peer is still working; it ends `timeout` after `mesh.delegation.timeoutMinutes`.
+- **An `async: true` request got `"duplicate": true`:** the same request to the same peer and agent, for the same chat, is still running. Wait for it, or change the message.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.
