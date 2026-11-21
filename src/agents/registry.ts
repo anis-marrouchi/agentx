@@ -1227,7 +1227,8 @@ export class AgentRegistry {
       previousMessage = priorUserMessage(session.messages, task.message ?? "")
         // A chat continued from another one's session (#2010) has no
         // message of its own yet: compare with the source chat's last.
-        ?? this.sessions.continuedFromMessage(task.agentId, channel, chatId, task.message ?? "")
+        // Only with topicSessions on; off, the seat is as before.
+        ?? (this.config.mesh?.delegation?.topicSessions ? this.sessions.continuedFromMessage(task.agentId, channel, chatId, task.message ?? "") : null)
       recentRequests = priorUserRequests(
         session.messages,
         task.message ?? "",

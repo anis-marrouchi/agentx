@@ -179,13 +179,13 @@ A send whose answer is read by its id (`"mode": "none"`) keeps **one session per
 **One issue named in the message.** With `mesh.delegation.topicSessions` on, a message with no `home` whose text names exactly one issue or merge request (a link, or a reference such as `group/project!12`) continues the helper's last run on that issue on this machine, from any chat or sender. Rules:
 
 - Only while that run's saved context is still cheap to reuse: it ended less than `session.resumeGate.cacheTtlMinutes` ago (an hour by default). After that, the message starts a fresh session.
-- It never waits. If the helper's last run on that issue is still going, the new message starts a fresh session beside it.
+- It never waits. If the helper's last run on that issue is still going, the new message starts a fresh session beside it. While a run continues a session, no other message continues that same session, whichever rule it follows.
 - It is not a `home`. The issue is not written on the hand-off, the helper's run is not told it as its home, and nothing waits for it. Only a named `home` waits its turn.
 - A message that names two or more issues, or only a bare `#12`, gets no topic and follows the rules above.
-- It survives a restart: AgentX reads the issue again from the stored message (its first 500 characters). An issue named after that point is not found, and the message starts fresh.
+- It survives a restart: AgentX reads the issue again from the stored message (its first 500 characters). A message longer than that gets no topic after a restart, since the cut part may name another issue; the next message on that issue starts fresh.
 - The first message on an issue still follows the rules above (the same chat, or the same sender).
 - The daemon log shows `continues its session from its last run on <issue>`. With the setting off, it shows `would continue <chat> on <issue> (topicSessions is off)` where a message would have continued, so you can count them before turning it on.
-- AgentX does not copy any message into the new chat. To check that the new message really belongs to the same work, AgentX compares it with the last message of the chat it continued from.
+- AgentX does not copy any message into the new chat. To check that the new message really belongs to the same work, AgentX compares it with the last message of the chat it continued from. It does this only for a message continued this way; with the setting off, nothing changes.
 
 ### A notice instead of a run
 

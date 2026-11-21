@@ -61,7 +61,7 @@ export interface Session {
    *  A resumed session gets the block again only when it differs. */
   rulesHash?: string
   /** The chat this one's native session was continued from (#2010), set by
-   *  continueFrom. Only a pointer: the session-continuity seat reads the
+   *  continueFrom for a topic resume only. Only a pointer: the session-continuity seat reads the
    *  source's last user message from it while this chat has none of its
    *  own. No message is ever copied into this chat. */
   continuedFrom?: { channel: string; chatId: string }
@@ -547,7 +547,7 @@ export class SessionStore {
    * rotated when it grows or goes stale. False when the earlier chat has
    * no session to continue; nothing is written then.
    */
-  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }): boolean {
+  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }, opts: { pointer?: boolean } = {}): boolean {
     if (from.channel === to.channel && from.chatId === to.chatId) return false
     const src = this.peekSession(agentId, from.channel, from.chatId)
     if (!src) return false
@@ -562,7 +562,10 @@ export class SessionStore {
     dst.lastTurnContextTokens = src.lastTurnContextTokens
     dst.rulesHash = src.rulesHash
     dst.updatedAt = src.updatedAt
-    dst.continuedFrom = { channel: from.channel, chatId: from.chatId }
+    // Only a topic resume (#2010, setting on) leaves the pointer; every
+    // other continuation stays as before and drops one left over.
+    if (opts.pointer) dst.continuedFrom = { channel: from.channel, chatId: from.chatId }
+    else delete dst.continuedFrom
     this.save(dst)
     return true
   }

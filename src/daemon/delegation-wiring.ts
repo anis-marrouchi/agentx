@@ -438,10 +438,11 @@ export function continueSession(
   agentId: string,
   from: ReadonlyArray<{ channel: string; chatId: string }>,
   to: { channel: string; chatId: string },
+  opts: { pointer?: boolean } = {},
 ): boolean {
   if (!to.chatId) return false
   try {
-    return from.some((f) => store.continueFrom(agentId, f, to))
+    return from.some((f) => store.continueFrom(agentId, f, to, opts))
   } catch {
     return false
   }
@@ -674,7 +675,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       freshSession: !(opts.resumeFrom && continueSession(w.registry.getSessionStore(), callee, opts.resumeFrom, {
         channel: String((context as any).channel ?? "a2a"),
         chatId: String((context as any).chatId ?? ""),
-      })),
+      }, { pointer: !!opts.topic })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
       ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),

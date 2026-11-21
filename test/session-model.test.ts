@@ -204,10 +204,22 @@ describe("SessionStore sessionModel", () => {
     expect(store.getSessionModel("a", "api", "c9")).toBe(EDGE)
   })
 
-  it("continueFrom leaves a pointer for the continuity seat, never a copied message (#2010)", () => {
+  it("continueFrom leaves no pointer unless asked: other continuations stay as before (#2010)", () => {
     store.addUserMessage("a", "a2a", "src", "agent:p", "Review team/site!12")
     store.setClaudeSessionId("a", "a2a", "src", "s1", AGENT)
     expect(store.continueFrom("a", { channel: "a2a", chatId: "src" }, { channel: "a2a", chatId: "dst" })).toBe(true)
+    expect(store.getSession("a", "a2a", "dst").continuedFrom).toBeUndefined()
+    expect(store.continuedFromMessage("a", "a2a", "dst", "x")).toBeNull()
+    // A later plain continuation drops a pointer left by a topic resume.
+    expect(store.continueFrom("a", { channel: "a2a", chatId: "src" }, { channel: "a2a", chatId: "dst2" }, { pointer: true })).toBe(true)
+    expect(store.continueFrom("a", { channel: "a2a", chatId: "src" }, { channel: "a2a", chatId: "dst2" })).toBe(true)
+    expect(store.getSession("a", "a2a", "dst2").continuedFrom).toBeUndefined()
+  })
+
+  it("continueFrom leaves a pointer for a topic resume, never a copied message (#2010)", () => {
+    store.addUserMessage("a", "a2a", "src", "agent:p", "Review team/site!12")
+    store.setClaudeSessionId("a", "a2a", "src", "s1", AGENT)
+    expect(store.continueFrom("a", { channel: "a2a", chatId: "src" }, { channel: "a2a", chatId: "dst" }, { pointer: true })).toBe(true)
     store.addUserMessage("a", "a2a", "dst", "agent:p", "Now fix the notes")
     const dst = store.getSession("a", "a2a", "dst")
     expect(dst.continuedFrom).toEqual({ channel: "a2a", chatId: "src" })

@@ -1276,6 +1276,59 @@ describe("topic sessions: one issue named in the message (#2010)", () => {
     expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
   })
 
+  it("marks only a topic resume, so only it leaves a pointer to its source chat", async () => {
+    const { h, runs, calls } = topicRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    // Same caller chat, no ref: the #1749 caller-chat resume, not a topic one.
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "and the rest", kind: "send" })
+    runs[1]?.resolve({ content: "ok" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toHaveLength(1)
+    expect(calls[1].opts.topic).toBeUndefined()
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(calls[2].opts.resumeFrom).toHaveLength(1)
+    expect(calls[2].opts.topic).toBe(true)
+  })
+
+  it("a topic run that takes a source chat makes it busy for the caller-chat key too (A/B/C)", async () => {
+    const { h, runs, calls } = topicRuns()
+    // A from P1 on team/site!12 ends in chat X.
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    const x = { channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }
+    // B from P2 names !12 and continues X; it is still going.
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toEqual([x])
+    // C from P1 with no ref: P1's caller-chat key still names X, which B
+    // is running on. C starts fresh, so no two runs share X's session.
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one more thing", kind: "send" })
+    await flush()
+    expect(calls[2].opts.resumeFrom).toBeUndefined()
+    // Once B ended, X is free again.
+    runs[1].resolve({ content: "ok" })
+    runs[2].resolve({ content: "ok" })
+    await flush()
+    expect(h.logs.some((l) => l.includes("still going"))).toBe(false)
+  })
+
+  it("and the other way round: a caller-chat run on a source chat makes it busy for the topic", async () => {
+    const { h, runs, calls } = topicRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one more thing", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toHaveLength(1)
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(calls[2].opts.resumeFrom).toBeUndefined()
+  })
+
   it("off: today's behaviour, with one 'would continue' line", async () => {
     const { h, runs, calls } = topicRuns({ topicSessions: false })
     const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
@@ -1306,6 +1359,27 @@ describe("topic sessions: one issue named in the message (#2010)", () => {
     now += 2 * 3_600_000
     const third = topicRuns({ now: () => now, store: n.store() })
     expect(third.h.logs.some((l) => l.includes("topic session(s) rebuilt"))).toBe(false)
+  })
+
+  it("rebuilds no key from a clipped request: a ref across the cut, or one the cut may hide", async () => {
+    let now = 1_000_000
+    const n = node()
+    const first = topicRuns({ now: () => now, store: n.store() })
+    // team/site!1234 lands across the 500-character cut: stored as "team/site!12…".
+    const across = "x".repeat(489) + " team/site!1234 more"
+    // One ref before the cut, a second one after it: the live run had no key.
+    const hidden = "Review team/site!12 " + "y".repeat(600) + " and team/site!13"
+    first.h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: across, kind: "send" })
+    first.h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: hidden, kind: "send" })
+    first.runs[0].resolve({ content: "ok" })
+    first.runs[1].resolve({ content: "ok" })
+    await flush()
+    now += 60_000
+    const second = topicRuns({ now: () => now, store: n.store() })
+    expect(second.h.logs.some((l) => l.includes("topic session(s) rebuilt"))).toBe(false)
+    second.h.mgr.start({ caller: { ...AGENT_TURN, context: { ...AGENT_TURN.context, chatId: "c5" } }, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(second.calls[0].opts.resumeFrom).toBeUndefined()
   })
 })
 

@@ -195,6 +195,9 @@ export interface DelegationDeps {
       /** Continue the callee's session from this chat of its own, the
        *  last run on the same home (#1100), instead of a fresh one. */
       resumeFrom?: Array<{ channel: string; chatId: string }>
+      /** The resume is a topic resume (#2010, topicSessions on): only then
+       *  does the new chat keep a pointer to its source chat. */
+      topic?: true
       /** How long the run may wait for a free slot of a busy callee
        *  (registry.execute's slotWaitMs). */
       slotWaitMs?: number
@@ -351,6 +354,11 @@ const FALLBACK_CLIP = 3500
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s
+}
+
+/** Whether a stored request may have been cut by clip(s, REQUEST_CLIP). */
+function wasClipped(request: string): boolean {
+  return request.length >= REQUEST_CLIP && request.endsWith("…")
 }
 
 /** The parts of the caller's context the callback turn needs. Bulky or
@@ -936,21 +944,28 @@ export class DelegationManager {
       }
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
-      if (homeKey) this.busyChats.add(mine)
+      // With topic sessions on (#2010), two keys can name one source chat
+      // (a topic key and a caller-chat key): a run that takes a source
+      // makes it busy for every key while it goes, so no second run
+      // resumes the same native session beside it. Off: as before.
+      const taken = this.deps.topicSessions && homeKey ? (resumeFrom ?? []).map(chatKeyOf).filter((k) => !this.busyChats.has(k)) : []
+      const busy = homeKey ? [mine, ...taken] : []
+      for (const k of busy) this.busyChats.add(k)
+      const release = () => { for (const k of busy) this.busyChats.delete(k) }
       let started: Promise<CalleeRun>
       try {
         started = this.deps.runLocal(record.callee, opts.message, calleeContext, {
           timeoutMs,
           onStart: (runId) => { this.localRuns.set(id, runId) },
           extras: opts.extras,
-          ...(resumeFrom?.length ? { resumeFrom } : {}),
+          ...(resumeFrom?.length ? { resumeFrom, ...(useTopic ? { topic: true as const } : {}) } : {}),
           ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
         })
       } catch (e) {
-        this.busyChats.delete(mine)
+        release()
         throw e
       }
-      return started.finally(() => { this.busyChats.delete(mine) })
+      return started.finally(release)
     }
     // The wait is bounded by this delegation's own time limit: a run ahead
     // that never settles (stuck before it started) does not hold it forever.
@@ -1492,9 +1507,12 @@ export class DelegationManager {
   /**
    * The topic keys after a restart (#2010), from the rows that ended inside
    * the warm window: each row's topic is read again from its request (the
-   * message clipped to 500 characters). A ref the clip cut off only means a
-   * fresh start. Newest first: the first row of a key wins. Ended rows only;
-   * a lost row may still be resumed on its own chat.
+   * message clipped to 500 characters). A clipped request gives no key: a
+   * ref across the cut would read as another ref (team/site!1234 as
+   * team/site!12), and the cut part may have named a second ref, which
+   * gave the live run no key. A fresh start is the safe side. Newest
+   * first: the first row of a key wins. Ended rows only; a lost row may
+   * still be resumed on its own chat.
    */
   private rebuildTopicKeys(store: HandoffStore): void {
     const now = this.now()
@@ -1507,6 +1525,7 @@ export class DelegationManager {
     }
     let rebuilt = 0
     for (const r of rows) {
+      if (wasClipped(r.request)) continue
       const topic = topicOf(r.request)
       if (!topic) continue
       const key = `${r.callee}\u0000topic\u0000${topic}`
