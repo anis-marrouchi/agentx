@@ -52,6 +52,10 @@ export interface SweepDeps {
    *  (forward.ts deliverResult). Rejects when that node did not take it. */
   tellPeer?: (node: string, card: DecisionCard) => Promise<void>
   sendDigest?: (dest: { channel: string; chatId: string; accountId?: string }, text: string) => Promise<void>
+  /** A schedule's goal card (#863, crons/goal-answer.ts): the daemon
+   *  applies the operator's answer before the owner is told. Idempotent;
+   *  a failure is retried at the job's next fire. */
+  applyCronGoal?: (card: DecisionCard) => Promise<unknown>
   /** Told about every decided or expired card, once (open requests, #356). */
   onCardResult?: (card: DecisionCard) => void
   /** Where the operator opens the inbox, for the digest. */
@@ -162,6 +166,9 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       // Marked first: a turn that hangs or crashes must not tell it twice.
       markAgentNotified(ctx.root, card.id, now)
       try { deps.onCardResult?.(card) } catch (e: any) { log(`[approvals] ${card.id}: result listener failed: ${e?.message ?? e}`) }
+      if (card.origin?.kind === "cron-goal" && deps.applyCronGoal) {
+        try { await deps.applyCronGoal(card) } catch (e: any) { log(`[approvals] ${card.id}: goal answer not applied, retried at the job's next fire: ${e?.message ?? e}`) }
+      }
       // A workflow step's card resumes its run (onCardResult): the run
       // is what acts on it, not a turn on the agent (#788).
       if (card.origin?.kind === "workflow") continue

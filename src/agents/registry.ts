@@ -1993,7 +1993,9 @@ export class AgentRegistry {
       // the lane its next item: queued, it would end at once, unrun.
       // A run the daemon starts to wake a job (#1861) waits too: queued,
       // its reply would be posted to the job's chat when the queue flushes.
-      if (qChannel === "api" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context)) {
+      // A sensor's wake ("sensor", #863) is awaited by the sensor loop, which
+      // counts it sent only once it starts: queued, it would never start.
+      if (qChannel === "api" || qChannel === "sensor" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context)) {
         const start = Date.now()
         const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500

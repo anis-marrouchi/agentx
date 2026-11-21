@@ -183,7 +183,38 @@ export interface LearnedDraftsOrigin {
   drafts: string[]
 }
 
-export type CardOrigin = LearnedDraftsOrigin | SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+/** The keep / change / drop card of a schedule on goal check (#863).
+ *  Raised by the daemon for the job's owner agent; never expires; the
+ *  daemon applies the operator's answer itself (crons/goal-answer.ts). */
+export interface CronGoalOrigin {
+  kind: "cron-goal"
+  jobId: string
+  goalId: string
+}
+
+/** The operator's choice on a decided cron-goal card: a no, or a yes with
+ *  no choice, is keep. */
+export function cronGoalChoice(card: { verdict?: string; choice?: string }): "keep" | "change" | "drop" {
+  if (card.verdict !== "yes") return "keep"
+  const c = (card.choice ?? "").toLowerCase()
+  return c === "change" ? "change" : c === "drop" ? "drop" : "keep"
+}
+
+/** Lines for the owner told the result of its job's goal card. Replace
+ *  the generic result lines: the daemon did the bookkeeping already. */
+export function cronGoalLines(origin: CronGoalOrigin, card: { verdict?: string; choice?: string; note?: string }): string[] {
+  const choice = cronGoalChoice(card)
+  const head = `The operator said ${choice} for your schedule ${origin.jobId} (goal ${origin.goalId}).${card.note ? ` Their note: "${card.note}".` : ""}`
+  if (choice === "keep") {
+    return [head, "The daemon has cleared its goal check: it runs again on its next time, and its goal is not checked again for 30 days. Nothing else to do."]
+  }
+  if (choice === "change") {
+    return [head, `Operator said change${card.note ? `: ${card.note}` : ""}. The job does not run until you make the change: use agentx_schedule with action "change" (brief, time, goal or value) and a reason, or "retire" it. Your change goes in the job's change log.`]
+  }
+  return [head, "The daemon has retired the job: it never runs again. Write one note on the goal's issue saying why it ended."]
+}
+
+export type CardOrigin = CronGoalOrigin | LearnedDraftsOrigin | SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

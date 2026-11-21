@@ -20,6 +20,8 @@ import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
 import { isPhoneLink } from "@/notify/phone-link"
 import { situationsConfigSchema } from "@/situations/config"
+import { sensorProblems, sensorsConfigSchema } from "@/sensors/config"
+import { allowedHostJobsSchema } from "@/crons/host-jobs"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -968,6 +970,16 @@ const cronJobSchema = z.object({
    *  at that time, it runs once when the daemon starts. `schedule` holds
    *  the same time as a cron, for display only. */
   runAt: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "runAt must be an ISO time" }).optional(),
+  /** Recurring job (#863): ISO time after which it ends for good, the
+   *  same way a retire does (`enabled: false` + `endedAt` + a ledger row). */
+  until: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "until must be an ISO time" }).optional(),
+  /** Set when the job was retired (retire, a drop answer, or `until`). A
+   *  job with it never runs and is never switched back on (crons/retired.ts). */
+  endedAt: z.string().optional(),
+  /** The schedule the operator last approved (#863). A time change that
+   *  fires more often than this over 31 days needs approval again. Unset:
+   *  the current `schedule` counts as approved. */
+  approvedSchedule: z.string().optional(),
   /** Agent id that created this job through the agent `schedule` tool.
    *  Absent for operator-created jobs. Drives the ownership rule: an agent
    *  manages only the routines it created, unless it is `admin`. */
@@ -975,11 +987,15 @@ const cronJobSchema = z.object({
   /** Pending operator approval for an agent-requested change. While a
    *  `create` is pending the job never runs, whatever `enabled` says; a
    *  pending `delete` leaves the job as it was until approved. Cleared by
-   *  `agentx schedule approve|reject <id>`. */
+   *  `agentx schedule approve|reject <id>`. A pending `change` (#863) is a
+   *  time that fires more often than `approvedSchedule`: the job keeps its
+   *  current time until approved. */
   approval: z.object({
-    action: z.enum(["create", "delete"]),
+    action: z.enum(["create", "delete", "change"]),
     requestedBy: z.string(),
     requestedAt: z.string(),
+    schedule: z.string().optional(),
+    reason: z.string().optional(),
   }).optional(),
 }).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",
@@ -2303,6 +2319,14 @@ export const daemonConfigSchema = z.object({
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
+  /** Built-in readers the daemon reads on a timer, no model (#863):
+   *  `sensors.<id>` with levels that wake an agent or push to the owner.
+   *  See src/sensors/config.ts. */
+  sensors: sensorsConfigSchema,
+  /** What may run outside AgentX on this machine (#863), by launchd label
+   *  or crontab line: owner, why, and during the migration `until`. An
+   *  entry past its until shows on the Wall for its owner. */
+  allowedHostJobs: allowedHostJobsSchema,
   /** One message a day that lists only what is wrong: failed or missed
    *  schedules, stuck requests, paused agents (#1289). Nothing wrong,
    *  nothing sent. See src/crons/exceptions-digest.ts. */
@@ -3330,8 +3354,12 @@ export function literalSecretProblems(raw: any): string[] {
 }
 
 /** Rules that span two sections, checked after the schema. */
-export function crossFieldProblems(cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals">): string[] {
-  const problems: string[] = []
+export function crossFieldProblems(
+  cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals"> & Partial<Pick<DaemonConfig, "sensors" | "agents">>,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  // A battery sensor on a node without pmset, a level aimed at no agent (#863).
+  const problems: string[] = sensorProblems(cfg, platform)
   const m = cfg.native?.mirror
   if (m?.enabled) {
     if (cfg.reminders?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in reminders.lists; a mirrored task would be handed back to an agent. Use another list.`)

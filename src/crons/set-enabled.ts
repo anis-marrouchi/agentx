@@ -1,4 +1,6 @@
 import { applyConfigMutation } from "@/daemon/config-mutator"
+import { rootOfConfig } from "./goal-state"
+import { retiredRefusalAt } from "./retired"
 
 // --- Switch one schedule on or off ---
 //
@@ -25,11 +27,15 @@ export async function setCronEnabled(
   // refusal or a no-op never touches agentx.json (and never wakes the
   // daemon's config watcher).
   let outcome: SetCronEnabledResult | null = null
+  const root = rootOfConfig(opts.configPath)
   const r = await applyConfigMutation((cfg) => {
     const job = cfg.crons?.[id]
     if (!job) outcome = { ok: false, status: 404, error: `no schedule "${id}"` }
     else if (enabled && job.approval?.action === "create") {
       outcome = { ok: false, status: 409, error: `schedule "${id}" is waiting for approval: agentx schedule approve ${id}` }
+    } else if (enabled && retiredRefusalAt(root, id, job)) {
+      // A retired job never comes back by a switch (#863).
+      outcome = { ok: false, status: 409, error: retiredRefusalAt(root, id, job)! }
     } else if (job.enabled === enabled) outcome = { ok: true, id, enabled, changed: false }
     if (outcome) throw new Error("no write")
     job.enabled = enabled

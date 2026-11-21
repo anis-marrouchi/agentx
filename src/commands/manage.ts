@@ -972,6 +972,15 @@ cron
       console.log(chalk.yellow(`  Cron "${id}" is awaiting approval — run: agentx schedule approve ${id}`))
       return
     }
+    // A retired job never comes back by a switch (#863).
+    const { retiredRefusalAt } = await import("@/crons/retired")
+    const { rootOfConfig } = await import("@/crons/goal-state")
+    const retired = retiredRefusalAt(rootOfConfig(), id, config.crons[id])
+    if (retired) {
+      console.log(chalk.red(`  ${retired}`))
+      process.exitCode = 1
+      return
+    }
     config.crons[id].enabled = true
     await saveConfig(config)
     console.log(chalk.green(`  Cron "${id}" enabled`))

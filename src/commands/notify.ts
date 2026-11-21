@@ -19,6 +19,7 @@ import { defaultNotifyChannel } from "@/notify/push-settings"
 import { noticeRuleBreak, withTodo } from "@/approvals/screen-gate"
 import { isPhoneLink } from "@/notify/phone-link"
 import { numberReport } from "@/notify/unanswered"
+import { noticeTold, titledText } from "@/notify/owner-push"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -45,7 +46,7 @@ function daemonSender(defaultChannel: string, defaultChatId: string, told?: Reco
   // or a nag kept for the daily digest. The daemon says so in its answer.
   let keptBack: string | null = null
   const send: Sender = async ({ title, message, channel, chatId }) => {
-    const text = title && !message.startsWith(title) ? `${title}\n${message}` : message
+    const text = titledText(title, message)
     const res = await fetch(`${DAEMON}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -203,15 +204,7 @@ export const notify = new Command()
     }
 
     // What it is about, for the told-the-owner gate (#1126).
-    const told = {
-      ...(opts.key ? { key: String(opts.key) } : {}),
-      ...(opts.request ? { requestId: String(opts.request) } : {}),
-      ...(opts.digest ? { kind: "nag" } : {}),
-      ...(opts.urgent ? { urgent: true } : {}),
-      // A notice: the same words again within the window are a repeat.
-      textKey: true,
-      from: opts.from,
-    }
+    const told = noticeTold(opts)
     let buttons: PushButton[]
     try {
       buttons = pushButtons(opts.url, opts.button)

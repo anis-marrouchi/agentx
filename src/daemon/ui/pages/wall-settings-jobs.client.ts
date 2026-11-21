@@ -29,6 +29,45 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
     return stOptions(((S.st.data && S.st.data.agents) || []).map(function (a) { return [a.id, (a.name || a.id) + ' (' + a.id + ')']; }), current);
   }
 
+  function stWhen(v) { var d = new Date(v); return isNaN(d.getTime()) ? '' : d.toLocaleString(); }
+  /** Verdict, end time, goal-check lines and the change log of one job (#863). */
+  function stCronMoreHtml(c) {
+    var out = '';
+    if (c.lastVerdict) out += '<p class="wsj__sub">Owner says: ' + esc(c.lastVerdict.text) + ' <small>' + esc(stWhen(c.lastVerdict.at)) + '</small></p>';
+    if (c.endedAt) out += '<p class="wsj__sub">Ended ' + esc(stWhen(c.endedAt)) + '.</p>';
+    else if (c.until) out += '<p class="wsj__sub">Ends after ' + esc(stWhen(c.until)) + '.</p>';
+    (c.goalLines || []).forEach(function (l) { out += '<p class="wsj__sub wst__err">' + esc(l) + '</p>'; });
+    if (c.changes && c.changes.length) {
+      out += '<details class="wsj__log"><summary>Change log (' + c.changes.length + ')</summary><ul>' + c.changes.map(function (r) {
+        return '<li><small>' + esc(stWhen(r.at)) + '</small> <b>' + esc(r.field) + '</b> by @' + esc(r.by) +
+          (r.old != null || r.new != null ? ': <code>' + esc(r.old == null ? '—' : String(r.old).slice(0, 80)) + '</code> → <code>' + esc(r.new == null ? '—' : String(r.new).slice(0, 80)) + '</code>' : '') +
+          (r.reason ? ' · ' + esc(r.reason) : '') + '</li>';
+      }).join('') + '</ul></details>';
+    }
+    return out;
+  }
+  /** Sensors (#863): built-in readers, no model; last reading and wakes. */
+  function stSensorsHtml() {
+    var list = (S.st.data && S.st.data.sensors) || [];
+    if (!list.length) return '';
+    return '<h3>Sensors</h3><ul class="wsj">' + list.map(function (x) {
+      var wakes = (x.wakes || []).map(function (w) {
+        return '<li><small>' + esc(stWhen(w.at)) + '</small> ' + esc(w.level) + ' → @' + esc(w.target) + ' · ' + esc(w.reading) + (w.ok ? '' : ' · ' + esc(w.error || 'failed')) + '</li>';
+      }).join('');
+      return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(x.id) + '</b> <small>' + esc(x.reading) + ' every ' + esc(x.every) + (x.targets.length ? ' · wakes ' + esc(x.targets.join(', ')) : '') + '</small>' +
+        '<p class="wsj__sub">Last reading: ' + esc(x.last) + (x.lastAt ? ' <small>' + esc(stWhen(x.lastAt)) + '</small>' : '') + '</p>' +
+        (wakes ? '<details class="wsj__log"><summary>Wakes (' + x.wakes.length + ')</summary><ul>' + wakes + '</ul></details>' : '') + '</div></li>';
+    }).join('') + '</ul>';
+  }
+  /** allowedHostJobs past their until (#863). */
+  function stHostJobsHtml() {
+    var list = (S.st.data && S.st.data.hostJobs) || [];
+    if (!list.length) return '';
+    return '<h3>Host jobs past their until</h3><ul class="wsj">' + list.map(function (h) {
+      return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(h.label) + '</b> <small>@' + esc(h.owner) + '</small><p class="wsj__sub wst__err">' + esc(h.text) + '</p></div></li>';
+    }).join('') + '</ul>';
+  }
+
   // --- Schedules ---
   function stCronsHtml() {
     var list = (S.st.data && S.st.data.crons) || [];
@@ -36,12 +75,12 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
       var k = 'cron:' + c.id;
       return '<li class="wsj__row"><div class="wsj__main"><b>' + esc(c.id) + '</b> <code>' + esc(c.schedule) + '</code> <small>runs @' + esc(c.agent) + '</small>' +
         (c.prompt ? '<p class="wsj__sub">' + esc(c.prompt.length > 120 ? c.prompt.slice(0, 120) + '…' : c.prompt) + '</p>' : '') +
-        '<p class="wsj__sub">' + axCronValueHtml(c.value, esc) + axCronGoalHtml(c, esc) + '</p></div>' +
+        '<p class="wsj__sub">' + axCronValueHtml(c.value, esc) + axCronGoalHtml(c, esc) + '</p>' + stCronMoreHtml(c) + '</div>' +
         '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="' + esc(k) + '">Delete</button>' +
         stConfirmHtml(k, 'Delete the schedule <b>' + esc(c.id) + '</b>? It stops running.', 'Delete ' + c.id) + '</li>';
     }).join('') + '</ul>' : '<p class="ax-wall__empty">No schedules yet. Add one below to have an agent do something on a timer.</p>';
     return '<header class="wst__h"><h2>Schedules</h2><p>Make an agent do something on a timer: daily summaries, weekly reports, hourly checks.</p></header>' +
-      stNoteHtml('cron') + rows +
+      stNoteHtml('cron') + rows + stSensorsHtml() + stHostJobsHtml() +
       '<details class="wsc" open><summary><h3>Add a schedule</h3></summary>' +
       '<form class="wsf" data-st-form="cron">' +
         '<label>Name<input id="st-c-id" placeholder="weekly-report" autocomplete="off"></label>' +

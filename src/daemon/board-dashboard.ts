@@ -2109,7 +2109,15 @@ interface NodeLive {
     consecutiveErrors: number
     /** Why it runs and the number that proves it (#1183). */
     value?: CronValue
+    /** The goal check's Wall lines (#863). */
+    goalLines?: string[]
+    lastVerdict?: { text: string; at: string }
+    until?: string
   }>
+  /** Sensors with their last reading and wakes (#863, crons/schedule-view.ts). */
+  sensors?: import("@/crons/schedule-view").SensorView[]
+  /** allowedHostJobs entries past their until (#863). */
+  hostJobs?: import("@/crons/host-jobs").HostJobLine[]
   cronRuns?: Array<{
     jobId: string
     startedAt: string
@@ -2207,7 +2215,7 @@ export async function fetchDaemonAgents(
         .catch(() => null)
         .finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", stop) })
     }
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes, stoppedRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes, stoppedRes, extrasRes] = await Promise.all([
       optional("/health"),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       optional("/mesh"),
@@ -2217,6 +2225,8 @@ export async function fetchDaemonAgents(
       optional("/routines"),
       optional("/attach/sessions"),
       optional("/api/signals/stopped?limit=20"),
+      // Sensors and host jobs past their until (#863); older daemons 404.
+      optional("/crons/extras"),
     ])
     if (!agentsRes || !agentsRes.ok) {
       // Out of time is a slow node, not a down one (#1442): it answered
@@ -2284,6 +2294,11 @@ export async function fetchDaemonAgents(
         // The goal it serves, and whether it is closed (#1568).
         ...(typeof job.goal === "string" ? { goal: job.goal } : {}),
         ...(job.goalClosed && typeof job.goalClosed.state === "string" ? { goalClosed: { state: job.goalClosed.state } } : {}),
+        // The goal check's lines (#863): held, change owed, refused card.
+        ...(Array.isArray(job.goalLines) ? { goalLines: job.goalLines.filter((l: unknown) => typeof l === "string").slice(0, 10).map((l: string) => l.slice(0, 300)) } : {}),
+        // The owner's verdict and the job's end time (#863).
+        ...(job.lastVerdict && typeof job.lastVerdict.text === "string" ? { lastVerdict: { text: job.lastVerdict.text.slice(0, 200), at: String(job.lastVerdict.at ?? "") } } : {}),
+        ...(typeof job.until === "string" ? { until: job.until } : {}),
       }))
     }
     if (cronRunsRes && cronRunsRes.ok) {
@@ -2292,6 +2307,11 @@ export async function fetchDaemonAgents(
     }
     // Older daemons 404 here; leaving `routines` unset tells the page the
     // node does not report them rather than that it has none.
+    if (extrasRes && extrasRes.ok) {
+      const body: any = await extrasRes.json().catch(() => null)
+      if (body && Array.isArray(body.sensors)) base.sensors = body.sensors.slice(0, 20)
+      if (body && Array.isArray(body.hostJobs)) base.hostJobs = body.hostJobs.slice(0, 50)
+    }
     if (routinesRes && routinesRes.ok) {
       const body: any = await routinesRes.json().catch(() => null)
       if (body && Array.isArray(body.routines)) base.routines = body.routines.slice(0, ROUTINE_LIMITS.routines)

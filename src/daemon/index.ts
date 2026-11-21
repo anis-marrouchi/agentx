@@ -91,6 +91,8 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
+import { pushToOwner } from "@/notify/owner-push"
+import { SensorRunner } from "@/sensors/runner"
 import { localAlert, localSettings, notify, readHold, writeCallHold, NotificationQueue, type Sender } from "@/notify"
 import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
 import { attachReach, type AttachedReach } from "@/notify/reach-attach"
@@ -115,6 +117,10 @@ import { closeForwardedCard, handleApprovalsApi } from "@/approvals/daemon-api"
 import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { applyGoalAnswer } from "@/crons/goal-answer"
+import { movementReader } from "@/requests/checkers/issue-movement"
+import { writeSensorRun } from "@/sensors/run-record"
+import { schedulesExtras } from "@/crons/schedule-view"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
 import { runMirror } from "@/approvals/mirror"
 import { requestStoreFor } from "@/approvals/inbox"
@@ -386,6 +392,8 @@ export class AgentXDaemon {
   private attachSweep?: ReturnType<typeof setInterval>
   /** Sends notices no run picked up within the hour (agents/notices.ts). */
   private noticeSweep?: ReturnType<typeof setInterval>
+  /** Built-in readers on a timer (#863, src/sensors). */
+  private sensors?: SensorRunner
   private callSweep?: ReturnType<typeof setInterval>
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
@@ -1707,6 +1715,7 @@ export class AgentXDaemon {
 
     if (this.attachSweep) clearInterval(this.attachSweep)
     if (this.noticeSweep) clearInterval(this.noticeSweep)
+    this.sensors?.stop()
     if (this.callSweep) clearInterval(this.callSweep)
     if (this.taskRunPrune) clearInterval(this.taskRunPrune)
 
@@ -2298,6 +2307,29 @@ export class AgentXDaemon {
       const counts = this.requests!.store.goalCounts().find((g) => g.id === id)
       return { state: goal.state, brief: goalBrief(goal, counts ? { open: counts.open, done: counts.done } : null) }
     })
+    // The schedule goal check (#863): held jobs, the owner's one wake, the
+    // keep / change / drop card. Only on the operator's node: a card
+    // forwarded over the mesh would lose its origin.
+    cron.setGoalCheck({
+      root: process.cwd(),
+      configPath: this.configPath,
+      runsDir: resolve(process.cwd(), ".agentx/cron/runs"),
+      now: Date.now,
+      log: this.log,
+      goal: (id) => {
+        const g = this.requests?.goals.get(id)
+        if (!g) return null
+        const check = g.check?.kind === "issue" ? { kind: "issue", provider: g.check.provider, ref: g.check.ref } : g.check ? { kind: g.check.kind } : null
+        return { state: g.state, check, createdAt: g.createdAt }
+      },
+      movement: movementReader(forgeConnectorsOf(config)),
+      operatorNode: () => config.approvals.forwardTo ?? null,
+      wake: async (agentId, text, chatId) => {
+        if (!this.registry.getAgent(agentId)) throw new Error(`agent "${agentId}" is not on this node`)
+        await this.registry.execute({ agentId, message: text, context: { channel: "cron", chatId } })
+      },
+      ledger: () => this.db,
+    })
     cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
       this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
       this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
@@ -2804,6 +2836,8 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
+          // A schedule's goal card (#863): applied before the owner is told.
+          applyCronGoal: (card) => applyGoalAnswer(card, { root: process.cwd(), configPath: this.configPath, log: this.log, ledger: () => this.db }),
           onCardResult: (card) => {
             this.requests?.tracker.cardResolved(card)
             this.workflowCardResult(card)
@@ -4817,6 +4851,8 @@ export class AgentXDaemon {
     }, 1000)
     this.attachSweep.unref?.()
 
+    this.startSensors()
+
     // Notices nobody's run picked up within the hour go as one run, so a
     // quiet agent still gets them (agents/notices.ts).
     this.noticeSweep = setInterval(() => {
@@ -4831,6 +4867,81 @@ export class AgentXDaemon {
       }
     }, 60_000)
     this.noticeSweep.unref?.()
+  }
+
+  /**
+   * Sensors (#863): built-in readers on a timer, no model. A level wakes
+   * its target agent at priority critical, in the "sensor" channel, and
+   * counts once that run starts; an urgent level, or a critical one whose
+   * wake is held or failed, sends the push `agentx notify --urgent` sends,
+   * through the same told gate as POST /send. Wall lines are named events
+   * `sensor.<id>` on the Hub's Events view. State: .agentx/state/sensors.json.
+   */
+  private startSensors(): void {
+    this.sensors = new SensorRunner({
+      sensors: () => this.config.sensors ?? {},
+      wake: ({ sensor, target, text, signal, onStart }) => this.registry.execute({
+        agentId: target,
+        message: text,
+        context: { channel: "sensor", chatId: `sensor:${sensor}`, sender: `sensor:${sensor}`, admissionPriority: "critical" } as any,
+        onStart: () => onStart(),
+        callerSignal: signal,
+      }).then((r) => ({ error: r.error })),
+      push: (sensor, level, text) => pushToOwner({
+        message: text,
+        todo: level.push.todo,
+        title: level.push.title,
+        from: level.push.from,
+        key: level.push.key ?? `sensor-${sensor}-${level.id}`,
+        priority: level.push.priority,
+        urgent: true,
+      }, {
+        post: async (body) => {
+          const g = this.ownerSendGate(body)
+          if ("kept" in g) return { sent: false, told: g.kept.told }
+          await this.router.sendOutbound({ channel: String(body.channel), chatId: String(body.chatId), text: String(body.text), told: g.told }).catch((e) => {
+            g.failed()
+            throw e
+          })
+          return { sent: true }
+        },
+        channel: defaultNotifyChannel(this.config),
+        alert: this.ownerAlert(),
+      }),
+      wall: (sensor, text) => { getAgentEventBus().publish({ kind: "custom", type: `sensor.${sensor}`, summary: text }) },
+      // Each wake as a run-history row with kind "sensor" (run-record.ts).
+      record: (row) => writeSensorRun(resolve(process.cwd(), ".agentx/cron/runs"), row),
+      log: (m) => this.log(m),
+      stateFile: resolve(process.cwd(), ".agentx/state/sensors.json"),
+    })
+    this.sensors.start()
+    const ids = Object.keys(this.config.sensors ?? {})
+    if (ids.length) this.log(`  Sensors: ${ids.join(", ")}`)
+  }
+
+  /**
+   * The told-the-owner gate of POST /send (#1126): to the owner's own
+   * addresses it decides first, so the caller hears whether it went out.
+   * A caller may say what it is about; it may not skip the gate. Shared
+   * with the sensors' model-free push (#863), so that push is gated as the
+   * one `agentx notify --urgent` sends. `failed` marks a passed send that
+   * then failed.
+   */
+  private ownerSendGate(body: Record<string, unknown>): { kept: { told: string; key?: string | null } } | { told: ReturnType<typeof toldOfBody>; failed: () => void } {
+    const told = toldOfBody(body.told, body.agentId)
+    const gate = this.ownerGate
+    let row: number | undefined
+    if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
+      const { title, body: rest } = splitTitle(String(body.text))
+      const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
+      if (d.verdict !== "send") {
+        this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
+        return { kept: { told: d.verdict, key: d.key } }
+      }
+      told.passed = true
+      row = d.rowId
+    }
+    return { told, failed: () => { if (row !== undefined) gate?.outcome(row, "failed") } }
   }
 
   /**
@@ -8099,6 +8210,12 @@ export class AgentXDaemon {
           this.json(res, 200, this.cron.list())
           break
 
+        case "GET /crons/extras":
+          // Sensors with their last reading and wakes, and host jobs past
+          // their until (#863), for the Wall's Schedules page.
+          this.json(res, 200, schedulesExtras(process.cwd(), this.config, Date.now()))
+          break
+
         case "GET /crons/health":
           this.json(res, 200, this.cron.health())
           break
@@ -8757,22 +8874,10 @@ export class AgentXDaemon {
             break
           }
           try {
-            // To the owner's own addresses, the told-the-owner gate decides
-            // first (#1126), so the caller hears whether it went out. A
-            // caller may say what it is about; it may not skip the gate.
-            const told = toldOfBody(body.told, body.agentId)
-            const gate = this.ownerGate
-            let row: number | undefined
-            if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
-              const { title, body: rest } = splitTitle(String(body.text))
-              const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
-              if (d.verdict !== "send") {
-                this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
-                this.json(res, 200, { ok: true, sent: false, told: d.verdict, key: d.key })
-                break
-              }
-              told.passed = true
-              row = d.rowId
+            const gate = this.ownerSendGate(body)
+            if ("kept" in gate) {
+              this.json(res, 200, { ok: true, sent: false, told: gate.kept.told, key: gate.kept.key })
+              break
             }
             const messageId = await this.router.sendOutbound({
               channel: body.channel as string,
@@ -8787,11 +8892,11 @@ export class AgentXDaemon {
               buttons: body.buttons as any,
               poll: body.poll as any,
               media: body.media as any,
-              told,
+              told: gate.told,
               // An agent's message in the conversation (the MCP agentx_send
               // tool sets it); other callers' sends are notices (#1892).
             }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
-              if (row !== undefined) gate?.outcome(row, "failed")
+              gate.failed()
               throw e
             })
             const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })

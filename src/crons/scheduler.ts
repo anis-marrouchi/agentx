@@ -17,6 +17,9 @@ import { isQuietRun, withQuietRule } from "./quiet"
 import { exitCheckError, withExitRule, withoutExitMarker } from "./exit-check"
 import { withSourceWarning } from "@/sales/sources"
 import { cronGoalGate, withGoalFirst, type CronGoalSource } from "./goal-gate"
+import { goalCheckAtFire, goalCheckTick, type FireGate, type GoalCheckDeps } from "./goal-check"
+import { goalWallLines, readCronGoalState } from "./goal-state"
+import { endByUntil, lateLine, pastUntil, withLateFirst, type UntilDeps } from "./job-end"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -204,6 +207,8 @@ export class CronScheduler {
   private deliverCallback?: CronDeliverCallback
   private wikiNotes?: DaemonConfig["wikiNotes"]
   private goalSource?: CronGoalSource
+  private goalCheck?: GoalCheckDeps
+  private goalTimer?: ReturnType<typeof setInterval>
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -225,7 +230,8 @@ export class CronScheduler {
         // A job whose creation is still awaiting operator approval must
         // never fire, even if something flipped `enabled` behind the
         // approval flow (hand edit, `cron enable`, dashboard toggle).
-        enabled: def.enabled && def.approval?.action !== "create",
+        // A retired job (#863) never loads as on, whatever `enabled` says.
+        enabled: def.enabled && def.approval?.action !== "create" && !def.endedAt,
         schedule: def.schedule,
         timezone: def.timezone,
         agent: def.agent,
@@ -244,6 +250,7 @@ export class CronScheduler {
         requireSources: def.requireSources,
         expectExitZero: def.expectExitZero,
         runAt: def.runAt,
+        until: def.until,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -292,6 +299,47 @@ export class CronScheduler {
   /** Where `crons.<id>.goal` is read (#1568): the goal records. */
   setGoalSource(source: CronGoalSource): void {
     this.goalSource = source
+  }
+
+  /** The schedule goal check (#863, crons/goal-check.ts): held jobs do not
+   *  run their brief. Also starts its minute tick (the 2 h card raise and
+   *  the change-owed rule), stopped by stop(). */
+  setGoalCheck(deps: GoalCheckDeps): void {
+    this.goalCheck = deps
+    if (this.goalTimer) clearInterval(this.goalTimer)
+    this.goalTimer = setInterval(() => {
+      if (!this.running || !this.goalCheck) return
+      try {
+        goalCheckTick(Array.from(this.jobs.values()).map((j) => ({ id: j.id, agent: j.agent, goal: j.goal })), this.goalCheck)
+      } catch (e: any) {
+        this.log(`[cron-goal] tick failed: ${e?.message ?? e}`)
+      }
+    }, 60_000)
+    this.goalTimer.unref?.()
+  }
+
+  /** The goal check, then the goal gate (#1568). `why` names a hold. */
+  private async goalHold(job: CronJobState): Promise<{ skip: boolean; brief: string; why?: string }> {
+    if (this.goalCheck) {
+      let gate: FireGate = { hold: null, kept: false }
+      try {
+        gate = await goalCheckAtFire({ id: job.id, agent: job.agent, goal: job.goal }, this.goalCheck)
+      } catch (e: any) {
+        this.log(`[cron-goal] "${job.id}": goal check failed, runs as before: ${e?.message ?? e}`)
+      }
+      if (gate.hold !== null) {
+        this.log(`Job "${job.id}" held: ${gate.hold}`)
+        // A drop answer retired it: never armed again.
+        if (gate.retired) job.enabled = false
+        return { skip: true, brief: "", why: gate.hold }
+      }
+      if (gate.kept) {
+        // The operator kept it within 30 days: a closed goal does not skip it.
+        job.goalClosed = undefined
+        return { skip: false, brief: cronGoalGate(job.goal, this.goalSource).brief }
+      }
+    }
+    return this.goalGate(job)
   }
 
   /** The job's goal before a run: skip it when the goal is closed, else
@@ -349,6 +397,8 @@ export class CronScheduler {
 
   async stop(): Promise<void> {
     this.running = false
+    if (this.goalTimer) clearInterval(this.goalTimer)
+    this.goalTimer = undefined
     for (const timer of this.timers.values()) {
       clearTimeout(timer)
     }
@@ -427,8 +477,21 @@ export class CronScheduler {
           return
         }
         nextRun = new Date(Math.max(due, Date.now()))
+        // Missed while the daemon was down: the brief says how late (#863).
+        job.lateBy = Date.now() - due
       } else {
+        // A recurring job ends at its until (#863), the way a one-time one ends.
+        if (pastUntil(job.until, Date.now())) {
+          void this.endAtUntil(job)
+          return
+        }
         nextRun = getNextCronDate(job.schedule, new Date(), job.timezone)
+        if (job.until && nextRun.getTime() > Date.parse(job.until)) {
+          job.nextRun = undefined
+          this.log(`Job "${jobId}" ends at its until ${job.until} before its next run`)
+          this.armTimer(jobId, Date.parse(job.until), () => { void this.endAtUntil(job) })
+          return
+        }
       }
       job.nextRun = nextRun
       job.retryPending = false
@@ -461,10 +524,11 @@ export class CronScheduler {
     this.timers.set(jobId, timer)
   }
 
-  /** The ledger row for a run skipped because its goal is closed (#1568). */
-  private recordGoalHalt(job: CronJobState, firedAt: Date): void {
+  /** The ledger row for a run skipped because its goal is closed (#1568)
+   *  or the job is held by its goal check (#863). */
+  private recordGoalHalt(job: CronJobState, firedAt: Date, why?: string): void {
     this.recordCronDecisionInLedger(job.id, job.agent, firedAt, {
-      agentId: null, outcome: "halted", reason: `goal ${job.goal} ${job.goalClosed?.state ?? "closed"}`,
+      agentId: null, outcome: "halted", reason: why ?? `goal ${job.goal} ${job.goalClosed?.state ?? "closed"}`,
     })
   }
 
@@ -579,6 +643,11 @@ export class CronScheduler {
     if (!job || !this.running) return
 
     const isRetry = retryAttempt > 0
+    // Past its until (#863): ended, never run.
+    if (!job.runAt && pastUntil(job.until, Date.now())) {
+      await this.endAtUntil(job)
+      return
+    }
     // firedAt is captured here (rather than below at the original
     // `startedAt` declaration) so the ledger event has a stable
     // sourceEventId regardless of whether we record at the hook-block
@@ -604,10 +673,11 @@ export class CronScheduler {
       }
     }
 
-    // A job whose goal is closed does not run (#1568).
-    const goal = this.goalGate(job)
+    // A job whose goal is closed does not run (#1568), nor one held by
+    // its goal check (#863).
+    const goal = await this.goalHold(job)
     if (goal.skip) {
-      this.recordGoalHalt(job, firedAt)
+      this.recordGoalHalt(job, firedAt, goal.why)
       if (!fire) this.scheduleNext(jobId)
       return
     }
@@ -644,11 +714,14 @@ export class CronScheduler {
     })
 
     const timeout = agentRunTimeout(job.timeout)
+    // A one-time run missed while the daemon was down (#863): said once.
+    const late = lateLine(job.lateBy)
+    job.lateBy = undefined
     try {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt)), job.report), job.expectExitZero),
+          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : withLateFirst(late, job.prompt))), job.report), job.expectExitZero),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -793,11 +866,11 @@ export class CronScheduler {
     for (const { jobId, missedAt } of missed) {
       const job = this.jobs.get(jobId)
       if (!job || !job.enabled) continue
-      const goal = this.goalGate(job)
+      const goal = await this.goalHold(job)
       if (goal.skip) {
         // Same ledger row as a live run skipped for its goal, keyed on the
         // time the run was due.
-        this.recordGoalHalt(job, missedAt)
+        this.recordGoalHalt(job, missedAt, goal.why)
         continue
       }
 
@@ -886,6 +959,22 @@ export class CronScheduler {
       await this.persistDisabled(job)
       await this.notifyDisabled(job)
     }
+  }
+
+  /** Where an until end writes: the goal check's root and ledger when set. */
+  private untilDeps(): UntilDeps {
+    const g = this.goalCheck
+    return { root: g?.root ?? process.cwd(), configPath: g?.configPath, ledger: g?.ledger, log: (m) => this.log(m) }
+  }
+
+  /** A recurring job past its until (#863): off now, ended in agentx.json. */
+  private async endAtUntil(job: CronJobState): Promise<void> {
+    job.enabled = false
+    job.nextRun = undefined
+    const timer = this.timers.get(job.id)
+    if (timer) clearTimeout(timer)
+    this.timers.delete(job.id)
+    if (job.until) await endByUntil(job.id, job.until, this.untilDeps())
   }
 
   /** A one-time job has run: switch it off, here and in agentx.json (#2004). */
@@ -1052,7 +1141,24 @@ export class CronScheduler {
    * List all jobs and their status (including failure info).
    */
   list(): CronJobState[] {
-    return Array.from(this.jobs.values())
+    const jobs = Array.from(this.jobs.values())
+    // The goal check's Wall lines (#863), from its state file.
+    if (this.goalCheck) {
+      try {
+        const state = readCronGoalState(this.goalCheck.root).jobs
+        for (const j of jobs) {
+          const lines = state[j.id] ? goalWallLines(state[j.id], j.agent) : []
+          if (lines.length) j.goalLines = lines
+          else delete j.goalLines
+          // The owner's own line on its job (agentx_schedule verdict).
+          if (state[j.id]?.lastVerdict) j.lastVerdict = state[j.id].lastVerdict
+          else delete j.lastVerdict
+        }
+      } catch (e: any) {
+        this.log(`[cron-goal] state file unreadable: ${e?.message ?? e}`)
+      }
+    }
+    return jobs
   }
 
   /**

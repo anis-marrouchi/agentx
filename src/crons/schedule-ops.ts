@@ -1,7 +1,11 @@
 import cronstrue from "cronstrue"
+import type Database from "better-sqlite3"
 import { applyConfigMutation, getAtPath, setAtPath, unsetAtPath, type MutationResult } from "@/daemon/config-mutator"
 import type { NlCronResult } from "@/utils/nl-cron"
 import { getNextCronDate } from "./scheduler"
+import { rootOfConfig } from "./goal-state"
+import { retiredRefusalAt } from "./retired"
+import { writeLedgerRow } from "./change-ledger"
 
 // --- Shared schedule operations ---
 //
@@ -22,9 +26,12 @@ export interface NotifyTarget {
 }
 
 export interface ScheduleApproval {
-  action: "create" | "delete"
+  action: "create" | "delete" | "change"
   requestedBy: string
   requestedAt: string
+  /** change (#863): the new time, which fires more often than the approved one. */
+  schedule?: string
+  reason?: string
 }
 
 /** Default timezone for schedules created without one: this machine's, the
@@ -192,9 +199,10 @@ export interface ApprovalOutcome {
  */
 export async function approveSchedule(
   id: string,
-  opts: { configPath?: string; reload?: boolean } = {},
+  opts: { configPath?: string; reload?: boolean; ledger?: () => Database.Database | null } = {},
 ): Promise<ApprovalOutcome> {
   let message = ""
+  let changed: { old: string; new: string; by: string; reason?: string } | null = null
   const result = await applyConfigMutation((cfg) => {
     const job: any = getAtPath(cfg, `crons.${id}`)
     if (!job) throw new Error(`cron "${id}" not found`)
@@ -204,12 +212,24 @@ export async function approveSchedule(
       delete job.approval
       job.enabled = true
       message = `${id} approved and enabled (requested by ${approval.requestedBy})`
+    } else if (approval.action === "change") {
+      // A time that fires more often (#863): now the approved one.
+      if (!approval.schedule) throw new Error(`cron "${id}" has a change request with no time`)
+      changed = { old: String(job.schedule), new: approval.schedule, by: approval.requestedBy, reason: approval.reason }
+      delete job.approval
+      job.schedule = approval.schedule
+      job.approvedSchedule = approval.schedule
+      message = `${id} time change approved: ${approval.schedule} (requested by ${approval.requestedBy})`
     } else {
       unsetAtPath(cfg, `crons.${id}`)
       message = `${id} deletion approved; job removed (requested by ${approval.requestedBy})`
     }
   }, { configPath: opts.configPath, reload: opts.reload })
   if (!result.success) return { success: false, message: result.error || "failed", result }
+  if (changed) {
+    const c: { old: string; new: string; by: string; reason?: string } = changed
+    writeLedgerRow(rootOfConfig(opts.configPath), { job: id, field: "time", old: c.old, new: c.new, by: c.by, reason: c.reason ?? "approved by the operator", at: Date.now() }, opts.ledger)
+  }
   return { success: true, message, result }
 }
 
@@ -230,7 +250,7 @@ export async function rejectSchedule(
       message = `${id} rejected; pending job removed`
     } else {
       delete job.approval
-      message = `${id} deletion rejected; job kept`
+      message = approval.action === "change" ? `${id} time change rejected; job keeps ${job.schedule}` : `${id} deletion rejected; job kept`
     }
   }, { configPath: opts.configPath, reload: opts.reload })
   if (!result.success) return { success: false, message: result.error || "failed", result }
@@ -249,6 +269,8 @@ export async function setScheduleEnabled(
     if (enabled && isPendingCreate(job)) {
       throw new Error(`cron "${id}" is awaiting approval; run \`agentx schedule approve ${id}\``)
     }
+    const retired = enabled ? retiredRefusalAt(rootOfConfig(opts.configPath), id, job) : null
+    if (retired) throw new Error(retired)
     setAtPath(cfg, `crons.${id}.enabled`, enabled)
   }, { configPath: opts.configPath, reload: opts.reload })
 }
