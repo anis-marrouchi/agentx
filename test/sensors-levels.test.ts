@@ -2,22 +2,12 @@ import { describe, expect, it } from "vitest"
 import { parsePmset, readBattery, type BatteryReading } from "../src/sensors/battery"
 import { sensorSchema, sensorProblems, everyMs } from "../src/sensors/config"
 import { crossFieldProblems, daemonConfigSchema } from "../src/daemon/config"
-import { emptyState, failed, pushed, started, step, type SensorAction, type SensorState } from "../src/sensors/levels"
+import { checkHolds, emptyState, failed, HOLD_MS, pushed, started, step, type SensorAction, type SensorState } from "../src/sensors/levels"
+import { SCRIPT_LEVELS } from "./fixtures/sensor-levels"
 
 // #863: the battery sensor keeps every line of battery-watch.sh. These are
 // the script's own cases, on the pure engine (no timer, no I/O).
 
-export const SCRIPT_LEVELS = {
-  reading: "battery",
-  every: "60s",
-  levels: [
-    { id: "on-30min", when: { forMinutes: 30 }, target: "ops-agent", brief: "Ops battery watch" },
-    { id: "below-50", when: { below: 50 }, target: "ops-agent", brief: "Ops battery watch" },
-    { id: "below-25", when: { below: 25 }, urgent: true, push: { from: "Ops", key: "mac-battery-low" } },
-    { id: "below-15", when: { below: 15 }, target: "ops-agent", critical: true, brief: "Ops battery watch" },
-  ],
-  rearm: { above: 30, onAC: true },
-}
 const cfg = sensorSchema.parse(SCRIPT_LEVELS)
 const T0 = Date.parse("2030-05-01T10:00:00Z")
 const MIN = 60_000
@@ -157,6 +147,39 @@ describe("battery levels (battery-watch.sh)", () => {
     expect(f.actions).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent failed \(agent busy\); waking it again/) }])
     expect(pushes(f.actions)).toEqual([])
     expect(wakes(step(cfg, f.state, bat(45), T0 + MIN).actions)).toEqual(["below-50"])
+  })
+
+  it("24% with the queue held: the 25% push is itself model-free; the held 50% wake gets a Wall line and a retry, no push", () => {
+    const first = step(cfg, emptyState(), bat(24), T0)
+    expect(pushes(first.actions)).toEqual(["below-25"])
+    expect(wakes(first.actions)).toEqual(["below-50"])
+    const sent = pushed(first.state, "below-25", false, { ok: true, reason: "sent" }).state
+    const held = checkHolds(cfg, sent, T0 + HOLD_MS)
+    expect(kinds(held.actions, "abort")).toHaveLength(1)
+    expect(pushes(held.actions)).toEqual([])
+    expect(kinds(held.actions, "wall")).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent not started in 2 min; waking it again at the next reading/) }])
+    const next = step(cfg, held.state, bat(24), T0 + HOLD_MS + MIN)
+    expect(wakes(next.actions)).toEqual(["below-50"])
+    expect(pushes(next.actions)).toEqual([])
+  })
+
+  it("15% held: the fallback push at the 2 min check, not at the next reading; a failed one is retried, then never again", () => {
+    const first = step(cfg, emptyState(), bat(14), T0)
+    expect(wakes(first.actions)).toEqual(["below-15"])
+    const held = checkHolds(cfg, first.state, T0 + HOLD_MS)
+    expect(kinds(held.actions, "push")).toEqual([{ kind: "push", level: "below-15", fallback: true, text: "Ops battery watch, URGENT: Mac on battery at 14%, under the 15% line, 0 min on battery." }])
+    const failedPush = pushed(held.state, "below-15", true, { ok: false, why: "daemon 503" }).state
+    expect(failedPush.levels["below-15"].fallback).toBe("owed")
+    // The next reading: one retry (not two, though the hold check runs in it too).
+    const retry = step(cfg, failedPush, bat(14), T0 + HOLD_MS + MIN)
+    expect(kinds(retry.actions, "push").filter((a) => (a as any).fallback)).toHaveLength(1)
+    const ok = pushed(retry.state, "below-15", true, { ok: true, reason: "sent" }).state
+    const later = checkHolds(cfg, ok, T0 + 2 * HOLD_MS + MIN)
+    expect(kinds(later.actions, "push").filter((a) => (a as any).fallback)).toEqual([])
+  })
+
+  it("an urgent level cannot also carry fallbackPush", () => {
+    expect(sensorSchema.safeParse({ ...SCRIPT_LEVELS, levels: [{ id: "x", when: { below: 25 }, urgent: true, fallbackPush: true }] }).success).toBe(false)
   })
 
   it("an unavailable reading is never a crossing: one Wall line, again only after a good reading", () => {

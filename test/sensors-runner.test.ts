@@ -7,7 +7,7 @@ import { sensorSchema } from "../src/sensors/config"
 import { HOLD_MS } from "../src/sensors/levels"
 import { SensorRunner, type WakeRequest } from "../src/sensors/runner"
 import type { OwnerPushResult } from "../src/notify/owner-push"
-import { SCRIPT_LEVELS } from "./sensors-levels.test"
+import { SCRIPT_LEVELS } from "./fixtures/sensor-levels"
 
 // #863: the sensor loop on the daemon. Wakes are held or failed by a fake
 // registry, pushes fail or go out by a fake gate; the clock is set by hand.
@@ -125,6 +125,46 @@ describe("sensor runner", () => {
     expect(wakeCalls.map((w) => w.level)).toEqual(["on-30min", "on-30min"])
     expect(runner.state("battery").levels["on-30min"].sent).toBe(true)
     expect(pushCalls).toEqual([])
+  })
+
+  it("24% with the queue held: the 25% push once, the held 50% wake a Wall line and a retry, no other push", async () => {
+    wakeMode = "hold"
+    bat(24)
+    await runner.readOnce("battery")
+    await runner.idle()
+    expect(pushCalls.map((p) => p.level)).toEqual(["below-25"])
+    expect(wakeCalls.map((w) => w.level)).toEqual(["below-50"])
+    now += HOLD_MS
+    await runner.checkHolds("battery")
+    await runner.idle()
+    expect(wakeCalls[0].signal.aborted).toBe(true)
+    expect(wall).toEqual([expect.stringMatching(/below-50 wake to ops-agent not started in 2 min; waking it again/)])
+    now += 60_000
+    await runner.readOnce("battery")
+    await runner.idle()
+    expect(wakeCalls.map((w) => w.level)).toEqual(["below-50", "below-50"])
+    expect(pushCalls.map((p) => p.level)).toEqual(["below-25"])
+  })
+
+  it("15% level held and its fallback push fails: retried at the next reading, result logged, sent once", async () => {
+    wakeMode = "hold"
+    pushResults = [{ ok: true, reason: "sent" }, { ok: false, why: "daemon 503" }, { ok: true, reason: "sent" }]
+    bat(14)
+    await runner.readOnce("battery")
+    now += HOLD_MS
+    await runner.checkHolds("battery")
+    await runner.idle()
+    expect(pushCalls.map((p) => p.level)).toEqual(["below-25", "below-15"])
+    expect(logs.some((l) => /below-15 push failed, retry at the next reading: daemon 503/.test(l))).toBe(true)
+    now += 60_000
+    await runner.readOnce("battery")
+    await runner.idle()
+    expect(pushCalls.map((p) => p.level)).toEqual(["below-25", "below-15", "below-15"])
+    expect(runner.state("battery").levels["below-15"].fallback).toBe("sent")
+    now += 60_000
+    await runner.readOnce("battery")
+    await runner.idle()
+    expect(pushCalls).toHaveLength(3)
   })
 
   it("15% level failed: the push at once, the wake retried at the next reading", async () => {
