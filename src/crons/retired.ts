@@ -31,16 +31,20 @@ export function retiredRefusalAt(root: string, id: string, job: { endedAt?: unkn
   return retiredRefusal({ endedAt, goalCheck: jobGoalState(root, id).goalCheck }, id)
 }
 
-export type EndJobResult = { ok: true; changed: boolean } | { ok: false; error: string }
+/** `withdrew`: the time of a pending change request that ended with the job. */
+export type EndJobResult = { ok: true; changed: boolean; withdrew?: string } | { ok: false; error: string }
 
 /**
  * Retire a job in agentx.json: `enabled: false` and `endedAt`. Used by a
- * drop answer, the owner's retire and `until`. A job already ended is left
- * as it is (changed: false), so a retry is harmless. Never reloads: the
- * caller stops the in-memory job, or the daemon's config watcher does.
+ * drop answer, the owner's retire and `until`. A pending time-change
+ * request is withdrawn in the same write, so no dead card stays on the
+ * Desk (#2065). A job already ended is left as it is (changed: false), so
+ * a retry is harmless. Never reloads: the caller stops the in-memory job,
+ * or the daemon's config watcher does.
  */
 export async function endJobInConfig(id: string, endedAt: string, opts: { configPath?: string; reload?: boolean } = {}): Promise<EndJobResult> {
   let outcome: EndJobResult | null = null
+  let withdrew: string | undefined
   const r = await applyConfigMutation((cfg) => {
     const job = cfg.crons?.[id]
     if (!job) outcome = { ok: false, error: `no schedule "${id}"` }
@@ -48,8 +52,12 @@ export async function endJobInConfig(id: string, endedAt: string, opts: { config
     if (outcome) throw new Error("no write")
     job.enabled = false
     job.endedAt = endedAt
+    if (job.approval?.action === "change") {
+      withdrew = String(job.approval.schedule ?? "")
+      delete job.approval
+    }
   }, { configPath: opts.configPath, reload: opts.reload ?? false })
   if (outcome) return outcome
   if (!r.success) return { ok: false, error: r.error || "could not write agentx.json" }
-  return { ok: true, changed: true }
+  return { ok: true, changed: true, ...(withdrew !== undefined ? { withdrew } : {}) }
 }

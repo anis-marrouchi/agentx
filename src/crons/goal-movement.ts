@@ -17,6 +17,30 @@ export const OWN_POST_SLACK_MS = 2 * 60_000
 export const NO_MOVEMENT_DAYS = 30
 const DAY_MS = 86_400_000
 
+/** How long a good issue read is reused (#2065). */
+export const MOVEMENT_CACHE_MS = 6 * 3_600_000
+
+/** Good issue reads by `provider:ref`, shared by the jobs on one issue.
+ *  A cached read only ever lets a job run: a newer read can only add
+ *  movement, so the caller reads fresh before it holds a job. Failed
+ *  reads are never kept. */
+export class MovementCache {
+  private reads = new Map<string, { at: number; times: number[] }>()
+  constructor(private ttlMs = MOVEMENT_CACHE_MS) {}
+
+  get(key: string, now: number): number[] | null {
+    const hit = this.reads.get(key)
+    if (!hit) return null
+    if (now - hit.at < this.ttlMs) return hit.times
+    this.reads.delete(key)
+    return null
+  }
+
+  set(key: string, now: number, times: number[]): void {
+    this.reads.set(key, { at: now, times })
+  }
+}
+
 export interface RunWindow { start: number; end: number }
 
 /** The newest movement not made by the job itself; null when none. */
