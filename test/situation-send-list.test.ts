@@ -45,8 +45,9 @@ describe("send list (#1892 j)", () => {
       // 15 sendOutbound (/send, /channel/send, mesh answers, alerts…) +
       // deliverToChat + the closing note on a forge home (#1892 phase 4: an
       // issue comment, not a chat reply). /mesh/task async left for the
-      // hand-off journal's deliver (#2007 S5).
-      "daemon/index.ts": 17,
+      // hand-off journal's deliver (#2007 S5). The battery sensor's
+      // model-free push to the owner (#863): a notice, false.
+      "daemon/index.ts": 18,
       "workflows/nodes/follow-up.ts": 1, // deliver → sendToChat
       "workflows/nodes/handlers.ts": 1, // action.send: true
     })

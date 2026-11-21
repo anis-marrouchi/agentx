@@ -4895,8 +4895,13 @@ export class AgentXDaemon {
         urgent: true,
       }, {
         post: async (body) => {
-          const out = await this.sendThroughGate(body)
-          return out.sent ? { sent: true } : { sent: false, told: out.told }
+          const g = this.ownerSendGate(body)
+          if ("kept" in g) return { sent: false, told: g.kept.told }
+          await this.router.sendOutbound({ channel: String(body.channel), chatId: String(body.chatId), text: String(body.text), told: g.told }).catch((e) => {
+            g.failed()
+            throw e
+          })
+          return { sent: true }
         },
         channel: defaultNotifyChannel(this.config),
         alert: this.ownerAlert(),
@@ -4911,14 +4916,14 @@ export class AgentXDaemon {
   }
 
   /**
-   * The send of POST /send on a non-a2a channel. To the owner's own
-   * addresses the told-the-owner gate decides first (#1126), so the caller
-   * hears whether it went out. A caller may say what it is about; it may
-   * not skip the gate. Shared with the sensors' model-free push (#863), so
-   * that push is the one `agentx notify --urgent` sends. Throws as the
-   * router's send does.
+   * The told-the-owner gate of POST /send (#1126): to the owner's own
+   * addresses it decides first, so the caller hears whether it went out.
+   * A caller may say what it is about; it may not skip the gate. Shared
+   * with the sensors' model-free push (#863), so that push is gated as the
+   * one `agentx notify --urgent` sends. `failed` marks a passed send that
+   * then failed.
    */
-  private async sendThroughGate(body: Record<string, unknown>): Promise<{ sent: false; told: string; key?: string | null } | { sent: true; messageId: Awaited<ReturnType<MessageRouter["sendOutbound"]>> }> {
+  private ownerSendGate(body: Record<string, unknown>): { kept: { told: string; key?: string | null } } | { told: ReturnType<typeof toldOfBody>; failed: () => void } {
     const told = toldOfBody(body.told, body.agentId)
     const gate = this.ownerGate
     let row: number | undefined
@@ -4927,32 +4932,12 @@ export class AgentXDaemon {
       const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
       if (d.verdict !== "send") {
         this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
-        return { sent: false, told: d.verdict, key: d.key }
+        return { kept: { told: d.verdict, key: d.key } }
       }
       told.passed = true
       row = d.rowId
     }
-    const messageId = await this.router.sendOutbound({
-      channel: body.channel as string,
-      chatId: body.chatId as string,
-      text: body.text as string,
-      replyTo: body.replyTo as string | undefined,
-      parseMode: body.parseMode as any,
-      agentId: body.agentId as string | undefined,
-      accountId: body.accountId as string | undefined,
-      // Optional rich payloads (buttons/poll/media) — enables cron
-      // jobs and API callers to send interactive messages directly.
-      buttons: body.buttons as any,
-      poll: body.poll as any,
-      media: body.media as any,
-      told,
-      // An agent's message in the conversation (the MCP agentx_send
-      // tool sets it); other callers' sends are notices (#1892).
-    }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
-      if (row !== undefined) gate?.outcome(row, "failed")
-      throw e
-    })
-    return { sent: true, messageId }
+    return { told, failed: () => { if (row !== undefined) gate?.outcome(row, "failed") } }
   }
 
   /**
@@ -8879,12 +8864,31 @@ export class AgentXDaemon {
             break
           }
           try {
-            const out = await this.sendThroughGate(body)
-            if (!out.sent) {
-              this.json(res, 200, { ok: true, sent: false, told: out.told, key: out.key })
+            const gate = this.ownerSendGate(body)
+            if ("kept" in gate) {
+              this.json(res, 200, { ok: true, sent: false, told: gate.kept.told, key: gate.kept.key })
               break
             }
-            const messageId = out.messageId
+            const messageId = await this.router.sendOutbound({
+              channel: body.channel as string,
+              chatId: body.chatId as string,
+              text: body.text as string,
+              replyTo: body.replyTo as string | undefined,
+              parseMode: body.parseMode as any,
+              agentId: body.agentId as string | undefined,
+              accountId: body.accountId as string | undefined,
+              // Optional rich payloads (buttons/poll/media) — enables cron
+              // jobs and API callers to send interactive messages directly.
+              buttons: body.buttons as any,
+              poll: body.poll as any,
+              media: body.media as any,
+              told: gate.told,
+              // An agent's message in the conversation (the MCP agentx_send
+              // tool sets it); other callers' sends are notices (#1892).
+            }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
+              gate.failed()
+              throw e
+            })
             const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
             this.json(res, answer.status, answer.body)
           } catch (e: any) {
