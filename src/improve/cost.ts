@@ -30,6 +30,7 @@
 
 import type Database from "better-sqlite3"
 import type { CallUsage, TaskUsage } from "@/daemon/token-tracker"
+import { CACHE_TTL_MS } from "@/agents/prompt-cache"
 import { emitSignal, signalDb, type Signal, type SignalKind } from "./signals"
 
 export const COST_KINDS = ["job_cost_high", "start_no_cache_reuse", "context_rewrite", "model_switch", "start_over_budget"] as const satisfies readonly SignalKind[]
@@ -41,12 +42,6 @@ export const COST_HIGH_FACTOR = 3
 export const COST_HIGH_MIN_TOKENS = 50_000
 export const BASELINE_RUNS = 30
 export const BASELINE_DAYS = 14
-/** How long a written prompt prefix stays reusable. Claude Code writes its
- *  cache with the one-hour lifetime: on a week of live traces, 525 of 584
- *  resumed runs more than 60 minutes after the chat's previous run wrote
- *  20k+ again, while runs inside the hour read it. One constant for both
- *  kinds that depend on it. */
-export const CACHE_LIFETIME_MS = 60 * 60_000
 export const START_WRITE_MIN = 20_000
 /** The budget of a fresh start's first call: input + cache read + cache
  *  write (#2009). Named exceptions (full starts about 20k until #2002
@@ -182,7 +177,7 @@ export function costSignals(run: CostRun, history: CostHistory = {}): Signal[] {
   const first = main[0]
   const last = history.lastAgentRun
   if (!run.resumed && first && first.cacheReadTokens === 0 && first.cacheCreateTokens >= START_WRITE_MIN && last
-    && run.startedAt - last.finishedAt <= CACHE_LIFETIME_MS && run.startedAt >= last.finishedAt
+    && run.startedAt - last.finishedAt <= CACHE_TTL_MS && run.startedAt >= last.finishedAt
     && !!run.model && last.model === run.model) {
     add("start_no_cache_reuse", `fresh start wrote ${k(first.cacheCreateTokens)}, last run ${Math.round((run.startedAt - last.finishedAt) / 60_000)} min ago`)
   }
@@ -191,7 +186,7 @@ export function costSignals(run: CostRun, history: CostHistory = {}): Signal[] {
   // the first call of a resumed one once the cache has expired: neither is
   // waste. Any other call that writes most of its context again lost it.
   const prev = history.chatPrev
-  const firstWarm = run.resumed && !!prev && run.startedAt - prev.finishedAt <= CACHE_LIFETIME_MS
+  const firstWarm = run.resumed && !!prev && run.startedAt - prev.finishedAt <= CACHE_TTL_MS
   const rewrites = main.filter((c, i) => (i > 0 || firstWarm) && context(c) >= REWRITE_MIN_CONTEXT && c.cacheCreateTokens >= REWRITE_SHARE * context(c))
   if (rewrites.length) {
     const worst = rewrites.reduce((a, b) => (b.cacheCreateTokens > a.cacheCreateTokens ? b : a))
@@ -229,7 +224,7 @@ export function lastAgentRunQuery(run: CostRun): Query {
   return {
     sql: `SELECT finished_at AS finishedAt, model ${FROM_TRACES} WHERE agent_id = ? AND started_at >= ? AND started_at < ?
       AND task_id != ? AND finished_at IS NOT NULL AND finished_at <= ? AND finished_at >= ? ORDER BY finished_at DESC LIMIT 1`,
-    args: [run.agentId, run.startedAt - PREVIOUS_RUN_LOOKBACK_MS, run.startedAt, run.taskId, run.startedAt, run.startedAt - CACHE_LIFETIME_MS],
+    args: [run.agentId, run.startedAt - PREVIOUS_RUN_LOOKBACK_MS, run.startedAt, run.taskId, run.startedAt, run.startedAt - CACHE_TTL_MS],
   }
 }
 

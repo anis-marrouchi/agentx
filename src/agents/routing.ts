@@ -1,5 +1,6 @@
 import { askSeat } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
+import { CACHE_TTL_MS } from "./prompt-cache"
 import {
   TASK_TIER_SEAT,
   taskTierQuestions,
@@ -68,10 +69,11 @@ export function channelKeepsConfiguredModel(channel: string | null | undefined):
   return channel === "voice" || channel === "desktop" || channel === "opencode"
 }
 
-/** How long a cached prefix is assumed to live. Anthropic's default TTL is
- *  five minutes with a one-hour option; an hour is assumed here because it
- *  is the assumption whose error is cheap — see the note above. */
-export const CACHE_TTL_MS = 60 * 60 * 1000
+/** How long a cached prefix is assumed to live. One value for routing, the
+ *  cost signals and the resume gate's default: see ./prompt-cache. An hour
+ *  is assumed because it is the assumption whose error is cheap — see the
+ *  note above. Re-exported here so existing importers keep working. */
+export { CACHE_TTL_MS }
 
 /** Resolve only models compatible with the agent's CLI engine. An omitted
  *  model leaves the agent on its configured default. */

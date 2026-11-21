@@ -43,7 +43,7 @@ import {
   needsFlagship as needsFlagshipOf,
   type TaskTierAnswers,
 } from "../src/decisions/seats/task-tier"
-import { DOWNGRADE_BELOW, channelKeepsConfiguredModel } from "../src/agents/routing"
+import { DOWNGRADE_BELOW, channelKeepsConfiguredModel, CACHE_TTL_MS } from "../src/agents/routing"
 import { TokenTracker, type CACHE_AWARE_PRICING } from "../src/daemon/token-tracker"
 
 export type PricingTable = typeof CACHE_AWARE_PRICING
@@ -250,7 +250,9 @@ export interface DecideOptions {
   onProgress?: (done: number, total: number) => void
 }
 
-export const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000
+/** The live router's prompt-cache lifetime, so a replay judges warm vs cold
+ *  the same way (#2031). `--cache-ttl-minutes` still overrides it. */
+export const DEFAULT_CACHE_TTL_MS = CACHE_TTL_MS
 
 /**
  * Ask both seats for every trace. Calls go through askSeat, so they are

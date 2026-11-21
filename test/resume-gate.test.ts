@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { CACHE_READ_FACTOR, DEFAULT_REQUESTS_PER_TURN, decideResume, describeResume, requestsPerTurn, type ResumeGateSettings } from "../src/agents/resume-gate"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { CACHE_TTL_MINUTES, CACHE_TTL_MS } from "../src/agents/prompt-cache"
+import { CACHE_TTL_MS as ROUTING_CACHE_TTL_MS } from "../src/agents/routing"
 
 // #621 step 3: resume a session only when replaying it is not much dearer
 // than a fresh lean start.
@@ -69,5 +71,25 @@ describe("config", () => {
   it("is off by default", () => {
     const c = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
     expect(c.session.resumeGate).toEqual({ mode: "off", freshTokens: 30_000, cacheTtlMinutes: 60, cacheWriteFactor: 2, margin: 1.5 })
+  })
+})
+
+describe("one prompt-cache lifetime (#2031)", () => {
+  it("is 60 minutes, and routing, the gate default and minutes all read it", () => {
+    expect(CACHE_TTL_MS).toBe(60 * MIN)
+    expect(CACHE_TTL_MINUTES).toBe(60)
+    expect(ROUTING_CACHE_TTL_MS).toBe(CACHE_TTL_MS)
+    const c = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
+    expect(c.session.resumeGate.cacheTtlMinutes).toBe(CACHE_TTL_MINUTES)
+  })
+
+  it("splits warm from cold at the default, and the setting still overrides it for the gate", () => {
+    const at = (idleMs: number, cacheTtlMinutes = CACHE_TTL_MINUTES) =>
+      decideResume({ contextTokens: 60_000, turnInputTokens: 600_000, idleMs }, { ...S, cacheTtlMinutes }).warm
+    expect(at(59 * MIN)).toBe(true)
+    expect(at(61 * MIN)).toBe(false)
+    expect(at(10 * MIN, 5)).toBe(false)
+    const c = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, session: { resumeGate: { cacheTtlMinutes: 5 } } })
+    expect(c.session.resumeGate.cacheTtlMinutes).toBe(5)
   })
 })

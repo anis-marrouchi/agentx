@@ -9,12 +9,13 @@ import { readSignals, setSignalDb, SIGNAL_KINDS, SIGNAL_MEANING } from "../src/i
 import { KIND_WEIGHT, normalizeDetail } from "../src/improve/rank"
 import { readFileSync } from "fs"
 import {
-  costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory, queueCostSignals, CACHE_LIFETIME_MS,
+  costSignals, emitCostSignals, jobTypeOf, jobKey, readCostHistory, queueCostSignals,
   COST_KINDS, START_ALERT_TOKENS, START_BUDGET_TOKENS, START_WRITE_MIN, startTokens,
   baselineQuery, lastAgentRunQuery, chatPrevQuery, jobRunsQuery,
   type CostRun, type CostHistory,
 } from "../src/improve/cost"
 import type { CallUsage } from "../src/daemon/token-tracker"
+import { CACHE_TTL_MS } from "../src/agents/prompt-cache"
 import { kindLines } from "../src/commands/improve"
 
 // #1995: four cost signals so the nightly pass ranks token waste like it
@@ -130,8 +131,12 @@ describe("context_rewrite", () => {
     expect(kinds(run([call(0, 50_000), call(0, 52_000)], { resumed: true }), { chatPrev: { finishedAt: NOW - 90 * MIN, model: OPUS } })).toEqual(["context_rewrite"])
   })
 
-  it("uses one cache lifetime of 60 minutes", () => {
-    expect(CACHE_LIFETIME_MS).toBe(60 * MIN)
+  it("uses the one prompt-cache lifetime: warm at 59 minutes, cold at 61 (#2031)", () => {
+    expect(CACHE_TTL_MS).toBe(60 * MIN)
+    // run() starts one minute before NOW; the gap is measured from that start.
+    const resumed = (gap: number) => kinds(run([call(0, 50_000)], { resumed: true }), { chatPrev: { finishedAt: NOW - MIN - gap, model: OPUS } })
+    expect(resumed(59 * MIN)).toEqual(["context_rewrite"])
+    expect(resumed(61 * MIN)).toEqual([])
   })
 
   it("is silent for a small context or a partial write", () => {
