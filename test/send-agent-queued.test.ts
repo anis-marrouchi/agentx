@@ -3,21 +3,24 @@ import { createServer, type Server } from "http"
 import type { AddressInfo } from "net"
 import { readFileSync } from "fs"
 import { join } from "path"
-import { a2aSendBody, duplicateBody, queueSend, queuedBody, SendAgentDedupe, sendAgentKey, SEND_AGENT_DEDUPE_MS, SEND_AGENT_SLOT_WAIT_MS } from "../src/daemon/send-agent"
+import { a2aSendBody, duplicateBody, SendAgentDedupe, sendAgentKey, SEND_AGENT_DEDUPE_MS, SEND_AGENT_SLOT_WAIT_MS } from "../src/daemon/send-agent"
+import { noneBody } from "../src/daemon/delegation-wiring"
 import { _handleToolCallForTesting, _resetDaemonUrlForTesting, sendAgentFetchError } from "../src/mcp/index"
 
 // retro:01M4DJTC01FK0BVCMFKT5K4SRQ — #847: agentx_send_agent blocked for
 // ~300 s on a long target task, reported "fetch failed" although the task
-// was queued, and the retry created a duplicate.
+// was queued, and the retry created a duplicate. Since #2007 piece 2 every
+// send is a hand-off on the journal (a dlg- id); queueSend and its snd- ids
+// are gone.
 
 describe("SendAgentDedupe", () => {
   it("returns the first body for a repeat inside the window, and forgets it after", () => {
     let now = 0
     const d = new SendAgentDedupe(SEND_AGENT_DEDUPE_MS, 10, () => now)
     const key = sendAgentKey("front", "devops", "deploy the fix")
-    d.put(key, queuedBody("snd-1", "devops"))
+    d.put(key, noneBody("dlg-1", "devops", undefined, false))
     now = SEND_AGENT_DEDUPE_MS - 1
-    expect(d.get(key)?.taskId).toBe("snd-1")
+    expect(d.get(key)?.taskId).toBe("dlg-1")
     now = SEND_AGENT_DEDUPE_MS + 1
     expect(d.get(key)).toBeNull()
   })
@@ -38,29 +41,6 @@ describe("SendAgentDedupe", () => {
   })
 })
 
-describe("queueSend", () => {
-  it("answers at once while the target's turn is still running, and logs the outcome later", async () => {
-    const logs: string[] = []
-    let finish!: () => void
-    const running = new Promise<{ ok: boolean }>((r) => { finish = () => r({ ok: true }) })
-    const started = Date.now()
-    const body = queueSend({ agent: "devops", run: () => running, log: (m) => logs.push(m), newId: () => "X1" })
-    expect(Date.now() - started).toBeLessThan(100)
-    expect(body).toMatchObject({ accepted: true, status: "queued", taskId: "snd-X1", agent: "devops" })
-    expect(logs).toEqual(["[send/agent] snd-X1 → devops queued"])
-    finish()
-    await new Promise((r) => setTimeout(r, 0))
-    expect(logs[1]).toBe("[send/agent] snd-X1 → devops done")
-  })
-
-  it("logs a run that throws instead of letting it escape", async () => {
-    const logs: string[] = []
-    queueSend({ agent: "builder", peer: "vps", run: async () => { throw new Error("peer gone") }, log: (m) => logs.push(m), newId: () => "X2" })
-    await new Promise((r) => setTimeout(r, 0))
-    expect(logs[1]).toBe("[send/agent] snd-X2 → builder@vps failed: peer gone")
-  })
-})
-
 describe("POST /send/agent through agentx_send_agent", () => {
   // A stand-in daemon built from the same helpers the real route uses. The
   // target's turn (a long DevOps task) never finishes during the test.
@@ -77,7 +57,7 @@ describe("POST /send/agent through agentx_send_agent", () => {
         const seen = dedupe.get(key)
         const answer = seen
           ? duplicateBody(seen)
-          : queueSend({ agent: body.agentId, log: () => {}, run: () => { runs++; return new Promise(() => {}) } })
+          : noneBody(`dlg-${++runs}`, body.agentId, undefined, false)
         if (!seen) dedupe.put(key, answer)
         res.writeHead(202, { "Content-Type": "application/json" })
         res.end(JSON.stringify(answer))
@@ -97,7 +77,7 @@ describe("POST /send/agent through agentx_send_agent", () => {
     const started = Date.now()
     const out = await _handleToolCallForTesting("agentx_send_agent", { agentId: "devops", text: "roll out the fix", senderAgentId: "front" })
     expect(Date.now() - started).toBeLessThan(5000)
-    expect(out.content[0].text).toMatch(/Queued for devops \(task snd-[0-9A-Z]+\)/)
+    expect(out.content[0].text).toMatch(/Sent to devops \(task dlg-[0-9]+\)/)
   })
 
   it("a retry returns the existing task id instead of a second task", async () => {
@@ -105,7 +85,7 @@ describe("POST /send/agent through agentx_send_agent", () => {
     const first = await _handleToolCallForTesting("agentx_send_agent", args)
     const before = runs
     const again = await _handleToolCallForTesting("agentx_send_agent", args)
-    const id = first.content[0].text.match(/task (snd-[0-9A-Z]+)/)![1]
+    const id = first.content[0].text.match(/task (dlg-[0-9]+)/)![1]
     expect(again.content[0].text).toContain(`Already sent (task ${id})`)
     expect(runs).toBe(before)
   })
@@ -157,10 +137,10 @@ describe("the daemon route", () => {
     expect(send).toContain("await this.sendToAgent(req, res, a2a.body)")
   })
 
-  it("queues local and mesh sends unless the caller asked to wait", () => {
-    expect(route.match(/queueSend\(/g)?.length).toBe(2)
-    expect(route).toContain('const wait = body.async === false')
-    expect(route.match(/if \(wait\)/g)?.length).toBe(2)
+  it("hands every send off on the journal, and never waits (#2007 piece 2)", () => {
+    expect(route).not.toContain("queueSend(")
+    expect(route).not.toContain("body.async === false")
+    expect(route).toContain("identity: true, unnamed: true")
   })
 
   it("checks the dedupe window before starting anything", () => {
@@ -172,12 +152,13 @@ describe("the daemon route", () => {
     const relay = route.indexOf("this.delegations.relayReply(")
     expect(relay).toBeGreaterThan(route.indexOf("this.sendAgentDedupe.get("))
     expect(relay).toBeLessThan(route.indexOf("this.delegationGate("))
-    expect(route).toContain("{ send: true })")
+    expect(route).toContain("{ send: true, identity: true, unnamed: true })")
     expect(route).toContain("this.config.mesh.delegation.callbackSends")
   })
 
-  it("lets a queued local send wait past the 25 min slot cap, and only a queued one (#1258)", () => {
-    expect(route).toContain("...(waits ? {} : { slotWaitMs: SEND_AGENT_SLOT_WAIT_MS })")
+  it("lets a none send to a busy local agent wait past the 25 min slot cap (#1258)", () => {
+    const none = src.slice(src.indexOf("  private startNone("), src.indexOf("  private recordInboundDispatch("))
+    expect(none).toContain("slotWaitMs: SEND_AGENT_SLOT_WAIT_MS")
     expect(SEND_AGENT_SLOT_WAIT_MS).toBeGreaterThan(25 * 60_000)
   })
 })

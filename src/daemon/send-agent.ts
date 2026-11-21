@@ -7,7 +7,6 @@
 // the first task id back instead of a second task.
 
 import { createHash } from "crypto"
-import { newEventId } from "@/intent/ulid"
 
 /** How long a resend of the same message from the same sender to the same
  *  agent is treated as a retry. Longer than the old ~300 s client timeout,
@@ -83,8 +82,9 @@ export function a2aSendBody(body: Record<string, unknown>): { body: Record<strin
   const to = sender === caller ? callee : caller
   return {
     body: {
-      // What /send/agent reads besides the addressing: wait for the answer
-      // (async:false), the work's home and context, its task type.
+      // What /send/agent reads besides the addressing: the work's home and
+      // context, its task type. `async` is passed on as before; since #2007
+      // piece 2 an async:false is ignored and flagged (asyncIgnored).
       ...pick(body, ["async", "home", "context", "taskType"]),
       agentId: to,
       text: body.text,
@@ -105,32 +105,18 @@ function pick(o: Record<string, unknown>, keys: string[]): Record<string, unknow
   return out
 }
 
-/** The 202 body for a send that was queued, not waited on. */
-export function queuedBody(taskId: string, agent: string, peer?: string): Record<string, unknown> {
-  const who = peer ? `${agent} on ${peer}` : agent
-  return {
-    accepted: true,
-    status: "queued",
-    taskId,
-    agent,
-    ...(peer ? { peer } : {}),
-    note:
-      `Queued for ${who} (task ${taskId}). The message is delivered; do not send it again. ` +
-      `The answer is not returned here: ${agent} works on it in its own turn.`,
-  }
-}
-
 /**
  * The earlier answer a repeat gets from the dedupe window, or null to go
  * on. With the hand-off table (`journal`), a send that started a callback
  * hand-off is left to its join key (#2007 piece 3, S2): that key knows the
  * caller's chat and home, and frees as soon as the hand-off ends, so a
- * retry after an error starts fresh. Queued sends and relayed replies keep
- * the window, as does a node with no table.
+ * retry after an error starts fresh. Since #2007 piece 2 every send is a
+ * hand-off (`callback` or `none`); only relayed replies keep the window,
+ * as does a node with no table.
  */
 export function repeatOf(seen: Record<string, unknown> | null, journal: boolean): Record<string, unknown> | null {
   if (!seen) return null
-  if (journal && seen.mode === "callback") return null
+  if (journal && (seen.mode === "callback" || seen.mode === "none")) return null
   return seen
 }
 
@@ -141,29 +127,4 @@ export function duplicateBody(first: Record<string, unknown>): Record<string, un
     duplicate: true,
     note: `Already sent (task ${String(first.taskId)}); this repeat was not delivered again.`,
   }
-}
-
-/**
- * Start `run` in the background and answer at once. `run` never holds the
- * HTTP request; its outcome goes to `log` only. Returns the 202 body.
- */
-export function queueSend(
-  opts: {
-    agent: string
-    peer?: string
-    run: (taskId: string) => Promise<{ ok: boolean; detail?: string }>
-    log: (msg: string) => void
-    newId?: () => string
-  },
-): Record<string, unknown> {
-  const taskId = `snd-${(opts.newId ?? newEventId)()}`
-  const who = opts.peer ? `${opts.agent}@${opts.peer}` : opts.agent
-  opts.log(`[send/agent] ${taskId} → ${who} queued`)
-  void Promise.resolve()
-    .then(() => opts.run(taskId))
-    .then(
-      (r) => opts.log(`[send/agent] ${taskId} → ${who} ${r.ok ? "done" : "failed"}${r.detail ? `: ${r.detail}` : ""}`),
-      (e: any) => opts.log(`[send/agent] ${taskId} → ${who} failed: ${e?.message ?? e}`),
-    )
-  return queuedBody(taskId, opts.agent, opts.peer)
 }

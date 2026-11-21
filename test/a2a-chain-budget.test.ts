@@ -71,6 +71,9 @@ describe("where the budget is asked (#1756)", () => {
     expect(gate.indexOf("this.handOffRefusal(caller")).toBeGreaterThan(0)
     expect(gate.indexOf("this.handOffRefusal(")).toBeLessThan(gate.indexOf("this.startCallback("))
     const meshTask = src.slice(src.indexOf('case "POST /mesh/task"'), src.indexOf("// Streaming pass-through"))
-    expect(meshTask).toMatch(/meshTaskMode\(body, true\) === "callback" \? null : this\.handOffRefusal\(meshCaller/)
+    // #2007 piece 2: an agent caller goes through the gate (counted there)
+    // and leaves; the budget below counts only a deliver row or a guest host.
+    expect(meshTask).toMatch(/const overBudget = this\.handOffRefusal\(meshCaller/)
+    expect(meshTask.indexOf("this.delegationGate(")).toBeLessThan(meshTask.indexOf("const overBudget"))
   })
 })

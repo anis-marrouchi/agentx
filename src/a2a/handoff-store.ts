@@ -22,7 +22,7 @@
 
 import type Database from "better-sqlite3"
 import { existsSync, readFileSync, renameSync, unlinkSync } from "fs"
-import type { DelegationRecord, DelegationResult, DelegationStatus } from "./delegation"
+import { NONE_ORIGIN, type DelegationRecord, type DelegationResult, type DelegationStatus, type WayHome } from "./delegation"
 import { ensureColumns } from "@/storage/sqlite"
 
 /** The suffix a delegation log gets once it is imported (#1961). */
@@ -101,7 +101,9 @@ export const RESULT_TEXT_CAP = 12_000
  *   join_key      what makes two sends the same work; unique while open
  *   way_home      how the answer goes home; NULL is a callback, as every
  *                 older row is; 'deliver' sends the raw answer to the chat
- *                 the request named (/mesh/task async:true)
+ *                 the request named (/mesh/task async:true); 'none' (piece
+ *                 2) is an agent caller that cannot be called back: no
+ *                 origin_json, read by id, a named sender gets a notice
  *   result_text   the callee's answer, or the timeout or error text, as the
  *                 hand-off ended, capped at RESULT_TEXT_CAP. For a local run
  *                 it repeats task_traces.final_response; it is the only copy
@@ -143,8 +145,9 @@ export interface StoredWaiting {
 export interface HandoffView extends HandoffSummary {
   text?: string
   waiting?: StoredWaiting
-  /** Set when the answer does not come back as a callback: "deliver". */
-  wayHome?: "deliver"
+  /** Set when the answer does not come back as a callback: "deliver" or
+   *  "none". */
+  wayHome?: WayHome
 }
 
 export function ensureHandoffTable(db: Database.Database): void {
@@ -278,9 +281,28 @@ export class HandoffStore {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       rec.id, rec.caller, rec.callee, rec.peer ?? null, rec.kind ?? null, rec.depth ?? null, rec.home ?? null,
-      rec.taskType ?? null, rec.request, JSON.stringify(rec.origin), JSON.stringify(rec.root ?? null), rec.startedAt, source, at,
+      // A none row has no way home: no origin is kept.
+      rec.taskType ?? null, rec.request, rec.wayHome === "none" ? null : JSON.stringify(rec.origin), JSON.stringify(rec.root ?? null), rec.startedAt, source, at,
       rec.joinKey ?? null, rec.wayHome ?? null,
     ).changes > 0
+  }
+
+  /**
+   * The rows the per-sender keys are rebuilt from at start (#2007 N2), newest
+   * first: ended in [since, until], way_home 'none' with no home and no peer
+   * (R3), and only done, error, timeout or waiting (R4: a lost run may
+   * still be resumed on its own chat). One range read on idx_handoffs_ended.
+   */
+  senderRows(since: number, until: number): Array<{ id: string; caller: string; callee: string; endedAt: number }> {
+    const rows = this.sql(`
+      SELECT id, caller, callee, ended_at FROM handoffs
+      WHERE ended_at IS NOT NULL AND ended_at >= ? AND ended_at <= ?
+        AND way_home = 'none' AND home IS NULL AND peer IS NULL
+        AND status IN ('done', 'error', 'timeout', 'waiting')
+        AND caller IS NOT NULL AND callee IS NOT NULL
+      ORDER BY ended_at DESC, rowid DESC
+    `).all(since, until) as Array<{ id: string; caller: string; callee: string; ended_at: number }>
+    return rows.map((r) => ({ id: r.id, caller: r.caller, callee: r.callee, endedAt: r.ended_at }))
   }
 
   /** The open hand-off with this join key, or null. */
@@ -368,7 +390,7 @@ export class HandoffStore {
     }
     return {
       ...summaryOf(r), ...(r.result_text ? { text: r.result_text } : {}), ...(waiting ? { waiting } : {}),
-      ...(r.way_home === "deliver" ? { wayHome: "deliver" as const } : {}),
+      ...(wayHomeOf(r.way_home) ? { wayHome: wayHomeOf(r.way_home) } : {}),
     }
   }
 
@@ -557,8 +579,10 @@ export class HandoffStore {
     if (!r.caller || !r.callee) return null
     let origin: DelegationRecord["origin"]
     let root: DelegationRecord["root"]
+    const wayHome = wayHomeOf(r.way_home)
     try {
-      origin = JSON.parse(r.origin_json ?? "")
+      // A none row keeps no origin (#2007 piece 2): it is never sent anywhere.
+      origin = wayHome === "none" ? { ...NONE_ORIGIN } : JSON.parse(r.origin_json ?? "")
       root = JSON.parse(r.root_json ?? "null")
       if (!origin || typeof origin.channel !== "string" || typeof origin.chatId !== "string") throw new Error("no channel or chat")
     } catch (e: any) {
@@ -578,7 +602,13 @@ export class HandoffStore {
       ...(r.kind === "send" ? { kind: "send" as const } : {}),
       ...(r.depth ? { depth: r.depth } : {}),
       ...(r.home ? { home: r.home } : {}),
-      ...(r.way_home === "deliver" ? { wayHome: "deliver" as const } : {}),
+      ...(wayHome ? { wayHome } : {}),
     }
   }
+}
+
+/** The way home a row names; anything else (NULL on older rows) is a
+ *  callback. */
+function wayHomeOf(v: string | null | undefined): WayHome | undefined {
+  return v === "deliver" || v === "none" ? v : undefined
 }

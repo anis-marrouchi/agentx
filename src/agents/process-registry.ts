@@ -294,6 +294,12 @@ export class ProcessRegistry {
   private handleWorkspace = new Map<ProcessKeyString, string>()
   /** Who gets the replies no question asked for (#1861). */
   private unaskedReplyHandler?: (r: UnaskedReply) => void
+  /** Since start (#2007 C6): warm processes spawned, evicted at a cap, and
+   *  of those evicted, the ones not on an a2a chat (a person's chat). One
+   *  dlg- chat per agent send means more spawns; these say what it costs. */
+  private spawns = 0
+  private evictions = 0
+  private personEvictions = 0
   private readonly cfg: Required<Omit<ProcessRegistryConfig, "factory" | "log" | "currentWorkspaceHash" | "keepBackground">> & {
     keepBackground?: () => boolean
     factory: ProcessFactory
@@ -323,6 +329,11 @@ export class ProcessRegistry {
    */
   setUnaskedReplyHandler(fn: ((r: UnaskedReply) => void) | undefined): void {
     this.unaskedReplyHandler = fn
+  }
+
+  /** Spawns and cap evictions since start (#2007 C6). */
+  counts(): { spawns: number; evictions: number; personEvictions: number } {
+    return { spawns: this.spawns, evictions: this.evictions, personEvictions: this.personEvictions }
   }
 
   /** Begin the idle-eviction sweep timer. Idempotent. */
@@ -402,7 +413,8 @@ export class ProcessRegistry {
     })
     this.handles.set(ks, handle)
     this.handleWorkspace.set(ks, opts.workspace)
-    this.cfg.log(`[process-registry] spawned ${ks}`)
+    this.spawns++
+    this.cfg.log(`[process-registry] spawned ${ks} (${this.spawns} spawns, ${this.evictions} evictions since start)`)
     return handle
   }
 
@@ -522,7 +534,9 @@ export class ProcessRegistry {
     const ks = processKeyToString(target.key)
     this.handles.delete(ks)
     void target.kill("evicted (cap reached)")
-    this.cfg.log(`[process-registry] evicted ${ks} (cap)`)
+    this.evictions++
+    if (target.key.channel !== "a2a") this.personEvictions++
+    this.cfg.log(`[process-registry] evicted ${ks} (cap) (${this.evictions} evictions, ${this.personEvictions} of a person's chat, ${this.spawns} spawns since start)`)
     return true
   }
 
