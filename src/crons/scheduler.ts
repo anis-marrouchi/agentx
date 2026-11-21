@@ -225,7 +225,8 @@ export class CronScheduler {
         // A job whose creation is still awaiting operator approval must
         // never fire, even if something flipped `enabled` behind the
         // approval flow (hand edit, `cron enable`, dashboard toggle).
-        enabled: def.enabled && def.approval?.action !== "create",
+        // A retired job (#863) never loads as on, whatever `enabled` says.
+        enabled: def.enabled && def.approval?.action !== "create" && !def.endedAt,
         schedule: def.schedule,
         timezone: def.timezone,
         agent: def.agent,

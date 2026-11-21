@@ -2,7 +2,7 @@ import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync,
 import { resolve } from "path"
 import { recordAnswered } from "./answered"
 import { answerLines, buildChoices, draftFor, isNoChoice, resolveAnswer, type CardChoices } from "./choices"
-import { isRetroOrigin, numberLines, sourceConsentLines, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
+import { cronGoalLines, isRetroOrigin, numberLines, sourceConsentLines, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
 import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
 
 // --- Decision cards: what an agent asks the operator ---
@@ -453,10 +453,13 @@ export function resolveCard(
   return { ok: true, card: resolved }
 }
 
-/** Apply `if_silent` to every pending card past its expiry. */
+/** Apply `if_silent` to every pending card past its expiry. A schedule's
+ *  goal card (origin cron-goal, #863) never expires: the job stays held
+ *  until the operator answers, so the card must stay answerable. */
 export function expireCards(root: string, now: number = Date.now()): DecisionCard[] {
   const out: DecisionCard[] = []
   for (const card of listCards(root, "pending")) {
+    if (card.origin?.kind === "cron-goal") continue
     if (Date.parse(card.expires) > now) continue
     const expired: DecisionCard = {
       ...card,
@@ -498,6 +501,13 @@ export function verdictMessage(card: DecisionCard): string {
     `Question: ${card.ask}`,
     result,
   ]
+  // A schedule's goal card (#863): the daemon applied the answer; the owner
+  // is told what it means for its job, and nothing generic.
+  if (card.origin?.kind === "cron-goal") {
+    lines.push(...cronGoalLines(card.origin, card))
+    if (card.choice_suggested) lines.push("(The operator gave a plain yes, taken as the recommended option.)")
+    return lines.join("\n")
+  }
   // A retro card's pick and spec go through retroLines, labelled as the
   // reviewer's proposal: never "Approved text (send exactly this)".
   const check = card.origin?.kind === "retro-check" ? card.origin : undefined

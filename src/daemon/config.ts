@@ -968,6 +968,16 @@ const cronJobSchema = z.object({
    *  at that time, it runs once when the daemon starts. `schedule` holds
    *  the same time as a cron, for display only. */
   runAt: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "runAt must be an ISO time" }).optional(),
+  /** Recurring job (#863): ISO time after which it ends for good, the
+   *  same way a retire does (`enabled: false` + `endedAt` + a ledger row). */
+  until: z.string().refine((s) => !Number.isNaN(Date.parse(s)), { message: "until must be an ISO time" }).optional(),
+  /** Set when the job was retired (retire, a drop answer, or `until`). A
+   *  job with it never runs and is never switched back on (crons/retired.ts). */
+  endedAt: z.string().optional(),
+  /** The schedule the operator last approved (#863). A time change that
+   *  fires more often than this over 31 days needs approval again. Unset:
+   *  the current `schedule` counts as approved. */
+  approvedSchedule: z.string().optional(),
   /** Agent id that created this job through the agent `schedule` tool.
    *  Absent for operator-created jobs. Drives the ownership rule: an agent
    *  manages only the routines it created, unless it is `admin`. */

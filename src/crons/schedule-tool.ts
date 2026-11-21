@@ -15,6 +15,8 @@ import {
   type NotifyTarget,
   type ScheduleApproval,
 } from "./schedule-ops"
+import { rootOfConfig } from "./goal-state"
+import { retiredRefusalAt } from "./retired"
 
 // --- Agent-facing `schedule` tool ---
 //
@@ -76,13 +78,15 @@ function isAdmin(cfg: any, agentId: string): boolean {
   return cfg?.agents?.[agentId]?.admin === true
 }
 
+/** The job's owner (`agent`, #863), its creator, or an admin agent. */
 function canManage(cfg: any, job: any, caller: ScheduleCaller): boolean {
-  return isAdmin(cfg, caller.agentId) || job?.createdBy === caller.agentId
+  return isAdmin(cfg, caller.agentId) || job?.createdBy === caller.agentId || job?.agent === caller.agentId
 }
 
 function ownershipError(id: string, job: any): string {
-  const owner = job?.createdBy ? `agent "${job.createdBy}"` : "the operator"
-  return `Not allowed: "${id}" was created by ${owner}. Agents manage only schedules they created (unless configured admin).`
+  const owner = job?.agent ? `agent "${job.agent}"` : "another agent"
+  const creator = job?.createdBy ? `agent "${job.createdBy}"` : "the operator"
+  return `Not allowed: "${id}" is owned by ${owner} and was created by ${creator}. Agents manage only schedules they own or created (unless configured admin).`
 }
 
 function resolveNotify(args: Record<string, unknown>, caller: ScheduleCaller): NotifyTarget | undefined | "invalid" {
@@ -248,6 +252,9 @@ export async function runScheduleTool(
     if (enable && isPendingCreate(job)) {
       return `"${id}" is still awaiting operator approval; it can't be resumed until approved.`
     }
+    // A retired job never comes back by resume (#863).
+    const retired = enable ? retiredRefusalAt(rootOfConfig(deps.configPath), id, job) : null
+    if (retired) return retired
     if (job.enabled === enable) return `"${id}" is already ${enable ? "active" : "paused"}.`
     const result = await mutate((c) => setAtPath(c, `crons.${id}.enabled`, enable))
     if (!result.success) return `Error: ${result.error}`

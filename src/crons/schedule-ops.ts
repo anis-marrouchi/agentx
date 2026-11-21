@@ -2,6 +2,8 @@ import cronstrue from "cronstrue"
 import { applyConfigMutation, getAtPath, setAtPath, unsetAtPath, type MutationResult } from "@/daemon/config-mutator"
 import type { NlCronResult } from "@/utils/nl-cron"
 import { getNextCronDate } from "./scheduler"
+import { rootOfConfig } from "./goal-state"
+import { retiredRefusalAt } from "./retired"
 
 // --- Shared schedule operations ---
 //
@@ -249,6 +251,8 @@ export async function setScheduleEnabled(
     if (enabled && isPendingCreate(job)) {
       throw new Error(`cron "${id}" is awaiting approval; run \`agentx schedule approve ${id}\``)
     }
+    const retired = enabled ? retiredRefusalAt(rootOfConfig(opts.configPath), id, job) : null
+    if (retired) throw new Error(retired)
     setAtPath(cfg, `crons.${id}.enabled`, enabled)
   }, { configPath: opts.configPath, reload: opts.reload })
 }

@@ -178,10 +178,17 @@ describe("agentx_schedule tool", () => {
     expect(readCrons()["weekly-x"].enabled).toBe(true)
   })
 
-  it("operator-created jobs are off-limits to non-admin agents", async () => {
-    writeConfig({ nightly: { enabled: true, schedule: "0 2 * * *", agent: "alpha", prompt: "p" } })
+  it("operator-created jobs are off-limits to non-admin agents that do not own them", async () => {
+    writeConfig({ nightly: { enabled: true, schedule: "0 2 * * *", agent: "beta", prompt: "p" } })
     expect(await runScheduleTool({ action: "pause", id: "nightly" }, alpha, deps())).toMatch(/created by the operator/)
     expect(await runScheduleTool({ action: "delete", id: "nightly" }, alpha, deps())).toMatch(/Not allowed/)
+  })
+
+  it("the owner (agent) manages its job even when it did not create it (#863)", async () => {
+    writeConfig({ nightly: { enabled: true, schedule: "0 2 * * *", agent: "alpha", prompt: "p" } })
+    expect(await runScheduleTool({ action: "pause", id: "nightly" }, alpha, deps())).toMatch(/paused/)
+    expect(await runScheduleTool({ action: "resume", id: "nightly" }, alpha, deps())).toMatch(/resumed/)
+    expect(await runScheduleTool({ action: "pause", id: "nightly" }, beta, deps())).toMatch(/Not allowed/)
   })
 
   it("delete is a request: job keeps running until approved; reject keeps it", async () => {
