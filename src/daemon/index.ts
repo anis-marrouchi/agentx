@@ -4,6 +4,7 @@ import { handleLookup } from "@/daemon/lookup-api"
 import { emitSignal, setSignalDb } from "@/improve/signals"
 import { openCodeProcessPool } from "@/agents/opencode-process"
 import { codexProcessPool } from "@/agents/codex-process"
+import { RulesPageSync } from "@/agents/rules-page-sync"
 import { SessionMonitor, discoverClis, readMonitorBody, reviewWithClaudeCost } from "./session-monitor"
 import { workflowHealth, scanRuns } from "./workflow-health"
 import { AssistantStore } from "./assistant-store"
@@ -369,6 +370,8 @@ export class AgentXDaemon {
    *  events and resolve runbook paths. */
   private projectRules: ProjectRulesStore
   private mesh?: A2AMesh
+  /** Rules Registry page copy and its health (#809). */
+  private rulesSync?: RulesPageSync
   /** A2A delegations that call their caller back (#277). */
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
@@ -1361,6 +1364,7 @@ export class AgentXDaemon {
     this.startApprovalsSweep()
     this.startQualityReport()
     this.startReminders()
+    this.startRulesSync()
     // Messages received before the last stop but never handed to an agent.
     const waQueued = this.waTriage?.resume() ?? 0
     if (waQueued) this.log(`  WhatsApp triage: ${waQueued} queued message(s) picked up`)
@@ -1704,6 +1708,7 @@ export class AgentXDaemon {
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
     if (this.reachTimer) clearInterval(this.reachTimer)
+    this.rulesSync?.stop()
     this.reach?.detach()
     if (this.qualityTimer) clearInterval(this.qualityTimer)
     if (this.pushRosterTimer) clearInterval(this.pushRosterTimer)
@@ -2818,6 +2823,23 @@ export class AgentXDaemon {
     })
       .catch((e: any) => this.log(`[exceptions] digest failed: ${e?.message ?? e}`))
       .finally(() => { this.exceptionsDigesting = false })
+  }
+
+  /** The Rules Registry page (#809): a node without `rules.registryAgent`
+   *  pulls it from the peer that runs that agent; every node with rules on
+   *  logs a missing page as an error. Off while `rules.enabled` is off. */
+  private startRulesSync(): void {
+    if (!this.config.rules?.enabled) return
+    this.rulesSync = new RulesPageSync({
+      hub: this.registry.getWikiHub(),
+      config: () => this.config.rules,
+      isLocalAgent: (id) => !!this.config.agents[id],
+      peers: () => this.config.mesh?.peers ?? [],
+      directory: () => this.mesh?.directory() ?? [],
+      approvalsRequired: () => this.config.wiki?.decisionApprovals?.required === true,
+      log: this.log,
+    })
+    this.rulesSync.start()
   }
 
   /** Every minute: expire decision cards, tell agents their results, and
@@ -7965,6 +7987,9 @@ export class AgentXDaemon {
             // down and its mentions are queued rather than lost.
             deferredMesh: this.router.getDeferredMeshCounts(),
             projectRules: { count: ruleHealth.count, errors: ruleHealth.errors },
+            // The Rules Registry page (#809): where it comes from and the md5
+            // of its content, the same on every node that has the same rules.
+            rules: this.rulesSync?.status() ?? { enabled: false },
             // "memory-only": no database, so a restart forgets every
             // hand-off still out (#1861).
             handoffs: this.delegations.journalMode(),
@@ -10026,8 +10051,13 @@ export class AgentXDaemon {
           this.json(res, 200, {
             nodeId: this.config.node.id,
             agentId,
+            // Whether this node runs the agent itself, not a synced copy:
+            // the Rules Registry sync only takes the page from that node (#809).
+            runsAgent: !!this.config.agents[agentId],
             path: article.path,
             title: article.meta.title,
+            type: article.meta.type,
+            access: article.meta.access,
             tags: article.meta.tags,
             owner: article.meta.owner,
             created: article.meta.created,

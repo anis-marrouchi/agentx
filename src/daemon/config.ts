@@ -2851,6 +2851,12 @@ export const daemonConfigSchema = z.object({
     registryPage: z.string().min(1).default("decisions/rules-registry.md"),
     /** Most tokens the block may take; the builder fits it under this. */
     maxTokens: z.number().int().min(200).max(4000).default(1200),
+    /** A node that does not run `registryAgent` pulls the page from the
+     *  peer that does, this often (agents/rules-page-sync.ts). */
+    syncMinutes: z.number().int().min(1).max(1440).default(10),
+    /** Peer unreachable this long: the warning on the kept copy becomes an
+     *  error in the log and in /health.rules. */
+    maxStaleHours: z.number().int().min(1).max(720).default(24),
   }).default({}),
   graph: graphConfigSchema,
   decisions: decisionsConfigSchema,
