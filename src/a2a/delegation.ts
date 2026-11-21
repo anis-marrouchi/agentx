@@ -205,7 +205,8 @@ export interface DelegationDeps {
     callee: string,
     message: string,
     context: Record<string, unknown>,
-    opts: { timeoutMs: number; senderAgentId: string },
+    /** No senderAgentId for a caller that names no agent ("?"). */
+    opts: { timeoutMs: number; senderAgentId?: string },
   ): Promise<string>
   /** Stop a local callee run that went past the timeout. */
   cancelLocal?(runId: string, reason: string): void
@@ -661,7 +662,9 @@ export class DelegationManager {
     const home = normalizeHome(opts.home)
     // One run per message (#2007 piece 3): the same message from the same
     // chat, on the same home, joins the one still open.
-    const key = this.store ? joinKey({ caller: opts.caller.agentId, callee: keyCallee(opts), home, origin, message: opts.message }) : undefined
+    // A labelled "?" sender (#2007 review item 2) is its own caller here.
+    const keyCaller = keyCallerOf(opts.caller.agentId, senderLabelOf(opts.caller.agentId, opts.caller.context))
+    const key = this.store ? joinKey({ caller: keyCaller, callee: keyCallee(opts), home, origin, message: opts.message }) : undefined
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -705,7 +708,7 @@ export class DelegationManager {
   joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string; peer?: string; wayHome?: WayHome }): string | null {
     const origin = o.wayHome === "none" ? NONE_ORIGIN : originOf(o.caller.context)
     if (!origin || !this.store) return null
-    return joinKey({ caller: o.caller.agentId, callee: keyCallee(o), home: normalizeHome(o.home), origin, message: o.message })
+    return joinKey({ caller: keyCallerOf(o.caller.agentId, senderLabelOf(o.caller.agentId, o.caller.context)), callee: keyCallee(o), home: normalizeHome(o.home), origin, message: o.message })
   }
 
   /**
@@ -787,6 +790,9 @@ export class DelegationManager {
   private launchStarted(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0]): { taskId: string; record: DelegationRecord } {
     const { id, root, origin } = record
     const home = record.home
+    // A "?" sender that gave a name it is not an agent of this machine by
+    // (review item 2): its own session and sender line, the row's caller ?.
+    const label = senderLabelOf(record.caller, { sender: root?.sender })
     const depth = record.depth ?? 0
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
@@ -800,7 +806,7 @@ export class DelegationManager {
     const calleeContext: Record<string, unknown> = {
       channel: "a2a",
       chatId: `a2a:${record.caller}:${record.callee}:${id}`,
-      sender: `agent:${record.caller}`,
+      sender: `agent:${label ?? record.caller}`,
       ...(opts.calleeContext ?? {}),
       // The root always travels, and always as computed here: a caller
       // cannot claim a different origin for work it hands on.
@@ -833,10 +839,10 @@ export class DelegationManager {
       : home
         ? `${record.callee}\u0000${home}`
         : senderKey
-          ? senderKeyOf(record.callee, record.caller)
+          ? senderKeyOf(record.callee, keyCallerOf(record.caller, label))
           : `${record.callee}\u0000chat\u0000${record.caller}\u0000${origin.channel}\u0000${origin.chatId}`
     const prior = (homeKey ? this.sameHome(homeKey) : null)
-      ?? (senderKey ? { chats: [legacySenderChat(record.caller)], taskId: "legacy", running: null } : null)
+      ?? (senderKey ? { chats: [legacySenderChat(record.caller, label)], taskId: "legacy", running: null } : null)
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
     // Newest first: a run that failed before it saved a session falls back
     // to the one before it. Read when it launches: while any earlier run on
@@ -880,7 +886,7 @@ export class DelegationManager {
       this.timers.set(id, timer)
       if (opts.run) return opts.run().then((text) => ({ content: text } as CalleeRun))
       if (record.peer) {
-        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
+        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, ...(record.caller !== UNNAMED_CALLER ? { senderAgentId: record.caller } : {}) })
           .then((text) => ({ content: text } as CalleeRun))
       }
       const resumeFrom = resumable()
@@ -1445,7 +1451,7 @@ export class DelegationManager {
     }
     let rebuilt = 0
     for (const r of rows) {
-      const key = senderKeyOf(r.callee, r.caller)
+      const key = senderKeyOf(r.callee, keyCallerOf(r.caller, senderLabelOf(r.caller, { sender: r.sender })))
       if (this.homes.has(key)) continue // newest first: the first one wins
       const chat = { channel: "a2a", chatId: `a2a:${r.caller}:${r.callee}:${r.id}` }
       this.homes.set(key, { chats: [chat], taskId: r.id, running: null, endedAt: r.endedAt, implicit: true, sender: true })
@@ -1462,6 +1468,21 @@ function senderKeyOf(callee: string, caller: string): string {
 
 /** The chat a sender's sends ran on before #2007 piece 2 (`/send/agent`'s
  *  `chatId: senderAgentId || "a2a"`): the seed of its per-sender key. */
-function legacySenderChat(caller: string): { channel: string; chatId: string } {
-  return { channel: "a2a", chatId: caller === UNNAMED_CALLER ? "a2a" : caller }
+function legacySenderChat(caller: string, label?: string): { channel: string; chatId: string } {
+  return { channel: "a2a", chatId: label ?? (caller === UNNAMED_CALLER ? "a2a" : caller) }
+}
+
+/** The name a "?" caller gave (its context's `sender: "agent:<name>"`), or
+ *  undefined: a /send/agent sender that is not an agent of this machine
+ *  keeps its own session and sender line (#2007 review item 2). */
+export function senderLabelOf(caller: string, context: { sender?: unknown } | undefined | null): string | undefined {
+  if (caller !== UNNAMED_CALLER) return undefined
+  const s = typeof context?.sender === "string" ? context.sender : ""
+  const label = s.startsWith("agent:") ? s.slice(6).trim() : ""
+  return label && label !== UNNAMED_CALLER ? label : undefined
+}
+
+/** Who a key names as the caller: a labelled "?" sender by its label. */
+function keyCallerOf(caller: string, label: string | undefined): string {
+  return label ? `${UNNAMED_CALLER}:${label}` : caller
 }

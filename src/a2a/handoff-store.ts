@@ -293,16 +293,24 @@ export class HandoffStore {
    * (R3), and only done, error, timeout or waiting (R4: a lost run may
    * still be resumed on its own chat). One range read on idx_handoffs_ended.
    */
-  senderRows(since: number, until: number): Array<{ id: string; caller: string; callee: string; endedAt: number }> {
+  senderRows(since: number, until: number): Array<{ id: string; caller: string; callee: string; endedAt: number; sender?: string }> {
     const rows = this.sql(`
-      SELECT id, caller, callee, ended_at FROM handoffs
+      SELECT id, caller, callee, ended_at, root_json FROM handoffs
       WHERE ended_at IS NOT NULL AND ended_at >= ? AND ended_at <= ?
         AND way_home = 'none' AND home IS NULL AND peer IS NULL
         AND status IN ('done', 'error', 'timeout', 'waiting')
         AND caller IS NOT NULL AND callee IS NOT NULL
       ORDER BY ended_at DESC, rowid DESC
-    `).all(since, until) as Array<{ id: string; caller: string; callee: string; ended_at: number }>
-    return rows.map((r) => ({ id: r.id, caller: r.caller, callee: r.callee, endedAt: r.ended_at }))
+    `).all(since, until) as Array<{ id: string; caller: string; callee: string; ended_at: number; root_json: string | null }>
+    return rows.map((r) => {
+      // The root's sender names a "?" caller's label (review item 2).
+      let sender: string | undefined
+      try {
+        const root = JSON.parse(r.root_json ?? "null")
+        if (typeof root?.sender === "string") sender = root.sender
+      } catch { /* unreadable: no label */ }
+      return { id: r.id, caller: r.caller, callee: r.callee, endedAt: r.ended_at, ...(sender ? { sender } : {}) }
+    })
   }
 
   /** The open hand-off with this join key, or null. */

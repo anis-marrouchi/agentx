@@ -1,4 +1,6 @@
 // GET /lookup?agent=<id>  |  GET /lookup?work=<issue or MR link/ref, or req-id>
+//   |  GET /lookup?handoff=<dlg-id>&as=<agent>  (#2007: one hand-off and its
+//   answer, through the same reader and rules as GET /a2a/delegations/:id)
 // Read-only answers for agentx_lookup (src/a2a/lookup.ts). Nothing here
 // starts a run or calls a model. An agent on a mesh peer is looked up on
 // that peer (forward); work is looked up on this computer only.
@@ -28,6 +30,9 @@ export interface LookupDeps {
   /** An agent on a peer: that peer's answer, or null when no peer has it. */
   forward?: (agentId: string) => Promise<{ status: number; body: Record<string, unknown> } | null>
   nodeName?: string
+  /** One hand-off by its dlg- id, read as the agent named by `as`: the
+   *  answer of GET /a2a/delegations/:id (a2a/handoff-read.ts), same rules. */
+  readHandoff?: (id: string, as: string | null) => Answer
   now?: number
   /** Rows per slice of a work scan, and the time it may take (tests). */
   scanSlice?: number
@@ -42,7 +47,16 @@ type Answer = { status: number; body: Record<string, unknown> }
 
 export async function handleLookup(query: URLSearchParams, deps: LookupDeps): Promise<Answer> {
   const agent = (query.get("agent") ?? "").trim()
-  const work = (query.get("work") ?? "").trim()
+  const workArg = (query.get("work") ?? "").trim()
+  // A dlg- id is a hand-off, whichever field it came in (#2007 review item 1).
+  const handoff = (query.get("handoff") ?? "").trim() || (/^dlg-/.test(workArg) ? workArg : "")
+  const work = handoff ? "" : workArg
+  if (handoff) {
+    if (agent) return { status: 400, body: { error: "give one of: agent, work or handoff" } }
+    if (!deps.readHandoff) return { status: 409, body: { error: "this node cannot read hand-offs by id" } }
+    const a = deps.readHandoff(handoff, (query.get("as") ?? "").trim() || null)
+    return a.status === 200 ? { status: 200, body: { ...a.body, text: formatHandoff(a.body) } } : a
+  }
   if (!agent === !work) return { status: 400, body: { error: "give one of: agent=<agent id>, or work=<issue or merge request link or group/project#12 ref, or a req- id>" } }
   const now = deps.now ?? Date.now()
 
@@ -60,6 +74,17 @@ export async function handleLookup(query: URLSearchParams, deps: LookupDeps): Pr
   if (!key) return { status: 400, body: { error: `"${work}" is not a work reference: use an issue or merge request link, a group/project#12 or group/project!12 ref, or a req- id` } }
   const l = await workLookup(key, deps, now)
   return { status: 200, body: { ...l, text: formatWorkLookup(l) } }
+}
+
+/** One hand-off as agentx_lookup prints it: who, how it ended, the answer. */
+export function formatHandoff(h: Record<string, unknown>): string {
+  const who = `${String(h.caller ?? "?")} -> ${String(h.callee ?? "?")}${h.peer ? `@${String(h.peer)}` : ""}`
+  const when = `started ${String(h.startedAt ?? "?")}${h.endedAt ? `, ended ${String(h.endedAt)}` : ""}`
+  const w = h.waiting as { on?: string; dueAt?: string; kind?: string } | undefined
+  const waiting = w?.on ? `\nWaiting (${w.kind ?? "waiting"}) on: ${w.on}${w.dueAt ? `, due ${w.dueAt}` : ""}` : ""
+  const status = String(h.status ?? "running")
+  const text = typeof h.text === "string" && h.text ? `\n\n${h.text}` : status === "running" ? "\n\nStill running: no answer yet. Do not wait or poll; you hear when it ends." : ""
+  return `Hand-off ${String(h.id)} (${who}): ${status}, ${when}.${waiting}${text}`
 }
 
 export function agentLookup(agent: string, deps: LookupDeps, now: number): AgentLookup {

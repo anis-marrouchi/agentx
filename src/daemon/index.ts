@@ -4973,6 +4973,9 @@ export class AgentXDaemon {
     const plan = opts.callback === false && !agent ? null : this.callbackPlan(body, caller, target, { send: opts.send === true || !!agent, waitIgnored: !!agent || opts.unnamed === true })
     // No callback: an agent caller (or any /send/agent sender) gets a none row.
     const noneCaller = plan ? null : agent ?? (opts.unnamed ? UNNAMED_CALLER : null)
+    // A "?" sender that still gave a name keeps it (review item 2): its own
+    // session and the callee's sender line; the row's caller stays "?".
+    const label = noneCaller === UNNAMED_CALLER ? hint.senderAgentId : undefined
     // The same message again while the first is open (#2007 piece 3, C2):
     // it joins that hand-off before the budget counts a hop or the ledger
     // records a dispatch, so a duplicate spends neither.
@@ -4983,7 +4986,7 @@ export class AgentXDaemon {
         return { accepted: { ...joinedBody(joined, target.callee, plan.peer, plan.send), ...ignored } }
       }
     } else if (noneCaller) {
-      const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: { agentId: noneCaller, context: {} }, callee: target.callee, home: homeOfBody(body), message: target.message, wayHome: "none" }))
+      const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: { agentId: noneCaller, context: label ? { sender: `agent:${label}` } : {} }, callee: target.callee, home: homeOfBody(body), message: target.message, wayHome: "none" }))
       if (joined) {
         this.log(`[delegation ${joined}] ${noneCaller} -> ${target.callee}: the same message again; joined, no hop counted`)
         return { accepted: { ...noneBody(joined, target.callee, target.peer, true), ...ignored } }
@@ -4991,7 +4994,7 @@ export class AgentXDaemon {
     }
     const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
     if (over) return refused(over, "budget")
-    const accepted = plan ? this.startCallback(body, target, plan) : noneCaller ? this.startNone(body, target, noneCaller, caller) : null
+    const accepted = plan ? this.startCallback(body, target, plan) : noneCaller ? this.startNone(body, target, noneCaller, caller, label) : null
     if (accepted) return { accepted: { ...accepted, ...ignored } }
     let runId: string | undefined
     return {
@@ -5098,6 +5101,8 @@ export class AgentXDaemon {
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown>; run?: () => Promise<string> },
     callerName: string,
     turn: ReturnType<typeof resolveCallerTurn>,
+    /** The name a "?" sender gave (not an agent of this machine). */
+    label?: string,
   ): Record<string, unknown> | null {
     let peer = target.peer
     const local = !peer && this.registry.getAgent(target.callee)
@@ -5106,14 +5111,16 @@ export class AgentXDaemon {
       if (!found?.healthy) return null
       peer = found.peer
     }
-    // The chain's root: the turn's, else one built from the agent id.
-    const context = turn?.context ?? {}
+    // The chain's root: the turn's, else one built from the agent id. A
+    // labelled "?" sender's name rides in it (root.sender), so its session
+    // key is rebuilt after a restart (delegation.ts senderLabelOf).
+    const context = turn?.context ?? (label ? { sender: `agent:${label}` } : {})
     const named = callerName !== UNNAMED_CALLER ? callerName : undefined
     const extras: Record<string, unknown> = {}
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
         target.callee,
-        { channel: "a2a", sender: named ? `agent:${named}` : "agent", chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
+        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
         target.message,
         named,
       )
@@ -8859,6 +8866,17 @@ export class AgentXDaemon {
             closedRequests: (since) => (store ? store.listClosedSince(since, 200).map(asRow) : []),
             handOffs: () => this.delegations.list(100),
             nodeName: this.config.node.name,
+            // A dlg- id (#2007): the same reader and rules as
+            // GET /a2a/delegations/:id, so an agent reads its own rows.
+            readHandoff: (id, as) => {
+              const local = isLoopback(req.socket?.remoteAddress || "")
+              return readHandoff(this.delegations.journalReader(), id, {
+                operator: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+                local,
+                as,
+                peer: local ? null : peerOfToken(String(req.headers["authorization"] || ""), this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+              })
+            },
             forward: async (agentId) => {
               const peer = this.mesh?.directory().find((p) => p.healthy && p.skills.some((s) => s.id === agentId))
               if (!peer) return null

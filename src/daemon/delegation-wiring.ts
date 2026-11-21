@@ -338,7 +338,7 @@ export function noneBody(taskId: string, callee: string, peer: string | undefine
       ? `Already handed off as task ${taskId}; this repeat started nothing. `
       : `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. `) +
       `No turn of yours can be called back from here, so the answer is not sent to you as a message. ` +
-      `When it ends you get a short notice on your next run; read the answer with agentx_lookup or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
+      `When it ends you get a short notice on your next run; read the answer with agentx_lookup (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
   }
 }
 
@@ -409,7 +409,7 @@ export function startMeshDeliver(delegations: DelegationManager, o: MeshDeliver)
 /** The notice a named sender gets when its none row ends (#2007 C7). */
 export function noneNotice(rec: { id: string; callee: string; peer?: string }, result: { status: string }): string {
   const who = rec.peer ? `${rec.callee}@${rec.peer}` : rec.callee
-  return `Your hand-off ${rec.id} to ${who} ended: ${result.status}. Read it by its id (agentx_lookup, or GET /a2a/delegations/${rec.id}?as=<you>).`
+  return `Your hand-off ${rec.id} to ${who} ended: ${result.status}. Read it by its id (agentx_lookup with handoff: "${rec.id}", or GET /a2a/delegations/${rec.id}?as=<you>).`
 }
 
 /** How long a called-back send to a local agent may take (#1100): the
@@ -644,6 +644,9 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     onDone: w.onDone,
     callbackNote: w.callbackNote,
     onRelayFailed: w.onRelayFailed,
+    // A sender's last ended send stays its next send's session as long as
+    // any chat session lives (session.staleMinutes).
+    senderKeyMs: w.config.session.staleMinutes * 60_000,
     // A none row of a named local sender (#2007 C7): one notice on its next
     // run, or a run of its own after NOTICE_HOLD_MS. No new mechanism.
     notify: (rec, result) => {
