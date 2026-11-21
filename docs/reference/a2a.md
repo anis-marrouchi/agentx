@@ -44,8 +44,13 @@ The answer comes back at once with status `202`:
 What happens next:
 
 1. The peer runs the work. Nobody holds a connection open for it.
-2. When it answers, the answer is sent as it is to the chat in `context`, as the agent named in `context.agentId`.
-3. If it fails, times out (after `mesh.delegation.timeoutMinutes`, 30 by default) or AgentX restarts before it answers, that chat gets one short line instead: `Delegation to work-machine/helper failed: ...`.
+2. When it answers, the answer is sent as it is to the chat in `context`, as the agent named in `context.agentId`. This includes an answer that says the work is blocked: that is still the peer's answer.
+3. If the call fails, times out or AgentX restarts before it answers, that chat gets one short line instead: `Delegation to work-machine/helper failed: ...`.
+
+Two limits to know:
+
+- **The chat is told at most once.** AgentX records the end of the hand-off first and then sends to the chat. If AgentX stops between those two steps, the chat is never told. The answer is still in the hand-off: read it by its id.
+- **The time limit is `mesh.delegation.timeoutMinutes`** (30 minutes by default). The hand-off ends `timeout` at that limit, and the chat gets the failure line. The call to the peer has its own 30-minute limit. If you set `mesh.delegation.timeoutMinutes` lower than 30, a peer that answers after your limit but within 30 minutes has its answer dropped: the hand-off has already ended.
 
 Each such request is a **hand-off** with a `dlg-` id, like the ones agents make. So you can read its status and answer later with `GET /a2a/delegations/<id>` ([see below](#see-the-hand-offs-and-read-one-by-its-id)), and the same request sent again while the first still runs starts nothing ([see below](#what-happens-when-the-same-message-is-sent-twice)). With no `agent`, the peer picks one, and the hand-off names it `default`.
 
@@ -190,6 +195,7 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **A resend got `"duplicate": true` but you wanted a second run:** the first hand-off with that exact message is still `running` (or carries on as `continue`). Wait for it to end, or change the message.
 - **The same message ran twice:** check that both sends came from the same conversation and named the same `home`. A different conversation or home is new work. If they match, look in the daemon log for `duplicate guard off for this send`: the database could not record the hand-off, so the check was skipped for that send.
 - **`async: true` gets `400` (`async requires context.channel and context.chatId`):** add a `context` with both `channel` and `chatId`, the chat the answer should go to.
-- **An `async: true` answer never reached the chat:** read the hand-off by its `taskId`. If it ended, its `text` holds the answer or the failure, and the daemon log shows `delivery to <channel>:<chatId> failed: ...` with the reason (for example, no such channel on this machine). If it is still `running`, the peer is still working; it ends `timeout` after `mesh.delegation.timeoutMinutes`.
+- **An `async: true` answer never reached the chat:** read the hand-off by its `taskId`. If it ended, its `text` holds the answer or the failure, and the daemon log shows `delivery to <channel>:<chatId> failed: ...` with the reason (for example, no such channel on this machine). If it ended and the log shows no delivery line, AgentX stopped between ending the hand-off and sending: the chat is not told again, so read the answer from the hand-off. If it is still `running`, the peer is still working; it ends `timeout` after `mesh.delegation.timeoutMinutes`.
+- **An `async: true` hand-off ended `timeout` but the peer finished the work:** `mesh.delegation.timeoutMinutes` is set lower than the time the peer took. Its late answer was dropped. Raise the setting (up to 30 minutes keeps it within the peer call's own limit), or read the result on the peer.
 - **An `async: true` request got `"duplicate": true`:** the same request to the same peer and agent, for the same chat, is still running. Wait for it, or change the message.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.
