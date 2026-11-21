@@ -361,6 +361,24 @@ describe("agentx demo reads the reply by its id (C4)", () => {
   })
 })
 
+describe("what agents are taught (C4)", () => {
+  const skill = readFileSync(join(__dirname, "../skills/mesh-awareness/SKILL.md"), "utf-8")
+  const api = skill.slice(skill.indexOf("### 2. HTTP API"), skill.indexOf("### 4. AgentX CLI"))
+
+  it("names the sender and the run on the /task example, and teaches the receipt", () => {
+    expect(api).toContain('"senderAgentId": "<your own agent id>"')
+    expect(api).toContain("X-AgentX-Task: $AGENTX_TASK_ID")
+    expect(api).toMatch(/receipt/)
+    expect(api).toMatch(/mode: "none"/)
+  })
+
+  it("no longer documents snd- ids or a waiting async:false", () => {
+    const ask = readFileSync(join(__dirname, "../docs/jobs/ask-another-agent.md"), "utf-8")
+    expect(ask).not.toMatch(/"taskId": "snd-/)
+    expect(ask).not.toMatch(/Add `"async": false` to the request body to wait/)
+  })
+})
+
 describe("NONE_ORIGIN", () => {
   it("is not a chat anything can be sent to", () => {
     expect(NONE_ORIGIN.channel).toBe("none")

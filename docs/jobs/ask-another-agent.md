@@ -67,7 +67,7 @@ To change one:
 
 ## For agent builders
 
-Agents delegate with the `agentx_task` or `agentx_send_agent` tools, or with a `POST /task`, `/send/agent` or `/mesh/task` request to the daemon on their own machine. When a person started the conversation, these return at once with status `202` and a body like this:
+Agents delegate with the `agentx_task` or `agentx_send_agent` tools, or with a `POST /task`, `/send/agent` or `/mesh/task` request to the daemon on their own machine. **An agent never waits for another agent.** When the request comes from an agent, these always return at once with status `202` and a *receipt*: a body with a `taskId` that starts with `dlg-`. When a person started the conversation, it looks like this:
 
 ```json
 { "accepted": true, "mode": "callback", "taskId": "dlg-…", "agent": "helper", "note": "Delegated to helper (task dlg-…). …" }
@@ -75,11 +75,17 @@ Agents delegate with the `agentx_task` or `agentx_send_agent` tools, or with a `
 
 The answer arrives later as a message that starts with `[agentx:delegation-result task=… from=… status=…]`. The status is `done`, `error`, `timeout` or `lost`. Each task id is delivered once; late or repeated answers are dropped.
 
-The daemon must be able to tell which turn is asking. The tools do this for you. A request made from a shell names its turn with the header `X-AgentX-Task: $AGENTX_TASK_ID`, or with `callerChannel` and `callerChatId` in the body. The agent id alone is not enough, and such a request waits for its answer as before.
+Which agent is asking decides this, not the request's options:
+
+- **An agent asks** (the request names its running turn, or comes from this machine and names one of this machine's agents in `senderAgentId`): a receipt, always. `"stream": true`, an `Accept: text/event-stream` header and `"async": false` are ignored, and the receipt says so with `"streamIgnored": true` or `"asyncIgnored": true`.
+- **Nobody names an agent** (the `agentx` command line, workflow steps, another machine of the mesh, the phone app, `agentx mesh ask`, a stream proxy): `/task` and `/mesh/task` wait for the answer, as before. `/send/agent` answers `202` for them too.
+- **A guest host** (a machine this one joined as a guest) is the one exception: a `/mesh/task` to it is one request that waits for the answer, for an agent too.
+
+So that the answer can come back as a new message, the daemon must also be able to tell which *turn* is asking. The tools do this for you. A request made from a shell names its turn with the header `X-AgentX-Task: $AGENTX_TASK_ID`, or with `callerChannel` and `callerChatId` in the body. When only the agent is named (`senderAgentId`), the request still gets a receipt, but its answer is read by its id (see [Sending with `agentx_send_agent`](#sending-with-agentx-send-agent)).
 
 Channel and chat are accepted on purpose: an agent kept warm between turns has no per-turn id to show. The daemon still requires exactly one running turn of that agent on that chat, so what a program on this computer could do with the pair is limited to that turn's own statements about its own request. A per-process secret would close this; it is noted, not built.
 
-Add `"async": false` to the request body to wait for the answer anyway. Add `"async": true` to get the callback from a turn no person started, such as a schedule. `"async": true` has no effect inside a delegation: a turn that is itself answering another agent, or a turn that carries a delegation result, always waits. This stops one callback from starting another.
+A turn no person started (another agent, a schedule, a workflow) gets the answer back as a new message in its own chat too, as described for sends below.
 
 ### Look it up instead of asking
 
@@ -112,19 +118,23 @@ A send to an agent on this machine may run as long as that agent's own `maxExecu
 
 If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note. There is one exception: if the run finished well and its final answer mostly repeats what the other agent already wrote (half or more of its words), the sender is not woken again. The daemon log shows `end repeats what it already wrote … no callback turn`. A run that fails, times out or ends to wait is always reported.
 
-The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; it is queued as below.
+The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; its answer is read by its id, as below.
 
 A callback can lead to a new send, which calls back in turn. The count of such hops travels with the work in both directions, to agents on other machines too. After four, sends go out without a callback, so two agents cannot keep calling each other back.
 
-Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the message is queued and its answer is not returned to the sender:
+Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the send is still a hand-off with a `dlg-` id, but no turn is called back. The receipt says `"mode": "none"`:
 
 ```json
-{ "accepted": true, "status": "queued", "taskId": "snd-…", "agent": "helper", "note": "Queued for helper (task snd-…). …" }
+{ "accepted": true, "mode": "none", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup or GET /a2a/delegations/dlg-…?as=<you>. …" }
 ```
 
-If the agent on this machine is busy with other work, a queued message waits in line for it to be free, for up to 6 hours, and then runs. Nobody is holding a request open for it, so the 25-minute wait of a caller that waits does not apply. The daemon log shows `busy, waiting for a slot (up to 360m)` when the message starts waiting. Only a message still waiting after 6 hours is given up, with `slot wait timed out after 360m — message not run`. The wait is kept in memory: a daemon restart while the message waits loses it.
+- When the sender is one of this machine's agents, it gets a short **notice** when the hand-off ends, at the start of its next run (or as a run of its own after an hour; see [A notice instead of a run](#a-notice-instead-of-a-run)). The notice gives the id and how it ended. The sender then reads the answer by its id: `GET /a2a/delegations/<id>?as=<sender>`.
+- A sender that names no agent of this machine is recorded as `?`. Nobody is told; the answer is read by its id with the operator key.
+- If the agent on this machine is busy with other work, the message waits in line for it to be free, for up to 6 hours, and then runs. The daemon log shows `busy, waiting for a slot (up to 360m)` when it starts waiting. Unlike before, the hand-off survives a restart: it then ends `lost`, and the sender is told.
 
-Add `"async": false` to the request body to wait for the answer, as in older versions. Such a request waits up to 25 minutes for a busy agent to be free.
+`"async": false` no longer makes a send wait. It is ignored, and the receipt carries `"asyncIgnored": true`.
+
+**Before this version** a message sent this way got a `snd-…` id and ran on one chat per sender. Its answer could not be read later. One session per sender is kept: see [One session per piece of work](#one-session-per-piece-of-work).
 
 Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`. A hand-off with a `dlg-` id uses a finer check instead: the same message from the same conversation, on the same home, joins the first one while it is still running, and a new run starts once it has ended. See [What happens when the same message is sent twice](../reference/a2a.md#what-happens-when-the-same-message-is-sent-twice).
 
@@ -135,9 +145,9 @@ curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' 
   -d '{"channel":"a2a","chatId":"a2a:helper-a:helper-b:dlg-1","agentId":"helper-b","text":"Tests are green"}'
 ```
 
-The answer is the same `202` body as `/send/agent`. The `/send/agent` options `async`, `home`, `context` and `taskType` work here too: `"async": false` waits for the answer. A chat ID that does not name two agents, or an `agentId` that is neither agent in the chat, is refused with `400` and a hint to use `/send/agent`.
+The answer is the same `202` body as `/send/agent`. The `/send/agent` options `home`, `context` and `taskType` work here too; `"async": false` is ignored, as on `/send/agent`. A chat ID that does not name two agents, or an `agentId` that is neither agent in the chat, is refused with `400` and a hint to use `/send/agent`.
 
-If the tool gets no answer from the daemon in time, it says the message was **probably delivered**, not that it failed. Sending it again is safe, for the reason above. The daemon log has a `[send/agent] snd-…` line for each queued message, and a `started as run …` line when the other agent picks it up.
+If the tool gets no answer from the daemon in time, it says the message was **probably delivered**, not that it failed. Sending it again is safe, for the reason above. The daemon log has a `[delegation dlg-…] … started` line for each hand-off, and `GET /a2a/delegations` lists it.
 
 ### One session per piece of work
 
@@ -146,7 +156,7 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 - A new message on the same `home` to the same agent on this machine waits until the run already on it ends. It then continues that run's session, so the agent keeps what it knew. This applies when the earlier run is still going or ended in the last 12 hours, and to messages whose answer comes back as a new message (see above). It waits at most as long as its own time limit. A continued session is still renewed by AgentX when it grows too long or goes quiet, as any chat's is.
 - If the wait runs out while the earlier run is still going, the new message starts a fresh session instead, so two runs never write to one session. Its own time limit starts only then.
 - If the earlier run failed before it saved a session, the new message continues the run before that one (AgentX remembers the last three).
-- Only messages from one agent to another whose answer comes back as a new message (see above) wait their turn. A queued send, or one with `"async": false`, does not wait. A run on the same issue that starts another way, for example from a person's own chat or a schedule, does not wait either. It only gets the first line described below.
+- Only messages from one agent to another whose answer comes back as a new message (see above) wait their turn. A send whose answer is read by its id (`"mode": "none"`) does not wait. A run on the same issue that starts another way, for example from a person's own chat or a schedule, does not wait either. It only gets the first line described below.
 - A link and a reference to the same issue count as the same home: `https://git.example.com/team/app/-/issues/12` and `team/app#12` match. A merge request (`team/app!12`) is a different home from the issue with the same number.
 - When a run of an agent starts while another run of the same agent, in another chat, works on the same issue, the new run is told so in a first line that starts with `[agentx:same-home]`. It names the other run's chat and start time, and asks the agent to coordinate rather than redo or overwrite that work. The issue is taken from `home`, or from issue and merge request links and `group/project#12` references in the message. A bare `#12` is not used, because it names different work in every project.
 
@@ -158,6 +168,11 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 - The other run's answer is passed on if it ended in the last 45 minutes.
 
 Without `home`, the chat the message is sent from counts as its home, with a shorter window. When the same agent asks the same helper on this machine again from the same chat, and the helper's last run from that chat ended in the last 2 hours, the helper continues that run's session instead of starting a new one. The daemon log shows `continues its session from <channel>:<chat>`. Such a message never waits: if the helper's last run from that chat is still going, the new one starts a fresh session beside it.
+
+A send whose answer is read by its id (`"mode": "none"`) keeps **one session per sender**: the helper continues the session of its last run for the same sending agent (or for all senders that name no agent, together), if that run ended in the last 12 hours. The daemon log shows `continues its session from <sender>'s last send`. This survives a restart: AgentX finds the last such run in its database. The first send after upgrading continues the session the sender used before the upgrade. Things to know:
+
+- A second send from the same sender while the helper's last run for it is still going starts a fresh session beside it. Before, it could be read by the running turn. The daemon log shows `follow-up from <sender> to <helper> while its last run is going; starts fresh beside it (N since start)`.
+- Each send runs in its own chat, `a2a:<sender>:<helper>:dlg-…`. The session continues, but `agentx_recent` on that chat shows only that send's messages.
 
 ### A notice instead of a run
 
@@ -201,17 +216,25 @@ Some requests are refused straight away with status `409`:
 1. **Chat app:** ask your agent to get something from another agent, for example "ask the helper agent for today's build status".
 2. Your agent replies straight away, saying who it asked.
 3. A little later, your agent sends a second message with the helper's answer.
-4. **Terminal:** on the machine that runs your agent, run:
+4. **Terminal:** have an agent ask another one from a script, naming itself, and check it gets a receipt at once:
+   ```sh
+   curl -s -m 10 -X POST http://127.0.0.1:18800/send/agent -H 'Content-Type: application/json' \
+     -d '{"agentId":"helper","senderAgentId":"asker","text":"What is the build status?"}'
+   ```
+   The answer comes within a second, with `"accepted": true` and a `dlg-` `taskId`. Read the answer later with `curl -s "http://127.0.0.1:18800/a2a/delegations/<taskId>?as=asker"`.
+5. **Terminal:** on the machine that runs your agent, run:
    ```sh
    curl -s http://127.0.0.1:18800/a2a/delegations
    ```
    The newest entry names both agents and shows `"status":"done"`.
-5. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?agent=<agent-id>" | jq -r .text`. It prints what that agent is on now and what it finished in the last 48 hours.
-6. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?work=group/project!12" | jq -r .text` with a merge request your agents worked on. It lists the runs about it, newest first.
+6. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?agent=<agent-id>" | jq -r .text`. It prints what that agent is on now and what it finished in the last 48 hours.
+7. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?work=group/project!12" | jq -r .text` with a merge request your agents worked on. It lists the runs about it, newest first.
 
 ## If something is wrong
 
-- **Your agent still waits for the helper:** check that `mesh.delegation.asyncWhenHuman` is not `false`. For the phone app, voice and dashboard chat, check that phone notifications are set up. Work started by a schedule or a workflow always waits.
+- **Your agent still waits for the helper:** an agent never waits since this version, so the request did not name an agent. Check that it sends `senderAgentId` (and, from a script, the `X-AgentX-Task: $AGENTX_TASK_ID` header). A request that names no agent, such as a plain `curl` to `/task`, still waits on purpose. A `/mesh/task` to a guest host always waits.
+- **The answer never comes back as a message, only a notice:** the receipt said `"mode": "none"`: the daemon could not name the asking turn, or the send came from a person's chat. Read the answer by its id. To get it as a message, send the `X-AgentX-Task` header from inside the run.
+- **The receipt says `"streamIgnored": true` or `"asyncIgnored": true`:** an agent asked to wait or to stream. That is not possible any more; read the answer by its id or wait for the callback.
 - **The update never arrives:** open the daemon log and search for `[delegation`. A line ending in `no route to …` means the machine running your agent has no connection to that chat app; set the chat app up on that machine.
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
 - **You get "empty answer from …":** the helper ended its run with nothing: no answer, no job state, no waiting note and no message back. Open its run on the Hub's **Activity** page to see why, then ask again.
@@ -222,7 +245,7 @@ Some requests are refused straight away with status `409`:
 - **You get "could not pass on the answer … because of a restart":** AgentX restarted twice while your agent was passing the answer on, or the second try failed. Ask your agent for the answer again. If you track requests, the request shows what the helper said. In the daemon log, the lines starting `[delegation` with the reference from the message say what happened.
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask. A dashboard log line starting `[app] warning:` means the dashboard passed over some updates: it was away too long, or too many arrived at once. Ask your agent for the answer again.
-- **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
+- **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat while the first is running returns the first task id instead of a second task. Search the daemon log for `[delegation dlg-` to see it was handed off.
 - **An agent still messages a colleague just to ask for a status:** check that `agentx_lookup` is not left out by the agent's `session.lean.agentxTools` list. A lean session keeps it while `session.lean.contextOnDemand` is on.
 - **`agentx_lookup` finds nothing about a piece of work:** the runs must name it as a link, a `group/project!12` ref, or the project name with `!12`. Work from more than 7 days ago is not searched.
 - **An alert sent with `"priority": "critical"` still waited:** search the other machine's daemon log for `[admission]`. `started … (critical) past the gate` means it went past a swap or load hold. A wait on `memory:`, `disk:` or `session cap` is on purpose.
@@ -230,10 +253,11 @@ Some requests are refused straight away with status `409`:
 - **An agent seems slow to start on an owner's request:** search the daemon log for the request ID. `another run of this agent is on it` means it waits for that run, for up to 15 minutes.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
 - **`/send` answers `"is not in a2a chat"`:** the `agentId` you sent is not one of the two agents in the `chatId`. Send as the agent the chat belongs to, or use `POST /send/agent`.
-- **A queued `[send/agent] snd-…` line ends in `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
+- **A hand-off read by its id ended `error` with `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
+- **A helper started cold after the upgrade, without what it knew:** the sender's last run before the upgrade ended more than 12 hours earlier, so its session was renewed anyway. Look for `continues its session from` in the daemon log for the next send.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
 - **Updates from several helpers arrive one by one:** each answer waits only `mesh.delegation.coalesceSeconds` (two minutes by default) for the others. A helper that takes longer sends its answer later, in a second update. Raise the setting if your helpers usually finish further apart.
 - **`409` with "Hand-off budget used":** agents handed each other more work than `mesh.delegation.agentChains` allows, with no person behind it. This is the brake doing its job: the agent finishes the work itself or writes to you. If real work stops because of it, raise `perAgentHour` or `perChainDay`. The daemon log line `[delegation] … refused: Hand-off budget used` names the agent. The counts start over when AgentX restarts.
-- **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
+- **The status list is empty:** hand-offs are listed only on the machine that runs the asking agent, and only those kept in its database (see the `memory-only` entry above).
 - **A follow-up started a new session anyway:** check that both messages named the same `home`, and went to an agent on the same machine. After a restart, or 12 hours after the last run ended, a new session starts. The daemon log line `is on … continues its session` shows when a session was continued. The line `a run on … is still going; starting a fresh session instead` means the earlier run outlasted the wait. Send the message after the earlier run ends. Raising `mesh.delegation.timeoutMinutes` (for a send, the agent's `maxExecutionMinutes`) rarely helps, because the earlier run usually has the same limit and started first.
-- **Two runs still worked on the same issue:** the second one was told (its first line starts with `[agentx:same-home]`). If it went on anyway, tell the sending agent to name `home`, so the second message waits for the first run instead. Only an agent's message whose answer comes back as a new message waits. Any other run (a person's chat, a schedule, a queued send) never waits; only the first line warns it.
+- **Two runs still worked on the same issue:** the second one was told (its first line starts with `[agentx:same-home]`). If it went on anyway, tell the sending agent to name `home`, so the second message waits for the first run instead. Only an agent's message whose answer comes back as a new message waits. Any other run (a person's chat, a schedule, a send whose answer is read by its id) never waits; only the first line warns it.
