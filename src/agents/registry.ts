@@ -383,7 +383,13 @@ function wikiNotesHint(config: DaemonConfig): { inbox: string; daemonUrl: string
 export function buildWikiContext(
   agentWiki: ReturnType<WikiHub["getAgentWiki"]>,
   agentId: string,
-  opts: { maxArticles?: number; notesInbox?: { inbox: string; daemonUrl: string } } = {},
+  opts: {
+    maxArticles?: number
+    notesInbox?: { inbox: string; daemonUrl: string }
+    /** `wiki.startCatalog`. "counts" (default since #2002): one line per type
+     *  with its count. "titles": every title, as before #2002. */
+    catalog?: "counts" | "titles"
+  } = {},
 ): string {
   let articles: Array<{ meta: { title: string; type?: string }; path: string }>
   try {
@@ -404,8 +410,14 @@ export function buildWikiContext(
   // A corpus larger than the budget degrades to counts per type rather
   // than a truncated list: knowing 140 people are on file and how to ask
   // beats seeing the first 40 names and assuming that is all of them.
+  //
+  // #2002: counts are the default for every corpus. The full title list was
+  // added because agents almost never ran `wiki query`; with counts they
+  // have to ask again. The watch for one week after the deploy is
+  // owner_check_mismatch and owner_reopened; if either rises, set
+  // `wiki.startCatalog: "titles"` to bring the list back.
   const max = opts.maxArticles ?? 400
-  const listed = articles.length <= max
+  const listed = opts.catalog === "titles" && articles.length <= max
 
   const catalog = Array.from(byType.entries()).sort()
     .map(([type, titles]) => listed
@@ -424,6 +436,10 @@ export function buildWikiContext(
     "",
     "Catalog:",
     catalog,
+    ...(listed ? [] : [
+      "",
+      `Titles are not listed here. To find a page: \`node ${cli} wiki search "words" --dir ${wikiDir} --agent ${agentId}\`.`,
+    ]),
     "",
     `For the contents of an article, or any question spanning several, run:\n  node ${cli} wiki query "the question" --dir ${wikiDir} --agent ${agentId}`,
     "",
@@ -3119,7 +3135,10 @@ export class AgentRegistry {
     // Fresh sessions only — `--resume` replays the transcript, so the
     // catalog injected on turn one is still there.
     const wikiContext = !resumeSessionId && !isCodexCli
-      ? buildWikiContext(agentWiki, task.agentId, { notesInbox: wikiNotesHint(this.config) })
+      ? buildWikiContext(agentWiki, task.agentId, {
+        notesInbox: wikiNotesHint(this.config),
+        catalog: this.config.wiki?.startCatalog,
+      })
       : undefined
 
     // The owner's newest decisions, ahead of the history and the memo

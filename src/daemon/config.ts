@@ -2289,6 +2289,11 @@ export const daemonConfigSchema = z.object({
     decisionApprovals: z.object({
       required: z.boolean().default(false),
     }).default({}),
+    /** What the wiki block at a fresh start lists (#2002). "counts": one
+     *  line per article type with its count, and the search command.
+     *  "titles": every title, as before #2002. Set "titles" again if
+     *  owner_check_mismatch or owner_reopened rise after the trim. */
+    startCatalog: z.enum(["counts", "titles"]).default("counts"),
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),

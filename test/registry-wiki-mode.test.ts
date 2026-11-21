@@ -40,6 +40,8 @@ describe("daemon wiki hub", () => {
 
     const store = hub.getAgentWiki("ops")
     expect(store.listArticles("ops").map((a) => a.meta.title)).toEqual(["Release Steps"])
-    expect(buildWikiContext(store, "ops")).toContain("Release Steps")
+    expect(buildWikiContext(store, "ops", { catalog: "titles" })).toContain("Release Steps")
+    // The default since #2002 is counts per type.
+    expect(buildWikiContext(store, "ops")).toMatch(/\*\*\w+\*\* — 1 article/)
   })
 })
