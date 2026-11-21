@@ -104,6 +104,18 @@ If you keep your standing rules as one table on a wiki page, with the columns **
 - `run:daily` and `run:weekly` read the schedule of a scheduled job, or of the workflow the run belongs to. `team` fits no run yet.
 - The rules page then leaves the newest-decisions block, so it is not sent twice. With approvals on, an unapproved rules page sends nothing.
 
+### What the wiki block lists at the start
+
+A fresh conversation starts with a short wiki block: what the wiki is, the command to ask it (`wiki query`), the command to find a page by words (`wiki search`), and the rule for checked facts. It lists how many pages of each type the wiki holds, not their titles. A full list of titles cost some agents 2,000 to 5,000 tokens at every start.
+
+To list every title again, set this in `agentx.json` and restart the daemon:
+
+```json
+{ "wiki": { "startCatalog": "titles" } }
+```
+
+Do this if, in the week after the change, owners reopen more work or find more checks that do not match (`owner_reopened`, `owner_check_mismatch`). To compare start sizes before and after, run `pnpm exec tsx scripts/start-size.ts --path .agentx/db.sqlite` from the AgentX folder.
+
 ### When two facts disagree
 
 A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.
@@ -382,8 +394,11 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 10. After you turn the wiki absorb off for an agent, `agentx wiki absorb --dry-run` prints `absorb is off for this agent` next to it.
 11. Change a rule on a wiki decision page (and, with approvals on, approve it with `agentx wiki decisions approve`), then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
 12. `agentx wiki decisions list` shows `approved` next to that page. Edit the page again and it shows `changed since approval`.
+13. Start a new conversation with an agent and ask what its wiki block lists. It names page counts per type and the `wiki search` command, with no titles. With `"startCatalog": "titles"` it lists the titles.
 
 ## If something is wrong
+
+- **Agents miss wiki pages they used to find since the start block lists counts only:** set `{ "wiki": { "startCatalog": "titles" } }` in `agentx.json` and restart the daemon. The titles come back at the next fresh conversation.
 
 - **An agent repeats an old status or asks for an approval you removed:** check that your decision is on a wiki page of type `decision`, updated in the last 7 days, with the current rule in a **Rule** or **Update** section. With approvals on, also check that `agentx wiki decisions list` shows it as `approved`. A decision said in one chat only reaches other conversations from that page.
 - **`agentx wiki decisions list` says there are no decision pages:** you ran it outside the AgentX folder. Run it from there, or add `--dir ~/Developer/noqta/agentx/.agentx/wiki` (the path on the Mac).
