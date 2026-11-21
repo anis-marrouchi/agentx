@@ -177,12 +177,29 @@ function scheduleItems(ctx: InboxContext): InboxItem[] {
   const out: InboxItem[] = []
   for (const [id, job] of Object.entries<any>(cfg?.crons ?? {})) {
     const approval = job?.approval
-    if (!approval || (approval.action !== "create" && approval.action !== "delete")) continue
+    if (!approval || (approval.action !== "create" && approval.action !== "delete" && approval.action !== "change")) continue
     const tz = job.timezone || "UTC"
     const human = job.schedule ? humanizeCron(job.schedule) : ""
     const when = job.schedule ? `${human.charAt(0).toLowerCase()}${human.slice(1)} (${job.schedule})` : "no schedule"
     const what = String(job.prompt ?? job.command ?? "")
     const creating = approval.action === "create"
+    if (approval.action === "change") {
+      // A time that fires more often than the approved one (#863).
+      const next = typeof approval.schedule === "string" ? approval.schedule : ""
+      out.push({
+        key: `schedule:${id}`,
+        kind: "schedule",
+        title: `Schedule "${id}" to run more often`,
+        ask: `Let ${job.agent ?? "the agent"} move "${id}" from ${when} to ${next ? `${humanizeCron(next).toLowerCase()} (${next})` : "a new time"}?`,
+        yes: "use the new time",
+        no: "keep the current time",
+        raised_by: String(approval.requestedBy ?? "unknown"),
+        created_at: String(approval.requestedAt ?? ""),
+        detail: clip(`${approval.reason ? `Why: ${approval.reason} · ` : ""}${what}`),
+        more: "agentx schedule list",
+      })
+      continue
+    }
     out.push({
       key: `schedule:${id}`,
       kind: "schedule",

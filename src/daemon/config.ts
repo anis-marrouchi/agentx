@@ -985,11 +985,15 @@ const cronJobSchema = z.object({
   /** Pending operator approval for an agent-requested change. While a
    *  `create` is pending the job never runs, whatever `enabled` says; a
    *  pending `delete` leaves the job as it was until approved. Cleared by
-   *  `agentx schedule approve|reject <id>`. */
+   *  `agentx schedule approve|reject <id>`. A pending `change` (#863) is a
+   *  time that fires more often than `approvedSchedule`: the job keeps its
+   *  current time until approved. */
   approval: z.object({
-    action: z.enum(["create", "delete"]),
+    action: z.enum(["create", "delete", "change"]),
     requestedBy: z.string(),
     requestedAt: z.string(),
+    schedule: z.string().optional(),
+    reason: z.string().optional(),
   }).optional(),
 }).refine((j) => Boolean(j.command?.trim() || j.prompt?.trim()), {
   message: "a cron needs either a prompt (dispatch an agent) or a command (run it directly)",

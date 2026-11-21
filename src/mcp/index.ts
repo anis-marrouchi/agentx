@@ -965,24 +965,31 @@ const TOOLS = [
   {
     name: "agentx_schedule",
     description:
-      "Manage recurring routines (schedules) in plain English. Actions: list, create, pause, resume, delete. " +
+      "Manage recurring routines (schedules) in plain English. Actions: list, create, pause, resume, delete, change, retire, recommend. " +
       "create and delete are REQUESTS: nothing takes effect until the operator approves (the operator is sent the parsed cron and next fire time). " +
-      "Tell the user it is pending approval. You can pause/resume/delete only routines you created, unless you are an admin agent. " +
+      "Tell the user it is pending approval. You can manage only routines you run (agent) or created, unless you are an admin agent. " +
+      "change (with a reason) edits the brief (prompt), time (when), goal or value and goes in the job's change log; a time that runs more often than the approved one is a request. " +
+      "retire (with a reason) ends a job for good. recommend answers the daemon's goal-check question: {action:'recommend', id, choice:'keep'|'change'|'drop', why}. " +
       "Example: {action:'create', when:'every monday at 10am', prompt:'Check the open invoices and summarise'}.",
     inputSchema: {
       type: "object" as const,
       properties: {
         action: {
           type: "string",
-          enum: ["list", "create", "pause", "resume", "delete"],
+          enum: ["list", "create", "pause", "resume", "delete", "change", "retire", "recommend"],
           description: "What to do. Default: list.",
         },
         id: { type: "string", description: "Schedule id. Required for pause/resume/delete; optional for create (auto-generated)." },
         when: {
           type: "string",
-          description: "create: plain-English timing, e.g. 'every monday at 10am', 'weekdays at 6pm', 'every 15 minutes', '1st of every month at noon'.",
+          description: "create / change: plain-English timing, e.g. 'every monday at 10am', 'weekdays at 6pm', 'every 15 minutes', '1st of every month at noon'.",
         },
-        prompt: { type: "string", description: "create: what the agent should do at each run." },
+        prompt: { type: "string", description: "create / change: what the agent should do at each run." },
+        goal: { type: "string", description: "change: the goal record id the job serves." },
+        value: { type: "object", description: "change: {why, metric, number?}: why it runs and the number that proves it." },
+        reason: { type: "string", description: "change / retire: why (goes in the job's change log)." },
+        choice: { type: "string", enum: ["keep", "change", "drop"], description: "recommend: your recommendation for the job's goal card." },
+        why: { type: "string", description: "recommend: one line why (max 200 characters)." },
         agent: { type: "string", description: "create: agent that runs the routine. Default: you." },
         timezone: { type: "string", description: "create: IANA timezone. Default: the node's schedule default." },
         notify: {

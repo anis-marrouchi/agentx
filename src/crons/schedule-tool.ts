@@ -17,6 +17,8 @@ import {
 } from "./schedule-ops"
 import { rootOfConfig } from "./goal-state"
 import { retiredRefusalAt } from "./retired"
+import { changeAction, recommendAction, retireAction, type ChangeContext } from "./schedule-change"
+import type Database from "better-sqlite3"
 
 // --- Agent-facing `schedule` tool ---
 //
@@ -34,7 +36,7 @@ import { retiredRefusalAt } from "./retired"
 //   2. Ownership. Jobs record `createdBy`; an agent may touch only its own
 //      unless its config says `admin: true`.
 
-export type ScheduleAction = "list" | "create" | "pause" | "resume" | "delete"
+export type ScheduleAction = "list" | "create" | "pause" | "resume" | "delete" | "change" | "retire" | "recommend"
 
 export interface ScheduleCaller {
   agentId: string
@@ -51,6 +53,8 @@ export interface ScheduleToolDeps {
   now?: () => Date
   /** Deliver the approval request to the operator. Throws on failure. */
   notifyOperator?: (dest: NotifyTarget, text: string) => Promise<void>
+  /** The change log (#863). Default: the node's database. */
+  ledger?: () => Database.Database | null
 }
 
 /** Channels that are not a conversation someone reads, so they never make a
@@ -247,6 +251,16 @@ export async function runScheduleTool(
   if (!job) return `Error: schedule "${id}" not found.`
   if (!canManage(cfg, job, caller)) return ownershipError(id, job)
 
+  // The owner's own changes and its goal-check recommendation (#863).
+  if (action === "change" || action === "retire" || action === "recommend") {
+    const ctx: ChangeContext = {
+      id, job, caller, root: rootOfConfig(deps.configPath), configPath: deps.configPath, reload: deps.reload, now, ledger: deps.ledger,
+      notifyApproval: (text) => notifyApproval(cfg, deps, text),
+    }
+    if (action === "recommend") return recommendAction(args, ctx)
+    return action === "retire" ? retireAction(args, ctx) : changeAction(args, ctx, crons)
+  }
+
   if (action === "pause" || action === "resume") {
     const enable = action === "resume"
     if (enable && isPendingCreate(job)) {
@@ -306,7 +320,7 @@ export async function runScheduleTool(
     ].join("\n")
   }
 
-  return `Error: unknown action "${action}". Use list, create, pause, resume or delete.`
+  return `Error: unknown action "${action}". Use list, create, pause, resume, delete, change, retire or recommend.`
 }
 
 /**

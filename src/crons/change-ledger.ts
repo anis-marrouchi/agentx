@@ -81,3 +81,17 @@ export function ledgerText(v: unknown): string | null {
   if (v === undefined || v === null || v === "") return null
   return typeof v === "string" ? v : JSON.stringify(v)
 }
+
+/** Write one row; never throws. False when it was not written (no
+ *  database, or the write failed): the change itself still stands. */
+export function writeLedgerRow(root: string, row: CronChangeRow, ledger?: () => Database.Database | null, log?: (msg: string) => void): boolean {
+  try {
+    const db = ledger ? ledger() : openChangeLedger(root)
+    if (!db) return false
+    recordCronChange(db, row)
+    return true
+  } catch (e: any) {
+    log?.(`[cron-goal] change log row for "${row.job}" not written: ${e?.message ?? e}`)
+    return false
+  }
+}
