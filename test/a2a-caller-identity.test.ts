@@ -264,26 +264,29 @@ describe("one session per sender, kept as an implicit key (section 5, N2)", () =
 })
 
 describe("rollback (v2 §7, test 10)", () => {
-  const ROLLBACK = "UPDATE handoffs SET status='lost', ended_at=@now, updated_at=@now WHERE status IS NULL AND way_home IN ('none','deliver')"
+  // Only none rows: deliver rows (piece 4b) are read by the release before
+  // this one, so a rollback leaves them to it (review item 3).
+  const ROLLBACK = "UPDATE handoffs SET status='lost', ended_at=@now, updated_at=@now WHERE status IS NULL AND way_home = 'none'"
 
-  it("closes open none and deliver rows and leaves callbacks and ended rows alone", () => {
+  it("closes open none rows and leaves deliver, callback and ended rows alone", () => {
     const db = freshDb()
     const h = manager(db)
     const none = h.mgr.start({ caller: agentCaller("builder"), callee: "worker", message: "a", kind: "send", wayHome: "none" })
     const deliver = h.mgr.start({ caller: { agentId: "front", context: { channel: "telegram", chatId: "c1" } }, callee: "default", peer: "vps", message: "b", wayHome: "deliver", run: () => new Promise(() => {}) })
     const callback = h.mgr.start({ caller: { agentId: "front", taskId: "t", context: { channel: "telegram", chatId: "c1" } }, callee: "worker", message: "c" })
     const changed = db.prepare(ROLLBACK).run({ now: 123 }).changes
-    expect(changed).toBe(2)
+    expect(changed).toBe(1)
     expect(row(db, none.taskId).status).toBe("lost")
-    expect(row(db, deliver.taskId).status).toBe("lost")
+    expect(row(db, deliver.taskId).status).toBeNull()
     expect(row(db, callback.taskId).status).toBeNull()
     // Old rows (way_home NULL) still load as callbacks.
-    expect(new HandoffStore(db).open().map((r) => r.id)).toEqual([callback.taskId])
+    expect(new HandoffStore(db).open().map((r) => r.id).sort()).toEqual([deliver.taskId, callback.taskId].sort())
   })
 
   it("is the statement the docs give", () => {
     const doc = readFileSync(join(__dirname, "../docs/reference/a2a.md"), "utf-8")
-    expect(doc).toContain("WHERE status IS NULL AND way_home IN ('none','deliver')")
+    expect(doc).toContain("WHERE status IS NULL AND way_home = 'none'")
+    expect(doc).not.toContain("way_home IN ('none','deliver')")
   })
 })
 
@@ -376,6 +379,76 @@ describe("what agents are taught (C4)", () => {
     const ask = readFileSync(join(__dirname, "../docs/jobs/ask-another-agent.md"), "utf-8")
     expect(ask).not.toMatch(/"taskId": "snd-/)
     expect(ask).not.toMatch(/Add `"async": false` to the request body to wait/)
+  })
+})
+
+describe("a named sender that is not a local agent (review item 2)", () => {
+  // /send/agent records it as "?", but keys its session by its label.
+  const labelled = (label: string): CallerTurn => ({ agentId: "?", context: { sender: `agent:${label}` } })
+
+  it("gets a session of its own per label, seeded from its legacy chat", () => {
+    const db = freshDb()
+    const h = manager(db)
+    h.mgr.start({ caller: labelled("script-a"), callee: "worker", message: "one", kind: "send", wayHome: "none" })
+    h.mgr.start({ caller: labelled("script-b"), callee: "worker", message: "two", kind: "send", wayHome: "none" })
+    expect(h.runs[0].resumeFrom).toEqual([{ channel: "a2a", chatId: "script-a" }])
+    expect(h.runs[1].resumeFrom).toEqual([{ channel: "a2a", chatId: "script-b" }])
+    // Neither was counted as a follow-up of the other.
+    expect(h.mgr.midTurnFollowUps()).toBe(0)
+  })
+
+  it("shows the label as the callee's sender line, and the row's caller stays ?", () => {
+    const db = freshDb()
+    const h = manager(db)
+    const r = h.mgr.start({ caller: labelled("script-a"), callee: "worker", message: "one", kind: "send", wayHome: "none" })
+    expect(h.runs[0].context.sender).toBe("agent:script-a")
+    expect(row(db, r.taskId).caller).toBe("?")
+  })
+
+  it("does not join the same text from another label", () => {
+    const db = freshDb()
+    const h = manager(db)
+    const a = h.mgr.start({ caller: labelled("script-a"), callee: "worker", message: "same", kind: "send", wayHome: "none" })
+    const b = h.mgr.start({ caller: labelled("script-b"), callee: "worker", message: "same", kind: "send", wayHome: "none" })
+    expect(b.taskId).not.toBe(a.taskId)
+    expect(h.runs).toHaveLength(2)
+  })
+
+  it("keeps its session after a restart, apart from the shared unnamed one", async () => {
+    const db = freshDb()
+    const a = manager(db)
+    const first = a.mgr.start({ caller: labelled("script-a"), callee: "worker", message: "one", kind: "send", wayHome: "none" })
+    a.finish[0]({ content: "ok" })
+    await flush()
+    a.mgr.stop()
+    const b = manager(db, {}, 101 * HOUR)
+    b.mgr.start({ caller: labelled("script-a"), callee: "worker", message: "two", kind: "send", wayHome: "none" })
+    b.mgr.start({ caller: agentCaller("?"), callee: "worker", message: "three", kind: "send", wayHome: "none" })
+    expect(b.runs[0].resumeFrom?.[0]).toEqual({ channel: "a2a", chatId: `a2a:?:worker:${first.taskId}` })
+    // A truly unnamed send keeps the shared session, not script-a's.
+    expect(b.runs[1].resumeFrom).toEqual([{ channel: "a2a", chatId: "a2a" }])
+  })
+
+  it("is passed from /send/agent to the hand-off as the sender's label", () => {
+    const src = readFileSync(join(__dirname, "../src/daemon/index.ts"), "utf-8")
+    const none = src.slice(src.indexOf("  private startNone("), src.indexOf("  private recordInboundDispatch("))
+    expect(none).toMatch(/sender: `agent:\$\{label\}`/)
+  })
+})
+
+describe("small review fixes (item 5)", () => {
+  it("sends no senderAgentId to a peer for an unnamed caller", () => {
+    const db = freshDb()
+    const seen: Array<string | undefined> = []
+    const h = manager(db, { runPeer: (_p, _c, _m, _ctx, opts) => { seen.push(opts.senderAgentId); return new Promise(() => {}) } })
+    h.mgr.start({ caller: agentCaller("?"), callee: "worker", peer: "vps", message: "x", kind: "send", wayHome: "none" })
+    h.mgr.start({ caller: agentCaller("builder"), callee: "worker", peer: "vps", message: "y", kind: "send", wayHome: "none" })
+    expect(seen).toEqual([undefined, "builder"])
+  })
+
+  it("takes the per-sender window from the configured session stale minutes", () => {
+    const src = readFileSync(join(__dirname, "../src/daemon/delegation-wiring.ts"), "utf-8")
+    expect(src).toMatch(/senderKeyMs: w\.config\.session\.staleMinutes \* 60_000/)
   })
 })
 

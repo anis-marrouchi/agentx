@@ -157,3 +157,36 @@ describe("bare merge request refs", () => {
     expect(bareRefNamesProject("app #52", "team/app#52")).toBe(false)
   })
 })
+
+// #2007 piece 2 review item 1: the 202 note and the notice of a none
+// hand-off tell the agent to read it with agentx_lookup. A dlg- id is
+// read through the same reader and rules as GET /a2a/delegations/:id.
+describe("agentx_lookup: a hand-off by its id", () => {
+  const row = { id: "dlg-9", caller: "planner", callee: "builder", status: "done", startedAt: "2026-11-08T09:00:00.000Z", endedAt: "2026-11-08T09:10:00.000Z", text: "Merged team/app!52." }
+  const reader = (calls: Array<[string, string | null]>) => (id: string, as: string | null) => {
+    calls.push([id, as])
+    return id === "dlg-9" && as === "planner" ? { status: 200, body: row } : { status: 404, body: { error: "no hand-off with this id that you may read" } }
+  }
+
+  it("reads handoff=<id> as the named agent, with its answer", async () => {
+    const calls: Array<[string, string | null]> = []
+    const a = await handleLookup(new URLSearchParams("handoff=dlg-9&as=planner"), deps({ readHandoff: reader(calls) }))
+    expect(a.status).toBe(200)
+    expect(calls).toEqual([["dlg-9", "planner"]])
+    const text = String(a.body.text)
+    expect(text).toContain("dlg-9")
+    expect(text).toContain("planner")
+    expect(text).toContain("done")
+    expect(text).toContain("Merged team/app!52.")
+  })
+
+  it("takes a dlg- id given as work too", async () => {
+    const a = await handleLookup(new URLSearchParams("work=dlg-9&as=planner"), deps({ readHandoff: reader([]) }))
+    expect(a.status).toBe(200)
+  })
+
+  it("answers like the reader when the asker may not read it", async () => {
+    const a = await handleLookup(new URLSearchParams("handoff=dlg-9&as=ops"), deps({ readHandoff: reader([]) }))
+    expect(a.status).toBe(404)
+  })
+})
