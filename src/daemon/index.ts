@@ -315,7 +315,7 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshDeliverJoined, meshTaskMode, replyBody, resolveCallerTurn, startMeshDeliver, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, queueSend, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -9484,6 +9484,28 @@ export class AgentXDaemon {
           const meshCaller = resolveCallerTurn(callerHintFrom(req, body), this.registry)
           const limited = hopRefusal(String(body.agent || body.peer), meshCaller, this.registry, this.syncWaits)
           if (limited) { this.json(res, 409, { error: limited }); return }
+          // An explicit async:true that names its chat runs on the hand-off
+          // journal (#2007 S5): the same request while its row is open
+          // joins it, before the budget below counts a hop.
+          const deliverCtx = body.context as Record<string, unknown> | undefined
+          const deliverReq = body.async === true && meshTaskMode(body, true) === "legacy-async"
+            && typeof deliverCtx?.channel === "string" && !!deliverCtx.channel && typeof deliverCtx?.chatId === "string" && !!deliverCtx.chatId
+            ? {
+                peer: String(body.peer),
+                ...(typeof body.agent === "string" && body.agent ? { agent: body.agent } : {}),
+                message: String(body.message),
+                context: deliverCtx,
+                ...(typeof body.senderAgentId === "string" && body.senderAgentId ? { caller: body.senderAgentId } : {}),
+              }
+            : null
+          if (deliverReq) {
+            const joined = meshDeliverJoined(this.delegations, deliverReq)
+            if (joined) {
+              this.log(`[delegation ${joined.taskId}] /mesh/task async to ${deliverReq.peer}: the same request again; joined, no hop counted`)
+              this.json(res, 202, joined)
+              return
+            }
+          }
           // Hand-off budget (#1756) for the ways out that skip the
           // delegation gate; a callback hop is counted there.
           const overBudget = meshTaskMode(body, true) === "callback" ? null : this.handOffRefusal(meshCaller, `${String(body.agent || "?")}@${String(body.peer)}`)
@@ -9606,53 +9628,26 @@ export class AgentXDaemon {
               })
               return
             }
-            const taskId = `mesh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-            this.json(res, 202, {
-              accepted: true,
-              taskId,
-              deliverTo: `${deliverChannel}:${deliverChatId}`,
-              note: "result will be delivered to the originating chat when the peer finishes",
-            })
-
+            // On the hand-off journal (#2007 S5): one row with way_home
+            // 'deliver', its dlg- id in the 202, ended once with its text,
+            // readable with GET /a2a/delegations/<id>. The peer call is made
+            // as before; the answer, or one line on failure, still goes to
+            // the chat named here. A restart while it runs tells that chat
+            // it was lost.
             const peerName = body.peer as string
             const targetAgent = body.agent as string | undefined
             // Captured: the `if (!this.mesh)` guard above does not narrow
             // through the async closure.
             const mesh = this.mesh
-            void (async () => {
-              const started = Date.now()
-              let text: string
-              // The answer is the agent's reply in the asking chat; the
-              // failure text is a notice (#1892).
-              let answered = false
-              try {
-                text = await mesh.sendTask(peerName, body.message as string, targetAgent, {
-                  vouchOwner,
-                  context: meshContext,
-                  senderAgentId: meshSender,
-                })
-                this.log(
-                  `[mesh/task async ${taskId}] ${peerName}/${targetAgent ?? "default"} finished in ${Date.now() - started}ms`,
-                )
-                answered = true
-              } catch (e: any) {
-                // The failure is reported to the same chat that asked.
-                // Silence here is how "I'll report back" became a lie.
-                text = `Delegation to ${peerName}/${targetAgent ?? "default"} failed: ${e?.message ?? e}`
-                this.log(`[mesh/task async ${taskId}] failed: ${e?.message ?? e}`)
-              }
-              try {
-                await this.router.sendOutbound({
-                  channel: deliverChannel,
-                  chatId: deliverChatId,
-                  text,
-                  agentId: (meshContext?.agentId as string | undefined) ?? meshSender,
-                  accountId: meshContext?.accountId as string | undefined,
-                }, { countsAsReply: answered })
-              } catch (e: any) {
-                this.log(`[mesh/task async ${taskId}] delivery failed: ${e?.message ?? e}`)
-              }
-            })()
+            const accepted = startMeshDeliver(this.delegations, {
+              ...(deliverReq ?? { peer: peerName, ...(targetAgent ? { agent: targetAgent } : {}), message: String(body.message), context: meshContext!, ...(meshSender ? { caller: meshSender } : {}) }),
+              run: () => mesh.sendTask(peerName, body.message as string, targetAgent, {
+                vouchOwner,
+                context: meshContext,
+                senderAgentId: meshSender,
+              }),
+            })
+            this.json(res, accepted.status, accepted.body)
             break
           }
 

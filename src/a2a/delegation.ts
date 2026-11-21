@@ -87,6 +87,10 @@ export interface DelegationRecord {
   home?: string
   /** What makes two sends the same work (#2007 piece 3, joinKey). */
   joinKey?: string
+  /** "deliver": a /mesh/task with async:true (#2007 S5). The raw answer,
+   *  or one line on failure, goes to `origin` (the chat the request named)
+   *  instead of a callback turn. Absent: a callback. */
+  wayHome?: "deliver"
 }
 
 export interface DelegationResult {
@@ -482,6 +486,15 @@ export function joinKey(o: { caller: string; callee: string; home?: string; orig
   return `j1:${sha(o.caller, o.callee, o.home ?? "").slice(0, 24)}:${sha(o.origin.channel, o.origin.chatId).slice(0, 24)}:${sha(o.message)}`
 }
 
+/** The caller a deliver row names when the request named no agent. */
+export const UNNAMED_CALLER = "?"
+
+/** The callee as the join key counts it: a deliver row (#2007 S5) names
+ *  its peer too, since "default" on one peer is not "default" on another. */
+function keyCallee(o: { callee: string; peer?: string; wayHome?: "deliver" }): string {
+  return o.wayHome === "deliver" && o.peer ? `${o.callee}@${o.peer}` : o.callee
+}
+
 /** The LIKE pattern of a key with its chat part left open. */
 function sameTextPattern(key: string): string {
   const [v, pair, , text] = key.split(":")
@@ -600,6 +613,12 @@ export class DelegationManager {
      *  callee already on the same home finishes first; this one then
      *  resumes that session instead of starting beside it. */
     home?: string
+    /** "deliver" (#2007 S5): `caller.context` is the chat the request
+     *  named; the answer goes there as it is, with no callback turn. */
+    wayHome?: "deliver"
+    /** The call that does the work, instead of runLocal or runPeer: the
+     *  /mesh/task async peer call, made exactly as before this row. */
+    run?: () => Promise<string>
   }): { taskId: string; record: DelegationRecord; duplicate?: true } {
     const origin = originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
@@ -610,7 +629,7 @@ export class DelegationManager {
     const home = normalizeHome(opts.home)
     // One run per message (#2007 piece 3): the same message from the same
     // chat, on the same home, joins the one still open.
-    const key = this.store ? joinKey({ caller: opts.caller.agentId, callee: opts.callee, home, origin, message: opts.message }) : undefined
+    const key = this.store ? joinKey({ caller: opts.caller.agentId, callee: keyCallee(opts), home, origin, message: opts.message }) : undefined
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -625,6 +644,7 @@ export class DelegationManager {
       ...(depth ? { depth } : {}),
       ...(home ? { home } : {}),
       ...(key ? { joinKey: key } : {}),
+      ...(opts.wayHome ? { wayHome: opts.wayHome } : {}),
     }
     // The row first, before anything in memory is touched: a duplicate
     // leaves no trace.
@@ -650,10 +670,10 @@ export class DelegationManager {
 
   /** The join key a send from this caller turn would have; null when the
    *  turn has no chat to call back to or the node has no table. */
-  joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string }): string | null {
+  joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string; peer?: string; wayHome?: "deliver" }): string | null {
     const origin = originOf(o.caller.context)
     if (!origin || !this.store) return null
-    return joinKey({ caller: o.caller.agentId, callee: o.callee, home: normalizeHome(o.home), origin, message: o.message })
+    return joinKey({ caller: o.caller.agentId, callee: keyCallee(o), home: normalizeHome(o.home), origin, message: o.message })
   }
 
   /**
@@ -733,7 +753,11 @@ export class DelegationManager {
     const depth = record.depth ?? 0
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
-    try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
+    // A deliver row is not an open request's hand-off nor a job: nobody
+    // waits on it in a turn, so the request and job listeners stay out.
+    if (record.wayHome !== "deliver") {
+      try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
+    }
 
     const calleeContext: Record<string, unknown> = {
       channel: "a2a",
@@ -798,6 +822,7 @@ export class DelegationManager {
       }, timeoutMs)
       ;(timer as any).unref?.()
       this.timers.set(id, timer)
+      if (opts.run) return opts.run().then((text) => ({ content: text } as CalleeRun))
       if (record.peer) {
         return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
           .then((text) => ({ content: text } as CalleeRun))
@@ -882,7 +907,8 @@ export class DelegationManager {
     // database that already ended it has called back. An answer that will
     // be called back is marked pending in the same write: should the daemon
     // stop before its callback turn starts, the next start runs it once.
-    const pending = repeat ? undefined : { result: { ...result, text: clip(result.text, RESULT_CLIP) }, ...(written ? { wrote: true } : {}) }
+    const deliver = rec.wayHome === "deliver"
+    const pending = repeat || deliver ? undefined : { result: { ...result, text: clip(result.text, RESULT_CLIP) }, ...(written ? { wrote: true } : {}) }
     if (this.journal("end the hand-off", (s) => s.end(id, result.status, this.now(), pending, result), "missing") === "taken") {
       this.deps.log(`[delegation ${id}] ${result.status} dropped: another process ended it already`)
       return false
@@ -890,6 +916,10 @@ export class DelegationManager {
     const entry = this.recent.find((r) => r.id === id)
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
+    if (deliver) {
+      await this.deliverRaw(rec, result)
+      return true
+    }
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
     // A callee that said it is blocked did not fail, and a stalled one
     // already left its own signal (job_stalled).
@@ -904,6 +934,30 @@ export class DelegationManager {
     }
     await this.queueCallback({ rec, result, wrote: !!written })
     return true
+  }
+
+  /** A deliver row's end (#2007 S5), as /mesh/task async sent it before
+   *  the row: the raw answer to the named chat, or one line saying it
+   *  failed (a notice, not the agent's reply). Sent once: complete() runs
+   *  once per id. */
+  private async deliverRaw(rec: DelegationRecord, result: DelegationResult): Promise<void> {
+    const ok = result.status === "done" || result.status === "waiting"
+    const text = ok ? result.text : `Delegation to ${rec.peer ?? "this node"}/${rec.callee} failed: ${result.text}`
+    const known = rec.caller !== UNNAMED_CALLER
+    if (!ok && known && !result.state) {
+      emitSignal({ kind: "delegation_failed", agentId: rec.caller, ref: rec.id, detail: `${rec.callee}${rec.peer ? `@${rec.peer}` : ""} ${result.status}: ${result.text.slice(0, 160)}` })
+    }
+    const { channel, chatId } = rec.origin
+    try {
+      await this.deps.deliver({
+        channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId,
+        // As before: the text goes in the session of the agent it names.
+        record: known, taskId: rec.id, outcome: ok ? "done" : "error", countsAsReply: ok,
+      })
+      this.deps.log(`[delegation ${rec.id}] ${result.status} delivered to ${channel}:${chatId}`)
+    } catch (e: any) {
+      this.deps.log(`[delegation ${rec.id}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
+    }
   }
 
   /**
