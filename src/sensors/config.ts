@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { cronValueSchema } from "@/crons/value-line"
 import { GOAL_ID_MAX } from "@/requests/goals"
+import { batteryReaderMissing } from "@/native/battery-reader"
 
 // --- sensors: settings (#863) ---
 //
@@ -112,9 +113,8 @@ export function sensorProblems(
 ): string[] {
   const problems: string[] = []
   for (const [id, s] of Object.entries(cfg.sensors ?? {})) {
-    if (s.reading === "battery" && platform !== "darwin") {
-      problems.push(`sensors.${id}: a battery sensor reads pmset, which only macOS has (this node is ${platform}). Remove it from this node's config.`)
-    }
+    const missing = s.reading === "battery" ? batteryReaderMissing(platform) : null
+    if (missing) problems.push(`sensors.${id}: ${missing}. Remove it from this node's config.`)
     for (const l of s.levels) {
       if (l.target && cfg.agents && !(l.target in cfg.agents)) {
         problems.push(`sensors.${id}.levels.${l.id}.target: "${l.target}" is no agent of this node.`)
