@@ -4,7 +4,7 @@ import { join } from "path"
 import Database from "better-sqlite3"
 import { HandoffStore } from "../src/a2a/handoff-store"
 import { DelegationManager, type CallerTurn, type DelegationDeps } from "../src/a2a/delegation"
-import { joinedBody } from "../src/daemon/delegation-wiring"
+import { joinedBody, noneBody } from "../src/daemon/delegation-wiring"
 import { repeatOf } from "../src/daemon/send-agent"
 
 // #2007 piece 3: one run per hand-off message. The same message from the
@@ -248,6 +248,12 @@ describe("a joined send whose run ended and whose job carries on (#2042)", () =>
     const note = String(joinedBody("dlg-1", "worker", undefined, true, true).note)
     expect(note).toMatch(/comes through the job/)
     expect(note).not.toMatch(/hear its answer once/)
+  })
+
+  it("a none sender is not told a notice is still coming", () => {
+    const note = String(noneBody("dlg-1", "worker", undefined, true, true).note)
+    expect(note).toMatch(/comes through the job/)
+    expect(note).not.toMatch(/When it ends/)
   })
 
   it("the continue window is the job wake's grace setting, read from config", () => {

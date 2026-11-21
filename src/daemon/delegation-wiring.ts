@@ -342,7 +342,8 @@ export function noneBody(taskId: string, callee: string, peer: string | undefine
       ? `Already handed off as task ${taskId}; this repeat started nothing. ` + (carried ? `That run ended and the job carries on; its result comes through the job. ` : ``)
       : `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. `) +
       `No turn of yours can be called back from here, so the answer is not sent to you as a message. ` +
-      `When it ends you get a short notice on your next run; read the answer with agentx_lookup (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
+      (carried ? `Read what it left with agentx_lookup` : `When it ends you get a short notice on your next run; read the answer with agentx_lookup`) +
+      ` (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
   }
 }
 
