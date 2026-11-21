@@ -197,7 +197,8 @@ export async function retireAction(args: Record<string, unknown>, c: ChangeConte
   if (!ended.changed) return `"${c.id}" is already retired.`
   row(c, "retire", c.job.enabled ? "on" : "paused", "retired", reason)
   payChangeOwed(c)
-  return `Retired "${c.id}": it never runs again. Bringing it back needs a new schedule the operator approves.`
+  const withdrawn = ended.withdrew !== undefined ? ` Its time-change request${ended.withdrew ? ` (${ended.withdrew})` : ""} is withdrawn.` : ""
+  return `Retired "${c.id}": it never runs again.${withdrawn} Bringing it back needs a new schedule the operator approves.`
 }
 
 /** The owner's one line about its job (#863): shown on the Wall and in

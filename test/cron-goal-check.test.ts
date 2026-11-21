@@ -9,6 +9,7 @@ import { applyGoalAnswer } from "../src/crons/goal-answer"
 import { jobGoalState, goalWallLines } from "../src/crons/goal-state"
 import { recordCronChange } from "../src/crons/change-ledger"
 import { retiredRefusalAt } from "../src/crons/retired"
+import { MovementCache } from "../src/crons/goal-movement"
 import type { MovementRead } from "../src/requests/checkers/issue-movement"
 
 // #863 v2 + v2.1 + v2.2: the schedule goal check. The owner is woken once,
@@ -316,6 +317,55 @@ describe("movement on the goal's issue", () => {
     expect(await goalCheckAtFire(JOB, deps())).toEqual({ hold: null, kept: false })
     expect(goalWallLines(state(), "helper")).toEqual(["goal check runs on mac only"])
     expect(wakes).toHaveLength(0)
+  })
+
+  describe("cached reads (#2065)", () => {
+    const counted = () => {
+      const calls: string[] = []
+      return { calls, movement: async (p: string, ref: string) => { calls.push(`${p}:${ref}`); return read } }
+    }
+
+    it("two runs inside the TTL make one tracker call; after it, a fresh one", async () => {
+      const cache = new MovementCache(HOUR)
+      const m = counted()
+      expect(await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))).toEqual({ hold: null, kept: false })
+      now = T0 + HOUR - 60_000
+      expect(await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))).toEqual({ hold: null, kept: false })
+      expect(m.calls).toEqual(["gitlab:g/p#1"])
+      now = T0 + HOUR
+      await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))
+      expect(m.calls).toHaveLength(2)
+    })
+
+    it("jobs on the same issue share one read", async () => {
+      const cache = new MovementCache(HOUR)
+      const m = counted()
+      await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))
+      await goalCheckAtFire({ ...JOB, id: "k" }, deps({ movement: m.movement, movementCache: cache }))
+      expect(m.calls).toHaveLength(1)
+    })
+
+    it("a hold is never decided on a cached read: the tracker is read again first", async () => {
+      const cache = new MovementCache(60 * DAY)
+      read = { ok: true, state: "open", times: [T0 - 29 * DAY] }
+      const m = counted()
+      expect(await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))).toEqual({ hold: null, kept: false })
+      // Two days on, the cached read would say 31 days still; a fresh read shows a new note.
+      now = T0 + 2 * DAY
+      read = { ok: true, state: "open", times: [T0 + DAY] }
+      expect(await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))).toEqual({ hold: null, kept: false })
+      expect(m.calls).toHaveLength(2)
+      expect(state().goalCheck).toBeUndefined()
+    })
+
+    it("a failed read is not cached", async () => {
+      const cache = new MovementCache(HOUR)
+      read = { ok: false, error: "HTTP 502" }
+      const m = counted()
+      await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))
+      await goalCheckAtFire(JOB, deps({ movement: m.movement, movementCache: cache }))
+      expect(m.calls).toHaveLength(2)
+    })
   })
 
   it("a job with no goal is never checked", async () => {
