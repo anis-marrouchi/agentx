@@ -20,6 +20,7 @@ import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
 import { isPhoneLink } from "@/notify/phone-link"
 import { situationsConfigSchema } from "@/situations/config"
+import { sensorProblems, sensorsConfigSchema } from "@/sensors/config"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -2311,6 +2312,10 @@ export const daemonConfigSchema = z.object({
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
+  /** Built-in readers the daemon reads on a timer, no model (#863):
+   *  `sensors.<id>` with levels that wake an agent or push to the owner.
+   *  See src/sensors/config.ts. */
+  sensors: sensorsConfigSchema,
   /** One message a day that lists only what is wrong: failed or missed
    *  schedules, stuck requests, paused agents (#1289). Nothing wrong,
    *  nothing sent. See src/crons/exceptions-digest.ts. */
@@ -3338,8 +3343,12 @@ export function literalSecretProblems(raw: any): string[] {
 }
 
 /** Rules that span two sections, checked after the schema. */
-export function crossFieldProblems(cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals">): string[] {
-  const problems: string[] = []
+export function crossFieldProblems(
+  cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals"> & Partial<Pick<DaemonConfig, "sensors" | "agents">>,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  // A battery sensor on a node without pmset, a level aimed at no agent (#863).
+  const problems: string[] = sensorProblems(cfg, platform)
   const m = cfg.native?.mirror
   if (m?.enabled) {
     if (cfg.reminders?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in reminders.lists; a mirrored task would be handed back to an agent. Use another list.`)

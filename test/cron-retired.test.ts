@@ -63,6 +63,23 @@ describe("every enable path refuses a retired job", () => {
     expect((await setScheduleEnabled("paused", true, { configPath, reload: false })).success).toBe(true)
   })
 
+  it("agentx cron enable (the CLI writer) refuses; a paused job still enables", async () => {
+    write({ ended, paused })
+    const prev = process.cwd()
+    process.chdir(dir)
+    try {
+      const { cron } = await import("../src/commands/manage")
+      await cron.parseAsync(["enable", "ended"], { from: "user" })
+      expect(read().crons.ended.enabled).toBe(false)
+      expect(process.exitCode).toBe(1)
+      await cron.parseAsync(["enable", "paused"], { from: "user" })
+      expect(read().crons.paused.enabled).toBe(true)
+    } finally {
+      process.chdir(prev)
+      process.exitCode = 0
+    }
+  })
+
   it("the tool's resume refuses; a paused job still resumes", async () => {
     write({ ended, paused })
     expect(await runScheduleTool({ action: "resume", id: "ended" }, caller, { configPath, reload: false })).toMatch(/retired on 2026-11-20.*operator approval/)

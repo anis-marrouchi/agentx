@@ -91,6 +91,8 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
+import { pushToOwner } from "@/notify/owner-push"
+import { SensorRunner } from "@/sensors/runner"
 import { localAlert, localSettings, notify, readHold, writeCallHold, NotificationQueue, type Sender } from "@/notify"
 import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
 import { attachReach, type AttachedReach } from "@/notify/reach-attach"
@@ -388,6 +390,8 @@ export class AgentXDaemon {
   private attachSweep?: ReturnType<typeof setInterval>
   /** Sends notices no run picked up within the hour (agents/notices.ts). */
   private noticeSweep?: ReturnType<typeof setInterval>
+  /** Built-in readers on a timer (#863, src/sensors). */
+  private sensors?: SensorRunner
   private callSweep?: ReturnType<typeof setInterval>
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
@@ -1709,6 +1713,7 @@ export class AgentXDaemon {
 
     if (this.attachSweep) clearInterval(this.attachSweep)
     if (this.noticeSweep) clearInterval(this.noticeSweep)
+    this.sensors?.stop()
     if (this.callSweep) clearInterval(this.callSweep)
     if (this.taskRunPrune) clearInterval(this.taskRunPrune)
 
@@ -4844,6 +4849,8 @@ export class AgentXDaemon {
     }, 1000)
     this.attachSweep.unref?.()
 
+    this.startSensors()
+
     // Notices nobody's run picked up within the hour go as one run, so a
     // quiet agent still gets them (agents/notices.ts).
     this.noticeSweep = setInterval(() => {
@@ -4858,6 +4865,94 @@ export class AgentXDaemon {
       }
     }, 60_000)
     this.noticeSweep.unref?.()
+  }
+
+  /**
+   * Sensors (#863): built-in readers on a timer, no model. A level wakes
+   * its target agent at priority critical, in the "sensor" channel, and
+   * counts once that run starts; an urgent level, or a critical one whose
+   * wake is held or failed, sends the push `agentx notify --urgent` sends,
+   * through the same told gate as POST /send. Wall lines are named events
+   * `sensor.<id>` on the Hub's Events view. State: .agentx/state/sensors.json.
+   */
+  private startSensors(): void {
+    this.sensors = new SensorRunner({
+      sensors: () => this.config.sensors ?? {},
+      wake: ({ sensor, target, text, signal, onStart }) => this.registry.execute({
+        agentId: target,
+        message: text,
+        context: { channel: "sensor", chatId: `sensor:${sensor}`, sender: `sensor:${sensor}`, admissionPriority: "critical" } as any,
+        onStart: () => onStart(),
+        callerSignal: signal,
+      }).then((r) => ({ error: r.error })),
+      push: (sensor, level, text) => pushToOwner({
+        message: text,
+        todo: level.push.todo,
+        title: level.push.title,
+        from: level.push.from,
+        key: level.push.key ?? `sensor-${sensor}-${level.id}`,
+        priority: level.push.priority,
+        urgent: true,
+      }, {
+        post: async (body) => {
+          const out = await this.sendThroughGate(body)
+          return out.sent ? { sent: true } : { sent: false, told: out.told }
+        },
+        channel: defaultNotifyChannel(this.config),
+        alert: this.ownerAlert(),
+      }),
+      wall: (sensor, text) => { getAgentEventBus().publish({ kind: "custom", type: `sensor.${sensor}`, summary: text }) },
+      log: (m) => this.log(m),
+      stateFile: resolve(process.cwd(), ".agentx/state/sensors.json"),
+    })
+    this.sensors.start()
+    const ids = Object.keys(this.config.sensors ?? {})
+    if (ids.length) this.log(`  Sensors: ${ids.join(", ")}`)
+  }
+
+  /**
+   * The send of POST /send on a non-a2a channel. To the owner's own
+   * addresses the told-the-owner gate decides first (#1126), so the caller
+   * hears whether it went out. A caller may say what it is about; it may
+   * not skip the gate. Shared with the sensors' model-free push (#863), so
+   * that push is the one `agentx notify --urgent` sends. Throws as the
+   * router's send does.
+   */
+  private async sendThroughGate(body: Record<string, unknown>): Promise<{ sent: false; told: string; key?: string | null } | { sent: true; messageId: Awaited<ReturnType<MessageRouter["sendOutbound"]>> }> {
+    const told = toldOfBody(body.told, body.agentId)
+    const gate = this.ownerGate
+    let row: number | undefined
+    if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
+      const { title, body: rest } = splitTitle(String(body.text))
+      const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
+      if (d.verdict !== "send") {
+        this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
+        return { sent: false, told: d.verdict, key: d.key }
+      }
+      told.passed = true
+      row = d.rowId
+    }
+    const messageId = await this.router.sendOutbound({
+      channel: body.channel as string,
+      chatId: body.chatId as string,
+      text: body.text as string,
+      replyTo: body.replyTo as string | undefined,
+      parseMode: body.parseMode as any,
+      agentId: body.agentId as string | undefined,
+      accountId: body.accountId as string | undefined,
+      // Optional rich payloads (buttons/poll/media) — enables cron
+      // jobs and API callers to send interactive messages directly.
+      buttons: body.buttons as any,
+      poll: body.poll as any,
+      media: body.media as any,
+      told,
+      // An agent's message in the conversation (the MCP agentx_send
+      // tool sets it); other callers' sends are notices (#1892).
+    }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
+      if (row !== undefined) gate?.outcome(row, "failed")
+      throw e
+    })
+    return { sent: true, messageId }
   }
 
   /**
@@ -8784,43 +8879,12 @@ export class AgentXDaemon {
             break
           }
           try {
-            // To the owner's own addresses, the told-the-owner gate decides
-            // first (#1126), so the caller hears whether it went out. A
-            // caller may say what it is about; it may not skip the gate.
-            const told = toldOfBody(body.told, body.agentId)
-            const gate = this.ownerGate
-            let row: number | undefined
-            if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
-              const { title, body: rest } = splitTitle(String(body.text))
-              const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
-              if (d.verdict !== "send") {
-                this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
-                this.json(res, 200, { ok: true, sent: false, told: d.verdict, key: d.key })
-                break
-              }
-              told.passed = true
-              row = d.rowId
+            const out = await this.sendThroughGate(body)
+            if (!out.sent) {
+              this.json(res, 200, { ok: true, sent: false, told: out.told, key: out.key })
+              break
             }
-            const messageId = await this.router.sendOutbound({
-              channel: body.channel as string,
-              chatId: body.chatId as string,
-              text: body.text as string,
-              replyTo: body.replyTo as string | undefined,
-              parseMode: body.parseMode as any,
-              agentId: body.agentId as string | undefined,
-              accountId: body.accountId as string | undefined,
-              // Optional rich payloads (buttons/poll/media) — enables cron
-              // jobs and API callers to send interactive messages directly.
-              buttons: body.buttons as any,
-              poll: body.poll as any,
-              media: body.media as any,
-              told,
-              // An agent's message in the conversation (the MCP agentx_send
-              // tool sets it); other callers' sends are notices (#1892).
-            }, { countsAsReply: body.countsAsReply === true }).catch((e) => {
-              if (row !== undefined) gate?.outcome(row, "failed")
-              throw e
-            })
+            const messageId = out.messageId
             const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
             this.json(res, answer.status, answer.body)
           } catch (e: any) {
