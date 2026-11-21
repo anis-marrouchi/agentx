@@ -154,7 +154,7 @@ Click the AgentX icon in the menu bar, press **Command–Option–A** from any a
 | **Settings…** | Opens the [settings window](#the-settings-window) (**Command–,**) |
 | **Dashboard…** | Opens the dashboard's Settings page in your browser (**Command–D**) |
 | **History…** | Opens the [History window](#history) (**Command–Y**) |
-| **Quit AgentX Voice** | Closes the app (**Command–Q**). An app installed with `agentx desktop install` starts again on its own; use `agentx desktop stop` to keep it closed |
+| **Quit AgentX Voice** | Closes the app (**Command–Q**). It stays closed until you next log in or run `agentx desktop start`. If the app crashes, it starts again on its own |
 
 ## The settings window
 
