@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.250.0](https://github.com/anis-marrouchi/agentx/compare/v0.249.0...v0.250.0) (2026-11-21)
+
+
+### Features
+
+* **crons,sensors:** Mac jobs into AgentX: owner schedule actions, goal check, until, battery sensor (noqta[#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#2062](https://github.com/anis-marrouchi/agentx/issues/2062)) ([8c9e27f](https://github.com/anis-marrouchi/agentx/commit/8c9e27f4d93f3628b01efdc9d406e393c250ec8d))
+
+
+### Bug Fixes
+
+* **requests:** newest matching note is the proof; cap owner-words reopens ([#2059](https://github.com/anis-marrouchi/agentx/issues/2059)) ([3157f9c](https://github.com/anis-marrouchi/agentx/commit/3157f9c2e1455e8dc7038b928f2b5db496e14ada))
+
 ## [0.249.0](https://github.com/anis-marrouchi/agentx/compare/v0.248.1...v0.249.0) (2026-11-21)
 
 
