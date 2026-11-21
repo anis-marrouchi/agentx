@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.249.0](https://github.com/anis-marrouchi/agentx/compare/v0.248.1...v0.249.0) (2026-11-21)
+
+
+### Features
+
+* **a2a:** continue a helper's warm session on the one issue a message names ([#2061](https://github.com/anis-marrouchi/agentx/issues/2061)) ([0485ea4](https://github.com/anis-marrouchi/agentx/commit/0485ea4b0f8aa01e54e43b86d7c6034b93e0e194))
+
+
+### Bug Fixes
+
+* **desktop:** Quit leaves AgentX Voice closed ([5318927](https://github.com/anis-marrouchi/agentx/commit/5318927ff6077e52482b9bd6ce0e7f471194c935))
+
 ## [0.248.1](https://github.com/anis-marrouchi/agentx/compare/v0.248.0...v0.248.1) (2026-11-21)
 
 
