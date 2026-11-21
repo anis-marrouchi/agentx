@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.247.0](https://github.com/anis-marrouchi/agentx/compare/v0.246.1...v0.247.0) (2026-11-21)
+
+
+### Features
+
+* **a2a:** async /mesh/task runs on the hand-off journal ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007) piece 4b) ([#2044](https://github.com/anis-marrouchi/agentx/issues/2044)) ([82d2497](https://github.com/anis-marrouchi/agentx/commit/82d249734f108da2a409d13dd70dc6dd6cd5e9f8))
+
 ## [0.246.1](https://github.com/anis-marrouchi/agentx/compare/v0.246.0...v0.246.1) (2026-11-20)
 
 
