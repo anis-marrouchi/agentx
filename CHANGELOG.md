@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.248.0](https://github.com/anis-marrouchi/agentx/compare/v0.247.0...v0.248.0) (2026-11-21)
+
+
+### Features
+
+* **a2a:** agents get a receipt at once, never wait on each other ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007) piece 2) ([#2048](https://github.com/anis-marrouchi/agentx/issues/2048)) ([43c8f7a](https://github.com/anis-marrouchi/agentx/commit/43c8f7a15c69ae3a41f2b2358a67b7255024e697))
+
 ## [0.247.0](https://github.com/anis-marrouchi/agentx/compare/v0.246.1...v0.247.0) (2026-11-21)
 
 
