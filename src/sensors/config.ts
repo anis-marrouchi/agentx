@@ -5,23 +5,25 @@ import { GOAL_ID_MAX } from "@/requests/goals"
 // --- sensors: settings (#863) ---
 //
 //   sensors:
-//     battery:
+//     battery:                      # battery-watch.sh, line for line
 //       reading: battery            # the only built-in reader so far
 //       every: "60s"                # how often it is read, 20s or more
 //       levels:
-//         - { id: on-30min, when: { forMinutes: 30 }, target: ops-agent }
-//         - { id: below-50, when: { below: 50 }, target: ops-agent }
-//         - { id: below-25, when: { below: 25 }, urgent: true }
-//         - { id: below-15, when: { below: 15 }, target: ops-agent, critical: true }
+//         - { id: on-30min, when: { forMinutes: 30 }, target: coo-agent, brief: "DevOps battery watch" }
+//         - { id: below-50, when: { below: 50 }, target: coo-agent, brief: "DevOps battery watch" }
+//         - { id: below-25, when: { below: 25 }, urgent: true, push: { from: DevOps, key: mac-battery-low } }
+//         - { id: below-15, when: { below: 15 }, target: coo-agent, brief: "DevOps battery watch, URGENT", fallbackPush: true }
 //       rearm: { above: 30, onAC: true }
 //       value: { why: "...", metric: "..." }
 //       goal: mac-health
 //
+// macOS only (pmset): the config check refuses a battery sensor elsewhere.
 // A reading costs no model. A level whose condition holds wakes its target
-// agent once per battery stretch (priority critical), or with `urgent`
-// sends the model-free push `agentx notify --urgent` sends. A `critical`
-// level falls back to that push when its wake has not started within
-// 2 minutes or failed. See src/sensors/levels.ts.
+// agent once per battery stretch, always at priority critical, or with
+// `urgent` sends the model-free push `agentx notify --urgent` sends. Only a
+// `fallbackPush` level sends that push when its wake has not started within
+// 2 minutes, or failed; any other held wake gets a Wall line and a retry.
+// See src/sensors/levels.ts. State: .agentx/state/sensors.json.
 
 export const SENSOR_EVERY_MIN_MS = 20_000
 const EVERY = /^(\d+)\s*(s|m)$/
@@ -48,11 +50,12 @@ const levelSchema = z.object({
   /** A model-free push to the owner instead of a wake. */
   urgent: z.boolean().default(false),
   /** The wake falls back to the model-free push when it has not started
-   *  within 2 minutes, or failed. Other levels get a Wall line and a retry. */
-  critical: z.boolean().default(false),
+   *  within 2 minutes, or failed (the script's 15 % line only). Other agent
+   *  levels get a Wall line and a retry, never a push to the operator. */
+  fallbackPush: z.boolean().default(false),
   /** Words put before the wake's text, e.g. who is speaking. */
   brief: z.string().trim().min(1).max(200).optional(),
-  /** How the push reads, for `urgent` and for a `critical` fallback. */
+  /** How the push reads, for `urgent` and for a `fallbackPush` level. */
   push: z.object({
     title: z.string().trim().min(1).max(60).default("Mac battery low"),
     from: z.string().trim().min(1).max(60).default("agentx"),
@@ -63,7 +66,7 @@ const levelSchema = z.object({
 }).superRefine((l, ctx) => {
   if (!l.urgent && !l.target) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "a level needs a target agent, or urgent: true", path: ["target"] })
   if (l.urgent && l.target) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "an urgent level is a push to the owner: leave target out", path: ["target"] })
-  if (l.urgent && l.critical) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "critical is for a level that wakes an agent, not for an urgent push", path: ["critical"] })
+  if (l.urgent && l.fallbackPush) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "fallbackPush is for a level that wakes an agent; an urgent level already is the push", path: ["fallbackPush"] })
 })
 
 export const sensorSchema = z.object({

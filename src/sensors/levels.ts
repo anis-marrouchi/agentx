@@ -15,8 +15,9 @@ import type { SensorConfig, SensorLevel } from "./config"
 //     and re-arms only above `rearm.above` on AC: a short AC spell does not.
 //   - A wake counts as sent only once its run has STARTED. Not started in
 //     2 minutes (held) or failed: a Wall line, and the wake goes again at
-//     the next reading. A `critical` level also owes the model-free push,
-//     once per stretch.
+//     the next reading. Only a `fallbackPush` level (the 15 % line) also
+//     owes the model-free push, once per stretch, sent at once; the other
+//     agent levels never push to the operator (the COO decides that).
 //   - A push that fails is tried again at the next reading, the result
 //     logged; only a push that went out counts.
 //   - A reading that is not ok is never a crossing: one Wall line, again
@@ -30,11 +31,11 @@ export interface LevelState {
   sentAt?: number
   /** A wake handed to the agent that has not started yet. */
   pending?: { since: number; seq: number }
-  /** The text the last wake carried, for a critical level's fallback. */
+  /** The text the last wake carried, for a fallbackPush level's push. */
   text?: string
   /** A held or failed wake was put on the Wall this stretch. */
   stuckTold?: boolean
-  /** A critical level's model-free push: owed, or sent, this stretch. */
+  /** A fallbackPush level's model-free push: owed, or sent, this stretch. */
   fallback?: "owed" | "sent"
 }
 
@@ -70,9 +71,10 @@ function holds(l: SensorLevel, r: { percent: number; onBattery: boolean }, onMin
   return true
 }
 
-/** The words of a wake, as the script wrote them. */
+/** The words of a wake, as the script wrote them ("DevOps battery watch,
+ *  URGENT" as the brief gives the script's 15 % line). */
 export function wakeText(l: SensorLevel, percent: number, onMin: number): string {
-  const lead = l.brief ? (l.critical ? `${l.brief}, URGENT: ` : `${l.brief}: `) : (l.critical ? "URGENT: " : "")
+  const lead = l.brief ? `${l.brief}: ` : ""
   if (l.when.below !== undefined) return `${lead}Mac on battery at ${percent}%, under the ${l.when.below}% line, ${onMin} min on battery.`
   return `${lead}Mac on battery for ${onMin} min, now ${percent}%.`
 }
@@ -84,7 +86,7 @@ export function pushText(l: SensorLevel, percent: number, onMin: number): string
 }
 
 /** Held wakes: not started within HOLD_MS. Dropped, put on the Wall, and
- *  sent again at the next reading; a critical level owes the push. */
+ *  sent again at the next reading; a fallbackPush level's push goes now. */
 export function checkHolds(cfg: SensorConfig, state: SensorState, now: number, id = "battery"): Step {
   const s = clone(state)
   const actions: SensorAction[] = []
@@ -94,14 +96,17 @@ export function checkHolds(cfg: SensorConfig, state: SensorState, now: number, i
     actions.push({ kind: "abort", level: l.id, seq: st.pending.seq })
     st.pending = undefined
     actions.push(...stuck(id, l, st, `not started in ${Math.round(HOLD_MS / 60_000)} min`))
+    if (st.fallback === "owed") actions.push(fallbackPush(l, st))
   }
   return { state: s, actions }
 }
 
+const fallbackPush = (l: SensorLevel, st: LevelState): SensorAction => ({ kind: "push", level: l.id, text: st.text ?? "", fallback: true })
+
 /** A held or failed wake: one Wall line per level and stretch, the rest
- *  logged; a critical level owes its push. */
+ *  logged; a fallbackPush level owes its push. */
 function stuck(id: string, l: SensorLevel, st: LevelState, why: string): SensorAction[] {
-  const owes = l.critical && st.fallback !== "sent"
+  const owes = l.fallbackPush && st.fallback !== "sent"
   if (owes) st.fallback = "owed"
   const line = `sensor ${id}: the ${l.id} wake to ${l.target} ${why}; ${owes ? "sending the urgent push instead, and " : ""}waking it again at the next reading`
   if (st.stuckTold) return [{ kind: "log", text: line }]
@@ -165,10 +170,13 @@ export function step(cfg: SensorConfig, state: SensorState, reading: BatteryRead
   for (const l of cfg.levels.filter((x) => !x.urgent && x.when.below === undefined)) {
     if (holds(l, reading, onMin)) wake(l)
   }
-  // A critical level's push still owed: tried at every reading until sent.
+  // A fallback push still owed (it failed before): tried at every reading
+  // until sent. Not twice in one step when the hold check above owed it.
   for (const l of cfg.levels) {
     const st = s.levels[l.id]
-    if (st?.fallback === "owed") actions.push({ kind: "push", level: l.id, text: st.text ?? wakeText(l, percent, onMin), fallback: true })
+    if (st?.fallback !== "owed" || actions.some((a) => a.kind === "push" && a.fallback && a.level === l.id)) continue
+    st.text ??= wakeText(l, percent, onMin)
+    actions.push(fallbackPush(l, st))
   }
   return { state: s, actions }
 }
@@ -205,7 +213,7 @@ export function failed(cfg: SensorConfig, state: SensorState, levelId: string, s
   st.sent = false
   st.pending = undefined
   const actions = stuck(id, l, st, `failed (${why.slice(0, 120)})`)
-  if (st.fallback === "owed") actions.push({ kind: "push", level: l.id, text: st.text ?? "", fallback: true })
+  if (st.fallback === "owed") actions.push(fallbackPush(l, st))
   return { state: s, actions }
 }
 
