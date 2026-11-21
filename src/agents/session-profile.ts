@@ -94,12 +94,13 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
  *  and the node-facts rule in every prompt (agentx_node, #1531),
  *  and the job's state an agent-channel run ends with (agentx_job_state, #1861),
  *  and the [Situation] line asking the agent to name its talk (agentx_situation, #1892),
- *  and the answer to a per-request source ask that says how to read (agentx_sources, #1892 phase 7).
+ *  and the answer to a per-request source ask that says how to read (agentx_sources, #1892 phase 7),
+ *  and a held job's goal check asking its owner to recommend, change or retire it (agentx_schedule, #863).
  *  A tool left off the list is
  *  not even findable through ToolSearch, so a prompt naming it would
  *  send the agent after a tool it cannot call. The test scans src/ for
  *  prompts naming any other tool. */
-export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state", "agentx_situation", "agentx_sources"]
+export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow", "agentx_waiting", "agentx_content", "agentx_sprint", "agentx_node", "agentx_job_state", "agentx_situation", "agentx_sources", "agentx_schedule"]
 
 /** The tools the `[Context on demand]` line names, and agentx_numbers,
  *  which a standing order's refusal points to (noqta#807); kept whenever
