@@ -313,6 +313,21 @@ export class HandoffStore {
     })
   }
 
+  /** Local rows with no named home that really ended in this window,
+   *  newest first, with their clipped request: the topic keys a start
+   *  rebuilds (#2010). */
+  topicRows(since: number, until: number): Array<{ id: string; caller: string; callee: string; endedAt: number; request: string }> {
+    const rows = this.sql(`
+      SELECT id, caller, callee, ended_at, request FROM handoffs
+      WHERE ended_at IS NOT NULL AND ended_at >= ? AND ended_at <= ?
+        AND home IS NULL AND peer IS NULL AND request IS NOT NULL
+        AND status IN ('done', 'error', 'timeout', 'waiting')
+        AND caller IS NOT NULL AND callee IS NOT NULL
+      ORDER BY ended_at DESC, rowid DESC
+    `).all(since, until) as Array<{ id: string; caller: string; callee: string; ended_at: number; request: string }>
+    return rows.map((r) => ({ id: r.id, caller: r.caller, callee: r.callee, endedAt: r.ended_at, request: r.request }))
+  }
+
   /** The open hand-off with this join key, or null. */
   openByJoin(key: string): string | null {
     const row = this.sql("SELECT id FROM handoffs WHERE join_key = ? AND status IS NULL").get(key) as { id: string } | undefined

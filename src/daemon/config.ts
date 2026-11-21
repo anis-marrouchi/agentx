@@ -1160,6 +1160,12 @@ const meshConfigSchema = z.object({
      *  one turn instead of one turn each (#1749). 0: only answers that
      *  are already in are joined. */
     coalesceSeconds: z.number().int().min(0).max(900).default(120),
+    /** Topic sessions (#2010): a hand-off that names no home but whose
+     *  message names exactly one issue or merge request continues the
+     *  callee's last run on it, while that run's prompt cache is warm
+     *  (session.resumeGate.cacheTtlMinutes). Off: only a "would continue"
+     *  log line. Read at start: a change applies after a restart. */
+    topicSessions: z.boolean().default(false),
     /** Hand-off budget for work no person started (#1756): agents that keep
      *  handing work to each other are told to finish it themselves or write
      *  to the owner once. Work a person started is never counted. 0: off. */

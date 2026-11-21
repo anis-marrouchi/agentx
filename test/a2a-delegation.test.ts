@@ -1196,6 +1196,119 @@ describe("one session per piece of work (#1100)", () => {
   })
 })
 
+describe("topic sessions: one issue named in the message (#2010)", () => {
+  const OTHER_CHAT: CallerTurn = { ...AGENT_TURN, context: { ...AGENT_TURN.context, chatId: "mcp:lead:planner:work-2" } }
+  function topicRuns(over: Partial<DelegationDeps> = {}) {
+    const runs: Array<{ resolve: (v: { content: string; error?: string }) => void }> = []
+    const calls: any[] = []
+    const h = harness({
+      topicSessions: true,
+      runLocal: (callee, message, context, opts) => {
+        calls.push({ callee, message, context, opts })
+        opts.onStart(`run-${calls.length}`)
+        const d = deferred<{ content: string; error?: string }>()
+        runs.push(d)
+        return d.promise
+      },
+      ...over,
+    })
+    return { h, runs, calls }
+  }
+
+  it("continues the callee's last run on the same single ref from another chat, without making it a home", async () => {
+    const { h, runs, calls } = topicRuns()
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Please review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    const b = h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Now fix the notes on Team/Site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+    // Never a home: not on the record, not in the callee's context.
+    expect(a.record.home).toBeUndefined()
+    expect(b.record.home).toBeUndefined()
+    expect(calls[1].context.home).toBeUndefined()
+    expect(h.logs.some((l) => l.includes("its last run on team/site!12"))).toBe(true)
+  })
+
+  it("starts fresh on another ref, on two refs, and on another callee", async () => {
+    const { h, runs, calls } = topicRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Review team/site!13", kind: "send" })
+    h.mgr.start({ caller: { ...AGENT_TURN, context: { ...AGENT_TURN.context, chatId: "c3" } }, callee: "writer", message: "Compare team/site!12 with team/site#4", kind: "send" })
+    h.mgr.start({ caller: { ...AGENT_TURN, context: { ...AGENT_TURN.context, chatId: "c4" } }, callee: "reviewer", message: "Review team/site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
+    expect(calls[2].opts.resumeFrom).toBeUndefined()
+    expect(calls[3].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("starts fresh beside a run still going on the topic, never waits", async () => {
+    const { h, calls } = topicRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Also check team/site!12", kind: "send" })
+    await flush()
+    expect(calls).toHaveLength(2)
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("is warm-only: past the cache lifetime the run starts fresh", async () => {
+    let now = 1_000_000
+    const { h, runs, calls } = topicRuns({ now: () => now, topicWarmMs: 60_000 })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    now += 120_000
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Again team/site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("keeps the caller-chat key for a first run on a topic", async () => {
+    const { h, runs, calls } = topicRuns()
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    // First run on the topic, same caller chat: today's #1749 rule.
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+  })
+
+  it("off: today's behaviour, with one 'would continue' line", async () => {
+    const { h, runs, calls } = topicRuns({ topicSessions: false })
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
+    expect(h.logs.some((l) => l.includes(`would continue a2a:a2a:planner:writer:${a.taskId} on team/site!12`))).toBe(true)
+  })
+
+  it("is rebuilt after a restart from the stored request, inside the warm window only", async () => {
+    let now = 1_000_000
+    const n = node()
+    const first = topicRuns({ now: () => now, store: n.store() })
+    const a = first.h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Review team/site!12", kind: "send" })
+    first.runs[0].resolve({ content: "ok" })
+    await flush()
+    // The stored row names no home.
+    expect((n.db.prepare("SELECT home FROM handoffs WHERE id = ?").get(a.taskId) as any).home).toBeNull()
+    now += 60_000
+    const second = topicRuns({ now: () => now, store: n.store() })
+    expect(second.h.logs.some((l) => l.includes("1 topic session(s) rebuilt"))).toBe(true)
+    second.h.mgr.start({ caller: OTHER_CHAT, callee: "writer", message: "Fix team/site!12", kind: "send" })
+    await flush()
+    expect(second.calls[0].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+    // Past the window: nothing rebuilt.
+    now += 2 * 3_600_000
+    const third = topicRuns({ now: () => now, store: n.store() })
+    expect(third.h.logs.some((l) => l.includes("topic session(s) rebuilt"))).toBe(false)
+  })
+})
+
 describe("a run that ends to wait is not done (#1100)", () => {
   it("is reported as waiting, with what for and until when, for an agent's send", async () => {
     const h = harness()

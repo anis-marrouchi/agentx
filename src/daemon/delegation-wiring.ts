@@ -654,6 +654,9 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     // A sender's last ended send stays its next send's session as long as
     // any chat session lives (session.staleMinutes).
     senderKeyMs: w.config.session.staleMinutes * 60_000,
+    // A topic run is continued only while its prompt cache is warm (#2010).
+    topicSessions: cfg.topicSessions,
+    ...(w.config.session.resumeGate?.cacheTtlMinutes ? { topicWarmMs: w.config.session.resumeGate.cacheTtlMinutes * 60_000 } : {}),
     // A continue row keeps its key as long as the job wake's grace (#2042).
     continueJoinMs: (w.config.requests?.jobs?.wake?.graceMinutes ?? DEFAULT_WAKE_SETTINGS.graceMinutes) * 60_000,
     // A none row of a named local sender (#2007 C7): one notice on its next
