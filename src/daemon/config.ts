@@ -8,6 +8,7 @@ import { resolve } from "path"
 import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { monthlyBudgetSchema } from "@/agents/budget-schema"
+import { CACHE_TTL_MINUTES } from "@/agents/prompt-cache"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, VOICE_READY_SOUNDS } from "@/voice/orb-palettes"
@@ -3084,8 +3085,10 @@ export const daemonConfigSchema = z.object({
       /** Tokens a fresh lean session starts with (~27k measured in #615). */
       freshTokens: z.number().int().min(1000).max(200_000).default(30_000),
       /** How long the cached transcript is assumed to survive. Longer is the
-       *  safe side: it treats more sessions as warm, and keeps them. */
-      cacheTtlMinutes: z.number().int().min(1).max(1440).default(60),
+       *  safe side: it treats more sessions as warm, and keeps them. Defaults
+       *  to the one prompt-cache lifetime (src/agents/prompt-cache.ts, #2031);
+       *  set it only to try another lifetime for the gate alone. */
+      cacheTtlMinutes: z.number().int().min(1).max(1440).default(CACHE_TTL_MINUTES),
       /** Cache-write price as a multiple of the input price (2 for the
        *  one-hour cache, 1.25 for the five-minute one). */
       cacheWriteFactor: z.number().min(1).max(4).default(2),

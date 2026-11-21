@@ -313,7 +313,7 @@ When a conversation's memory is rotated or treated as stale.
 | `session.observationPack.retentionDays` | number (0–3650) | `0` | Days a saved original is kept. `0` keeps every original. |
 | `session.resumeGate.mode` | `"off"` \| `"shadow"` \| `"active"` | `"off"` | Before an earlier conversation is picked up again, compare its price with a fresh start and start fresh when that is clearly cheaper. `shadow` only writes what it would do to the daemon log. See [Resume or start fresh](#resume-or-start-fresh). Applies on save. |
 | `session.resumeGate.freshTokens` | number (1000–200000) | `30000` | Tokens a fresh lean session starts with. |
-| `session.resumeGate.cacheTtlMinutes` | number (1–1440) | `60` | Minutes the saved conversation is assumed to stay in the provider's cache. |
+| `session.resumeGate.cacheTtlMinutes` | number (1–1440) | `60` | Minutes the saved conversation is assumed to stay in the provider's cache. The default is AgentX's one cache lifetime, the same 60 minutes that [One model per session](#one-model-per-session) and the [cost signals](/jobs/failure-signals#what-is-counted-for-cost) use. Set it only to try another lifetime for this gate; the others keep 60 minutes. |
 | `session.resumeGate.cacheWriteFactor` | number (1–4) | `2` | Price of writing to the cache, as a multiple of the normal input price. `2` for the one-hour cache, `1.25` for the five-minute one. |
 | `session.resumeGate.margin` | number (1–10) | `1.5` | How many times cheaper a fresh start must be before the gate picks it. |
 
@@ -556,6 +556,8 @@ The two ranges do not hold the same tasks, so compare the cost per task on the b
 
 A `claude-code` agent picks an earlier conversation up again by replaying it, and it replays the whole conversation on every step of the new task. The provider keeps a recent conversation in a *cache* (a short-term store it reads from at a tenth of the normal price). Once the cache has expired, the first step pays to store the whole conversation again, at more than the normal price.
 
+AgentX assumes the cache lasts **60 minutes** after the conversation's last step. This one value decides "is the cache still there?" everywhere in AgentX: in this gate, in [One model per session](#one-model-per-session), and in the [cost signals](/jobs/failure-signals#what-is-counted-for-cost). `session.resumeGate.cacheTtlMinutes` changes it for this gate only.
+
 With `session.resumeGate.mode` set, AgentX compares two prices before it picks a conversation up:
 
 - **Picking it up:** the conversation's size, read cheaply if the cache is still there, or stored again if it is not, then read on every later step.
@@ -583,7 +585,7 @@ To try it without changing anything:
 
 An agent's *session* is the conversation the engine (Claude Code, Codex or OpenCode) keeps for one chat, and picks up again on the next message. Each session runs on one model from start to end. Changing the model in the middle would make the engine read the whole conversation again at full price, because the provider's cache (its short-term store of the conversation) belongs to one model.
 
-The model is chosen when a session starts and saved with it. On later messages:
+The model is chosen when a session starts and saved with it. "Within the hour" below is AgentX's one cache lifetime of 60 minutes, the same value the [resume gate](#resume-or-start-fresh) and the [cost signals](/jobs/failure-signals#what-is-counted-for-cost) use. On later messages:
 
 - **Picked up within the hour** (the cache is still there): the session keeps its model. If the task-edge decision says the message needs the edge model, the move is *held*: the agent answers on its current model, and the daemon log says so. Its other advice (the implied-request line, the sub-agent hint) still applies.
 - **Picked up after more than an hour** (the cache has expired): the model decisions are asked again. When they answer with another model, a new session starts on that model. When a decision fails or times out, the session keeps its model.

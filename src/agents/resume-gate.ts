@@ -32,7 +32,9 @@ export interface ResumeGateSettings {
   mode: ResumeGateMode
   /** Tokens a fresh lean session starts with. */
   freshTokens: number
-  /** How long the cached transcript is assumed to survive. */
+  /** How long the cached transcript is assumed to survive. The setting
+   *  defaults to the one prompt-cache lifetime, CACHE_TTL_MINUTES in
+   *  ./prompt-cache (#2031). */
   cacheTtlMinutes: number
   /** Cache-write price as a multiple of the input price. */
   cacheWriteFactor: number
