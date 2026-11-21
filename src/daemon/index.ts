@@ -312,11 +312,11 @@ import { publishAnnouncement } from "@/events/announce"
 import { publishNamedEvent } from "@/events/emit"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
+import { contextWithSendDepth, isDelegationRelay, UNNAMED_CALLER, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshDeliverJoined, meshTaskMode, replyBody, resolveCallerTurn, startMeshDeliver, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
-import { a2aSendBody, duplicateBody, queueSend, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
+import { acceptedBody, agentCallerOf, ignoredFlags, noneBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshDeliverJoined, meshTaskMode, replyBody, resolveCallerTurn, startMeshDeliver, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { a2aSendBody, duplicateBody, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -4842,12 +4842,12 @@ export class AgentXDaemon {
    * contact-directory fallback, no name fuzzy-matching. Caller
    * must pass an exact agentId.
    *
-   * retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202
-   * {accepted, taskId, status: "queued"} as soon as the work is
-   * handed off, local or mesh; the target's turn runs in the
-   * background. A repeat of the same message from the same sender
-   * within the dedupe window gets the first task id back. Only
-   * `"async": false` still waits for the answer.
+   * retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202 as soon as the
+   * work is handed off, local or mesh. Since #2007 piece 2 every send is a
+   * hand-off on the journal (one `handoffs` row, a dlg- id): a callback
+   * into the asking turn when it can be called back, else a `none` row
+   * read by its id. There is no wait branch: `"async": false` is ignored
+   * and flagged (asyncIgnored). A repeat of an open hand-off joins it.
    */
   private async sendToAgent(req: IncomingMessage, res: ServerResponse, body: Record<string, unknown>): Promise<void> {
     if (!body.agentId || !body.text) {
@@ -4862,10 +4862,9 @@ export class AgentXDaemon {
     // priority: "critical" (#1807): an alert that must not wait behind a
     // swap or load hold on the target's node. Any other value is ignored.
     const priority = requestedPriorityOf(body.priority)
-    const wait = body.async === false
     const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
-    // A callback start is left to the hand-off's join key (#2007 S2).
-    const seen = wait ? null : repeatOf(this.sendAgentDedupe.get(dedupeKey), this.delegations.journalMode() === "database")
+    // A start is left to the hand-off's join key (#2007 S2).
+    const seen = repeatOf(this.sendAgentDedupe.get(dedupeKey), this.delegations.journalMode() === "database")
     if (seen) {
       this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
       this.json(res, 202, duplicateBody(seen))
@@ -4883,7 +4882,7 @@ export class AgentXDaemon {
     // delegation's chat, is answering it: the message goes into the
     // asker's conversation for that work, not into a new chat.
     const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
-    if (!wait && this.config.mesh.delegation.callbackSends) {
+    if (this.config.mesh.delegation.callbackSends) {
       const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
       if (rec) {
         this.delegations.relayReply(rec, text)
@@ -4894,109 +4893,32 @@ export class AgentXDaemon {
       }
     }
     // #277 — same gate as /task: refuse a cycle, or call back when a
-    // person started it. #1100 — or when an agent sent it.
-    const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType || priority ? { calleeContext: { ...(taskType ? { taskType } : {}), ...(priority ? { admissionPriority: priority } : {}) } } : {}) }, { send: true })
+    // person started it. #1100 — or when an agent sent it. #2007 piece 2 —
+    // otherwise a none row: every send gets a receipt, a sender that names
+    // no local agent too (it is recorded as "?").
+    const calleeContext = {
+      ...(senderAgentId ? {} : { sender: "agent" }),
+      ...(taskType ? { taskType } : {}),
+      ...(priority ? { admissionPriority: priority } : {}),
+    }
+    const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(Object.keys(calleeContext).length ? { calleeContext } : {}) }, { send: true, identity: true, unnamed: true })
     if (!("track" in gate)) {
       const a = gateAnswer(gate)
       if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
       this.json(res, a.status, a.body)
       return
     }
-    // Local agent? Dispatch directly through the registry.
-    // The hop count goes on through a plain send too, local or to a
-    // peer, so two agents past the cap are not called back again (#1100).
-    const sendDepth = from ? callbackDepthOf(from.context) + 1 : 0
-    const localDef = this.registry.getAgent(targetAgent)
-    if (localDef) {
-      const track = gate.track
-      // Only a caller that waits holds the callee in syncWaits: a
-      // queued send leaves the caller free, so it can't form a cycle.
-      const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
-        const context = {
-          channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
-          ...(sendDepth ? { sendDepth } : {}),
-          ...(priority ? { admissionPriority: priority } : {}),
-          // What the work is about (#1100): a second run on it is told.
-          ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
-        }
-        // A remote target records on its own node's /task; a local one
-        // has no other hop that would put this delegation in the ledger.
-        const intentRef = this.recordInboundDispatch(
-          targetAgent,
-          { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(track.root ? { initiator: track.root } : {}) },
-          text,
-          senderAgentId,
-        )
-        return this.registry.execute({
-          agentId: targetAgent,
-          message: text,
-          context,
-          intentRef,
-          onStart: waits ? track.onStart : onStart,
-          // A queued send has no caller holding a request open: it
-          // waits behind long runs instead of being dropped (#1258).
-          ...(waits ? {} : { slotWaitMs: SEND_AGENT_SLOT_WAIT_MS }),
-        }).finally(() => { if (waits) track.end() })
-      }
-      if (wait) {
-        try {
-          const response = await runLocal(true)
-          this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
-        } catch (e: any) {
-          this.json(res, 500, { error: e.message })
-        }
-        return
-      }
-      const queued = queueSend({
-        agent: targetAgent,
-        log: (m) => this.log(m),
-        run: async (taskId) => {
-          // A busy agent queues the message; it gets a run (and a
-          // trace) only when it starts. This line joins the two ids.
-          const r = await runLocal(false, (runId) => this.log(`[send/agent] ${taskId} → ${targetAgent} started as run ${runId}`))
-          return { ok: !r.error, ...(r.error ? { detail: r.error.slice(0, 200) } : {}) }
-        },
-      })
-      this.sendAgentDedupe.put(dedupeKey, queued)
-      this.json(res, 202, queued)
-      return
-    }
-    // Remote agent? Find the mesh peer that advertises this agent.
+    // No hand-off could start: the callee is on no node this one knows.
     if (!this.mesh) {
       this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
       return
     }
-    const mesh = this.mesh
-    const directory = mesh.directory()
-    const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
-    if (!peer) {
-      const known = [
-        ...Object.keys(this.config.agents),
-        ...directory.flatMap((p) => p.skills.map((s) => s.id)),
-      ]
-      this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
-      return
-    }
-    if (wait) {
-      try {
-        const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}), ...(priority ? { priority } : {}) })
-        this.json(res, 200, { ok: true, messageId, peer: peer.peer })
-      } catch (e: any) {
-        this.json(res, 500, { error: e.message, peer: peer.peer })
-      }
-      return
-    }
-    const queued = queueSend({
-      agent: targetAgent,
-      peer: peer.peer,
-      log: (m) => this.log(m),
-      run: async () => {
-        await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}), ...(priority ? { priority } : {}) })
-        return { ok: true }
-      },
-    })
-    this.sendAgentDedupe.put(dedupeKey, queued)
-    this.json(res, 202, queued)
+    const directory = this.mesh.directory()
+    const known = [
+      ...Object.keys(this.config.agents),
+      ...directory.flatMap((p) => p.skills.map((s) => s.id)),
+    ]
+    this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
   }
 
   /**
@@ -5012,15 +4934,28 @@ export class AgentXDaemon {
    *             is unchanged: the peer runs a normal synchronous task and
    *             this daemon holds the call in the background.
    *   track     synchronous, as before; records who waits on the callee.
+   *             Never for an agent caller with `identity` (#2007 piece 2):
+   *             it gets a callback, or a `none` row read by its id.
+   *
+   * `identity`: decide by who calls (B4). An agent caller (agentCallerOf:
+   * a resolved turn, or a loopback non-forwarded request naming a local
+   * agent) always gets a 202, whatever `stream`, `Accept` or `async` say;
+   * those are flagged in the body. `unnamed`: a caller that names no agent
+   * gets a none row too, as "?" (/send/agent always answered 202).
    */
   private delegationGate(
     req: IncomingMessage,
     body: Record<string, unknown>,
-    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
-    opts: { callback?: boolean; send?: boolean } = {},
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown>; run?: () => Promise<string> },
+    opts: { callback?: boolean; send?: boolean; identity?: boolean; unnamed?: boolean } = {},
   ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
+    const agent = opts.identity ? agentCallerOf(hint, caller, this.registry) : null
+    const ignored = agent || opts.unnamed ? ignoredFlags(body, String(req.headers["accept"] || "")) : {}
+    if (agent && Object.keys(ignored).length) {
+      this.log(`[delegation] ${agent} -> ${target.callee}: ${Object.keys(ignored).join(", ")}; an agent gets a receipt, never a wait`)
+    }
     // People permissions (#379): work a limited person started stops here,
     // whichever way the hop would have run.
     const refused = (why: string, kind: string): DelegationGateResult => {
@@ -5033,7 +4968,14 @@ export class AgentXDaemon {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return refused(why, "cycle")
     }
-    const plan = opts.callback === false ? null : this.callbackPlan(body, caller, target, { send: opts.send === true })
+    // An agent caller is never held: a stream or async:false is ignored, and
+    // its send may call it back even from a turn no person started.
+    const plan = opts.callback === false && !agent ? null : this.callbackPlan(body, caller, target, { send: opts.send === true || !!agent, waitIgnored: !!agent || opts.unnamed === true })
+    // No callback: an agent caller (or any /send/agent sender) gets a none row.
+    const noneCaller = plan ? null : agent ?? (opts.unnamed ? UNNAMED_CALLER : null)
+    // A "?" sender that still gave a name keeps it (review item 2): its own
+    // session and the callee's sender line; the row's caller stays "?".
+    const label = noneCaller === UNNAMED_CALLER ? hint.senderAgentId : undefined
     // The same message again while the first is open (#2007 piece 3, C2):
     // it joins that hand-off before the budget counts a hop or the ledger
     // records a dispatch, so a duplicate spends neither.
@@ -5041,13 +4983,19 @@ export class AgentXDaemon {
       const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: plan.caller, callee: target.callee, home: homeOfBody(body), message: target.message }))
       if (joined) {
         this.log(`[delegation ${joined}] ${plan.caller.agentId} -> ${target.callee}: the same message again; joined, no hop counted`)
-        return { accepted: joinedBody(joined, target.callee, plan.peer, plan.send) }
+        return { accepted: { ...joinedBody(joined, target.callee, plan.peer, plan.send), ...ignored } }
+      }
+    } else if (noneCaller) {
+      const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: { agentId: noneCaller, context: label ? { sender: `agent:${label}` } : {} }, callee: target.callee, home: homeOfBody(body), message: target.message, wayHome: "none" }))
+      if (joined) {
+        this.log(`[delegation ${joined}] ${noneCaller} -> ${target.callee}: the same message again; joined, no hop counted`)
+        return { accepted: { ...noneBody(joined, target.callee, target.peer, true), ...ignored } }
       }
     }
     const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
     if (over) return refused(over, "budget")
-    const accepted = plan ? this.startCallback(body, target, plan) : null
-    if (accepted) return { accepted }
+    const accepted = plan ? this.startCallback(body, target, plan) : noneCaller ? this.startNone(body, target, noneCaller, caller, label) : null
+    if (accepted) return { accepted: { ...accepted, ...ignored } }
     let runId: string | undefined
     return {
       track: {
@@ -5082,11 +5030,12 @@ export class AgentXDaemon {
     body: Record<string, unknown>,
     caller: ReturnType<typeof resolveCallerTurn>,
     target: { callee: string; peer?: string },
-    opts: { send?: boolean } = {},
+    opts: { send?: boolean; waitIgnored?: boolean } = {},
   ): { caller: NonNullable<ReturnType<typeof resolveCallerTurn>>; send: boolean; peer?: string } | null {
-    const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
+    // An agent caller's async:false is ignored (#2007 piece 2): it never waits.
+    const asyncFlag = body.async === true ? true : body.async === false && !opts.waitIgnored ? false : undefined
     // An agent's send that no person waits on still calls its asker back
-    // (#1100). A send that asked to wait (async:false) never gets here.
+    // (#1100). Only a caller that names no agent can still ask to wait.
     const send = !this.delegations.shouldCallback(caller, asyncFlag)
     if (send && !(opts.send && asyncFlag !== false && this.config.mesh.delegation.callbackSends && this.delegations.shouldCallbackSend(caller))) return null
     if (!caller) return null
@@ -5101,7 +5050,7 @@ export class AgentXDaemon {
 
   private startCallback(
     body: Record<string, unknown>,
-    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown>; run?: () => Promise<string> },
     plan: { caller: NonNullable<ReturnType<typeof resolveCallerTurn>>; send: boolean; peer?: string },
   ): Record<string, unknown> {
     const { caller, send, peer } = plan
@@ -5130,10 +5079,70 @@ export class AgentXDaemon {
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+      // /mesh/task makes its own peer call, with the caller's context (R2).
+      ...(target.run ? { run: target.run } : {}),
     })
     // Joined at the insert: the same send raced in after the gate's check.
     if (duplicate) return joinedBody(taskId, target.callee, peer, send)
     return acceptedBody(taskId, target.callee, peer, send)
+  }
+
+  /**
+   * A hand-off nobody can be called back for (#2007 piece 2): an agent
+   * caller with no turn (a script inside an agent, naming it), a turn whose
+   * chat is a person's, the hop cap (S4), callbackSends off; and on
+   * /send/agent a sender that names no agent ("?"). One row with way_home
+   * 'none', its dlg- id back at once, read by id; a named sender gets a
+   * notice when it ends (C7). Null when the callee is on no node this one
+   * knows (the caller answers 404).
+   */
+  private startNone(
+    body: Record<string, unknown>,
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown>; run?: () => Promise<string> },
+    callerName: string,
+    turn: ReturnType<typeof resolveCallerTurn>,
+    /** The name a "?" sender gave (not an agent of this machine). */
+    label?: string,
+  ): Record<string, unknown> | null {
+    let peer = target.peer
+    const local = !peer && this.registry.getAgent(target.callee)
+    if (!peer && !local) {
+      const found = this.mesh?.findAgentPeer(target.callee)
+      if (!found?.healthy) return null
+      peer = found.peer
+    }
+    // The chain's root: the turn's, else one built from the agent id. A
+    // labelled "?" sender's name rides in it (root.sender), so its session
+    // key is rebuilt after a restart (delegation.ts senderLabelOf).
+    const context = turn?.context ?? (label ? { sender: `agent:${label}` } : {})
+    const named = callerName !== UNNAMED_CALLER ? callerName : undefined
+    const extras: Record<string, unknown> = {}
+    if (!peer) {
+      const intentRef = this.recordInboundDispatch(
+        target.callee,
+        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
+        target.message,
+        named,
+      )
+      if (intentRef) extras.intentRef = intentRef
+    }
+    const maxMinutes = this.registry.getAgent(target.callee)?.maxExecutionMinutes
+    const { taskId, duplicate } = this.delegations.start({
+      caller: { agentId: callerName, ...(turn?.taskId ? { taskId: turn.taskId } : {}), context },
+      callee: target.callee,
+      peer,
+      message: target.message,
+      calleeContext: target.calleeContext,
+      extras,
+      kind: "send",
+      wayHome: "none",
+      // A local callee that is busy keeps the queued send's slot wait
+      // (#1258): nobody holds a request open for it.
+      ...(peer ? {} : { timeoutMs: ((maxMinutes ?? 20) + 5) * 60_000 + SEND_AGENT_SLOT_WAIT_MS, slotWaitMs: SEND_AGENT_SLOT_WAIT_MS }),
+      ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+      ...(target.run ? { run: target.run } : {}),
+    })
+    return noneBody(taskId, target.callee, peer, duplicate === true)
   }
 
   /**
@@ -8857,6 +8866,17 @@ export class AgentXDaemon {
             closedRequests: (since) => (store ? store.listClosedSince(since, 200).map(asRow) : []),
             handOffs: () => this.delegations.list(100),
             nodeName: this.config.node.name,
+            // A dlg- id (#2007): the same reader and rules as
+            // GET /a2a/delegations/:id, so an agent reads its own rows.
+            readHandoff: (id, as) => {
+              const local = isLoopback(req.socket?.remoteAddress || "")
+              return readHandoff(this.delegations.journalReader(), id, {
+                operator: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+                local,
+                as,
+                peer: local ? null : peerOfToken(String(req.headers["authorization"] || ""), this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+              })
+            },
             forward: async (agentId) => {
               const peer = this.mesh?.directory().find((p) => p.healthy && p.skills.some((s) => s.id === agentId))
               if (!peer) return null
@@ -8905,13 +8925,17 @@ export class AgentXDaemon {
           if (requestedPriorityOf(body.priority)) body.context = contextWithAdmissionPriority(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
-          // Streaming callers are watching the run, so they keep waiting.
-          // A cycle that could never finish is refused either way.
+          // #2007 piece 2 (B4) — any agent caller gets a receipt, decided
+          // right after its caller is resolved, before the stream branch:
+          // its stream:true or async:false is ignored and flagged. Callers
+          // that name no agent (the CLI, workflow steps, a peer's /task, the
+          // dashboard, the phone app) stay synchronous, and a stream there
+          // keeps waiting. A cycle that could never finish is refused either way.
           const gate = this.delegationGate(req, body, {
             callee: agentId,
             message: String(body.message),
             calleeContext: body.context as Record<string, unknown> | undefined,
-          }, { callback: body.stream !== true && !String(req.headers["accept"] || "").includes("text/event-stream") })
+          }, { identity: true, callback: body.stream !== true && !String(req.headers["accept"] || "").includes("text/event-stream") })
           if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
           const track = gate.track
           // Per-task context strategy override. When absent, registry falls
@@ -9484,6 +9508,10 @@ export class AgentXDaemon {
           const meshCaller = resolveCallerTurn(callerHintFrom(req, body), this.registry)
           const limited = hopRefusal(String(body.agent || body.peer), meshCaller, this.registry, this.syncWaits)
           if (limited) { this.json(res, 409, { error: limited }); return }
+          // A host this node joined as a guest (#380) is one synchronous
+          // request, for an agent caller too (#2007 R1): it has no journal
+          // path, so a receipt here would never settle. The one agent wait left.
+          const host = new GuestHostStore(process.cwd()).get(String(body.peer))
           // An explicit async:true that names its chat runs on the hand-off
           // journal (#2007 S5): the same request while its row is open
           // joins it, before the budget below counts a hop.
@@ -9506,14 +9534,46 @@ export class AgentXDaemon {
               return
             }
           }
+          // #2007 piece 2 (N1, B4) — an agent caller always gets a receipt,
+          // decided here, right after its caller is resolved and before the
+          // stream branch: stream:true, an SSE Accept header and async:false
+          // are ignored and flagged. Only an explicit async:true naming its
+          // own chat delivers there (S5, above); every other agent caller
+          // gets a callback into its turn, or a none row when no turn
+          // resolves (R2). The caller's context still goes to the peer, which
+          // keys its session by it. Callers that name no agent (the phone
+          // relay, `agentx mesh ask`, the stream proxy, scripts) stay sync.
+          const meshAgent = host || deliverReq ? null : agentCallerOf(callerHintFrom(req, body), meshCaller, this.registry)
+          if (meshAgent) {
+            if (!this.mesh) { this.json(res, 400, { error: "Mesh not enabled" }); return }
+            const mesh = this.mesh
+            const peerName = String(body.peer)
+            const message = String(body.message)
+            const targetAgent = typeof body.agent === "string" && body.agent ? body.agent : undefined
+            const meshContext = body.context as Record<string, unknown> | undefined
+            const vouchOwner = this.operatorVouchFor(body.context, req)
+            const sender = typeof body.senderAgentId === "string" && body.senderAgentId ? body.senderAgentId : meshAgent
+            const gate = this.delegationGate(req, body, {
+              // The peer's first agent when none is named, as on a deliver row.
+              callee: targetAgent ?? "default",
+              peer: peerName,
+              message,
+              run: () => mesh.sendTask(peerName, message, targetAgent, { context: meshContext, senderAgentId: sender, vouchOwner }),
+            }, { identity: true })
+            // A refusal is final here too, as on /task and /send/agent (#282).
+            if (!("track" in gate)) {
+              const a = gateAnswer(gate)
+              this.json(res, a.status, a.body)
+              break
+            }
+          }
           // Hand-off budget (#1756) for the ways out that skip the
-          // delegation gate; a callback hop is counted there.
-          const overBudget = meshTaskMode(body, true) === "callback" ? null : this.handOffRefusal(meshCaller, `${String(body.agent || "?")}@${String(body.peer)}`)
+          // delegation gate: a deliver row, a guest host.
+          const overBudget = this.handOffRefusal(meshCaller, `${String(body.agent || "?")}@${String(body.peer)}`)
           if (overBudget) { this.json(res, 409, { error: overBudget }); return }
           // A host this node joined as a guest (#380): the message runs
           // as a turn of the host's agent inside the grant, and only the
           // answer comes back. No streaming, no callback: one request.
-          const host = new GuestHostStore(process.cwd()).get(String(body.peer))
           if (host) {
             const r = await askHost(host, String(body.message))
             this.json(res, r.error ? 502 : 200, r.error ? { error: r.error, host: host.name } : { content: r.content, host: host.name, agentId: host.agentId })
@@ -9579,27 +9639,10 @@ export class AgentXDaemon {
           const meshContext = body.context as Record<string, unknown> | undefined
           const meshSender = typeof body.senderAgentId === "string" ? body.senderAgentId : undefined
 
-          // #277 — an agent delegating from a turn a person started (or a
-          // root turn asking async:true) gets the answer back as a new turn
-          // in its own chat. Only a request whose context names no chat of
-          // its own: one that does keeps its behaviour from before, where
-          // async:true below delivers the raw answer to that chat. Needs a
-          // named callee: "the peer's first agent" is resolved on the peer.
-          if (meshTaskMode(body, true) === "callback") {
-            const gate = this.delegationGate(req, body, {
-              callee: body.agent as string,
-              peer: body.peer as string,
-              message: body.message as string,
-              calleeContext: meshContext,
-            })
-            // A refusal is final here too, as on /task and /send/agent: it
-            // used to fall through to the synchronous path below (#282).
-            if (!("track" in gate)) {
-              const a = gateAnswer(gate)
-              this.json(res, a.status, a.body)
-              break
-            }
-          }
+          // An agent caller gets here only for an explicit deliver (S5) or a
+          // guest host (R1, answered above); every other one was given a
+          // receipt (#2007 piece 2). So nothing here goes the callback way:
+          // async:true delivers to the named chat, else sync.
 
           // Async mode: answer the caller now, deliver the result later.
           //

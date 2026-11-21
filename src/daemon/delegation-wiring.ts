@@ -145,6 +145,35 @@ export function resolveCallerTurn(
 }
 
 /**
+ * Who asks, when it is an agent (#2007 piece 2, B4): the agent of the
+ * resolved turn, or, with no turn, a request from this machine that is not
+ * a mesh forward and names a local agent as its sender (C1: the same test
+ * resolveCallerTurn makes, so a peer's runPeer or a mesh.delegate step
+ * naming an agent id that also exists here is not taken for it). An agent
+ * caller always gets a receipt; null keeps today's synchronous answer for
+ * the CLI, workflow steps, peers, the phone relay and scripts.
+ */
+export function agentCallerOf(
+  hint: Pick<CallerHint, "senderAgentId" | "meshForwarded" | "local">,
+  turn: CallerTurn | null,
+  registry: { getAgent(id: string): unknown },
+): string | null {
+  if (turn) return turn.agentId
+  if (hint.meshForwarded || !hint.local || !hint.senderAgentId) return null
+  return registry.getAgent(hint.senderAgentId) ? hint.senderAgentId : null
+}
+
+/** What an agent caller asked for that it does not get (#2007 B4): a
+ *  stream (`stream:true` or an SSE Accept header) or a wait (`async:false`).
+ *  Flagged in the 202 body. */
+export function ignoredFlags(body: Record<string, unknown>, accept: string): { streamIgnored?: true; asyncIgnored?: true } {
+  return {
+    ...(body.stream === true || accept.includes("text/event-stream") ? { streamIgnored: true as const } : {}),
+    ...(body.async === false ? { asyncIgnored: true as const } : {}),
+  }
+}
+
+/**
  * Synchronous delegations running on this node: which turn waits on which
  * callee run. Used only to refuse a delegation that could never be
  * answered (a cycle back into a turn that is itself waiting).
@@ -293,6 +322,26 @@ export function joinedBody(taskId: string, callee: string, peer?: string, send =
   }
 }
 
+/** The 202 of a none row (#2007 piece 2): an agent caller nobody can call
+ *  back. The answer is read by its id; a named sender also gets a notice
+ *  on its next run. */
+export function noneBody(taskId: string, callee: string, peer: string | undefined, duplicate: boolean): Record<string, unknown> {
+  const who = peer ? `${callee} on ${peer}` : callee
+  return {
+    accepted: true,
+    mode: "none",
+    taskId,
+    agent: callee,
+    ...(peer ? { peer } : {}),
+    ...(duplicate ? { duplicate: true } : {}),
+    note: (duplicate
+      ? `Already handed off as task ${taskId}; this repeat started nothing. `
+      : `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. `) +
+      `No turn of yours can be called back from here, so the answer is not sent to you as a message. ` +
+      `When it ends you get a short notice on your next run; read the answer with agentx_lookup (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
+  }
+}
+
 /** What /mesh/task async:true starts (#2007 S5): the peer, the agent it
  *  names (or none: the peer picks), the message, the request's own
  *  context (it names the chat the answer goes to), the asking agent when
@@ -355,6 +404,12 @@ export function startMeshDeliver(delegations: DelegationManager, o: MeshDeliver)
     run: o.run,
   })
   return { status: 202, body: meshDeliverBody(r.taskId, o, r.duplicate === true) }
+}
+
+/** The notice a named sender gets when its none row ends (#2007 C7). */
+export function noneNotice(rec: { id: string; callee: string; peer?: string }, result: { status: string }): string {
+  const who = rec.peer ? `${rec.callee}@${rec.peer}` : rec.callee
+  return `Your hand-off ${rec.id} to ${who} ended: ${result.status}. Read it by its id (agentx_lookup with handoff: "${rec.id}", or GET /a2a/delegations/${rec.id}?as=<you>).`
 }
 
 /** How long a called-back send to a local agent may take (#1100): the
@@ -589,6 +644,16 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     onDone: w.onDone,
     callbackNote: w.callbackNote,
     onRelayFailed: w.onRelayFailed,
+    // A sender's last ended send stays its next send's session as long as
+    // any chat session lives (session.staleMinutes).
+    senderKeyMs: w.config.session.staleMinutes * 60_000,
+    // A none row of a named local sender (#2007 C7): one notice on its next
+    // run, or a run of its own after NOTICE_HOLD_MS. No new mechanism.
+    notify: (rec, result) => {
+      if (!w.registry.getAgent(rec.caller)) return
+      const waiting = w.registry.notices.add(rec.caller, rec.callee, noneNotice(rec, result))
+      w.log(`[delegation ${rec.id}] ${rec.caller} told with a notice (${result.status}; ${waiting} waiting)`)
+    },
     runLocal: (callee, message, context, opts) => w.registry.execute({
       agentId: callee,
       message,
@@ -600,6 +665,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
+      ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
     }),
     runPeer: (peer, callee, message, context, opts) => {

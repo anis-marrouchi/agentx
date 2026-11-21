@@ -768,3 +768,22 @@ describe("ProcessHandle — runTurn (fake) yields the expected event sequence", 
     expect(events.map((e) => e.type)).toEqual(["system", "assistant", "result"])
   })
 })
+
+// #2007 piece 2, C6: one dlg- chat per send means more warm processes.
+// The registry counts spawns and evictions (and evictions of a person's
+// chat process) since start, and says the running totals in its log lines.
+describe("ProcessRegistry — spawn and eviction counts (#2007 C6)", () => {
+  it("counts spawns, evictions and evictions outside a2a chats", () => {
+    const factory = new FakeFactory()
+    const logs: string[] = []
+    const reg = new ProcessRegistry({ factory, maxProcessesGlobal: 2, sweepIntervalMs: 1_000_000, log: (m) => logs.push(m) })
+    const a = reg.acquire(KEY("a", "c1"), OPTS("a")) as FakeHandle
+    const b = reg.acquire({ agentId: "b", channel: "a2a", chatId: "a2a:x:b:dlg-1" }, OPTS("b")) as FakeHandle
+    a.setIdle(Date.now() - 10_000)
+    b.setIdle(Date.now() - 1_000)
+    reg.acquire(KEY("c", "c1"), OPTS("c"))
+    expect(reg.counts()).toEqual({ spawns: 3, evictions: 1, personEvictions: 1 })
+    expect(logs.some((l) => /evicted .*\(cap\).*1 eviction/.test(l))).toBe(true)
+    expect(logs.some((l) => /spawned .*3 spawns/.test(l))).toBe(true)
+  })
+})

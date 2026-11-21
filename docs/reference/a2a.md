@@ -54,9 +54,9 @@ Two limits to know:
 
 Each such request is a **hand-off** with a `dlg-` id, like the ones agents make. So you can read its status and answer later with `GET /a2a/delegations/<id>` ([see below](#see-the-hand-offs-and-read-one-by-its-id)), and the same request sent again while the first still runs starts nothing ([see below](#what-happens-when-the-same-message-is-sent-twice)). With no `agent`, the peer picks one, and the hand-off names it `default`.
 
-Without `async`, or without a chat in `context`, `/mesh/task` works as before: it waits for the answer, or streams it with `stream: true`. `async: true` with no chat in `context` gets `400`, because there is nowhere to send the answer.
+Without `async`, or without a chat in `context`, `/mesh/task` from a caller that names no agent (the command line, a script, the phone app) works as before: it waits for the answer, or streams it with `stream: true`. `async: true` with no chat in `context` gets `400`, because there is nowhere to send the answer.
 
-When an agent sends work from a conversation a person started, the request returns at once and the answer comes back to that agent as a new message. See [When an agent asks another agent](../jobs/ask-another-agent.md).
+A request from an agent never waits: see [Agents get a receipt, never a wait](#agents-get-a-receipt-never-a-wait).
 
 ## Send work to an agent on this machine
 
@@ -68,9 +68,34 @@ curl http://127.0.0.1:18800/task \
   -d '{"agent":"helper","message":"Reply with a short hello"}'
 ```
 
-The request stays open until the agent answers. If the agent is busy with other work, the request first waits for it to be free, for up to 25 minutes.
+The request stays open until the agent answers. If the agent is busy with other work, the request first waits for it to be free, for up to 25 minutes. This holds for a caller that names no agent. An agent gets a receipt instead ([below](#agents-get-a-receipt-never-a-wait)).
 
-**Keep the connection open if the message must run.** A caller that disconnects (for example `curl -m 30` timing out) before the agent is free has its request dropped: it never runs, and nothing is sent back. Once the agent has started the work, a disconnect no longer stops it. There is no fire-and-forget mode for scripts: only an agent asking from a conversation a person started gets an early answer and its reply later ([When an agent asks another agent](../jobs/ask-another-agent.md)). So set your client's timeout to more than 25 minutes plus the time the work takes, and don't treat a timeout as "delivered". If you resend after a timeout, the message may run twice when the first attempt had already started.
+**Keep the connection open if the message must run.** A caller that disconnects (for example `curl -m 30` timing out) before the agent is free has its request dropped: it never runs, and nothing is sent back. Once the agent has started the work, a disconnect no longer stops it. There is no fire-and-forget mode for scripts that name no agent: only an agent gets an early answer and its reply later ([below](#agents-get-a-receipt-never-a-wait)). So set your client's timeout to more than 25 minutes plus the time the work takes, and don't treat a timeout as "delivered". If you resend after a timeout, the message may run twice when the first attempt had already started.
+
+## Agents get a receipt, never a wait
+
+On `POST /send/agent`, `POST /task` and `POST /mesh/task`, who asks decides whether the request waits, not its options. The daemon works out the caller first:
+
+| Caller | Answer |
+|---|---|
+| An agent with a running turn that can be called back | `202`, `"mode": "callback"`. The answer arrives later as a new message in that agent's conversation |
+| An agent that cannot be called back: only `senderAgentId` names it (from this machine), it asks from a person's chat, it is four hops deep, or `mesh.delegation.callbackSends` is `false` | `202`, `"mode": "none"`. Read the answer by its id. The agent gets a short notice when it ends |
+| An agent on `/mesh/task` with `"async": true` and a chat in `context` | `202`, `"mode": "deliver"`: the answer goes to that chat ([above](#get-the-answer-later-in-a-chat)) |
+| Nobody names an agent: the command line, workflow steps, another machine, the phone app, `agentx mesh ask`, a stream proxy | `/task` and `/mesh/task` wait for the answer (or stream it), as before. `/send/agent` answers `202` with `"mode": "none"` |
+| A `/mesh/task` to a guest host (a machine this one joined as a guest) | Always one request that waits for the answer, for an agent too |
+
+From an agent, `"stream": true`, an `Accept: text/event-stream` header and `"async": false` are ignored. The `202` says so with `"streamIgnored": true` or `"asyncIgnored": true`. An agent named only by `senderAgentId` counts only when the request comes from this machine and is not forwarded by another machine: an agent of the same name on another machine stays a caller that waits.
+
+On `/mesh/task`, the request's `context` still goes to the other machine, which uses it to keep one conversation per chat. Only an explicit `"async": true` sends the answer to that chat; without it the answer comes back to the agent.
+
+A `none` receipt looks like this:
+
+```json
+{ "accepted": true, "mode": "none", "taskId": "dlg-…", "agent": "helper",
+  "note": "Sent to helper (task dlg-…). … read the answer with agentx_lookup (handoff: \"dlg-…\") or GET /a2a/delegations/dlg-…?as=<you>. Do not wait or poll for it." }
+```
+
+Every one of these is a hand-off with a `dlg-` id. The old `snd-…` ids are gone, and `"async": false` no longer makes `/send/agent` wait. A `snd-` send that was still running when you upgraded is not reported, as on any restart before.
 
 ## See the hand-offs and read one by its id
 
@@ -88,6 +113,8 @@ curl -s http://127.0.0.1:18800/a2a/delegations
 curl -s "http://127.0.0.1:18800/a2a/delegations/dlg-example?as=helper"
 ```
 
+An agent reads the same with the `agentx_lookup` tool (`handoff: "dlg-example"`), which names the agent it runs for as `as`. `GET /lookup?handoff=<id>&as=<agent>` gives the same row, with the same rules, plus a short `text` summary.
+
 The answer has these fields:
 
 | Field | Meaning |
@@ -98,7 +125,7 @@ The answer has these fields:
 | `text` | What the agent answered, or why it failed. At most 12,000 characters |
 | `waiting` | For `waiting`: what it waits for (`on`), until when (`dueAt`, when given), and `kind`: `waiting` (it waits on something) or `continue` (it carries on later by itself) |
 | `startedAt`, `endedAt` | When it started and ended |
-| `wayHome` | `deliver` for a `/mesh/task` sent with `async: true`: the answer went to the chat the request named. Absent when the answer goes back to the asking agent |
+| `wayHome` | `deliver` for a `/mesh/task` sent with `async: true`: the answer went to the chat the request named. `none` when no turn could be called back: read it here. Absent when the answer goes back to the asking agent as a message |
 
 **An empty answer.** Sometimes the agent that did the work ends its run without writing an answer. The hand-off then ends `error` with the text `empty answer from <agent>`, but only when that agent said nothing else either. It did not state its job's state ([Say where the work stands when a run ends](../jobs/end-of-run-state.md)), did not say it was waiting (`agentx_waiting`), and did not write back to the asking agent during the work. If it did any of those, the empty end is on purpose, and the hand-off ends as that says: `done`, `waiting`, or `error` for a blocked job.
 
@@ -178,7 +205,14 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 5. **Terminal:** for a hand-off that ended `error`, read it as in step 4. The text `empty answer from <agent>` means that agent ended its run with nothing at all. Any other text is the real failure.
 6. **Terminal:** while a hand-off from an agent is still `running`, have that agent send the same message again from the same conversation. The answer has the same `taskId` and `"duplicate": true`, and `GET /a2a/delegations` lists only one hand-off for it. The daemon log shows `the same message again ... joined`.
 7. **Terminal:** send the `async: true` request above with a chat of your own in `context`. It returns at once with `"mode": "deliver"` and a `dlg-` `taskId`. The answer arrives in that chat. Then run `curl -s "http://127.0.0.1:18800/a2a/delegations/<taskId>?as=<context.agentId>"`: it shows `"wayHome": "deliver"`, the status, and the answer in `text`.
-8. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
+8. **Terminal:** from a script, send as an agent of this machine and check the receipt comes at once, even when you ask to wait:
+   ```sh
+   curl -s -m 10 http://127.0.0.1:18800/task -H 'Content-Type: application/json' \
+     -d '{"agent":"helper","senderAgentId":"asker","message":"Reply with a short hello","async":false}'
+   ```
+   The answer has `"accepted": true`, `"mode": "none"`, a `dlg-` `taskId` and `"asyncIgnored": true`. The same request without `senderAgentId` waits and returns the hello.
+9. **Terminal:** run `curl -s "http://127.0.0.1:18800/a2a/delegations/<taskId>?as=asker"`. It shows `"wayHome": "none"` and, once the work is done, the answer in `text`.
+10. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 
 ## If something is wrong
 
@@ -198,4 +232,11 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 - **An `async: true` answer never reached the chat:** read the hand-off by its `taskId`. If it ended, its `text` holds the answer or the failure, and the daemon log shows `delivery to <channel>:<chatId> failed: ...` with the reason (for example, no such channel on this machine). If it ended and the log shows no delivery line, AgentX stopped between ending the hand-off and sending: the chat is not told again, so read the answer from the hand-off. If it is still `running`, the peer is still working; it ends `timeout` after `mesh.delegation.timeoutMinutes`.
 - **An `async: true` hand-off ended `timeout` but the peer finished the work:** `mesh.delegation.timeoutMinutes` is set lower than the time the peer took. Its late answer was dropped. Raise the setting (up to 30 minutes keeps it within the peer call's own limit), or read the result on the peer.
 - **An `async: true` request got `"duplicate": true`:** the same request to the same peer and agent, for the same chat, is still running. Wait for it, or change the message.
+- **A script expected an answer but got `202`:** it named an agent (`senderAgentId`, or the `X-AgentX-Task` header). An agent never waits. Read the answer by the `taskId`, or leave the agent out if a person runs the script.
+- **An agent's request still waited:** it did not name the agent, or it went to a guest host. Send `senderAgentId`, and from inside a run the `X-AgentX-Task: $AGENTX_TASK_ID` header. The daemon log line `an agent gets a receipt, never a wait` shows when a request asked to wait and got a receipt.
+- **An agent never heard about a `none` hand-off:** the notice reaches it at the start of its next run, or as a run of its own after an hour. Search the daemon log for `told with a notice`. A sender recorded as `?` named no agent of this machine, so nobody is told.
+- **You need to go back to the version before agents got receipts:** that version cannot read open `none` hand-offs and leaves them open for good (it reads `deliver` ones). Before you start it, close the `none` ones in the database (**Terminal**, in the folder that holds `agentx.json`):
+  ```sh
+  sqlite3 .agentx/db.sqlite "UPDATE handoffs SET status='lost', ended_at=strftime('%s','now')*1000, updated_at=strftime('%s','now')*1000 WHERE status IS NULL AND way_home = 'none'"
+  ```
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.

@@ -32,6 +32,7 @@ import { taskTypeOf } from "@/agents/task-context"
 import { normalizeHome } from "./home"
 import { describeJobState, endStateInAnswer, stalledLine, type EndState } from "@/agents/run-state"
 import type { HandoffStore } from "./handoff-store"
+import { DEFAULT_STALE_SESSION_MINUTES } from "@/agents/sessions"
 
 /** "waiting": the callee answered, but said its run ends to wait for
  *  something (a build, another agent, a time) before the work is done
@@ -89,9 +90,18 @@ export interface DelegationRecord {
   joinKey?: string
   /** "deliver": a /mesh/task with async:true (#2007 S5). The raw answer,
    *  or one line on failure, goes to `origin` (the chat the request named)
-   *  instead of a callback turn. Absent: a callback. */
-  wayHome?: "deliver"
+   *  instead of a callback turn. "none" (#2007 piece 2): an agent caller
+   *  that cannot be called back; nobody gets a turn, the row is read by
+   *  its id and a named sender gets a notice (`origin` is NONE_ORIGIN).
+   *  Absent: a callback. */
+  wayHome?: WayHome
 }
+
+/** How a hand-off's answer goes home, besides a callback (#2007). */
+export type WayHome = "deliver" | "none"
+
+/** The origin of a `none` row: no chat, nothing is ever sent to it. */
+export const NONE_ORIGIN: DelegationOrigin = Object.freeze({ channel: "none", chatId: "" }) as DelegationOrigin
 
 export interface DelegationResult {
   status: DelegationStatus
@@ -184,6 +194,9 @@ export interface DelegationDeps {
       /** Continue the callee's session from this chat of its own, the
        *  last run on the same home (#1100), instead of a fresh one. */
       resumeFrom?: Array<{ channel: string; chatId: string }>
+      /** How long the run may wait for a free slot of a busy callee
+       *  (registry.execute's slotWaitMs). */
+      slotWaitMs?: number
     },
   ): Promise<CalleeRun>
   /** Run the callee on a mesh peer and return its answer text. */
@@ -192,7 +205,8 @@ export interface DelegationDeps {
     callee: string,
     message: string,
     context: Record<string, unknown>,
-    opts: { timeoutMs: number; senderAgentId: string },
+    /** No senderAgentId for a caller that names no agent ("?"). */
+    opts: { timeoutMs: number; senderAgentId?: string },
   ): Promise<string>
   /** Stop a local callee run that went past the timeout. */
   cancelLocal?(runId: string, reason: string): void
@@ -261,6 +275,13 @@ export interface DelegationDeps {
    *  node with no database keeps hand-offs in memory only. */
   store?: HandoffStore | null
   now?: () => number
+  /** A `none` row of a named sender agent ended (#2007 C7): tell it, with
+   *  a notice on its next run (agents/notices.ts). */
+  notify?(rec: DelegationRecord, result: DelegationResult): void
+  /** How long a sender's last ended run stays the session its next send
+   *  continues (the implicit per-sender key, #2007 piece 2). Default: the
+   *  session stale window (DEFAULT_STALE_SESSION_MINUTES). */
+  senderKeyMs?: number
 }
 
 /** How every callback message starts. A turn whose message starts with
@@ -492,7 +513,7 @@ export const UNNAMED_CALLER = "?"
 
 /** The callee as the join key counts it: a deliver row (#2007 S5) names
  *  its peer too, since "default" on one peer is not "default" on another. */
-function keyCallee(o: { callee: string; peer?: string; wayHome?: "deliver" }): string {
+function keyCallee(o: { callee: string; peer?: string; wayHome?: WayHome }): string {
   return o.wayHome === "deliver" && o.peer ? `${o.callee}@${o.peer}` : o.callee
 }
 
@@ -523,12 +544,17 @@ export class DelegationManager {
   private answered = new Map<string, string[]>()
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
-  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean }>()
+  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean; sender?: true }>()
   /** Callee chats with a same-home run going right now: never continued. */
   private busyChats = new Set<string>()
   /** Starts whose text was already open from another chat of the same
    *  caller (#2007 B2): the accepted cost, counted since this process began. */
   private sameTextCount = 0
+  /** Sends from one sender to one callee that came while its last run there
+   *  was still going (#2007 C5): before piece 2 they were offered to that
+   *  run mid-turn; now each starts beside it. Counted since this process
+   *  began; no store. */
+  private midTurnCount = 0
   private readonly now: () => number
   private readonly store: HandoffStore | null
 
@@ -582,7 +608,7 @@ export class DelegationManager {
     const rec = id ? this.pendingById.get(id) : undefined
     // Only an agent's send: a delegation a person started keeps its own
     // way back to that person.
-    if (!rec || rec.kind !== "send" || rec.peer || rec.callee !== from.agentId || rec.caller !== to) return null
+    if (!rec || rec.kind !== "send" || rec.peer || rec.wayHome || rec.callee !== from.agentId || rec.caller !== to) return null
     return rec
   }
 
@@ -615,13 +641,19 @@ export class DelegationManager {
      *  resumes that session instead of starting beside it. */
     home?: string
     /** "deliver" (#2007 S5): `caller.context` is the chat the request
-     *  named; the answer goes there as it is, with no callback turn. */
-    wayHome?: "deliver"
+     *  named; the answer goes there as it is, with no callback turn.
+     *  "none" (#2007 piece 2): an agent caller with no turn to call back
+     *  (`caller.context` may be empty: the root is built from the agent
+     *  id); the row is read by its id, a named sender gets a notice. */
+    wayHome?: WayHome
     /** The call that does the work, instead of runLocal or runPeer: the
      *  /mesh/task async peer call, made exactly as before this row. */
     run?: () => Promise<string>
+    /** Passed to runLocal: how long a busy callee's slot may be waited for
+     *  (a none send keeps the queued send's wait, #1258). */
+    slotWaitMs?: number
   }): { taskId: string; record: DelegationRecord; duplicate?: true } {
-    const origin = originOf(opts.caller.context)
+    const origin = opts.wayHome === "none" ? NONE_ORIGIN : originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
     const id = `dlg-${this.now().toString(36)}-${randomBytes(4).toString("hex")}`
     const root = rootInitiatorOf(opts.caller.context as any, opts.caller.agentId)
@@ -630,7 +662,9 @@ export class DelegationManager {
     const home = normalizeHome(opts.home)
     // One run per message (#2007 piece 3): the same message from the same
     // chat, on the same home, joins the one still open.
-    const key = this.store ? joinKey({ caller: opts.caller.agentId, callee: keyCallee(opts), home, origin, message: opts.message }) : undefined
+    // A labelled "?" sender (#2007 review item 2) is its own caller here.
+    const keyCaller = keyCallerOf(opts.caller.agentId, senderLabelOf(opts.caller.agentId, opts.caller.context))
+    const key = this.store ? joinKey({ caller: keyCaller, callee: keyCallee(opts), home, origin, message: opts.message }) : undefined
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -671,10 +705,10 @@ export class DelegationManager {
 
   /** The join key a send from this caller turn would have; null when the
    *  turn has no chat to call back to or the node has no table. */
-  joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string; peer?: string; wayHome?: "deliver" }): string | null {
-    const origin = originOf(o.caller.context)
+  joinKeyOf(o: { caller: CallerTurn; callee: string; home?: string; message: string; peer?: string; wayHome?: WayHome }): string | null {
+    const origin = o.wayHome === "none" ? NONE_ORIGIN : originOf(o.caller.context)
     if (!origin || !this.store) return null
-    return joinKey({ caller: o.caller.agentId, callee: keyCallee(o), home: normalizeHome(o.home), origin, message: o.message })
+    return joinKey({ caller: keyCallerOf(o.caller.agentId, senderLabelOf(o.caller.agentId, o.caller.context)), callee: keyCallee(o), home: normalizeHome(o.home), origin, message: o.message })
   }
 
   /**
@@ -700,6 +734,11 @@ export class DelegationManager {
    *  another chat of the same caller (#2007 B2). */
   sameTextOtherChat(): number {
     return this.sameTextCount
+  }
+
+  /** Same-sender follow-ups that came while the last run was going (C5). */
+  midTurnFollowUps(): number {
+    return this.midTurnCount
   }
 
   /**
@@ -751,19 +790,23 @@ export class DelegationManager {
   private launchStarted(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0]): { taskId: string; record: DelegationRecord } {
     const { id, root, origin } = record
     const home = record.home
+    // A "?" sender that gave a name it is not an agent of this machine by
+    // (review item 2): its own session and sender line, the row's caller ?.
+    const label = senderLabelOf(record.caller, { sender: root?.sender })
     const depth = record.depth ?? 0
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
     // A deliver row is not an open request's hand-off nor a job: nobody
     // waits on it in a turn, so the request and job listeners stay out.
-    if (record.wayHome !== "deliver") {
+    // A none row has no caller turn either (#2007 piece 2).
+    if (!record.wayHome) {
       try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
     }
 
     const calleeContext: Record<string, unknown> = {
       channel: "a2a",
       chatId: `a2a:${record.caller}:${record.callee}:${id}`,
-      sender: `agent:${record.caller}`,
+      sender: `agent:${label ?? record.caller}`,
       ...(opts.calleeContext ?? {}),
       // The root always travels, and always as computed here: a caller
       // cannot claim a different origin for work it hands on.
@@ -773,7 +816,8 @@ export class DelegationManager {
       ...(home ? { home } : {}),
     }
     const who = record.peer ? `${record.callee}@${record.peer}` : record.callee
-    this.deps.log(`[delegation ${id}] ${record.caller} -> ${who} started (root=${root.kind}:${root.channel}, callback to ${origin.channel}:${origin.chatId})`)
+    const wayHome = record.wayHome === "none" ? "no callback; read it by id" : `${record.wayHome ?? "callback"} to ${origin.channel}:${origin.chatId}`
+    this.deps.log(`[delegation ${id}] ${record.caller} -> ${who} started (root=${root.kind}:${root.channel}, ${wayHome})`)
 
     // One session per piece of work (#1100): the callee's run on the same
     // home, still going or recent, is the session this one continues.
@@ -781,13 +825,24 @@ export class DelegationManager {
     // again from the same conversation, the callee picks up where its last
     // run there ended, instead of starting cold. It never waits for a run
     // still going there; it starts fresh beside it.
+    //
+    // A none row with no home keeps the one session per sender that the
+    // old /send/agent chat (`{a2a, <sender>}`) gave (#2007 piece 2): its
+    // key is the callee and the sender. With no run there yet in this
+    // process or in the table (load), it continues that legacy chat, so the
+    // deploy itself starts nobody cold. Only this key is seeded that way:
+    // never the caller-chat key above, so no two keys share a session.
     const implicit = !home
+    const senderKey = !record.peer && !home && record.wayHome === "none"
     const homeKey = record.peer
       ? null
       : home
         ? `${record.callee}\u0000${home}`
-        : `${record.callee}\u0000chat\u0000${record.caller}\u0000${origin.channel}\u0000${origin.chatId}`
-    const prior = homeKey ? this.sameHome(homeKey) : null
+        : senderKey
+          ? senderKeyOf(record.callee, keyCallerOf(record.caller, label))
+          : `${record.callee}\u0000chat\u0000${record.caller}\u0000${origin.channel}\u0000${origin.chatId}`
+    const prior = (homeKey ? this.sameHome(homeKey) : null)
+      ?? (senderKey ? { chats: [legacySenderChat(record.caller, label)], taskId: "legacy", running: null } : null)
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
     // Newest first: a run that failed before it saved a session falls back
     // to the one before it. Read when it launches: while any earlier run on
@@ -799,10 +854,16 @@ export class DelegationManager {
       const chats = prior?.chats ?? []
       if (chats.some((c) => this.busyChats.has(chatKeyOf(c)))) {
         if (!implicit) this.deps.log(`[delegation ${id}] a run on ${home} is still going; starting a fresh session instead`)
+        if (senderKey) {
+          // Before piece 2 this follow-up was offered to the running turn
+          // mid-turn (C5). Accepted: it runs beside it. Counted.
+          this.midTurnCount++
+          this.deps.log(`[delegation ${id}] follow-up from ${record.caller} to ${record.callee} while its last run is going; starts fresh beside it (${this.midTurnCount} since start)`)
+        }
         return []
       }
       const from = chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
-      if (implicit && from.length) this.deps.log(`[delegation ${id}] ${record.callee} continues its session from ${origin.channel}:${origin.chatId}`)
+      if (implicit && from.length) this.deps.log(`[delegation ${id}] ${record.callee} continues its session from ${senderKey ? `${record.caller}'s last send (${from[0].channel}:${from[0].chatId})` : `${origin.channel}:${origin.chatId}`}`)
       return from
     }
     if (prior && !implicit) {
@@ -825,7 +886,7 @@ export class DelegationManager {
       this.timers.set(id, timer)
       if (opts.run) return opts.run().then((text) => ({ content: text } as CalleeRun))
       if (record.peer) {
-        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
+        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, ...(record.caller !== UNNAMED_CALLER ? { senderAgentId: record.caller } : {}) })
           .then((text) => ({ content: text } as CalleeRun))
       }
       const resumeFrom = resumable()
@@ -838,6 +899,7 @@ export class DelegationManager {
           onStart: (runId) => { this.localRuns.set(id, runId) },
           extras: opts.extras,
           ...(resumeFrom?.length ? { resumeFrom } : {}),
+          ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
         })
       } catch (e) {
         this.busyChats.delete(mine)
@@ -853,7 +915,7 @@ export class DelegationManager {
     const run = waitFor ? waitFor.then(launch) : launch()
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
-      this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit })
+      this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit, ...(senderKey ? { sender: true as const } : {}) })
       void running.then(() => {
         const h = this.homes.get(homeKey)
         if (h?.taskId === id) { h.running = null; h.endedAt = this.now() }
@@ -909,7 +971,8 @@ export class DelegationManager {
     // be called back is marked pending in the same write: should the daemon
     // stop before its callback turn starts, the next start runs it once.
     const deliver = rec.wayHome === "deliver"
-    const pending = repeat || deliver ? undefined : { result: { ...result, text: clip(result.text, RESULT_CLIP) }, ...(written ? { wrote: true } : {}) }
+    const none = rec.wayHome === "none"
+    const pending = repeat || deliver || none ? undefined : { result: { ...result, text: clip(result.text, RESULT_CLIP) }, ...(written ? { wrote: true } : {}) }
     if (this.journal("end the hand-off", (s) => s.end(id, result.status, this.now(), pending, result), "missing") === "taken") {
       this.deps.log(`[delegation ${id}] ${result.status} dropped: another process ended it already`)
       return false
@@ -919,6 +982,10 @@ export class DelegationManager {
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
     if (deliver) {
       await this.deliverRaw(rec, result)
+      return true
+    }
+    if (none) {
+      this.settleNone(rec, result)
       return true
     }
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
@@ -963,6 +1030,19 @@ export class DelegationManager {
       this.deps.log(`[delegation ${rec.id}] ${result.status} delivered to ${channel}:${chatId}`)
     } catch (e: any) {
       this.deps.log(`[delegation ${rec.id}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
+    }
+  }
+
+  /** A none row's end (#2007 piece 2): no callback turn. A named sender
+   *  hears it once, as a notice on its next run (C7); an unnamed one ("?")
+   *  reads it by id. */
+  private settleNone(rec: DelegationRecord, result: DelegationResult): void {
+    if (rec.caller === UNNAMED_CALLER) return
+    if (!result.state && (result.status === "error" || result.status === "timeout" || result.status === "lost")) {
+      emitSignal({ kind: "delegation_failed", agentId: rec.caller, ref: rec.id, detail: `${rec.callee}${rec.peer ? `@${rec.peer}` : ""} ${result.status}: ${result.text.slice(0, 160)}` })
+    }
+    try { this.deps.notify?.(rec, result) } catch (e: any) {
+      this.deps.log(`[delegation ${rec.id}] could not leave ${rec.caller} a notice: ${e?.message ?? e}`)
     }
   }
 
@@ -1096,9 +1176,11 @@ export class DelegationManager {
   private sameHome(key: string): { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null } | null {
     const homeWindow = this.deps.sameHomeMs ?? 12 * 3_600_000
     const chatWindow = this.deps.sameChatMs ?? 2 * 3_600_000
+    const senderWindow = this.senderWindow()
     const now = this.now()
     for (const [k, h] of this.homes) {
-      if (h.endedAt !== null && now - h.endedAt > (h.implicit ? chatWindow : homeWindow)) this.homes.delete(k)
+      const window = h.sender ? senderWindow : h.implicit ? chatWindow : homeWindow
+      if (h.endedAt !== null && now - h.endedAt > window) this.homes.delete(k)
     }
     return this.homes.get(key) ?? null
   }
@@ -1124,6 +1206,8 @@ export class DelegationManager {
    *  turn's callback hop count (MAX_SEND_DEPTH). */
   originFor(id: string): { caller: string; origin: DelegationOrigin; depth: number } | null {
     const rec = this.pendingById.get(id)
+    // A none row has no chat where news could go.
+    if (rec?.wayHome === "none") return null
     if (rec) return { caller: rec.caller, origin: rec.origin, depth: rec.depth ?? 0 }
     const r = this.recent.find((e) => e.id === id)
     return r?.origin ? { caller: r.caller, origin: r.origin, depth: r.depth ?? 0 } : null
@@ -1340,5 +1424,65 @@ export class DelegationManager {
     } catch (e: any) {
       this.deps.log(`[delegation] could not read the handoffs table: ${e?.message ?? e}`)
     }
+    this.rebuildSenderKeys(store)
   }
+
+  private senderWindow(): number {
+    return this.deps.senderKeyMs ?? DEFAULT_STALE_SESSION_MINUTES * 60_000
+  }
+
+  /**
+   * The per-sender keys after a restart (#2007 N2): `homes` lives in
+   * memory, so each (caller, callee) key is rebuilt from its newest ended
+   * row within the session stale window. Only its own rows (R3): way_home
+   * 'none' with no home, never a callback (#1749 caller-chat) or named-home
+   * row, whose chat another key continues. Only rows that really ended
+   * (R4): done, error, timeout, waiting; a lost row was cut off mid-run and
+   * may still be resumed on its own chat.
+   */
+  private rebuildSenderKeys(store: HandoffStore): void {
+    const now = this.now()
+    let rows: ReturnType<HandoffStore["senderRows"]>
+    try {
+      rows = store.senderRows(now - this.senderWindow(), now)
+    } catch (e: any) {
+      this.deps.log(`[delegation] could not rebuild the per-sender sessions: ${e?.message ?? e}`)
+      return
+    }
+    let rebuilt = 0
+    for (const r of rows) {
+      const key = senderKeyOf(r.callee, keyCallerOf(r.caller, senderLabelOf(r.caller, { sender: r.sender })))
+      if (this.homes.has(key)) continue // newest first: the first one wins
+      const chat = { channel: "a2a", chatId: `a2a:${r.caller}:${r.callee}:${r.id}` }
+      this.homes.set(key, { chats: [chat], taskId: r.id, running: null, endedAt: r.endedAt, implicit: true, sender: true })
+      rebuilt++
+    }
+    if (rebuilt) this.deps.log(`[delegation] ${rebuilt} per-sender session(s) rebuilt from the handoffs table`)
+  }
+}
+
+/** The implicit key of a none row with no home: one session per sender. */
+function senderKeyOf(callee: string, caller: string): string {
+  return `${callee}\u0000sender\u0000${caller}`
+}
+
+/** The chat a sender's sends ran on before #2007 piece 2 (`/send/agent`'s
+ *  `chatId: senderAgentId || "a2a"`): the seed of its per-sender key. */
+function legacySenderChat(caller: string, label?: string): { channel: string; chatId: string } {
+  return { channel: "a2a", chatId: label ?? (caller === UNNAMED_CALLER ? "a2a" : caller) }
+}
+
+/** The name a "?" caller gave (its context's `sender: "agent:<name>"`), or
+ *  undefined: a /send/agent sender that is not an agent of this machine
+ *  keeps its own session and sender line (#2007 review item 2). */
+export function senderLabelOf(caller: string, context: { sender?: unknown } | undefined | null): string | undefined {
+  if (caller !== UNNAMED_CALLER) return undefined
+  const s = typeof context?.sender === "string" ? context.sender : ""
+  const label = s.startsWith("agent:") ? s.slice(6).trim() : ""
+  return label && label !== UNNAMED_CALLER ? label : undefined
+}
+
+/** Who a key names as the caller: a labelled "?" sender by its label. */
+function keyCallerOf(caller: string, label: string | undefined): string {
+  return label ? `${UNNAMED_CALLER}:${label}` : caller
 }

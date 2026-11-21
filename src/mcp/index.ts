@@ -823,6 +823,7 @@ const TOOLS = [
       "Look up a colleague's work instead of asking them, the way you check the board before interrupting someone. " +
       "agent=<id>: what that agent is on now, its open requests from the owner, its hand-offs still running, and what it finished in the last 48 hours with the start of each answer. " +
       "work=<issue or merge request link, group/project#12 or group/project!12, or a req- id>: the owner's requests about it (open, or closed in the last 7 days) and every run about it in the last 7 days, newest first. " +
+      "handoff=<dlg- id from a receipt or a notice>: that hand-off of yours, how it ended and its answer (you must be its asking agent or the one that did the work). " +
       "It starts no run and asks nobody. Use it before agentx_send_agent whenever you only need to know a status; message the agent only when you need work or a decision. " +
       "Runs from a person's own chat show that they happened, not what was said.",
     inputSchema: {
@@ -830,6 +831,7 @@ const TOOLS = [
       properties: {
         agent: { type: "string", description: "Exact agentId of the colleague, here or on a mesh peer." },
         work: { type: "string", description: "An issue or merge request link, a group/project#12 or group/project!12 ref, or an owner's request id (req-…)." },
+        handoff: { type: "string", description: "A hand-off id (dlg-…) from a receipt or a notice: read how it ended and its answer." },
       },
     },
   },
@@ -1909,8 +1911,13 @@ async function handleToolCall(
     case "agentx_lookup": {
       const agent = typeof args.agent === "string" ? args.agent.trim() : ""
       const work = typeof args.work === "string" ? args.work.trim() : ""
-      if (!agent === !work) return { content: [{ type: "text", text: "Error: give one of agent or work." }] }
-      const q = agent ? `agent=${encodeURIComponent(agent)}` : `work=${encodeURIComponent(work)}`
+      const handoff = typeof args.handoff === "string" ? args.handoff.trim() : ""
+      if ([agent, work, handoff].filter(Boolean).length !== 1) return { content: [{ type: "text", text: "Error: give one of agent, work or handoff." }] }
+      // A hand-off is read as this agent: only its own rows (#2007).
+      const as = process.env.AGENTX_AGENT_ID ? `&as=${encodeURIComponent(process.env.AGENTX_AGENT_ID)}` : ""
+      const q = agent ? `agent=${encodeURIComponent(agent)}`
+        : handoff || /^dlg-/.test(work) ? `handoff=${encodeURIComponent(handoff || work)}${as}`
+        : `work=${encodeURIComponent(work)}`
       const res = await daemonFetch(`${daemonUrl()}/lookup?${q}`, { signal: AbortSignal.timeout(20_000) })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }

@@ -17,6 +17,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, openSync, 
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
+import { waitForHandoffReply } from "./demo-handoff"
 import { busyPorts, cliCommand, configStartupTimeout, ledgerHint, resolveStartupTimeout } from "./demo-startup"
 import { openBrowser } from "@/utils/open-browser"
 
@@ -182,6 +183,11 @@ async function post(port: number, path: string, body: object): Promise<any> {
   const data: any = await res.json().catch(() => ({}))
   if (!res.ok || data.error) throw new Error(data.error || `${path} HTTP ${res.status}`)
   return data
+}
+
+async function getJson(port: number, path: string): Promise<any> {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(5000) })
+  return res.json()
 }
 
 function say(role: string, text: string, color: (s: string) => string): void {
@@ -352,14 +358,16 @@ export const demo = new Command()
 
         console.log()
         console.log(chalk.magenta("  ⇄ mesh hop: laptop-paris → vps-nyc (A2A /task)"))
+        // The send answers at once with a hand-off id; the demo, a CLI and
+        // not an agent, reads the helper's reply by that id (#2007).
         const s2 = await post(specs[0].port, "/send/agent", {
           agentId: "builder",
           senderAgentId: "cx",
           text: DELEGATION,
-          // The demo prints the helper's reply, so it waits for it (#847).
-          async: false,
         })
-        const builderReply = typeof s2.messageId === "string" ? s2.messageId : s2.content || "(no reply)"
+        const builderReply = typeof s2.taskId === "string"
+          ? await waitForHandoffReply((path) => getJson(specs[0].port, path), s2.taskId, "cx")
+          : "(no reply)"
         say("@builder (vps-nyc)", builderReply, chalk.yellow)
 
         const s3 = await post(specs[0].port, "/task", {

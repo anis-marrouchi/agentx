@@ -79,7 +79,7 @@ const MAX_MESSAGES = 30          // Keep last 30 messages max
  *  memo carrying the open task forward. Size-based rotation (tier-2) now
  *  measures true per-request context, so a long-lived session no longer
  *  needs a short stale window to keep replay bounded. */
-const DEFAULT_STALE_SESSION_MINUTES = 720
+export const DEFAULT_STALE_SESSION_MINUTES = 720
 /** Default hard cap on turns per Claude session — a backstop only. Claude
  *  CLI `--resume` replays the prior session on each turn, so replay cost
  *  grows with turn count; but the tier-2 check now measures the ACTUAL

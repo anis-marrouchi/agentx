@@ -147,16 +147,39 @@ Mention another agent's Telegram handle in your response. The AgentX router auto
 
 ### 2. HTTP API (programmatic, local node)
 
+Always name yourself (`senderAgentId`) and your run (`X-AgentX-Task`). The
+daemon then answers at once with a **receipt**; it never makes you wait:
+
 ```bash
-curl -s -X POST http://127.0.0.1:19900/task \
+curl -s -m 10 -X POST http://127.0.0.1:19900/task \
   -H "Content-Type: application/json" \
-  -d '{"agent": "<agent-id>", "message": "Your task description"}'
+  -H "X-AgentX-Task: $AGENTX_TASK_ID" \
+  -d '{"agent": "<agent-id>", "message": "Your task description",
+       "senderAgentId": "<your own agent id>"}'
 ```
+
+This returns `202 {accepted, mode, taskId: "dlg-…", note}` right away:
+
+- `mode: "callback"`: the answer arrives later as a new message in this
+  conversation. Tell whoever asked you who you asked, then end your turn.
+- `mode: "none"`: no turn of yours can be called back. You get a short
+  notice on your next run when it ends; read the answer then with
+  `agentx_lookup` (`handoff: "<taskId>"`) or
+  `GET /a2a/delegations/<taskId>?as=<your id>`.
+
+Do not wait for it, poll for it, or send it again (a repeat while it runs
+returns the same `taskId` with `duplicate: true`). `stream: true` and
+`async: false` do nothing for an agent: the receipt says `streamIgnored` or
+`asyncIgnored`. A bare `curl /task` that names no agent is treated as a
+script and holds your turn until the other agent finishes; never send one.
 
 ### 3. Mesh Task (cross-node, remote agents)
 
-**Use `async: true`. Always. A synchronous mesh delegation will be killed
-before the remote agent finishes, and its answer will be lost.**
+Name yourself here too: an agent always gets a receipt. Without
+`async: true` the answer comes back to you (a callback, or a notice and a
+read by id, as above); your `context` still goes to the remote node so it
+keeps one conversation per chat. With `async: true` **and** a chat in
+`context`, the answer goes straight to that chat instead.
 
 ```bash
 curl -s -X POST http://127.0.0.1:19900/mesh/task \
@@ -172,12 +195,15 @@ curl -s -X POST http://127.0.0.1:19900/mesh/task \
   }'
 ```
 
-This returns `202 {accepted, taskId, deliverTo}` immediately. The daemon
-holds the long call in the background and **delivers the remote agent's
-answer straight to that chat** when it lands. You do not wait, and you do
-not relay it yourself.
+This returns `202 {accepted, mode: "deliver", taskId: "dlg-…", deliverTo}`
+immediately. The daemon holds the long call in the background and
+**delivers the remote agent's answer straight to that chat** when it lands.
+You do not wait, and you do not relay it yourself.
 
-#### Why `async` and not a longer timeout
+The one request that still waits is a `/mesh/task` to a guest host (a
+machine this one joined as a guest): keep those short.
+
+#### Why a receipt and not a longer timeout
 
 A delegated agent run takes minutes. An agent's Bash tool kills any
 command at **2 minutes**, and `curl -m 600` does NOT change that — the
@@ -187,7 +213,7 @@ killed, and the user never saw it.
 
 Raising the Bash timeout is not the fix either. It makes the delegation
 only as reliable as the longest thing you can keep a socket open for.
-`async` removes the wait entirely.
+The receipt removes the wait entirely.
 
 #### `context` is the route home — it is not optional
 
@@ -195,7 +221,7 @@ only as reliable as the longest thing you can keep a socket open for.
 deliver the result. Without them:
 
 - the request is **rejected** with 400 in async mode, and
-- in sync mode the task lands on the remote node as `api:default`,
+- otherwise the task lands on the remote node as `api:default`,
   detached from the conversation that asked for it.
 
 Pass the channel and chat id you were actually asked on.
@@ -208,9 +234,9 @@ Saying "I'm polling for his report and will send it when it lands" is
 stating something impossible, and it has been said to a user who then
 received nothing.
 
-With `async: true` the daemon delivers the answer. Say that instead:
-"Delegated to <agent> on <peer>. His answer will arrive here when he's
-done." Then stop.
+The daemon brings the answer back (a callback, a delivery to the chat, or
+a notice and a read by id). Say that instead: "Delegated to <agent> on
+<peer>. His answer will arrive here when he's done." Then stop.
 
 ### 4. AgentX CLI
 
