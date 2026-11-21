@@ -37,9 +37,14 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `report` | `"always"` \| `"exceptions"` | `"always"` | `"exceptions"`: the run decides whether there is anything to say. The agent is asked to reply with exactly `NOTHING_TO_REPORT` when all is well, and such a run sends nothing to `notify`. Failure messages are sent either way. See [report only when something is wrong](/jobs/daily-report#report-only-when-something-is-wrong). |
 | `fireToken` | string | — | Secret that lets another system start the job now. See [fire a routine](/jobs/fire-a-routine). |
 | `runAt` | string (ISO time) | — | Makes the job run once, at this time, and then sets `enabled` to `false`. If the node was off at that time, the job runs once when it starts. `schedule` then only shows the same time. Set by `agentx schedule "tomorrow at 9:05"`. |
+| `until` | string (ISO time) | — | Ends a repeating job for good at this time: AgentX sets `enabled` to `false`, writes `endedAt` and records the end in the job's change log. An agent can set or clear it on its own job with `agentx_schedule` `change` (`until: "none"` clears it). |
+| `endedAt` | string | — | When the job ended: retired by its owner, dropped on its goal card, or past `until`. Set by AgentX. A job with `endedAt` never runs again, and `agentx cron enable` or a resume refuses it; it needs a new approved schedule. |
+| `approvedSchedule` | string | — | The schedule you last approved. Set by AgentX. When an agent changes the time so the job would run more often than this, the change waits for your approval and the job keeps its current time. Unset: the current `schedule` counts as approved. |
 | `createdBy` | string | — | The agent that created the job from chat. Set by AgentX; an agent may only manage jobs it created, unless it is an admin. |
 | `approval` | object | — | A change an agent asked for that waits for you. Set by AgentX; cleared by `agentx schedule approve` or `agentx schedule reject`. |
-| `approval.action` | `"create"` \| `"delete"` | required | What the agent asked for. A job waiting on `create` never runs. |
+| `approval.action` | `"create"` \| `"delete"` \| `"change"` | required | What the agent asked for. A job waiting on `create` never runs. A `change` is a time that runs more often than `approvedSchedule`; the job keeps its current time until you approve it. |
+| `approval.schedule` | string | — | For a `change`: the new time the agent asked for. |
+| `approval.reason` | string | — | For a `change`: why the agent asked. |
 | `approval.requestedBy` | string | required | The agent that asked. |
 | `approval.requestedAt` | string | required | When it asked (date and time). |
 
@@ -80,6 +85,73 @@ A run that ends with `EXIT=1`, or with no `EXIT=` line at all, is recorded as fa
 On a run that worked, the `EXIT=0` line is removed before the answer is sent to `notify`, so the reader never sees it. The run history keeps the answer as the agent wrote it. With `requireSources`, the `EXIT=0` line is not checked for a source.
 
 A run the daemon makes up after a restart, for a time it missed while it was off, counts the same way: a failure adds to the failures in a row, sends the failure message, and can turn the job off under `onError`. It is not retried; the next regular run follows the schedule.
+
+### What an agent may do with its own job
+
+With the `agentx_schedule` tool, the agent that created a job (or an admin agent) can:
+
+- `change` its prompt, time, `goal`, `value` or `until`. A time that runs more often waits for your approval. While the job is on goal check, only your answer changes its `goal` or `value`.
+- `retire` it: the job ends as with `until`.
+- `verdict`: one line (up to 200 characters) on how the job is doing, shown in Settings › Schedules.
+- `recommend` keep, change or drop on the job's goal card, with one line why.
+
+Each change writes a row in the job's change log.
+
+**Goal check.** When a job's goal shows no movement, the job is held, its owner is woken once, and one card goes to your Desk. Goal cards do not expire. Answering **drop** ends the job.
+
+**A one-time job that ran late.** When the node was off at a one-time job's `runAt`, the run made at start-up begins its brief with "This run is N h late".
+
+## `sensors`
+
+Readers the daemon checks on a timer, with no model: `sensors.<id>`. The only built-in reader is `battery`, and it works on macOS only (it reads `pmset`). The config check refuses a battery sensor on another system, and a level whose `target` is not an agent of this node.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `reading` | `"battery"` | required | What is read. |
+| `every` | string | `"60s"` | How often it is read, in seconds or minutes such as `"60s"` or `"5m"`. At least `20s`. |
+| `levels` | list | required | Conditions that wake an agent or send you a push. Each level fires once per stretch on battery, with 30 minutes between wakes. |
+| `levels[].id` | string | required | The level's name, unique in the sensor. |
+| `levels[].when.below` | number (1–100) | — | Holds while the charge is under this percentage. |
+| `levels[].when.forMinutes` | number | — | Holds once the node has been on battery this many minutes. A level needs `below` or `forMinutes`. |
+| `levels[].target` | string | — | The agent woken, at priority critical. Required unless `urgent`. |
+| `levels[].brief` | string | — | Words put before the wake's text, for example who is speaking. |
+| `levels[].urgent` | boolean | `false` | Sends you a push with no model instead of waking an agent, like `agentx notify --urgent`. |
+| `levels[].fallbackPush` | boolean | `false` | When the wake has not started within 2 minutes, or failed, send you that push instead. Any other level whose wake is held gets a line on the Hub and is tried again. |
+| `levels[].push` | object | — | How the push reads: `title`, `from`, `key`, `todo`, `priority` (1–5). |
+| `rearm` | object | `{ "above": 30, "onAC": true }` | When the levels may fire again: back above this percentage, on the charger when `onAC`. |
+| `value` | object | — | Why it runs and the number that proves it, as on a schedule. |
+| `goal` | string (goal id) | — | The goal record it serves. |
+
+A failed push is tried again at the next reading and the result is logged. Each wake is a row in the run history with `kind: "sensor"`. Settings › Schedules shows each sensor with its last reading and wakes.
+
+```json
+"sensors": {
+  "battery": {
+    "reading": "battery",
+    "every": "60s",
+    "levels": [
+      { "id": "below-50", "when": { "below": 50 }, "target": "ops" },
+      { "id": "below-15", "when": { "below": 15 }, "target": "ops", "fallbackPush": true }
+    ]
+  }
+}
+```
+
+## `allowedHostJobs`
+
+What may run on this machine outside AgentX, keyed by launchd label or crontab line. AgentX does not run these jobs; the list says whose they are.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `owner` | string | required | Who owns the job. |
+| `why` | string (up to 300 characters) | required | Why it runs. |
+| `until` | string (date or ISO time) | — | When it should be gone, for example after moving it into a schedule. Past this time, the entry shows on the Hub for its owner and in Settings › Schedules. |
+
+```json
+"allowedHostJobs": {
+  "com.example.battery-watch": { "owner": "ops", "why": "Battery warnings until the sensor is checked", "until": "2026-12-31" }
+}
+```
 
 ## `exceptionsDigest`
 

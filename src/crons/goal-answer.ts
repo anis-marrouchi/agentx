@@ -4,6 +4,7 @@ import { cronGoalChoice } from "@/approvals/origin"
 import { ownerChangedSince, recordCronChange } from "./change-ledger"
 import { addNote, dropNote, jobGoalState, updateJobGoalState } from "./goal-state"
 import { endJobInConfig } from "./retired"
+import { HUB_NAME } from "@/daemon/ui/hub-name"
 
 // --- The operator's answer on a schedule's goal card, applied (#863) ---
 //
@@ -83,7 +84,7 @@ async function applyDrop(card: DecisionCard, at: string, deps: GoalAnswerDeps): 
     try {
       updateJobGoalState(deps.root, jobId, (s) => { addNote(s, "drop-write", `drop answered, not yet written to agentx.json: ${ended.error}`, new Date().toISOString()) })
     } catch (e: any) {
-      deps.log(`[cron-goal] "${jobId}": Wall line not written: ${e?.message ?? e}`)
+      deps.log(`[cron-goal] "${jobId}": ${HUB_NAME} line not written: ${e?.message ?? e}`)
     }
     return "failed"
   }

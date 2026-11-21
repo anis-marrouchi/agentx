@@ -75,6 +75,7 @@ Keep tokens out of screenshots, chats and support requests. See [Keep it safe](.
 
 1. **Browser:** in **Settings**, select **Schedules**.
 2. For each schedule, check its time, the agent it runs as, and what it does.
+3. Read the owner's verdict line under each schedule. Below the list, check the sensors (last reading and wakes) and any host job past its `until`. See [sensors](../reference/config-automation.md#sensors) and [allowed host jobs](../reference/config-automation.md#allowedhostjobs).
 
 ## Webhooks
 

@@ -990,7 +990,7 @@ const TOOLS = [
         value: { type: "object", description: "change: {why, metric, number?}: why it runs and the number that proves it." },
         reason: { type: "string", description: "change / retire: why (goes in the job's change log)." },
         until: { type: "string", description: "change: ISO time after which a recurring job ends for good; \"none\" clears it." },
-        text: { type: "string", description: "verdict: one line on how your job is doing (max 200 characters); shown on the Wall." },
+        text: { type: "string", description: `verdict: one line on how your job is doing (max 200 characters); shown on the ${HUB_NAME}.` },
         choice: { type: "string", enum: ["keep", "change", "drop"], description: "recommend: your recommendation for the job's goal card." },
         why: { type: "string", description: "recommend: one line why (max 200 characters)." },
         agent: { type: "string", description: "create: agent that runs the routine. Default: you." },
