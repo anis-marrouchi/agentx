@@ -4,7 +4,7 @@ import { join } from "path"
 import Database from "better-sqlite3"
 import { HandoffStore } from "../src/a2a/handoff-store"
 import { DelegationManager, type CallerTurn, type DelegationDeps } from "../src/a2a/delegation"
-import { joinedBody } from "../src/daemon/delegation-wiring"
+import { joinedBody, noneBody } from "../src/daemon/delegation-wiring"
 import { repeatOf } from "../src/daemon/send-agent"
 
 // #2007 piece 3: one run per hand-off message. The same message from the
@@ -169,6 +169,44 @@ describe("a duplicate send joins the open hand-off (#2007 piece 3)", () => {
     expect(runs).toHaveLength(2)
   })
 
+  it("a resend that joins an ended continue row is marked carried; an open join is not (#2042)", async () => {
+    const db = freshDb()
+    const { mgr } = manager(db)
+    const a = mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" })
+    const open = mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" })
+    expect(open).toMatchObject({ taskId: a.taskId, duplicate: true })
+    expect(open.carried).toBeUndefined()
+    await mgr.complete(a.taskId, { status: "waiting", text: "half done", waiting: { on: "worker to carry on: tests" }, state: { state: "continue", left: "tests" } })
+    expect(mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" })).toMatchObject({ taskId: a.taskId, duplicate: true, carried: true })
+    expect(mgr.carriedByJob(a.taskId)).toBe(true)
+  })
+
+  it("keeps the continue window as long as continueJoinMs says (#2042)", async () => {
+    const db = freshDb()
+    const { mgr, tick } = manager(db, { continueJoinMs: 30 * 60_000 })
+    const a = mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" })
+    await mgr.complete(a.taskId, { status: "waiting", text: "half done", waiting: { on: "worker to carry on" }, state: { state: "continue", left: "tests" } })
+    tick(20 * 60_000)
+    expect(mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" }).duplicate).toBe(true)
+    tick(11 * 60_000)
+    expect(mgr.start({ caller: CHAT_1, callee: "worker", message: "Deploy it" }).duplicate).toBeFalsy()
+  })
+
+  it("records the row without its key when the keyed insert gives up after two tries (#2042)", () => {
+    const db = freshDb()
+    const { mgr, store, runs, logs } = manager(db)
+    const real = store!.insert.bind(store!)
+    // Two clashes whose open row is gone each time it is read.
+    store!.insert = (rec, at, source) => (rec.joinKey ? false : real(rec, at, source))
+    const a = mgr.start({ caller: CHAT_1, callee: "worker", message: "Check the build" })
+    expect(a.duplicate).toBeFalsy()
+    expect(statusOf(db, a.taskId)).toBeNull()
+    expect(keyOf(db, a.taskId)).toBeNull()
+    expect(store!.read(a.taskId)).toBeTruthy()
+    expect(runs).toHaveLength(1)
+    expect(logs.some((l) => l.includes("recorded without it"))).toBe(true)
+  })
+
   it("a continue row with a due time keeps the key until that time (Q6)", async () => {
     const db = freshDb()
     const { mgr, tick } = manager(db)
@@ -202,6 +240,25 @@ describe("the answer a joined send gets", () => {
     expect(body).toMatchObject({ accepted: true, mode: "callback", taskId: "dlg-1", agent: "worker", duplicate: true })
     expect(String(body.note)).toContain("dlg-1")
     expect(String(body.note)).toMatch(/once/)
+  })
+})
+
+describe("a joined send whose run ended and whose job carries on (#2042)", () => {
+  it("is told the result comes through the job, not that it hears once", () => {
+    const note = String(joinedBody("dlg-1", "worker", undefined, true, true).note)
+    expect(note).toMatch(/comes through the job/)
+    expect(note).not.toMatch(/hear its answer once/)
+  })
+
+  it("a none sender is not told a notice is still coming", () => {
+    const note = String(noneBody("dlg-1", "worker", undefined, true, true).note)
+    expect(note).toMatch(/comes through the job/)
+    expect(note).not.toMatch(/When it ends/)
+  })
+
+  it("the continue window is the job wake's grace setting, read from config", () => {
+    const wiring = readFileSync(join(__dirname, "../src/daemon/delegation-wiring.ts"), "utf8")
+    expect(wiring).toMatch(/continueJoinMs: \(w\.config\.requests\?\.jobs\?\.wake\?\.graceMinutes/)
   })
 })
 

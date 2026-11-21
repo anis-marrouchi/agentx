@@ -491,7 +491,8 @@ export const REPEAT_SHARE = 0.5
 
 /** How long after a "continue" end with no due time a resend still joins
  *  that hand-off (#2007 Q6): the job wake's grace for a woken run to start
- *  (jobs/wake.ts, graceMinutes 10). */
+ *  (jobs/wake.ts, graceMinutes 10). The daemon fills continueJoinMs from
+ *  requests.jobs.wake.graceMinutes, so the two cannot drift (#2042). */
 export const CONTINUE_JOIN_MS = 10 * 60_000
 
 function sha(...parts: string[]): string {
@@ -652,7 +653,7 @@ export class DelegationManager {
     /** Passed to runLocal: how long a busy callee's slot may be waited for
      *  (a none send keeps the queued send's wait, #1258). */
     slotWaitMs?: number
-  }): { taskId: string; record: DelegationRecord; duplicate?: true } {
+  }): { taskId: string; record: DelegationRecord; duplicate?: true; carried?: true } {
     const origin = opts.wayHome === "none" ? NONE_ORIGIN : originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
     const id = `dlg-${this.now().toString(36)}-${randomBytes(4).toString("hex")}`
@@ -687,7 +688,7 @@ export class DelegationManager {
       const open = this.joined(key) ?? this.claim(record)
       if (open) {
         this.deps.log(`[delegation ${open}] ${record.caller} -> ${record.callee}: the same message again from ${origin.channel}:${origin.chatId}; joined, nothing started`)
-        return { taskId: open, record: this.pendingById.get(open) ?? { ...record, id: open }, duplicate: true }
+        return { taskId: open, record: this.pendingById.get(open) ?? { ...record, id: open }, duplicate: true, ...(this.carriedByJob(open) ? { carried: true as const } : {}) }
       }
       this.noteSameText(record)
     } else {
@@ -730,6 +731,13 @@ export class DelegationManager {
     }, null)
   }
 
+  /** True when a joined hand-off has ended and its callee carries on
+   *  through a job wake (a `continue` row, #2042): a resend that joins it
+   *  is told the result comes through the job, not as a new answer. */
+  carriedByJob(id: string): boolean {
+    return this.journal("read the hand-off", (s) => s.statusOf(id) === "waiting", false)
+  }
+
   /** Starts since this process began whose text was already open from
    *  another chat of the same caller (#2007 B2). */
   sameTextOtherChat(): number {
@@ -755,7 +763,10 @@ export class DelegationManager {
         const open = store.openByJoin(record.joinKey!)
         if (open) return open
       }
-      this.deps.log(`[delegation ${record.id}] WARNING: the hand-off was not recorded with its join key; duplicate guard off for this send`)
+      // Still recorded, without the key (#2042): the run stays visible to
+      // the list, the read by id and restart recovery.
+      const plain = store.insert({ ...record, joinKey: undefined }, record.startedAt)
+      this.deps.log(`[delegation ${record.id}] WARNING: the hand-off was not recorded with its join key${plain ? "; recorded without it" : ""}; duplicate guard off for this send`)
     } catch (e: any) {
       this.deps.log(`[delegation ${record.id}] WARNING: could not record the hand-off (${e?.message ?? e}); duplicate guard off for this send`)
     }

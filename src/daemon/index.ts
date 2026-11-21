@@ -4983,13 +4983,13 @@ export class AgentXDaemon {
       const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: plan.caller, callee: target.callee, home: homeOfBody(body), message: target.message }))
       if (joined) {
         this.log(`[delegation ${joined}] ${plan.caller.agentId} -> ${target.callee}: the same message again; joined, no hop counted`)
-        return { accepted: { ...joinedBody(joined, target.callee, plan.peer, plan.send), ...ignored } }
+        return { accepted: { ...joinedBody(joined, target.callee, plan.peer, plan.send, this.delegations.carriedByJob(joined)), ...ignored } }
       }
     } else if (noneCaller) {
       const joined = this.delegations.joined(this.delegations.joinKeyOf({ caller: { agentId: noneCaller, context: label ? { sender: `agent:${label}` } : {} }, callee: target.callee, home: homeOfBody(body), message: target.message, wayHome: "none" }))
       if (joined) {
         this.log(`[delegation ${joined}] ${noneCaller} -> ${target.callee}: the same message again; joined, no hop counted`)
-        return { accepted: { ...noneBody(joined, target.callee, target.peer, true), ...ignored } }
+        return { accepted: { ...noneBody(joined, target.callee, target.peer, true, this.delegations.carriedByJob(joined)), ...ignored } }
       }
     }
     const over = this.handOffRefusal(caller, target.peer ? `${target.callee}@${target.peer}` : target.callee)
@@ -5068,7 +5068,7 @@ export class AgentXDaemon {
       )
       if (intentRef) extras.intentRef = intentRef
     }
-    const { taskId, duplicate } = this.delegations.start({
+    const { taskId, duplicate, carried } = this.delegations.start({
       caller,
       callee: target.callee,
       peer,
@@ -5083,7 +5083,7 @@ export class AgentXDaemon {
       ...(target.run ? { run: target.run } : {}),
     })
     // Joined at the insert: the same send raced in after the gate's check.
-    if (duplicate) return joinedBody(taskId, target.callee, peer, send)
+    if (duplicate) return joinedBody(taskId, target.callee, peer, send, carried === true)
     return acceptedBody(taskId, target.callee, peer, send)
   }
 
@@ -5127,7 +5127,7 @@ export class AgentXDaemon {
       if (intentRef) extras.intentRef = intentRef
     }
     const maxMinutes = this.registry.getAgent(target.callee)?.maxExecutionMinutes
-    const { taskId, duplicate } = this.delegations.start({
+    const { taskId, duplicate, carried } = this.delegations.start({
       caller: { agentId: callerName, ...(turn?.taskId ? { taskId: turn.taskId } : {}), context },
       callee: target.callee,
       peer,
@@ -5142,7 +5142,7 @@ export class AgentXDaemon {
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
       ...(target.run ? { run: target.run } : {}),
     })
-    return noneBody(taskId, target.callee, peer, duplicate === true)
+    return noneBody(taskId, target.callee, peer, duplicate === true, carried === true)
   }
 
   /**

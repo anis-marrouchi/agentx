@@ -30,6 +30,7 @@ import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
 import { isLoopback } from "./mesh-auth"
 import { getEventBus } from "@/events/bus"
+import { DEFAULT_WAKE_SETTINGS } from "@/jobs/wake"
 
 /** Channels with no adapter or thread of their own: a callback reply
  *  reaches the person as a push notification. The phone app ("app") is not
@@ -313,19 +314,22 @@ export function acceptedBody(taskId: string, callee: string, peer?: string, send
 
 /** What a send that joined an open hand-off gets back (#2007 piece 3):
  *  the 202 of the first send, marked, with nothing started. */
-export function joinedBody(taskId: string, callee: string, peer?: string, send = false): Record<string, unknown> {
+export function joinedBody(taskId: string, callee: string, peer?: string, send = false, carried = false): Record<string, unknown> {
   return {
     ...acceptedBody(taskId, callee, peer, send),
     duplicate: true,
     note: `Already handed off as task ${taskId}; this repeat started nothing. ` +
-      `You will hear its answer once, as a new message in this conversation. Do not send it again, and do not wait or poll for it.`,
+      (carried
+        // An ended continue row (#2042): no new answer comes for it.
+        ? `That run ended and the job carries on; its result comes through the job. Do not send it again, and do not wait or poll for it.`
+        : `You will hear its answer once, as a new message in this conversation. Do not send it again, and do not wait or poll for it.`),
   }
 }
 
 /** The 202 of a none row (#2007 piece 2): an agent caller nobody can call
  *  back. The answer is read by its id; a named sender also gets a notice
  *  on its next run. */
-export function noneBody(taskId: string, callee: string, peer: string | undefined, duplicate: boolean): Record<string, unknown> {
+export function noneBody(taskId: string, callee: string, peer: string | undefined, duplicate: boolean, carried = false): Record<string, unknown> {
   const who = peer ? `${callee} on ${peer}` : callee
   return {
     accepted: true,
@@ -335,10 +339,11 @@ export function noneBody(taskId: string, callee: string, peer: string | undefine
     ...(peer ? { peer } : {}),
     ...(duplicate ? { duplicate: true } : {}),
     note: (duplicate
-      ? `Already handed off as task ${taskId}; this repeat started nothing. `
+      ? `Already handed off as task ${taskId}; this repeat started nothing. ` + (carried ? `That run ended and the job carries on; its result comes through the job. ` : ``)
       : `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. `) +
       `No turn of yours can be called back from here, so the answer is not sent to you as a message. ` +
-      `When it ends you get a short notice on your next run; read the answer with agentx_lookup (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
+      (carried ? `Read what it left with agentx_lookup` : `When it ends you get a short notice on your next run; read the answer with agentx_lookup`) +
+      ` (handoff: "${taskId}") or GET /a2a/delegations/${taskId}?as=<you>. Do not wait or poll for it.`,
   }
 }
 
@@ -365,7 +370,7 @@ function meshDeliverTurn(o: Omit<MeshDeliver, "run">): CallerTurn {
   return { agentId: named ?? o.caller ?? UNNAMED_CALLER, context: o.context }
 }
 
-function meshDeliverBody(taskId: string, o: Omit<MeshDeliver, "run">, duplicate: boolean): Record<string, unknown> {
+function meshDeliverBody(taskId: string, o: Omit<MeshDeliver, "run">, duplicate: boolean, carried = false): Record<string, unknown> {
   const to = `${String(o.context.channel)}:${String(o.context.chatId)}`
   return {
     accepted: true,
@@ -376,7 +381,9 @@ function meshDeliverBody(taskId: string, o: Omit<MeshDeliver, "run">, duplicate:
     deliverTo: to,
     ...(duplicate ? { duplicate: true } : {}),
     note: duplicate
-      ? `Already running as task ${taskId}; this repeat started nothing. Its result goes to ${to} once.`
+      ? carried
+        ? `Already ran as task ${taskId}; this repeat started nothing. The job carries on; its result comes through the job.`
+        : `Already running as task ${taskId}; this repeat started nothing. Its result goes to ${to} once.`
       : `The result will be delivered to the originating chat when the peer finishes. Read it any time with GET /a2a/delegations/${taskId}.`,
   }
 }
@@ -387,7 +394,7 @@ function meshDeliverBody(taskId: string, o: Omit<MeshDeliver, "run">, duplicate:
 export function meshDeliverJoined(delegations: DelegationManager, o: Omit<MeshDeliver, "run">): Record<string, unknown> | null {
   const key = delegations.joinKeyOf({ caller: meshDeliverTurn(o), callee: o.agent || DEFAULT_CALLEE, peer: o.peer, wayHome: "deliver", message: o.message })
   const open = delegations.joined(key)
-  return open ? meshDeliverBody(open, o, true) : null
+  return open ? meshDeliverBody(open, o, true, delegations.carriedByJob(open)) : null
 }
 
 /** Start /mesh/task async:true on the hand-off journal (#2007 S5): one
@@ -403,7 +410,7 @@ export function startMeshDeliver(delegations: DelegationManager, o: MeshDeliver)
     wayHome: "deliver",
     run: o.run,
   })
-  return { status: 202, body: meshDeliverBody(r.taskId, o, r.duplicate === true) }
+  return { status: 202, body: meshDeliverBody(r.taskId, o, r.duplicate === true, r.carried === true) }
 }
 
 /** The notice a named sender gets when its none row ends (#2007 C7). */
@@ -647,6 +654,8 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     // A sender's last ended send stays its next send's session as long as
     // any chat session lives (session.staleMinutes).
     senderKeyMs: w.config.session.staleMinutes * 60_000,
+    // A continue row keeps its key as long as the job wake's grace (#2042).
+    continueJoinMs: (w.config.requests?.jobs?.wake?.graceMinutes ?? DEFAULT_WAKE_SETTINGS.graceMinutes) * 60_000,
     // A none row of a named local sender (#2007 C7): one notice on its next
     // run, or a run of its own after NOTICE_HOLD_MS. No new mechanism.
     notify: (rec, result) => {
