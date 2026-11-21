@@ -171,7 +171,8 @@ async function evaluateGoal(job: GoalJob & { goal: string }, s: JobGoalState, de
   if (!deps.movement) return null
   const windows = cronRunWindows(deps.runsDir, job.id, now - (NO_MOVEMENT_DAYS + 1) * DAY_MS, deps.log)
   const kept = s.goalKeptAt ? Date.parse(s.goalKeptAt) : null
-  const still = (times: number[]) => daysStill(now, [lastMovementAt(times, windows), kept, rec.createdAt])
+  const createdAt = rec.createdAt
+  const still = (times: number[]) => daysStill(now, [lastMovementAt(times, windows), kept, createdAt])
   // A recent read that says "moving" lets the job run with no tracker call;
   // a hold is only ever decided on a fresh read (#2065).
   const key = `${check.provider}:${check.ref}`
