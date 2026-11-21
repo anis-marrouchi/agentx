@@ -142,9 +142,13 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
   if (spec.notePattern) {
     // Plain text, any case: an agent's pattern never runs as a regular
     // expression on the daemon's thread, so it cannot stall it.
+    // The newest note that matches is the proof (#2056): notes are oldest
+    // first, and an older one with the same words is not what was judged.
     const want = spec.notePattern.toLowerCase()
-    const at = (item.notes ?? []).findIndex((n, i) => mayMatch(spec, item, i) && n.slice(0, NOTE_MAX).toLowerCase().includes(want))
-    if (at >= 0) return { verdict: "met", detail: noteEvidence(spec, item, at) }
+    const notes = item.notes ?? []
+    for (let at = notes.length - 1; at >= 0; at--) {
+      if (mayMatch(spec, item, at) && notes[at].slice(0, NOTE_MAX).toLowerCase().includes(want)) return { verdict: "met", detail: noteEvidence(spec, item, at) }
+    }
   }
   const since = spec.notePattern && spec.after !== undefined ? ` since ${new Date(spec.after).toISOString()}` : ""
   return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note${since} has "${spec.notePattern}"` : ""}` }

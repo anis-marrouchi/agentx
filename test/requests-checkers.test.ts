@@ -136,6 +136,17 @@ describe("issue", () => {
     expect(spec({ kind: "issue", provider: "github", ref: "acme/app#12" })).not.toHaveProperty("after")
   })
 
+  // #2056: an older note with the same words is not the proof.
+  it("two notes match: the newest one is the proof", async () => {
+    const note = spec({ kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "prm-mwne72ea" })
+    const out = await runCheck(note, ctx({ forge: reader({
+      state: "open", url: "u",
+      notes: ["prm-mwne72ea: started", "unrelated", "prm-mwne72ea: review done, MR !12 approved"],
+      noteTimes: [NOW + 1, NOW + 2, NOW + 3], noteUrls: ["u#note_1", "u#note_2", "u#note_3"],
+    }) }))
+    expect(out).toEqual({ verdict: "met", detail: 'u#note_3 has a note with "prm-mwne72ea": "prm-mwne72ea: review done, MR !12 approved"' })
+  })
+
   it("a spec stored before #1925 (no after) still counts every note", async () => {
     const stored = readCloseWhen(JSON.stringify({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "shipped" }))!
     expect((await runCheck(stored, ctx({ forge: reader({ state: "open", url: "u", notes: ["shipped"] }) }))).verdict).toBe("met")

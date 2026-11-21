@@ -38,9 +38,25 @@ export interface OwnerCheckSettings {
    *  agent, once, with what is missing (noqta#876). Off: reopened and the
    *  owner told, nobody woken. */
   wakeOnMismatch: boolean
+  /** Reopens per request (#2056). Past it, a close judged a mismatch
+   *  stands and the owner is told once with the reason. */
+  maxReopens: number
 }
 
-export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true }
+export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2 }
+
+/** The owner's notice for a close kept after the reopen limit (#2056). */
+export function reopenLimitText(r: RequestRecord, why: string, reopens: number): { title: string; text: string } {
+  return {
+    title: "Closed without doing what you asked, not reopened again",
+    text: [
+      `The check found the close does not do what you asked, and it was already reopened ${reopens} time${reopens === 1 ? "" : "s"}, so it stays ${r.state} (by ${r.closedBy}).`,
+      `What you asked: ${clip(oneLine(r.text))}`,
+      `Why it does not match: ${why || "the close does not match your words"}`,
+      `To have it done, reopen it or ask again. Request ${r.id}.`,
+    ].join("\n"),
+  }
+}
 
 export const OWNER_CHECK_SYSTEM =
   "You check whether work closed by an assistant did what its owner asked. You are strict about the owner's words and fair to the assistant. " +
@@ -201,6 +217,9 @@ export interface OwnerCheckDeps {
   /** The id is an agent of this node: a close made by one wakes it
    *  (noqta#876). Unset: every id is taken for one. */
   hasAgent?: (id: string) => boolean
+  /** Tells the request's owner (#2056): a close kept after the reopen
+   *  limit. Unset: only recorded. */
+  tellOwner?: (r: RequestRecord, title: string, text: string) => Promise<void> | void
 }
 
 export class OwnerWordsCheck {
@@ -231,7 +250,21 @@ export class OwnerWordsCheck {
           continue
         }
         this.tries.delete(r.id)
-        if (v.verdict === "mismatch") {
+        if (v.verdict === "mismatch" && (r.ownerReopens ?? 0) >= (s.maxReopens ?? DEFAULT_OWNER_CHECK.maxReopens)) {
+          // A loop (#2056: a check met again by the same proof, judged a
+          // mismatch again): the close stands and the owner is told once.
+          if (this.deps.store.holdOwnerMismatch(r.id, `${MISMATCH_PREFIX} (closed as ${r.state} by ${r.closedBy}): ${v.why}`, at)) {
+            this.deps.log?.(`[requests] ${r.id}: owner-words mismatch after ${r.ownerReopens ?? 0} reopens, kept ${r.state}: ${v.why}`)
+            if (this.deps.tellOwner) {
+              const n = reopenLimitText(r, v.why, r.ownerReopens ?? 0)
+              try {
+                await this.deps.tellOwner(r, n.title, n.text)
+              } catch (e: any) {
+                this.deps.log?.(`[requests] ${r.id}: could not tell the owner its close was kept: ${e?.message ?? e}`)
+              }
+            }
+          }
+        } else if (v.verdict === "mismatch") {
           const d = deliverablesOf(r, this.deps.plan?.(r) ?? null)
           const target = this.wakeTarget(r, s)
           const reason = `${MISMATCH_PREFIX} (closed as ${r.state} by ${r.closedBy}): ${v.why || "the close does not match your words"}`
