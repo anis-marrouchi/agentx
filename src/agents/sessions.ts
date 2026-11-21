@@ -60,6 +60,11 @@ export interface Session {
   /** Hash of the Rules Registry block this native session last got (#809).
    *  A resumed session gets the block again only when it differs. */
   rulesHash?: string
+  /** The chat this one's native session was continued from (#2010), set by
+   *  continueFrom for a topic resume only. Only a pointer: the session-continuity seat reads the
+   *  source's last user message from it while this chat has none of its
+   *  own. No message is ever copied into this chat. */
+  continuedFrom?: { channel: string; chatId: string }
 }
 
 /** Store the session's model, or drop one left from an earlier session:
@@ -542,14 +547,10 @@ export class SessionStore {
    * rotated when it grows or goes stale. False when the earlier chat has
    * no session to continue; nothing is written then.
    */
-  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }): boolean {
+  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }, opts: { pointer?: boolean } = {}): boolean {
     if (from.channel === to.channel && from.chatId === to.chatId) return false
-    // Read without creating: getSession would write an empty record for a
-    // chat that never saved one (a run that failed early).
-    const key = this.sessionKey(agentId, from.channel, from.chatId)
-    const known = this.cache.has(key) || existsSync(this.sessionFile(key)) || this.loadPreviousDaySession(agentId, from.channel, from.chatId) !== null
-    if (!known) return false
-    const src = this.getSession(agentId, from.channel, from.chatId)
+    const src = this.peekSession(agentId, from.channel, from.chatId)
+    if (!src) return false
     if (!src.claudeSessionId && !src.codexSessionId && !src.opencodeSessionId) return false
     const dst = this.getSession(agentId, to.channel, to.chatId)
     dst.claudeSessionId = src.claudeSessionId
@@ -561,8 +562,31 @@ export class SessionStore {
     dst.lastTurnContextTokens = src.lastTurnContextTokens
     dst.rulesHash = src.rulesHash
     dst.updatedAt = src.updatedAt
+    // Only a topic resume (#2010, setting on) leaves the pointer; every
+    // other continuation stays as before and drops one left over.
+    if (opts.pointer) dst.continuedFrom = { channel: from.channel, chatId: from.chatId }
+    else delete dst.continuedFrom
     this.save(dst)
     return true
+  }
+
+  /** The session of a chat, read without creating one: getSession would
+   *  write an empty record for a chat that never saved one (a run that
+   *  failed early). Null when there is none. */
+  private peekSession(agentId: string, channel: string, chatId: string): Session | null {
+    const key = this.sessionKey(agentId, channel, chatId)
+    const known = this.cache.has(key) || existsSync(this.sessionFile(key)) || this.loadPreviousDaySession(agentId, channel, chatId) !== null
+    return known ? this.getSession(agentId, channel, chatId) : null
+  }
+
+  /** The user message before `currentMessage` in the chat this one was
+   *  continued from (#2010), for the session-continuity seat when this
+   *  chat has none of its own yet. Null when it was not continued, or the
+   *  source has no such message. Reads only; nothing is copied. */
+  continuedFromMessage(agentId: string, channel: string, chatId: string, currentMessage: string): string | null {
+    const from = this.peekSession(agentId, channel, chatId)?.continuedFrom
+    if (!from) return null
+    return priorUserMessage(this.peekSession(agentId, from.channel, from.chatId)?.messages, currentMessage)
   }
 
   /** The model the chat's native session runs on (#2001), if stored. */

@@ -29,7 +29,8 @@ import { createHash, randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
 import { taskTypeOf } from "@/agents/task-context"
-import { normalizeHome } from "./home"
+import { homeRefsOf, normalizeHome } from "./home"
+import { CACHE_TTL_MS } from "@/agents/prompt-cache"
 import { describeJobState, endStateInAnswer, stalledLine, type EndState } from "@/agents/run-state"
 import type { HandoffStore } from "./handoff-store"
 import { DEFAULT_STALE_SESSION_MINUTES } from "@/agents/sessions"
@@ -194,6 +195,9 @@ export interface DelegationDeps {
       /** Continue the callee's session from this chat of its own, the
        *  last run on the same home (#1100), instead of a fresh one. */
       resumeFrom?: Array<{ channel: string; chatId: string }>
+      /** The resume is a topic resume (#2010, topicSessions on): only then
+       *  does the new chat keep a pointer to its source chat. */
+      topic?: true
       /** How long the run may wait for a free slot of a busy callee
        *  (registry.execute's slotWaitMs). */
       slotWaitMs?: number
@@ -282,6 +286,22 @@ export interface DelegationDeps {
    *  continues (the implicit per-sender key, #2007 piece 2). Default: the
    *  session stale window (DEFAULT_STALE_SESSION_MINUTES). */
   senderKeyMs?: number
+  /** Topic sessions (#2010): a hand-off with no named home whose message
+   *  names exactly one issue or merge request continues the callee's last
+   *  run on it, while that run's prompt cache is still warm. Off (default):
+   *  only the line "would continue <chat> on <topic>" is logged. */
+  topicSessions?: boolean
+  /** How long after a topic run ended its session is still warm enough to
+   *  continue (session.resumeGate.cacheTtlMinutes). Default CACHE_TTL_MS. */
+  topicWarmMs?: number
+}
+
+/** The topic of a hand-off with no named home (#2010): the one issue or
+ *  merge request its message names, or undefined when it names none or
+ *  several (a wrong match costs more than one missed resume). */
+export function topicOf(message: string | null | undefined): string | undefined {
+  const refs = homeRefsOf(message)
+  return refs.length === 1 ? refs[0] : undefined
 }
 
 /** How every callback message starts. A turn whose message starts with
@@ -334,6 +354,11 @@ const FALLBACK_CLIP = 3500
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s
+}
+
+/** Whether a stored request may have been cut by clip(s, REQUEST_CLIP). */
+function wasClipped(request: string): boolean {
+  return request.length >= REQUEST_CLIP && request.endsWith("…")
 }
 
 /** The parts of the caller's context the callback turn needs. Bulky or
@@ -545,7 +570,7 @@ export class DelegationManager {
   private answered = new Map<string, string[]>()
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
-  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean; sender?: true }>()
+  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null; implicit: boolean; sender?: true; topic?: true }>()
   /** Callee chats with a same-home run going right now: never continued. */
   private busyChats = new Set<string>()
   /** Starts whose text was already open from another chat of the same
@@ -852,8 +877,19 @@ export class DelegationManager {
         : senderKey
           ? senderKeyOf(record.callee, keyCallerOf(record.caller, label))
           : `${record.callee}\u0000chat\u0000${record.caller}\u0000${origin.channel}\u0000${origin.chatId}`
-    const prior = (homeKey ? this.sameHome(homeKey) : null)
+    const keyPrior = (homeKey ? this.sameHome(homeKey) : null)
       ?? (senderKey ? { chats: [legacySenderChat(record.caller, label)], taskId: "legacy", running: null } : null)
+    // Topic sessions (#2010): with no named home, the one issue or merge
+    // request the message names is a second key, kept here only: never in
+    // record.home, the callee's context or the hand-off row, so nothing
+    // else reads it as a home and nothing waits on it. Its run is offered
+    // only while warm (topicWindow), and like every implicit key it starts
+    // fresh beside a run still going, never waits.
+    const topic = homeKey && !home ? topicOf(opts.message) : undefined
+    const topicKey = topic ? `${record.callee}\u0000topic\u0000${topic}` : null
+    const topicPrior = topicKey ? this.sameHome(topicKey) : null
+    const useTopic = !!(topicPrior && this.deps.topicSessions)
+    const prior = useTopic ? topicPrior : keyPrior
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
     // Newest first: a run that failed before it saved a session falls back
     // to the one before it. Read when it launches: while any earlier run on
@@ -874,7 +910,13 @@ export class DelegationManager {
         return []
       }
       const from = chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
-      if (implicit && from.length) this.deps.log(`[delegation ${id}] ${record.callee} continues its session from ${senderKey ? `${record.caller}'s last send (${from[0].channel}:${from[0].chatId})` : `${origin.channel}:${origin.chatId}`}`)
+      if (implicit && from.length) this.deps.log(`[delegation ${id}] ${record.callee} continues its session from ${useTopic ? `its last run on ${topic} (${from[0].channel}:${from[0].chatId})` : senderKey ? `${record.caller}'s last send (${from[0].channel}:${from[0].chatId})` : `${origin.channel}:${origin.chatId}`}`)
+      if (topicPrior && !useTopic) {
+        const would = topicPrior.chats.find((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
+        if (would && !topicPrior.chats.some((c) => this.busyChats.has(chatKeyOf(c)))) {
+          this.deps.log(`[delegation ${id}] would continue ${would.channel}:${would.chatId} on ${topic} (topicSessions is off)`)
+        }
+      }
       return from
     }
     if (prior && !implicit) {
@@ -902,21 +944,28 @@ export class DelegationManager {
       }
       const resumeFrom = resumable()
       const mine = chatKeyOf(calleeChat)
-      if (homeKey) this.busyChats.add(mine)
+      // With topic sessions on (#2010), two keys can name one source chat
+      // (a topic key and a caller-chat key): a run that takes a source
+      // makes it busy for every key while it goes, so no second run
+      // resumes the same native session beside it. Off: as before.
+      const taken = this.deps.topicSessions && homeKey ? (resumeFrom ?? []).map(chatKeyOf).filter((k) => !this.busyChats.has(k)) : []
+      const busy = homeKey ? [mine, ...taken] : []
+      for (const k of busy) this.busyChats.add(k)
+      const release = () => { for (const k of busy) this.busyChats.delete(k) }
       let started: Promise<CalleeRun>
       try {
         started = this.deps.runLocal(record.callee, opts.message, calleeContext, {
           timeoutMs,
           onStart: (runId) => { this.localRuns.set(id, runId) },
           extras: opts.extras,
-          ...(resumeFrom?.length ? { resumeFrom } : {}),
+          ...(resumeFrom?.length ? { resumeFrom, ...(useTopic ? { topic: true as const } : {}) } : {}),
           ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
         })
       } catch (e) {
-        this.busyChats.delete(mine)
+        release()
         throw e
       }
-      return started.finally(() => { this.busyChats.delete(mine) })
+      return started.finally(release)
     }
     // The wait is bounded by this delegation's own time limit: a run ahead
     // that never settles (stuck before it started) does not hold it forever.
@@ -926,10 +975,15 @@ export class DelegationManager {
     const run = waitFor ? waitFor.then(launch) : launch()
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
-      this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit, ...(senderKey ? { sender: true as const } : {}) })
+      this.homes.set(homeKey, { chats: [calleeChat, ...(keyPrior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit, ...(senderKey ? { sender: true as const } : {}) })
+      // The topic key names the same run (#2010), so a later run on either
+      // key sees it as busy while it goes and continues it once it ended.
+      if (topicKey) this.homes.set(topicKey, { chats: [calleeChat, ...(topicPrior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit: true, topic: true })
       void running.then(() => {
-        const h = this.homes.get(homeKey)
-        if (h?.taskId === id) { h.running = null; h.endedAt = this.now() }
+        for (const k of topicKey ? [homeKey, topicKey] : [homeKey]) {
+          const h = this.homes.get(k)
+          if (h?.taskId === id) { h.running = null; h.endedAt = this.now() }
+        }
       })
     }
     run
@@ -1188,9 +1242,10 @@ export class DelegationManager {
     const homeWindow = this.deps.sameHomeMs ?? 12 * 3_600_000
     const chatWindow = this.deps.sameChatMs ?? 2 * 3_600_000
     const senderWindow = this.senderWindow()
+    const topicWindow = this.topicWindow()
     const now = this.now()
     for (const [k, h] of this.homes) {
-      const window = h.sender ? senderWindow : h.implicit ? chatWindow : homeWindow
+      const window = h.topic ? topicWindow : h.sender ? senderWindow : h.implicit ? chatWindow : homeWindow
       if (h.endedAt !== null && now - h.endedAt > window) this.homes.delete(k)
     }
     return this.homes.get(key) ?? null
@@ -1436,10 +1491,50 @@ export class DelegationManager {
       this.deps.log(`[delegation] could not read the handoffs table: ${e?.message ?? e}`)
     }
     this.rebuildSenderKeys(store)
+    this.rebuildTopicKeys(store)
   }
 
   private senderWindow(): number {
     return this.deps.senderKeyMs ?? DEFAULT_STALE_SESSION_MINUTES * 60_000
+  }
+
+  /** Warm-only (#2010): a topic run is offered only while its prompt cache
+   *  lives. A cold resume is the case only the resume gate can price. */
+  private topicWindow(): number {
+    return this.deps.topicWarmMs ?? CACHE_TTL_MS
+  }
+
+  /**
+   * The topic keys after a restart (#2010), from the rows that ended inside
+   * the warm window: each row's topic is read again from its request (the
+   * message clipped to 500 characters). A clipped request gives no key: a
+   * ref across the cut would read as another ref (team/site!1234 as
+   * team/site!12), and the cut part may have named a second ref, which
+   * gave the live run no key. A fresh start is the safe side. Newest
+   * first: the first row of a key wins. Ended rows only; a lost row may
+   * still be resumed on its own chat.
+   */
+  private rebuildTopicKeys(store: HandoffStore): void {
+    const now = this.now()
+    let rows: ReturnType<HandoffStore["topicRows"]>
+    try {
+      rows = store.topicRows(now - this.topicWindow(), now)
+    } catch (e: any) {
+      this.deps.log(`[delegation] could not rebuild the topic sessions: ${e?.message ?? e}`)
+      return
+    }
+    let rebuilt = 0
+    for (const r of rows) {
+      if (wasClipped(r.request)) continue
+      const topic = topicOf(r.request)
+      if (!topic) continue
+      const key = `${r.callee}\u0000topic\u0000${topic}`
+      if (this.homes.has(key)) continue
+      const chat = { channel: "a2a", chatId: `a2a:${r.caller}:${r.callee}:${r.id}` }
+      this.homes.set(key, { chats: [chat], taskId: r.id, running: null, endedAt: r.endedAt, implicit: true, topic: true })
+      rebuilt++
+    }
+    if (rebuilt) this.deps.log(`[delegation] ${rebuilt} topic session(s) rebuilt from the handoffs table`)
   }
 
   /**

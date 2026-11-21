@@ -1225,6 +1225,10 @@ export class AgentRegistry {
       // appended upstream, so that would compare the request to itself.
       // See priorUserMessage for why the seat stays shut when it does.
       previousMessage = priorUserMessage(session.messages, task.message ?? "")
+        // A chat continued from another one's session (#2010) has no
+        // message of its own yet: compare with the source chat's last.
+        // Only with topicSessions on; off, the seat is as before.
+        ?? (this.config.mesh?.delegation?.topicSessions ? this.sessions.continuedFromMessage(task.agentId, channel, chatId, task.message ?? "") : null)
       recentRequests = priorUserRequests(
         session.messages,
         task.message ?? "",

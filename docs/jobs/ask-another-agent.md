@@ -56,6 +56,7 @@ These settings live under `mesh.delegation` in `agentx.json`. They apply to help
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. With it off, an answer your agent had not started passing on is not passed on after a restart either. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 | `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
+| `mesh.delegation.topicSessions` | `false` | Turn it on (`true`) so a message that names one issue or merge request, but no `home`, continues the helper's last run on that issue while it is still fresh (see **One issue named in the message** below). Read at start: restart AgentX after changing it. |
 | `mesh.delegation.agentChains.perAgentHour` | `15` | For work no person asked for (a schedule, or agents asking each other), how many times one agent may hand work to another agent in any one hour. Past it, the agent is told to finish the work itself or write to you once. Work you asked for is never counted. `0` turns this off. |
 | `mesh.delegation.agentChains.perChainDay` | `40` | The same, for one chain of work: everything that grew from the same first message, whichever agents handle it, in any 24 hours. `0` turns this off. |
 
@@ -175,6 +176,17 @@ A send whose answer is read by its id (`"mode": "none"`) keeps **one session per
 - A second send from the same sender while the helper's last run for it is still going starts a fresh session beside it. Before, it could be read by the running turn. The daemon log shows `follow-up from <sender> to <helper> while its last run is going; starts fresh beside it (N since start)`.
 - Each send runs in its own chat, `a2a:<sender>:<helper>:dlg-…`. The session continues, but `agentx_recent` on that chat shows only that send's messages.
 
+**One issue named in the message.** With `mesh.delegation.topicSessions` on, a message with no `home` whose text names exactly one issue or merge request (a link, or a reference such as `group/project!12`) continues the helper's last run on that issue on this machine, from any chat or sender. Rules:
+
+- Only while that run's saved context is still cheap to reuse: it ended less than `session.resumeGate.cacheTtlMinutes` ago (an hour by default). After that, the message starts a fresh session.
+- It never waits. If the helper's last run on that issue is still going, the new message starts a fresh session beside it. While a run continues a session, no other message continues that same session, whichever rule it follows.
+- It is not a `home`. The issue is not written on the hand-off, the helper's run is not told it as its home, and nothing waits for it. Only a named `home` waits its turn.
+- A message that names two or more issues, or only a bare `#12`, gets no topic and follows the rules above.
+- It survives a restart: AgentX reads the issue again from the stored message (its first 500 characters). A message longer than that gets no topic after a restart, since the cut part may name another issue; the next message on that issue starts fresh.
+- The first message on an issue still follows the rules above (the same chat, or the same sender).
+- The daemon log shows `continues its session from its last run on <issue>`. With the setting off, it shows `would continue <chat> on <issue> (topicSessions is off)` where a message would have continued, so you can count them before turning it on.
+- AgentX does not copy any message into the new chat. To check that the new message really belongs to the same work, AgentX compares it with the last message of the chat it continued from. It does this only for a message continued this way; with the setting off, nothing changes.
+
 ### A notice instead of a run
 
 Some messages are only for information: a watch script saying the machine has been on battery for 30 minutes, for example. Add `"notice": true` to the `/send/agent` body, and the message does not start a run. It is put at the head of the agent's next run of agent work: a message from another agent, a schedule, a workflow, a reminder, an event or the business day cycle. It never goes into a person's or a guest's chat. It appears under a line starting `[agentx:notices`. If no such run starts within an hour, the waiting notices go to the agent together, as one run. For example (terminal):
@@ -230,6 +242,7 @@ Some requests are refused straight away with status `409`:
    The newest entry names both agents and shows `"status":"done"`.
 6. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?agent=<agent-id>" | jq -r .text`. It prints what that agent is on now and what it finished in the last 48 hours.
 7. **Terminal:** run `curl -s "http://127.0.0.1:18800/lookup?work=group/project!12" | jq -r .text` with a merge request your agents worked on. It lists the runs about it, newest first.
+8. **Topic sessions:** with `mesh.delegation.topicSessions` on, send a helper two messages that name the same `group/project!12`, from two different chats, the second after the first ended. Search the daemon log for `continues its session from its last run on group/project!12`. With the setting off, the log shows `would continue … on group/project!12` instead.
 
 ## If something is wrong
 
@@ -257,6 +270,8 @@ Some requests are refused straight away with status `409`:
 - **A hand-off read by its id ended `error` with `slot wait timed out after 360m`:** the other agent was busy for 6 hours straight, so the message was not run. Raise that agent's `maxConcurrent`, or look for a run that is stuck, then send the message again.
 - **A helper started cold after the upgrade, without what it knew:** the sender's last run before the upgrade ended more than 12 hours earlier, so its session was renewed anyway. Look for `continues its session from` in the daemon log for the next send.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
+- **A helper continued an unrelated session after a message that named one issue:** the message named that issue only as background. Turn `mesh.delegation.topicSessions` off (`false`) and restart AgentX; sessions go back to the rules before it. To start fresh on one message, name two issues, or none, or give it its own `home`.
+- **Topic sessions are on but a helper still starts fresh:** search the daemon log for the hand-off id. No `continues its session from its last run on` line means the last run on that issue ended more than `session.resumeGate.cacheTtlMinutes` ago, is still going, or ran on another machine, or the message named more than one issue.
 - **Updates from several helpers arrive one by one:** each answer waits only `mesh.delegation.coalesceSeconds` (two minutes by default) for the others. A helper that takes longer sends its answer later, in a second update. Raise the setting if your helpers usually finish further apart.
 - **`409` with "Hand-off budget used":** agents handed each other more work than `mesh.delegation.agentChains` allows, with no person behind it. This is the brake doing its job: the agent finishes the work itself or writes to you. If real work stops because of it, raise `perAgentHour` or `perChainDay`. The daemon log line `[delegation] … refused: Hand-off budget used` names the agent. The counts start over when AgentX restarts.
 - **The status list is empty:** hand-offs are listed only on the machine that runs the asking agent, and only those kept in its database (see the `memory-only` entry above).
