@@ -154,6 +154,9 @@ export interface WallPost {
    *  "group/project!12"): it has or may have pull or merge requests, so
    *  the opened post offers its Diff (#2102). Null: no forge home. */
   mergeRef: string | null
+  /** The mesh node its issue runs on (#2104), chosen from the Hub. Null:
+   *  this node (or where the agent mapping says). */
+  runOn: string | null
   createdAt: number
   updatedAt: number
   /** Last time its state changed, else last activity. */
@@ -614,6 +617,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),
     home: r.home,
     mergeRef: diffHomeOf(r, deps.gitlabUrl)?.key ?? null,
+    runOn: r.runOn?.node ?? null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     lastMoveAt,

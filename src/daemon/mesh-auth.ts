@@ -130,7 +130,11 @@ export function isMeshGatedPath(path: string): boolean {
     // Where the owner is and was last seen (#1138 step B).
     path === "/owner/presence" ||
     // What each agent is on and what it finished (agentx_lookup).
-    path === "/lookup"
+    path === "/lookup" ||
+    // Run an issue on another machine (#2104): a node's open runs and
+    // worktree state for a chat, and the Hub's read and move of where an
+    // issue runs (the move is the owner's).
+    path === "/mesh/issue-state" || path === "/issue-run-on"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

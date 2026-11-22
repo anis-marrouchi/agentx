@@ -64,6 +64,12 @@ import { diffCommentsMessage, diffTarget, handleWallDiff, parseDiffComments, sha
 //   POST /api/admin/wall/request/close   {id, action: done|drop}  a request
 //        on Needs you (#1440): the Open requests calls of /approvals
 //        (requests-panel.ts), under the same guard.
+//   GET  /api/admin/wall/run-on?id=<post>  where a post's issue runs and
+//        the nodes it can run on (#2104): the daemon's GET /issue-run-on
+//        (issue-run-on.ts), {current, stale, choices}
+//   POST /api/admin/wall/run-on {id, node}  run the issue on that node,
+//        or with node "local" bring it back to this Mac: the daemon's
+//        POST /issue-run-on, which checks the move first
 //
 // A comment and a call go to the node that keeps the post (the client
 // sends the post's peer, and the dashboard proxy forwards). A Space always
@@ -81,6 +87,7 @@ export const WALL_DECIDE_PATH = `${WALL_ACTIONS_PREFIX}/decide`
 export const WALL_DECIDE_POPUP_PATH = `${WALL_DECIDE_PATH}/popup`
 export const WALL_REVIEW_PATH = `${WALL_ACTIONS_PREFIX}/review`
 export const WALL_REQUEST_PATH = `${WALL_ACTIONS_PREFIX}/request`
+export const WALL_RUN_ON_PATH = `${WALL_ACTIONS_PREFIX}/run-on`
 
 /** The Approvals or graph route a Wall answer is served by, or null (#1440). */
 export function wallAnswerRoute(method: string, path: string): string | null {
@@ -213,7 +220,8 @@ export function isWallWrite(method: string, path: string): boolean {
 
 /** Is this one of the Wall's write routes, or the Space or diff read? */
 export function isWallActionPath(path: string): boolean {
-  return path === WALL_COMMENT_PATH || path === WALL_DIFF_PATH || path === WALL_DIFF_COMMENTS_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`)
+  return path === WALL_COMMENT_PATH || path === WALL_DIFF_PATH || path === WALL_DIFF_COMMENTS_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`) ||
+    path === WALL_RUN_ON_PATH
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "")
@@ -329,6 +337,21 @@ export async function handleWallAction(method: string, path: string, body: Recor
     const about = (r.headline ?? summarize(r.text, 140)).replace(/\s+/g, " ").trim()
     const reason = `${HUB_NAME} post ${id}: ${about}`.slice(0, REASON_MAX)
     return deps.daemon("POST", "/calls/owner", { agentId: r.agentId, reason })
+  }
+
+  // Where a post's issue runs (#2104): the daemon checks and moves it.
+  if (path === WALL_RUN_ON_PATH) {
+    if (method === "GET") {
+      const id = str((body as Record<string, unknown>).id)
+      if (!id) return { status: 400, body: { error: "send ?id=<post>" } }
+      return deps.daemon("GET", `/issue-run-on?id=${encodeURIComponent(id)}`)
+    }
+    if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
+    const id = str(body.id)
+    const node = str(body.node)
+    if (!id || !node) return { status: 400, body: { error: "send { id, node }" } }
+    if (!AGENT_RE.test(node)) return { status: 400, body: { error: "node: a mesh node's name, or \"local\"" } }
+    return deps.daemon("POST", "/issue-run-on", { id, node, by: "owner" })
   }
 
   // The Space: talk mode, on this computer.

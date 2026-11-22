@@ -229,6 +229,10 @@ import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { readHandoff } from "@/a2a/handoff-read"
+import { checkoutsOf } from "@/agents/task-worktrees"
+import { execProcess } from "@/agents/spec-tests"
+import { issueState, moveRunOn, nodeNumbersOf, runOnChoices, type IssueState, type RunOnDeps } from "@/daemon/issue-run-on"
+import { LOCAL_NODE } from "@/channels/run-on"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -695,6 +699,20 @@ export class AgentXDaemon {
     // MCP tool layer can post outbound messages through the canonical send
     // path without re-implementing dedupe / marker / identity / ledger.
     setMessageRouter(this.router)
+    // Which node a run goes to (#2104): an active workflow run's home, then
+    // the issue's runOn, then the agent mapping (MessageRouter.resolvePreferNode).
+    // Read late: the dispatcher and the request store start after the router.
+    this.router.setPlacement({
+      workflowHome: (entity) => {
+        const d = this.workflowDispatcher
+        const home = d?.activeHomeNode(entity as any) ?? null
+        return home && home === d?.homeNodeId ? LOCAL_NODE : home
+      },
+      runOn: (provider, project, n) => this.requests?.store.runOnForIssue(provider, project, n) ?? null,
+    })
+    // A task another node placed here finds its checkout among this node's
+    // rule folders too (#2104 B4).
+    this.registry.setCheckoutDirs(() => this.projectRules?.list().map((r) => r.runbook).filter((d): d is string => !!d) ?? [])
 
     this.signals = this.createSignalService()
     setSignalService(this.signals)
@@ -755,7 +773,7 @@ export class AgentXDaemon {
       // hosts that agent.
       this.registry.setMeshFallback({
         findPeerWithSkill: (skillId) => this.mesh!.findPeerWithSkill(skillId),
-        sendTask: (peer, text, agentId) => this.mesh!.sendTask(peer, text, agentId),
+        sendTask: (peer, text, agentId, opts) => this.mesh!.sendTask(peer, text, agentId, opts),
         directory: () => this.mesh!.directory(),
       })
     }
@@ -2705,6 +2723,59 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  /** The issue's state on this node, what a move asks (#2104 B3). */
+  private issueStateHere(chatId: string, channel: string | undefined): Promise<IssueState> {
+    return issueState(chatId, channel, {
+      runOpen: (c) => this.registry.runOpenOnChat(c),
+      agents: () => Object.values(this.config.agents ?? {}) as Array<{ workspace?: string; worktrees?: any }>,
+      ruleDirs: () => this.projectRules?.list().map((r) => r.runbook).filter((d): d is string => !!d) ?? [],
+      exec: execProcess,
+    })
+  }
+
+  /** What GET and POST /issue-run-on read (#2104). */
+  private runOnDeps(): RunOnDeps {
+    const peerGet = async (peer: string, path: string, timeoutMs: number): Promise<unknown> => {
+      const entry = this.mesh?.directory().find((p) => p.peer === peer)
+      if (!entry) throw new Error(`unknown peer ${peer}`)
+      const r = await fetch(`${entry.peerUrl.replace(/\/+$/, "")}${path}`, { headers: this.mesh!.authHeaders(peer), signal: AbortSignal.timeout(timeoutMs) })
+      if (!r.ok) throw new Error(`${peer} answered ${r.status}`)
+      return r.json()
+    }
+    const forges = this.router.getChannelNames().filter((c) => c === "github" || c === "gitlab")
+    return {
+      store: () => this.requests?.store ?? null,
+      directory: () => this.mesh?.directory() ?? [],
+      localHostsAgent: (id) => !!this.registry.getAgent(id),
+      localCheckouts: () => this.localCheckouts(),
+      localNumbers: async () => nodeNumbersOf(await this.nodeEnv.report()),
+      peerNumbers: async (peer) => nodeNumbersOf(await peerGet(peer, "/api/node", 2_000).catch(() => null)),
+      localIssueState: (chatId, channel) => this.issueStateHere(chatId, channel),
+      peerIssueState: async (peer, chatId, channel) => {
+        const body = await peerGet(peer, `/mesh/issue-state?chatId=${encodeURIComponent(chatId)}&channel=${encodeURIComponent(channel)}`, 5_000) as any
+        if (typeof body?.runOpen !== "boolean") throw new Error(`${peer} does not know /mesh/issue-state (an older AgentX)`)
+        return { runOpen: body.runOpen, worktree: body.worktree ?? null }
+      },
+      forge: forges.length === 1 ? forges[0] as "github" | "gitlab" : undefined,
+    }
+  }
+
+  /** See localCheckouts. */
+  private checkoutsCache?: { at: number; list: string[] }
+
+  /** "owner/repo" of the origin of each project rule's runbook folder and
+   *  each agent's workspace (#2104 B4), read at most every five minutes:
+   *  the agent card is fetched by every peer's health check. */
+  localCheckouts(now = Date.now()): string[] {
+    if (this.checkoutsCache && now - this.checkoutsCache.at < 300_000) return this.checkoutsCache.list
+    const dirs = [
+      ...(this.projectRules?.list().map((r) => r.runbook) ?? []),
+      ...Object.values(this.config.agents ?? {}).map((a: any) => a?.workspace),
+    ].filter((d): d is string => typeof d === "string" && !!d)
+    const list = checkoutsOf(dirs)
+    this.checkoutsCache = { at: now, list }
+    return list
+  }
   /** The told-the-owner gate (#1126). Null without a database. */
   private ownerGate: OwnerGate | null = null
   private toldLedger: ToldLedger | null = null
@@ -6612,6 +6683,22 @@ export class AgentXDaemon {
       // names and whether each accepts. No live state is projected, so
       // there is nothing here to redact. See mesh-inbox.ts for why this is
       // a published set rather than a session listing.
+      // Run an issue on another machine (#2104, daemon/issue-run-on.ts).
+      // All three are behind the mesh token (isMeshGatedPath).
+      if (req.method === "GET" && path === "/mesh/issue-state") {
+        const chatId = url.searchParams.get("chatId") || ""
+        if (!chatId) { this.json(res, 400, { error: "chatId query param required" }); return }
+        this.json(res, 200, await this.issueStateHere(chatId, url.searchParams.get("channel") || undefined))
+        return
+      }
+      if (path === "/issue-run-on" && (req.method === "GET" || req.method === "POST")) {
+        const reply = req.method === "GET"
+          ? await runOnChoices(url.searchParams.get("id") || "", this.runOnDeps())
+          : await moveRunOn(await readJsonBody(req).catch(() => ({})) as Record<string, unknown>, this.runOnDeps())
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       if (req.method === "GET" && path === "/mesh/inboxes") {
         this.json(res, 200, { inboxes: listPublishedInboxes(this.config) })
         return
@@ -10025,6 +10112,9 @@ export class AgentXDaemon {
             // when the workflow runs on a different node than the channel
             // adapter (e.g. workflow on macbook, whatsapp on peer-server).
             channels: this.router.getChannelNames(),
+            // The repositories this node has checked out (#2104 B4): the Hub
+            // offers a node to run an issue only when it has the issue's repo.
+            checkouts: this.localCheckouts(),
             // The GitHub logins this node posts with, so the peer that
             // receives the webhook knows an agent's comment as ours (#522).
             githubLogins: this.github?.postingAccounts() ?? [],

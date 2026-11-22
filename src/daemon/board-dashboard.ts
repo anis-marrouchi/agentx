@@ -1031,6 +1031,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // gate above; the proxy above sends a comment, a call, a diff read or
   // diff comments to the node that keeps the post.
   if (isWallActionPath(path)) {
+    // A read takes its one argument from the query (run-on ?id=, #2104).
     const body = method === "POST" ? await readJson(req) : Object.fromEntries(url.searchParams)
     const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) })
     sendJson(res, reply!.status, reply!.body)
