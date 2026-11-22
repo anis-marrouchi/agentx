@@ -40,8 +40,8 @@ import type { GateDecision, SituationGate } from "@/situations/gate"
 import { situationKeyOf } from "@/situations/key"
 import { personLimitsOf } from "@/people/people"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "@/agents/mesh-safety"
-import type { RunOn } from "@/requests/store"
-import { issueOfChat, offlineNoteText, pickPreferNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
+import type { Placement } from "@/requests/store"
+import { droppedNoteText, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
 import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
@@ -358,12 +358,15 @@ export class MessageRouter {
     /** The node an active workflow run on the entity is homed on: a peer
      *  name, LOCAL_NODE for this node, or null when none is active. */
     workflowHome?: (entity: { backend: string; id: string }) => string | null
-    /** The `runOn` of the open request homed on the issue. */
-    runOn?: (provider: "github" | "gitlab", project: string, number: number) => RunOn | null
+    /** The issue chat's placement (requests/store.ts issue_placements). */
+    placement?: (channel: string, chatId: string) => Placement | null
   }
   /** Issues already told their node is offline, per outage (#2104 B5):
    *  `<peer>\n<chatId>`, cleared when the peer comes back. */
   private offlineNoted = new Set<string>()
+  /** Issues already told their held messages were dropped because the
+   *  queue was full (#2104 C1), per outage, like offlineNoted. */
+  private droppedNoted = new Set<string>()
   private serviceMatcher?: ServiceMatcher
   private business?: BusinessLayer
   private groupLog: GroupLog
@@ -538,16 +541,16 @@ export class MessageRouter {
   }
 
   /** The reads the node resolver needs (#2104): the daemon wires the
-   *  workflow dispatcher's home node and the request store's `runOn`. */
+   *  workflow dispatcher's home node and the issue placements. */
   setPlacement(placement: NonNullable<MessageRouter["placement"]>): void {
     this.placement = placement
   }
 
-  /** Which node a message's run goes to (#2104 B1), in one order for every
-   *  entry point: an active workflow run's home node on the entity, the
-   *  issue's `runOn`, the agent mapping's node (`msg.preferNode`), else
-   *  nothing (local, then mesh). See channels/run-on.ts. A read that fails
-   *  counts as nothing set. */
+  /** Which node a message's run goes to (#2104 B1), in the order every
+   *  entry point reads (channels/run-on.ts): an active workflow run's home
+   *  node on the entity, the issue's placement ("local" included), the
+   *  agent mapping's node (`msg.preferNode`), else nothing (local, then
+   *  mesh). A read that fails counts as nothing set. */
   resolvePreferNode(msg: IncomingMessage, _agentId: string): PreferNodePick {
     const chatId = msg.group?.id || msg.sender.id
     let workflowHome: string | null = null
@@ -555,12 +558,9 @@ export class MessageRouter {
       try { workflowHome = this.placement?.workflowHome?.(ref) ?? null } catch { workflowHome = null }
       if (workflowHome) break
     }
-    let runOn: RunOn | null = null
-    const issue = issueOfChat(msg.channel, chatId)
-    if (issue && !workflowHome) {
-      try { runOn = this.placement?.runOn?.(issue.provider, issue.project, issue.number) ?? null } catch { runOn = null }
-    }
-    return pickPreferNode({ workflowHome, runOn, mapping: msg.preferNode })
+    const placementOf = this.placement?.placement
+    const placed = !workflowHome && placementOf ? resolveRunNode({ context: { channel: msg.channel, chatId } }, { placement: placementOf }) : null
+    return pickPreferNode({ workflowHome, placement: placed?.placement ?? null, mapping: msg.preferNode })
   }
 
   setServiceMatcher(matcher: ServiceMatcher): void {
@@ -1183,32 +1183,47 @@ export class MessageRouter {
     chatId: string,
   ): Promise<void> {
     // The node the run goes to (#2104 B1): a workflow run's home, the
-    // issue's runOn, the agent mapping. Set: skip local and route directly
-    // to that mesh peer.
+    // issue's placement, the agent mapping.
     const pick = this.resolvePreferNode(msg, agentId)
-    if (pick.node) {
-      const node = pick.node
-      this.log(`preferNode="${node}" (${pick.source}) — forcing mesh routing for agent "${agentId}"`)
-      const placed = pick.source === "runOn"
-      if (placed) {
-        // The person check first, then what the peer cannot enforce (B2):
-        // a run is refused here rather than run there without its limits.
-        if (await this.refusedForPerson(adapter, msg, agentId)) return
-        const ctx = this.buildMeshContext(msg, chatId)
-        const blocked = meshForwardBlock(agentId, undefined, personLimitsOf(this.config.people ?? [], ctx as any))
-        if (blocked) {
-          this.log(`[run-on] ${chatId} runs on "${node}": refused for ${agentId}: ${blocked.error}`)
-          const text = placedRefusalText(node)
-          await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
-          this.resolveIntent(msg, "completed", Date.now(), text)
+    if (pick.source === "placement") {
+      // Placed: never forwarded on the mapping. An offline node holds the
+      // message (one note on the issue); else the local registry sends the
+      // run to the placed node itself, so its records stay here. With no
+      // local agent, the message goes to the node directly.
+      if (pick.node) {
+        const node = pick.node
+        const peer = this.mesh?.directory().find((p) => p.peer === node)
+        if (!peer?.healthy) {
+          this.log(`[run-on] ${chatId} runs on "${node}", which is offline: holding the message`)
+          this.deferForPeer(adapter, msg, agentId, node)
+          await this.noteOffline(adapter, msg, agentId, node, chatId)
           return
         }
+        if (!this.registry.getAgent(agentId)) {
+          // The person check first, then what the peer cannot enforce (B2).
+          if (await this.refusedForPerson(adapter, msg, agentId)) return
+          const ctx = this.buildMeshContext(msg, chatId)
+          const blocked = meshForwardBlock(agentId, undefined, personLimitsOf(this.config.people ?? [], ctx as any))
+          if (blocked) {
+            this.log(`[run-on] ${chatId} runs on "${node}": refused for ${agentId}: ${blocked.error}`)
+            const text = placedRefusalText(node)
+            await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
+            this.resolveIntent(msg, "completed", Date.now(), text)
+            return
+          }
+          const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, node, { placed: true })
+          if (!routed) this.deferForPeer(adapter, msg, agentId, node)
+          return
+        }
+        this.log(`[run-on] ${chatId} runs on "${node}": the local registry sends the run there`)
       }
-      const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, node, { placed })
+    } else if (pick.node) {
+      const node = pick.node
+      this.log(`preferNode="${node}" (${pick.source}) — forcing mesh routing for agent "${agentId}"`)
+      const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, node)
       if (!routed) {
         this.log(`Mesh peer "${node}" not found or unhealthy for agent "${agentId}"`)
         this.deferForPeer(adapter, msg, agentId, node)
-        if (placed) await this.noteOffline(adapter, msg, agentId, node, chatId)
       }
       return
     }
@@ -2352,6 +2367,7 @@ export class MessageRouter {
     if (queue.length >= this.MESH_DEFER_MAX_PER_PEER) {
       const dropped = queue.shift()
       if (dropped) this.resolveIntent(dropped.msg, "canceled", null, `mesh-defer: queue for peer "${peerName}" full`)
+      if (dropped) void this.noteDropped([dropped], peerName, "full")
       this.log(
         `[mesh-defer] queue for peer "${peerName}" full (${this.MESH_DEFER_MAX_PER_PEER}) — ` +
         `discarding oldest (${dropped?.key})`,
@@ -2376,7 +2392,7 @@ export class MessageRouter {
    */
   private async replayDeferred(peerName: string): Promise<void> {
     // The outage is over: a later one is told again (#2104 B5).
-    for (const key of [...this.offlineNoted]) if (key.startsWith(`${peerName}\n`)) this.offlineNoted.delete(key)
+    for (const set of [this.offlineNoted, this.droppedNoted]) for (const key of [...set]) if (key.startsWith(`${peerName}\n`)) set.delete(key)
     const queue = this.deferredByPeer.get(peerName)
     if (!queue?.length) return
     this.deferredByPeer.delete(peerName)
@@ -2391,6 +2407,7 @@ export class MessageRouter {
     }
     if (stale > 0) {
       this.log(`[mesh-defer] peer "${peerName}" back — discarding ${stale} message(s) past TTL`)
+      await this.noteDropped(queue.filter((d) => now - d.deferredAt >= this.MESH_DEFER_TTL_MS), peerName, "ttl")
     }
     if (!live.length) return
 
@@ -2398,9 +2415,16 @@ export class MessageRouter {
 
     for (const d of live) {
       try {
-        // Resolved again: the issue may have been brought back meanwhile.
+        // Resolved again: the issue may have been moved meanwhile. A placed
+        // issue goes through the normal path, where the local registry
+        // sends it to its node (or holds it again).
         const again = this.resolvePreferNode(d.msg, d.agentId)
-        const routed = await this.handleViaMeshByPeer(d.adapter, d.msg, d.agentId, peerName, { placed: again.source === "runOn" && again.node === peerName })
+        if (again.source === "placement") {
+          await this.processResolvedMessage(d.adapter, d.msg, d.agentId, d.msg.group?.id || d.msg.sender.id)
+          this.log(`[mesh-defer] replayed ${d.key} -> "${d.agentId}" (placed issue)`)
+          continue
+        }
+        const routed = await this.handleViaMeshByPeer(d.adapter, d.msg, d.agentId, peerName)
         if (routed) {
           this.log(`[mesh-defer] replayed ${d.key} -> "${d.agentId}" on "${peerName}"`)
         } else {
@@ -2411,6 +2435,32 @@ export class MessageRouter {
         }
       } catch (e: any) {
         this.log(`[mesh-defer] replay failed for ${d.key}: ${e?.message || e}`)
+      }
+    }
+  }
+
+  /** Held messages dropped (#2104 C1): one note on each issue placed on
+   *  that peer, with how many and why, so "waits for it" is not left
+   *  standing. A full queue drops one at a time: told once per outage. */
+  private async noteDropped(dropped: Array<{ adapter: ChannelAdapter; msg: IncomingMessage; agentId: string }>, peerName: string, why: "ttl" | "full"): Promise<void> {
+    const byChat = new Map<string, { d: (typeof dropped)[number]; n: number }>()
+    for (const d of dropped) {
+      const pick = this.resolvePreferNode(d.msg, d.agentId)
+      if (pick.source !== "placement" || pick.node !== peerName) continue
+      const chatId = d.msg.group?.id || d.msg.sender.id
+      const had = byChat.get(chatId)
+      byChat.set(chatId, { d: had?.d ?? d, n: (had?.n ?? 0) + 1 })
+    }
+    for (const [chatId, { d, n }] of byChat) {
+      if (why === "full") {
+        const key = `${peerName}\n${chatId}`
+        if (this.droppedNoted.has(key)) continue
+        this.droppedNoted.add(key)
+      }
+      try {
+        await this.adapterSend(d.adapter, { channel: d.msg.channel, chatId, text: droppedNoteText(peerName, n, why), accountId: d.msg.accountId, agentId: d.agentId }, { countsAsReply: false })
+      } catch (e: any) {
+        this.log(`[run-on] dropped note on ${chatId} failed: ${e?.message ?? e}`)
       }
     }
   }

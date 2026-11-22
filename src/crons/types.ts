@@ -24,6 +24,8 @@ export interface CronJobState {
   maxOutputTokens?: number
   /** The run's `context.taskType` (#1049). */
   taskType?: string
+  /** The run's `context.home` (#2104): the issue it is about. */
+  home?: string
   /** Routine autonomy level; unset = act (full agent permissions). */
   autonomy?: AutonomyLevel
   onError: Array<"log" | "notify" | "disable">

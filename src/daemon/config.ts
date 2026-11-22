@@ -951,6 +951,10 @@ const cronJobSchema = z.object({
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
   /** The task type of each run (`context.taskType`, #1049). */
   taskType: z.string().trim().min(1).max(64).optional(),
+  /** The issue each run is about (`context.home`): a link or
+   *  "group/project#12". A run on an issue placed on another machine runs
+   *  there (#2104). */
+  home: z.string().trim().min(1).max(300).optional(),
   /** How much this routine may do: `report` (read-only), `propose` (branch,
    *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
    *  permissions — the default). Enforced per run by the guard, not by the

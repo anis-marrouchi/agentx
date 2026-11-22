@@ -233,12 +233,20 @@ export class WebhookHandler {
       }
     }
 
-    // Check if there's a webhook entry with mesh routing
+    // The issue a GitHub or GitLab payload is about (#2104): the run's
+    // `home`, so a placed issue runs on its node.
+    const home = forgeIssueHomeOf(source, parsed)
+    const context: Record<string, unknown> = { channel: `webhook:${source}`, sender: `webhook:${source}`, ...(home ? { home } : {}) }
+
+    // Check if there's a webhook entry with mesh routing. Its node is the
+    // mapping tier (#2104 B1): an issue placed from the Hub ("local" too)
+    // beats it, and the local registry sends the run to the placed node.
     const meshEntry = this.webhookEntries.find(
       w => w.enabled && w.node && w.agentId === agentId && w.source === source,
     )
+    const placed = home ? this.registry.placementOf({ context }) : null
 
-    if (meshEntry?.node && this.mesh) {
+    if (meshEntry?.node && this.mesh && !placed) {
       // Respond immediately — GitHub/GitLab have short delivery timeouts.
       // Forward to mesh peer asynchronously.
       this.sendJson(res, 202, {
@@ -253,10 +261,7 @@ export class WebhookHandler {
       // `webhook:${source}` instead of falling back to api/default and
       // losing the source attribution.
       this.mesh.sendTask(meshEntry.node, summary, agentId, {
-        context: {
-          channel: `webhook:${source}`,
-          sender: `webhook:${source}`,
-        },
+        context,
       }).then(
         (response) => this.log(`Mesh-forwarded webhook [${source}] -> ${meshEntry.node}/${agentId}: ${response?.slice(0, 100) || "ok"}`),
         (e: any) => this.log(`Mesh forward failed [${source}] -> ${meshEntry.node}/${agentId}: ${e.message}`),
@@ -269,10 +274,7 @@ export class WebhookHandler {
       const response = await this.registry.execute({
         message: summary,
         agentId,
-        context: {
-          channel: `webhook:${source}`,
-          sender: `webhook:${source}`,
-        },
+        context: context as any,
       })
 
       this.sendJson(res, response.error ? 500 : 200, {
@@ -699,4 +701,24 @@ function safeEqualOrReject(expected: string, actual: string): string | null {
   const a = Buffer.from(expected)
   const b = Buffer.from(actual)
   return timingSafeEqual(a, b) ? null : "signature mismatch"
+}
+
+/** "owner/repo#12" for a GitHub issue or issue comment payload, or a
+ *  GitLab issue or note-on-issue payload; undefined for anything else (a
+ *  pull or merge request is not placed, #2104). */
+export function forgeIssueHomeOf(source: string, parsed: unknown): string | undefined {
+  const p = parsed as any
+  if (!p || typeof p !== "object") return undefined
+  if (source === "github") {
+    const repo = p.repository?.full_name
+    const n = p.issue?.number
+    return typeof repo === "string" && typeof n === "number" && !p.issue?.pull_request && !p.pull_request ? `${repo}#${n}` : undefined
+  }
+  if (source === "gitlab") {
+    const project = p.project?.path_with_namespace
+    if (typeof project !== "string") return undefined
+    if (p.object_kind === "issue" && typeof p.object_attributes?.iid === "number") return `${project}#${p.object_attributes.iid}`
+    if (p.object_kind === "note" && p.object_attributes?.noteable_type === "Issue" && typeof p.issue?.iid === "number") return `${project}#${p.issue.iid}`
+  }
+  return undefined
 }
