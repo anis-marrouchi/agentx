@@ -157,6 +157,18 @@ check(PillMenu.reduceTitle(reduced: false, character: true) == "Reduce to charac
         && PillMenu.reduceTitle(reduced: true, character: true) == "Show speech bubble",
       "with the character, the same item reduces it to the character alone and brings its bubble back")
 
+// --- The full pill grows from the orb (#2092) ---
+
+let ownerOrb = CGPoint(x: 1123, y: 543)
+let fromOrb = PillPlacement.pill(atOrb: ownerOrb)
+check(CGPoint(x: fromOrb.x + PillPlacement.pillOrbCentre.x, y: fromOrb.y + PillPlacement.pillOrbCentre.y)
+        == CGPoint(x: ownerOrb.x + orb.width / 2, y: ownerOrb.y + orb.height / 2),
+      "opened over the orb, the pill's orb sits on the reduced orb: one click talks where it was clicked")
+check(PillPlacement.orb(atPill: fromOrb) == ownerOrb, "a drag of the opened pill leaves the orb under it")
+let edgeOrb = CGPoint(x: 1512 - 54, y: 300)
+let edgePill = PillPlacement.clamp(saved: PillPlacement.pill(atOrb: edgeOrb), size: pill, screens: [laptop], fallback: laptop)
+check(edgePill == CGPoint(x: 1512 - 264, y: 300), "an orb at the right edge: the pill opens leftwards, on screen, same height")
+
 // --- The full pill over the reduced form, and back by itself (#457) ---
 
 var pillForm = PillForm()

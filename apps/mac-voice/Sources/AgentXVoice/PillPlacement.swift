@@ -22,6 +22,25 @@ enum PillPlacement {
         CGPoint(x: (visible.midX - size.width / 2).rounded(), y: visible.minY + inset)
     }
 
+    /// Where the orb's middle is in the full pill, from its bottom-left
+    /// corner (Panel lays the orb out there).
+    static let pillOrbCentre = CGPoint(x: 28, y: 27)
+
+    /// The full pill opened over the reduced orb at `orb` (#2092): it grows
+    /// from the orb, its own orb over the reduced one, so the next click
+    /// lands where the last one did. `inside` keeps it on screen.
+    static func pill(atOrb orb: CGPoint) -> CGPoint {
+        CGPoint(x: orb.x + orbSize.width / 2 - pillOrbCentre.x,
+                y: orb.y + orbSize.height / 2 - pillOrbCentre.y)
+    }
+
+    /// The other way: the full pill at `pill`, dragged while open over the
+    /// orb, leaves the orb under its own orb.
+    static func orb(atPill pill: CGPoint) -> CGPoint {
+        CGPoint(x: pill.x + pillOrbCentre.x - orbSize.width / 2,
+                y: pill.y + pillOrbCentre.y - orbSize.height / 2)
+    }
+
     /// A saved position made safe: the pill lands fully on the screen it
     /// overlaps most. When it overlaps none (the monitor it was on has been
     /// unplugged, or the saved value is nonsense) it goes back to the
