@@ -16,7 +16,8 @@ import type { WikiHub } from "@/wiki/hub"
  *
  * On every node with rules on, a missing page (or one the approval filter
  * drops) is an ERROR in the log, written when the state changes rather than
- * on every tick. `status()` feeds `/health.rules`; its md5 is over the page
+ * on every tick. Approvals (`wiki.decisionApprovals`) are not copied: on a
+ * peer copy the owner approves on this node, and the ERROR says so. `status()` feeds `/health.rules`; its md5 is over the page
  * content only, so the Mac and clawd show the same value for the same rules.
  */
 
@@ -155,7 +156,14 @@ export class RulesPageSync {
     } else if (!st.error) {
       const store = this.deps.hub.getAgentWiki(cfg.registryAgent)
       const [readable] = decisionsForBlock([article], store.baseDir, this.deps.approvalsRequired())
-      if (!readable) st.error = `registry page not approved, runs get no rules: ${page}`
+      if (!readable) {
+        // Approvals live in this node's `_decisions/approved.json`, which the
+        // sync does not copy: a peer's approval would let a mesh write pass
+        // the owner gate (#1778). Say so, and how to approve here (#2068).
+        st.error = local
+          ? `registry page not approved, runs get no rules: ${page}`
+          : `registry page not approved on this node, runs get no rules: ${page}. Approvals are not synced from the registry node; approve the copy here: agentx wiki decisions approve ${cfg.registryAgent} ${cfg.registryPage}`
+      }
     }
     return st
   }

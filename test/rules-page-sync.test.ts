@@ -6,6 +6,7 @@ import { join } from "path"
 import { WikiHub } from "../src/wiki/hub"
 import type { PeerFetch } from "../src/wiki/article-sync"
 import { RulesPageSync, contentMd5, type RulesSyncConfig } from "../src/agents/rules-page-sync"
+import { approveDecision, decisionHash } from "../src/wiki/decision-approvals"
 
 const PAGE = "decisions/rules-registry.md"
 const META = {
@@ -238,5 +239,36 @@ describe("RulesPageSync — missing page is an error, logged once per state chan
     const { sync } = setup({ hub: macWithPage(), local: true, approvalsRequired: true })
     const st = await sync.tick()
     expect(st.error).toMatch(/not approved/)
+  })
+
+  it("approvals on (clawd): says approvals are not synced and how to approve here; approved here, runs get the rules", async () => {
+    const mac = macWithPage()
+    const fetchJson: PeerFetch = async () => routeAnswer(mac, "mac-node", true)
+    const { sync, hub, logs } = setup({ fetchJson, approvalsRequired: true })
+    const st = await sync.tick()
+    expect(st.error).toMatch(/not approved on this node/)
+    expect(st.error).toMatch(/Approvals are not synced/)
+    expect(st.error).toContain(`agentx wiki decisions approve pm-agent ${PAGE}`)
+    expect(logs.filter((l) => l.includes("[rules] ERROR"))).toHaveLength(1)
+
+    const store = hub.getAgentWiki("pm-agent")
+    approveDecision(store.baseDir, store.readArticle(PAGE)!)
+    const after = await sync.tick()
+    expect(after.error).toBeUndefined()
+    expect(after.md5).toBe(contentMd5(mac.getAgentWiki("pm-agent").readArticle(PAGE)!.content))
+  })
+
+  it("copies a title with a colon, quotes and a newline so it reads back the same on clawd", async () => {
+    const title = 'Rules Registry: "fleet"\nv2'
+    const mac = newHub()
+    mac.getAgentWiki("pm-agent").writeArticle(PAGE, { ...META, title }, BODY, "pm-agent")
+    const fetchJson: PeerFetch = async () => routeAnswer(mac, "mac-node", true)
+    const { sync, hub } = setup({ fetchJson })
+    const st = await sync.tick()
+    expect(st.error).toBeUndefined()
+    const copy = hub.getAgentWiki("pm-agent").readArticle(PAGE)!
+    expect(copy.meta.title).toBe(title)
+    // Same title and body: an approval hash made on either node matches.
+    expect(decisionHash(copy)).toBe(decisionHash(mac.getAgentWiki("pm-agent").readArticle(PAGE)!))
   })
 })

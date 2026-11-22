@@ -16,6 +16,15 @@ import { ancestryScore as ancestryOf } from "@/graph"
 import { LockBusyError, withLock } from "./facts/ledger-file"
 import { IMPORTANCE_LEVELS, type Importance, type WikiStatement } from "./ontology/types"
 
+/** The title as one frontmatter line. A quote, backslash or newline would
+ *  break the plain `"..."` form, so such a title is written as a JSON string
+ *  (valid YAML too) and read back by parseArticle (#2068). Other titles keep
+ *  the plain form, so existing pages and their approval hashes don't move. */
+export function frontmatterTitle(title: string | undefined): string {
+  const t = title ?? ""
+  return /["\\\r\n\u0000-\u001f]/.test(t) ? JSON.stringify(t) : `"${t}"`
+}
+
 function isImportance(s: string): s is Importance {
   return (IMPORTANCE_LEVELS as readonly string[]).includes(s)
 }
@@ -281,7 +290,7 @@ export class WikiStore {
 
     const frontmatter = [
       "---",
-      `title: "${meta.title}"`,
+      `title: ${frontmatterTitle(meta.title)}`,
     ]
     if (meta.type) frontmatter.push(`type: ${meta.type}`)
     if (meta.related?.length) {
@@ -427,6 +436,20 @@ export class WikiStore {
       const m = fm.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))
       return m?.[1]?.trim().replace(/^"(.*)"$/, "$1") || ""
     }
+    // The title alone is JSON-escaped when it holds a quote, backslash or
+    // newline (frontmatterTitle). Older pages keep the plain quoted form.
+    const getTitle = (): string => {
+      const raw = fm.match(/^title:\s*(.+)$/m)?.[1]?.trim() ?? ""
+      if (raw.startsWith('"') && raw.endsWith('"') && raw.includes("\\")) {
+        try {
+          const parsed: unknown = JSON.parse(raw)
+          if (typeof parsed === "string") return parsed
+        } catch {
+          // not JSON (an older title with a stray backslash): plain form below
+        }
+      }
+      return get("title")
+    }
 
     const getArray = (key: string): string[] => {
       const m = fm.match(new RegExp(`^${key}:\\s*\\[(.*)\\]$`, "m"))
@@ -458,7 +481,7 @@ export class WikiStore {
     const date = get("date")
     return {
       meta: {
-        title: get("title"),
+        title: getTitle(),
         type,
         related: related.length ? related : undefined,
         tags,

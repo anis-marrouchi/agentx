@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { WikiStore } from "../src/wiki/store"
-import { mkdirSync, rmSync, existsSync, writeFileSync } from "fs"
+import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from "fs"
 import { resolve } from "path"
 
 const TEST_DIR = resolve(__dirname, "../.test-wiki")
@@ -450,5 +450,49 @@ describe("WikiStore - article type validation", () => {
   it("preserves related wikilinks regardless of type validity", () => {
     s.writeArticle("p/with-related.md", baseMeta({ type: "project", related: ["A", "B"] }), "body", "atlas")
     expect(s.readArticle("p/with-related.md")?.meta.related).toEqual(["A", "B"])
+  })
+})
+
+describe("WikiStore - title in frontmatter (#2068)", () => {
+  const DIR = resolve(__dirname, "../.test-wiki-title")
+  let s: WikiStore
+
+  beforeEach(() => {
+    rmSync(DIR, { recursive: true, force: true })
+    s = new WikiStore(DIR, () => {})
+  })
+  afterEach(() => {
+    rmSync(DIR, { recursive: true, force: true })
+  })
+
+  const meta = (title: string) => ({
+    title, type: "decision" as const, tags: [], owner: "atlas", access: "public" as const,
+    created: "2026-11-22", lastUpdated: "2026-11-22", sources: [],
+  })
+
+  it("writes a title with a colon, quotes, a backslash and a newline on one line and reads it back the same", () => {
+    const title = 'Rules: "R4" C:\\dir\nsecond line'
+    s.writeArticle("d/t.md", meta(title), "body", "atlas")
+    const raw = readFileSync(resolve(DIR, "d/t.md"), "utf-8")
+    const fm = raw.split("\n---\n")[0]
+    expect(fm.split("\n").filter((l) => l.startsWith("title:"))).toHaveLength(1)
+    expect(fm).not.toContain("second line\n")
+    expect(s.readArticle("d/t.md")?.meta.title).toBe(title)
+    expect(s.readArticle("d/t.md")?.content).toBe("body")
+  })
+
+  it("keeps the plain quoted form for ordinary titles", () => {
+    s.writeArticle("d/p.md", meta("Rules Registry: fleet"), "body", "atlas")
+    expect(readFileSync(resolve(DIR, "d/p.md"), "utf-8")).toContain('title: "Rules Registry: fleet"\n')
+    expect(s.readArticle("d/p.md")?.meta.title).toBe("Rules Registry: fleet")
+  })
+
+  it("still reads older pages written with raw quotes or a stray backslash", () => {
+    mkdirSync(resolve(DIR, "d"), { recursive: true })
+    const page = (t: string) => `---\ntitle: ${t}\ntype: decision\ntags: []\nowner: atlas\naccess: public\ncreated: x\nlast_updated: x\nsources: []\n---\nbody\n`
+    writeFileSync(resolve(DIR, "d/old1.md"), page('"Carbon "12 M" Fix"'))
+    writeFileSync(resolve(DIR, "d/old2.md"), page('"C:\\path"'))
+    expect(s.readArticle("d/old1.md")?.meta.title).toBe('Carbon "12 M" Fix')
+    expect(s.readArticle("d/old2.md")?.meta.title).toBe("C:\\path")
   })
 })
