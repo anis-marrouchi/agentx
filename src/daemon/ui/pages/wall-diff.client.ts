@@ -18,7 +18,10 @@
 // head moved since, the answer says moved and the view warns. Drafts are
 // cleared only once the send succeeds, and the picker waits for them to be
 // sent or removed. Drafts stay in memory, and in sessionStorage when the browser has it, per
-// post; a refresh of the Hub does not repaint a box being typed in.
+// post, with the ref and head commit they were written on: after a reload
+// the view opens that PR again and the send names that commit, so drafts
+// never go to another PR and a moved head is still caught. A refresh of
+// the Hub does not repaint a box being typed in.
 
 export const WALL_DIFF_SCRIPT = String.raw`
   // --- Diff view (#2102) ---
@@ -27,18 +30,22 @@ export const WALL_DIFF_SCRIPT = String.raw`
   function diffOf(id) {
     S.diffs = S.diffs || {};
     if (!S.diffs[id]) {
-      var drafts = [];
+      // Kept as {ref, headSha, drafts}: drafts with no ref are dropped.
+      var kept = null;
       var ss = diffStore();
-      if (ss) { try { drafts = JSON.parse(ss.getItem(DIFF_KEY + id) || '[]') || []; } catch (e) { drafts = []; } }
-      S.diffs[id] = { open: false, loading: false, error: '', data: null, folded: {}, drafts: drafts, editing: null, sending: false, note: '' };
+      if (ss) { try { kept = JSON.parse(ss.getItem(DIFF_KEY + id) || 'null'); } catch (e) { kept = null; } }
+      var ok = kept && typeof kept.ref === 'string' && kept.ref && Array.isArray(kept.drafts) && kept.drafts.length;
+      S.diffs[id] = { open: false, loading: false, error: '', data: null, folded: {}, drafts: ok ? kept.drafts : [], at: ok ? { ref: kept.ref, headSha: kept.headSha || null } : null, editing: null, sending: false, note: '' };
       // data: {prs, ref, provider, title, state, headSha, files, truncated}; ref null: no PR found.
+      // at: {ref, headSha} the drafts were written on; null with no drafts.
     }
     return S.diffs[id];
   }
   function diffKeep(id) {
     var ss = diffStore(), d = diffOf(id);
+    if (!d.drafts.length) d.at = null;
     if (!ss) return;
-    try { if (d.drafts.length) ss.setItem(DIFF_KEY + id, JSON.stringify(d.drafts)); else ss.removeItem(DIFF_KEY + id); } catch (e) { /* full or private: memory only */ }
+    try { if (d.drafts.length && d.at) ss.setItem(DIFF_KEY + id, JSON.stringify({ ref: d.at.ref, headSha: d.at.headSha, drafts: d.drafts })); else ss.removeItem(DIFF_KEY + id); } catch (e) { /* full or private: memory only */ }
   }
   /** A box in the diff is being typed in: a refresh leaves the post alone. */
   function diffTyping() { var a = document.activeElement; return !!(a && a.id === 'wdf-text'); }
@@ -84,7 +91,9 @@ export const WALL_DIFF_SCRIPT = String.raw`
   }
   function diffInner(p, d) {
     if (d.loading) return '<p class="ax-wall__empty">Loading the diff…</p>';
-    if (d.error) return '<p class="ax-wall__empty">Diff not available: ' + esc(d.error) + '</p>';
+    if (d.error) return '<p class="ax-wall__empty">Diff not available: ' + esc(d.error) + '</p>' +
+      // Drafts on a PR that cannot be read any more can still be let go.
+      (d.drafts.length ? '<div class="wdo__row"><button type="button" class="ax-btn ax-btn--ghost" data-wdf="discard">Remove ' + d.drafts.length + (d.drafts.length === 1 ? ' draft' : ' drafts') + ' on ' + esc(d.at ? d.at.ref : '') + '</button></div>' : '');
     if (!d.data) return '';
     if (!d.data.ref) return '<section class="wdf"><p class="ax-wall__empty">No pull or merge request names this issue yet.</p></section>';
     var files = d.data.files || [];
@@ -162,8 +171,10 @@ export const WALL_DIFF_SCRIPT = String.raw`
     d.sending = true; d.note = 'Sending…';
     paintDiff();
     var comments = d.drafts.map(function (c) { return { file: c.file, side: c.side, line: c.line, text: c.text, code: c.code }; });
-    var body = { id: p.id, pr: d.data && d.data.ref, comments: comments };
-    if (d.data && d.data.headSha) body.headSha = d.data.headSha;
+    // The PR and commit the drafts were written on, not the one shown now.
+    var at = d.at || { ref: d.data && d.data.ref, headSha: d.data && d.data.headSha };
+    var body = { id: p.id, pr: at.ref, comments: comments };
+    if (at.headSha) body.headSha = at.headSha;
     var r = await act('POST', '/api/admin/wall/diff-comments', body, p.node && p.node.peer);
     d.sending = false;
     // A failed send keeps every draft.
@@ -181,7 +192,8 @@ export const WALL_DIFF_SCRIPT = String.raw`
     var d = diffOf(p.id), what = t.getAttribute('data-wdf');
     if (what === 'toggle') {
       d.open = !d.open;
-      if (d.open && !d.data && !d.loading) { diffLoad(p); return; }
+      // With drafts, the PR they were written on, whatever comes first now.
+      if (d.open && !d.data && !d.loading) { diffLoad(p, d.at && d.at.ref); return; }
     } else if (what === 'pr') {
       var ref = t.getAttribute('data-ref');
       if (d.drafts.length || !ref || (d.data && d.data.ref === ref)) return;
@@ -205,6 +217,12 @@ export const WALL_DIFF_SCRIPT = String.raw`
       d.drafts.splice(+t.getAttribute('data-n'), 1);
       d.editing = null;
       diffKeep(p.id);
+    } else if (what === 'discard') {
+      d.drafts = []; d.editing = null;
+      diffKeep(p.id);
+      d.folded = {};
+      diffLoad(p);
+      return;
     } else if (what === 'cancel') {
       d.editing = null;
     } else if (what === 'add') {
@@ -212,6 +230,7 @@ export const WALL_DIFF_SCRIPT = String.raw`
       if (!e) return;
       if (!text) { d.note = 'Write the comment first.'; paintDiff(); return; }
       var draft = { file: e.file, side: e.side, line: e.line, code: e.code, text: text };
+      if (!d.at && d.data) d.at = { ref: d.data.ref, headSha: d.data.headSha || null };
       if (e.n == null) d.drafts.push(draft); else d.drafts[e.n] = draft;
       d.editing = null; d.note = '';
       diffKeep(p.id);
