@@ -6676,15 +6676,8 @@ export class AgentXDaemon {
         return
       }
 
-      // --- Published mesh inboxes -------------------------------------
-      //
-      // GET is unauthenticated, matching /mesh, /agents and /crons, because
-      // the response contains only what an operator explicitly declared:
-      // names and whether each accepts. No live state is projected, so
-      // there is nothing here to redact. See mesh-inbox.ts for why this is
-      // a published set rather than a session listing.
       // Run an issue on another machine (#2104, daemon/issue-run-on.ts).
-      // All three are behind the mesh token (isMeshGatedPath).
+      // Both are behind the mesh token (isMeshGatedPath).
       if (req.method === "GET" && path === "/mesh/issue-state") {
         const chatId = url.searchParams.get("chatId") || ""
         if (!chatId) { this.json(res, 400, { error: "chatId query param required" }); return }
@@ -6699,6 +6692,13 @@ export class AgentXDaemon {
         return
       }
 
+      // --- Published mesh inboxes -------------------------------------
+      //
+      // GET is unauthenticated, matching /mesh, /agents and /crons, because
+      // the response contains only what an operator explicitly declared:
+      // names and whether each accepts. No live state is projected, so
+      // there is nothing here to redact. See mesh-inbox.ts for why this is
+      // a published set rather than a session listing.
       if (req.method === "GET" && path === "/mesh/inboxes") {
         this.json(res, 200, { inboxes: listPublishedInboxes(this.config) })
         return
