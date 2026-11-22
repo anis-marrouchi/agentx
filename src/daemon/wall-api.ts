@@ -9,6 +9,7 @@ import { OPEN_STATES, type RequestRecord, type RequestStore } from "@/requests/s
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import type { WallForgeTime, WallForgeTimeSource } from "./wall-forge-time"
 import { forgeCommentsOf, forgeCommentsOfAll, type WallForgeComment, type WallForgeState, type WallForgeStateSource } from "./wall-forge-state"
+import { mergeHomeOf } from "./wall-diff"
 import { isStalled, projectOverview, repoOfChat, type WallProjects } from "./wall-projects"
 import { wallClosures, wallThroughput } from "./wall-throughput"
 import { blockerOf, type WallBlocker } from "./wall-blocks"
@@ -149,6 +150,10 @@ export interface WallPost {
   /** Open, with no move for more than twice the rhythm. */
   stalled: boolean
   home: { kind: string; link: string } | null
+  /** The pull or merge request its home is ("owner/repo#12",
+   *  "group/project!12"): the opened post offers its Diff (#2102). Null:
+   *  an issue, or no forge home. */
+  mergeRef: string | null
   createdAt: number
   updatedAt: number
   /** Last time its state changed, else last activity. */
@@ -608,6 +613,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     goal: r.goal ? { id: r.goal.id, title: redactSecrets(r.goal.title) } : null,
     stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),
     home: r.home,
+    mergeRef: mergeHomeOf(r, deps.gitlabUrl)?.key ?? null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     lastMoveAt,

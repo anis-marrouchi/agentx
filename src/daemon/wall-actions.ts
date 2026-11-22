@@ -7,6 +7,7 @@ import { readRequestSettings } from "@/requests/settings"
 import { COMMENT_MAX, OPEN_STATES, TEXT_MAX } from "@/requests/store"
 import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import { HUB_NAME } from "./ui/hub-name"
+import { diffCommentsMessage, mergeHomeOf, parseDiffComments } from "./wall-diff"
 
 // --- What the owner does from a Wall post (#1316) ---
 //
@@ -22,6 +23,10 @@ import { HUB_NAME } from "./ui/hub-name"
 //        also kept on the request, so it shows in the post's thread. On a
 //        closed post (#1355) the comment opens it again, in progress, and
 //        the agent picks it up the same way.
+//   POST /api/admin/wall/diff-comments  {id, comments: [{file, side, line, text, code?}]}
+//        line comments from the post's Diff view (#2102, wall-diff.ts): one
+//        message naming the pull or merge request, each comment in order,
+//        handed to the agent exactly as a comment is.
 //   POST /api/admin/wall/post         {agent, text}  a new post (#1355): the
 //        owner gives an agent of this node a task from the Wall's composer.
 //        It opens as a request owed to the owner, and the requests check
@@ -64,6 +69,7 @@ import { HUB_NAME } from "./ui/hub-name"
 
 export const WALL_ACTIONS_PREFIX = "/api/admin/wall"
 export const WALL_COMMENT_PATH = `${WALL_ACTIONS_PREFIX}/comment`
+export const WALL_DIFF_COMMENTS_PATH = `${WALL_ACTIONS_PREFIX}/diff-comments`
 export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
@@ -188,6 +194,8 @@ export interface WallActionDeps {
    *  operator key. */
   daemon: (method: "GET" | "POST", path: string, body?: unknown) => Promise<Reply>
   now?: () => number
+  /** This node's GitLab address, for a post whose home is a merge request (#2102). */
+  gitlabUrl?: string | null
 }
 
 /** A write on the Wall (#1454): any method but a read under its prefix.
@@ -202,7 +210,7 @@ export function isWallWrite(method: string, path: string): boolean {
 
 /** Is this one of the Wall's write routes, or the Space read? */
 export function isWallActionPath(path: string): boolean {
-  return path === WALL_COMMENT_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`)
+  return path === WALL_COMMENT_PATH || path === WALL_DIFF_COMMENTS_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`)
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "")
@@ -220,6 +228,31 @@ export function redactTalk(view: unknown): unknown {
   return out
 }
 
+/** A comment on a post, from the Wall (#1316): the agent that has it now
+ *  gets the words as a reply from the Approvals page or the Desk would give
+ *  them, and they stay in the post's thread. On a closed post (#1355) it
+ *  opens the post again. Wall comments and diff comments (#2102) both
+ *  go through here. */
+async function commentOnPost(id: string, text: string, deps: WallActionDeps, now: number): Promise<Reply> {
+  const store = requestStoreFor(deps.inbox)
+  const r = store?.get(id)
+  if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
+  // A comment on a closed post opens it again for its agent (#1355).
+  if (!(OPEN_STATES as readonly string[]).includes(r.state)) {
+    if (!readRequestSettings(deps.inbox.configPath).enabled) {
+      return { status: 409, body: { error: "Requests are off on this computer, so nothing would give the agent the comment." } }
+    }
+    if (!store.reopen(id, text, now)) return { status: 409, body: { error: `${id} changed while sending; try again` } }
+    store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
+    return { status: 200, body: { ok: true, agentId: r.agentId, reopened: true, message: `Sent to ${r.agentId}: the post was ${r.state}, so it opens again, and its answer shows in the thread.` } }
+  }
+  // The same reply the Approvals page and the Desk send.
+  const sent = await handleRequestsPanel("POST", `${REQUESTS_PANEL_PREFIX}/reply`, { id, text }, { ...deps.inbox, now })
+  if (sent.status !== 200) return sent
+  store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
+  return { status: 200, body: { ok: true, agentId: r.agentId, message: `Sent to ${r.agentId}: it goes on with this post within a minute, and its answer shows in the thread.` } }
+}
+
 export async function handleWallAction(method: string, path: string, body: Record<string, unknown>, deps: WallActionDeps): Promise<Reply | null> {
   if (!isWallActionPath(path)) return null
   const now = deps.now?.() ?? Date.now()
@@ -230,23 +263,22 @@ export async function handleWallAction(method: string, path: string, body: Recor
     const text = str(body.text)
     if (!id || !text) return { status: 400, body: { error: "send { id, text }" } }
     if (text.length > COMMENT_MAX) return { status: 400, body: { error: `the comment is longer than ${COMMENT_MAX} characters` } }
-    const store = requestStoreFor(deps.inbox)
-    const r = store?.get(id)
-    if (!store || !r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
-    // A comment on a closed post opens it again for its agent (#1355).
-    if (!(OPEN_STATES as readonly string[]).includes(r.state)) {
-      if (!readRequestSettings(deps.inbox.configPath).enabled) {
-        return { status: 409, body: { error: "Requests are off on this computer, so nothing would give the agent the comment." } }
-      }
-      if (!store.reopen(id, text, now)) return { status: 409, body: { error: `${id} changed while sending; try again` } }
-      store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
-      return { status: 200, body: { ok: true, agentId: r.agentId, reopened: true, message: `Sent to ${r.agentId}: the post was ${r.state}, so it opens again, and its answer shows in the thread.` } }
-    }
-    // The same reply the Approvals page and the Desk send.
-    const sent = await handleRequestsPanel("POST", `${REQUESTS_PANEL_PREFIX}/reply`, { id, text }, { ...deps.inbox, now })
-    if (sent.status !== 200) return sent
-    store.comment(id, `wc-${now}-${randomUUID().slice(0, 8)}`, text, now)
-    return { status: 200, body: { ok: true, agentId: r.agentId, message: `Sent to ${r.agentId}: it goes on with this post within a minute, and its answer shows in the thread.` } }
+    return commentOnPost(id, text, deps, now)
+  }
+
+  if (path === WALL_DIFF_COMMENTS_PATH) {
+    if (method !== "POST") return { status: 405, body: { error: "POST" } }
+    const id = str(body.id)
+    if (!id) return { status: 400, body: { error: "send { id, comments }" } }
+    const parsed = parseDiffComments(body.comments)
+    if ("error" in parsed) return { status: 400, body: { error: parsed.error } }
+    const r = requestStoreFor(deps.inbox)?.get(id)
+    if (!r || r.state === "candidate") return { status: 404, body: { error: `no post "${id}" on this computer` } }
+    const home = mergeHomeOf(r, deps.gitlabUrl)
+    if (!home) return { status: 400, body: { error: "not a merge or pull request" } }
+    const text = diffCommentsMessage(home, parsed.comments)
+    if (text.length > COMMENT_MAX) return { status: 400, body: { error: `the comments come to more than ${COMMENT_MAX} characters together; send fewer at a time` } }
+    return commentOnPost(id, text, deps, now)
   }
 
   if (path === WALL_POST_PATH) {

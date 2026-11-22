@@ -94,6 +94,9 @@ import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallG
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
+import { createReviewGateGitHub } from "@/quality/review-gate-github"
+import { createReviewGateGitLab } from "@/quality/review-gate-gitlab"
+import { handleWallDiff, WALL_DIFF_PATH, type WallDiffDeps } from "./wall-diff"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
@@ -1030,7 +1033,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // to the node that keeps the post.
   if (isWallActionPath(path)) {
     const body = method === "POST" ? await readJson(req) : {}
-    const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
+    const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), gitlabUrl: forgeConnectorsOf(ctx.config).gitlab?.url ?? null })
     sendJson(res, reply!.status, reply!.body)
     return
   }
@@ -1043,6 +1046,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (settingsTarget && !settingsTarget.startsWith("/api/admin/approvals/")) {
     await handleAdminApi(req, res, settingsTarget, { owner: isDashboardOwner(req, ctx) })
+    return
+  }
+  // A post's pull or merge request diff (#2102, wall-diff.ts).
+  if (method === "GET" && path === WALL_DIFF_PATH) {
+    const reply = await handleWallDiff(url.searchParams, wallDiffDeps(ctx.config))
+    sendJson(res, reply.status, reply.body)
     return
   }
   // The Wall (#1180): read-only posts and threads from this node's records.
@@ -3568,6 +3577,22 @@ function wallStateSource(config: DaemonConfig): WallForgeStateSource | null {
   const key = JSON.stringify(c)
   if (wallState?.key !== key) wallState = { key, source: wallForgeState({ github: !!c.github, gitlabUrl: c.gitlab?.url ?? null }, forgeReader(c)) }
   return wallState.source
+}
+
+/** What the Diff view (#2102) reads: the request, and its PR or MR diff
+ *  through the review gate's own forge calls, with this node's forge
+ *  tokens (the ones the Wall's forge state reads with). Null: no requests. */
+function wallDiffDeps(config: DaemonConfig): WallDiffDeps | null {
+  const store = requestStoreFor({ root: process.cwd() })
+  if (!store) return null
+  const c = forgeConnectorsOf(config)
+  return {
+    store,
+    gitlabUrl: c.gitlab?.url ?? null,
+    diff: (home) => home.provider === "github"
+      ? createReviewGateGitHub(async () => c.github?.token).getDiff(home.ref.project, home.ref.number)
+      : createReviewGateGitLab(c.gitlab?.url ?? "", () => c.gitlab?.token).getDiff(home.ref.project, home.ref.number),
+  }
 }
 
 const wallForgeSources = (config: DaemonConfig) => [wallTimeSource(config), wallStateSource(config)]
