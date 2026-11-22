@@ -10,6 +10,7 @@ import { WAKE_SELF_MARK, type WorkActivity } from "@/workflows/wake"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
 import { computeIssueTargets, describeIssueChange } from "./gitlab-issue-targets"
+import { CI_FIX_ATTEMPTS_DEFAULT, CiFixCounter, ciFixKey, ciStillRedNote } from "./ci-fix"
 
 // --- GitLab webhook channel adapter ---
 //
@@ -71,6 +72,12 @@ export interface GitLabChannelConfig {
    *  dispatch), on any event or note, with or without a project rule
    *  (noqta/noqta#800). Default "agent:no-wake"; "" turns it off. */
   noWakeLabel?: string
+  /** The CI fix loop (#2102): how many times a red pipeline on one MR
+   *  head commit wakes the MR's agent before a person is asked instead.
+   *  Default 3; 0 never wakes. */
+  ci?: { fixAttempts?: number }
+  /** Where the CI fix counts persist. Unset: in memory only. */
+  ciStateFile?: string
 }
 
 /** Statuses that mean "this token may not write here". A per-agent token
@@ -164,13 +171,17 @@ export interface GitLabMREvent {
 interface GitLabPipelineEvent {
   object_kind: "pipeline"
   user: { name: string; username: string }
-  project: { path_with_namespace: string }
+  project: { path_with_namespace: string; web_url?: string }
   object_attributes: {
     id: number
     ref: string
+    sha?: string
     status: string
     duration: number
   }
+  /** Set when the pipeline ran for a merge request. */
+  merge_request?: { iid: number; title?: string; url?: string } | null
+  builds?: Array<{ id: number; name: string; stage: string; status: string }>
 }
 
 type GitLabEvent = GitLabNoteEvent | GitLabIssueEvent | GitLabMREvent | GitLabPipelineEvent | Record<string, unknown>
@@ -282,6 +293,8 @@ export class GitLabAdapter implements ChannelAdapter {
    *  expiresAtMs. Pruned lazily on each access. 5-min TTL covers GitLab's
    *  webhook-retry window without keeping stale entries forever. */
   private dispatchedTargets: Map<string, number> = new Map()
+  /** Wakes per MR head commit for the CI fix loop's cap (#2102). */
+  private ciFix: CiFixCounter
   private readonly DISPATCH_TTL_MS = 5 * 60 * 1000
   private log: (...args: unknown[]) => void
   private hooks?: HookRegistry
@@ -305,6 +318,7 @@ export class GitLabAdapter implements ChannelAdapter {
     this.config = config
     this.log = log
     this.hooks = hooks
+    this.ciFix = new CiFixCounter(config.ciStateFile)
   }
 
   setMesh(mesh: import("@/a2a/mesh").A2AMesh): void {
@@ -1620,8 +1634,19 @@ export class GitLabAdapter implements ChannelAdapter {
       }).catch((e: Error) => this.log(`on:gitlab-pipeline hook error: ${e.message}`))
     }
 
+    // A green pipeline on an MR clears its CI fix counts (#2102).
+    const mr = event.merge_request?.iid ? event.merge_request : undefined
+    if (mr && attrs.status === "success") this.ciFix.clear("gitlab", project, mr.iid)
+
     // Only route to agent on failures
     if (!this.handler || attrs.status !== "failed") {
+      res.writeHead(200)
+      res.end("ok")
+      return
+    }
+
+    if (mr) {
+      await this.wakeForFailedMRPipeline(event, mr)
       res.writeHead(200)
       res.end("ok")
       return
@@ -1650,6 +1675,91 @@ export class GitLabAdapter implements ChannelAdapter {
     this.handler(incoming).catch((e) => this.log(`Error handling pipeline: ${e.message}`))
     res.writeHead(200)
     res.end("ok")
+  }
+
+  /** A failed pipeline on an MR (#2102): wake the MR author's agent, else
+   *  an assignee's, else the project's route, on the MR's own chat, to fix
+   *  CI on its branch. Past `ci.fixAttempts` wakes on one head commit, post
+   *  one note asking a person to look instead. */
+  private async wakeForFailedMRPipeline(event: GitLabPipelineEvent, mr: { iid: number; title?: string; url?: string }): Promise<void> {
+    const attrs = event.object_attributes
+    const project = event.project.path_with_namespace
+    const sha = attrs.sha ?? ""
+    const chatId = `${project}:merge_request:${mr.iid}`
+
+    // The pipeline payload names no MR author: ask the API, else take the
+    // user the pipeline ran for (usually whoever pushed).
+    const people = await this.mergeRequestPeople(project, mr.iid) ?? { author: event.user?.username, assignees: [] }
+    const handles = [people.author, ...people.assignees].filter((u): u is string => !!u).map((u) => `@${u}`)
+    const resolved = handles.length ? this.resolveAgentFromMention(handles.join(" ")) : undefined
+    const agentId = resolved?.agentId ?? this.resolveAgent(project)
+
+    const cap = this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT
+    const decision = this.ciFix.attempt(ciFixKey("gitlab", project, mr.iid, sha), cap)
+    if (decision.action === "note") {
+      this.log(`Pipeline ${attrs.id} on MR !${mr.iid}: CI still red after ${decision.count} tries on ${sha}, asking a person`)
+      await this.send({ channel: "gitlab", chatId, text: ciStillRedNote(decision.count, sha), agentId })
+        .catch((e: Error) => this.log(`CI still-red note on MR !${mr.iid} failed: ${e.message}`))
+      return
+    }
+    if (decision.action === "silent") {
+      this.log(`Pipeline ${attrs.id} on MR !${mr.iid} failed: no wake (ci.fixAttempts ${cap}, ${decision.count} tries on ${sha})`)
+      return
+    }
+
+    const webUrl = event.project.web_url
+    const failed = (event.builds ?? []).filter((b) => b.status === "failed")
+    const jobs = failed.map((b) => `  - ${b.name} (stage ${b.stage})${webUrl ? `: ${webUrl}/-/jobs/${b.id}` : ""}`).join("\n")
+    const text = `[GitLab ${project} MR !${mr.iid} pipeline FAILED]: ${stripAgentxMarkers(mr.title ?? "")}\n` +
+      (mr.url ? `URL: ${mr.url}\n` : "") +
+      `Ref: ${attrs.ref}\nCommit: ${sha}\n` +
+      (jobs ? `Failed jobs:\n${jobs}\n` : "") +
+      `\nPlease fix CI on this MR's branch (${attrs.ref}) and push. (CI fix attempt ${decision.count} of ${cap} on this commit.)`
+
+    const channelMeta = await this.getChannelMeta(chatId)
+    const incoming: IncomingMessage = {
+      id: `pipeline-${attrs.id}`,
+      channel: "gitlab",
+      accountId: "default",
+      sender: {
+        id: chatId,
+        name: event.user.name,
+        username: event.user.username,
+      },
+      text,
+      timestamp: new Date(),
+      raw: event,
+      resolvedAgent: agentId,
+      preferNode: this.config.agentMappings?.find((m) => m.agentId === agentId)?.node ?? resolved?.node,
+      channelMeta: channelMeta ? {
+        ...channelMeta,
+        issue: { type: "merge_request", iid: String(mr.iid), title: mr.title ?? "" },
+      } : undefined,
+      runbookPath: this.rules?.find(project)?.runbook,
+      runbookFiles: this.rules?.find(project)?.runbookFiles,
+    }
+
+    this.log(`Pipeline ${attrs.id} failed on MR !${mr.iid} -> agent "${agentId}"`)
+    this.handler?.(incoming).catch((e) => this.log(`Error handling pipeline: ${e.message}`))
+  }
+
+  /** An MR's author and assignees, read with the global token. */
+  private async mergeRequestPeople(project: string, iid: number): Promise<{ author?: string; assignees: string[] } | undefined> {
+    if (!this.config.token) return undefined
+    try {
+      const res = await fetch(`${this.config.host}/api/v4/projects/${encodeURIComponent(project)}/merge_requests/${iid}`, {
+        headers: { "PRIVATE-TOKEN": this.config.token },
+      })
+      if (!res.ok) { this.log(`MR !${iid} lookup failed (${res.status})`); return undefined }
+      const data = await res.json() as { author?: { username?: string }; assignees?: Array<{ username?: string }> }
+      return {
+        author: data.author?.username,
+        assignees: (data.assignees ?? []).map((a) => a.username).filter((u): u is string => !!u),
+      }
+    } catch (e: any) {
+      this.log(`MR !${iid} lookup error: ${e.message}`)
+      return undefined
+    }
   }
 
   /**
