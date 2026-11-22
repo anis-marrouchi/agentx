@@ -8568,7 +8568,7 @@ export class AgentXDaemon {
           const body = await readBody(req)
           const on = typeof body.on === "string" ? body.on.trim() : ""
           if (!on) { this.json(res, 400, { error: "Required: on (what the work waits for)" }); break }
-          const due = parseDue(body.due)
+          const due = parseDue(body.due, Date.now())
           if (typeof due === "string") { this.json(res, 400, { error: due }); break }
           const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
           if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_waiting tool from inside your run" }); break }
@@ -8587,7 +8587,7 @@ export class AgentXDaemon {
           if (typeof state === "string") { this.json(res, 400, { error: state }); break }
           let dueAt: number | undefined
           if (state.state === "waiting" && state.until) {
-            const due = parseDue(state.until)
+            const due = parseDue(state.until, Date.now())
             if (typeof due === "number") dueAt = due
           }
           const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
