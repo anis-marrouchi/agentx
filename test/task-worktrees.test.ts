@@ -346,7 +346,7 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
       const asked: unknown[] = []
       const { out, task, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: (...a) => { asked.push(a); return true } })
       expect(out.task).toBe(task)
-      expect(asked).toEqual([["gitlab", repo, 3]])
+      expect(asked).toEqual([["gitlab", repo, 3, "coder"]])
       expect(lines.join("\n")).toContain("in progress before worktrees (open request)")
     })
 

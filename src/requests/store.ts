@@ -837,16 +837,18 @@ export class RequestStore {
     return row ? toRecord(row) : null
   }
 
-  /** Whether an open request has this forge issue as a home (#2102):
-   *  its latest home or any issue link, by address or short ref. Pull and
-   *  merge request homes do not count. */
-  openOnIssue(provider: "github" | "gitlab", project: string, number: number): boolean {
+  /** Whether an open request of `agentId` has this forge issue as a home
+   *  (#2102): its latest home or any issue link, by address or short ref.
+   *  Pull and merge request homes do not count. Another agent's request
+   *  does not count (#2112 review): PM opening the issue's request before
+   *  Coder's first run does not mean Coder started it in the checkout. */
+  openOnIssue(provider: "github" | "gitlab", project: string, number: number, agentId: string): boolean {
     const like = `%${number}%`
     const rows = this.db.prepare(
-      `SELECT home_link AS ref FROM requests WHERE home_kind = 'issue' AND home_link LIKE ? AND state IN (${placeholders(OPEN_STATES.length)})
+      `SELECT home_link AS ref FROM requests WHERE agent_id = ? AND home_kind = 'issue' AND home_link LIKE ? AND state IN (${placeholders(OPEN_STATES.length)})
        UNION SELECT l.ref AS ref FROM request_links l JOIN requests r ON r.id = l.request_id
-         WHERE l.kind = 'issue' AND l.ref LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})`,
-    ).all(like, ...OPEN_STATES, like, ...OPEN_STATES) as Array<{ ref: string }>
+         WHERE r.agent_id = ? AND l.kind = 'issue' AND l.ref LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})`,
+    ).all(agentId, like, ...OPEN_STATES, agentId, like, ...OPEN_STATES) as Array<{ ref: string }>
     return rows.some((row) => {
       const ref = parseRef(provider, row.ref.trim())
       return !!ref && !ref.mr && ref.number === number && ref.project.toLowerCase() === project.toLowerCase()

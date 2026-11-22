@@ -453,15 +453,21 @@ describe("hand-off agents from the handoffs table (#1520, #1861)", () => {
 describe("an open request on an issue (#2102 worktrees)", () => {
   it("finds an open request by its issue home, address or short ref, and not a closed one or a merge request", () => {
     const id = homed(ISSUE)
-    expect(store.openOnIssue("github", "acme/app", 7)).toBe(true)
-    expect(store.openOnIssue("github", "ACME/App", 7)).toBe(true)
-    expect(store.openOnIssue("github", "acme/app", 70)).toBe(false)
-    expect(store.openOnIssue("github", "acme/other", 7)).toBe(false)
+    expect(store.openOnIssue("github", "acme/app", 7, "coder")).toBe(true)
+    expect(store.openOnIssue("github", "ACME/App", 7, "coder")).toBe(true)
+    expect(store.openOnIssue("github", "acme/app", 70, "coder")).toBe(false)
+    expect(store.openOnIssue("github", "acme/other", 7, "coder")).toBe(false)
     homed(MR, "t2")
-    expect(store.openOnIssue("gitlab", "group/project", 3)).toBe(false)
+    expect(store.openOnIssue("gitlab", "group/project", 3, "coder")).toBe(false)
     homed("group/project#4", "t3")
-    expect(store.openOnIssue("gitlab", "group/project", 4)).toBe(true)
+    expect(store.openOnIssue("gitlab", "group/project", 4, "coder")).toBe(true)
     db.prepare("UPDATE requests SET state = 'done' WHERE id = ?").run(id)
-    expect(store.openOnIssue("github", "acme/app", 7)).toBe(false)
+    expect(store.openOnIssue("github", "acme/app", 7, "coder")).toBe(false)
+  })
+
+  it("does not count another agent's open request on the issue (#2112 review)", () => {
+    homed(ISSUE)
+    expect(store.openOnIssue("github", "acme/app", 7, "coder")).toBe(true)
+    expect(store.openOnIssue("github", "acme/app", 7, "pm-agent")).toBe(false)
   })
 })

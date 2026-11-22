@@ -714,7 +714,7 @@ export class AgentRegistry {
   /** See setTimeLimitHandoff. */
   private timeLimitHandoff?: (runIds: Array<string | undefined>, note: string) => string | null
   /** See setDueTimeGate. */
-  private openRequestOnIssue?: (provider: "github" | "gitlab", project: string, number: number) => boolean
+  private openRequestOnIssue?: (provider: "github" | "gitlab", project: string, number: number, agentId: string) => boolean
   private dueTimeGate?: (
     run: { agentId: string; channel: string; chatId: string; runIds: string[]; startedAt: number; reply: string },
     askAgent: (text: string) => Promise<{ reply?: string; error?: string }>,
@@ -1431,8 +1431,8 @@ export class AgentRegistry {
    *  session kept for the chat was started in another folder, and Claude
    *  Code keeps sessions per folder.
    *  An issue or change already in progress in the checkout (`sessionKept`:
-   *  the chat has a session to resume, or an open request has the issue as
-   *  its home) and with no worktree yet stays in the checkout (#2102 review
+   *  the chat has a session to resume, or an open request of this agent has
+   *  the issue as its home) and with no worktree yet stays in the checkout (#2102 review
    *  B5): a new worktree would start it again from the default branch. */
   private async inTaskWorktree(def: AgentDef, task: AgentTask, opts: { sessionKept?: boolean } = {}): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
     const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
@@ -1454,7 +1454,7 @@ export class AgentRegistry {
     }
     const openRequest = () => {
       if (target.kind === "change" || !target.repo || (target.source !== "github" && target.source !== "gitlab") || !/^\d+$/.test(target.id)) return false
-      try { return !!this.openRequestOnIssue?.(target.source, target.repo, Number(target.id)) } catch { return false }
+      try { return !!this.openRequestOnIssue?.(target.source, target.repo, Number(target.id), task.agentId) } catch { return false }
     }
     const before = opts.sessionKept ? "session" : openRequest() ? "open request" : null
     if (before && !(await hasTargetWorktree(target, branch, picked.dir, settings, execProcess).catch(() => false))) {
