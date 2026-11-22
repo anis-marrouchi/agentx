@@ -15,6 +15,7 @@ import { batteryReaderMissing } from "@/native/battery-reader"
 //         - { id: below-25, when: { below: 25 }, urgent: true, push: { from: DevOps, key: mac-battery-low } }
 //         - { id: below-15, when: { below: 15 }, target: coo-agent, brief: "DevOps battery watch, URGENT", fallbackPush: true }
 //       rearm: { above: 30, onAC: true }
+//       wakeRetry: { max: 3, minutes: 5 }   # retries of a held or failed wake (#2063)
 //       value: { why: "...", metric: "..." }
 //       goal: mac-health
 //
@@ -88,6 +89,12 @@ export const sensorSchema = z.object({
   rearm: z.object({
     above: z.number().int().min(1).max(100).default(30),
     onAC: z.boolean().default(true),
+  }).default({}),
+  /** A held or failed wake goes again at most `max` times per level and
+   *  stretch, no sooner than `minutes` after it was given up (#2063). */
+  wakeRetry: z.object({
+    max: z.number().int().min(0).max(10).default(3),
+    minutes: z.number().int().min(1).max(240).default(5),
   }).default({}),
   /** Why it runs and the number that proves it, as on a cron job (#1183). */
   value: cronValueSchema.optional(),

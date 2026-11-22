@@ -194,7 +194,7 @@ export class SensorRunner {
         // A dropped wake's end is not news: the engine already let it go.
         if (ctl.signal.aborted) return
         if (this.runs.get(key)?.seq === a.seq) this.runs.delete(key)
-        if (res.error) void withCfg((cfg) => failed(cfg, this.stateOf(id), a.level, a.seq, res.error!, id))
+        if (res.error) void withCfg((cfg) => failed(cfg, this.stateOf(id), a.level, a.seq, res.error!, id, this.now()))
       })
   }
 
