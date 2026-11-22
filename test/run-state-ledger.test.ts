@@ -6,6 +6,7 @@ import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { JobStore } from "../src/jobs/store"
 import { DEFAULT_STATE_WAIT_MS, recordRunState, toDeclaration } from "../src/jobs/run-state-ledger"
+import { jobStateInText } from "../src/agents/run-state"
 
 const T0 = Date.UTC(2026, 10, 14, 18, 0, 0)
 
@@ -35,6 +36,17 @@ describe("a run's state as a job declaration", () => {
     expect(toDeclaration({ state: "waiting", on: "devops" }, T0))
       .toEqual({ state: "waiting", on: "devops", until: T0 + DEFAULT_STATE_WAIT_MS })
     expect(toDeclaration({ state: "done", proof: "PR #9" }, T0)).toEqual({ state: "done", proof: "PR #9" })
+  })
+
+  it("takes the ISO time out of an until with words, not now + 1 h (#2073)", () => {
+    const run = jobStateInText("All sent.\nState: waiting — Anis's answer to card x, until 2026-11-23T12:00:00Z (card expiry)")
+    expect(run).toMatchObject({ state: "waiting", until: "2026-11-23T12:00:00Z (card expiry)" })
+    expect(toDeclaration(run!, T0)).toEqual({ state: "waiting", on: "Anis's answer to card x", until: Date.UTC(2026, 10, 23, 12) })
+  })
+
+  it("keeps the note and looks again in an hour for an until with no year (#2073)", () => {
+    expect(toDeclaration({ state: "waiting", on: "devops", until: "23 Nov 12:00Z" }, T0))
+      .toEqual({ state: "waiting", on: "devops", until: T0 + DEFAULT_STATE_WAIT_MS, note: "until 23 Nov 12:00Z" })
   })
 })
 

@@ -88,13 +88,26 @@ export function waitsOnWords(group: StallGroup, who: string): string {
 
 export const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 
+/** The first ISO date or time in a text ("2026-11-23T12:00:00Z (card expiry)"). */
+const ISO_IN_TEXT = /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?/
+
 /** A due time an agent or the owner gave: epoch ms, or an ISO date.
- *  Undefined when absent, a string when it is not a time. */
-export function parseDue(v: unknown): number | undefined | string {
+ *  Undefined when absent, a string when it is not a time. A text with
+ *  words around an ISO time gives that time (#2073). A text time in a
+ *  year before `now`'s is not a time: Date.parse reads "23 Nov 12:00Z"
+ *  as 2001, which would stall a job at once. */
+export function parseDue(v: unknown, now: number = Date.now()): number | undefined | string {
   if (v === undefined || v === null || v === "") return undefined
-  const at = typeof v === "number" ? v : typeof v === "string" ? Date.parse(v.trim()) : NaN
-  if (!Number.isFinite(at) || at <= 0) return "due must be an ISO date (2030-01-31T17:00:00Z) or epoch milliseconds"
-  return at
+  const notATime = "due must be an ISO date (2030-01-31T17:00:00Z) or epoch milliseconds"
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : notATime
+  if (typeof v !== "string") return notATime
+  const minYear = new Date(now).getUTCFullYear()
+  const ok = (t: number) => Number.isFinite(t) && t > 0 && new Date(t).getUTCFullYear() >= minYear
+  const whole = Date.parse(v.trim())
+  if (ok(whole)) return whole
+  const iso = v.match(ISO_IN_TEXT)
+  const found = iso ? Date.parse(iso[0]) : NaN
+  return ok(found) ? found : notATime
 }
 
 // ── Running the checkers from the requests check ─────────────────────────
