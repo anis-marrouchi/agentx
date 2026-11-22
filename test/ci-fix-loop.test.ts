@@ -405,7 +405,7 @@ describe("CiFixLoop", () => {
   })
 })
 
-describe("RequestStore.openOnIssue", () => {
+describe("RequestStore.newestOpenOnIssue", () => {
   it("finds the open request homed on the issue, by any of its link forms", () => {
     const cwd = process.cwd()
     closeDb()
@@ -416,10 +416,10 @@ describe("RequestStore.openOnIssue", () => {
       store.addCandidate({ id: "r1", runId: "t1", channel: "telegram", chatId: "c", sender: "anis", agentId: "coder", text: "fix it", now })
       store.progress("r1", now)
       store.setHome("r1", { kind: "issue", link: `https://github.com/${REPO}/issues/12` }, now)
-      expect(store.openOnIssue(issueHomeLinks("github", "ACME/api", 12))?.agentId).toBe("coder")
-      expect(store.openOnIssue(issueHomeLinks("github", REPO, 13))).toBeNull()
+      expect(store.newestOpenOnIssue(issueHomeLinks("github", "ACME/api", 12))?.agentId).toBe("coder")
+      expect(store.newestOpenOnIssue(issueHomeLinks("github", REPO, 13))).toBeNull()
       store.close("r1", "done", "shipped", now)
-      expect(store.openOnIssue(issueHomeLinks("github", REPO, 12))).toBeNull()
+      expect(store.newestOpenOnIssue(issueHomeLinks("github", REPO, 12))).toBeNull()
     } finally {
       closeDb()
       process.chdir(cwd)
