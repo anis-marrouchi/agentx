@@ -46,6 +46,13 @@ describe("changeSourceOf", () => {
     expect(changeSourceOf({ object_kind: "note", merge_request: { source_branch: "fix", source_project_id: 2, target_project_id: 1 } })).toEqual({ sourceBranch: "fix", sourceFork: true })
   })
 
+  it("reads a GitHub workflow run and a GitLab MR pipeline (CI fix loop)", () => {
+    const run = (head: string) => ({ repository: { full_name: "o/r" }, workflow_run: { head_branch: "feat", head_repository: { full_name: head } } })
+    expect(changeSourceOf(run("o/r"))).toEqual({ sourceBranch: "feat", sourceFork: false })
+    expect(changeSourceOf(run("someone/r"))).toEqual({ sourceBranch: "feat", sourceFork: true })
+    expect(changeSourceOf({ object_kind: "pipeline", merge_request: { source_branch: "fix", source_project_id: 1, target_project_id: 1 } })).toEqual({ sourceBranch: "fix", sourceFork: false })
+  })
+
   it("is undefined for anything else", () => {
     expect(changeSourceOf({ issue: { number: 1 } })).toBeUndefined()
     expect(changeSourceOf(undefined)).toBeUndefined()

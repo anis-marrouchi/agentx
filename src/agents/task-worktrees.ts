@@ -92,6 +92,14 @@ export function changeSourceOf(raw: unknown): { sourceBranch: string; sourceFork
     const fork = typeof head !== "string" || (typeof base === "string" && head.toLowerCase() !== base.toLowerCase())
     return { sourceBranch: pr.head.ref, sourceFork: fork }
   }
+  // A failed workflow run on a PR (the CI fix loop, #2102).
+  const run = r.workflow_run
+  if (run && typeof run.head_branch === "string" && run.head_branch) {
+    const head = run.head_repository?.full_name
+    const base = r.repository?.full_name
+    const fork = typeof head !== "string" || (typeof base === "string" && head.toLowerCase() !== base.toLowerCase())
+    return { sourceBranch: run.head_branch, sourceFork: fork }
+  }
   const mr = r.object_kind === "merge_request" ? r.object_attributes : r.merge_request
   if (mr && typeof mr.source_branch === "string" && mr.source_branch) {
     const fork = mr.source_project_id != null && mr.target_project_id != null && mr.source_project_id !== mr.target_project_id
