@@ -38,6 +38,10 @@ import { planHoldText, waitNoticeText } from "@/admission/wait-notice"
 import { sendToChat, type SendToChatOpts, type SituationTag } from "@/situations/send-to-chat"
 import type { GateDecision, SituationGate } from "@/situations/gate"
 import { situationKeyOf } from "@/situations/key"
+import { personLimitsOf } from "@/people/people"
+import { meshContextOf, meshForwardBlock, placedRefusalText } from "@/agents/mesh-safety"
+import type { RunOn } from "@/requests/store"
+import { issueOfChat, offlineNoteText, pickPreferNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
 import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
@@ -349,6 +353,17 @@ export class MessageRouter {
   }
   private hooks?: HookRegistry
   private mesh?: A2AMesh
+  /** See setPlacement (#2104). */
+  private placement?: {
+    /** The node an active workflow run on the entity is homed on: a peer
+     *  name, LOCAL_NODE for this node, or null when none is active. */
+    workflowHome?: (entity: { backend: string; id: string }) => string | null
+    /** The `runOn` of the open request homed on the issue. */
+    runOn?: (provider: "github" | "gitlab", project: string, number: number) => RunOn | null
+  }
+  /** Issues already told their node is offline, per outage (#2104 B5):
+   *  `<peer>\n<chatId>`, cleared when the peer comes back. */
+  private offlineNoted = new Set<string>()
   private serviceMatcher?: ServiceMatcher
   private business?: BusinessLayer
   private groupLog: GroupLog
@@ -520,6 +535,32 @@ export class MessageRouter {
     mesh.onPeerChange((e) => {
       if (e.delta === "recovered") void this.replayDeferred(e.peer)
     })
+  }
+
+  /** The reads the node resolver needs (#2104): the daemon wires the
+   *  workflow dispatcher's home node and the request store's `runOn`. */
+  setPlacement(placement: NonNullable<MessageRouter["placement"]>): void {
+    this.placement = placement
+  }
+
+  /** Which node a message's run goes to (#2104 B1), in one order for every
+   *  entry point: an active workflow run's home node on the entity, the
+   *  issue's `runOn`, the agent mapping's node (`msg.preferNode`), else
+   *  nothing (local, then mesh). See channels/run-on.ts. A read that fails
+   *  counts as nothing set. */
+  resolvePreferNode(msg: IncomingMessage, _agentId: string): PreferNodePick {
+    const chatId = msg.group?.id || msg.sender.id
+    let workflowHome: string | null = null
+    for (const ref of workflowEntityRefs(msg.channel, chatId)) {
+      try { workflowHome = this.placement?.workflowHome?.(ref) ?? null } catch { workflowHome = null }
+      if (workflowHome) break
+    }
+    let runOn: RunOn | null = null
+    const issue = issueOfChat(msg.channel, chatId)
+    if (issue && !workflowHome) {
+      try { runOn = this.placement?.runOn?.(issue.provider, issue.project, issue.number) ?? null } catch { runOn = null }
+    }
+    return pickPreferNode({ workflowHome, runOn, mapping: msg.preferNode })
   }
 
   setServiceMatcher(matcher: ServiceMatcher): void {
@@ -1141,13 +1182,33 @@ export class MessageRouter {
     agentId: string,
     chatId: string,
   ): Promise<void> {
-    // If preferNode is set, skip local and route directly to the specified mesh peer
-    if (msg.preferNode) {
-      this.log(`preferNode="${msg.preferNode}" — forcing mesh routing for agent "${agentId}"`)
-      const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, msg.preferNode)
+    // The node the run goes to (#2104 B1): a workflow run's home, the
+    // issue's runOn, the agent mapping. Set: skip local and route directly
+    // to that mesh peer.
+    const pick = this.resolvePreferNode(msg, agentId)
+    if (pick.node) {
+      const node = pick.node
+      this.log(`preferNode="${node}" (${pick.source}) — forcing mesh routing for agent "${agentId}"`)
+      const placed = pick.source === "runOn"
+      if (placed) {
+        // The person check first, then what the peer cannot enforce (B2):
+        // a run is refused here rather than run there without its limits.
+        if (await this.refusedForPerson(adapter, msg, agentId)) return
+        const ctx = this.buildMeshContext(msg, chatId)
+        const blocked = meshForwardBlock(agentId, undefined, personLimitsOf(this.config.people ?? [], ctx as any))
+        if (blocked) {
+          this.log(`[run-on] ${chatId} runs on "${node}": refused for ${agentId}: ${blocked.error}`)
+          const text = placedRefusalText(node)
+          await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
+          this.resolveIntent(msg, "completed", Date.now(), text)
+          return
+        }
+      }
+      const routed = await this.handleViaMeshByPeer(adapter, msg, agentId, node, { placed })
       if (!routed) {
-        this.log(`Mesh peer "${msg.preferNode}" not found or unhealthy for agent "${agentId}"`)
-        this.deferForPeer(adapter, msg, agentId, msg.preferNode)
+        this.log(`Mesh peer "${node}" not found or unhealthy for agent "${agentId}"`)
+        this.deferForPeer(adapter, msg, agentId, node)
+        if (placed) await this.noteOffline(adapter, msg, agentId, node, chatId)
       }
       return
     }
@@ -2314,6 +2375,8 @@ export class MessageRouter {
    * answered — a reply to a 40-minute-old mention is noise.
    */
   private async replayDeferred(peerName: string): Promise<void> {
+    // The outage is over: a later one is told again (#2104 B5).
+    for (const key of [...this.offlineNoted]) if (key.startsWith(`${peerName}\n`)) this.offlineNoted.delete(key)
     const queue = this.deferredByPeer.get(peerName)
     if (!queue?.length) return
     this.deferredByPeer.delete(peerName)
@@ -2335,7 +2398,9 @@ export class MessageRouter {
 
     for (const d of live) {
       try {
-        const routed = await this.handleViaMeshByPeer(d.adapter, d.msg, d.agentId, peerName)
+        // Resolved again: the issue may have been brought back meanwhile.
+        const again = this.resolvePreferNode(d.msg, d.agentId)
+        const routed = await this.handleViaMeshByPeer(d.adapter, d.msg, d.agentId, peerName, { placed: again.source === "runOn" && again.node === peerName })
         if (routed) {
           this.log(`[mesh-defer] replayed ${d.key} -> "${d.agentId}" on "${peerName}"`)
         } else {
@@ -2347,6 +2412,19 @@ export class MessageRouter {
       } catch (e: any) {
         this.log(`[mesh-defer] replay failed for ${d.key}: ${e?.message || e}`)
       }
+    }
+  }
+
+  /** One note on an issue whose runs wait for its offline node (#2104
+   *  B5), once per issue and outage. */
+  private async noteOffline(adapter: ChannelAdapter, msg: IncomingMessage, agentId: string, node: string, chatId: string): Promise<void> {
+    const key = `${node}\n${chatId}`
+    if (this.offlineNoted.has(key)) return
+    this.offlineNoted.add(key)
+    try {
+      await this.adapterSend(adapter, { channel: msg.channel, chatId, text: offlineNoteText(node), accountId: msg.accountId, agentId }, { countsAsReply: false })
+    } catch (e: any) {
+      this.log(`[run-on] offline note on ${chatId} failed: ${e?.message ?? e}`)
     }
   }
 
@@ -2369,6 +2447,7 @@ export class MessageRouter {
     msg: IncomingMessage,
     agentId: string,
     peerName: string,
+    opts: { placed?: boolean } = {},
   ): Promise<boolean> {
     if (!this.mesh) return false
     if (await this.refusedForPerson(adapter, msg, agentId)) return true
@@ -2389,8 +2468,13 @@ export class MessageRouter {
     const start = Date.now()
     this.activeMeshForwards++
     try {
+      // A run placed on the peer (#2104) says so, and leaves this node's
+      // runbook paths behind: the peer finds its own checkout, or refuses.
+      const context = opts.placed
+        ? { ...meshContextOf(this.buildMeshContext(msg, chatId)), placed: true }
+        : this.buildMeshContext(msg, chatId)
       const response = await this.mesh.sendTask(peerName, msg.text, agentId, {
-        context: this.buildMeshContext(msg, chatId),
+        context,
         replyVia: { messageId: msg.id, accountId: msg.accountId },
       })
       const duration = Date.now() - start
