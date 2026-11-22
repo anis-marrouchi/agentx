@@ -1358,6 +1358,7 @@ export class GitLabAdapter implements ChannelAdapter {
 
     // Skip bot-triggered MR updates (cascade prevention)
     if (this.isBotUser(event.user.username)) {
+      this.log(`MR !${event.object_attributes.iid} on ${event.project.path_with_namespace} "${event.object_attributes.action ?? "event"}" by bot "${event.user.username}" — skipped (cascade prevention)`)
       res.writeHead(200); res.end("ok"); return
     }
 
