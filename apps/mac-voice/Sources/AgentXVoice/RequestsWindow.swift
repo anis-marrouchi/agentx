@@ -5,7 +5,8 @@ import SwiftUI
 /// sent, beside the pill.
 ///
 /// It opens three ways. Hovering the pill for half a second opens it for
-/// as long as the pointer is on the pill or the list. A click on the mini
+/// as long as the pointer is on the pill, the list or the gap between
+/// them; a click inside it pins it like the other two ways (#2093). A click on the mini
 /// orbs or on "1 new", or ⌘⌥O, opens it until Esc or a click elsewhere,
 /// with the keyboard in it: ↑ ↓ move, Return picks, ⌘⌫ closes, Esc hides.
 /// Picking or closing a row is the app's to do (`onPick`, `onClose`). A
@@ -21,13 +22,8 @@ import SwiftUI
 /// takes the keyboard from the app in front unless the owner asked for
 /// the keyboard (a click or the shortcut).
 final class RequestsWindow: NSPanel {
-    enum Mode {
-        /// Opened by hovering the pill: goes when the pointer leaves both.
-        case hover
-        /// Opened by a click or the shortcut: stays until Esc or a click
-        /// elsewhere, and holds the keyboard.
-        case pinned
-    }
+    /// Hover, or pinned: a pinned list holds the keyboard (OpenRequests.swift).
+    typealias Mode = OpenRequests.ListMode
 
     let model = RequestsModel()
     /// Nil while the list is hidden.
@@ -101,7 +97,7 @@ final class RequestsWindow: NSPanel {
     func open(_ mode: Mode, select: Int? = nil) {
         leaveCheck?.cancel()
         leaveCheck = nil
-        if self.mode != .pinned { self.mode = mode }
+        self.mode = OpenRequests.opening(self.mode, as: mode)
         if mode == .pinned {
             model.keyboard = select != nil
             if let select { model.selected = select }
@@ -130,6 +126,17 @@ final class RequestsWindow: NSPanel {
         model.opened = nil
         model.expanded = nil
         orderOut(nil)
+    }
+
+    /// A click inside a hover list: it stays now, like one opened by a
+    /// click, and takes the keyboard so a click elsewhere or Esc closes it.
+    @MainActor
+    private func pin() {
+        guard mode == .hover else { return }
+        mode = OpenRequests.clicked(mode)
+        leaveCheck?.cancel()
+        leaveCheck = nil
+        makeKey()
     }
 
     /// An agent's row in the grouped list was picked: its rows show.
@@ -194,8 +201,7 @@ final class RequestsWindow: NSPanel {
         let check = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.mode == .hover else { return }
-                let at = NSEvent.mouseLocation
-                if self.frame.contains(at) || self.pillFrame().contains(at) { return }
+                if OpenRequests.keepsHover(pointer: NSEvent.mouseLocation, list: self.frame, pill: self.pillFrame()) { return }
                 self.dismissList()
             }
         }
@@ -228,6 +234,9 @@ final class RequestsWindow: NSPanel {
     /// answers the same keys whatever has focus inside it.
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, MainActor.assumeIsolated({ key(event) }) { return }
+        // A click in a list opened by hovering pins it (#2093), before the
+        // click picks a row or an agent and the list changes size.
+        if event.type == .leftMouseDown || event.type == .rightMouseDown { MainActor.assumeIsolated { pin() } }
         super.sendEvent(event)
     }
 

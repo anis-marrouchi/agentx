@@ -148,7 +148,7 @@ Click the AgentX icon in the menu bar, press **Command–Option–A** from any a
 | **Hold notifications** | A "don't interrupt me" switch. While ticked, agent notifications wait and the orb turns amber. Untick it to let them through |
 | **Show floating pill** | Keeps the pill on screen when idle. Off by default |
 | **Animated orb** | Lets the orb move with your voice and the answer. On by default. Untick it for a still orb |
-| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. Click the orb to open the full pill; it goes back to the orb by itself once your next turn is over. With the character it reads **Reduce to character** and takes the speech bubble away. See [reduce the pill to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb) |
+| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. Click the orb once to talk: the full pill opens where the orb is and starts listening, and goes back to the orb by itself once your turn is over. With the character it reads **Reduce to character** and takes the speech bubble away. See [reduce the pill to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb) |
 | **Hide pill** | Hides the pill and stops the voice. Greyed out when the pill isn't showing |
 | **Reset position** | Puts the pill back in the bottom-right corner |
 | **Settings…** | Opens the [settings window](#the-settings-window) (**Command–,**) |
@@ -284,7 +284,7 @@ Each row in the list shows the agent, what it is doing, the first words of your 
 | **Heard** | You have heard it. Pick it to read it again; **Listen again** plays it |
 | **Couldn't answer** | Something went wrong. Pick it to see why, and choose **Ask again** to send the same words once more |
 
-With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing.
+With the list open from the keyboard, hold **Option–Space** to talk to the agent of the row you are on. Press **Escape** to close the list. Moving the pointer away closes a list you opened by pointing, until you click in it: from your first click the list stays open, so you can pick an agent and its rows without chasing it. It then closes when you press **Escape** or click somewhere else.
 
 **Carry on with one agent.** Picking a row makes its agent the one you talk to next, and the pill says **Hold ⌥Space to continue it**. Hold **Option–Space** and say your follow-up: that agent still has your earlier question and its answer in mind. The follow-up goes in the same row, not a new one, until you close the row or talk to another agent.
 

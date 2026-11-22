@@ -155,6 +155,7 @@ Pick a row with a click, or with the keyboard:
 - **Loading:** if the daemon takes more than half a second to send the list when it opens, two grey rows show until it does.
 
   ![The list loading: two grey placeholder rows under Open requests](/screenshots/voice/requests-loading-light.png)
+- **Opened by pointing:** the list stays while the pointer is on the pill, on the list, or in the gap between them. Click anywhere in it and it stays open, like a list opened by a click: picking an agent or going back never closes it, even when the list changes size. It then closes with **Escape** or a click somewhere else.
 - To open the list only with a click or **Command–Option–O**, turn off **Open the list on hover** in [Settings › General](#general-tab).
 
 #### One row per agent
@@ -694,7 +695,7 @@ The pill can be reduced to its orb alone: a small circle with no name, no words 
 2. **Mac:** choose **Reduce to orb**. The pill becomes a circle in the middle of the bottom edge of the screen.
 3. **Mac:** drag the orb where you want it and let go. It stays there, and comes back to the same place the next time the app starts. The orb and the full pill each keep their own place.
 
-To open the full pill, click the orb once. It stays open until your next turn is over, then goes back to the orb by itself. To keep the full pill, choose **Show full pill** in the menu.
+To talk, click the orb once. The full pill opens where the orb is, its own orb over the one you clicked, and starts listening, as a click on the full pill does. It stays open until your turn is over, then goes back to the orb by itself. Dragging the pill while it is open moves the orb with it. To keep the full pill, choose **Show full pill** in the menu.
 
 Good to know:
 

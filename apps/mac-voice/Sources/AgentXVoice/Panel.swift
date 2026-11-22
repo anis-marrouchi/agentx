@@ -163,10 +163,11 @@ final class Panel: NSPanel {
             let now = NSEvent.mouseLocation
             let moved = hypot(now.x - start.x, now.y - start.y)
             let onRow = convertToScreen(row.convert(row.bounds, to: nil)).contains(start)
-            // Reduced, a click opens the pill; it does not start talking.
-            // On the mini orbs or "1 new", it opens the open-requests list.
+            // Reduced, one click opens the pill over the orb and talks,
+            // like a click on the full pill (#2092). On the mini orbs or
+            // "1 new", it opens the open-requests list.
             if moved < 4 && onRow {
-                if reduced { MainActor.assumeIsolated { open(clicked: true) } }
+                if reduced { MainActor.assumeIsolated { open(clicked: true) }; onClick?() }
                 else if onListPart(start) { onOpenList?() }
                 else { onClick?() }
             }
@@ -432,6 +433,15 @@ final class Panel: NSPanel {
         }
         let screens = NSScreen.screens.map(\.visibleFrame)
         let fallback = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+        // Open over the chosen orb: the pill grows from where the orb is,
+        // not from the pill's own place (#2092).
+        if form.chosen && !reduced {
+            let orb = PillPlacement.clamp(saved: Config.orbOrigin, size: PillPlacement.orbSize,
+                                          screens: screens, fallback: fallback, rest: PillPlacement.orbOrigin)
+            place(PillPlacement.clamp(saved: PillPlacement.pill(atOrb: orb), size: frame.size,
+                                      screens: screens, fallback: fallback))
+            return
+        }
         place(PillPlacement.clamp(saved: reduced ? Config.orbOrigin : Config.pillOrigin, size: frame.size,
                                   screens: screens, fallback: fallback,
                                   rest: reduced ? PillPlacement.orbOrigin : PillPlacement.defaultOrigin))
@@ -444,7 +454,7 @@ final class Panel: NSPanel {
     @MainActor
     func resetPosition() {
         guard bubble == nil else { return }
-        if reduced { Config.orbOrigin = nil } else { Config.pillOrigin = nil }
+        if reduced || form.chosen { Config.orbOrigin = nil } else { Config.pillOrigin = nil }
         restorePosition()
     }
 
@@ -553,7 +563,10 @@ final class Panel: NSPanel {
         MainActor.assumeIsolated {
             guard placing == 0 else { return }
             if reduced { Config.orbOrigin = frame.origin; return }
-            Config.pillOrigin = expanded ? collapsedFrame().origin : frame.origin
+            let origin = expanded ? collapsedFrame().origin : frame.origin
+            // Open over the orb, a drag moves the orb with it (#2092).
+            if form.chosen { Config.orbOrigin = PillPlacement.orb(atPill: origin); return }
+            Config.pillOrigin = origin
         }
     }
 
