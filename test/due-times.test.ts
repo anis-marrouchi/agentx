@@ -60,8 +60,11 @@ function deps(mode: DueTimeMode, now = T0, capacity = 4): RequestsApiDeps {
   }
 }
 
+// Each promise its own words: the same words again within minutes are a
+// retry and give back the first one (#2078).
+let promiseN = 0
 function promise(mode: DueTimeMode, body: Record<string, unknown>, now = T0) {
-  return handleRequestsApi("POST", "/requests", { agentId: "writer", action: "promise", owedTo: "owner", text: "Write the summary", ...body }, deps(mode, now))
+  return handleRequestsApi("POST", "/requests", { agentId: "writer", action: "promise", owedTo: "owner", text: `Write the summary ${++promiseN}`, ...body }, deps(mode, now))
 }
 
 /** An owner's request to `agent`, waiting for its accept. */
