@@ -38,11 +38,16 @@ export function agentsOf(configPath?: string): Array<{ id: string; name: string 
 const list = (v: unknown): string[] | undefined =>
   typeof v === "string" ? v.split(",").map((x) => x.trim()).filter(Boolean) : undefined
 
+/** The inbox, and the longest reply kept for this one call: the Diff view's
+ *  batch of line comments (#2102, DIFF_BATCH_MAX) passes its own. Unset:
+ *  the store's TEXT_MAX. Never read from the request body. */
+export type PanelContext = InboxContext & { textMax?: number }
+
 export async function handleRequestsPanel(
   method: string,
   path: string,
   body: Record<string, unknown>,
-  ctx: InboxContext,
+  ctx: PanelContext,
 ): Promise<{ status: number; body: unknown }> {
   try {
     return await route(method, path, body, ctx)
@@ -55,7 +60,7 @@ async function route(
   method: string,
   path: string,
   body: Record<string, unknown>,
-  ctx: InboxContext,
+  ctx: PanelContext,
 ): Promise<{ status: number; body: unknown }> {
   if (method === "GET" && path === REQUESTS_PANEL_PREFIX) {
     const store = requestStoreFor(ctx)
@@ -85,7 +90,7 @@ async function route(
     if (!readRequestSettings(ctx.configPath).enabled) {
       return { status: 409, body: { error: "Requests are off, so nothing would tell the agent. Turn them on in Settings › Requests." } }
     }
-    if (!store.handOff(id, agentId, text, ctx.now ?? Date.now())) return { status: 409, body: { error: `${id} is already closed` } }
+    if (!store.handOff(id, agentId, text, ctx.now ?? Date.now(), ctx.textMax)) return { status: 409, body: { error: `${id} is already closed` } }
     const who = agent?.name ?? agentId
     return { status: 200, body: { ok: true, message: act === "reply" ? `Reply sent: ${who} will go on with ${id}` : `${who} has ${id} now and will be told within a minute` } }
   }
