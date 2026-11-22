@@ -16,16 +16,19 @@ import type { ExecFn } from "./spec-tests"
 //
 // A pull request or merge request task (#2102) runs on the change's source
 // branch: in the worktree that already has it checked out (most often the
-// issue worktree the agent opened it from), else in a new worktree
-// `pr-<n>` / `mr-<n>` tracking `origin/<branch>`. A branch is never checked
-// out twice. The source branch comes from the webhook payload
+// issue worktree the agent opened it from, or the checkout itself when it
+// is on that branch), else in a new worktree `pr-<n>` / `mr-<n>` tracking
+// `origin/<branch>`. A branch is never checked out twice. The source branch comes from the webhook payload
 // (changeSourceOf); when it is unknown, or the change comes from a fork,
 // the task runs in the checkout. Worktrees untouched for
 // `maxAgeDays` are removed when they hold no uncommitted change; their
 // branches are kept, since they may carry pushed work.
 //
-// On by default; it applies only when a checkout whose origin is the
-// issue's repository is found (pickCheckout). See daemon/config.ts
+// Off by default: coding agents turn it on per agent (#2102 review B4),
+// and it applies only when a checkout whose origin is the issue's
+// repository is found (pickCheckout). An issue already in progress when
+// it is turned on (a kept session, an open request) stays in the checkout
+// until it ends (B5, AgentRegistry.inTaskWorktree). See daemon/config.ts
 // (`agents.<id>.worktrees`).
 
 /** `agents.<id>.worktrees` (daemon/config.ts). */
@@ -39,7 +42,7 @@ export interface TaskWorktreeSettings {
   maxAgeDays: number
 }
 
-export const TASK_WORKTREE_DEFAULTS: TaskWorktreeSettings = { enabled: true, maxAgeDays: 14 }
+export const TASK_WORKTREE_DEFAULTS: TaskWorktreeSettings = { enabled: false, maxAgeDays: 14 }
 
 /** The issue, pull request or merge request a task is for. `repo` is set
  *  for a forge issue or change, whose checkout must have that repository
@@ -153,6 +156,9 @@ export interface TaskWorktree {
    *  (most often the issue's), so a session kept for its chat was started
    *  in another folder. */
   adopted?: boolean
+  /** True when a change task runs in the checkout itself, which already
+   *  has the source branch checked out. */
+  inCheckout?: boolean
 }
 
 export interface WorktreeDeps {
@@ -163,6 +169,26 @@ export interface WorktreeDeps {
 
 const short = (s: string) => s.trim().slice(0, 300)
 
+function issueWorktreeDir(target: WorktreeTarget, checkout: string, settings: Pick<TaskWorktreeSettings, "root">): string {
+  return join(worktreeRoot(checkout, settings), worktreeBranch(target).replace(/^agentx\//, "").replace(/[^A-Za-z0-9._-]+/g, "-"))
+}
+
+function changeWorktreeDir(target: WorktreeTarget, checkout: string, settings: Pick<TaskWorktreeSettings, "root">): string {
+  return join(worktreeRoot(checkout, settings), `${target.source === "gitlab" ? "mr" : "pr"}-${target.id}`)
+}
+
+/** Whether a task on the target would find a folder already set up for
+ *  it, rather than a new worktree: the issue's worktree, or for a change
+ *  its `pr-<n>` / `mr-<n>` worktree or any folder of the checkout
+ *  (the checkout included) that has `branch` checked out. Makes nothing. */
+export async function hasTargetWorktree(target: WorktreeTarget, branch: string | undefined, checkout: string, settings: Pick<TaskWorktreeSettings, "root">, exec: ExecFn): Promise<boolean> {
+  if (target.kind !== "change") return existsSync(join(issueWorktreeDir(target, checkout, settings), ".git"))
+  if (existsSync(join(changeWorktreeDir(target, checkout, settings), ".git"))) return true
+  if (!branch) return false
+  const list = await exec("git", ["worktree", "list", "--porcelain"], { cwd: checkout, timeoutMs: 60_000 })
+  return list.code === 0 && !!worktreeHolding(list.stdout, branch)
+}
+
 /** Makes (or finds) the worktree for one issue. Never switches, resets or
  *  deletes anything in the checkout: the branch is created only when it
  *  does not exist yet, from the remote branch of the same name when there
@@ -171,7 +197,7 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
   const git = (args: string[], cwd: string) => deps.exec("git", args, { cwd, timeoutMs: 120_000 })
   const branch = worktreeBranch(target)
   const root = worktreeRoot(checkout, settings)
-  const dir = join(root, branch.replace(/^agentx\//, "").replace(/[^A-Za-z0-9._-]+/g, "-"))
+  const dir = issueWorktreeDir(target, checkout, settings)
 
   if (existsSync(join(dir, ".git"))) {
     const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], dir)
@@ -208,7 +234,7 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
 
 /** Makes (or finds) the worktree for a pull or merge request, on its
  *  source branch `branch`. A worktree of the checkout that already has the
- *  branch checked out is reused; else one is added under the root, on the
+ *  branch checked out (the checkout itself too) is reused; else one is added under the root, on the
  *  local branch when there is one, else on a new local branch tracking
  *  `origin/<branch>`. Never checks a branch out twice, and never switches,
  *  resets or deletes anything in the checkout. */
@@ -216,7 +242,7 @@ export async function prepareChangeWorktree(target: WorktreeTarget, branch: stri
   const git = (args: string[], cwd: string) => deps.exec("git", args, { cwd, timeoutMs: 120_000 })
   const change = target.source === "gitlab" ? "merge request" : "pull request"
   const root = worktreeRoot(checkout, settings)
-  const dir = join(root, `${target.source === "gitlab" ? "mr" : "pr"}-${target.id}`)
+  const dir = changeWorktreeDir(target, checkout, settings)
 
   const fetched = await git(["fetch", "origin", branch], checkout)
   if (fetched.code !== 0) deps.log?.(`[worktrees] fetch of ${branch} in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
@@ -226,7 +252,9 @@ export async function prepareChangeWorktree(target: WorktreeTarget, branch: stri
   if (list.code !== 0) return { error: `git worktree list failed in ${checkout}: ${short(list.stderr)}` }
   const holder = worktreeHolding(list.stdout, branch)
   if (holder) {
-    if (samePath(holder, checkout)) return { error: `${branch} is checked out in ${checkout} itself` }
+    // The checkout itself is on the branch: work there, never check the
+    // branch out a second time.
+    if (samePath(holder, checkout)) return { dir: checkout, branch, checkout, reused: true, change, inCheckout: true }
     if (samePath(holder, dir)) {
       touch(dir, deps.now)
       return { dir, branch, checkout, reused: true, change }
@@ -304,18 +332,25 @@ export async function pruneTaskWorktrees(checkout: string, settings: TaskWorktre
   return removed
 }
 
-/** Told to the agent with the task, so it commits on the right branch. */
-export function worktreeInstructions(wt: TaskWorktree): string {
+/** Told to the agent with the task, so it commits on the right branch.
+ *  `agentId`: the marker it ends its PR/MR bodies with, by which the CI
+ *  fix loop finds the change's agent (#2102). */
+export function worktreeInstructions(wt: TaskWorktree, agentId: string): string {
+  const marker = `End every pull request or merge request description you write with the line \`<!-- agentx:${agentId} -->\`: that is how a failed CI run on it finds you.`
   if (wt.change) {
     return [
-      `You are working in a git worktree on this ${wt.change}'s branch: ${wt.dir}, on the branch \`${wt.branch}\`.`,
+      wt.inCheckout
+        ? `You are working in ${wt.dir}, which has this ${wt.change}'s branch \`${wt.branch}\` checked out.`
+        : `You are working in a git worktree on this ${wt.change}'s branch: ${wt.dir}, on the branch \`${wt.branch}\`.`,
       `Make your changes there, commit them on \`${wt.branch}\` and push to that branch to update the ${wt.change}; do not open a new one.`,
-      `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
+      wt.inCheckout ? "Do not switch branches." : `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
+      marker,
     ].join(" ")
   }
   return [
     `You are working in a git worktree of your own for this issue: ${wt.dir}, on the branch \`${wt.branch}\`.`,
     `Make your changes there, commit them on \`${wt.branch}\`, push that branch, and open the pull request (or merge request) from it.`,
     `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
+    marker,
   ].join(" ")
 }

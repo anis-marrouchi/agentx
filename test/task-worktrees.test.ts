@@ -86,12 +86,12 @@ describe("names and paths", () => {
     expect(worktreeRoot("/srv/code/api", { root: "/var/wt" })).toBe("/var/wt")
   })
 
-  it("is on by default in the agent config (#2102)", () => {
+  it("is off by default in the agent config, on per agent (#2102 review B4)", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { coder: { name: "Coder", tier: "claude-code", workspace: "/tmp/x" } } })
-    expect(cfg.agents.coder.worktrees).toEqual({ enabled: true, maxAgeDays: 14 })
-    expect(TASK_WORKTREE_DEFAULTS.enabled).toBe(true)
-    const off = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { coder: { name: "Coder", tier: "claude-code", workspace: "/tmp/x", worktrees: { enabled: false } } } })
-    expect(off.agents.coder.worktrees.enabled).toBe(false)
+    expect(cfg.agents.coder.worktrees).toEqual({ enabled: false, maxAgeDays: 14 })
+    expect(TASK_WORKTREE_DEFAULTS.enabled).toBe(false)
+    const on = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, agents: { coder: { name: "Coder", tier: "claude-code", workspace: "/tmp/x", worktrees: { enabled: true } } } })
+    expect(on.agents.coder.worktrees.enabled).toBe(true)
   })
 
   it("finds the worktree holding a branch", () => {
@@ -182,10 +182,12 @@ describe("prepareTaskWorktree (real git)", () => {
   it("tells the agent where it works", async () => {
     const wt = await prepareTaskWorktree(target, checkout, settings, { exec: execProcess })
     if ("error" in wt) throw new Error(wt.error)
-    const text = worktreeInstructions(wt)
+    const text = worktreeInstructions(wt, "coder-agent")
     expect(text).toContain(wt.dir)
     expect(text).toContain("`agentx/issue-12`")
     expect(text).toContain(checkout)
+    // The CI fix loop finds the PR's agent by this marker (#2102 review B2).
+    expect(text).toContain("<!-- agentx:coder-agent -->")
   })
 })
 
@@ -195,7 +197,7 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
   let checkout: string
   let repo: string
   const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" } }).trim()
-  const settings = { ...TASK_WORKTREE_DEFAULTS }
+  const settings = { ...TASK_WORKTREE_DEFAULTS, enabled: true }
   const prevCwd = process.cwd()
 
   beforeEach(() => {
@@ -236,9 +238,10 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
     if ("error" in wt) throw new Error(wt.error)
     expect(realpathSync(wt.dir)).toBe(realpathSync(issue.dir))
     expect(existsSync(join(base, ".agentx-worktrees", "api", "pr-40"))).toBe(false)
-    const text = worktreeInstructions(wt)
+    const text = worktreeInstructions(wt, "coder")
     expect(text).toContain("pull request")
     expect(text).toContain("push to that branch")
+    expect(text).toContain("<!-- agentx:coder -->")
   })
 
   it("adds a worktree tracking origin/<branch> when none has it", async () => {
@@ -263,20 +266,26 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
     expect(git(wt.dir, "rev-parse", "--abbrev-ref", "HEAD")).toBe("feat/login")
   })
 
-  it("will not check out the branch the checkout itself is on", async () => {
+  it("works in the checkout itself when it is on the source branch", async () => {
     git(checkout, "checkout", "-q", "-b", "feat/login", "origin/feat/login")
     const wt = await prepareChangeWorktree({ source: "github", repo, id: "9", kind: "change" }, "feat/login", checkout, settings, { exec: execProcess })
-    expect(wt).toHaveProperty("error")
+    if ("error" in wt) throw new Error(wt.error)
+    expect(wt).toMatchObject({ dir: checkout, branch: "feat/login", reused: true, inCheckout: true })
+    expect(existsSync(join(base, ".agentx-worktrees", "api", "pr-9"))).toBe(false)
+    const text = worktreeInstructions(wt, "coder")
+    expect(text).toContain("checked out")
+    expect(text).not.toContain("do not edit")
   })
 
   describe("in the registry", () => {
-    const run = async (chatId: string, context: Record<string, unknown>, worktrees?: Record<string, unknown>) => {
+    const run = async (chatId: string, context: Record<string, unknown>, worktrees: Record<string, unknown> = { enabled: true }, opts: { sessionKept?: boolean; openRequest?: (p: string, project: string, n: number) => boolean } = {}) => {
       const lines: string[] = []
       const config = daemonConfigSchema.parse({ jobState: { enabled: false }, node: { id: "t", name: "t" }, agents: { coder: { name: "Coder", tier: "claude-code", workspace: checkout } } })
       const r = new AgentRegistry(config, (...a: unknown[]) => lines.push(a.join(" ")))
-      const def = { ...config.agents.coder, ...(worktrees ? { worktrees: { ...config.agents.coder.worktrees, ...worktrees } } : {}) }
+      if (opts.openRequest) r.setOpenRequestOnIssue(opts.openRequest)
+      const def = { ...config.agents.coder, worktrees: { ...config.agents.coder.worktrees, ...worktrees } }
       const task = { agentId: "coder", message: "hi", context: { channel: "gitlab", chatId, ...context } }
-      const out = await (r as any).inTaskWorktree(def, task)
+      const out = await (r as any).inTaskWorktree(def, task, { sessionKept: opts.sessionKept })
       return { out, task, lines }
     }
 
@@ -309,6 +318,54 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
       const { out, task } = await run(`${repo}:merge_request:5`, { sourceBranch: "feat/login" }, { enabled: false })
       expect(out.task).toBe(task)
       expect(existsSync(join(base, ".agentx-worktrees"))).toBe(false)
+    })
+
+    it("makes no worktree by default (#2102 review B4)", async () => {
+      const { out, task } = await run(`${repo}:issue:3`, {}, {})
+      expect(out.task).toBe(task)
+      expect(existsSync(join(base, ".agentx-worktrees"))).toBe(false)
+    })
+
+    it("gives a new issue a worktree and tells the agent its marker", async () => {
+      const { out, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: () => false })
+      expect(out.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-3"))
+      expect(out.fresh).toBe(true)
+      expect(out.task.systemPromptAppend).toContain("<!-- agentx:coder -->")
+      expect(lines.join("\n")).toMatch(/\[worktrees\] coder .*: created .* on agentx\/issue-3/)
+    })
+
+    it("keeps an issue with a kept session and no worktree yet in the checkout (#2102 review B5)", async () => {
+      const { out, task, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { sessionKept: true })
+      expect(out.task).toBe(task)
+      expect(out.fresh).toBeUndefined()
+      expect(existsSync(join(base, ".agentx-worktrees"))).toBe(false)
+      expect(lines.join("\n")).toContain("running in the workspace: in progress before worktrees (session)")
+    })
+
+    it("keeps an issue with an open request in the checkout", async () => {
+      const asked: unknown[] = []
+      const { out, task, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: (...a) => { asked.push(a); return true } })
+      expect(out.task).toBe(task)
+      expect(asked).toEqual([["gitlab", repo, 3]])
+      expect(lines.join("\n")).toContain("in progress before worktrees (open request)")
+    })
+
+    it("still reuses an existing worktree when the chat has a session", async () => {
+      const first = await run(`${repo}:issue:3`, {})
+      expect(first.out.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-3"))
+      const { out, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { sessionKept: true, openRequest: () => true })
+      expect(out.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-3"))
+      expect(out.fresh).toBe(false)
+      expect(lines.join("\n")).toContain("reusing")
+    })
+
+    it("runs a merge request whose branch the checkout has checked out in the checkout", async () => {
+      git(checkout, "checkout", "-q", "-b", "feat/login", "origin/feat/login")
+      const { out, lines } = await run(`${repo}:merge_request:5`, { sourceBranch: "feat/login", sourceFork: false }, { enabled: true }, { sessionKept: true })
+      expect(out.task.cwd).toBe(checkout)
+      expect(out.fresh).toBe(false)
+      expect(existsSync(join(base, ".agentx-worktrees", "api", "mr-5"))).toBe(false)
+      expect(lines.join("\n")).toContain("reusing")
     })
   })
 })

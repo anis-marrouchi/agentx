@@ -102,7 +102,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
-import { TASK_WORKTREE_DEFAULTS, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
+import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -714,6 +714,7 @@ export class AgentRegistry {
   /** See setTimeLimitHandoff. */
   private timeLimitHandoff?: (runIds: Array<string | undefined>, note: string) => string | null
   /** See setDueTimeGate. */
+  private openRequestOnIssue?: (provider: "github" | "gitlab", project: string, number: number) => boolean
   private dueTimeGate?: (
     run: { agentId: string; channel: string; chatId: string; runIds: string[]; startedAt: number; reply: string },
     askAgent: (text: string) => Promise<{ reply?: string; error?: string }>,
@@ -968,6 +969,13 @@ export class AgentRegistry {
    *  to ask the agent one question in the same session. Unset: no check. */
   setDueTimeGate(fn: AgentRegistry["dueTimeGate"]): void {
     this.dueTimeGate = fn
+  }
+
+  /** Wire the open-request lookup by issue home (requests/store.ts): an
+   *  issue with an open request when worktrees are turned on stays in the
+   *  checkout (#2102). Unset: no issue counts as in progress by request. */
+  setOpenRequestOnIssue(fn: AgentRegistry["openRequestOnIssue"]): void {
+    this.openRequestOnIssue = fn
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1421,8 +1429,12 @@ export class AgentRegistry {
    *  that cannot be made is logged, and the task runs in the workspace.
    *  `fresh`: the worktree is new (or taken over from another chat), so a
    *  session kept for the chat was started in another folder, and Claude
-   *  Code keeps sessions per folder. */
-  private async inTaskWorktree(def: AgentDef, task: AgentTask): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
+   *  Code keeps sessions per folder.
+   *  An issue or change already in progress in the checkout (`sessionKept`:
+   *  the chat has a session to resume, or an open request has the issue as
+   *  its home) and with no worktree yet stays in the checkout (#2102 review
+   *  B5): a new worktree would start it again from the default branch. */
+  private async inTaskWorktree(def: AgentDef, task: AgentTask, opts: { sessionKept?: boolean } = {}): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
     const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
     if (!settings.enabled) return { def, task }
     const target = worktreeTarget(task.context?.channel, task.context?.chatId)
@@ -1438,6 +1450,15 @@ export class AgentRegistry {
     const branch = task.context?.sourceBranch
     if (target.kind === "change" && (task.context?.sourceFork || !branch)) {
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${task.context?.sourceFork ? `fork (${branch ?? "unknown branch"} is in another repository)` : "source branch unknown"}`)
+      return { def, task }
+    }
+    const openRequest = () => {
+      if (target.kind === "change" || !target.repo || (target.source !== "github" && target.source !== "gitlab") || !/^\d+$/.test(target.id)) return false
+      try { return !!this.openRequestOnIssue?.(target.source, target.repo, Number(target.id)) } catch { return false }
+    }
+    const before = opts.sessionKept ? "session" : openRequest() ? "open request" : null
+    if (before && !(await hasTargetWorktree(target, branch, picked.dir, settings, execProcess).catch(() => false))) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: in progress before worktrees (${before})`)
       return { def, task }
     }
     const key = `${task.agentId}:${picked.dir}:${label}`
@@ -1468,7 +1489,7 @@ export class AgentRegistry {
         .then((gone) => { if (gone.length) this.log(`[worktrees] removed ${gone.length} unused worktree(s): ${gone.join(", ")}`) })
         .catch((e: any) => this.log(`[worktrees] prune failed: ${e?.message || e}`))
     }
-    const note = worktreeInstructions(wt)
+    const note = worktreeInstructions(wt, task.agentId)
     return {
       fresh: !wt.reused || !!wt.adopted,
       // A persistent process keeps the folder it was started in.
@@ -4045,7 +4066,7 @@ export class AgentRegistry {
           const gated = runDispatchGates()
           if (gated) return gated
         }
-        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt)
+        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt, { sessionKept: !!resumeSessionId })
         // Claude Code's auto-memory is not cut: it lists its newest notes
         // last, and Claude Code's own 200-line rule is kept until the hand
         // trim of #2002 step 4 (review of PR #2035).

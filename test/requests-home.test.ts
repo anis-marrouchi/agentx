@@ -449,3 +449,19 @@ describe("hand-off agents from the handoffs table (#1520, #1861)", () => {
     expect(db.prepare("SELECT agent FROM request_links WHERE ref = 'dlg-1'").get()).toEqual({ agent: "devops" })
   })
 })
+
+describe("an open request on an issue (#2102 worktrees)", () => {
+  it("finds an open request by its issue home, address or short ref, and not a closed one or a merge request", () => {
+    const id = homed(ISSUE)
+    expect(store.openOnIssue("github", "acme/app", 7)).toBe(true)
+    expect(store.openOnIssue("github", "ACME/App", 7)).toBe(true)
+    expect(store.openOnIssue("github", "acme/app", 70)).toBe(false)
+    expect(store.openOnIssue("github", "acme/other", 7)).toBe(false)
+    homed(MR, "t2")
+    expect(store.openOnIssue("gitlab", "group/project", 3)).toBe(false)
+    homed("group/project#4", "t3")
+    expect(store.openOnIssue("gitlab", "group/project", 4)).toBe(true)
+    db.prepare("UPDATE requests SET state = 'done' WHERE id = ?").run(id)
+    expect(store.openOnIssue("github", "acme/app", 7)).toBe(false)
+  })
+})

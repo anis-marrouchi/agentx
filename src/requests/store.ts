@@ -3,6 +3,7 @@ import { extractUiDirective } from "@/channels/ui-directive"
 import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
+import { parseRef } from "./checkers/issue"
 import type { Proof } from "./promise"
 import type { QaFilter, QaRecord, QaVerdict } from "./qa"
 import type { GoalRequest, GoalSummary, RequestGoal } from "./goals"
@@ -834,6 +835,22 @@ export class RequestStore {
       "SELECT r.* FROM requests r JOIN request_links l ON l.request_id = r.id WHERE l.kind = ? AND l.ref = ? AND r.state != 'job'",
     ).get(kind, ref)
     return row ? toRecord(row) : null
+  }
+
+  /** Whether an open request has this forge issue as a home (#2102):
+   *  its latest home or any issue link, by address or short ref. Pull and
+   *  merge request homes do not count. */
+  openOnIssue(provider: "github" | "gitlab", project: string, number: number): boolean {
+    const like = `%${number}%`
+    const rows = this.db.prepare(
+      `SELECT home_link AS ref FROM requests WHERE home_kind = 'issue' AND home_link LIKE ? AND state IN (${placeholders(OPEN_STATES.length)})
+       UNION SELECT l.ref AS ref FROM request_links l JOIN requests r ON r.id = l.request_id
+         WHERE l.kind = 'issue' AND l.ref LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})`,
+    ).all(like, ...OPEN_STATES, like, ...OPEN_STATES) as Array<{ ref: string }>
+    return rows.some((row) => {
+      const ref = parseRef(provider, row.ref.trim())
+      return !!ref && !ref.mr && ref.number === number && ref.project.toLowerCase() === project.toLowerCase()
+    })
   }
 
   /** `agent`: who a delegation went to (#1522). */
