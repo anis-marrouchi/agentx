@@ -284,6 +284,25 @@ check(roomy.request(heldID)?.held == nil, "an answer clears it")
 check(OpenRequests.askTimeout >= 3600 + 600, "the app waits longer than the daemon's longest queue wait")
 check(OpenRequests.heldNote(name: "Writer") == "Writer is waiting for room on this Mac · the answer will come", "the pill's line for a held turn")
 
+// --- The list stays open while picking (#2093) ---
+
+check(OpenRequests.opening(nil, as: .hover) == .hover, "hovering opens a hover list")
+check(OpenRequests.opening(.pinned, as: .hover) == .pinned, "hovering never unpins a pinned list")
+check(OpenRequests.opening(.hover, as: .pinned) == .pinned, "a click or ⌘⌥O pins a hover list")
+check(OpenRequests.clicked(.hover) == .pinned, "a click inside a hover list pins it, so picking an agent never closes it")
+check(OpenRequests.clicked(.pinned) == .pinned, "a pinned list stays pinned")
+check(OpenRequests.clicked(nil) == nil, "a click on a hidden list opens nothing")
+let pillBox = CGRect(x: 1000, y: 100, width: 284, height: 54)
+let listBox = CGRect(x: 924, y: 162, width: 360, height: 300)
+check(OpenRequests.keepsHover(pointer: CGPoint(x: 1100, y: 158), list: listBox, pill: pillBox),
+      "in the 8 pt gap between pill and list: the hover list stays")
+check(OpenRequests.keepsHover(pointer: CGPoint(x: 1100, y: 120), list: listBox, pill: pillBox)
+        && OpenRequests.keepsHover(pointer: CGPoint(x: 1000, y: 400), list: listBox, pill: pillBox),
+      "on the pill or on the list: it stays")
+check(!OpenRequests.keepsHover(pointer: CGPoint(x: 600, y: 300), list: listBox, pill: pillBox)
+        && !OpenRequests.keepsHover(pointer: CGPoint(x: 1100, y: 500), list: listBox, pill: pillBox),
+      "away from both: it goes")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)

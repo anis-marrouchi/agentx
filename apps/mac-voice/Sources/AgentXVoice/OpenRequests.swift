@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The open-requests list (#1455): every question the widget has sent, from
@@ -551,5 +552,35 @@ struct OpenRequests {
     /// answer not heard yet, else the newest, next to the pill.
     var firstSelection: Int? {
         requests.first(where: \.isNew)?.id ?? requests.last?.id
+    }
+
+    // MARK: How the list stays open (#2093)
+
+    /// How the list was opened.
+    enum ListMode: Equatable {
+        /// By hovering the pill: goes when the pointer leaves both.
+        case hover
+        /// By a click, the shortcut, or a click inside a hover list: stays
+        /// until a row is played, Esc, or a click elsewhere.
+        case pinned
+    }
+
+    /// The list asked to open as `asked` while it is `current` (nil:
+    /// hidden). Hovering never unpins a pinned list.
+    static func opening(_ current: ListMode?, as asked: ListMode) -> ListMode {
+        current == .pinned ? .pinned : asked
+    }
+
+    /// A click inside the list: an open list is pinned from then on, so
+    /// picking an agent, going back, or the list changing size under the
+    /// pointer never closes it.
+    static func clicked(_ current: ListMode?) -> ListMode? {
+        current == nil ? nil : .pinned
+    }
+
+    /// A hover list stays while the pointer is on the pill, on the list,
+    /// or between them: the box around both covers the gap.
+    static func keepsHover(pointer: CGPoint, list: CGRect, pill: CGRect) -> Bool {
+        list.union(pill).contains(pointer)
     }
 }
