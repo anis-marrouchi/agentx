@@ -859,6 +859,21 @@ export class RequestStore {
     })
   }
 
+  /** The newest open request homed on an issue named by one of `links`,
+   *  compared without case: the CI fix loop's owner of an `agentx/issue-<n>`
+   *  branch (#2102). Never a job row. */
+  newestOpenOnIssue(links: readonly string[]): RequestRecord | null {
+    if (links.length === 0) return null
+    const refs = links.map((l) => l.toLowerCase())
+    const row = this.db.prepare(
+      `SELECT r.* FROM requests r WHERE r.state IN (${placeholders(OPEN_STATES.length)})
+         AND (lower(r.home_link) IN (${placeholders(refs.length)})
+           OR r.id IN (SELECT request_id FROM request_links WHERE kind = 'issue' AND lower(ref) IN (${placeholders(refs.length)})))
+         ORDER BY r.updated_at DESC, r.rowid DESC LIMIT 1`,
+    ).get(...OPEN_STATES, ...refs, ...refs)
+    return row ? toRecord(row) : null
+  }
+
   /** `agent`: who a delegation went to (#1522). */
   link(requestId: string, kind: LinkKind, ref: string, now: number, agent: string | null = null): void {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, agent) VALUES (?, ?, ?, ?, ?)").run(requestId, kind, ref, now, agent)
