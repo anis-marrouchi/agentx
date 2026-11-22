@@ -2,7 +2,7 @@
 
 First complete the [desktop prerequisites](../requirements.md#desktop-assistant), choose a [speech backend](../requirements.md#voice-input-and-spoken-replies), and review [macOS permissions](../requirements.md#macos-permissions). Each section includes setup steps and official help.
 
-AgentX Voice is a menu-bar assistant for your Mac with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small floating pill and is spoken aloud. The daemon and the selected agent do the work. macOS lists the app as **AgentX Desktop**, and some pages call it the *desktop assistant*: both mean AgentX Voice. For a gentler start, read the [AgentX Voice guide](../guides/agentx-voice.md).
+AgentX Voice is a menu-bar assistant for your Mac with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small floating pill and is spoken aloud. The daemon and the selected agent do the work. Some pages call it the *desktop assistant*: it means AgentX Voice. Older installs named the app **AgentX Desktop**. For a gentler start, read the [AgentX Voice guide](../guides/agentx-voice.md).
 
 ## Install and activate
 
@@ -16,7 +16,7 @@ You need a Mac with Apple Silicon and macOS 14 or newer, a running daemon (the A
    ```sh
    agentx desktop install
    ```
-   This builds and installs the app into `~/Applications/AgentX Desktop.app` and its helper into `~/Applications/AgentX Helper.app`, remembers the daemon address, and starts the app at login. If Apple's command-line tools are missing, it tells you how to install them.
+   This builds and installs the app into `~/Applications/AgentX Voice.app` and its helper into `~/Applications/AgentX Helper.app`, remembers the daemon address, and starts the app at login. If Apple's command-line tools are missing, it tells you how to install them.
 
    There is only ever one login item. If an earlier install, or `apps/mac-voice/install.sh`, already made one under another `…agentx.voice…` name, the installer keeps that name and points it at the new app, and removes any other login item that starts the voice app. `--dry-run` shows the login item it will use and the ones it will remove. `agentx desktop status`, `start` and `stop` use the same login item.
 3. **Mac:** when macOS asks, allow the microphone.
@@ -900,7 +900,7 @@ To download the models ahead of time instead:
 
 1. **Terminal:** run
    ```sh
-   ~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local fetch all
+   ~/Applications/"AgentX Voice.app"/Contents/MacOS/agentx-voice-local fetch all
    ```
    It prints its progress and `parakeet: installed in …` when done.
 2. **Terminal:** run the same program with `status`. Both models show `installed`.
@@ -1533,7 +1533,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 22. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
 23. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
 24. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
-25. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
+25. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Voice.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
 26. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
 27. **Mac:** ask "Give me three links about macOS design.", then pick its answer in the open-requests list. The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
 28. **Mac:** while that answer is open, move the pointer over it and click **Listen again**. It is spoken again from the start, and the button shows a stop square. Click it again: the voice stops.

@@ -8,7 +8,7 @@ Words used across these docs, in plain terms.
 | **Activity** | The recorded history of work and routing decisions. See [Activity](../dashboard/activity.md). |
 | **Agent** | An AI assistant that does work for you. It has a workspace, written instructions, and a model. Some pages say *AI helper*, *AI worker* or *AI teammate*: they all mean an agent. |
 | **AgentX Helper** | A separate small Mac app that shows AgentX notification banners with the AgentX logo. It is not the voice assistant. See [Get notified](../jobs/notifications.md). |
-| **AgentX Voice** | The voice assistant for your Mac: hold a key, speak, and an agent answers out loud. macOS lists the app as **AgentX Desktop**, some pages call it the *desktop assistant*, and you install it with `agentx desktop install`. All three mean AgentX Voice. See [AgentX Voice](../guides/agentx-voice.md). |
+| **AgentX Voice** | The voice assistant for your Mac: hold a key, speak, and an agent answers out loud. Some pages call it the *desktop assistant*, and you install it with `agentx desktop install`. Older installs named the app **AgentX Desktop**. All of these mean AgentX Voice. See [AgentX Voice](../guides/agentx-voice.md). |
 | **API key** | A secret code from a model provider, such as Anthropic, that lets AgentX use that provider's models. The provider bills the account the key belongs to. Keep it private, like a password. |
 | **Automation** | Work AgentX starts on its own, without anyone sending a message: a schedule, or a workflow that starts on a timer or an event. |
 | **Canned reply** | A fixed, pre-written reply. The demo (`agentx demo`) uses canned replies instead of a real model, so it costs nothing. |

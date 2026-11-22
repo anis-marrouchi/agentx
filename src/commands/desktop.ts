@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { homedir, release, tmpdir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
-import { DESKTOP_APP, HELPER_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
+import { DESKTOP_APP, HELPER_APP, OLD_DESKTOP_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -47,7 +47,7 @@ function sourceRoot() {
   if (root && existsSync(join(root, 'apps/mac-voice/build.sh'))) return root
   throw new Error('Desktop sources are missing from this installation. Update AgentX to a release containing apps/mac-voice and apps/mac-helper.')
 }
-export const desktop = new Command('desktop').description('install and control the macOS desktop assistant')
+export const desktop = new Command('desktop').description('install and control AgentX Voice, the macOS voice assistant')
 desktop.command('install').description('build, install, and start voice and computer-use helpers at login')
   .option('--agent <id>', 'pin this agent; without it, pick the agent from the menu-bar icon')
   .option('--dry-run', 'show the installation plan without building or changing login items')
@@ -60,7 +60,10 @@ desktop.command('install').description('build, install, and start voice and comp
     const root = sourceRoot()
     const apps = join(homedir(), 'Applications')
     const { keep, remove } = loginItems()
-    console.log(`Desktop assistant → ${join(apps, DESKTOP_APP)}\nComputer-use helper → ${join(apps, HELPER_APP)}\nAgent → ${pinned ? `${agent} (pinned)` : 'picked from the menu-bar icon'}\nDaemon → ${url}\nStarts at login → ${keep.file}${remove.map(r => `\nRemoves duplicate login item → ${r.file}`).join('')}`)
+    // The app was installed as "AgentX Desktop" before it had one name (#2095).
+    const oldApp = join(apps, OLD_DESKTOP_APP)
+    const replacesOld = existsSync(join(oldApp, 'Contents/MacOS/AgentXVoice'))
+    console.log(`${replacesOld ? `Replaces ${oldApp}\n` : ''}AgentX Voice → ${join(apps, DESKTOP_APP)}\nComputer-use helper → ${join(apps, HELPER_APP)}\nAgent → ${pinned ? `${agent} (pinned)` : 'picked from the menu-bar icon'}\nDaemon → ${url}\nStarts at login → ${keep.file}${remove.map(r => `\nRemoves duplicate login item → ${r.file}`).join('')}`)
     if (opts.dryRun) return
     try { execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'pipe' }) }
     catch { throw new Error('Apple command-line tools are required. Run xcode-select --install, finish installation, then retry.') }
@@ -87,6 +90,7 @@ desktop.command('install').description('build, install, and start voice and comp
         if (item.label !== keep.label) await stop(item)
         rmSync(item.file, { force: true })
       }
+      if (replacesOld) rmSync(oldApp, { recursive: true, force: true })
       mkdirSync(apps, { recursive: true })
       for (const [name, built, dest] of [['mac-voice', 'AgentX Voice.app', DESKTOP_APP], ['mac-helper', HELPER_APP, HELPER_APP]]) {
         cpSync(join(stage, name, 'build', built), join(apps, dest), { recursive: true })
@@ -95,11 +99,11 @@ desktop.command('install').description('build, install, and start voice and comp
       mkdirSync(dirname(log), { recursive: true })
       writeFileSync(keep.file, plist, { mode: 0o600 })
       start(keep)
-      console.log('Desktop assistant is running. Hold Option–Space to speak; Command–Option–V for smart paste.\nAllow Microphone for the app and Accessibility / Screen Recording for the helper when macOS asks.\nThe AgentX daemon and a speech transcription backend must also be available. Run agentx desktop status to inspect the login service.')
+      console.log('AgentX Voice is running. Hold Option–Space to speak; Command–Option–V for smart paste.\nAllow Microphone for the app and Accessibility / Screen Recording for the helper when macOS asks.\nThe AgentX daemon and a speech transcription backend must also be available. Run agentx desktop status to inspect the login service.')
     } finally { rmSync(stage, { recursive: true, force: true }) }
   })
-desktop.command('start').description('start the installed desktop assistant').action(() => { checkPlatform(); start(loginItems().keep); console.log('Desktop assistant started.') })
-desktop.command('stop').description('stop the desktop assistant until started again or next login').action(async () => { checkPlatform(); await stop(loginItems().keep); console.log('Desktop assistant stopped.') })
+desktop.command('start').description('start the installed AgentX Voice').action(() => { checkPlatform(); start(loginItems().keep); console.log('AgentX Voice started.') })
+desktop.command('stop').description('stop AgentX Voice until started again or next login').action(async () => { checkPlatform(); await stop(loginItems().keep); console.log('AgentX Voice stopped.') })
 desktop.command('status').description('show the desktop login service status').action(() => {
   checkPlatform()
   const { keep } = loginItems()
