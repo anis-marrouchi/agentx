@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, statSync, utimesSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, utimesSync } from "fs"
 import { basename, dirname, join, resolve } from "path"
 import { originRemoteOf, parseGitHubChatId } from "./cloud-sessions"
 import type { ExecFn } from "./spec-tests"
@@ -14,12 +14,19 @@ import type { ExecFn } from "./spec-tests"
 // first time and reused by every later task on the same issue. The
 // checkout itself is never switched or reset.
 //
-// Pull request and merge request tasks keep running in the checkout: their
-// branch belongs to whoever opened them. Worktrees untouched for
+// A pull request or merge request task (#2102) runs on the change's source
+// branch: in the worktree that already has it checked out (most often the
+// issue worktree the agent opened it from), else in a new worktree
+// `pr-<n>` / `mr-<n>` tracking `origin/<branch>`. A branch is never checked
+// out twice. The source branch comes from the webhook payload
+// (changeSourceOf); when it is unknown, or the change comes from a fork,
+// the task runs in the checkout. Worktrees untouched for
 // `maxAgeDays` are removed when they hold no uncommitted change; their
 // branches are kept, since they may carry pushed work.
 //
-// Off by default. See daemon/config.ts (`agents.<id>.worktrees`).
+// On by default; it applies only when a checkout whose origin is the
+// issue's repository is found (pickCheckout). See daemon/config.ts
+// (`agents.<id>.worktrees`).
 
 /** `agents.<id>.worktrees` (daemon/config.ts). */
 export interface TaskWorktreeSettings {
@@ -32,28 +39,35 @@ export interface TaskWorktreeSettings {
   maxAgeDays: number
 }
 
-export const TASK_WORKTREE_DEFAULTS: TaskWorktreeSettings = { enabled: false, maxAgeDays: 14 }
+export const TASK_WORKTREE_DEFAULTS: TaskWorktreeSettings = { enabled: true, maxAgeDays: 14 }
 
-/** The issue a task is for. `repo` is set for a forge issue, whose
- *  checkout must have that repository as its origin. */
+/** The issue, pull request or merge request a task is for. `repo` is set
+ *  for a forge issue or change, whose checkout must have that repository
+ *  as its origin. */
 export interface WorktreeTarget {
   source: "github" | "gitlab" | "linear" | "jira"
   repo?: string
-  /** Issue number, or the tracker key ("ENG-12"). */
+  /** Issue number, PR number or MR iid, or the tracker key ("ENG-12"). */
   id: string
+  /** "change": a pull or merge request, worked on its source branch.
+   *  Unset: an issue. */
+  kind?: "issue" | "change"
 }
 
-/** The issue a task's channel and chat id name, or null for anything else
- *  (a pull request, a merge request, a chat message). */
+/** The issue, pull request or merge request a task's channel and chat id
+ *  name, or null for anything else (a chat message). */
 export function worktreeTarget(channel: string | undefined, chatId: string | undefined): WorktreeTarget | null {
   if (!chatId) return null
   if (channel === "github") {
     const t = parseGitHubChatId(chatId)
-    return t && t.kind === "issue" ? { source: "github", repo: t.repo, id: String(t.number) } : null
+    if (!t) return null
+    return t.kind === "issue" ? { source: "github", repo: t.repo, id: String(t.number) } : { source: "github", repo: t.repo, id: String(t.number), kind: "change" }
   }
   if (channel === "gitlab") {
     const m = chatId.match(/^(.+):issue:(\d+)$/)
-    return m ? { source: "gitlab", repo: m[1], id: m[2] } : null
+    if (m) return { source: "gitlab", repo: m[1], id: m[2] }
+    const mr = chatId.match(/^(.+):merge_request:(\d+)$/)
+    return mr ? { source: "gitlab", repo: mr[1], id: mr[2], kind: "change" } : null
   }
   if (channel === "linear" || channel === "jira") {
     const m = chatId.match(/^(?:linear|jira):([A-Za-z][A-Za-z0-9_]*-\d+)$/)
@@ -62,7 +76,31 @@ export function worktreeTarget(channel: string | undefined, chatId: string | und
   return null
 }
 
-/** The branch a task's worktree is on. */
+/** The source branch of the pull or merge request a webhook payload is
+ *  about, and whether it comes from another repository (a fork). Reads
+ *  GitHub `pull_request.head` and GitLab `object_attributes` (merge request
+ *  event) or `merge_request` (note on a merge request). Undefined when the
+ *  payload names no change. */
+export function changeSourceOf(raw: unknown): { sourceBranch: string; sourceFork: boolean } | undefined {
+  const r = raw as any
+  if (!r || typeof r !== "object") return undefined
+  const pr = r.pull_request
+  if (pr && typeof pr.head?.ref === "string" && pr.head.ref) {
+    const head = pr.head.repo?.full_name
+    const base = pr.base?.repo?.full_name ?? r.repository?.full_name
+    // A deleted fork leaves `head.repo` null.
+    const fork = typeof head !== "string" || (typeof base === "string" && head.toLowerCase() !== base.toLowerCase())
+    return { sourceBranch: pr.head.ref, sourceFork: fork }
+  }
+  const mr = r.object_kind === "merge_request" ? r.object_attributes : r.merge_request
+  if (mr && typeof mr.source_branch === "string" && mr.source_branch) {
+    const fork = mr.source_project_id != null && mr.target_project_id != null && mr.source_project_id !== mr.target_project_id
+    return { sourceBranch: mr.source_branch, sourceFork: fork }
+  }
+  return undefined
+}
+
+/** The branch a task's worktree is on (an issue target). */
 export function worktreeBranch(target: WorktreeTarget): string {
   return /^\d+$/.test(target.id) ? `agentx/issue-${target.id}` : `agentx/${target.id.toLowerCase()}`
 }
@@ -101,6 +139,12 @@ export interface TaskWorktree {
   checkout: string
   /** True when an earlier task on the issue made it. */
   reused: boolean
+  /** Set for a pull or merge request: the worktree is on its source branch. */
+  change?: "pull request" | "merge request"
+  /** True when a change task took over a worktree made for something else
+   *  (most often the issue's), so a session kept for its chat was started
+   *  in another folder. */
+  adopted?: boolean
 }
 
 export interface WorktreeDeps {
@@ -154,6 +198,72 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
   return { dir, branch, checkout, reused: false }
 }
 
+/** Makes (or finds) the worktree for a pull or merge request, on its
+ *  source branch `branch`. A worktree of the checkout that already has the
+ *  branch checked out is reused; else one is added under the root, on the
+ *  local branch when there is one, else on a new local branch tracking
+ *  `origin/<branch>`. Never checks a branch out twice, and never switches,
+ *  resets or deletes anything in the checkout. */
+export async function prepareChangeWorktree(target: WorktreeTarget, branch: string, checkout: string, settings: TaskWorktreeSettings, deps: WorktreeDeps): Promise<TaskWorktree | { error: string }> {
+  const git = (args: string[], cwd: string) => deps.exec("git", args, { cwd, timeoutMs: 120_000 })
+  const change = target.source === "gitlab" ? "merge request" : "pull request"
+  const root = worktreeRoot(checkout, settings)
+  const dir = join(root, `${target.source === "gitlab" ? "mr" : "pr"}-${target.id}`)
+
+  const fetched = await git(["fetch", "origin", branch], checkout)
+  if (fetched.code !== 0) deps.log?.(`[worktrees] fetch of ${branch} in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
+  // A worktree removed by hand leaves a stale entry that would be reused.
+  await git(["worktree", "prune"], checkout)
+  const list = await git(["worktree", "list", "--porcelain"], checkout)
+  if (list.code !== 0) return { error: `git worktree list failed in ${checkout}: ${short(list.stderr)}` }
+  const holder = worktreeHolding(list.stdout, branch)
+  if (holder) {
+    if (samePath(holder, checkout)) return { error: `${branch} is checked out in ${checkout} itself` }
+    if (samePath(holder, dir)) {
+      touch(dir, deps.now)
+      return { dir, branch, checkout, reused: true, change }
+    }
+    touch(holder, deps.now)
+    return { dir: holder, branch, checkout, reused: true, change, adopted: true }
+  }
+  if (existsSync(join(dir, ".git"))) {
+    const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], dir)
+    return { error: `${dir} exists but is not on ${branch}${head.code === 0 ? ` (it is on ${head.stdout.trim()})` : ""}; remove it or check out ${branch} there` }
+  }
+
+  const local = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], checkout)
+  let args: string[]
+  if (local.code === 0) {
+    args = ["worktree", "add", dir, branch]
+  } else {
+    const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], checkout)
+    if (remote.code !== 0) return { error: `origin has no branch ${branch}` }
+    args = ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]
+  }
+  mkdirSync(root, { recursive: true })
+  const added = await git(args, checkout)
+  if (added.code !== 0) return { error: `could not create the worktree for ${branch}: ${short(added.stderr)}` }
+  touch(dir, deps.now)
+  return { dir, branch, checkout, reused: false, change }
+}
+
+/** Git lists worktrees by their real path (/private/var, not /var). */
+function samePath(a: string, b: string): boolean {
+  const real = (p: string) => { try { return realpathSync(p) } catch { return resolve(p) } }
+  return real(a) === real(b)
+}
+
+/** The folder of the worktree that has `branch` checked out, from
+ *  `git worktree list --porcelain`. */
+export function worktreeHolding(porcelain: string, branch: string): string | undefined {
+  for (const block of porcelain.split(/\n\s*\n/)) {
+    const lines = block.split("\n").map((l) => l.trim())
+    const path = lines.find((l) => l.startsWith("worktree "))?.slice("worktree ".length)
+    if (path && lines.includes(`branch refs/heads/${branch}`)) return path
+  }
+  return undefined
+}
+
 /** A folder's time is its last task, for pruning: editing a file inside
  *  does not change it. */
 function touch(dir: string, now: (() => number) | undefined): void {
@@ -188,6 +298,13 @@ export async function pruneTaskWorktrees(checkout: string, settings: TaskWorktre
 
 /** Told to the agent with the task, so it commits on the right branch. */
 export function worktreeInstructions(wt: TaskWorktree): string {
+  if (wt.change) {
+    return [
+      `You are working in a git worktree on this ${wt.change}'s branch: ${wt.dir}, on the branch \`${wt.branch}\`.`,
+      `Make your changes there, commit them on \`${wt.branch}\` and push to that branch to update the ${wt.change}; do not open a new one.`,
+      `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
+    ].join(" ")
+  }
   return [
     `You are working in a git worktree of your own for this issue: ${wt.dir}, on the branch \`${wt.branch}\`.`,
     `Make your changes there, commit them on \`${wt.branch}\`, push that branch, and open the pull request (or merge request) from it.`,

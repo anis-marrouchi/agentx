@@ -102,7 +102,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
-import { TASK_WORKTREE_DEFAULTS, pickCheckout, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
+import { TASK_WORKTREE_DEFAULTS, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1416,25 +1416,37 @@ export class AgentRegistry {
   }
 
   /** The agent and task to run locally: in the issue's own worktree when
-   *  `agents.<id>.worktrees` is on (#1292), else unchanged. A worktree that
-   *  cannot be made is logged, and the task runs in the workspace.
-   *  `fresh`: the worktree is new, so a session kept for the chat was
-   *  started in another folder, and Claude Code keeps sessions per folder. */
+   *  `agents.<id>.worktrees` is on (#1292), or for a pull or merge request
+   *  in a worktree on its source branch (#2102), else unchanged. A worktree
+   *  that cannot be made is logged, and the task runs in the workspace.
+   *  `fresh`: the worktree is new (or taken over from another chat), so a
+   *  session kept for the chat was started in another folder, and Claude
+   *  Code keeps sessions per folder. */
   private async inTaskWorktree(def: AgentDef, task: AgentTask): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
     const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
     if (!settings.enabled) return { def, task }
     const target = worktreeTarget(task.context?.channel, task.context?.chatId)
     if (!target) return { def, task }
-    const label = `${target.repo ? `${target.repo}#` : ""}${target.id}`
+    const label = target.kind === "change"
+      ? `${target.repo}${target.source === "gitlab" ? "!" : " PR #"}${target.id}`
+      : `${target.repo ? `${target.repo}#` : ""}${target.id}`
     const picked = pickCheckout(target, [task.context?.runbookPath, def.workspace].filter((d): d is string => !!d))
     if ("reason" in picked) {
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${picked.reason}`)
       return { def, task }
     }
+    const branch = task.context?.sourceBranch
+    if (target.kind === "change" && (task.context?.sourceFork || !branch)) {
+      this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${task.context?.sourceFork ? `fork (${branch ?? "unknown branch"} is in another repository)` : "source branch unknown"}`)
+      return { def, task }
+    }
     const key = `${task.agentId}:${picked.dir}:${label}`
     let pending = this.worktreesPending.get(key)
     if (!pending) {
-      pending = prepareTaskWorktree(target, picked.dir, settings, { exec: execProcess, log: (l) => this.log(l) })
+      const deps = { exec: execProcess, log: (l: string) => this.log(l) }
+      pending = target.kind === "change" && branch
+        ? prepareChangeWorktree(target, branch, picked.dir, settings, deps)
+        : prepareTaskWorktree(target, picked.dir, settings, deps)
       this.worktreesPending.set(key, pending)
       void pending.finally(() => this.worktreesPending.delete(key)).catch(() => {})
     }
@@ -1458,7 +1470,7 @@ export class AgentRegistry {
     }
     const note = worktreeInstructions(wt)
     return {
-      fresh: !wt.reused,
+      fresh: !wt.reused || !!wt.adopted,
       // A persistent process keeps the folder it was started in.
       def: { ...def, persistentProcess: false },
       task: { ...task, cwd: wt.dir, systemPromptAppend: task.systemPromptAppend ? `${task.systemPromptAppend}\n\n${note}` : note },
