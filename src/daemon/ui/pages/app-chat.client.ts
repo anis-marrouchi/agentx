@@ -52,7 +52,11 @@ export const APP_CHAT_SCRIPT = `
   });
   $('cx-sheet-done').addEventListener('click', function () { dialog.close(); });
   // flow: the stream this view follows; a stream from before a switch is ignored.
-  var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0, flow: 0, ac: null };
+  // opening: the id of a conversation being switched to. Until it is loaded,
+  // state.conv is still the one switched away from, so words sent meanwhile
+  // wait for it instead of going to the old one (2026-11-22: voice said
+  // after switching to Hakim landed in Rassam's chat).
+  var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0, flow: 0, ac: null, opening: null };
   // Follow-ups typed for a conversation the phone switched away from, and
   // the conversations sent from this phone (their answers are read out).
   var held = {}, sentHere = {};
@@ -86,6 +90,7 @@ export const APP_CHAT_SCRIPT = `
     emit('target', { target: t, conversationId: state.conv && state.conv.id });
   }
   function useConversation(conv) {
+    if (state.opening === conv.id) state.opening = null;
     state.conv = conv;
     var color = conv.color || (state.target && state.target.agent === conv.agent ? state.target.color : undefined);
     state.target = { node: conv.node, nodeName: conv.nodeName, agent: conv.agent, agentName: conv.agentName, color: color };
@@ -119,7 +124,19 @@ export const APP_CHAT_SCRIPT = `
     setBusy(false);
     if (id) emit('detached', { conversationId: id });
   }
+  // Words that waited for a conversation that never opened go back into the
+  // text box, so they are neither lost nor sent to another agent.
+  function giveBack(msg) {
+    if (!state.opening) return;
+    state.opening = null;
+    if (!state.queue.length) return;
+    var texts = state.queue.map(function (x) { x.el.remove(); return x.text; });
+    state.queue = [];
+    input.value = texts.concat(input.value.trim() ? [input.value] : []).join(V.NL + V.NL);
+    flash(msg);
+  }
   function startNew() {
+    giveBack('Not sent: the conversation did not open. Your words are in the text box.');
     detach();
     state.view++;
     clearTimeout(pollTimer);
@@ -132,8 +149,12 @@ export const APP_CHAT_SCRIPT = `
   var pollTimer = 0;
   function openConversation(id) {
     if (state.busy && state.conv && state.conv.id === id) return;
+    if (state.opening === id) return;
+    giveBack('Not sent: you switched again before the conversation opened. Your words are in the text box.');
     detach();
     clearTimeout(pollTimer);
+    // Already on screen: nothing to wait for.
+    state.opening = state.conv && state.conv.id === id ? null : id;
     // The phone's copy first, so it opens at once and offline; the server's
     // copy replaces it when it arrives. A load that finishes after the user
     // moved on (New, another conversation, a send) is dropped.
@@ -147,14 +168,24 @@ export const APP_CHAT_SCRIPT = `
       if (r.status === 404) { fromServer = true; V.cacheDrop(id); startNew(); return null; }
       return r.ok ? r.json() : null;
     }).then(function (c) {
-      if (!c || mine !== state.view) return;
+      if (mine !== state.view) return;
+      if (!c) { notOpened(id); return; }
       fromServer = true;
       useConversation(c);
       var live = renderConversation(c);
       if (!c.running) { V.cachePut(c); sendQueued(); return; }
       // Still running: pick the live stream up where it is.
       follow(function (signal) { return api('/api/app/chat/attach?conversationId=' + encodeURIComponent(id), { signal: signal }); }, live, c.partial || {});
-    }).catch(function () {});
+    }).catch(function () { if (mine === state.view) notOpened(id); });
+  }
+  // The server's copy did not come. The phone's copy, when it had one, is
+  // on screen and the words go there; without it the screen still shows the
+  // conversation switched away from, so say so rather than send to it.
+  function notOpened(id) {
+    if (state.opening !== id) { if (state.conv && state.conv.id === id) sendQueued(); return; }
+    var on = state.target ? ' Still talking to ' + (state.target.agentName || state.target.agent) + '.' : '';
+    if (state.queue.length) giveBack('Not sent: that conversation did not open. Your words are in the text box.' + on);
+    else { state.opening = null; flash('That conversation did not open. Try again.' + on); }
   }
 
   // --- Sending, streaming, stopping ---
@@ -177,7 +208,8 @@ export const APP_CHAT_SCRIPT = `
     text = String(text || '').trim();
     if (!text) return false;
     var spoken = !!(opts && opts.spoken);
-    if (state.busy) {
+    // Also while a switch loads: the words wait for the new conversation.
+    if (state.busy || state.opening) {
       // A follow-up while the agent answers: shown now, sent as the next
       // turn so its answer streams here as well.
       var q = queuedMsg(text);
@@ -200,7 +232,7 @@ export const APP_CHAT_SCRIPT = `
     return true;
   }
   function sendQueued() {
-    if (!state.queue.length || state.busy) return;
+    if (!state.queue.length || state.busy || state.opening) return;
     var next = state.queue.splice(0);
     next.forEach(function (x) { x.el.remove(); });
     send(next.map(function (x) { return x.text; }).join(V.NL + V.NL), { spoken: next.every(function (x) { return x.spoken; }) });
