@@ -94,6 +94,7 @@ import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallG
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
+import { createWallForge, type WallDiffDeps } from "./wall-diff"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
@@ -1025,12 +1026,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
-  // The Wall's writes (#1316): comment on a post, call its agent, a Space.
-  // After the token gate above; the proxy above sends a comment or a call
-  // to the node that keeps the post.
+  // The Wall's writes (#1316): comment on a post, call its agent, a Space;
+  // and the Diff view's read and line comments (#2102). After the token
+  // gate above; the proxy above sends a comment, a call, a diff read or
+  // diff comments to the node that keeps the post.
   if (isWallActionPath(path)) {
-    const body = method === "POST" ? await readJson(req) : {}
-    const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config) })
+    const body = method === "POST" ? await readJson(req) : Object.fromEntries(url.searchParams)
+    const reply = await handleWallAction(method, path, body, { inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) })
     sendJson(res, reply!.status, reply!.body)
     return
   }
@@ -3568,6 +3570,20 @@ function wallStateSource(config: DaemonConfig): WallForgeStateSource | null {
   const key = JSON.stringify(c)
   if (wallState?.key !== key) wallState = { key, source: wallForgeState({ github: !!c.github, gitlabUrl: c.gitlab?.url ?? null }, forgeReader(c)) }
   return wallState.source
+}
+
+/** What the Diff view (#2102) reads: the request, its PRs or MRs and
+ *  their diffs (the review gate's own forge calls), with this node's forge
+ *  tokens (the ones the Wall's forge state reads with). Null: no requests. */
+function wallDiffDeps(config: DaemonConfig): WallDiffDeps | null {
+  const store = requestStoreFor({ root: process.cwd() })
+  if (!store) return null
+  const c = forgeConnectorsOf(config)
+  return {
+    store,
+    gitlabUrl: c.gitlab?.url ?? null,
+    forge: createWallForge({ githubToken: c.github?.token, gitlabUrl: c.gitlab?.url ?? null, gitlabToken: c.gitlab?.token }),
+  }
 }
 
 const wallForgeSources = (config: DaemonConfig) => [wallTimeSource(config), wallStateSource(config)]

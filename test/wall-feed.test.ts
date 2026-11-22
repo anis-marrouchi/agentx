@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown }; session?: Map<string, string> } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -46,8 +46,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const classes = () => { const s = new Set<string>(); return { toggle: (c: string, on?: boolean) => { (on ?? !s.has(c)) ? s.add(c) : s.delete(c); return s.has(c) }, contains: (c: string) => s.has(c) } }
   const el = (id: string) => {
     if (!els.has(id)) {
-      // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-|^wall-editor-root$/.test(id) ? [`<x id="${id}">`] : null)
+      // The open post's action box (wdo-*) and Diff view (wdf, #2102) are drawn by the script itself.
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-|^wdf(-text)?$|^wall-editor-root$/.test(id) ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -88,6 +88,10 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.liveFails && url === "/api/live?quick=1") return Promise.resolve({ ok: false, status: 502, json: async () => ({}) })
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    if (opts.diff && url.startsWith("/api/admin/wall/diff")) {
+      const r = opts.diff(url, init)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
     const peer = init?.headers?.["X-Agentx-Peer"] as string | undefined
     if (peer && opts.peerCost && url.startsWith("/api/admin/observability/")) {
       const body = opts.peerCost(peer, url)
@@ -132,7 +136,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   // With `timers`, the script's timeouts are kept for the test to run.
   const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined }, fetchStub, loc,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined,
+      sessionStorage: opts.session ? { getItem: (k: string) => opts.session!.get(k) ?? null, setItem: (k: string, v: string) => { opts.session!.set(k, v) }, removeItem: (k: string) => { opts.session!.delete(k) } } : undefined }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, later,
   )
@@ -2780,5 +2785,232 @@ describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
     expect(w.el("wall-cost").innerHTML).toContain('<option value="node-a" selected>node-a</option>')
     expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent @cx</option>')
     expect(w.el("cb-usd").value).toBe("10")
+  })
+})
+
+describe("Diff view of a PR or MR post (#2102)", () => {
+  const SHA = "c0ffee".padEnd(40, "0")
+  const DIFF = { prs: [{ ref: "acme/shop#12", title: "Fix", state: "open", headSha: SHA }], ref: "acme/shop#12", provider: "github", title: "Fix", state: "open", headSha: SHA, truncated: false, files: [
+    { file: "src/app.ts", status: "modified", hunks: [{ header: "@@ -1,2 +1,2 @@", lines: [
+      { kind: "ctx", oldLine: 1, newLine: 1, text: "const a = 1" },
+      { kind: "del", oldLine: 2, text: "const b = 2" },
+      { kind: "add", newLine: 2, text: "const b = <3>" },
+    ] }] },
+    { file: "img/logo.png", status: "binary", hunks: [] },
+  ] }
+  const data = { ...WALL, posts: [post("r1", "cx", "in_progress", { mergeRef: "acme/shop#12", home: { kind: "link", link: "https://github.com/acme/shop/pull/12" } }), post("r2", "cx", "in_progress")] }
+
+  it("offers Diff only on a post whose home is a PR or MR", async () => {
+    const w = openWall({ hash: "#post=r1", data })
+    await w.settle()
+    expect(w.el("wall-post").innerHTML).toContain('data-wdf="toggle" aria-expanded="false" title="The changes in acme/shop#12">Diff</button>')
+    const other = openWall({ hash: "#post=r2", data })
+    await other.settle()
+    expect(other.el("wall-post").innerHTML).not.toContain("data-wdf")
+  })
+
+  it("shows the files and lines, takes comments on lines and sends them in one batch", async () => {
+    const sent: any[] = []
+    const w = openWall({ hash: "#post=r1", data, diff: (url, init) => {
+      if (init?.method === "POST") { sent.push({ url, body: JSON.parse(init.body) }); return { status: 200, body: { ok: true, message: "Sent to cx." } } }
+      return { status: 200, body: DIFF }
+    } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/diff?id=r1")).toBe(true)
+    let html = w.el("wdf").innerHTML
+    expect(html).toContain("Diff · acme/shop#12")
+    expect(html).toContain('<span class="wdf__sha" title="Head commit read">c0ffee000000</span>')
+    // One PR: no picker.
+    expect(html).not.toContain('data-wdf="pr"')
+    expect(html).toContain('<span class="wdf__fn">src/app.ts</span>')
+    expect(html).toContain('<tr class="wdf__l is-del" data-wdf="line" data-f="0" data-h="0" data-l="1"')
+    expect(html).toContain("const b = &lt;3&gt;")
+    expect(html).toContain("Binary file: not shown.")
+    expect(html).toContain("Send 0 comments to agent")
+
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "2" })
+    expect(w.el("wdf").innerHTML).toContain('<textarea id="wdf-text"')
+    w.el("wdf-text").value = "  Why 3?  "
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "1" })
+    w.el("wdf-text").value = "Keep 2"
+    w.click({ "data-wdf": "add" })
+    html = w.el("wdf").innerHTML
+    expect(html).toContain('<span class="wdf__dt" dir="auto">Why 3?</span>')
+    expect(html).toContain("2 comments drafted for Customer Desk")
+    expect(html).toContain("Send 2 comments to agent")
+
+    // Edit the first, remove nothing, then send.
+    w.click({ "data-wdf": "edit", "data-n": "0" })
+    expect(w.el("wdf").innerHTML).toContain(">Save</button>")
+    w.el("wdf-text").value = "Why 3, not 4?"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(sent).toEqual([{ url: "/api/admin/wall/diff-comments", body: { id: "r1", pr: "acme/shop#12", headSha: SHA, comments: [
+      { file: "src/app.ts", side: "new", line: 2, text: "Why 3, not 4?", code: "const b = <3>" },
+      { file: "src/app.ts", side: "old", line: 2, text: "Keep 2", code: "const b = 2" },
+    ] } }])
+    html = w.el("wdf").innerHTML
+    expect(html).toContain("Sent to cx.")
+    expect(html).toContain("Send 0 comments to agent")
+  })
+
+  it("keeps the drafts and says why when the send fails; a draft can be removed", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: (_url, init) => init?.method === "POST" ? { status: 401, body: { error: "Only the owner writes on the Hub" } } : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Not sent: Only the owner writes on the Hub")
+    expect(w.el("wdf").innerHTML).toContain("Send 1 comment to agent")
+    w.click({ "data-wdf": "remove", "data-n": "0" })
+    expect(w.el("wdf").innerHTML).toContain("Send 0 comments to agent")
+  })
+
+  it("says so when the diff cannot be read", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: () => ({ status: 400, body: { error: "not a merge or pull request" } }) })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Diff not available: not a merge or pull request")
+  })
+
+  it("offers Diff on an issue post, and says so when no PR or MR names it", async () => {
+    const issue = { ...WALL, posts: [post("r3", "cx", "in_progress", { mergeRef: "acme/shop#3", home: { kind: "issue", link: "https://github.com/acme/shop/issues/3" } })] }
+    const w = openWall({ hash: "#post=r3", data: issue, diff: () => ({ status: 200, body: { prs: [], ref: null, provider: "github", title: null, state: null, headSha: null, files: [], truncated: false } }) })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("No pull or merge request names this issue yet.")
+    expect(w.el("wdf").innerHTML).not.toContain("data-wdf=\"send\"")
+  })
+
+  it("picks among several PRs, and holds the picker while drafts wait", async () => {
+    const two = { ...DIFF, prs: [DIFF.prs[0], { ref: "acme/shop#13", title: "Docs", state: "merged", headSha: "d".repeat(40) }] }
+    const urls: string[] = []
+    const w = openWall({ hash: "#post=r1", data, diff: (url) => {
+      urls.push(url)
+      return { status: 200, body: url.includes("&pr=") ? { ...two, ref: "acme/shop#13", headSha: "d".repeat(40) } : two }
+    } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    let html = w.el("wdf").innerHTML
+    expect(html).toContain('data-wdf="pr" data-ref="acme/shop#12" aria-pressed="true">acme/shop#12 · Fix <span class="wdf__st">open</span>')
+    expect(html).toContain('data-wdf="pr" data-ref="acme/shop#13" aria-pressed="false">acme/shop#13 · Docs <span class="wdf__st">merged</span>')
+    w.click({ "data-wdf": "pr", "data-ref": "acme/shop#13" })
+    await w.settle()
+    expect(urls).toEqual(["/api/admin/wall/diff?id=r1", "/api/admin/wall/diff?id=r1&pr=acme%2Fshop%2313"])
+    html = w.el("wdf").innerHTML
+    expect(html).toContain("Diff · acme/shop#13")
+    expect(html).toContain('data-ref="acme/shop#13" aria-pressed="true"')
+    // A draft holds the picker: switching would leave it on the wrong lines.
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    expect(w.el("wdf").innerHTML).toContain('disabled title="Send or remove the drafted comments first"')
+    w.click({ "data-wdf": "pr", "data-ref": "acme/shop#12" })
+    await w.settle()
+    expect(urls).toHaveLength(2)
+  })
+
+  it("after a reload, drafts go back to the PR and commit they were written on (#2114 review)", async () => {
+    const D = "d".repeat(40), E = "e".repeat(40)
+    const pr13 = { ref: "acme/shop#13", title: "Docs", state: "open", headSha: D }
+    const session = new Map<string, string>()
+    // First tab life: #12 comes first, the owner picks #13 and drafts on it.
+    const first = openWall({ hash: "#post=r1", data, session, diff: (url) => ({ status: 200, body: url.includes("&pr=") ? { ...DIFF, prs: [DIFF.prs[0], pr13], ref: "acme/shop#13", headSha: D } : { ...DIFF, prs: [DIFF.prs[0], pr13] } }) })
+    await first.settle()
+    first.click({ "data-wdf": "toggle" })
+    await first.settle()
+    first.click({ "data-wdf": "pr", "data-ref": "acme/shop#13" })
+    await first.settle()
+    first.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    first.el("wdf-text").value = "Hmm"
+    first.click({ "data-wdf": "add" })
+    expect(JSON.parse(session.get("ax.wall.diff.r1")!)).toMatchObject({ ref: "acme/shop#13", headSha: D, drafts: [{ text: "Hmm" }] })
+
+    // Reload: another PR now comes first and #13 has moved to E.
+    const urls: string[] = []
+    const sent: any[] = []
+    const again = openWall({ hash: "#post=r1", data, session, diff: (url, init) => {
+      if (init?.method === "POST") { sent.push(JSON.parse(init.body)); return { status: 200, body: { ok: true, message: "Sent.", moved: true, headSha: E } } }
+      urls.push(url)
+      return { status: 200, body: url.includes("&pr=") ? { ...DIFF, prs: [{ ref: "acme/shop#14", title: "New", state: "open", headSha: SHA }, { ...pr13, headSha: E }], ref: "acme/shop#13", headSha: E } : { ...DIFF, ref: "acme/shop#14" } }
+    } })
+    await again.settle()
+    again.click({ "data-wdf": "toggle" })
+    await again.settle()
+    expect(urls).toEqual(["/api/admin/wall/diff?id=r1&pr=acme%2Fshop%2313"])
+    expect(again.el("wdf").innerHTML).toContain("Diff · acme/shop#13")
+    again.click({ "data-wdf": "send" })
+    await again.settle()
+    expect(sent).toEqual([{ id: "r1", pr: "acme/shop#13", headSha: D, comments: [{ file: "src/app.ts", side: "new", line: 1, text: "Hmm", code: "const a = 1" }] }])
+    expect(session.has("ax.wall.diff.r1")).toBe(false)
+  })
+
+  it("drops kept drafts with no ref, and lets drafts on an unreadable PR go", async () => {
+    const legacy = new Map([["ax.wall.diff.r1", JSON.stringify([{ file: "src/app.ts", side: "new", line: 1, text: "Old" }])]])
+    const w = openWall({ hash: "#post=r1", data, session: legacy, diff: () => ({ status: 200, body: DIFF }) })
+    await w.settle()
+    expect(w.el("wall-post").innerHTML).toContain(">Diff</button>")
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Send 0 comments to agent")
+
+    const gone = new Map([["ax.wall.diff.r1", JSON.stringify({ ref: "acme/shop#99", headSha: SHA, drafts: [{ file: "src/app.ts", side: "new", line: 1, text: "Lost" }] })]])
+    const urls: string[] = []
+    const g = openWall({ hash: "#post=r1", data, session: gone, diff: (url) => { urls.push(url); return url.includes("&pr=") ? { status: 400, body: { error: "acme/shop#99 is not a pull or merge request of this post" } } : { status: 200, body: DIFF } } })
+    await g.settle()
+    g.click({ "data-wdf": "toggle" })
+    await g.settle()
+    expect(g.el("wdf").innerHTML).toContain("Diff not available: acme/shop#99 is not a pull or merge request of this post")
+    expect(g.el("wdf").innerHTML).toContain('data-wdf="discard">Remove 1 draft on acme/shop#99</button>')
+    g.click({ "data-wdf": "discard" })
+    await g.settle()
+    expect(urls).toEqual(["/api/admin/wall/diff?id=r1&pr=acme%2Fshop%2399", "/api/admin/wall/diff?id=r1"])
+    expect(gone.has("ax.wall.diff.r1")).toBe(false)
+    expect(g.el("wdf").innerHTML).toContain("Diff · acme/shop#12")
+  })
+
+  it("warns when the PR moved since the lines were read", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: (_url, init) => init?.method === "POST"
+      ? { status: 200, body: { ok: true, message: "Sent to cx.", moved: true, headSha: "e".repeat(40) } }
+      : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Sent to cx. Careful: the pull or merge request has moved to eeeeeeeeeeee since you read these lines. Reload the diff to see it.")
+  })
+
+  it("reads and comments on a peer's post at that peer, as a comment goes", async () => {
+    const peer = "https://node-b.example"
+    const far = { ...WALL, posts: [post("r1", "cx", "in_progress", { mergeRef: "acme/shop#12", node: { name: "node-b", peer, daemonUrl: null } })] }
+    const w = openWall({ hash: "#post=r1", data: far, diff: (_url, init) => init?.method === "POST" ? { status: 200, body: { ok: true } } : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    const diffCalls = w.calls.filter((c) => c.url.startsWith("/api/admin/wall/diff"))
+    expect(diffCalls.map((c) => [c.url, c.init?.headers?.["X-Agentx-Peer"]])).toEqual([
+      ["/api/admin/wall/diff?id=r1", peer],
+      ["/api/admin/wall/diff-comments", peer],
+    ])
   })
 })

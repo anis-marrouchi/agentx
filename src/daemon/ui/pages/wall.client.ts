@@ -59,6 +59,7 @@ import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_CLOSE_SCRIPT } from "./wall-close.client"
+import { WALL_DIFF_SCRIPT } from "./wall-diff.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
@@ -103,6 +104,7 @@ ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
 ${WALL_CLOSE_SCRIPT}
+${WALL_DIFF_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
@@ -546,6 +548,8 @@ ${WALL_JOBLEDGER_SCRIPT}
     if (p.home) acts.push(/^https?:\/\//.test(p.home.link)
       ? '<a href="' + esc(p.home.link) + '" target="_blank" rel="noopener" title="Home: ' + esc(p.home.link) + '">' + ICON.link + '<span class="home">Home: ' + esc(p.home.link.replace(/^https?:\/\//, '')) + '</span></a>'
       : '<span title="Home">' + ICON.link + 'Home: ' + esc(p.home.link) + '</span>');
+    // A PR or MR home has its diff (#2102, wall-diff.client.ts).
+    acts.push(diffButtonHtml(p));
     if (p.evidence) acts.push(/^https?:\/\//.test(p.evidence)
       ? '<a href="' + esc(p.evidence) + '" target="_blank" rel="noopener">' + ICON.proof + 'Proof</a>'
       : '<span>' + ICON.proof + 'Proof: ' + esc(p.evidence) + '</span>');
@@ -576,6 +580,7 @@ ${WALL_JOBLEDGER_SCRIPT}
       factsHtml(p) +
       '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
       doHtml(p) +
+      diffHtml(p) +
       '<div class="wp__thread" data-for="' + esc(p.id) + '"><h2 class="wp__th">Thread</h2>' +
         (t ? threadHtml(t, p) : '') + '</div>' +
       '</div></article>';
@@ -1342,7 +1347,8 @@ ${WALL_JOBLEDGER_SCRIPT}
       if (S.creator && S.creator.fresh) { S.creator.fresh = false; $('wall-creator').innerHTML = creatorHtml(); }
       else if (!typing) { creatorRead(); $('wall-creator').innerHTML = creatorHtml(); }
     }
-    if (page === 'post') $('wall-post').innerHTML = postPageHtml();
+    // A line comment being typed in the Diff view (#2102) keeps the post as it is.
+    if (page === 'post' && !diffTyping()) $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
     // The People page (#1441): wall-people.client.ts.

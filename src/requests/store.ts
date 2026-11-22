@@ -38,6 +38,10 @@ export const WALL_CHANNEL = "wall"
 
 /** Longest owner comment kept on a request (#1316). */
 export const COMMENT_MAX = 4000
+/** Longest batch of line comments from the Hub's Diff view (#2102): kept
+ *  whole as the comment, the owner's note and the reopen note. Only that
+ *  route passes it; every other caller keeps COMMENT_MAX / TEXT_MAX. */
+export const DIFF_BATCH_MAX = 16000
 
 /** Where the work of a request lives (#394): the issue, idea file,
  *  approval, ERP record or Desk card the agent named. The latest is kept
@@ -870,9 +874,9 @@ export class RequestStore {
 
   /** The owner commented on the request from the Wall (#1316): kept as a
    *  "comment" link, its words in the link's proof column. */
-  comment(requestId: string, ref: string, text: string, now: number): void {
+  comment(requestId: string, ref: string, text: string, now: number, max = COMMENT_MAX): void {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at, proof) VALUES (?, 'comment', ?, ?, ?)")
-      .run(requestId, ref, now, text.slice(0, COMMENT_MAX))
+      .run(requestId, ref, now, text.slice(0, max))
   }
 
   /** How the linked work ended ("done", "waiting", "error"…), and the
@@ -1296,13 +1300,13 @@ export class RequestStore {
    *  that agent has it, in progress, and is told at the next check. Any
    *  open request, not only one that needs attention. The agent it was
    *  asked of is kept from the first time: channel and chat stay its own. */
-  handOff(id: string, agentId: string, note: string, now: number): boolean {
+  handOff(id: string, agentId: string, note: string, now: number, max = TEXT_MAX): boolean {
     return this.db.transaction(() => {
       const moved = this.db.prepare(
         `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
            question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
-      ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
+      ).run("in_progress", now, agentId, now, now, note.trim().slice(0, max) || null, id, ...OPEN_STATES).changes > 0
       if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
       return moved
     })()
@@ -1311,12 +1315,12 @@ export class RequestStore {
   /** The owner commented on a closed post (#1355): it opens again, in
    *  progress, with the comment as the owner's note, for its agent to pick
    *  up at the next check. How it was closed is kept until it closes again. */
-  reopen(id: string, note: string, now: number): boolean {
+  reopen(id: string, note: string, now: number, max = TEXT_MAX): boolean {
     const reopened = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'in_progress', closed_at = NULL, updated_at = ?, attention_reason = NULL, notified_at = NULL,
          question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, ${PROOF_RESET}
        WHERE id = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run("in_progress", now, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...CLOSED_STATES).changes > 0
+    ).run("in_progress", now, now, now, note.trim().slice(0, max) || null, id, ...CLOSED_STATES).changes > 0
     // The owner sending a closed request back is the clearest sign the
     // close was wrong.
     if (reopened) this.signal("owner_reopened", id, note || null, now)
