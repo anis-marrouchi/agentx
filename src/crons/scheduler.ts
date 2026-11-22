@@ -985,12 +985,11 @@ export class CronScheduler {
   }
 
   /**
-   * Whether `job` may still run now (#863, n158092): the daemon runs, the
-   * job is still loaded and on, and a recurring job is not past its until
-   * (then it is ended here). Asked again after every await before a run.
+   * Whether `job` may still run now (#863, n158092): it is still loaded
+   * and on, and a recurring job is not past its until (then it is ended
+   * here). Asked again after every await before a run.
    */
   private async stillDue(job: CronJobState): Promise<boolean> {
-    if (!this.running) return false
     const current = this.jobs.get(job.id)
     if (!current || !current.enabled) return false
     if (!current.runAt && pastUntil(current.until, Date.now())) {
