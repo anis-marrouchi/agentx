@@ -26,6 +26,7 @@ let mrDetails: Record<string, unknown>
 let mrList: unknown[]
 let prDetails: Record<string, unknown>
 let commitRuns: unknown[]
+let mrListFails: boolean
 let dir: string
 
 beforeEach(() => {
@@ -35,10 +36,12 @@ beforeEach(() => {
   mrList = []
   prDetails = { body: MARKED, head: { ref: "feat/y" }, user: { login: "anis" } }
   commitRuns = [{ status: "completed", conclusion: "success" }]
+  mrListFails = false
   dir = mkdtempSync(join(tmpdir(), "ci-fix-"))
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
     const u = String(url)
     calls.push({ url: u, method: init?.method ?? "GET", body: init?.body })
+    if (mrListFails && u.includes("/merge_requests?")) return { ok: false, status: 500, json: async () => ({}), text: async () => "" }
     const data = u.includes("/merge_requests?") ? mrList
       : /\/merge_requests\/\d+$/.test(u) ? mrDetails
       : /\/pulls\/\d+$/.test(u) ? prDetails
@@ -64,17 +67,17 @@ async function settle(adapter: GitLabAdapter | GitHubAdapter): Promise<void> {
 
 // --- GitLab ---
 
-function gitlab(opts: { fixAttempts?: number; agentForIssue?: (p: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; knownAgentIds?: string[] } = {}) {
+function gitlab(opts: { fixAttempts?: number; agentForIssue?: (p: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; knownAgentIds?: string[]; token?: string; log?: (...args: unknown[]) => void } = {}) {
   const gl = new GitLabAdapter({
     webhookPort: 0,
     host: "https://gitlab.example.test",
-    token: "global",
+    token: "token" in opts ? opts.token : "global",
     routes: [{ project: REPO, agent: "route-agent" }],
     ci: opts.fixAttempts === undefined ? undefined : { fixAttempts: opts.fixAttempts },
     ciStateFile: join(dir, "ci-fix-gitlab.json"),
     ciAgentForIssue: opts.agentForIssue,
     knownAgentIds: opts.knownAgentIds,
-  } as GitLabChannelConfig, () => {})
+  } as GitLabChannelConfig, opts.log ?? (() => {}))
   ;(gl as any).usernameToAgent.set("sam_coder", "author-agent")
   const runs: IncomingMessage[] = []
   gl.onMessage(opts.handler ?? (async (m) => { runs.push(m) }))
@@ -260,6 +263,39 @@ describe("GitLab: failed MR pipeline", () => {
     expect(runs[0].text).toBe(`[GitLab Pipeline FAILED] Project: ${REPO}\nRef: feat/x\nDuration: 42s\nPlease investigate the failure.`)
   })
 
+  it("a branch pipeline whose MR lookup fails wakes nobody and logs it", async () => {
+    mrListFails = true
+    const lines: string[] = []
+    const { gl, runs } = gitlab({ log: (...a) => { lines.push(a.join(" ")) } })
+    await pipe(gl, pipeline("failed", { mr: false }))
+    await settle(gl)
+    expect(runs).toHaveLength(0)
+    expect(lines.some((l) => l.includes("Pipeline 77") && l.includes("lookup failed"))).toBe(true)
+    // No token: the lookup cannot run, also nobody.
+    const noToken = gitlab({ token: undefined })
+    await pipe(noToken.gl, pipeline("failed", { mr: false }))
+    await settle(noToken.gl)
+    expect(noToken.runs).toHaveLength(0)
+  })
+
+  it("a branch pipeline with no MR delivered again wakes the route agent once", async () => {
+    const { gl, runs } = gitlab()
+    await pipe(gl, pipeline("failed", { mr: false }))
+    await pipe(gl, pipeline("failed", { mr: false }))
+    expect(runs).toHaveLength(1)
+    expect(runs[0].resolvedAgent).toBe("route-agent")
+  })
+
+  it("an MR from a fork wakes nobody, even with a marker or an agentx/issue-<n> branch, and posts one note", async () => {
+    mrDetails = { ...mrDetails, source_branch: "agentx/issue-12", source_project_id: 2, target_project_id: 1 }
+    const { gl, runs } = gitlab({ agentForIssue: () => "x-agent" })
+    await pipe(gl, pipeline("failed"))
+    await settle(gl)
+    expect(runs).toHaveLength(0)
+    expect(notePosts()).toHaveLength(1)
+    expect(notePosts()[0].body).toContain("no agent owns this")
+  })
+
   it("the count is saved before the wake: a throwing handler still leaves it on file", async () => {
     const { gl } = gitlab({ handler: async () => { throw new Error("boom") } })
     await pipe(gl, pipeline("failed"))
@@ -438,6 +474,16 @@ describe("GitHub: failed workflow run", () => {
     const notes = notePosts()
     expect(notes).toHaveLength(1)
     expect(notes[0].body).toContain("no agent owns this")
+  })
+
+  it("a PR from a fork wakes nobody, even with a marker or an agentx/issue-<n> branch, and posts one comment", async () => {
+    prDetails = { ...prDetails, head: { ref: "agentx/issue-12", repo: { full_name: "someone/api" } } }
+    const { gh, runs } = github({ agentForIssue: () => "x-agent" })
+    await hook(gh, "workflow_run", workflowRun("failure"))
+    await settle(gh)
+    expect(runs).toHaveLength(0)
+    expect(notePosts()).toHaveLength(1)
+    expect(notePosts()[0].body).toContain("no agent owns this")
   })
 
   it("a run with no PR and check_suite wake nothing", async () => {
