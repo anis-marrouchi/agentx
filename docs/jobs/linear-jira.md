@@ -21,7 +21,7 @@ Both are off until you turn them on. Here is the whole path:
 
 1. **Browser:** the AgentX daemon (port `18800` unless you changed it) must be reachable from the internet, so Linear or Jira can call it, the same way GitHub's webhooks reach the [GitHub channel](/reference/config-channels#github). Write down that address, for example `https://agentx.example.com`.
 2. **Terminal:** pick the agent that will do the work. Run `agentx agent list` to see your agents.
-3. **Terminal:** keep a clone (a copy) of the repository the work lands in on this computer, for example `/home/you/repos/example-repo`. Each issue then gets a folder of its own ([worktrees](/jobs/task-worktrees), on by default).
+3. **Terminal:** keep a clone (a copy) of the repository the work lands in on this computer, for example `/home/you/repos/example-repo`. To give each issue a folder of its own, turn on [worktrees](/jobs/task-worktrees) for the agent.
 
 ## Connect Linear
 
