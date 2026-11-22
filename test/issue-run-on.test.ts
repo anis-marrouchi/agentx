@@ -8,6 +8,8 @@ import { execProcess } from "../src/agents/spec-tests"
 import { TASK_WORKTREE_DEFAULTS, issueWorktreeState, prepareTaskWorktree, remotePath } from "../src/agents/task-worktrees"
 import { issueHomeOf, issueState, moveRefusal, moveRunOn, nodeNumbersOf, runOnChoices, type IssueState, type RunOnDeps } from "../src/daemon/issue-run-on"
 import { RequestStore } from "../src/requests/store"
+import { AgentRegistry } from "../src/agents/registry"
+import { daemonConfigSchema } from "../src/daemon/config"
 import { handleWallAction, isWallActionPath, isWallWrite, WALL_RUN_ON_PATH } from "../src/daemon/wall-actions"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
@@ -70,6 +72,20 @@ describe("the issue's state on a node (real git)", () => {
     expect((await issueWorktreeState(wt.dir, execProcess))!.ahead).toBe(1)
   })
 
+  it("C3: a placed task finds its checkout among this node's own (not the sender's runbookPath)", async () => {
+    const config = daemonConfigSchema.parse({ jobState: { enabled: false }, node: { id: "clawd", name: "clawd" }, agents: { coder: { name: "Coder", tier: "claude-code", workspace: join(base, "elsewhere") } } })
+    const r = new AgentRegistry(config, () => {})
+    r.setCheckoutDirs(() => [checkout])
+    const def = { ...config.agents.coder, worktrees: { ...config.agents.coder.worktrees, enabled: true } }
+    const task = { agentId: "coder", message: "hi", context: { channel: "gitlab", chatId: chat(), placed: true, runbookPath: "/Users/someone/on/the/mac" } }
+    const out = await (r as any).inTaskWorktree(def, task, {})
+    expect(out.refused).toBeUndefined()
+    expect(out.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-12"))
+    // The same task not placed looks only at its own runbookPath and workspace.
+    const plain = await (r as any).inTaskWorktree(def, { ...task, context: { channel: "gitlab", chatId: chat() } }, {})
+    expect(plain.task.cwd).toBeUndefined()
+  })
+
   it("on the new node, the issue's worktree starts from origin/agentx/issue-<n>, tracking it", async () => {
     // The Mac pushed its work on the issue.
     const mac = await prepareTaskWorktree(target(), checkout, settings, { exec: execProcess })
@@ -91,6 +107,91 @@ describe("the issue's state on a node (real git)", () => {
   })
 })
 
+describe("B3: a reused worktree or branch is brought up to the pushed one (real git)", () => {
+  let base: string
+  let origin: string
+  let url: string
+  let repo: string
+  let mac: string
+  let other: string
+  const target = () => ({ source: "gitlab" as const, repo, id: "12" })
+  const commit = (dir: string, file: string, msg: string) => { writeFileSync(join(dir, file), msg + "\n"); git(dir, "add", "."); git(dir, "commit", "-q", "-m", msg) }
+
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), "agentx-sync-"))
+    origin = join(base, "origin.git")
+    url = `file://localhost${origin}`
+    repo = remotePath(url)!
+    mac = join(base, "mac", "api")
+    other = join(base, "clawd", "api")
+    execFileSync("git", ["init", "--bare", "-q", "-b", "main", origin])
+    execFileSync("git", ["clone", "-q", url, mac])
+    commit(mac, "README.md", "init")
+    git(mac, "push", "-q", "origin", "HEAD:main")
+    git(mac, "remote", "set-head", "origin", "main")
+    execFileSync("git", ["clone", "-q", url, other])
+    git(other, "remote", "set-head", "origin", "main")
+  })
+  afterEach(() => rmSync(base, { recursive: true, force: true }))
+
+  it("a new branch tracks origin/<branch>; never pushed with commits is not pushed", async () => {
+    const wt = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    if ("error" in wt) throw new Error(wt.error)
+    expect(git(wt.dir, "config", "branch.agentx/issue-12.merge")).toBe("refs/heads/agentx/issue-12")
+    expect(await issueWorktreeState(wt.dir, execProcess)).toEqual({ branch: "agentx/issue-12", dirty: false, ahead: 0 })
+    commit(wt.dir, "a.txt", "work")
+    expect((await issueWorktreeState(wt.dir, execProcess))!.ahead).toBe(1)
+    expect(moveRefusal("this Mac", { runOpen: false, worktree: (await issueWorktreeState(wt.dir, execProcess))! })).toContain("not pushed")
+    // A plain push goes to the issue's branch, not main.
+    git(wt.dir, "push", "-q", "origin", "HEAD")
+    expect(git(mac, "ls-remote", "origin", "refs/heads/agentx/issue-12")).toContain("agentx/issue-12")
+    git(mac, "fetch", "-q", "origin")
+    expect((await issueWorktreeState(wt.dir, execProcess))!.ahead).toBe(0)
+  })
+
+  it("Mac to clawd and back: the Mac's old worktree fast-forwards before it is reused", async () => {
+    const first = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    if ("error" in first) throw new Error(first.error)
+    commit(first.dir, "a.txt", "on mac")
+    git(first.dir, "push", "-q", "origin", "agentx/issue-12")
+    const there = await prepareTaskWorktree(target(), other, settings, { exec: execProcess })
+    if ("error" in there) throw new Error(there.error)
+    commit(there.dir, "b.txt", "on clawd")
+    git(there.dir, "push", "-q", "origin", "agentx/issue-12")
+    const back = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    if ("error" in back) throw new Error(back.error)
+    expect(back.reused).toBe(true)
+    expect(git(back.dir, "log", "-1", "--format=%s")).toBe("on clawd")
+    expect(existsSync(join(back.dir, "b.txt"))).toBe(true)
+  })
+
+  it("an existing local branch (no worktree) is fast-forwarded too", async () => {
+    git(mac, "branch", "-q", "--no-track", "agentx/issue-12", "origin/main")
+    commit(other, "c.txt", "pushed elsewhere")
+    git(other, "push", "-q", "origin", "HEAD:agentx/issue-12")
+    const wt = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    if ("error" in wt) throw new Error(wt.error)
+    expect(git(wt.dir, "log", "-1", "--format=%s")).toBe("pushed elsewhere")
+  })
+
+  it("diverged: refused, with both commits named", async () => {
+    const first = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    if ("error" in first) throw new Error(first.error)
+    commit(first.dir, "a.txt", "local only")
+    const ours = git(first.dir, "rev-parse", "HEAD")
+    commit(other, "b.txt", "pushed elsewhere")
+    git(other, "push", "-q", "origin", "HEAD:agentx/issue-12")
+    const theirs = git(other, "rev-parse", "HEAD")
+    const again = await prepareTaskWorktree(target(), mac, settings, { exec: execProcess })
+    expect(again).toMatchObject({ refuse: true })
+    const err = (again as any).error as string
+    expect(err).toContain("diverged")
+    expect(err).toContain(ours.slice(0, 12))
+    expect(err).toContain(theirs.slice(0, 12))
+    expect(git(first.dir, "rev-parse", "HEAD")).toBe(ours)
+  })
+})
+
 describe("the move check", () => {
   const clean: IssueState = { runOpen: false, worktree: { branch: "agentx/issue-7", dirty: false, ahead: 0 } }
   it("refuses for each reason, with it", () => {
@@ -107,9 +208,16 @@ describe("GET and POST /issue-run-on", () => {
   let db: Database.Database
   let store: RequestStore
   let peers: any[]
-  let states: Record<string, IssueState | Error>
+  let states: Record<string, IssueState | Error | Array<IssueState | Error>>
   let asked: string[]
   const ISSUE = "https://github.com/acme/app/issues/7"
+  const placed = () => store.placement("github", "acme/app:issue:7")
+  const stateOf = (k: string): IssueState => {
+    let s = states[k]
+    if (Array.isArray(s)) s = s.length > 1 ? s.shift()! : s[0]
+    if (s instanceof Error) throw s
+    return s ?? { runOpen: false, worktree: null }
+  }
 
   const deps = (): RunOnDeps => ({
     store: () => store,
@@ -118,8 +226,8 @@ describe("GET and POST /issue-run-on", () => {
     localCheckouts: () => ["acme/app"],
     localNumbers: async () => ({ swapUsedPct: 40, load1: 3.2 }),
     peerNumbers: async (p) => (p === "clawd" ? { swapUsedPct: 5, load1: 0.4 } : null),
-    localIssueState: async () => { asked.push("local"); const s = states.local; if (s instanceof Error) throw s; return s ?? { runOpen: false, worktree: null } },
-    peerIssueState: async (p) => { asked.push(p); const s = states[p]; if (s instanceof Error) throw s; return s ?? { runOpen: false, worktree: null } },
+    localIssueState: async () => { asked.push("local"); return stateOf("local") },
+    peerIssueState: async (p) => { asked.push(p); return stateOf(p) },
     now: () => 1000,
   })
 
@@ -130,10 +238,11 @@ describe("GET and POST /issue-run-on", () => {
     store.addPromise({ id: "wp-1", channel: "dashboard", chatId: "wall", agentId: "coder", text: "fix", owedTo: "owner", home: { kind: "issue", link: ISSUE }, now: 1 })
     store.addPromise({ id: "wp-2", channel: "dashboard", chatId: "wall", agentId: "coder", text: "idea", owedTo: "owner", home: { kind: "idea", link: "ideas/x.md" }, now: 1 })
     peers = [
-      { peer: "clawd", peerUrl: "http://c", healthy: true, skills: [{ id: "coder" }], checkouts: ["Acme/App"] },
-      { peer: "nas", peerUrl: "http://n", healthy: true, skills: [{ id: "atlas" }], checkouts: ["acme/app"] },
-      { peer: "box", peerUrl: "http://b", healthy: true, skills: [{ id: "coder" }], checkouts: ["acme/other"] },
-      { peer: "old", peerUrl: "http://o", healthy: false, skills: [{ id: "coder" }], checkouts: ["acme/app"], lastCheck: new Date(5000) },
+      { peer: "clawd", peerUrl: "http://c", healthy: true, skills: [{ id: "coder" }], checkouts: ["Acme/App"], placement: 1 },
+      { peer: "nas", peerUrl: "http://n", healthy: true, skills: [{ id: "atlas" }], checkouts: ["acme/app"], placement: 1 },
+      { peer: "box", peerUrl: "http://b", healthy: true, skills: [{ id: "coder" }], checkouts: ["acme/other"], placement: 1 },
+      { peer: "older", peerUrl: "http://x", healthy: true, skills: [{ id: "coder" }], checkouts: ["acme/app"] },
+      { peer: "old", peerUrl: "http://o", healthy: false, skills: [{ id: "coder" }], checkouts: ["acme/app"], placement: 1, lastCheck: new Date(5000) },
     ]
     states = {}
     asked = []
@@ -148,11 +257,11 @@ describe("GET and POST /issue-run-on", () => {
     expect(issueHomeOf({ home: { kind: "idea", link: "ideas/x.md" }, channel: "x" })).toBeNull()
   })
 
-  it("GET offers this Mac and the peers that host the agent and have the repo, with their numbers", async () => {
+  it("GET offers this Mac and the peers that host the agent, have the repo and placement: 1 (C2)", async () => {
     const r = await runOnChoices("wp-1", deps())
     expect(r.status).toBe(200)
     const b = r.body as any
-    expect(b).toMatchObject({ current: "local", stale: false, issue: "acme/app#7", agentId: "coder" })
+    expect(b).toMatchObject({ current: "local", placement: null, stale: false, issue: "acme/app#7", agentId: "coder" })
     expect(b.choices).toEqual([
       { node: "local", label: "This Mac", healthy: true, hostsAgent: true, hasCheckout: true, swapUsedPct: 40, load1: 3.2 },
       { node: "clawd", label: "clawd", healthy: true, hostsAgent: true, hasCheckout: true, swapUsedPct: 5, load1: 0.4 },
@@ -161,7 +270,7 @@ describe("GET and POST /issue-run-on", () => {
   })
 
   it("GET shows a placement on an offline node as stale", async () => {
-    store.setRunOn("wp-1", { node: "old", setBy: "owner", setAt: 1 }, 2)
+    store.setPlacement("github", "acme/app:issue:7", { node: "old", setBy: "owner", setAt: 1 })
     const b = (await runOnChoices("wp-1", deps())).body as any
     expect(b).toMatchObject({ current: "old", stale: true, staleSince: new Date(5000).toISOString() })
   })
@@ -173,12 +282,13 @@ describe("GET and POST /issue-run-on", () => {
     expect((await moveRunOn({ id: "wp-1" }, deps())).status).toBe(400)
   })
 
-  it("refuses an unknown or unfit node", async () => {
+  it("refuses an unknown or unfit node, and one without placement (C2)", async () => {
     expect((await moveRunOn({ id: "wp-1", node: "ghost" }, deps())).status).toBe(404)
     expect(((await moveRunOn({ id: "wp-1", node: "nas" }, deps())).body as any).error).toContain("does not host coder")
     expect(((await moveRunOn({ id: "wp-1", node: "box" }, deps())).body as any).error).toContain("no checkout of acme/app")
+    expect(((await moveRunOn({ id: "wp-1", node: "older" }, deps())).body as any).error).toContain("cannot run a placed issue")
     expect(((await moveRunOn({ id: "wp-1", node: "old" }, deps())).body as any).error).toContain("offline")
-    expect(store.get("wp-1")!.runOn).toBeNull()
+    expect(placed()).toBeNull()
   })
 
   it("refuses a move the holder's check fails, for each reason", async () => {
@@ -186,18 +296,19 @@ describe("GET and POST /issue-run-on", () => {
       states.local = s
       const r = await moveRunOn({ id: "wp-1", node: "clawd" }, deps())
       expect(r.status).toBe(409)
-      expect(store.get("wp-1")!.runOn).toBeNull()
+      expect(placed()).toBeNull()
     }
     expect(asked).toEqual(["local", "local", "local"])
   })
 
-  it("moves when clean, asks the node that holds it next time, and node local clears", async () => {
+  it("moves when clean (checked before and after the write), and local is written, not deleted", async () => {
     states.local = { runOpen: false, worktree: { branch: "agentx/issue-7", dirty: false, ahead: 0 } }
     const r = await moveRunOn({ id: "wp-1", node: "clawd", by: "owner" }, deps())
     expect(r.status).toBe(200)
-    expect(store.get("wp-1")!.runOn).toEqual({ node: "clawd", setBy: "owner", setAt: 1000 })
-    expect(store.runOnForIssue("github", "acme/app", 7)?.node).toBe("clawd")
+    expect(placed()).toEqual({ node: "clawd", setBy: "owner", setAt: 1000 })
+    expect(asked).toEqual(["local", "local"])
     // Back to this Mac: clawd, which holds it now, is asked.
+    asked = []
     states.clawd = { runOpen: true, worktree: null }
     expect((await moveRunOn({ id: "wp-1", node: "local" }, deps())).status).toBe(409)
     states.clawd = new Error("timed out")
@@ -206,17 +317,31 @@ describe("GET and POST /issue-run-on", () => {
     const back = await moveRunOn({ id: "wp-1", node: "local" }, deps())
     expect(back.status).toBe(200)
     expect((back.body as any).message).toContain("Back to this Mac")
-    expect(store.get("wp-1")!.runOn).toBeNull()
-    expect(asked).toEqual(["local", "clawd", "clawd", "clawd"])
+    expect(placed()?.node).toBe("local")
+    expect(asked).toEqual(["clawd", "clawd", "clawd", "clawd"])
   })
 
-  it("brings an issue back from an offline node without asking it", async () => {
-    store.setRunOn("wp-1", { node: "old", setBy: "owner", setAt: 1 }, 2)
-    expect(((await moveRunOn({ id: "wp-1", node: "clawd" }, deps())).body as any).error).toContain("Bring it back to this Mac first")
+  it("a run that opens during the move puts the old placement back and refuses", async () => {
+    store.setPlacement("github", "acme/app:issue:7", { node: "clawd", setBy: "owner", setAt: 5 })
+    states.clawd = [{ runOpen: false, worktree: null }, { runOpen: true, worktree: null }]
+    const r = await moveRunOn({ id: "wp-1", node: "local" }, deps())
+    expect(r.status).toBe(409)
+    expect((r.body as any).error).toContain("opened")
+    expect(placed()).toEqual({ node: "clawd", setBy: "owner", setAt: 5 })
+    // With no placement before, the undo leaves none.
+    store.restorePlacement("github", "acme/app:issue:7", null)
+    states.local = [{ runOpen: false, worktree: null }, { runOpen: true, worktree: null }]
+    expect((await moveRunOn({ id: "wp-1", node: "clawd" }, deps())).status).toBe(409)
+    expect(placed()).toBeNull()
+  })
+
+  it("an offline holder refuses every move, Back to this Mac included", async () => {
+    store.setPlacement("github", "acme/app:issue:7", { node: "old", setBy: "owner", setAt: 1 })
+    expect(((await moveRunOn({ id: "wp-1", node: "clawd" }, deps())).body as any).error).toContain("old is offline")
     const back = await moveRunOn({ id: "wp-1", node: "local" }, deps())
-    expect(back.status).toBe(200)
+    expect(back.status).toBe(409)
     expect(asked).toEqual([])
-    expect(store.get("wp-1")!.runOn).toBeNull()
+    expect(placed()?.node).toBe("old")
   })
 
   it("reads /api/node numbers", () => {

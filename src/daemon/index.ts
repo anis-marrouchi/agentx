@@ -708,11 +708,24 @@ export class AgentXDaemon {
         const home = d?.activeHomeNode(entity as any) ?? null
         return home && home === d?.homeNodeId ? LOCAL_NODE : home
       },
-      runOn: (provider, project, n) => this.requests?.store.runOnForIssue(provider, project, n) ?? null,
+      placement: (channel, chatId) => this.requests?.store.placement(channel, chatId) ?? null,
+    })
+    // The same placement, at the start of every registry.execute (#2104
+    // B1): Hub turns, crons with a home and workflow steps too. A pick-up
+    // turn names its request, whose home is the issue.
+    this.registry.setPlacements({
+      placement: (channel, chatId) => this.requests?.store.placement(channel, chatId) ?? null,
+      requestHome: (id) => {
+        const r = this.requests?.store.get(id)
+        return r?.home?.kind === "issue" ? r.home.link : null
+      },
     })
     // A task another node placed here finds its checkout among this node's
-    // rule folders too (#2104 B4).
-    this.registry.setCheckoutDirs(() => this.projectRules?.list().map((r) => r.runbook).filter((d): d is string => !!d) ?? [])
+    // own (#2104 C3): its rule folders and its agents' workspaces.
+    this.registry.setCheckoutDirs(() => [
+      ...(this.projectRules?.list().map((r) => r.runbook) ?? []),
+      ...Object.values(this.config.agents ?? {}).map((a: any) => a?.workspace),
+    ].filter((d): d is string => typeof d === "string" && !!d))
 
     this.signals = this.createSignalService()
     setSignalService(this.signals)
@@ -9167,6 +9180,11 @@ export class AgentXDaemon {
         case "POST /task": {
           const body = await readBody(req)
           this.markOperatorTurn(body.context, req)
+          // A task from another machine is never sent on to a placed issue's
+          // node again (#2104 B1): the sender already chose.
+          if (!isLoopback(req.socket?.remoteAddress || "")) {
+            body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), fromPeer: true }
+          }
           const agentId = (body.agent as string) || this.config.node.defaultAgent
           if (!agentId || !body.message) {
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
@@ -10115,6 +10133,9 @@ export class AgentXDaemon {
             // The repositories this node has checked out (#2104 B4): the Hub
             // offers a node to run an issue only when it has the issue's repo.
             checkouts: this.localCheckouts(),
+            // This node runs a placed issue's task in its own checkout or
+            // refuses it (#2104 C2); an older one would fall back silently.
+            placement: 1,
             // The GitHub logins this node posts with, so the peer that
             // receives the webhook knows an agent's comment as ours (#522).
             githubLogins: this.github?.postingAccounts() ?? [],

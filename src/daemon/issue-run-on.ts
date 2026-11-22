@@ -2,15 +2,16 @@ import { existsSync } from "fs"
 import { issueWorktreePath, issueWorktreeState, pickCheckout, TASK_WORKTREE_DEFAULTS, worktreeTarget, type IssueWorktreeState, type TaskWorktreeSettings } from "@/agents/task-worktrees"
 import type { ExecFn } from "@/agents/spec-tests"
 import { parseRef } from "@/requests/checkers/issue"
-import type { RequestRecord, RequestStore, RunOn } from "@/requests/store"
+import type { Placement, RequestRecord, RequestStore } from "@/requests/store"
 import { OPEN_STATES } from "@/requests/store"
 
 // --- Run an issue on another machine (#2104) ---
 //
 // The owner picks, on a Wall post whose home is an issue, the mesh node
-// the issue's runs go to. The choice is the request's `runOn` (no store of
-// its own); the router reads it (channels/run-on.ts). Two reads and one
-// write, all on the daemon:
+// the issue's runs go to. The choice is kept per issue chat in
+// `issue_placements` (requests/store.ts), never pruned; registry.execute
+// and the router read it (channels/run-on.ts). Two reads and one write,
+// all on the daemon:
 //
 //   GET  /mesh/issue-state?chatId=&channel=   (mesh token) what a move asks
 //        the node holding the issue: {runOpen, worktree: {branch, dirty,
@@ -19,10 +20,12 @@ import { OPEN_STATES } from "@/requests/store"
 //        run on: {current, stale, choices: [...]}. The Wall's
 //        GET /api/admin/wall/run-on asks this.
 //   POST /issue-run-on {id, node}  moves it: refused for a post with no
-//        issue home, a node that is unknown or cannot run it (does not host
-//        the agent or has no checkout of the repository), or a failed move
-//        check (a run open, uncommitted changes, commits not pushed).
-//        `node: "local"` brings it back to this Mac.
+//        issue home, a node that is unknown or cannot run it (offline, an
+//        AgentX without placement, does not host the agent, no checkout of
+//        the repository), or a failed move check (a run open, uncommitted
+//        changes, commits not pushed, the holder offline). `node: "local"`
+//        brings it back to this Mac: an explicit choice, which beats a
+//        mapping.
 
 export interface IssueState { runOpen: boolean; worktree: IssueWorktreeState | null }
 
@@ -81,7 +84,7 @@ export function issueHomeOf(r: Pick<RequestRecord, "home" | "channel">, forge?: 
   return null
 }
 
-export interface PeerEntry { peer: string; peerUrl: string; healthy: boolean; skills: Array<{ id: string }>; checkouts?: string[]; lastCheck?: Date }
+export interface PeerEntry { peer: string; peerUrl: string; healthy: boolean; skills: Array<{ id: string }>; checkouts?: string[]; placement?: number; lastCheck?: Date }
 export interface NodeNumbers { swapUsedPct?: number; load1?: number }
 
 export interface RunOnChoice {
@@ -126,16 +129,24 @@ function postOf(id: string, deps: RunOnDeps): { r: RequestRecord; issue: NonNull
   return { r, issue, agentId: r.askedAgent ?? r.agentId }
 }
 
+/** A peer the Hub may offer: it hosts the agent, has the repository and
+ *  says it supports placement (`placement: 1` in its card, #2104 C2): an
+ *  older peer would ignore `placed` and fall back without saying so. */
+function fits(p: PeerEntry, agentId: string, repo: string): boolean {
+  return p.placement === 1 && p.skills.some((s) => s.id === agentId) && has(p.checkouts, repo)
+}
+
 /** GET /issue-run-on?id= */
 export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> {
   const post = postOf(id, deps)
   if ("status" in post) return post
   const { r, issue, agentId } = post
   const peers = deps.directory()
-  const current = r.runOn?.node ?? LOCAL
-  const currentPeer = r.runOn ? peers.find((p) => p.peer === r.runOn!.node) : undefined
-  const stale = !!r.runOn && !currentPeer?.healthy
-  const fit = peers.filter((p) => p.skills.some((s) => s.id === agentId) && has(p.checkouts, issue.project))
+  const placement = deps.store()!.placement(issue.provider, issue.chatId)
+  const current = placement?.node ?? LOCAL
+  const currentPeer = current !== LOCAL ? peers.find((p) => p.peer === current) : undefined
+  const stale = current !== LOCAL && !currentPeer?.healthy
+  const fit = peers.filter((p) => fits(p, agentId, issue.project))
   const [localNums, ...peerNums] = await Promise.all([
     deps.localNumbers().catch(() => null),
     ...fit.map((p) => (p.healthy ? deps.peerNumbers(p.peer).catch(() => null) : Promise.resolve(null))),
@@ -147,14 +158,19 @@ export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> 
   return {
     status: 200,
     body: {
-      id: r.id, issue: issue.label, agentId, current, runOn: r.runOn ?? null, stale,
+      id: r.id, issue: issue.label, agentId, current, placement, stale,
       ...(stale && currentPeer?.lastCheck ? { staleSince: new Date(currentPeer.lastCheck).toISOString() } : {}),
       choices,
     },
   }
 }
 
-/** POST /issue-run-on {id, node} */
+/** POST /issue-run-on {id, node}. The order (#2104 B3): check the node
+ *  that holds the issue (no open run, clean, nothing unpushed), write the
+ *  placement, ask the holder again whether a run opened meanwhile, and if
+ *  one did put the old placement back and refuse. A holder that does not
+ *  answer (offline) refuses the move, "Back to this Mac" included: its
+ *  state cannot be known (a forced way out waits on Q4). */
 export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unknown }, deps: RunOnDeps): Promise<Reply> {
   const id = typeof body.id === "string" ? body.id.trim() : ""
   const node = typeof body.node === "string" ? body.node.trim() : ""
@@ -163,50 +179,56 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
   if ("status" in post) return post
   const { r, issue, agentId } = post
   if (!(OPEN_STATES as readonly string[]).includes(r.state)) return { status: 409, body: { error: `The post is ${r.state}; open it again first.` } }
+  const store = deps.store()!
   const peers = deps.directory()
-  const current = r.runOn?.node ?? LOCAL
-  if (node === current) return { status: 200, body: { ok: true, current, message: node === LOCAL ? "It already runs on this Mac." : `It already runs on ${node}.` } }
+  const before = store.placement(issue.provider, issue.chatId)
+  const current = before?.node ?? LOCAL
+  if (node === current && before) return { status: 200, body: { ok: true, current, message: node === LOCAL ? "It already runs on this Mac." : `It already runs on ${node}.` } }
 
   if (node !== LOCAL) {
     const peer = peers.find((p) => p.peer === node)
     if (!peer) return { status: 404, body: { error: `"${node}" is not a node of this mesh.` } }
     if (!peer.healthy) return { status: 409, body: { error: `${node} is offline.` } }
+    if (peer.placement !== 1) return { status: 409, body: { error: `${node} runs an AgentX that cannot run a placed issue; update it first.` } }
     if (!peer.skills.some((s) => s.id === agentId)) return { status: 409, body: { error: `${node} does not host ${agentId}.` } }
     if (!has(peer.checkouts, issue.project)) return { status: 409, body: { error: `${node} has no checkout of ${issue.project}.` } }
   }
 
-  // The move check (B3), asked of the node that holds the issue now.
-  const channel = issue.provider
-  const holderPeer = current === LOCAL ? undefined : peers.find((p) => p.peer === current)
-  let state: IssueState | null = null
-  if (current === LOCAL) {
-    state = await deps.localIssueState(issue.chatId, channel)
-  } else if (holderPeer?.healthy) {
+  // 1. The holder's state.
+  const holder = current === LOCAL ? "this Mac" : current
+  const ask = async (): Promise<IssueState | string> => {
+    if (current === LOCAL) return deps.localIssueState(issue.chatId, issue.provider)
+    if (!peers.find((p) => p.peer === current)?.healthy) return `${current} is offline, so its work on the issue cannot be checked. Start it again, then move the issue.`
     try {
-      state = await deps.peerIssueState(current, issue.chatId, channel)
+      return await deps.peerIssueState(current, issue.chatId, issue.provider)
     } catch (e: any) {
-      return { status: 409, body: { error: `Could not ask ${current} whether the issue can move: ${e?.message ?? e}` } }
+      return `Could not ask ${current} whether the issue can move: ${e?.message ?? e}`
     }
-  } else if (node !== LOCAL) {
-    // Moving from an offline node to another peer: its work cannot be checked.
-    return { status: 409, body: { error: `${current} is offline, so its work on the issue cannot be checked. Bring it back to this Mac first.` } }
   }
-  // Back to this Mac from an offline node (B5) goes ahead unchecked: the
-  // owner asked, and only what it pushed is known here.
-  const refusal = state ? moveRefusal(current === LOCAL ? "this Mac" : current, state) : null
+  const first = await ask()
+  if (typeof first === "string") return { status: 409, body: { error: first } }
+  const refusal = moveRefusal(holder, first)
   if (refusal) return { status: 409, body: { error: refusal } }
 
-  const store = deps.store()!
+  // 2. Written: from here, a new run goes to the new node.
   const now = deps.now?.() ?? Date.now()
-  const runOn: RunOn | null = node === LOCAL ? null : { node, setBy: typeof body.by === "string" && body.by ? body.by : "owner", setAt: now }
-  if (!store.setRunOn(r.id, runOn, now)) return { status: 409, body: { error: `${r.id} changed while moving; try again` } }
-  const unchecked = !state && current !== LOCAL
+  const placement: Placement = { node, setBy: typeof body.by === "string" && body.by ? body.by : "owner", setAt: now }
+  store.setPlacement(issue.provider, issue.chatId, placement)
+
+  // 3. A run that opened on the holder between 1 and 2 would split the
+  // work: the move is undone.
+  const again = await ask()
+  const opened = typeof again === "string" ? again : again.runOpen ? `A run opened on this issue on ${holder} while it was moving, so it stays there. Try again when that run ends.` : null
+  if (opened) {
+    store.restorePlacement(issue.provider, issue.chatId, before)
+    return { status: 409, body: { error: opened } }
+  }
   return {
     status: 200,
     body: {
-      ok: true, current: node, runOn,
+      ok: true, current: node, placement,
       message: node === LOCAL
-        ? `Back to this Mac: ${issue.label}'s next run starts here${unchecked ? `. ${current} was offline, so work it did not push stays there` : ""}.`
+        ? `Back to this Mac: ${issue.label}'s next run starts here, from the issue's pushed branch.`
         : `${issue.label}'s next run starts on ${node}, from the issue's pushed branch.`,
     },
   }
