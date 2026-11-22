@@ -2,6 +2,15 @@
 
 AgentX works and is used every day, but it is still before version 1.0 (its version numbers start with 0): there is still work to do. Settings and configuration flows especially need testing, fixes, and polish.
 
+## Start here
+
+New to the code? Read these two pages first:
+
+1. **[How AgentX fits together](docs/architecture/overview.md).** One picture follows a Telegram message from arrival to reply, and each step names the `src/` folder that does it.
+2. **[Glossary › Words in the code](docs/reference/glossary.md#words-in-the-code).** The words you will meet in the code, in issues and in pull requests (request, plan step, job state, home, situation…), one plain line each, with where each lives under `src/`.
+
+Then the [repo layout](#repo-layout) and [setup](#setup) below get you running.
+
 ## Where help matters most
 
 1. **Testing and issue reporting.** Try the [demo](docs/see-it-first.md) or follow the [installation guide](docs/install.md). Test setup, Settings, and a real task. Report broken behavior and confusing instructions; no code contribution is required.

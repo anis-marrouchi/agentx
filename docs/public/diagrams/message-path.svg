@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1010" width="920" height="1010" role="img" aria-labelledby="t d" style="--cycle:6.3s">
+<title id="t">How one message travels through AgentX</title>
+<desc id="d">Nine steps in three parts. A person sends a Telegram message; the Telegram channel (src/channels/telegram.ts) receives it and the channel router (src/channels/router.ts) takes it; the router checks the chat's situation (src/situations/), picks the agent and writes the choice in the intent ledger (src/intent/). The run waits for a free slot in the admission queue (src/admission/), the agent's engine runs (src/agents/runtime.ts), and the agent calls AgentX tools such as agentx_request over MCP (src/mcp/). The reply goes back through the router to Telegram; requests, plans and promises are tracked in src/requests/; events and history feed the dashboard (src/events/, src/daemon/ui/). If the agent lives on another machine, the mesh (src/a2a/) sends the message there. Around the path: schedules and jobs, workflows, the wiki and memory, AgentX Voice.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="1010" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How one message travels</text>
+<text x="44" y="82" class="sub" text-anchor="start">Each card names the src/ folder that does that step.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">The person writing</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">AgentX</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">THE MESSAGE ARRIVES</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:5.58s"/>
+<circle cx="70" cy="176" r="15" fill="#0B0D12"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Someone writes</text>
+<text x="60" y="241" class="title" text-anchor="start">on Telegram</text>
+<text x="60" y="263" class="note" text-anchor="start">channels/telegram.ts</text>
+<text x="60" y="280" class="note" text-anchor="start">receives the update</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.28s"/>
+<circle cx="354" cy="176" r="15" fill="#0B0D12"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">The router takes it</text>
+<text x="344" y="242" class="note" text-anchor="start">channels/router.ts:</text>
+<text x="344" y="259" class="note" text-anchor="start">one path for every channel</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.98s"/>
+<circle cx="638" cy="176" r="15" fill="#0B0D12"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">Situation, agent,</text>
+<text x="628" y="241" class="title" text-anchor="start">ledger</text>
+<text x="628" y="263" class="note" text-anchor="start">situations/ · intent/</text>
+<text x="628" y="280" class="note" text-anchor="start">who answers, and why</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="200" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">THE AGENT RUNS</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:7.68s"/>
+<circle cx="70" cy="392" r="15" fill="#0B0D12"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">It waits for a slot</text>
+<text x="60" y="458" class="note" text-anchor="start">admission/: a queue when</text>
+<text x="60" y="475" class="note" text-anchor="start">the machine is busy</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.38s"/>
+<circle cx="354" cy="392" r="15" fill="#0B0D12"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">The engine runs</text>
+<text x="344" y="458" class="note" text-anchor="start">agents/runtime.ts: Claude</text>
+<text x="344" y="475" class="note" text-anchor="start">Code, Codex, OpenCode, SDK</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:9.08s"/>
+<circle cx="638" cy="392" r="15" fill="#0B0D12"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">It calls AgentX tools</text>
+<text x="628" y="458" class="note" text-anchor="start">mcp/: agentx_request,</text>
+<text x="628" y="475" class="note" text-anchor="start">agentx_send and the rest</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<rect x="20" y="536" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="92" y="564" class="band" text-anchor="start">THE REPLY GOES BACK</text>
+<path d="M744 500 V518 Q744 528 734 528 H80 Q70 528 70 538 V576" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
+<path d="M65 571 L70 577 L75 571" class="link fade" style="animation-delay:3.12s"/>
+<g class="rise" style="animation-delay:2.24s">
+<rect x="44" y="580" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="608" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:9.78s"/>
+<circle cx="70" cy="608" r="15" fill="#0B0D12"/>
+<text x="70" y="613" class="num" text-anchor="middle">7</text>
+<text x="60" y="652" class="title" text-anchor="start">The reply arrives</text>
+<text x="60" y="673" class="title" text-anchor="start">on Telegram</text>
+<text x="60" y="695" class="note" text-anchor="start">router → channel adapter</text>
+</g>
+<g class="rise" style="animation-delay:2.56s">
+<rect x="328" y="580" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="608" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:10.48s"/>
+<circle cx="354" cy="608" r="15" fill="#0B0D12"/>
+<text x="354" y="613" class="num" text-anchor="middle">8</text>
+<text x="344" y="652" class="title" text-anchor="start">Open work is tracked</text>
+<text x="344" y="674" class="note" text-anchor="start">requests/: requests,</text>
+<text x="344" y="691" class="note" text-anchor="start">plans, promises</text>
+</g>
+<g class="fade" style="animation-delay:2.39s"><path d="M311 648 H323" class="link"/><path d="M319 644 L324 648 L319 652" class="link"/></g>
+<g class="rise" style="animation-delay:2.88s">
+<rect x="612" y="580" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="608" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.18s"/>
+<circle cx="638" cy="608" r="15" fill="#0B0D12"/>
+<text x="638" y="613" class="num" text-anchor="middle">9</text>
+<text x="628" y="652" class="title" text-anchor="start">History and events</text>
+<text x="628" y="674" class="note" text-anchor="start">events/ · storage/, shown</text>
+<text x="628" y="691" class="note" text-anchor="start">by the dashboard (daemon/ui/)</text>
+</g>
+<g class="fade" style="animation-delay:2.71s"><path d="M595 648 H607" class="link"/><path d="M603 644 L608 648 L603 652" class="link"/></g>
+<g class="rise" style="animation-delay:3.28s"><rect x="44" y="748" width="548" height="68" rx="14" class="card"/><rect x="44" y="748" width="6" height="68" rx="3" fill="#1A66FF"/><text x="66" y="777" class="title" text-anchor="start">The agent is on another machine</text><text x="66" y="799" class="note" text-anchor="start">The router hands the message to that mesh peer: src/a2a/.</text></g>
+<g class="rise" style="animation-delay:4.08s"><text x="44" y="864" class="band" text-anchor="start">AROUND THE PATH</text></g>
+<g class="rise" style="animation-delay:4.28s"><circle cx="49" cy="890.5" r="4" fill="#1A66FF"/><text x="62" y="896" class="symptom" text-anchor="start">Schedules and jobs</text><text x="62" y="916" class="note" text-anchor="start">crons/ · jobs/: work that starts by itself</text></g>
+<g class="rise" style="animation-delay:4.53s"><circle cx="465" cy="890.5" r="4" fill="#1A66FF"/><text x="478" y="896" class="symptom" text-anchor="start">Workflows</text><text x="478" y="916" class="note" text-anchor="start">workflows/: saved steps, engine and runs</text></g>
+<g class="rise" style="animation-delay:4.78s"><circle cx="49" cy="942.5" r="4" fill="#1A66FF"/><text x="62" y="948" class="symptom" text-anchor="start">Wiki and memory</text><text x="62" y="968" class="note" text-anchor="start">wiki/ · memory/: what agents know</text></g>
+<g class="rise" style="animation-delay:5.03s"><circle cx="465" cy="942.5" r="4" fill="#1A66FF"/><text x="478" y="948" class="symptom" text-anchor="start">AgentX Voice</text><text x="478" y="968" class="note" text-anchor="start">apps/mac-voice/ · voice/: speak, hear</text></g>
+</svg>

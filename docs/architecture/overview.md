@@ -2,6 +2,24 @@
 
 Start with [the visual workflow tutorial](../tutorials/first-workflow.md). This page explains what happens behind the controls you used.
 
+![One Telegram message in nine steps: the Telegram channel receives it, the router picks the agent and records why, the run waits for a free slot, the agent's engine runs and calls AgentX tools, the reply goes back to Telegram, and the open work, events and history are kept for the dashboard. Each step names its src/ folder; a message for an agent on another machine goes over the mesh.](/diagrams/message-path.svg)
+
+## Follow one message
+
+The picture follows one Telegram message from arrival to reply. Each step names the folder under `src/` that does it. The words are explained in the [glossary's code section](../reference/glossary.md#words-in-the-code).
+
+1. **Arrives.** The Telegram adapter (`src/channels/telegram.ts`) receives the update and turns it into one message shape that every channel shares.
+2. **Routed.** The router (`src/channels/router.ts`, `routeMessage`) is the one path for every channel.
+3. **Decided.** The router reads the chat's situation (`src/situations/`) to see whether the message needs an answer, picks the agent, and writes the choice and its reason in the intent ledger (`src/intent/`). If the agent lives on another machine, the mesh (`src/a2a/`) sends the message there instead.
+4. **Waits.** When the machine is busy, the run waits in the admission queue (`src/admission/`). A long wait posts a short note in the chat.
+5. **Runs.** The agent's engine runs the turn (`src/agents/runtime.ts`, `executeTask`): Claude Code, Codex, OpenCode, the SDK or the orchestrator. Its conversation is kept per chat (`src/agents/sessions.ts`).
+6. **Uses tools.** During the turn the agent calls AgentX tools over MCP (`src/mcp/`): `agentx_request` to track the owner's request, `agentx_send` to message another channel, and others.
+7. **Replies.** The router sends the reply back through the same adapter, to the same chat.
+8. **Tracked.** Requests, tracked plans and promises stay open in `src/requests/` until they are done.
+9. **Kept.** Events (`src/events/`) and run history (`src/storage/`) feed the dashboard pages (`src/daemon/ui/`).
+
+Around this path: schedules and jobs start work without a message (`src/crons/`, `src/jobs/`), workflows run saved steps (`src/workflows/`), the wiki and memory hold what agents know (`src/wiki/`, `src/memory/`), and AgentX Voice is the Mac app you speak to (`apps/mac-voice/`, `src/voice/`).
+
 ## 1. You choose an entry point
 
 A request can arrive through Telegram, a webhook, a schedule, the dashboard, the OpenCode-backed terminal UI, or the desktop assistant. Each entry point supplies a message and context, such as the agent, conversation, or current dashboard page.
@@ -45,7 +63,12 @@ The typed `request-gate` decision evaluates whether a new request benefits from 
 
 | Part | Source directory |
 |---|---|
-| Routing, daemon API, channel lifecycle | `src/daemon/` |
+| Channel adapters and the message router | `src/channels/` |
+| Daemon API, config loader, dashboard pages | `src/daemon/` |
+| Situations and the intent ledger | `src/situations/`, `src/intent/` |
+| Admission queue | `src/admission/` |
+| AgentX tools for agents (MCP) | `src/mcp/` |
+| Requests, tracked plans, promises | `src/requests/` |
 | Agent runtimes | `src/agents/`, `src/agent/` |
 | Workflow engine and editor | `src/workflows/`, `src/web/workflow-editor/` |
 | Typed decisions and backend adapters | `src/decisions/` |

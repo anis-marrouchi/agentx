@@ -191,7 +191,8 @@ export function createDiagram({ width = 920, height, title, desc, margin = 44 })
     /** A titled list of [heading, line] pairs with a coloured dot, in `columns`: what to do when it fails. */
     list(x, y, { title: heading, items, columns = 1, colour = C.warn, delay = d.now }) {
       const colWidth = (x1 - x) / columns
-      out.push(`<g class="rise" ${at(delay)}>` + text(x, y, heading, "band warn") + "</g>")
+      // The heading is orange for a failure list (the default) and blue for any other list.
+      out.push(`<g class="rise" ${at(delay)}>` + text(x, y, heading, colour === C.warn ? "band warn" : "band") + "</g>")
       items.forEach(([name, line], i) => {
         const lx = x + (i % columns) * colWidth
         const ly = y + 32 + Math.floor(i / columns) * 52
