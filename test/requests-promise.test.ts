@@ -246,3 +246,32 @@ describe("settings", () => {
     expect(requestsConfigSchema.safeParse({ promises: { factTtlDays: 0 } }).success).toBe(false)
   })
 })
+
+describe("a retried promise call (#2078)", () => {
+  const body = { action: "promise", agentId: "coder", owedTo: "client-a", text: "Deploy the login fix to production" }
+
+  it("gives back the open promise with the same words instead of a second one", async () => {
+    const first = await post(body)
+    const again = await post(body, { now: clock + 30_000 })
+    expect(again.status).toBe(200)
+    expect((again.body as any).repeated).toBe(true)
+    expect((again.body as any).request.id).toBe((first.body as any).request.id)
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("opens a new one for other words, another requester, or after the window", async () => {
+    await post(body)
+    await post({ ...body, text: "Deploy the signup fix to production" })
+    await post({ ...body, owedTo: "client-b" })
+    await post(body, { now: clock + 11 * MIN })
+    expect(store.openPromises("coder")).toBe(4)
+  })
+
+  it("opens a new one when the earlier promise is closed", async () => {
+    const id = (await post(body)).body as any
+    store.close(id.request.id, "done", "kept", clock)
+    const again = await post(body, { now: clock + 30_000 })
+    expect((again.body as any).repeated).toBeUndefined()
+    expect(store.openPromises("coder")).toBe(1)
+  })
+})

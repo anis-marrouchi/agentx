@@ -170,6 +170,10 @@ export interface ApiReply {
 
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
+/** How far back a promise call looks for the same open promise (#2078):
+ *  a retry after the tool's 10 s timeout comes within seconds; the 17
+ *  pairs found on 2026-11-22 were 2 to 51 s apart. */
+export const PROMISE_RETRY_WINDOW_MS = 10 * 60_000
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
 const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "standing"]
 
@@ -531,6 +535,10 @@ export function handleRequestsApi(
       if (typeof home === "string") return { status: 400, body: { error: home } }
       const loop = parseLoop(input, deps, now)
       if (typeof loop === "string") return { status: 400, body: { error: loop } }
+      // A retry of a call that timed out on the agent's side (#2078): the
+      // first call still opened it, so give that one back.
+      const again = store.findOpenPromise(agentId, owedTo, text, now - PROMISE_RETRY_WINDOW_MS)
+      if (again) return { status: 200, body: { request: store.get(again), repeated: true } }
       if (store.openPromises(agentId) >= MAX_OPEN_PROMISES) {
         return { status: 409, body: { error: `${agentId} already has ${MAX_OPEN_PROMISES} open promises: close some with done or decline first` } }
       }

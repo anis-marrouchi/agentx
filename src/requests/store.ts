@@ -464,6 +464,18 @@ export class RequestStore {
     ).run(input.id, WALL_CHANNEL, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.now)
   }
 
+  /** The newest open promise of this agent, owed to `owedTo`, with the
+   *  same words, opened at or after `since` (#2078). A promise call that
+   *  times out on the agent's side still lands in the daemon, and the
+   *  agent's retry must find it instead of opening a second one. */
+  findOpenPromise(agentId: string, owedTo: string, text: string, since: number): string | null {
+    const r = this.db.prepare(
+      `SELECT id FROM requests WHERE agent_id = ? AND promise = 1 AND owed_to = ? AND text = ? AND created_at >= ?
+         AND state IN (${placeholders(OPEN_STATES.length)}) ORDER BY created_at DESC LIMIT 1`,
+    ).get(agentId, owedTo, text.slice(0, TEXT_MAX), since, ...OPEN_STATES) as { id: string } | undefined
+    return r?.id ?? null
+  }
+
   /** How many open promises this agent holds. */
   openPromises(agentId: string): number {
     return (this.db.prepare(
