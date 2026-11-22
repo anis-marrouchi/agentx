@@ -98,9 +98,23 @@ describe("which posts have a Diff", () => {
 
   it("finds PR and MR links in text, on the home's forge only", () => {
     const t = `see https://github.com/acme/shop/pull/30, and ${GITLAB}/g/sub/p/-/merge_requests/4 and https://github.com/acme/shop/issues/5`
-    expect(prLinksIn([t], "github", GITLAB).map((h) => h.key)).toEqual(["acme/shop#30"])
-    expect(prLinksIn([t], "gitlab", GITLAB).map((h) => h.key)).toEqual(["g/sub/p!4"])
-    expect(prLinksIn([t], "gitlab", null)).toEqual([])
+    const ghHome = { provider: "github" as const, ref: { project: "acme/shop", number: 3, mr: false } }
+    const glHome = { provider: "gitlab" as const, ref: { project: "g/sub/p", number: 1, mr: false } }
+    expect(prLinksIn([t], ghHome, GITLAB).map((h) => h.key)).toEqual(["acme/shop#30"])
+    expect(prLinksIn([t], glHome, GITLAB).map((h) => h.key)).toEqual(["g/sub/p!4"])
+    expect(prLinksIn([t], glHome, null)).toEqual([])
+  })
+
+  it("keeps links to the home's own repository or project only, and drops dot segments", () => {
+    const ghHome = { provider: "github" as const, ref: { project: "acme/shop", number: 3, mr: false } }
+    const t = "https://github.com/other/lib/pull/9 https://github.com/ACME/Shop/pull/31 https://github.com/acme/../pull/7 https://github.com/./shop/pull/8 https://github.com/acme/shop.old/pull/6"
+    expect(prLinksIn([t], ghHome, GITLAB).map((h) => h.key)).toEqual(["acme/shop#31"])
+    const glHome = { provider: "gitlab" as const, ref: { project: "g/p", number: 1, mr: false } }
+    const g = `${GITLAB}/g/other/-/merge_requests/2 ${GITLAB}/g/p/-/merge_requests/3 ${GITLAB}/g/../p/-/merge_requests/4 ${GITLAB}/g/p/./-/merge_requests/5`
+    expect(prLinksIn([g], glHome, GITLAB).map((h) => h.key)).toEqual(["g/p!3"])
+    // A home path with a dot segment has no Diff.
+    add("dots", "https://github.com/acme/../issues/3")
+    expect(diffHomeOf(store.get("dots")!, GITLAB)).toBeNull()
   })
 })
 
@@ -181,6 +195,21 @@ describe("GET diff: an issue's pull and merge requests", () => {
     now += PRS_TTL_MS
     await handleWallDiff({ id: "named" }, d)
     expect(timeline()).toBe(2)
+  })
+
+  it("an open PR of another repo named in passing is not the default diff nor listed", async () => {
+    add("passing", "https://github.com/acme/shop/issues/3", "Like https://github.com/other/lib/pull/9; done in https://github.com/acme/shop/pull/30.")
+    const m = mockFetch({
+      [`${GH}/repos/acme/shop/issues/3/timeline`]: [],
+      [`${GH}/repos/acme/shop/pulls/30`]: ghPull(30, SHA_A, "closed"),
+      [`${GH}/repos/other/lib/pulls/9`]: ghPull(9, SHA_B),
+      [`${GH}/repos/acme/shop/pulls/30 diff`]: DIFF,
+    })
+    const r = await handleWallDiff({ id: "passing" }, gh(m.fetch))
+    expect(r.body).toMatchObject({ prs: [{ ref: "acme/shop#30" }], ref: "acme/shop#30" })
+    expect((r.body as any).prs).toHaveLength(1)
+    expect(m.calls.some((c) => c.includes("other/lib"))).toBe(false)
+    expect((await handleWallDiff({ id: "passing", pr: "other/lib#9" }, gh(m.fetch))).status).toBe(400)
   })
 
   it("a PR home lists itself, with no timeline read", async () => {

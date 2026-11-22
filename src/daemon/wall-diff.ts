@@ -12,7 +12,8 @@ import { forgeHomeOf, type ForgeHome } from "./wall-forge-state"
 // home is a GitHub or GitLab issue, or already a PR or MR, finds those:
 //   - the PR/MR links in the request's own record: its home, evidence,
 //     words, owner's note, proof links, request links and the agent's last
-//     answer;
+//     answer, to the home's own repository or project only (a PR of another
+//     repo named in passing is never the default diff nor the comment target);
 //   - on GitHub, the issue timeline's cross-references from a pull request
 //     of the same repository; on GitLab, the issue's related merge
 //     requests.
@@ -47,9 +48,16 @@ export const PRS_TTL_MS = 60_000
 const PRS_MAX = 10
 
 /** The forge home of a post that has or may have a diff: a GitHub or
- *  GitLab issue, pull request or merge request. Null: no forge home. */
+ *  GitLab issue, pull request or merge request. Null: no forge home, or a
+ *  path with a "." or ".." segment, which names no repository. */
 export function diffHomeOf(r: Pick<RequestRecord, "home" | "channel" | "chatId">, gitlabUrl: string | null | undefined): ForgeHome | null {
-  return forgeHomeOf({ home: r.home, group: { channel: r.channel, chatId: r.chatId } }, gitlabUrl)
+  const home = forgeHomeOf({ home: r.home, group: { channel: r.channel, chatId: r.chatId } }, gitlabUrl)
+  return home && !dotPath(home.ref.project) ? home : null
+}
+
+/** A repository path with a "." or ".." segment. */
+function dotPath(path: string): boolean {
+  return path.split("/").some((seg) => seg === "." || seg === "..")
 }
 
 /** One PR or MR of a post, as the Hub shows it. */
@@ -93,11 +101,15 @@ const githubPr = (project: string, n: number): ForgeHome => ({ provider: "github
 const gitlabMr = (project: string, n: number): ForgeHome => ({ provider: "gitlab", ref: { project, number: n, mr: true }, key: `${project}!${n}` })
 const forgeName = (h: Pick<ForgeHome, "provider">) => (h.provider === "github" ? "GitHub" : "GitLab")
 
-/** The PR/MR links in some text, on the home's forge. */
-export function prLinksIn(texts: Array<string | null | undefined>, provider: ForgeHome["provider"], gitlabUrl: string | null | undefined): ForgeHome[] {
+/** The PR/MR links in some text, to the home's own repository or project
+ *  (same forge, same path, case aside). A link with a "." or ".." segment
+ *  names no repository and is dropped. */
+export function prLinksIn(texts: Array<string | null | undefined>, home: Pick<ForgeHome, "provider" | "ref">, gitlabUrl: string | null | undefined): ForgeHome[] {
   const out: ForgeHome[] = []
+  const project = home.ref.project.toLowerCase()
+  const ours = (path: string) => !dotPath(path) && path.toLowerCase() === project
   let gitlab: RegExp | null = null
-  if (provider === "gitlab" && gitlabUrl) {
+  if (home.provider === "gitlab" && gitlabUrl) {
     try {
       const host = new URL(gitlabUrl).host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       gitlab = new RegExp(`https?://${host}/([\\w.-]+(?:/[\\w.-]+)+)/-/merge_requests/(\\d+)`, "gi")
@@ -105,8 +117,8 @@ export function prLinksIn(texts: Array<string | null | undefined>, provider: For
   }
   for (const t of texts) {
     if (!t) continue
-    if (provider === "github") for (const m of t.matchAll(/https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/gi)) out.push(githubPr(m[1], Number(m[2])))
-    else if (gitlab) for (const m of t.matchAll(gitlab)) out.push(gitlabMr(m[1], Number(m[2])))
+    if (home.provider === "github") { for (const m of t.matchAll(/https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/gi)) if (ours(m[1])) out.push(githubPr(home.ref.project, Number(m[2]))) }
+    else if (gitlab) { for (const m of t.matchAll(gitlab)) if (ours(m[1])) out.push(gitlabMr(home.ref.project, Number(m[2]))) }
   }
   return out
 }
@@ -123,7 +135,7 @@ export async function findPrs(r: RequestRecord, home: ForgeHome, deps: WallDiffD
   let answer: string | null = null
   try { answer = deps.store.lastAnswer?.(r.id)?.text ?? null } catch { /* no traces here */ }
   const texts = [r.home?.link, r.evidence, r.text, r.ownerNote, answer, ...(r.deliverableProofs ?? []).map((p) => p.link), ...deps.store.links(r.id).map((l) => l.ref)]
-  const named = [...(home.ref.mr ? [home] : []), ...prLinksIn(texts, home.provider, deps.gitlabUrl)]
+  const named = [...(home.ref.mr ? [home] : []), ...prLinksIn(texts, home, deps.gitlabUrl)]
     .filter((h, i, all) => all.findIndex((o) => o.key === h.key) === i).slice(0, PRS_MAX)
   for (const h of named) keep(h, await deps.forge.pull(h).catch(() => ({ title: "", state: "unknown", headSha: null })))
   if (!home.ref.mr) {
