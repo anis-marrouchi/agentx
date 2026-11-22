@@ -192,23 +192,15 @@ export interface RequestRecord {
   /** A standing order (noqta#807): its rhythm, the number that proves it
    *  and its cron. Only the owner closes it. Null: an ordinary request. */
   standing?: StandingOrder | null
-  /** The mesh node this request's issue runs on (#2104), chosen from the
-   *  Hub. Null or unset: where the agent mapping says, else this node. */
-  runOn?: RunOn | null
 }
 
-/** Where an issue's runs go (#2104): a mesh peer's name, who chose it and
- *  when. Kept on the request homed on the issue; no store of its own. */
-export interface RunOn { node: string; setBy: string; setAt: number }
+/** Where an issue's runs go (#2104): a mesh peer's name, or LOCAL_PLACEMENT
+ *  for this node, who chose it and when. */
+export interface Placement { node: string; setBy: string; setAt: number }
 
-export function readRunOn(raw: unknown): RunOn | null {
-  if (typeof raw !== "string" || !raw) return null
-  try {
-    const v = JSON.parse(raw)
-    return v && typeof v.node === "string" && v.node && typeof v.setBy === "string" && typeof v.setAt === "number"
-      ? { node: v.node, setBy: v.setBy, setAt: v.setAt } : null
-  } catch { return null }
-}
+/** "Back to this Mac": an explicit choice of this node, which a mapping
+ *  does not take over. */
+export const LOCAL_PLACEMENT = "local"
 
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
 
@@ -281,6 +273,17 @@ export function ensureRequestTables(db: Database.Database): void {
       FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_request_verdicts_request ON request_verdicts(request_id, at);
+    -- Where an issue's runs go (#2104 B2): one row per issue chat, written
+    -- from the Hub. Never pruned, and no request row is needed for it: a
+    -- chat has many request rows, and those come and go.
+    CREATE TABLE IF NOT EXISTS issue_placements (
+      channel TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      node TEXT NOT NULL,
+      set_by TEXT NOT NULL,
+      set_at INTEGER NOT NULL,
+      PRIMARY KEY (channel, chat_id)
+    );
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
@@ -309,8 +312,6 @@ export function ensureRequestTables(db: Database.Database): void {
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
-  // The node the request's issue runs on (#2104), as JSON {node, setBy, setAt}.
-  ensureColumns(db, "requests", [["run_on", "TEXT"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -369,7 +370,6 @@ function toRecord(r: any): RequestRecord {
     deliverables: readDeliverables(r.deliverables), deliverableProofs: readProofs(r.deliverable_proofs),
     proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
     standing: readStanding(r.standing), ownerReopens: r.owner_reopens ?? 0,
-    runOn: readRunOn(r.run_on),
   }
 }
 
@@ -883,39 +883,38 @@ export class RequestStore {
    *  does not count (#2112 review): PM opening the issue's request before
    *  Coder's first run does not mean Coder started it in the checkout. */
   openOnIssue(provider: "github" | "gitlab", project: string, number: number, agentId: string): boolean {
-    return this.openRequestsOnIssue(provider, project, number).some((r) => r.agentId === agentId)
-  }
-
-  /** The node the open request homed on this forge issue runs on (#2104),
-   *  or null: the newest such request with one set. */
-  runOnForIssue(provider: "github" | "gitlab", project: string, number: number): RunOn | null {
-    for (const r of this.openRequestsOnIssue(provider, project, number)) if (r.runOn) return r.runOn
-    return null
-  }
-
-  /** Sets (or with null clears) where a request's issue runs (#2104). */
-  setRunOn(id: string, runOn: RunOn | null, now: number): boolean {
-    return this.db.prepare("UPDATE requests SET run_on = ?, updated_at = ? WHERE id = ? AND state != 'job'")
-      .run(runOn ? JSON.stringify(runOn) : null, now, id).changes > 0
-  }
-
-  /** Open requests homed on this forge issue, newest first. */
-  private openRequestsOnIssue(provider: "github" | "gitlab", project: string, number: number): RequestRecord[] {
     const like = `%${number}%`
     const rows = this.db.prepare(
-      `SELECT r.*, r.home_link AS ref FROM requests r WHERE r.home_kind = 'issue' AND r.home_link LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})
-       UNION SELECT r.*, l.ref AS ref FROM request_links l JOIN requests r ON r.id = l.request_id
-         WHERE l.kind = 'issue' AND l.ref LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})`,
-    ).all(like, ...OPEN_STATES, like, ...OPEN_STATES) as Array<Record<string, any> & { ref: string }>
-    const seen = new Set<string>()
-    const out: RequestRecord[] = []
-    for (const row of rows) {
-      const ref = parseRef(provider, String(row.ref).trim())
-      if (!ref || ref.mr || ref.number !== number || ref.project.toLowerCase() !== project.toLowerCase() || seen.has(row.id)) continue
-      seen.add(row.id)
-      out.push(toRecord(row))
-    }
-    return out.sort((a, b) => b.createdAt - a.createdAt)
+      `SELECT home_link AS ref FROM requests WHERE agent_id = ? AND home_kind = 'issue' AND home_link LIKE ? AND state IN (${placeholders(OPEN_STATES.length)})
+       UNION SELECT l.ref AS ref FROM request_links l JOIN requests r ON r.id = l.request_id
+         WHERE r.agent_id = ? AND l.kind = 'issue' AND l.ref LIKE ? AND r.state IN (${placeholders(OPEN_STATES.length)})`,
+    ).all(agentId, like, ...OPEN_STATES, agentId, like, ...OPEN_STATES) as Array<{ ref: string }>
+    return rows.some((row) => {
+      const ref = parseRef(provider, row.ref.trim())
+      return !!ref && !ref.mr && ref.number === number && ref.project.toLowerCase() === project.toLowerCase()
+    })
+  }
+
+  /** Where an issue chat's runs go (#2104), or null when nobody chose.
+   *  Chat ids are compared without case. */
+  placement(channel: string, chatId: string): Placement | null {
+    const row = this.db.prepare("SELECT node, set_by, set_at FROM issue_placements WHERE channel = ? AND chat_id = ?")
+      .get(channel, chatId.toLowerCase()) as { node: string; set_by: string; set_at: number } | undefined
+    return row ? { node: row.node, setBy: row.set_by, setAt: row.set_at } : null
+  }
+
+  /** Writes where an issue chat's runs go: a peer, or LOCAL_PLACEMENT. */
+  setPlacement(channel: string, chatId: string, p: Placement): void {
+    this.db.prepare(
+      `INSERT INTO issue_placements (channel, chat_id, node, set_by, set_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(channel, chat_id) DO UPDATE SET node = excluded.node, set_by = excluded.set_by, set_at = excluded.set_at`,
+    ).run(channel, chatId.toLowerCase(), p.node, p.setBy, p.setAt)
+  }
+
+  /** Puts back what was there before (a move undone): the row, or none. */
+  restorePlacement(channel: string, chatId: string, before: Placement | null): void {
+    if (before) this.setPlacement(channel, chatId, before)
+    else this.db.prepare("DELETE FROM issue_placements WHERE channel = ? AND chat_id = ?").run(channel, chatId.toLowerCase())
   }
 
   /** The newest open request homed on an issue named by one of `links`,
