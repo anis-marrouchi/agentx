@@ -27,11 +27,40 @@ Don't make the daemon reachable from the public internet just to get pairing wor
 
 ![Running now on the Hub: one card per connected machine, with what each runs now (demo machines here)](/screenshots/wall/running.png)
 
+## Run an issue on another machine
+
+A heavy issue can run on another machine of the mesh instead of this Mac. You choose it per issue, from its post on the Hub. Its agent keeps working on the issue the same way: comments and other events on that issue go to the machine you chose. Its pull request or merge request is not moved: review comments and CI wakes on it run where they ran before, on its branch.
+
+**Before you start**, the other machine needs, set up by whoever runs it:
+
+- the same agent (same id) as the post's agent;
+- a checkout of the issue's repository, named in a project rule's `runbook:` or as the agent's `workspace`;
+- worktrees turned on for that agent: see [Give each coding task its own worktree](./task-worktrees.md).
+
+Steps:
+
+1. **Browser:** open the dashboard, then the Hub, and open the post whose home is the issue.
+2. Under the comment box, in **Run on**, pick the machine. Only machines that host the agent and have the repository are listed, each with its swap use and load (for example "clawd — swap 12%, load 0.8").
+3. Select **Move**. The next run on the issue starts on that machine, in a worktree made from the issue's pushed branch `agentx/issue-<n>`.
+4. To bring it back, select **Back to this Mac**.
+
+A move is refused, with the reason, while:
+
+- a run is open on the issue on the machine that has it now;
+- the issue's worktree there has uncommitted changes;
+- its branch has commits not pushed. Push first, then move.
+
+What stays on this Mac: a run that a person with tool or skill limits starts is refused instead of running on the other machine, which can't apply those limits. The issue gets the reply "This issue runs on clawd, which can't apply your limits. Ask the owner to bring it back to this Mac." A workflow run that is already going on the issue keeps running where it is. Turns the Hub starts from the post itself (a comment on the post, a hand-off, a wake from the job ledger) still run on this Mac: only the issue's own events go to the other machine.
+
+When the other machine goes offline, the issue's runs wait for it. The issue gets one comment, "clawd is offline; this issue's runs wait for it.", and the post shows the machine as offline. Nothing moves back on its own: select **Back to this Mac** if you don't want to wait. Work that machine did not push stays there.
+
 ## Check it worked
 
 1. **Terminal, on either machine:** run `agentx mesh list`. The other machine is listed as `healthy`, with its number of agents.
 2. **Browser:** open the dashboard. On the Hub, select **Running now** in the nav. Both machines have a card marked **up**. See [Running now](../dashboard/hub.md#running-now).
 3. Send a small test task to an agent on the other machine: see [Agent-to-agent (A2A)](../reference/a2a.md).
+
+4. After you move an issue (see [Run an issue on another machine](#run-an-issue-on-another-machine)): the post says **Runs on** and the machine's name. Comment on the issue: the reply comes from the agent on that machine, and its task shows on that machine's card in **Running now**. **Terminal, on that machine:** `git -C <checkout> worktree list` lists the issue's worktree on `agentx/issue-<n>`.
 
 Agents on the second machine sometimes need your yes or no. If your screen is on the first machine, tell the second one to send its decision cards there: see [Approvals › Agents on another machine](../dashboard/approvals.md#agents-on-another-machine).
 
@@ -43,3 +72,8 @@ Agents on the second machine sometimes need your yes or no. If your screen is on
 - **An authentication error:** the machines hold different mesh tokens, or a daemon wasn't restarted after joining. Restart both daemons.
 - **`401` when you reload, send a message, stop a task or kill a process on the other machine:** these control calls need the mesh token when they come from another machine. On the same machine they need no token. From another machine, pass `--token` with the mesh token. The dashboard token is not accepted.
 - **Only one machine sees the other:** pairing was done in one direction. Repeat it the other way.
+- **Run on lists no other machine:** no other machine hosts the post's agent with a checkout of the issue's repository, or it runs an AgentX from before this choice. On that machine, check that the agent exists, that a project rule's `runbook:` or the agent's `workspace` is a checkout of the repository, and update AgentX there.
+- **Run on is not shown on a post:** the post has no issue as its home, it is closed, or you are not signed in as the owner.
+- **"A run is open on this issue", "uncommitted changes" or "not pushed" when you move:** wait for the run to end, or commit and push the branch `agentx/issue-<n>` on the machine that has it, then move again.
+- **The run was refused with "has no checkout":** the other machine has no checkout of the repository. Add one there (see above), or select **Back to this Mac**.
+- **The issue says the machine is offline:** start its daemon (`agentx daemon status` there), or select **Back to this Mac**. The held comments run when it is back, if that is within 30 minutes.
