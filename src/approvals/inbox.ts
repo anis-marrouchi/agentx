@@ -201,6 +201,14 @@ function scheduleItems(ctx: InboxContext): InboxItem[] {
       })
       continue
     }
+    // A one-time job (#2004) is due at its runAt, not at the cron's next
+    // match: a passed date would read as a first run next year (#2075).
+    const runAt = typeof job.runAt === "string" ? Date.parse(job.runAt) : NaN
+    // Said first, so a long prompt cannot clip it away.
+    const passed = creating && runAt <= now.getTime()
+      ? `Its time has passed (${formatFireTime(new Date(runAt), tz)}); enabling it runs it now, late · ` : ""
+    const firstRun = !creating || !job.schedule || passed ? ""
+      : ` · first run ${formatFireTime(Number.isNaN(runAt) ? nextFireTime(job.schedule, tz, now) : new Date(runAt), tz)}`
     out.push({
       key: `schedule:${id}`,
       kind: "schedule",
@@ -210,7 +218,7 @@ function scheduleItems(ctx: InboxContext): InboxItem[] {
       no: creating ? "drop the request" : "keep the schedule",
       raised_by: String(approval.requestedBy ?? "unknown"),
       created_at: String(approval.requestedAt ?? ""),
-      detail: clip(`${what}${creating && job.schedule ? ` · first run ${formatFireTime(nextFireTime(job.schedule, tz, now), tz)}` : ""}`),
+      detail: clip(`${passed}${what}${firstRun}`),
       more: "agentx schedule list",
     })
   }

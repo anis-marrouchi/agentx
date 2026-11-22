@@ -139,28 +139,39 @@ export function getNextCronDate(expression: string, after: Date, timezone: strin
   // Search up to 1 year ahead
   const limit = new Date(candidate.getTime() + 366 * 24 * 60 * 60 * 1000)
 
+  // Each step reads the wall clock in `timezone` and, on a miss, jumps
+  // forward by real minutes that cannot hold a match (#2075): the rest of
+  // a day that does not match, the rest of an hour that does not match, or
+  // the minutes up to the next allowed one. A minute-by-minute walk cost
+  // ~525,000 steps (~1.5 s) for a dated cron whose day has passed. A day
+  // jump stops an hour short of midnight, so a DST change later that day
+  // (at most one hour) cannot carry it past the next day's first minutes.
   while (candidate < limit) {
     const parts = fmt.formatToParts(candidate)
     const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value || "0", 10)
 
     const m = get("minute")
-    const h = get("hour")
+    const h = get("hour") % 24
     const dom = get("day")
     const mon = get("month")
-    const dow = candidate.getDay()
+    // The weekday in `timezone`, not the host's: the day jump below must
+    // see the same day boundaries for all three day fields.
+    const dow = new Date(Date.UTC(get("year"), mon - 1, dom)).getUTCDay()
 
-    if (
-      minutes.includes(m) &&
-      hours.includes(h) &&
-      daysOfMonth.includes(dom) &&
-      months.includes(mon) &&
-      daysOfWeek.includes(dow)
-    ) {
+    let skip: number
+    if (!(daysOfMonth.includes(dom) && months.includes(mon) && daysOfWeek.includes(dow))) {
+      const leftInDay = 24 * 60 - (h * 60 + m)
+      skip = leftInDay > 60 ? leftInDay - 60 : 60 - m
+    } else if (!hours.includes(h)) {
+      skip = 60 - m
+    } else if (!minutes.includes(m)) {
+      const nextMinute = minutes.find((x) => x > m)
+      skip = nextMinute === undefined ? 60 - m : nextMinute - m
+    } else {
       return candidate
     }
 
-    // Advance by 1 minute
-    candidate.setTime(candidate.getTime() + 60_000)
+    candidate.setTime(candidate.getTime() + skip * 60_000)
   }
 
   throw new Error(`No next run found for cron "${expression}" within 1 year`)
