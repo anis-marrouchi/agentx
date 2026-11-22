@@ -722,6 +722,10 @@ Give each run the rows of your rules page that fit it. Off by default. See [Send
 | `registryAgent` | string | `"pm-agent"` | The agent whose wiki holds the rules page. |
 | `registryPage` | string | `"decisions/rules-registry.md"` | The page, relative to that agent's wiki. |
 | `maxTokens` | number (200–4000) | `1200` | Most tokens the rules may take in one run. When they do not fit, each rule is cut to its id and title, so every id is still sent. |
+| `syncMinutes` | number (1–1440) | `10` | On a machine that does not run `registryAgent`: how often it copies the rules page from the connected machine that does. Only that machine is asked, and only its answer is kept. |
+| `maxStaleHours` | number (1–720) | `24` | When that machine cannot be reached, the last copy stays in use with a warning. After this many hours the warning becomes an error. |
+
+On every machine with `enabled` on, a missing rules page is logged as `[rules] ERROR registry page missing: <agent>/<page>` when it goes missing, not on every run. `GET /health` shows `rules`: `source` (`local` or `peer`), `node`, `syncedAt`, `warning`, `error`, and `md5`. The md5 covers the page text only, so two machines with the same rules show the same md5.
 
 ## Check it worked
 
