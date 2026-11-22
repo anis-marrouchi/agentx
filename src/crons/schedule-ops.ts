@@ -5,6 +5,7 @@ import type { NlCronResult } from "@/utils/nl-cron"
 import { getNextCronDate } from "./scheduler"
 import { rootOfConfig } from "./goal-state"
 import { retiredRefusalAt } from "./retired"
+import { withdrawGoalCards } from "./goal-card"
 import { writeLedgerRow } from "./change-ledger"
 
 // --- Shared schedule operations ---
@@ -203,6 +204,7 @@ export async function approveSchedule(
 ): Promise<ApprovalOutcome> {
   let message = ""
   let changed: { old: string; new: string; by: string; reason?: string } | null = null
+  let removed = false
   const result = await applyConfigMutation((cfg) => {
     const job: any = getAtPath(cfg, `crons.${id}`)
     if (!job) throw new Error(`cron "${id}" not found`)
@@ -222,10 +224,13 @@ export async function approveSchedule(
       message = `${id} time change approved: ${approval.schedule} (requested by ${approval.requestedBy})`
     } else {
       unsetAtPath(cfg, `crons.${id}`)
+      removed = true
       message = `${id} deletion approved; job removed (requested by ${approval.requestedBy})`
     }
   }, { configPath: opts.configPath, reload: opts.reload })
   if (!result.success) return { success: false, message: result.error || "failed", result }
+  // A deleted job's goal card never expires: withdraw it (#863, n158092).
+  if (removed) withdrawGoalCards(rootOfConfig(opts.configPath), id, "was deleted")
   if (changed) {
     const c: { old: string; new: string; by: string; reason?: string } = changed
     writeLedgerRow(rootOfConfig(opts.configPath), { job: id, field: "time", old: c.old, new: c.new, by: c.by, reason: c.reason ?? "approved by the operator", at: Date.now() }, opts.ledger)

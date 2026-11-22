@@ -421,3 +421,77 @@ describe("in the scheduler", () => {
     await s.stop()
   })
 })
+
+// Review n158092 item 3: a cron-goal card never expires, so retiring or
+// deleting the job must withdraw it, or it asks the operator forever.
+describe("retire or delete withdraws the open goal card", () => {
+  const pendingGoalCards = () => cronGoalCards().filter((c) => c.status === "pending")
+
+  it("the owner's retire: card withdrawn (resolved by the daemon, no verdict), goal check cleared", async () => {
+    const cardId = await heldWithCard("drop")
+    const { retireAction } = await import("../src/crons/schedule-change")
+    const job = JSON.parse(readFileSync(configPath, "utf-8")).crons.j
+    const out = await retireAction({ reason: "goal met" }, {
+      id: "j", job, caller: { agentId: "helper" }, root: dir, configPath, reload: false, now: new Date(now), ledger: () => db,
+      notifyApproval: async () => "",
+    })
+    expect(out).toMatch(/^Retired "j"/)
+    expect(readCard(dir, cardId)).toMatchObject({ status: "resolved", decided_by: "daemon", resolution: expect.stringMatching(/Withdrawn: the schedule j was retired/), agent_notified_at: expect.any(String) })
+    expect(readCard(dir, cardId)!.verdict).toBeUndefined()
+    expect(pendingGoalCards()).toHaveLength(0)
+    expect(state().goalCheck).toBeUndefined()
+  })
+
+  it("ended by its until: card withdrawn", async () => {
+    const cardId = await heldWithCard()
+    const { endByUntil } = await import("../src/crons/job-end")
+    expect(await endByUntil("j", new Date(now).toISOString(), { root: dir, configPath, log: (m) => logs.push(m), ledger: () => db })).toBe(true)
+    expect(readCard(dir, cardId)!.status).toBe("resolved")
+  })
+
+  it("an approved delete request: card withdrawn", async () => {
+    const cardId = await heldWithCard()
+    writeConfig({ approval: { action: "delete", requestedBy: "helper", requestedAt: new Date(now).toISOString() } })
+    const { approveSchedule } = await import("../src/crons/schedule-ops")
+    const r = await approveSchedule("j", { configPath, reload: false })
+    expect(r.success).toBe(true)
+    expect(readCard(dir, cardId)).toMatchObject({ status: "resolved", resolution: expect.stringMatching(/was deleted/) })
+  })
+
+  it("retired while the owner's recommendation turn runs: no card when the turn ends", async () => {
+    goal = { state: "done", check: null, createdAt: T0 - 90 * DAY }
+    await goalCheckAtFire(JOB, deps())
+    expect(wakes).toHaveLength(1)
+    const { endJobInConfig } = await import("../src/crons/retired")
+    expect(await endJobInConfig("j", new Date(now).toISOString(), { configPath, root: dir })).toMatchObject({ ok: true, changed: true })
+    wakes[0].done()
+    await flush()
+    expect(cronGoalCards()).toHaveLength(0)
+  })
+
+  it("the minute tick withdraws a card whose job is gone or retired, and leaves a live job's card", async () => {
+    const cardId = await heldWithCard()
+    goalCheckTick([{ ...JOB }], deps())
+    expect(readCard(dir, cardId)!.status).toBe("pending")
+    goalCheckTick([{ ...JOB, ended: true }], deps())
+    expect(readCard(dir, cardId)).toMatchObject({ status: "resolved", resolution: expect.stringMatching(/was retired/) })
+  })
+
+  it("the minute tick withdraws the card of a job removed by hand", async () => {
+    const cardId = await heldWithCard()
+    goalCheckTick([], deps())
+    expect(readCard(dir, cardId)).toMatchObject({ status: "resolved", resolution: expect.stringMatching(/no longer exists/) })
+    // A retired job raises no new card at the 2 h mark either.
+    now += 3 * HOUR
+    goalCheckTick([{ ...JOB, ended: true }], deps())
+    expect(pendingGoalCards()).toHaveLength(0)
+  })
+
+  it("a drop answer keeps its drop state (the retired guard reads it)", async () => {
+    const cardId = await heldWithCard("drop")
+    const decided = decideCard(dir, cardId, "yes", { now })
+    expect(await applyGoalAnswer((decided as any).card, answerDeps())).toBe("applied")
+    expect(state().goalCheck).toMatchObject({ reason: "drop-answered" })
+    expect(readCard(dir, cardId)!.status).toBe("decided")
+  })
+})

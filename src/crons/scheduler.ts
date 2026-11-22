@@ -262,6 +262,7 @@ export class CronScheduler {
         expectExitZero: def.expectExitZero,
         runAt: def.runAt,
         until: def.until,
+        endedAt: def.endedAt,
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -321,7 +322,7 @@ export class CronScheduler {
     this.goalTimer = setInterval(() => {
       if (!this.running || !this.goalCheck) return
       try {
-        goalCheckTick(Array.from(this.jobs.values()).map((j) => ({ id: j.id, agent: j.agent, goal: j.goal })), this.goalCheck)
+        goalCheckTick(Array.from(this.jobs.values()).map((j) => ({ id: j.id, agent: j.agent, goal: j.goal, ended: !!j.endedAt })), this.goalCheck)
       } catch (e: any) {
         this.log(`[cron-goal] tick failed: ${e?.message ?? e}`)
       }

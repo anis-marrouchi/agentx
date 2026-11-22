@@ -78,7 +78,7 @@ async function applyDrop(card: DecisionCard, at: string, deps: GoalAnswerDeps): 
     s.goalCheck.cardId = card.id
     delete s.changeOwed
   })
-  const ended = await endJobInConfig(jobId, at, { configPath: deps.configPath })
+  const ended = await endJobInConfig(jobId, at, { configPath: deps.configPath, root: deps.root })
   if (!ended.ok) {
     deps.log(`[cron-goal] "${jobId}": drop answered, but not written to agentx.json: ${ended.error}; retried at the next fire`)
     try {

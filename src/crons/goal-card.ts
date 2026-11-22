@@ -1,4 +1,5 @@
-import { createCard, listCards, type CardInput, type DecisionCard } from "@/approvals/cards"
+import { createCard, listCards, saveCard, type CardInput, type DecisionCard } from "@/approvals/cards"
+import { recordAnswered } from "@/approvals/answered"
 import type { CronGoalOrigin } from "@/approvals/origin"
 export { cronGoalChoice, cronGoalLines } from "@/approvals/origin"
 import { addNote, dropNote, jobGoalState, updateJobGoalState, type GoalCheckState, type GoalChoice } from "./goal-state"
@@ -95,4 +96,39 @@ export function raiseGoalCard(
   }
   opts.log(`[cron-goal] "${job.id}": goal card ${cardId} ${twin ? "taken over" : "raised"}`)
   return { ok: true, cardId, adopted: !!twin }
+}
+
+/**
+ * Withdraw the open goal cards of a job that was retired, ended by its
+ * until, or deleted (#863, n158092 item 3). A cron-goal card never
+ * expires, so without this it would ask the operator about a job that no
+ * longer runs, forever. Closed as "resolved" by the daemon, with the
+ * reason; no verdict is sent. The job's open goal check is cleared too, so
+ * an owner turn still running cannot raise a new card when it ends. A
+ * drop answer stays (the retired guard reads it). Never throws.
+ * Returns the withdrawn card ids.
+ */
+export function withdrawGoalCards(root: string, jobId: string, why: string, opts: { now?: number; log?: (msg: string) => void } = {}): string[] {
+  const log = opts.log ?? (() => {})
+  const at = new Date(opts.now ?? Date.now()).toISOString()
+  const ids: string[] = []
+  try {
+    for (const card of listCards(root, "pending")) {
+      if (card.origin?.kind !== "cron-goal" || card.origin.jobId !== jobId) continue
+      const resolution = cut(`Withdrawn: the schedule ${jobId} ${why}.`, 300)
+      saveCard(root, { ...card, status: "resolved", decided_by: "daemon", decided_at: at, resolution, agent_notified_at: at })
+      recordAnswered(root, { key: `card:${card.id}`, kind: "card", title: card.title, raised_by: card.raised_by, answer: "closed", text: resolution, at, by: "daemon" })
+      ids.push(card.id)
+    }
+  } catch (e: any) {
+    log(`[cron-goal] "${jobId}": goal cards not withdrawn: ${e?.message ?? e}`)
+  }
+  try {
+    const s = jobGoalState(root, jobId, log)
+    if (s.goalCheck && s.goalCheck.reason !== "drop-answered") updateJobGoalState(root, jobId, (st) => { delete st.goalCheck })
+  } catch (e: any) {
+    log(`[cron-goal] "${jobId}": goal check not cleared: ${e?.message ?? e}`)
+  }
+  if (ids.length) log(`[cron-goal] "${jobId}" ${why}: goal card ${ids.join(", ")} withdrawn`)
+  return ids
 }

@@ -34,7 +34,7 @@ export function pastUntil(until: string | undefined, now: number): boolean {
 /** End a job whose `until` passed. Idempotent: an ended job writes nothing. */
 export async function endByUntil(id: string, until: string, deps: UntilDeps): Promise<boolean> {
   const at = new Date(Date.parse(until)).toISOString()
-  const ended = await endJobInConfig(id, at, { configPath: deps.configPath, reload: false })
+  const ended = await endJobInConfig(id, at, { configPath: deps.configPath, reload: false, root: deps.root })
   if (!ended.ok) {
     deps.log(`Job "${id}" is past its until (${until}) but could not be ended: ${ended.error}`)
     return false
