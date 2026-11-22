@@ -64,7 +64,7 @@ async function settle(adapter: GitLabAdapter | GitHubAdapter): Promise<void> {
 
 // --- GitLab ---
 
-function gitlab(opts: { fixAttempts?: number; agentForIssue?: (p: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void> } = {}) {
+function gitlab(opts: { fixAttempts?: number; agentForIssue?: (p: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; knownAgentIds?: string[] } = {}) {
   const gl = new GitLabAdapter({
     webhookPort: 0,
     host: "https://gitlab.example.test",
@@ -73,6 +73,7 @@ function gitlab(opts: { fixAttempts?: number; agentForIssue?: (p: string, n: num
     ci: opts.fixAttempts === undefined ? undefined : { fixAttempts: opts.fixAttempts },
     ciStateFile: join(dir, "ci-fix-gitlab.json"),
     ciAgentForIssue: opts.agentForIssue,
+    knownAgentIds: opts.knownAgentIds,
   } as GitLabChannelConfig, () => {})
   ;(gl as any).usernameToAgent.set("sam_coder", "author-agent")
   const runs: IncomingMessage[] = []
@@ -131,8 +132,10 @@ describe("GitLab: failed MR pipeline", () => {
     const { gl, runs } = gitlab()
     await pipe(gl, pipeline("failed", { id: 77, sha: "c1" }))
     await settle(gl)
-    // A green run resets, so only the dedup stops the redelivered red.
-    await pipe(gl, pipeline("success", { id: 78, sha: "c1" }))
+    // The fix commit c2 passes and resets, so only the dedup stops the
+    // redelivered red of c1.
+    mrDetails = { ...mrDetails, sha: "c2" }
+    await pipe(gl, pipeline("success", { id: 78, sha: "c2" }))
     await pipe(gl, pipeline("failed", { id: 77, sha: "c1" }))
     await settle(gl)
     expect(runs).toHaveLength(1)
@@ -153,15 +156,65 @@ describe("GitLab: failed MR pipeline", () => {
     expect(JSON.parse(readFileSync(join(dir, "ci-fix-gitlab.json"), "utf-8"))[`gitlab:${REPO}:12`]).toMatchObject({ count: 3, noted: true })
   })
 
-  it("a green MR pipeline resets the count", async () => {
+  it("a green pipeline on the MR's head commit resets the count", async () => {
     const { gl, runs } = gitlab({ fixAttempts: 1 })
     await pipe(gl, pipeline("failed", { id: 1, sha: "c1" }))
     await settle(gl)
+    mrDetails = { ...mrDetails, sha: "c2" }
     await pipe(gl, pipeline("success", { id: 2, sha: "c2" }))
     await pipe(gl, pipeline("failed", { id: 3, sha: "c3" }))
     await settle(gl)
     expect(runs).toHaveLength(2)
     expect(notePosts()).toHaveLength(0)
+  })
+
+  it("a passing branch pipeline on the woken commit does not reset: the loop still stops at the cap", async () => {
+    mrList = [{ iid: 12, title: "Add x" }]
+    const { gl, runs } = gitlab({ fixAttempts: 2 })
+    for (let i = 1; i <= 4; i++) {
+      // Each commit: the MR pipeline fails, the branch pipeline passes.
+      mrDetails = { ...mrDetails, sha: `c${i}` }
+      await pipe(gl, pipeline("failed", { id: 10 * i, sha: `c${i}` }))
+      await pipe(gl, pipeline("success", { id: 10 * i + 1, sha: `c${i}`, mr: false })) // inside the hold window
+      await settle(gl)
+      await pipe(gl, pipeline("success", { id: 10 * i + 2, sha: `c${i}`, mr: false })) // after the wake
+    }
+    expect(runs).toHaveLength(2)
+    expect(notePosts()).toHaveLength(1)
+    expect(notePosts()[0].body).toContain("still red after 2 tries")
+  })
+
+  it("a late green of an older commit does not reset the count", async () => {
+    const { gl, runs } = gitlab({ fixAttempts: 2 })
+    mrDetails = { ...mrDetails, sha: "c2" }
+    await pipe(gl, pipeline("failed", { id: 1, sha: "c1" }))
+    await settle(gl)
+    await pipe(gl, pipeline("failed", { id: 2, sha: "c2" }))
+    await settle(gl)
+    await pipe(gl, pipeline("success", { id: 3, sha: "c1" })) // c1's re-run, head is c2
+    mrDetails = { ...mrDetails, sha: "c3" }
+    await pipe(gl, pipeline("failed", { id: 4, sha: "c3" }))
+    await settle(gl)
+    expect(runs).toHaveLength(2)
+    expect(notePosts()).toHaveLength(1)
+  })
+
+  it("an MR labelled agent:no-wake wakes nobody, posts nothing and counts nothing", async () => {
+    mrDetails = { ...mrDetails, labels: ["Doing", "agent:no-wake"] }
+    const { gl, runs } = gitlab()
+    await pipe(gl, pipeline("failed"))
+    await settle(gl)
+    expect(runs).toHaveLength(0)
+    expect(notePosts()).toHaveLength(0)
+    expect((gl as any).ciFix.entries[`gitlab:${REPO}:12`]?.count ?? 0).toBe(0)
+  })
+
+  it("a marker naming an unregistered agent is ignored: the branch owner, else nobody", async () => {
+    mrDetails = { ...mrDetails, description: "<!-- agentx:intruder -->", source_branch: "agentx/issue-12" }
+    const { gl, runs } = gitlab({ knownAgentIds: ["coder-agent", "x-agent"], agentForIssue: (_p, n) => (n === 12 ? "x-agent" : undefined) })
+    await pipe(gl, pipeline("failed"))
+    await settle(gl)
+    expect(runs.map((r) => r.resolvedAgent)).toEqual(["x-agent"])
   })
 
   it("without a marker, an agentx/issue-<n> branch wakes the agent of that issue's request", async () => {
@@ -225,7 +278,7 @@ describe("GitLab: failed MR pipeline", () => {
 
 // --- GitHub ---
 
-function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; webhookSecret?: string } = {}) {
+function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; webhookSecret?: string; knownAgentIds?: string[] } = {}) {
   const gh = new GitHubAdapter({
     routes: [{ repo: REPO, agent: "route-agent" }],
     agentMappings: [{ agentId: "author-agent", githubUsernames: ["anis"] }],
@@ -233,6 +286,7 @@ function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: num
     ciStateFile: join(dir, "ci-fix-github.json"),
     ciAgentForIssue: opts.agentForIssue,
     webhookSecret: opts.webhookSecret,
+    knownAgentIds: opts.knownAgentIds,
   } as GitHubChannelConfig, () => {})
   ;(gh as any).globalToken = "t"
   const runs: IncomingMessage[] = []
@@ -240,14 +294,14 @@ function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: num
   return { gh, runs }
 }
 
-const workflowRun = (conclusion: string, opts: { prs?: number[]; id?: number; attempt?: number; name?: string; sha?: string } = {}) => {
+const workflowRun = (conclusion: string, opts: { prs?: number[]; id?: number; attempt?: number; name?: string; sha?: string; head?: string } = {}) => {
   const id = opts.id ?? 900
   return {
     action: "completed",
     workflow_run: {
       id, run_attempt: opts.attempt ?? 1, name: opts.name ?? "CI", html_url: `https://github.com/${REPO}/actions/runs/${id}`,
       head_sha: opts.sha ?? SHA, head_branch: "feat/y", status: "completed", conclusion,
-      pull_requests: (opts.prs ?? [7]).map((number) => ({ number })),
+      pull_requests: (opts.prs ?? [7]).map((number) => ({ number, head: { sha: opts.head ?? opts.sha ?? SHA } })),
     },
     repository: { full_name: REPO, html_url: `https://github.com/${REPO}` },
   }
@@ -290,8 +344,9 @@ describe("GitHub: failed workflow run", () => {
     const { gh, runs } = github()
     await hook(gh, "workflow_run", workflowRun("failure", { id: 1, sha: "c1" }))
     await settle(gh)
-    // A green commit resets, so only the dedup stops the redelivered red.
-    await hook(gh, "workflow_run", workflowRun("success", { id: 2, sha: "c1" }))
+    // The fix commit c2 passes and resets, so only the dedup stops the
+    // redelivered red of c1.
+    await hook(gh, "workflow_run", workflowRun("success", { id: 2, sha: "c2" }))
     await hook(gh, "workflow_run", workflowRun("failure", { id: 1, sha: "c1" }))
     await settle(gh)
     expect(runs).toHaveLength(1)
@@ -311,22 +366,55 @@ describe("GitHub: failed workflow run", () => {
     expect(notes[0].body).toContain("still red after 3 tries")
   })
 
-  it("a success resets once every run of its commit is green", async () => {
-    const { gh, runs } = github({ fixAttempts: 1 })
+  it("a success on the head commit resets once every run of that commit is green", async () => {
+    const { gh, runs } = github({ fixAttempts: 2 })
     await hook(gh, "workflow_run", workflowRun("failure", { id: 1, sha: "c1" }))
     await settle(gh)
-    // One green workflow while another of its commit is red: no reset.
+    // The fix commit c2: one workflow passes while another is red, no reset.
     commitRuns = [{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "failure" }]
     await hook(gh, "workflow_run", workflowRun("success", { id: 2, sha: "c2" }))
-    await hook(gh, "workflow_run", workflowRun("failure", { id: 3, sha: "c3" }))
-    await settle(gh)
-    expect(runs).toHaveLength(1)
-    // Every run green: reset.
-    commitRuns = [{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "skipped" }]
-    await hook(gh, "workflow_run", workflowRun("success", { id: 4, sha: "c4" }))
-    await hook(gh, "workflow_run", workflowRun("failure", { id: 5, sha: "c5" }))
+    await hook(gh, "workflow_run", workflowRun("failure", { id: 3, sha: "c2" }))
     await settle(gh)
     expect(runs).toHaveLength(2)
+    // c3: every run green, reset.
+    commitRuns = [{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "skipped" }]
+    await hook(gh, "workflow_run", workflowRun("success", { id: 4, sha: "c3" }))
+    await hook(gh, "workflow_run", workflowRun("failure", { id: 5, sha: "c4" }))
+    await settle(gh)
+    expect(runs).toHaveLength(3)
+    expect(notePosts()).toHaveLength(0)
+  })
+
+  it("a late green of an older commit, or a green on the woken commit, does not reset", async () => {
+    const { gh, runs } = github({ fixAttempts: 2 })
+    await hook(gh, "workflow_run", workflowRun("failure", { id: 1, sha: "c1" }))
+    await settle(gh)
+    await hook(gh, "workflow_run", workflowRun("failure", { id: 2, sha: "c2" }))
+    await settle(gh)
+    await hook(gh, "workflow_run", workflowRun("success", { id: 3, sha: "c1", head: "c2" })) // late, c1
+    await hook(gh, "workflow_run", workflowRun("success", { id: 4, sha: "c2" })) // c2 woke the agent
+    await hook(gh, "workflow_run", workflowRun("failure", { id: 5, sha: "c3" }))
+    await settle(gh)
+    expect(runs).toHaveLength(2)
+    expect(notePosts()).toHaveLength(1)
+  })
+
+  it("a PR labelled agent:no-wake wakes nobody and posts nothing", async () => {
+    prDetails = { ...prDetails, labels: [{ name: "agent:no-wake" }] }
+    const { gh, runs } = github()
+    await hook(gh, "workflow_run", workflowRun("failure"))
+    await settle(gh)
+    expect(runs).toHaveLength(0)
+    expect(notePosts()).toHaveLength(0)
+  })
+
+  it("a marker naming an unregistered agent wakes nobody", async () => {
+    prDetails = { ...prDetails, body: "<!-- agentx:intruder -->" }
+    const { gh, runs } = github({ knownAgentIds: ["coder-agent"] })
+    await hook(gh, "workflow_run", workflowRun("failure"))
+    await settle(gh)
+    expect(runs).toHaveLength(0)
+    expect(notePosts()[0]?.body).toContain("no agent owns this")
   })
 
   it("without a marker, an agentx/issue-12 branch wakes the agent of the request on issue 12", async () => {
@@ -389,6 +477,8 @@ describe("ciOwner", () => {
     expect(ciOwner({ body: "> <!-- agentx:quoted -->", branch: "agentx/issue-5", agentForIssue: forIssue })).toEqual({ agentId: "req-agent", via: "branch" })
     expect(ciOwner({ body: "<!-- agentx:unknown -->", branch: "agentx/issue-6", agentForIssue: forIssue })).toBeUndefined()
     expect(ciOwner({ body: "", branch: "agentx/issue-5-extra", agentForIssue: forIssue })).toBeUndefined()
+    expect(ciOwner({ body: MARKED, branch: "agentx/issue-5", agentForIssue: forIssue, knownAgentIds: ["req-agent"] })).toEqual({ agentId: "req-agent", via: "branch" })
+    expect(ciOwner({ body: MARKED, knownAgentIds: ["coder-agent"] })).toEqual({ agentId: "coder-agent", via: "marker" })
   })
 })
 

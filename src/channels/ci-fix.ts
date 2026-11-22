@@ -13,7 +13,9 @@ import { detectAgentxMarker, UNKNOWN_AGENT } from "./outbound-marker"
 //   - a repeated delivery of one run is dropped;
 //   - past `ci.fixAttempts` wakes on the MR/PR, across commits, no more
 //     wakes, and one note asks a person to look;
-//   - a green run on the MR/PR resets all of it.
+//   - a green run on the MR/PR's head commit resets all of it, unless that
+//     commit had a red: a branch pipeline that passes beside a failing MR
+//     pipeline, or a late green of an older commit, resets nothing.
 // The count is saved before the wake is sent, so a crash mid-wake does not
 // give the loop a free try.
 
@@ -113,10 +115,17 @@ export class CiFixLoop<F> {
     return "held"
   }
 
-  /** A green run: forget the MR/PR's count and its held reds of `sha`. */
-  green(key: string, sha?: string): void {
+  /**
+   * A green run of `sha` while the MR/PR's head is `headSha`. It resets the
+   * count and drops an older commit's held red only when `sha` is the head
+   * and that commit had no red (held or woken): one green pipeline beside a
+   * red one on the same commit is not a green commit. True when it reset.
+   */
+  green(key: string, sha: string, headSha: string): boolean {
+    if (!sha || sha !== headSha) return false
     const held = this.held.get(key)
-    if (held && (!sha || held.sha === sha)) {
+    if (held?.sha === sha || this.entries[key]?.sha === sha) return false
+    if (held) {
       clearTimeout(held.timer)
       this.held.delete(key)
     }
@@ -124,6 +133,7 @@ export class CiFixLoop<F> {
       delete this.entries[key]
       this.save()
     }
+    return true
   }
 
   /** Count one wake on `key`, saved before it returns. Past the cap: the
@@ -184,16 +194,21 @@ export class CiFixLoop<F> {
 }
 
 /** The agent that owns an MR/PR for a CI fix: the AgentX marker in its
- *  description, else the open request on the issue its `agentx/issue-<n>`
- *  branch names. Never the route agent, never the author: undefined means
+ *  description when it names a registered agent, else the open request on
+ *  the issue its `agentx/issue-<n>` branch names. Never the route agent, never the author: undefined means
  *  nobody owns it. */
 export function ciOwner(input: {
   body?: string | null
   branch?: string | null
   agentForIssue?: (n: number) => string | undefined
+  /** The registered agent ids. Set: a marker naming another id is ignored,
+   *  since anyone who can edit the description can write one. */
+  knownAgentIds?: readonly string[]
 }): { agentId: string; via: "marker" | "branch" } | undefined {
   const marked = detectAgentxMarker(input.body)
-  if (marked && marked !== UNKNOWN_AGENT) return { agentId: marked, via: "marker" }
+  if (marked && marked !== UNKNOWN_AGENT && (!input.knownAgentIds || input.knownAgentIds.includes(marked))) {
+    return { agentId: marked, via: "marker" }
+  }
   const m = input.branch?.match(/^agentx\/issue-(\d+)$/)
   if (m && input.agentForIssue) {
     const agentId = input.agentForIssue(Number(m[1]))

@@ -4192,6 +4192,7 @@ export class AgentXDaemon {
           noWakeLabel: githubConfig.noWakeLabel,
           ci: githubConfig.ci,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
+          knownAgentIds: Object.keys(this.config.agents),
           ciAgentForIssue: (repo: string, n: number) => requestStoreFor({ root: process.cwd() })
             ?.newestOpenOnIssue(issueHomeLinks("github", repo, n))?.agentId,
         },

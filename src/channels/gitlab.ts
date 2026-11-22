@@ -1678,7 +1678,12 @@ export class GitLabAdapter implements ChannelAdapter {
     const key = ciFixKey("gitlab", project, mr.iid)
     const sha = attrs.sha ?? ""
     if (attrs.status === "success") {
-      this.ciFix.green(key, sha)
+      if (!this.ciFix.has(key)) return
+      // Only a green of the MR's head commit, with no red on it, resets.
+      const head = (await this.mergeRequestInfo(project, mr.iid))?.sha
+      if (!head) { this.log(`Pipeline ${attrs.id} passed on MR !${mr.iid}, MR head unreadable, count kept`); return }
+      const reset = this.ciFix.green(key, sha, head)
+      this.log(`Pipeline ${attrs.id} passed on MR !${mr.iid} (${sha}, head ${head}): ${reset ? "count reset" : "count kept"}`)
       return
     }
     const jobs = (event.builds ?? []).filter((b) => b.status === "failed").map(({ id, name, stage }) => ({ id, name, stage }))
@@ -1724,8 +1729,18 @@ export class GitLabAdapter implements ChannelAdapter {
     const key = ciFixKey("gitlab", project, mr.iid)
     const chatId = `${project}:merge_request:${mr.iid}`
     const info = await this.mergeRequestInfo(project, mr.iid)
+    const noWake = noWakeLabelIn(info?.labels, this.config.noWakeLabel)
+    if (noWake) {
+      this.log(`MR !${mr.iid}: CI failed on ${sha}, no wake: the MR is labelled "${noWake}" (channels.gitlab.noWakeLabel)`)
+      return
+    }
     const branch = info?.sourceBranch ?? event.object_attributes.ref
-    const owner = ciOwner({ body: info?.description, branch, agentForIssue: (n) => this.config.ciAgentForIssue?.(project, n) })
+    const owner = ciOwner({
+      body: info?.description,
+      branch,
+      agentForIssue: (n) => this.config.ciAgentForIssue?.(project, n),
+      knownAgentIds: this.config.knownAgentIds,
+    })
     if (!owner) {
       if (!info) { this.log(`MR !${mr.iid}: CI failed on ${sha}, MR unreadable and no owner from its branch, no wake`); return }
       this.log(`MR !${mr.iid}: CI failed on ${sha}, no agent owns the MR (no marker, no agentx/issue-<n> request), no wake`)
@@ -1790,11 +1805,18 @@ export class GitLabAdapter implements ChannelAdapter {
       .catch((e: Error) => this.log(`Error handling pipeline: ${e?.message ?? e}`))
   }
 
-  /** An MR's description, source branch, title and link, read with the
-   *  global token. */
-  private async mergeRequestInfo(project: string, iid: number): Promise<{ description?: string; sourceBranch?: string; title?: string; webUrl?: string } | undefined> {
-    const data = await this.ciRead<{ description?: string | null; source_branch?: string; title?: string; web_url?: string }>(project, `merge_requests/${iid}`)
-    return data ? { description: data.description ?? undefined, sourceBranch: data.source_branch, title: data.title, webUrl: data.web_url } : undefined
+  /** An MR's description, source branch, title, link, labels and head
+   *  commit, read with the global token. */
+  private async mergeRequestInfo(project: string, iid: number): Promise<{ description?: string; sourceBranch?: string; title?: string; webUrl?: string; labels?: string[]; sha?: string } | undefined> {
+    const data = await this.ciRead<{ description?: string | null; source_branch?: string; title?: string; web_url?: string; labels?: string[]; sha?: string }>(project, `merge_requests/${iid}`)
+    return data ? {
+      description: data.description ?? undefined,
+      sourceBranch: data.source_branch,
+      title: data.title,
+      webUrl: data.web_url,
+      labels: data.labels,
+      sha: data.sha,
+    } : undefined
   }
 
   /** The open MR whose source branch is `ref`, for a branch pipeline. */

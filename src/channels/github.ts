@@ -89,6 +89,9 @@ export interface GitHubChannelConfig {
   /** The agent of the open request homed on issue `n` of `repo`, for a PR
    *  on branch `agentx/issue-<n>` (#2102). */
   ciAgentForIssue?: (repo: string, n: number) => string | undefined
+  /** The registered agent ids: a PR body marker naming another id wakes
+   *  nobody (#2102). Unset: any marker id. */
+  knownAgentIds?: string[]
 }
 
 /** Defaults for the event gate (#612). `channels.github` in agentx.json
@@ -258,7 +261,7 @@ interface GitHubWorkflowRunEvent {
     head_branch: string
     status: string
     conclusion: string | null
-    pull_requests: Array<{ number: number }>
+    pull_requests: Array<{ number: number; head?: { sha?: string } }>
   }
   repository: GitHubRepo
 }
@@ -1149,8 +1152,8 @@ export class GitHubAdapter implements ChannelAdapter {
   /** A completed workflow run (#2102). A failure on a PR is held for the
    *  window with the other red runs of its commit, then wakes the agent
    *  that owns the PR (ciWake) once for that commit. A repeated delivery is
-   *  dropped. A success resets the PR's count once every run of the commit
-   *  is green. check_suite and check_run stay unhandled. */
+   *  dropped. A success resets the PR's count once every run of the PR's
+   *  head commit is green and that commit woke nothing. check_suite and check_run stay unhandled. */
   private async handleWorkflowRun(event: GitHubWorkflowRunEvent): Promise<void> {
     const run = event.workflow_run
     if (event.action !== "completed" || !run) return
@@ -1163,8 +1166,13 @@ export class GitHubAdapter implements ChannelAdapter {
     if (run.conclusion === "success") {
       for (const pr of prs) {
         const key = ciFixKey("github", repo, pr.number)
-        // One green workflow is not a green commit: another may be red.
-        if (this.ciFix.has(key) && await this.commitGreen(repo, run.head_sha)) this.ciFix.green(key, run.head_sha)
+        if (!this.ciFix.has(key)) continue
+        // Only the PR's head commit resets, and one green workflow is not
+        // a green commit: another may be red.
+        const head = pr.head?.sha ?? (await this.pullRequestInfo(repo, pr.number))?.headSha
+        if (!head || head !== run.head_sha || !await this.commitGreen(repo, run.head_sha)) continue
+        const reset = this.ciFix.green(key, run.head_sha, head)
+        this.log(`[github] workflow run ${run.id} passed on ${repo}#${pr.number} (${run.head_sha}): ${reset ? "count reset" : "count kept"}`)
       }
       return
     }
@@ -1188,8 +1196,18 @@ export class GitHubAdapter implements ChannelAdapter {
     const key = ciFixKey("github", repo, number)
     const chatId = `${repo}:pull:${number}`
     const pr = await this.pullRequestInfo(repo, number)
+    const noWake = noWakeLabelIn(pr?.labels, this.config.noWakeLabel)
+    if (noWake) {
+      this.log(`[github] ${chatId}: CI failed on ${sha}, no wake: the PR is labelled "${noWake}" (channels.github.noWakeLabel)`)
+      return
+    }
     const branch = pr?.headRef ?? runBranch
-    const owner = ciOwner({ body: pr?.body, branch, agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n) })
+    const owner = ciOwner({
+      body: pr?.body,
+      branch,
+      agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n),
+      knownAgentIds: this.config.knownAgentIds,
+    })
     if (!owner) {
       if (!pr) { this.log(`[github] ${chatId}: CI failed on ${sha}, PR unreadable and no owner from its branch, no wake`); return }
       this.log(`[github] ${chatId}: CI failed on ${sha}, no agent owns the PR (no marker, no agentx/issue-<n> request), no wake`)
@@ -1235,11 +1253,11 @@ export class GitHubAdapter implements ChannelAdapter {
       .catch((e: Error) => this.log(`Error handling workflow run: ${e?.message ?? e}`))
   }
 
-  /** A PR's body, head branch and author; the workflow_run payload carries
-   *  only its number. */
-  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; author?: string } | undefined> {
-    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string }; user?: { login?: string } }>(repo, `pulls/${number}`)
-    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, author: data.user?.login } : undefined
+  /** A PR's body, head branch and commit, author and labels; the
+   *  workflow_run payload carries only its number and head. */
+  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[] } | undefined> {
+    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string }; user?: { login?: string }; labels?: unknown[] }>(repo, `pulls/${number}`)
+    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels } : undefined
   }
 
   /** Every workflow run of `sha` finished green (skipped and neutral count
