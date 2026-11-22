@@ -156,6 +156,7 @@ Click the AgentX icon in the menu bar, press **Command–Option–A** from any a
 | **Settings…** | Opens the [settings window](#the-settings-window) (**Command–,**) |
 | **Dashboard…** | Opens the dashboard's Settings page in your browser (**Command–D**) |
 | **History…** | Opens the [History window](#history) (**Command–Y**) |
+| **Version** | Greyed out, above Quit: the AgentX version this copy was built from, and its commit, for example *Version 0.250.0 (dc9d402)*. A copy built before this line was added shows no version row |
 | **Quit AgentX Voice** | Closes the app (**Command–Q**). It stays closed until you next log in or run `agentx desktop start`. If the app crashes, it starts again on its own |
 
 ## The settings window
@@ -481,7 +482,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 | Command | What it does |
 |---|---|
 | `agentx desktop install` | Builds and installs the app and its helper, and starts the app at login; the helper starts when an agent needs it. `--agent <id>` pins one agent; `--dry-run` only shows the plan |
-| `agentx desktop status` | Shows whether the app is installed and running |
+| `agentx desktop status` | Shows whether the app is installed and running, which copy starts at login and its version. Warns when that copy is older than the CLI, when its login item restarts it after every Quit, and when more than one copy is installed |
 | `agentx desktop start` | Starts the installed app |
 | `agentx desktop stop` | Stops it until you start it again or next log in |
 | `agentx voice list` | Lists the Mac voices for your language. `--all` lists every language; `-c <path>` reads another `agentx.json` |
@@ -503,7 +504,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 
 ## Check it worked
 
-1. **Terminal:** run `agentx desktop status`. It shows the app's login service running, not `Not installed`.
+1. **Terminal:** run `agentx desktop status`. It shows the app's login service running, not `Not installed`, then `AgentX Voice <version> → <the app>` with no `Warning:` line after it.
 2. **Mac:** click the AgentX icon in the menu bar. Your agents are listed and one is ticked.
 3. **Mac:** hold **Option–Space**, say "What can you do?", then let go.
 4. **Mac:** the pill shows **Listening**, then **Sent. Ask the next one**. When you hear the soft sound, point at the pill and click the row with the blue dot: the answer is spoken aloud.
@@ -517,8 +518,10 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 
 ## If something is wrong
 
+- **`agentx desktop status` says the app is older than the CLI:** the copy that starts at login was built before your AgentX update, so recent fixes are missing. **Terminal:** run `agentx desktop install`.
+- **`agentx desktop status` says two or more copies are installed:** only the copy it names starts at login. Move the others to the Bin, so Spotlight and the permission settings show one AgentX Voice.
 - **No AgentX icon in the menu bar:** **Terminal:** run `agentx desktop status`. If it says it isn't running, run `agentx desktop start`. If it isn't installed, follow [Install and first run](#install-and-first-run).
-- **The app opens again right after you quit it:** it was installed before Quit kept it closed, and its login item still restarts it after every exit. **Terminal:** run `agentx desktop install` again once. To close it for now, run `agentx desktop stop`.
+- **The app opens again right after you quit it:** it was installed before Quit kept it closed, and its login item still restarts it after every exit. `agentx desktop status` and `agentx doctor` warn about this. **Terminal:** run `agentx desktop install` again once. To close it for now, run `agentx desktop stop`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Retry** in the menu.
 - **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Voice**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
