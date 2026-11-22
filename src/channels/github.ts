@@ -262,6 +262,7 @@ interface GitHubWorkflowRunEvent {
     status: string
     conclusion: string | null
     pull_requests: Array<{ number: number; head?: { sha?: string } }>
+    head_repository?: { full_name?: string } | null
   }
   repository: GitHubRepo
 }
@@ -1202,7 +1203,11 @@ export class GitHubAdapter implements ChannelAdapter {
       return
     }
     const branch = pr?.headRef ?? runBranch
-    const owner = ciOwner({
+    // A fork PR's body and branch are the fork author's to write: no agent
+    // owns it. GitHub repository names compare case-insensitively.
+    const headRepo = pr ? pr.headRepo : event.workflow_run.head_repository?.full_name
+    const fromFork = headRepo === null || (typeof headRepo === "string" && headRepo.toLowerCase() !== repo.toLowerCase())
+    const owner = fromFork ? undefined : ciOwner({
       body: pr?.body,
       branch,
       agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n),
@@ -1210,7 +1215,9 @@ export class GitHubAdapter implements ChannelAdapter {
     })
     if (!owner) {
       if (!pr) { this.log(`[github] ${chatId}: CI failed on ${sha}, PR unreadable and no owner from its branch, no wake`); return }
-      this.log(`[github] ${chatId}: CI failed on ${sha}, no agent owns the PR (no marker, no agentx/issue-<n> request), no wake`)
+      this.log(fromFork
+        ? `[github] ${chatId}: CI failed on ${sha}, the PR comes from a fork (${headRepo ?? "deleted"}), no agent owns it, no wake`
+        : `[github] ${chatId}: CI failed on ${sha}, no agent owns the PR (no marker, no agentx/issue-<n> request), no wake`)
       if (this.ciFix.noOwnerNoteOnce(key)) {
         await this.send({ channel: "github", chatId, text: ciNoOwnerNote(sha) })
           .catch((e: Error) => this.log(`[github] CI no-owner note on ${chatId} failed: ${e.message}`))
@@ -1255,9 +1262,11 @@ export class GitHubAdapter implements ChannelAdapter {
 
   /** A PR's body, head branch and commit, author and labels; the
    *  workflow_run payload carries only its number and head. */
-  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[] } | undefined> {
-    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string }; user?: { login?: string }; labels?: unknown[] }>(repo, `pulls/${number}`)
-    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels } : undefined
+  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[]; headRepo?: string | null } | undefined> {
+    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string; repo?: { full_name?: string } | null }; user?: { login?: string }; labels?: unknown[] }>(repo, `pulls/${number}`)
+    // head.repo is null when the fork was deleted: still a fork.
+    const headRepo = data?.head?.repo === null ? null : data?.head?.repo?.full_name
+    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels, headRepo } : undefined
   }
 
   /** Every workflow run of `sha` finished green (skipped and neutral count

@@ -184,8 +184,15 @@ interface GitLabPipelineEvent {
     duration: number
   }
   /** Set when the pipeline ran for a merge request. */
-  merge_request?: { iid: number; title?: string; url?: string } | null
+  merge_request?: { iid: number; title?: string; url?: string; source_project_id?: number; target_project_id?: number } | null
   builds?: Array<{ id: number; name: string; stage: string; status: string }>
+}
+
+/** An MR whose source project is not its target project comes from a fork:
+ *  no agent owns it, whatever its description or branch says (#2102). */
+function mrFromFork(mr: { source_project_id?: number; target_project_id?: number } | null | undefined): boolean {
+  return typeof mr?.source_project_id === "number" && typeof mr.target_project_id === "number" &&
+    mr.source_project_id !== mr.target_project_id
 }
 
 /** One failed pipeline, held for the CI fix wake of its commit. */
@@ -1664,15 +1671,20 @@ export class GitLabAdapter implements ChannelAdapter {
     // Answer GitLab first: the MR reads must not hold its webhook call.
     res.writeHead(200)
     res.end("ok")
-    const repeat = this.ciFix.repeat(`gitlab:${project}:pipeline:${attrs.id}:${attrs.status}`)
-    // A branch pipeline names no MR: the open MR from that branch is its MR.
-    const mr = inlineMr ?? await this.openMergeRequestForRef(project, attrs.ref)
-    if (!mr) {
-      if (attrs.status === "failed") this.wakeRouteForPipeline(event)
+    if (this.ciFix.repeat(`gitlab:${project}:pipeline:${attrs.id}:${attrs.status}`)) {
+      this.log(`Pipeline ${attrs.id} (${attrs.status}) on ${project} delivered again, dropped`)
       return
     }
-    if (repeat) {
-      this.log(`Pipeline ${attrs.id} (${attrs.status}) on ${project} delivered again, dropped`)
+    // A branch pipeline names no MR: the open MR from that branch is its MR.
+    const mr = inlineMr ?? await this.openMergeRequestForRef(project, attrs.ref)
+    if (mr === "error") {
+      // Unknown whether an MR exists: waking the route agent could wake the
+      // wrong agent, and the MR's owner cannot be found. Nobody, logged.
+      this.log(`Pipeline ${attrs.id} (${attrs.status}) on ${project}: open MR lookup failed for ref ${attrs.ref}, no wake`)
+      return
+    }
+    if (!mr) {
+      if (attrs.status === "failed") this.wakeRouteForPipeline(event)
       return
     }
     const key = ciFixKey("gitlab", project, mr.iid)
@@ -1735,7 +1747,9 @@ export class GitLabAdapter implements ChannelAdapter {
       return
     }
     const branch = info?.sourceBranch ?? event.object_attributes.ref
-    const owner = ciOwner({
+    // A fork MR's description and branch are the fork author's to write.
+    const fromFork = info ? !!info.fromFork : mrFromFork(event.merge_request)
+    const owner = fromFork ? undefined : ciOwner({
       body: info?.description,
       branch,
       agentForIssue: (n) => this.config.ciAgentForIssue?.(project, n),
@@ -1743,7 +1757,9 @@ export class GitLabAdapter implements ChannelAdapter {
     })
     if (!owner) {
       if (!info) { this.log(`MR !${mr.iid}: CI failed on ${sha}, MR unreadable and no owner from its branch, no wake`); return }
-      this.log(`MR !${mr.iid}: CI failed on ${sha}, no agent owns the MR (no marker, no agentx/issue-<n> request), no wake`)
+      this.log(fromFork
+        ? `MR !${mr.iid}: CI failed on ${sha}, the MR comes from a fork, no agent owns it, no wake`
+        : `MR !${mr.iid}: CI failed on ${sha}, no agent owns the MR (no marker, no agentx/issue-<n> request), no wake`)
       if (this.ciFix.noOwnerNoteOnce(key)) {
         await this.send({ channel: "gitlab", chatId, text: ciNoOwnerNote(sha) })
           .catch((e: Error) => this.log(`CI no-owner note on MR !${mr.iid} failed: ${e.message}`))
@@ -1807,8 +1823,8 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /** An MR's description, source branch, title, link, labels and head
    *  commit, read with the global token. */
-  private async mergeRequestInfo(project: string, iid: number): Promise<{ description?: string; sourceBranch?: string; title?: string; webUrl?: string; labels?: string[]; sha?: string } | undefined> {
-    const data = await this.ciRead<{ description?: string | null; source_branch?: string; title?: string; web_url?: string; labels?: string[]; sha?: string }>(project, `merge_requests/${iid}`)
+  private async mergeRequestInfo(project: string, iid: number): Promise<{ description?: string; sourceBranch?: string; title?: string; webUrl?: string; labels?: string[]; sha?: string; fromFork?: boolean } | undefined> {
+    const data = await this.ciRead<{ description?: string | null; source_branch?: string; title?: string; web_url?: string; labels?: string[]; sha?: string; source_project_id?: number; target_project_id?: number }>(project, `merge_requests/${iid}`)
     return data ? {
       description: data.description ?? undefined,
       sourceBranch: data.source_branch,
@@ -1816,15 +1832,19 @@ export class GitLabAdapter implements ChannelAdapter {
       webUrl: data.web_url,
       labels: data.labels,
       sha: data.sha,
+      fromFork: mrFromFork(data),
     } : undefined
   }
 
-  /** The open MR whose source branch is `ref`, for a branch pipeline. */
-  private async openMergeRequestForRef(project: string, ref: string): Promise<PipelineMR | undefined> {
+  /** The open MR whose source branch is `ref`, for a branch pipeline:
+   *  undefined when the read worked and there is none, "error" when it
+   *  could not be read (no token, API error). */
+  private async openMergeRequestForRef(project: string, ref: string): Promise<PipelineMR | undefined | "error"> {
     if (!ref) return undefined
     const list = await this.ciRead<Array<{ iid?: number; title?: string; web_url?: string }>>(project,
       `merge_requests?state=opened&source_branch=${encodeURIComponent(ref)}`)
-    const first = Array.isArray(list) ? list.find((m) => typeof m.iid === "number") : undefined
+    if (!Array.isArray(list)) return "error"
+    const first = list.find((m) => typeof m.iid === "number")
     return first ? { iid: first.iid!, title: first.title, url: first.web_url } : undefined
   }
 
