@@ -692,6 +692,8 @@ export class CronScheduler {
       if (!fire) this.scheduleNext(jobId)
       return
     }
+    // Paused, retired or past its until while the goal check awaited.
+    if (!(await this.stillDue(job))) return
 
     // Named after what will actually happen. A command job saying
     // `-> agent "coo-agent"` sends a reader looking for a dispatch that
@@ -876,7 +878,7 @@ export class CronScheduler {
   private async executeMissedRuns(missed: Array<{ jobId: string; missedAt: Date }>): Promise<void> {
     for (const { jobId, missedAt } of missed) {
       const job = this.jobs.get(jobId)
-      if (!job || !job.enabled) continue
+      if (!job || !(await this.stillDue(job))) continue
       const goal = await this.goalHold(job)
       if (goal.skip) {
         // Same ledger row as a live run skipped for its goal, keyed on the
@@ -884,6 +886,9 @@ export class CronScheduler {
         this.recordGoalHalt(job, missedAt, goal.why)
         continue
       }
+      // The goal check awaits (a forge read, an answer write): the job may
+      // have been paused, retired or passed its until meanwhile.
+      if (!(await this.stillDue(job))) continue
 
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
@@ -976,6 +981,22 @@ export class CronScheduler {
   private untilDeps(): UntilDeps {
     const g = this.goalCheck
     return { root: g?.root ?? process.cwd(), configPath: g?.configPath, ledger: g?.ledger, log: (m) => this.log(m) }
+  }
+
+  /**
+   * Whether `job` may still run now (#863, n158092): the daemon runs, the
+   * job is still loaded and on, and a recurring job is not past its until
+   * (then it is ended here). Asked again after every await before a run.
+   */
+  private async stillDue(job: CronJobState): Promise<boolean> {
+    if (!this.running) return false
+    const current = this.jobs.get(job.id)
+    if (!current || !current.enabled) return false
+    if (!current.runAt && pastUntil(current.until, Date.now())) {
+      await this.endAtUntil(current)
+      return false
+    }
+    return true
   }
 
   /** A recurring job past its until (#863): off now, ended in agentx.json. */
