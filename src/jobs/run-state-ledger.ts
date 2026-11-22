@@ -22,14 +22,14 @@ export type RunStateEvent =
 /** The declaration the job store takes for a state a run gave. */
 export function toDeclaration(s: RunJobState, now: number): JobDeclaration {
   const at = (v: string | undefined) => {
-    const t = parseDue(v)
+    const t = parseDue(v, now)
     return typeof t === "number" ? t : now + DEFAULT_STATE_WAIT_MS
   }
   switch (s.state) {
     case "done": return { state: "done", proof: s.proof }
     case "blocked": return { state: "blocked", why: s.why }
-    case "continue": return { state: "continue", wakeAt: at(s.when), note: s.when && typeof parseDue(s.when) !== "number" ? `${s.left} (${s.when})` : s.left }
-    case "waiting": return { state: "waiting", on: s.on, until: at(s.until), ...(s.until && typeof parseDue(s.until) !== "number" ? { note: `until ${s.until}` } : {}) }
+    case "continue": return { state: "continue", wakeAt: at(s.when), note: s.when && typeof parseDue(s.when, now) !== "number" ? `${s.left} (${s.when})` : s.left }
+    case "waiting": return { state: "waiting", on: s.on, until: at(s.until), ...(s.until && typeof parseDue(s.until, now) !== "number" ? { note: `until ${s.until}` } : {}) }
   }
 }
 

@@ -179,7 +179,7 @@ export const MAX_STEP_WAIT_MS = 7 * 24 * 60 * 60 * 1000
 /** The optional `waitUntil` of a progress report: a time ahead, at most a
  *  week out. Returns the time, null when not given, or an error. */
 function parseWaitUntil(v: unknown, status: string, now: number): number | null | string {
-  const at = parseDue(v)
+  const at = parseDue(v, now)
   if (at === undefined) return null
   if (typeof at === "string") return at.replace(/^due/, "waitUntil")
   if (status !== "progress") return "waitUntil goes with status progress only"
@@ -190,7 +190,7 @@ function parseWaitUntil(v: unknown, status: string, now: number): number | null 
 
 /** The optional `due` and `closeWhen` of promise, accept and wait. */
 function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: number): { dueAt?: number; closeWhen?: CloseWhen } | string {
-  const due = parseDue(input.due)
+  const due = parseDue(input.due, now)
   if (typeof due === "string") return due
   let closeWhen: CloseWhen | undefined
   if (input.closeWhen !== undefined && input.closeWhen !== null) {

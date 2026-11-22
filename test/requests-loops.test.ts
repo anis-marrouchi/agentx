@@ -7,7 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi, handleRequestsCall, MAX_OPEN_PROMISES, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { runRequestsSweep, attentionText } from "../src/requests/sweep"
-import { stalledLoops, waitsOn } from "../src/requests/loops"
+import { parseDue, stalledLoops, waitsOn } from "../src/requests/loops"
 import { runRequestTool, DONE_TIMEOUT_MS } from "../src/requests/tool"
 import type { CheckResult } from "../src/requests/checkers"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
@@ -346,5 +346,29 @@ describe("the owner closes a loop by hand", () => {
     expect(res.status).toBe(200)
     expect(store.get(id)).toMatchObject({ state: "done", evidence: "closed by owner: checked by hand" })
     expect(checks).toBe(0)
+  })
+})
+
+describe("parseDue on free text (#2073)", () => {
+  const NOW = Date.UTC(2026, 10, 22, 4, 0)
+  const AT = Date.UTC(2026, 10, 23, 12)
+  it("takes the first ISO time out of words around it", () => {
+    expect(parseDue("2026-11-23T12:00:00Z (card expiry)", NOW)).toBe(AT)
+    expect(parseDue("<who>'s answer to card x, 2026-11-23T12:00:00Z", NOW)).toBe(AT)
+  })
+  it("refuses a year before the current one (Date.parse reads no year as 2001)", () => {
+    expect(typeof parseDue("Mon 23 Nov 12:00Z", NOW)).toBe("string")
+    expect(typeof parseDue("23 Nov 12:00Z", NOW)).toBe("string")
+    expect(typeof parseDue("2025-12-31T23:00:00Z", NOW)).toBe("string")
+  })
+  it("a bare clock time is not a time", () => {
+    for (const t of ["18:00", "05:17 UTC", "tomorrow 09:00Z"]) expect(typeof parseDue(t, NOW)).toBe("string")
+  })
+  it("clean ISO and epoch ms work as before", () => {
+    expect(parseDue("2026-11-23T12:00:00Z", NOW)).toBe(AT)
+    expect(parseDue(AT, NOW)).toBe(AT)
+    expect(parseDue(undefined, NOW)).toBeUndefined()
+    expect(parseDue("", NOW)).toBeUndefined()
+    expect(typeof parseDue(-1, NOW)).toBe("string")
   })
 })
