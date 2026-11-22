@@ -38,6 +38,41 @@ Words used across these docs, in plain terms.
 
 For commands and accepted configuration, see the [CLI](./cli.md) and [configuration](./config.md) references.
 
+## Words in the code
+
+These words come up in the code, in issues and in pull requests. Each has one plain line and the place under `src/` where it lives. To see how the parts connect, read [How AgentX fits together](../architecture/overview.md): its picture follows one message from arrival to reply.
+
+| Word | Meaning | Where it lives |
+|---|---|---|
+| **Adapter** | The code for one channel, such as Telegram, that turns its messages into one shape and sends replies back. | `src/channels/telegram.ts`, `src/channels/whatsapp.ts`, … |
+| **Admission queue** | Where a run waits when the machine has no free slot. Long waits post a short "waiting" note in the chat. | `src/admission/` |
+| **Delegation** (hand-off) | One agent giving part of a job to another agent and getting a callback when it is done, so the person is not kept waiting. | `src/a2a/delegation.ts` |
+| **Desk** | One board of what waits for the owner, what runs and what ended. A *Desk card* is one item on it, often a question for the owner. | `src/desk/`, `src/approvals/` |
+| **Engine** | The program that runs an agent's turn: Claude Code, Codex, OpenCode, the Anthropic SDK or the orchestrator. Same as **Tier**. | `src/agents/runtime.ts` |
+| **Event** | A short record that something happened (a run ended, a request closed). Agents and pages subscribe to events. | `src/events/` |
+| **Goal** | A larger aim that several requests serve, with a done check. A schedule that names a goal stops when the goal closes. | `src/requests/tool.ts`, `src/crons/goal-*.ts` |
+| **Guard** | The rules that decide whether an agent may run a command or touch a file. The same input always gives the same verdict. | `src/guard/` |
+| **Home** | The issue or merge request a piece of work is about. Two runs of one agent on the same home are kept from overwriting each other. | `src/a2a/home.ts` |
+| **Intent ledger** | The record of each incoming message, which agent got it and why, and how it ended. See **Ledger** above. | `src/intent/` |
+| **Job state** | What a run of agent work says when it ends: done, continue (with a time), waiting (on whom) or blocked. | `src/agents/run-state.ts` |
+| **Job** | Agent work that can take several runs: a hand-off, a schedule, a reminder. The daemon wakes it again at the time its last run gave. | `src/jobs/` |
+| **Mesh peer** | Another machine running AgentX that this one hands work to. See **Mesh** above. | `src/a2a/` |
+| **Number** | A tracked figure, read on a rhythm, that shows whether a job is still useful. | `src/numbers/` |
+| **Owner** | The person AgentX works for. Their words outrank an agent's. | — |
+| **Owner-words check** | When an agent closes the owner's request, the close is compared with what the owner actually asked. | `src/requests/owner-check.ts` |
+| **Plan step** | One step of a tracked plan: an owner agent and a "done when" check. The daemon hands each step on in order and nudges one that goes quiet. | `src/requests/plan-store.ts` |
+| **Promise** | Something an agent or the owner owes: who owes it, to whom, when, and what closes it. | `src/requests/promise.ts` |
+| **Request** | One thing the owner asked for. It stays open on their list until it is done, declined or dropped. | `src/requests/` |
+| **Router** | The one path every incoming message takes: it picks the agent, records the choice and sends the reply back. | `src/channels/router.ts` |
+| **Rules Registry** | One wiki page listing the team's rules and where each applies. The rules that apply are added to each run's instructions. | `src/agents/rules-registry.ts` |
+| **Session** | One conversation of one agent in one chat, kept so the next message continues it. | `src/agents/sessions.ts` |
+| **Situation** | The state of one chat (talking, ending, ended), used to decide whether a message needs an answer at all. | `src/situations/` |
+| **Standing order** | An "every day" or "every week" order from the owner. It becomes a recurring job with a number, and is never closed as done. | `src/requests/standing.ts` |
+| **Tool** (AgentX tool) | A function an agent can call during its run, such as `agentx_request` or `agentx_send`. They reach the agent over MCP. | `src/mcp/` |
+| **Wake** | Starting a turn for an agent without a new message: at a job's wake time, or when an event it subscribed to happens. | `src/jobs/wake.ts`, `src/events/wake.ts` |
+| **Wiki** | The team's shared long-term memory: pages on people, systems, decisions and events, with links between them. | `src/wiki/` |
+| **Workflow run** | One execution of a workflow, with each step's state. Some work must run inside a workflow run (`workflows.required`). | `src/workflows/` |
+
 ## Check it worked
 
 1. Every term used on a docs page links here or is explained where it first appears.
