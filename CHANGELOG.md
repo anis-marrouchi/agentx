@@ -2,6 +2,31 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.250.0](https://github.com/anis-marrouchi/agentx/compare/v0.249.0...v0.250.0) (2026-11-22)
+
+
+### Features
+
+* **crons,sensors:** Mac jobs into AgentX: owner schedule actions, goal check, until, battery sensor (noqta[#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#2062](https://github.com/anis-marrouchi/agentx/issues/2062)) ([8c9e27f](https://github.com/anis-marrouchi/agentx/commit/8c9e27f4d93f3628b01efdc9d406e393c250ec8d))
+* **crons:** goal check reuses recent issue reads; retire withdraws a pending time change ([#2066](https://github.com/anis-marrouchi/agentx/issues/2066)) ([60a74d3](https://github.com/anis-marrouchi/agentx/commit/60a74d3daa4f2596ac074eed6cf774024af9e56c))
+* **rules:** copy the Rules Registry page to nodes without the registry agent ([#2067](https://github.com/anis-marrouchi/agentx/issues/2067)) ([3d83de5](https://github.com/anis-marrouchi/agentx/commit/3d83de596da7fffe94e9d5aa39842fbaeaafaa4a))
+
+
+### Bug Fixes
+
+* **crons:** goal-check wake waits for a slot, missed runs recheck until, retire/delete withdraws the goal card ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#2087](https://github.com/anis-marrouchi/agentx/issues/2087)) ([9f0a6c3](https://github.com/anis-marrouchi/agentx/commit/9f0a6c341294ad7d7a52a09585c9c40e4046678e))
+* **gitlab:** log a line when a bot MR event is skipped ([#2070](https://github.com/anis-marrouchi/agentx/issues/2070)) ([#2071](https://github.com/anis-marrouchi/agentx/issues/2071)) ([2210961](https://github.com/anis-marrouchi/agentx/commit/2210961e8b5dc2ec8d5766cb38e5b89cc6e75617))
+* **jobs:** State line until with words or no year no longer stalls the job ([#2073](https://github.com/anis-marrouchi/agentx/issues/2073)) ([#2074](https://github.com/anis-marrouchi/agentx/issues/2074)) ([a49448b](https://github.com/anis-marrouchi/agentx/commit/a49448be064b6aeee077e30d1c8a6986e93d2883))
+* **requests:** a promise call retried after a timeout gives back the first promise ([#2078](https://github.com/anis-marrouchi/agentx/issues/2078)) ([#2080](https://github.com/anis-marrouchi/agentx/issues/2080)) ([0b2662e](https://github.com/anis-marrouchi/agentx/commit/0b2662ec036147436bddd2554f91b25cce1536b1))
+* **requests:** newest matching note is the proof; cap owner-words reopens ([#2059](https://github.com/anis-marrouchi/agentx/issues/2059)) ([3157f9c](https://github.com/anis-marrouchi/agentx/commit/3157f9c2e1455e8dc7038b928f2b5db496e14ada))
+* **rules:** escape the page title in frontmatter; say approvals are not synced on a peer copy ([#2069](https://github.com/anis-marrouchi/agentx/issues/2069)) ([0005abc](https://github.com/anis-marrouchi/agentx/commit/0005abc32704160476e58227ff4e9708fe108f17))
+* **sensors:** cap the retries of a held or failed battery wake ([#2063](https://github.com/anis-marrouchi/agentx/issues/2063)) ([#2086](https://github.com/anis-marrouchi/agentx/issues/2086)) ([4e0b985](https://github.com/anis-marrouchi/agentx/commit/4e0b9856955e1d95cf309be512c128216956f563))
+
+
+### Performance Improvements
+
+* **crons:** jump over days and hours that cannot match in the next-run search; say a passed one-time schedule's time has passed ([#2075](https://github.com/anis-marrouchi/agentx/issues/2075)) ([#2076](https://github.com/anis-marrouchi/agentx/issues/2076)) ([b01ab7c](https://github.com/anis-marrouchi/agentx/commit/b01ab7c8e2ff294c4d4c6f1bda3f1ea08c58645e))
+
 ## [0.249.0](https://github.com/anis-marrouchi/agentx/compare/v0.248.1...v0.249.0) (2026-11-21)
 
 
