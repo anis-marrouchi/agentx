@@ -718,6 +718,12 @@ const channelsConfigSchema = z.object({
      *  note, with or without a project rule (noqta/noqta#800). "" turns
      *  it off. */
     noWakeLabel: z.string().default("agent:no-wake"),
+    /** The CI fix loop (#2102): a red pipeline on an MR/PR wakes its
+     *  agent at most `fixAttempts` times per head commit, then one note
+     *  asks a person to look. 0 never wakes. */
+    ci: z.object({
+      fixAttempts: z.number().int().min(0).default(3),
+    }).default({}),
   }).default({}),
   github: z.object({
     enabled: z.boolean().default(false),
@@ -776,6 +782,12 @@ const channelsConfigSchema = z.object({
      *  opening, a label change or a comment, with or without a project
      *  rule (noqta/noqta#800). "" turns it off. */
     noWakeLabel: z.string().default("agent:no-wake"),
+    /** The CI fix loop (#2102): a red pipeline on an MR/PR wakes its
+     *  agent at most `fixAttempts` times per head commit, then one note
+     *  asks a person to look. 0 never wakes. */
+    ci: z.object({
+      fixAttempts: z.number().int().min(0).default(3),
+    }).default({}),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides
