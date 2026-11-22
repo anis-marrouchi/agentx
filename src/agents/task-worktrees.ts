@@ -332,11 +332,15 @@ export async function pruneTaskWorktrees(checkout: string, settings: TaskWorktre
   return removed
 }
 
-/** Told to the agent with the task, so it commits on the right branch.
- *  `agentId`: the marker it ends its PR/MR bodies with, by which the CI
- *  fix loop finds the change's agent (#2102). */
-export function worktreeInstructions(wt: TaskWorktree, agentId: string): string {
-  const marker = `End every pull request or merge request description you write with the line \`<!-- agentx:${agentId} -->\`: that is how a failed CI run on it finds you.`
+/** In every agent's system prompt, worktree or not: the marker it ends its
+ *  PR/MR bodies with, by which the CI fix loop finds the change's agent
+ *  (#2102 review). */
+export function requestMarkerInstruction(agentId: string): string {
+  return `End every pull request or merge request description you write with the line \`<!-- agentx:${agentId} -->\`: that is how a failed CI run on it finds you.`
+}
+
+/** Told to the agent with the task, so it commits on the right branch. */
+export function worktreeInstructions(wt: TaskWorktree): string {
   if (wt.change) {
     return [
       wt.inCheckout
@@ -344,13 +348,11 @@ export function worktreeInstructions(wt: TaskWorktree, agentId: string): string 
         : `You are working in a git worktree on this ${wt.change}'s branch: ${wt.dir}, on the branch \`${wt.branch}\`.`,
       `Make your changes there, commit them on \`${wt.branch}\` and push to that branch to update the ${wt.change}; do not open a new one.`,
       wt.inCheckout ? "Do not switch branches." : `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
-      marker,
     ].join(" ")
   }
   return [
     `You are working in a git worktree of your own for this issue: ${wt.dir}, on the branch \`${wt.branch}\`.`,
     `Make your changes there, commit them on \`${wt.branch}\`, push that branch, and open the pull request (or merge request) from it.`,
     `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
-    marker,
   ].join(" ")
 }

@@ -102,7 +102,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
-import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, worktreeInstructions, worktreeTarget } from "./task-worktrees"
+import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, requestMarkerInstruction, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1431,8 +1431,9 @@ export class AgentRegistry {
    *  session kept for the chat was started in another folder, and Claude
    *  Code keeps sessions per folder.
    *  An issue or change already in progress in the checkout (`sessionKept`:
-   *  the chat has a session to resume, or an open request of this agent has
-   *  the issue as its home) and with no worktree yet stays in the checkout (#2102 review
+   *  the chat had a session before this turn, rotated since or not, or an
+   *  open request of this agent has the issue as its home, or that lookup
+   *  failed) and with no worktree yet stays in the checkout (#2102 review
    *  B5): a new worktree would start it again from the default branch. */
   private async inTaskWorktree(def: AgentDef, task: AgentTask, opts: { sessionKept?: boolean } = {}): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
     const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
@@ -1454,7 +1455,12 @@ export class AgentRegistry {
     }
     const openRequest = () => {
       if (target.kind === "change" || !target.repo || (target.source !== "github" && target.source !== "gitlab") || !/^\d+$/.test(target.id)) return false
-      try { return !!this.openRequestOnIssue?.(target.source, target.repo, Number(target.id), task.agentId) } catch { return false }
+      // A lookup that fails counts as in progress: the issue stays where it
+      // is rather than starting again from the default branch.
+      try { return !!this.openRequestOnIssue?.(target.source, target.repo, Number(target.id), task.agentId) } catch (e: any) {
+        this.log(`[worktrees] ${task.agentId} ${label}: open request lookup failed, keeping the issue in the checkout: ${e?.message || e}`)
+        return true
+      }
     }
     const before = opts.sessionKept ? "session" : openRequest() ? "open request" : null
     if (before && !(await hasTargetWorktree(target, branch, picked.dir, settings, execProcess).catch(() => false))) {
@@ -1489,7 +1495,7 @@ export class AgentRegistry {
         .then((gone) => { if (gone.length) this.log(`[worktrees] removed ${gone.length} unused worktree(s): ${gone.join(", ")}`) })
         .catch((e: any) => this.log(`[worktrees] prune failed: ${e?.message || e}`))
     }
-    const note = worktreeInstructions(wt, task.agentId)
+    const note = worktreeInstructions(wt)
     return {
       fresh: !wt.reused || !!wt.adopted,
       // A persistent process keeps the folder it was started in.
@@ -2629,6 +2635,17 @@ export class AgentRegistry {
     // agentx tools to it.
     const fullLandscapeOnDemand = !isolated && sessionProfile === "full" && state.def.tier === "claude-code" && this.config.session.fullContextOnDemand
 
+    // Whether this conversation was under way before this turn (#2102 review
+    // B5), read before any rotation below (fresh, stale, tier, max-turns,
+    // model, cost) clears the session: a rotated session is still work in
+    // progress in the checkout. Any runtime's native session counts, and
+    // so does a reply of the agent's already in the chat's history, the
+    // only record runtimes with no native session keep.
+    const sessionBefore = (() => {
+      const s = this.sessions.getSession(task.agentId, channel, chatId)
+      return !!(s.claudeSessionId || s.codexSessionId || s.opencodeSessionId) || s.messages.some((m) => m.role === "agent")
+    })()
+
     // Improvement plan #8 — caller-driven session reset. Honour it before
     // seeding or recording the current inbound message; otherwise the fresh
     // reset can erase the very message that started the task.
@@ -3578,6 +3595,9 @@ export class AgentRegistry {
       state.def.systemPrompt || "",
       codeFirstInstruction,
       richReplyInstruction,
+      // Every agent, in a worktree or not: the CI fix loop finds a
+      // change's agent by this marker (#2102 review).
+      requestMarkerInstruction(task.agentId),
       projectClaudeMd,
       projectRunbook,
       bootstrapContextText || "",
@@ -4066,7 +4086,7 @@ export class AgentRegistry {
           const gated = runDispatchGates()
           if (gated) return gated
         }
-        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt, { sessionKept: !!resumeSessionId })
+        const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt, { sessionKept: sessionBefore })
         // Claude Code's auto-memory is not cut: it lists its newest notes
         // last, and Claude Code's own 200-line rule is kept until the hand
         // trim of #2002 step 4 (review of PR #2035).

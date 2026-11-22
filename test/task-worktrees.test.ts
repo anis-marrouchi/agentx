@@ -182,12 +182,12 @@ describe("prepareTaskWorktree (real git)", () => {
   it("tells the agent where it works", async () => {
     const wt = await prepareTaskWorktree(target, checkout, settings, { exec: execProcess })
     if ("error" in wt) throw new Error(wt.error)
-    const text = worktreeInstructions(wt, "coder-agent")
+    const text = worktreeInstructions(wt)
     expect(text).toContain(wt.dir)
     expect(text).toContain("`agentx/issue-12`")
     expect(text).toContain(checkout)
-    // The CI fix loop finds the PR's agent by this marker (#2102 review B2).
-    expect(text).toContain("<!-- agentx:coder-agent -->")
+    // The marker is in every agent's system prompt instead (#2102 review).
+    expect(text).not.toContain("agentx:")
   })
 })
 
@@ -238,10 +238,9 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
     if ("error" in wt) throw new Error(wt.error)
     expect(realpathSync(wt.dir)).toBe(realpathSync(issue.dir))
     expect(existsSync(join(base, ".agentx-worktrees", "api", "pr-40"))).toBe(false)
-    const text = worktreeInstructions(wt, "coder")
+    const text = worktreeInstructions(wt)
     expect(text).toContain("pull request")
     expect(text).toContain("push to that branch")
-    expect(text).toContain("<!-- agentx:coder -->")
   })
 
   it("adds a worktree tracking origin/<branch> when none has it", async () => {
@@ -272,7 +271,7 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
     if ("error" in wt) throw new Error(wt.error)
     expect(wt).toMatchObject({ dir: checkout, branch: "feat/login", reused: true, inCheckout: true })
     expect(existsSync(join(base, ".agentx-worktrees", "api", "pr-9"))).toBe(false)
-    const text = worktreeInstructions(wt, "coder")
+    const text = worktreeInstructions(wt)
     expect(text).toContain("checked out")
     expect(text).not.toContain("do not edit")
   })
@@ -326,11 +325,12 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
       expect(existsSync(join(base, ".agentx-worktrees"))).toBe(false)
     })
 
-    it("gives a new issue a worktree and tells the agent its marker", async () => {
+    it("gives a new issue a worktree", async () => {
       const { out, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: () => false })
       expect(out.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-3"))
       expect(out.fresh).toBe(true)
-      expect(out.task.systemPromptAppend).toContain("<!-- agentx:coder -->")
+      expect(out.task.systemPromptAppend).toContain(out.task.cwd)
+      expect(out.task.systemPromptAppend).not.toContain("agentx:coder")
       expect(lines.join("\n")).toMatch(/\[worktrees\] coder .*: created .* on agentx\/issue-3/)
     })
 
@@ -347,6 +347,14 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
       const { out, task, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: (...a) => { asked.push(a); return true } })
       expect(out.task).toBe(task)
       expect(asked).toEqual([["gitlab", repo, 3, "coder"]])
+      expect(lines.join("\n")).toContain("in progress before worktrees (open request)")
+    })
+
+    it("keeps an issue in the checkout when the open request lookup throws", async () => {
+      const { out, task, lines } = await run(`${repo}:issue:3`, {}, { enabled: true }, { openRequest: () => { throw new Error("db locked") } })
+      expect(out.task).toBe(task)
+      expect(existsSync(join(base, ".agentx-worktrees"))).toBe(false)
+      expect(lines.join("\n")).toContain("open request lookup failed, keeping the issue in the checkout: db locked")
       expect(lines.join("\n")).toContain("in progress before worktrees (open request)")
     })
 
