@@ -223,7 +223,11 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
       const head = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], checkout)
       base = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : "origin/main"
     }
-    args = ["worktree", "add", "--no-track", "-b", branch, dir, base]
+    // From the issue's pushed branch (an earlier task, or the node it ran
+    // on before a move, #2104 B3), tracking it so the next push and the
+    // move check (`@{u}..HEAD`) see the same branch. From the default
+    // branch, never tracking it: a plain `git push` must not land there.
+    args = ["worktree", "add", remote.code === 0 ? "--track" : "--no-track", "-b", branch, dir, base]
   }
   mkdirSync(root, { recursive: true })
   const added = await git(args, checkout)
@@ -355,4 +359,44 @@ export function worktreeInstructions(wt: TaskWorktree): string {
     `Make your changes there, commit them on \`${wt.branch}\`, push that branch, and open the pull request (or merge request) from it.`,
     `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
   ].join(" ")
+}
+
+// --- Running an issue on another node (#2104) ---
+
+/** "owner/repo" of each folder's origin, once each (case-insensitive), in
+ *  order: what this node advertises as `checkouts` in its agent card, so
+ *  the Hub offers only nodes that have the issue's repository (B4). */
+export function checkoutsOf(dirs: string[], remoteOf: (dir: string) => string | undefined = originRemoteOf): string[] {
+  const out = new Map<string, string>()
+  for (const dir of new Set(dirs.filter(Boolean))) {
+    const path = remotePath(remoteOf(dir))
+    if (path && !out.has(path.toLowerCase())) out.set(path.toLowerCase(), path)
+  }
+  return [...out.values()]
+}
+
+/** The issue worktree folder of a target, made or not. */
+export function issueWorktreePath(target: WorktreeTarget, checkout: string, settings: Pick<TaskWorktreeSettings, "root">): string {
+  return issueWorktreeDir(target, checkout, settings)
+}
+
+export interface IssueWorktreeState { branch: string; dirty: boolean; ahead: number }
+
+/** The state of an issue worktree a move checks (#2104 B3): its branch,
+ *  whether it holds uncommitted changes (`git status --porcelain`), and
+ *  how many commits are not pushed: `git rev-list --count @{u}..HEAD`, or
+ *  for a branch with no upstream yet, the commits on no origin branch.
+ *  Null when the folder is no worktree. A git command that fails counts
+ *  as dirty, so a move is refused rather than made on a guess. */
+export async function issueWorktreeState(dir: string, exec: ExecFn): Promise<IssueWorktreeState | null> {
+  if (!existsSync(join(dir, ".git"))) return null
+  const git = (args: string[]) => exec("git", args, { cwd: dir, timeoutMs: 60_000 })
+  const head = await git(["rev-parse", "--abbrev-ref", "HEAD"])
+  const branch = head.code === 0 ? head.stdout.trim() : "unknown"
+  const status = await git(["status", "--porcelain"])
+  const dirty = status.code !== 0 || !!status.stdout.trim()
+  let count = await git(["rev-list", "--count", "@{u}..HEAD"])
+  if (count.code !== 0) count = await git(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"])
+  const ahead = count.code === 0 ? Number(count.stdout.trim()) || 0 : 1
+  return { branch, dirty, ahead }
 }
