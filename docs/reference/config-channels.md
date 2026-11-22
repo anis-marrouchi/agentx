@@ -156,6 +156,7 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `token` | string | — | This agent's own GitLab token, so it comments as itself. |
 | `node` | string | — | Mesh node the agent lives on, when it runs on another machine. |
 | `channels.gitlab.noWakeLabel` | string | `"agent:no-wake"` | An issue or merge request carrying this label starts no run and no workflow, on any change or note, even one that @-mentions an agent. A project rule is not needed. Remove the label to let the agent in. `""` turns this off. |
+| `channels.gitlab.ci.fixAttempts` | number | `3` | How many times a failed pipeline on one merge request commit starts the agent. After that, AgentX posts one note on the merge request asking a person to look. A passing pipeline on the merge request resets the count. `0` never starts the agent. See [Failed pipelines](#failed-pipelines). |
 
 ```json
 "gitlab": {
@@ -206,6 +207,10 @@ An issue change starts an agent only when one of these is true:
 
 A milestone, label, time, estimate, title or state change starts nothing, even on an issue assigned to an agent. The message the agent gets names what changed and who changed it. Comment mentions work as before. An `on:gitlab-issue` hook decides for itself and is not limited by these rules.
 
+### Failed pipelines
+
+A failed pipeline on a merge request starts the agent of the merge request's author. If the author is not an agent, it starts the agent of an assignee, then the agent in `routes`. The run belongs to the merge request, so the reply is a comment there. The message names the commit, the branch and each failed job with its link, and asks the agent to fix CI on that branch and push. `ci.fixAttempts` limits the retries per commit. A failed pipeline that is not for a merge request starts the agent in `routes`, as before. GitLab must send **Pipeline events**.
+
 ## GitHub
 
 | Key | Type | Default | What it does |
@@ -234,6 +239,11 @@ A milestone, label, time, estimate, title or state change starts nothing, even o
 | `channels.github.debounceSeconds` | number (0–3600) | `30` | Several changes to one issue or pull request within this many seconds start one run. The run sees the latest state and lists every change. Each new change restarts the wait. `0` starts a run for every change. |
 | `channels.github.triggerLabel` | string | `"agentx"` | Adding this label to an issue or pull request starts a run, whoever adds it. Other labels follow `issueActions` and `pullRequestActions`. |
 | `channels.github.noWakeLabel` | string | `"agent:no-wake"` | An issue or pull request carrying this label starts no run: not when it is opened, not on a label change, not on a comment or review, even one that @-mentions the agent. A project rule is not needed. Adding the label also drops a run still waiting its `debounceSeconds`. Remove the label to let the agent in. `""` turns this off. |
+| `channels.github.ci.fixAttempts` | number | `3` | How many times a failed workflow run on one pull request commit starts the agent. After that, AgentX posts one comment on the pull request asking a person to look. A successful run resets the count. `0` never starts the agent. |
+
+### Failed workflow runs
+
+A failed workflow run on a pull request starts the agent whose `githubUsernames` include the pull request's author, else the agent in `routes`. The run belongs to the pull request, so the reply is a comment there. The message names the workflow, the run link, the commit and the branch, and asks the agent to fix CI on that branch. A run with no pull request starts nothing. The webhook must send **Workflow runs** events; check suite and check run events start nothing, so one failed run is one start.
 
 ### Which comments start a run
 
