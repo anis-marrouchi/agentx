@@ -1646,9 +1646,11 @@ export class GitLabAdapter implements ChannelAdapter {
     }
 
     if (mr) {
-      await this.wakeForFailedMRPipeline(event, mr)
+      // Answer GitLab first: the MR lookup must not hold its webhook call.
       res.writeHead(200)
       res.end("ok")
+      await this.wakeForFailedMRPipeline(event, mr)
+        .catch((e: Error) => this.log(`Error handling MR pipeline: ${e.message}`))
       return
     }
 

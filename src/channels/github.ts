@@ -1165,6 +1165,7 @@ export class GitHubAdapter implements ChannelAdapter {
       if (decision.action === "note") {
         this.log(`[github] ${chatId}: CI still red after ${decision.count} tries on ${run.head_sha}, asking a person`)
         await this.send({ channel: "github", chatId, text: ciStillRedNote(decision.count, run.head_sha), agentId })
+          .catch((e: Error) => this.log(`[github] CI still-red note on ${chatId} failed: ${e.message}`))
         continue
       }
       if (decision.action === "silent") {
