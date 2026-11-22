@@ -218,7 +218,9 @@ A failed pipeline on a merge request starts the agent that owns the merge reques
 
 AgentX never starts the agent in `routes` or the author's agent for a failed pipeline on a merge request.
 
-A branch pipeline names no merge request. AgentX then looks for the open merge request whose source branch is the pipeline's branch, and treats the pipeline as part of it.
+A merge request from a fork (its source project is not its target project) has no owner: AgentX skips the marker and the branch, starts no agent and posts the one note, as in step 3.
+
+A branch pipeline names no merge request. AgentX then looks for the open merge request whose source branch is the pipeline's branch, and treats the pipeline as part of it. If that lookup fails (no token, or a GitLab API error), AgentX starts no agent and logs it.
 
 The run belongs to the merge request, so the reply is a comment there. The message names the commit, the branch, and each failed pipeline and job with its link. It asks the agent to fix CI on that branch and push.
 
@@ -228,7 +230,7 @@ The run belongs to the merge request, so the reply is a comment there. The messa
 
 A merge request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed pipeline.
 
-A failed pipeline with no open merge request starts the agent in `routes`, as before. GitLab must send **Pipeline events**.
+A failed pipeline with no open merge request starts the agent in `routes`, as before, once: the same pipeline sent again starts nothing. GitLab must send **Pipeline events**.
 
 ## GitHub
 
@@ -270,6 +272,8 @@ A failed workflow run on a pull request starts the agent that owns the pull requ
 3. Nobody. AgentX starts no agent and posts one comment on the pull request saying no agent owns it.
 
 AgentX never starts the agent in `routes` or the author's agent (`githubUsernames`) for a failed workflow run. So a person's own pull request, or a contributor's, does not start an agent that would push to their branch.
+
+A pull request from a fork (its head repository is not this repository) has no owner: AgentX skips the marker and the branch, starts no agent and posts the one comment, as in step 3.
 
 The run belongs to the pull request, so the reply is a comment there. The message names each failed workflow with its run link, the commit and the branch. It asks the agent to fix CI on that branch and push.
 
