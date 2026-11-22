@@ -143,10 +143,12 @@ describe("battery levels (battery-watch.sh)", () => {
     // Still waiting: not sent, not sent twice.
     expect(wakes(step(cfg, first.state, bat(45), T0 + 30_000).actions)).toEqual([])
     const seq = (kinds(first.actions, "wake")[0] as any).seq
-    const f = failed(cfg, first.state, "below-50", seq, "agent busy")
-    expect(f.actions).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent failed \(agent busy\); waking it again/) }])
+    const f = failed(cfg, first.state, "below-50", seq, "agent busy", "battery", T0 + 30_000)
+    expect(f.actions).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent failed \(agent busy\); waking it again in 5 min or later \(retry 1 of 3\)/) }])
     expect(pushes(f.actions)).toEqual([])
-    expect(wakes(step(cfg, f.state, bat(45), T0 + MIN).actions)).toEqual(["below-50"])
+    // Not at the next reading: no sooner than wakeRetry.minutes after it failed.
+    expect(wakes(step(cfg, f.state, bat(45), T0 + MIN).actions)).toEqual([])
+    expect(wakes(step(cfg, f.state, bat(45), T0 + 30_000 + 5 * MIN).actions)).toEqual(["below-50"])
   })
 
   it("24% with the queue held: the 25% push is itself model-free; the held 50% wake gets a Wall line and a retry, no push", () => {
@@ -157,8 +159,8 @@ describe("battery levels (battery-watch.sh)", () => {
     const held = checkHolds(cfg, sent, T0 + HOLD_MS)
     expect(kinds(held.actions, "abort")).toHaveLength(1)
     expect(pushes(held.actions)).toEqual([])
-    expect(kinds(held.actions, "wall")).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent not started in 2 min; waking it again at the next reading/) }])
-    const next = step(cfg, held.state, bat(24), T0 + HOLD_MS + MIN)
+    expect(kinds(held.actions, "wall")).toEqual([{ kind: "wall", text: expect.stringMatching(/below-50 wake to ops-agent not started in 2 min; waking it again in 5 min or later/) }])
+    const next = step(cfg, held.state, bat(24), T0 + HOLD_MS + 5 * MIN)
     expect(wakes(next.actions)).toEqual(["below-50"])
     expect(pushes(next.actions)).toEqual([])
   })
@@ -176,6 +178,44 @@ describe("battery levels (battery-watch.sh)", () => {
     const ok = pushed(retry.state, "below-15", true, { ok: true, reason: "sent" }).state
     const later = checkHolds(cfg, ok, T0 + 2 * HOLD_MS + MIN)
     expect(kinds(later.actions, "push").filter((a) => (a as any).fallback)).toEqual([])
+  })
+
+  it("#2063: low readings every minute after failed wakes give at most 1 + wakeRetry.max wakes per level and stretch", () => {
+    let s = emptyState()
+    const total: Record<string, number> = {}
+    const wall: string[] = []
+    for (let m = 0; m < 120; m++) {
+      const r = step(cfg, s, bat(45), T0 + m * MIN)
+      s = r.state
+      wall.push(...kinds(r.actions, "wall").map((a) => (a as any).text))
+      for (const a of kinds(r.actions, "wake") as Array<Extract<SensorAction, { kind: "wake" }>>) {
+        total[a.level] = (total[a.level] ?? 0) + 1
+        const f = failed(cfg, s, a.level, a.seq, "agent busy", "battery", T0 + m * MIN)
+        s = f.state
+        wall.push(...kinds(f.actions, "wall").map((x) => (x as any).text))
+      }
+    }
+    // The 50% level and, from 30 min on, the 30-min level: each capped.
+    expect(total).toEqual({ "below-50": 1 + cfg.wakeRetry.max, "on-30min": 1 + cfg.wakeRetry.max })
+    // Per level, one Wall line for the first failure, one when the retries run out.
+    expect(wall.filter((t) => t.includes("below-50"))).toEqual([
+      expect.stringMatching(/retry 1 of 3/),
+      expect.stringMatching(/below-50 wake to ops-agent failed \(agent busy\); no more wakes for this level until the Mac is back on AC \(3 retries used\)/),
+    ])
+    // AC back: the count starts again on the next stretch.
+    s = step(cfg, s, ac(60), T0 + 120 * MIN).state
+    expect(wakes(step(cfg, s, bat(45), T0 + 121 * MIN).actions)).toEqual(["below-50"])
+  })
+
+  it("#2063: wakeRetry is a setting; max 0 means one wake per level and stretch", () => {
+    expect(cfg.wakeRetry).toEqual({ max: 3, minutes: 5 })
+    const none = sensorSchema.parse({ ...SCRIPT_LEVELS, wakeRetry: { max: 0 } })
+    expect(none.wakeRetry).toEqual({ max: 0, minutes: 5 })
+    expect(sensorSchema.safeParse({ ...SCRIPT_LEVELS, wakeRetry: { minutes: 0 } }).success).toBe(false)
+    const first = step(none, emptyState(), bat(45), T0)
+    const f = failed(none, first.state, "below-50", (kinds(first.actions, "wake")[0] as any).seq, "agent busy", "battery", T0)
+    expect(f.actions).toEqual([{ kind: "wall", text: expect.stringMatching(/no more wakes for this level until the Mac is back on AC \(0 retries used\)/) }])
+    expect(wakes(step(none, f.state, bat(45), T0 + 20 * MIN).actions)).toEqual([])
   })
 
   it("an urgent level cannot also carry fallbackPush", () => {

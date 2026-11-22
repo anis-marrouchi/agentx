@@ -116,9 +116,10 @@ Readers the daemon checks on a timer, with no model: `sensors.<id>`. The only bu
 | `levels[].target` | string | — | The agent woken, at priority critical. Required unless `urgent`. |
 | `levels[].brief` | string | — | Words put before the wake's text, for example who is speaking. |
 | `levels[].urgent` | boolean | `false` | Sends you a push with no model instead of waking an agent, like `agentx notify --urgent`. |
-| `levels[].fallbackPush` | boolean | `false` | When the wake has not started within 2 minutes, or failed, send you that push instead. Any other level whose wake is held gets a line on the Hub and is tried again. |
+| `levels[].fallbackPush` | boolean | `false` | When the wake has not started within 2 minutes, or failed, send you that push instead. Any other level whose wake is held gets a line on the Hub and is tried again, within `wakeRetry`. |
 | `levels[].push` | object | — | How the push reads: `title`, `from`, `key`, `todo`, `priority` (1–5). |
 | `rearm` | object | `{ "above": 30, "onAC": true }` | When the levels may fire again: back above this percentage, on the charger when `onAC`. |
+| `wakeRetry` | object | `{ "max": 3, "minutes": 5 }` | How often a wake that was held or failed is tried again: at most `max` times (0–10) per level and stretch on battery, and no sooner than `minutes` (1–240) after it was given up. Each try is a critical wake, so the limit keeps a failing wake from waking the agent at every reading. When the tries run out you get one line on the Hub, and that level waits until the next stretch. |
 | `value` | object | — | Why it runs and the number that proves it, as on a schedule. |
 | `goal` | string (goal id) | — | The goal record it serves. |
 

@@ -105,6 +105,19 @@ describe("sensor runner", () => {
     expect(wall).toHaveLength(1)
   })
 
+  it("#2063: a wake that fails every time, read every minute for an hour, wakes 1 + wakeRetry.max times", async () => {
+    wakeMode = "fail"
+    bat(45)
+    for (let m = 0; m < 60; m++) {
+      await runner.readOnce("battery")
+      await runner.idle()
+      now += 60_000
+    }
+    expect(wakeCalls.filter((w) => w.level === "below-50")).toHaveLength(1 + cfg.wakeRetry.max)
+    expect(wakeCalls.filter((w) => w.level === "on-30min")).toHaveLength(1 + cfg.wakeRetry.max)
+    expect(wall.filter((t) => t.includes("below-50"))).toEqual([expect.stringMatching(/retry 1 of 3/), expect.stringMatching(/no more wakes for this level until the Mac is back on AC/)])
+  })
+
   it("30-min level held: a Wall line and a retry, no push", async () => {
     wakeMode = "hold"
     bat(70)
@@ -116,9 +129,9 @@ describe("sensor runner", () => {
     now += HOLD_MS
     await runner.checkHolds("battery")
     await runner.idle()
-    expect(wall).toEqual([expect.stringMatching(/on-30min wake to ops-agent not started in 2 min; waking it again at the next reading/)])
+    expect(wall).toEqual([expect.stringMatching(/on-30min wake to ops-agent not started in 2 min; waking it again in 5 min or later/)])
     expect(pushCalls).toEqual([])
-    now += 60_000
+    now += 5 * 60_000
     wakeMode = "start"
     await runner.readOnce("battery")
     await runner.idle()
@@ -139,7 +152,7 @@ describe("sensor runner", () => {
     await runner.idle()
     expect(wakeCalls[0].signal.aborted).toBe(true)
     expect(wall).toEqual([expect.stringMatching(/below-50 wake to ops-agent not started in 2 min; waking it again/)])
-    now += 60_000
+    now += 5 * 60_000
     await runner.readOnce("battery")
     await runner.idle()
     expect(wakeCalls.map((w) => w.level)).toEqual(["below-50", "below-50"])

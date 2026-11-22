@@ -15,7 +15,9 @@ import type { SensorConfig, SensorLevel } from "./config"
 //     and re-arms only above `rearm.above` on AC: a short AC spell does not.
 //   - A wake counts as sent only once its run has STARTED. Not started in
 //     2 minutes (held) or failed: a Wall line, and the wake goes again at
-//     the next reading. Only a `fallbackPush` level (the 15 % line) also
+//     a later reading, at most `wakeRetry.max` times per level and stretch
+//     and no sooner than `wakeRetry.minutes` after it was given up (#2063:
+//     each retry is a critical wake, so it is capped). Only a `fallbackPush` level (the 15 % line) also
 //     owes the model-free push, once per stretch, sent at once; the other
 //     agent levels never push to the operator (the COO decides that).
 //   - A push that fails is tried again at the next reading, the result
@@ -35,6 +37,10 @@ export interface LevelState {
   text?: string
   /** A held or failed wake was put on the Wall this stretch. */
   stuckTold?: boolean
+  /** Wakes handed to the agent this stretch, the first one included. */
+  tries?: number
+  /** When the last held or failed wake was given up. */
+  givenUpAt?: number
   /** A fallbackPush level's model-free push: owed, or sent, this stretch. */
   fallback?: "owed" | "sent"
 }
@@ -86,7 +92,8 @@ export function pushText(l: SensorLevel, percent: number, onMin: number): string
 }
 
 /** Held wakes: not started within HOLD_MS. Dropped, put on the Wall, and
- *  sent again at the next reading; a fallbackPush level's push goes now. */
+ *  sent again within its `wakeRetry` limit; a fallbackPush level's push
+ *  goes now. */
 export function checkHolds(cfg: SensorConfig, state: SensorState, now: number, id = "battery"): Step {
   const s = clone(state)
   const actions: SensorAction[] = []
@@ -95,7 +102,7 @@ export function checkHolds(cfg: SensorConfig, state: SensorState, now: number, i
     if (!st?.pending || st.sent || now - st.pending.since < HOLD_MS) continue
     actions.push({ kind: "abort", level: l.id, seq: st.pending.seq })
     st.pending = undefined
-    actions.push(...stuck(id, l, st, `not started in ${Math.round(HOLD_MS / 60_000)} min`))
+    actions.push(...stuck(cfg, id, l, st, `not started in ${Math.round(HOLD_MS / 60_000)} min`, now))
     if (st.fallback === "owed") actions.push(fallbackPush(l, st))
   }
   return { state: s, actions }
@@ -103,12 +110,22 @@ export function checkHolds(cfg: SensorConfig, state: SensorState, now: number, i
 
 const fallbackPush = (l: SensorLevel, st: LevelState): SensorAction => ({ kind: "push", level: l.id, text: st.text ?? "", fallback: true })
 
+/** Retries left for a level this stretch (#2063). */
+const retriesLeft = (cfg: SensorConfig, st: LevelState): number => cfg.wakeRetry.max - Math.max(0, (st.tries ?? 1) - 1)
+
 /** A held or failed wake: one Wall line per level and stretch, the rest
- *  logged; a fallbackPush level owes its push. */
-function stuck(id: string, l: SensorLevel, st: LevelState, why: string): SensorAction[] {
+ *  logged, and a Wall line when its retries run out; a fallbackPush level
+ *  owes its push. */
+function stuck(cfg: SensorConfig, id: string, l: SensorLevel, st: LevelState, why: string, now: number): SensorAction[] {
   const owes = l.fallbackPush && st.fallback !== "sent"
   if (owes) st.fallback = "owed"
-  const line = `sensor ${id}: the ${l.id} wake to ${l.target} ${why}; ${owes ? "sending the urgent push instead, and " : ""}waking it again at the next reading`
+  st.givenUpAt = now
+  const left = retriesLeft(cfg, st)
+  const next = left > 0
+    ? `waking it again in ${cfg.wakeRetry.minutes} min or later (retry ${cfg.wakeRetry.max - left + 1} of ${cfg.wakeRetry.max})`
+    : `no more wakes for this level until the Mac is back on AC (${cfg.wakeRetry.max} retries used)`
+  const line = `sensor ${id}: the ${l.id} wake to ${l.target} ${why}; ${owes ? "sending the urgent push instead, and " : ""}${next}`
+  if (left <= 0) return [{ kind: "wall", text: line }]
   if (st.stuckTold) return [{ kind: "log", text: line }]
   st.stuckTold = true
   return [{ kind: "wall", text: line }]
@@ -158,6 +175,9 @@ export function step(cfg: SensorConfig, state: SensorState, reading: BatteryRead
   const wake = (l: SensorLevel) => {
     const st = lv(s, l.id)
     if (st.sent || st.pending) return
+    // A retry (#2063): only while retries are left, and not too soon.
+    if (st.tries && (retriesLeft(cfg, st) <= 0 || now - (st.givenUpAt ?? 0) < cfg.wakeRetry.minutes * 60_000)) return
+    st.tries = (st.tries ?? 0) + 1
     s.seq += 1
     st.pending = { since: now, seq: s.seq }
     st.text = wakeText(l, percent, onMin)
@@ -204,15 +224,15 @@ export function started(cfg: SensorConfig, state: SensorState, levelId: string, 
 }
 
 /** The wake's run failed (before or after it started). Not sent: a Wall
- *  line, and the wake goes again at the next reading. */
-export function failed(cfg: SensorConfig, state: SensorState, levelId: string, seq: number, why: string, id = "battery"): Step {
+ *  line, and the wake goes again within its `wakeRetry` limit. */
+export function failed(cfg: SensorConfig, state: SensorState, levelId: string, seq: number, why: string, id = "battery", now = Date.now()): Step {
   const s = clone(state)
   const l = cfg.levels.find((x) => x.id === levelId)
   const st = s.levels[levelId]
   if (!l || !st || s.stretchStart === null || (st.pending && st.pending.seq !== seq)) return { state: s, actions: [] }
   st.sent = false
   st.pending = undefined
-  const actions = stuck(id, l, st, `failed (${why.slice(0, 120)})`)
+  const actions = stuck(cfg, id, l, st, `failed (${why.slice(0, 120)})`, now)
   if (st.fallback === "owed") actions.push(fallbackPush(l, st))
   return { state: s, actions }
 }
