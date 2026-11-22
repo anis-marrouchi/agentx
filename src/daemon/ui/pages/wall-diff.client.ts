@@ -3,16 +3,21 @@
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
 // esc(), headers(), act(), findPost(), loadThread() and nameOf().
 //
-// A post whose home is a GitHub pull request or a GitLab merge request
-// (p.mergeRef, wall-api.ts) has a Diff button in its action row. It opens
-// the diff under the comment box: GET /api/admin/wall/diff?id=<post>, from
-// the node that keeps the post. Each file has a header that folds it, each
+// A post whose home is a GitHub or GitLab issue, pull request or merge
+// request (p.mergeRef, wall-api.ts) has a Diff button in its action row. It
+// opens under the comment box: GET /api/admin/wall/diff?id=<post>, from the
+// node that keeps the post, gives the pull or merge requests found for it
+// and the diff of the first open one. With several, a small picker reads
+// another (&pr=<ref>); with none, the view says so. Each file has a header that folds it, each
 // line its old and new numbers. Selecting a line opens a box under it; Add
 // keeps the comment as a draft, shown under its line and counted in the
 // footer, where it can be edited or removed. "Send N comments to agent"
-// posts them all at once (POST /api/admin/wall/diff-comments): the agent
-// that has the post gets them as one message, as a comment would reach it.
-// Drafts stay in memory, and in sessionStorage when the browser has it, per
+// posts them all at once (POST /api/admin/wall/diff-comments) with the
+// PR's ref and the head commit the diff was read at: the agent that has the
+// post gets them as one message, as a comment would reach it. When the
+// head moved since, the answer says moved and the view warns. Drafts are
+// cleared only once the send succeeds, and the picker waits for them to be
+// sent or removed. Drafts stay in memory, and in sessionStorage when the browser has it, per
 // post; a refresh of the Hub does not repaint a box being typed in.
 
 export const WALL_DIFF_SCRIPT = String.raw`
@@ -26,6 +31,7 @@ export const WALL_DIFF_SCRIPT = String.raw`
       var ss = diffStore();
       if (ss) { try { drafts = JSON.parse(ss.getItem(DIFF_KEY + id) || '[]') || []; } catch (e) { drafts = []; } }
       S.diffs[id] = { open: false, loading: false, error: '', data: null, folded: {}, drafts: drafts, editing: null, sending: false, note: '' };
+      // data: {prs, ref, provider, title, state, headSha, files, truncated}; ref null: no PR found.
     }
     return S.diffs[id];
   }
@@ -66,13 +72,26 @@ export const WALL_DIFF_SCRIPT = String.raw`
     });
     return rows ? '<tr class="wdf__dr"><td colspan="3"><ul>' + rows + '</ul></td></tr>' : '';
   }
+  /** The post's PRs and MRs, when it has more than one. */
+  function diffPickerHtml(d) {
+    var prs = d.data.prs || [];
+    if (prs.length < 2) return '';
+    var held = d.drafts.length ? ' disabled title="Send or remove the drafted comments first"' : '';
+    return '<div class="wdf__prs" role="group" aria-label="Pull and merge requests">' + prs.map(function (x) {
+      return '<button type="button" class="chip" data-wdf="pr" data-ref="' + esc(x.ref) + '" aria-pressed="' + (x.ref === d.data.ref ? 'true' : 'false') + '"' + held + '>' +
+        esc(x.ref) + (x.title ? ' · ' + esc(x.title) : '') + ' <span class="wdf__st">' + esc(x.state) + '</span></button>';
+    }).join('') + '</div>';
+  }
   function diffInner(p, d) {
     if (d.loading) return '<p class="ax-wall__empty">Loading the diff…</p>';
     if (d.error) return '<p class="ax-wall__empty">Diff not available: ' + esc(d.error) + '</p>';
     if (!d.data) return '';
+    if (!d.data.ref) return '<section class="wdf"><p class="ax-wall__empty">No pull or merge request names this issue yet.</p></section>';
     var files = d.data.files || [];
     var where = d.data.provider === 'gitlab' ? 'GitLab' : 'GitHub';
-    var out = '<section class="wdf" aria-label="Diff of ' + esc(d.data.ref) + '"><h2 class="wp__th">Diff · ' + esc(d.data.ref) + '</h2>';
+    var out = '<section class="wdf" aria-label="Diff of ' + esc(d.data.ref) + '"><h2 class="wp__th">Diff · ' + esc(d.data.ref) +
+      (d.data.headSha ? ' <span class="wdf__sha" title="Head commit read">' + esc(String(d.data.headSha).slice(0, 12)) + '</span>' : '') + '</h2>' +
+      diffPickerHtml(d);
     if (d.data.truncated) out += '<p class="wdf__cut">The diff is long: only its first lines are shown. The rest is on ' + where + '.</p>';
     if (!files.length) out += '<p class="ax-wall__empty">No changed files.</p>';
     files.forEach(function (f, fi) {
@@ -120,12 +139,12 @@ export const WALL_DIFF_SCRIPT = String.raw`
     if (b) { b.outerHTML = diffButtonHtml(p); }
     if (d.editing && $('wdf-text') && $('wdf-text').focus) $('wdf-text').focus();
   }
-  async function diffLoad(p) {
+  async function diffLoad(p, pr) {
     var d = diffOf(p.id);
     d.loading = true; d.error = '';
     paintDiff();
     try {
-      var r = await fetch('/api/admin/wall/diff?id=' + encodeURIComponent(p.id), { headers: headers(p.node && p.node.peer) });
+      var r = await fetch('/api/admin/wall/diff?id=' + encodeURIComponent(p.id) + (pr ? '&pr=' + encodeURIComponent(pr) : ''), { headers: headers(p.node && p.node.peer) });
       var b = await r.json().catch(function () { return {}; });
       if (r.ok) d.data = b; else d.error = b.error || ('HTTP ' + r.status);
     } catch (e) { d.error = String(e && e.message || e); }
@@ -143,12 +162,16 @@ export const WALL_DIFF_SCRIPT = String.raw`
     d.sending = true; d.note = 'Sending…';
     paintDiff();
     var comments = d.drafts.map(function (c) { return { file: c.file, side: c.side, line: c.line, text: c.text, code: c.code }; });
-    var r = await act('POST', '/api/admin/wall/diff-comments', { id: p.id, comments: comments }, p.node && p.node.peer);
+    var body = { id: p.id, pr: d.data && d.data.ref, comments: comments };
+    if (d.data && d.data.headSha) body.headSha = d.data.headSha;
+    var r = await act('POST', '/api/admin/wall/diff-comments', body, p.node && p.node.peer);
     d.sending = false;
+    // A failed send keeps every draft.
     if (!r.ok) { d.note = 'Not sent: ' + r.error; paintDiff(); return; }
     d.drafts = []; d.editing = null;
     diffKeep(p.id);
     d.note = (r.body && r.body.message) || 'Sent.';
+    if (r.body && r.body.moved) d.note += ' Careful: the pull or merge request has moved to ' + String(r.body.headSha || '').slice(0, 12) + ' since you read these lines. Reload the diff to see it.';
     paintDiff();
     loadThread(p.id);
   }
@@ -159,6 +182,12 @@ export const WALL_DIFF_SCRIPT = String.raw`
     if (what === 'toggle') {
       d.open = !d.open;
       if (d.open && !d.data && !d.loading) { diffLoad(p); return; }
+    } else if (what === 'pr') {
+      var ref = t.getAttribute('data-ref');
+      if (d.drafts.length || !ref || (d.data && d.data.ref === ref)) return;
+      d.editing = null; d.folded = {};
+      diffLoad(p, ref);
+      return;
     } else if (what === 'fold') {
       var fi = t.getAttribute('data-f');
       d.folded[fi] = !d.folded[fi];
@@ -235,6 +264,9 @@ export const WALL_DIFF_CSS = `
 .wdf__dr ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .wdf__dr li { display: flex; gap: 8px; align-items: baseline; border-left: 3px solid var(--ax-accent); padding-left: 8px; }
 .wdf__dt { flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wdf__prs { display: flex; flex-wrap: wrap; gap: 6px; }
+.wdf__prs .chip[aria-pressed="true"] { outline: 1px solid var(--ax-accent); }
+.wdf__st, .wdf__sha { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wdf__cut { margin: 0; padding: 6px 10px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wdf__foot { position: sticky; bottom: 0; background: var(--ax-bg); padding: 6px 0; }
 .wdf__foot .wdo__n { margin-right: auto; }

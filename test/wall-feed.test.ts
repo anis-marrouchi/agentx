@@ -2788,7 +2788,8 @@ describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
 })
 
 describe("Diff view of a PR or MR post (#2102)", () => {
-  const DIFF = { ref: "acme/shop#12", provider: "github", truncated: false, files: [
+  const SHA = "c0ffee".padEnd(40, "0")
+  const DIFF = { prs: [{ ref: "acme/shop#12", title: "Fix", state: "open", headSha: SHA }], ref: "acme/shop#12", provider: "github", title: "Fix", state: "open", headSha: SHA, truncated: false, files: [
     { file: "src/app.ts", status: "modified", hunks: [{ header: "@@ -1,2 +1,2 @@", lines: [
       { kind: "ctx", oldLine: 1, newLine: 1, text: "const a = 1" },
       { kind: "del", oldLine: 2, text: "const b = 2" },
@@ -2819,6 +2820,9 @@ describe("Diff view of a PR or MR post (#2102)", () => {
     expect(w.calls.some((c) => c.url === "/api/admin/wall/diff?id=r1")).toBe(true)
     let html = w.el("wdf").innerHTML
     expect(html).toContain("Diff · acme/shop#12")
+    expect(html).toContain('<span class="wdf__sha" title="Head commit read">c0ffee000000</span>')
+    // One PR: no picker.
+    expect(html).not.toContain('data-wdf="pr"')
     expect(html).toContain('<span class="wdf__fn">src/app.ts</span>')
     expect(html).toContain('<tr class="wdf__l is-del" data-wdf="line" data-f="0" data-h="0" data-l="1"')
     expect(html).toContain("const b = &lt;3&gt;")
@@ -2844,7 +2848,7 @@ describe("Diff view of a PR or MR post (#2102)", () => {
     w.click({ "data-wdf": "add" })
     w.click({ "data-wdf": "send" })
     await w.settle()
-    expect(sent).toEqual([{ url: "/api/admin/wall/diff-comments", body: { id: "r1", comments: [
+    expect(sent).toEqual([{ url: "/api/admin/wall/diff-comments", body: { id: "r1", pr: "acme/shop#12", headSha: SHA, comments: [
       { file: "src/app.ts", side: "new", line: 2, text: "Why 3, not 4?", code: "const b = <3>" },
       { file: "src/app.ts", side: "old", line: 2, text: "Keep 2", code: "const b = 2" },
     ] } }])
@@ -2875,5 +2879,78 @@ describe("Diff view of a PR or MR post (#2102)", () => {
     w.click({ "data-wdf": "toggle" })
     await w.settle()
     expect(w.el("wdf").innerHTML).toContain("Diff not available: not a merge or pull request")
+  })
+
+  it("offers Diff on an issue post, and says so when no PR or MR names it", async () => {
+    const issue = { ...WALL, posts: [post("r3", "cx", "in_progress", { mergeRef: "acme/shop#3", home: { kind: "issue", link: "https://github.com/acme/shop/issues/3" } })] }
+    const w = openWall({ hash: "#post=r3", data: issue, diff: () => ({ status: 200, body: { prs: [], ref: null, provider: "github", title: null, state: null, headSha: null, files: [], truncated: false } }) })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("No pull or merge request names this issue yet.")
+    expect(w.el("wdf").innerHTML).not.toContain("data-wdf=\"send\"")
+  })
+
+  it("picks among several PRs, and holds the picker while drafts wait", async () => {
+    const two = { ...DIFF, prs: [DIFF.prs[0], { ref: "acme/shop#13", title: "Docs", state: "merged", headSha: "d".repeat(40) }] }
+    const urls: string[] = []
+    const w = openWall({ hash: "#post=r1", data, diff: (url) => {
+      urls.push(url)
+      return { status: 200, body: url.includes("&pr=") ? { ...two, ref: "acme/shop#13", headSha: "d".repeat(40) } : two }
+    } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    let html = w.el("wdf").innerHTML
+    expect(html).toContain('data-wdf="pr" data-ref="acme/shop#12" aria-pressed="true">acme/shop#12 · Fix <span class="wdf__st">open</span>')
+    expect(html).toContain('data-wdf="pr" data-ref="acme/shop#13" aria-pressed="false">acme/shop#13 · Docs <span class="wdf__st">merged</span>')
+    w.click({ "data-wdf": "pr", "data-ref": "acme/shop#13" })
+    await w.settle()
+    expect(urls).toEqual(["/api/admin/wall/diff?id=r1", "/api/admin/wall/diff?id=r1&pr=acme%2Fshop%2313"])
+    html = w.el("wdf").innerHTML
+    expect(html).toContain("Diff · acme/shop#13")
+    expect(html).toContain('data-ref="acme/shop#13" aria-pressed="true"')
+    // A draft holds the picker: switching would leave it on the wrong lines.
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    expect(w.el("wdf").innerHTML).toContain('disabled title="Send or remove the drafted comments first"')
+    w.click({ "data-wdf": "pr", "data-ref": "acme/shop#12" })
+    await w.settle()
+    expect(urls).toHaveLength(2)
+  })
+
+  it("warns when the PR moved since the lines were read", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: (_url, init) => init?.method === "POST"
+      ? { status: 200, body: { ok: true, message: "Sent to cx.", moved: true, headSha: "e".repeat(40) } }
+      : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Sent to cx. Careful: the pull or merge request has moved to eeeeeeeeeeee since you read these lines. Reload the diff to see it.")
+  })
+
+  it("reads and comments on a peer's post at that peer, as a comment goes", async () => {
+    const peer = "https://node-b.example"
+    const far = { ...WALL, posts: [post("r1", "cx", "in_progress", { mergeRef: "acme/shop#12", node: { name: "node-b", peer, daemonUrl: null } })] }
+    const w = openWall({ hash: "#post=r1", data: far, diff: (_url, init) => init?.method === "POST" ? { status: 200, body: { ok: true } } : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    const diffCalls = w.calls.filter((c) => c.url.startsWith("/api/admin/wall/diff"))
+    expect(diffCalls.map((c) => [c.url, c.init?.headers?.["X-Agentx-Peer"]])).toEqual([
+      ["/api/admin/wall/diff?id=r1", peer],
+      ["/api/admin/wall/diff-comments", peer],
+    ])
   })
 })
