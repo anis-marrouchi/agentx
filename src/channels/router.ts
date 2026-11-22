@@ -38,6 +38,7 @@ import { planHoldText, waitNoticeText } from "@/admission/wait-notice"
 import { sendToChat, type SendToChatOpts, type SituationTag } from "@/situations/send-to-chat"
 import type { GateDecision, SituationGate } from "@/situations/gate"
 import { situationKeyOf } from "@/situations/key"
+import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
 export class ChannelDownError extends Error {
@@ -1310,6 +1311,7 @@ export class MessageRouter {
           channelMeta: msg.channelMeta,
           runbookPath: msg.runbookPath,
           runbookFiles: msg.runbookFiles,
+          ...changeSourceOf(msg.raw),
         },
       },
       onDelta,
@@ -2070,6 +2072,7 @@ export class MessageRouter {
       channelMeta: msg.channelMeta,
       runbookPath: msg.runbookPath,
       runbookFiles: msg.runbookFiles,
+      ...changeSourceOf(msg.raw),
     }
   }
 

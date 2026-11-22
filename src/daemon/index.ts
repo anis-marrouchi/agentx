@@ -799,6 +799,10 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log, (_job, end) => needsJobState(this.config.jobState, end.channel))
           // Jobs (#1861): a hand-off still out ends with its delegation.
           this.requests.doors.setPendingDelegation((id) => !!this.delegations?.isPending(id))
+          // An issue with an open request of the same agent stays in the
+          // checkout when worktrees are turned on for that agent (#2102).
+          const requestStore = this.requests.store
+          this.registry.setOpenRequestOnIssue((provider, project, n, agentId) => requestStore.openOnIssue(provider, project, n, agentId))
           // The daemon owns the wake-up of a job (#1861, phase 3).
           const requests = this.requests
           // A job's notice (stalled, blocked on another node): read at the

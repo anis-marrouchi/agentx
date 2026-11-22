@@ -275,6 +275,11 @@ export interface AgentTask {
     runbookPath?: string
     /** Override list of files to read from runbookPath. Optional. */
     runbookFiles?: string[]
+    /** Source branch of the pull or merge request the task is about, from
+     *  the webhook payload (task-worktrees.ts changeSourceOf, #2102), and
+     *  whether it comes from a fork. */
+    sourceBranch?: string
+    sourceFork?: boolean
     /** Root of an agent-to-agent chain (a2a/initiator.ts). Set on every
      *  delegated hop, forwarded across mesh peers with the context. */
     initiator?: import("@/a2a/initiator").RootInitiator

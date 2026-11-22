@@ -410,9 +410,14 @@ const agentConfigSchema = z.object({
   }).default({}),
   /** Run each local task for an issue (GitHub, GitLab, Linear, Jira) in a
    *  git worktree of its own, on the branch `agentx/issue-<n>` (#1292).
-   *  Off by default. The checkout is the project rule's `runbook` path or
-   *  the agent's workspace; for a forge issue its origin must be the
-   *  issue's repository. Pull and merge request tasks keep running in the
+   *  Off by default: turn it on for coding agents (#2102 review B4). It
+   *  applies only when a checkout is found: the project rule's `runbook`
+   *  path or the agent's workspace, whose origin, for a forge issue, must
+   *  be the issue's repository. An issue already in progress (a kept
+   *  session, an open request) with no worktree yet stays in the checkout.
+   *  Pull and merge request tasks run on the change's source branch: in
+   *  the folder that has it checked out (the checkout too), else in a new
+   *  worktree; a fork's change, or one whose branch is unknown, runs in the
    *  checkout. See src/agents/task-worktrees.ts. */
   worktrees: z.object({
     enabled: z.boolean().default(false),
