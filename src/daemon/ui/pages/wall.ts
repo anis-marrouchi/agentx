@@ -46,6 +46,7 @@ import { WALL_TASK_CSS } from "./wall-task.client"
 import { WALL_SETTINGS_CSS } from "./wall-settings.client"
 import { WALL_ACTIVITY_CSS } from "./wall-activity.client"
 import { WALL_BUILD_CSS } from "./wall-build.client"
+import { WALL_DIFF_CSS } from "./wall-diff.client"
 import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
 import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
@@ -315,7 +316,7 @@ ${navItems}
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

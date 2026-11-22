@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown } } = {}) {
   const page = renderWallPage()
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -46,8 +46,8 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   const classes = () => { const s = new Set<string>(); return { toggle: (c: string, on?: boolean) => { (on ?? !s.has(c)) ? s.add(c) : s.delete(c); return s.has(c) }, contains: (c: string) => s.has(c) } }
   const el = (id: string) => {
     if (!els.has(id)) {
-      // The open post's action box (wdo-*) is drawn by the script itself.
-      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-|^wall-editor-root$/.test(id) ? [`<x id="${id}">`] : null)
+      // The open post's action box (wdo-*) and Diff view (wdf, #2102) are drawn by the script itself.
+      const tag = new RegExp(`<[^>]*id="${id}"[^>]*>`).exec(page) ?? (/^(wdo|cb)-|^wdf(-text)?$|^wall-editor-root$/.test(id) ? [`<x id="${id}">`] : null)
       if (!tag) throw new Error(`no element #${id} on the page`)
       const attrs: Record<string, string> = {}
       const on: Record<string, (ev: unknown) => void> = {}
@@ -88,6 +88,10 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.liveFails && url === "/api/live?quick=1") return Promise.resolve({ ok: false, status: 502, json: async () => ({}) })
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    if (opts.diff && url.startsWith("/api/admin/wall/diff")) {
+      const r = opts.diff(url, init)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
     const peer = init?.headers?.["X-Agentx-Peer"] as string | undefined
     if (peer && opts.peerCost && url.startsWith("/api/admin/observability/")) {
       const body = opts.peerCost(peer, url)
@@ -2780,5 +2784,96 @@ describe("The Cost page does all /admin/cost did (#1423, #1449)", () => {
     expect(w.el("wall-cost").innerHTML).toContain('<option value="node-a" selected>node-a</option>')
     expect(w.el("wall-cost").innerHTML).toContain('<option value="agent:cx" selected>Agent @cx</option>')
     expect(w.el("cb-usd").value).toBe("10")
+  })
+})
+
+describe("Diff view of a PR or MR post (#2102)", () => {
+  const DIFF = { ref: "acme/shop#12", provider: "github", truncated: false, files: [
+    { file: "src/app.ts", status: "modified", hunks: [{ header: "@@ -1,2 +1,2 @@", lines: [
+      { kind: "ctx", oldLine: 1, newLine: 1, text: "const a = 1" },
+      { kind: "del", oldLine: 2, text: "const b = 2" },
+      { kind: "add", newLine: 2, text: "const b = <3>" },
+    ] }] },
+    { file: "img/logo.png", status: "binary", hunks: [] },
+  ] }
+  const data = { ...WALL, posts: [post("r1", "cx", "in_progress", { mergeRef: "acme/shop#12", home: { kind: "link", link: "https://github.com/acme/shop/pull/12" } }), post("r2", "cx", "in_progress")] }
+
+  it("offers Diff only on a post whose home is a PR or MR", async () => {
+    const w = openWall({ hash: "#post=r1", data })
+    await w.settle()
+    expect(w.el("wall-post").innerHTML).toContain('data-wdf="toggle" aria-expanded="false" title="The changes in acme/shop#12">Diff</button>')
+    const other = openWall({ hash: "#post=r2", data })
+    await other.settle()
+    expect(other.el("wall-post").innerHTML).not.toContain("data-wdf")
+  })
+
+  it("shows the files and lines, takes comments on lines and sends them in one batch", async () => {
+    const sent: any[] = []
+    const w = openWall({ hash: "#post=r1", data, diff: (url, init) => {
+      if (init?.method === "POST") { sent.push({ url, body: JSON.parse(init.body) }); return { status: 200, body: { ok: true, message: "Sent to cx." } } }
+      return { status: 200, body: DIFF }
+    } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/diff?id=r1")).toBe(true)
+    let html = w.el("wdf").innerHTML
+    expect(html).toContain("Diff · acme/shop#12")
+    expect(html).toContain('<span class="wdf__fn">src/app.ts</span>')
+    expect(html).toContain('<tr class="wdf__l is-del" data-wdf="line" data-f="0" data-h="0" data-l="1"')
+    expect(html).toContain("const b = &lt;3&gt;")
+    expect(html).toContain("Binary file: not shown.")
+    expect(html).toContain("Send 0 comments to agent")
+
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "2" })
+    expect(w.el("wdf").innerHTML).toContain('<textarea id="wdf-text"')
+    w.el("wdf-text").value = "  Why 3?  "
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "1" })
+    w.el("wdf-text").value = "Keep 2"
+    w.click({ "data-wdf": "add" })
+    html = w.el("wdf").innerHTML
+    expect(html).toContain('<span class="wdf__dt" dir="auto">Why 3?</span>')
+    expect(html).toContain("2 comments drafted for Customer Desk")
+    expect(html).toContain("Send 2 comments to agent")
+
+    // Edit the first, remove nothing, then send.
+    w.click({ "data-wdf": "edit", "data-n": "0" })
+    expect(w.el("wdf").innerHTML).toContain(">Save</button>")
+    w.el("wdf-text").value = "Why 3, not 4?"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(sent).toEqual([{ url: "/api/admin/wall/diff-comments", body: { id: "r1", comments: [
+      { file: "src/app.ts", side: "new", line: 2, text: "Why 3, not 4?", code: "const b = <3>" },
+      { file: "src/app.ts", side: "old", line: 2, text: "Keep 2", code: "const b = 2" },
+    ] } }])
+    html = w.el("wdf").innerHTML
+    expect(html).toContain("Sent to cx.")
+    expect(html).toContain("Send 0 comments to agent")
+  })
+
+  it("keeps the drafts and says why when the send fails; a draft can be removed", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: (_url, init) => init?.method === "POST" ? { status: 401, body: { error: "Only the owner writes on the Hub" } } : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-wdf": "line", "data-f": "0", "data-h": "0", "data-l": "0" })
+    w.el("wdf-text").value = "Hmm"
+    w.click({ "data-wdf": "add" })
+    w.click({ "data-wdf": "send" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Not sent: Only the owner writes on the Hub")
+    expect(w.el("wdf").innerHTML).toContain("Send 1 comment to agent")
+    w.click({ "data-wdf": "remove", "data-n": "0" })
+    expect(w.el("wdf").innerHTML).toContain("Send 0 comments to agent")
+  })
+
+  it("says so when the diff cannot be read", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: () => ({ status: 400, body: { error: "not a merge or pull request" } }) })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wdf").innerHTML).toContain("Diff not available: not a merge or pull request")
   })
 })
