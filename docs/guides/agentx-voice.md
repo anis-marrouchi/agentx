@@ -1,6 +1,8 @@
 # AgentX Voice: talk to your agents from anywhere on your Mac
 
-AgentX Voice is a small assistant that lives in your Mac's menu bar (macOS lists the app as **AgentX Desktop**). Hold a key, say what you need, and let go. Your words go to one of your AgentX agents, and the agent answers out loud, in its own voice. You don't need to open a browser, a chat window or a terminal, whichever app you are in.
+AgentX Voice is a small assistant that lives in your Mac's menu bar. Hold a key, say what you need, and let go. Your words go to one of your AgentX agents, and the agent answers out loud, in its own voice. You don't need to open a browser, a chat window or a terminal, whichever app you are in.
+
+**Which copy do you have?** `agentx desktop install` puts **AgentX Voice** in the Applications folder of your home folder (`~/Applications`). If you built it from a source checkout with `apps/mac-voice/install.sh`, your copy is **AgentX Voice** in the main `/Applications` folder. It is the same app; only the folder differs. Older installs named the first copy **AgentX Desktop**; running `agentx desktop install` again replaces it.
 
 This page is the user guide: install it, ask your first question, and learn the pill, the menu, the settings and History. The [Desktop assistant](../dashboard/voice.md) page is the full reference, and goes deeper into speech to text, talks between two agents, live lessons, task narration and automations.
 
@@ -39,17 +41,17 @@ Speech to text (turning your voice into words) runs through ElevenLabs if you ha
    ```sh
    agentx desktop install
    ```
-   This builds the app and puts it in the Applications folder of your home folder as **AgentX Desktop** (`~/Applications/AgentX Desktop.app`), with its helper, **AgentX Helper**, next to it. It starts AgentX Voice every time you log in; the helper starts when an agent needs it. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
-4. **Mac:** when macOS asks to let **AgentX Desktop** use the microphone, choose **Allow**.
+   This builds the app and puts it in the Applications folder of your home folder as **AgentX Voice** (`~/Applications/AgentX Voice.app`), with its helper, **AgentX Helper**, next to it. It starts AgentX Voice every time you log in; the helper starts when an agent needs it. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
+4. **Mac:** when macOS asks to let **AgentX Voice** use the microphone, choose **Allow**.
 5. **Mac:** when the AgentX Helper asks, open **System Settings › Privacy & Security** and switch on **Accessibility** and **Screen Recording** for **AgentX Helper**. The helper lets agents point at things on your screen. See [macOS permissions](../requirements.md#macos-permissions).
 6. **Mac:** look for the AgentX icon (a small waveform) in the menu bar at the top of the screen.
 7. **Mac:** click it and choose the agent you want to talk to.
 
 ![System Settings › Privacy & Security › Accessibility with access turned on](/screenshots/requirements/accessibility.png)
 
-<!-- Screenshot needed: the macOS microphone prompt for AgentX Desktop. It appears only once per Mac and comes back only after resetting privacy settings (tccutil reset Microphone), so it needs a fresh demo account. -->
+<!-- Screenshot needed: the macOS microphone prompt for AgentX Voice. It appears only once per Mac and comes back only after resetting privacy settings (tccutil reset Microphone), so it needs a fresh demo account. -->
 
-Developers building from a source checkout can also run `apps/mac-voice/install.sh`. It installs a copy named **AgentX Voice** into `/Applications` instead, with its log in `~/Library/Logs/agentx-voice.err.log`. Both keep a single login item: each one takes over the login item the other made (even under an older name) and removes any duplicate, so whichever you ran last is the copy that starts at login. The other copy stays in its Applications folder but no longer starts. Use one way or the other, not both.
+Developers building from a source checkout can also run `apps/mac-voice/install.sh`. It installs the same app, also named **AgentX Voice**, into `/Applications` instead, with its log in `~/Library/Logs/agentx-voice.err.log`. Both keep a single login item: each one takes over the login item the other made (even under an older name) and removes any duplicate, so whichever you ran last is the copy that starts at login. The other copy stays in its Applications folder but no longer starts. Use one way or the other, not both.
 
 ### Ask your first question
 
@@ -518,7 +520,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **No AgentX icon in the menu bar:** **Terminal:** run `agentx desktop status`. If it says it isn't running, run `agentx desktop start`. If it isn't installed, follow [Install and first run](#install-and-first-run).
 - **The app opens again right after you quit it:** it was installed before Quit kept it closed, and its login item still restarts it after every exit. **Terminal:** run `agentx desktop install` again once. To close it for now, run `agentx desktop stop`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Retry** in the menu.
-- **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Desktop**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
+- **Nothing is heard, or "Sorry, I didn't hear that":** check **System Settings › Privacy & Security › Microphone** allows **AgentX Voice**, and keep holding the keys while you speak. If it still fails, speech to text isn't working: check your ElevenLabs key, or run `agentx doctor` to check Whisper and `ffmpeg` on this Mac. After installing `ffmpeg`, run `agentx desktop install` again.
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
 - **Parakeet is picked but answers are still slow:** it is still downloading (483 MB) or loading for the first time; Whisper answers meanwhile. Parakeet has no Arabic: for Arabic, set **On-this-Mac engine** back to Whisper. See [Switch to Parakeet](../dashboard/voice.md#switch-to-parakeet).
 - **An answer is never spoken:** answers wait until you pick them. Point at the pill, or press **Command–Option–O**, and pick the row with the blue dot. To hear them as soon as they are back, tick **Play answers at once** in the menu.

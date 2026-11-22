@@ -1,4 +1,4 @@
-# AgentX Desktop assistant
+# AgentX Voice
 
 Install and activate from your AgentX configuration directory:
 

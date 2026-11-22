@@ -5,11 +5,13 @@ import { homedir } from 'node:os'
 import { installedMacHelper, resolveDesktopHelper } from '@/computer-use/helper'
 
 export const DESKTOP_LABEL = 'tn.acme.agentx.voice'
-export const DESKTOP_APP = 'AgentX Desktop.app'
+export const DESKTOP_APP = 'AgentX Voice.app'
+/** The name `agentx desktop install` used before the app had one name (#2095). */
+export const OLD_DESKTOP_APP = 'AgentX Desktop.app'
 export const HELPER_APP = 'AgentX Helper.app'
 export function desktopPlatformError(platform: string, arch: string, release: string): string | null {
   if (platform !== 'darwin' || arch !== 'arm64' || Number(release.split('.')[0]) < 23)
-    return 'AgentX Desktop currently requires Apple Silicon and macOS 14 or newer.'
+    return 'AgentX Voice currently requires Apple Silicon and macOS 14 or newer.'
   return null
 }
 export function selectDesktopAgent(agents: Record<string, unknown>, requested?: string): string {

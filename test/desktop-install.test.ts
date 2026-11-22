@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { launchdRespawn } from '../src/daemon/restart'
-import { DESKTOP_LABEL, LAUNCHD_PATH, adoptLoginItem, desktopPath, isVoiceLoginItemFile, desktopPlatformError, desktopPlist, findOnPath, isNativeExecutable, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
+import { DESKTOP_APP, DESKTOP_LABEL, LAUNCHD_PATH, adoptLoginItem, desktopPath, isVoiceLoginItemFile, desktopPlatformError, desktopPlist, findOnPath, isNativeExecutable, plistPathEnv, selectDesktopAgent, shellQuote, resolveHelper, packageRoot, installedHelper } from '../src/desktop/install'
 
 describe('desktop installation', () => {
   it('rejects unsupported systems and supports macOS 14 on Apple Silicon', () => {
@@ -102,5 +102,14 @@ describe('desktop installation', () => {
   it('falls back to the ~/Applications path when there is no package folder', () => {
     expect(packageRoot('/')).toBeNull()
     expect(resolveHelper(null, '/tmp/home')).toBe(installedHelper('/tmp/home'))
+  })
+  it('gives the app one name: bundle, both installers and the microphone prompt (#2095)', () => {
+    const root = resolve(fileURLToPath(import.meta.url), '../..')
+    const plist = readFileSync(join(root, 'apps/mac-voice/Resources/Info.plist'), 'utf8')
+    expect(DESKTOP_APP).toBe('AgentX Voice.app')
+    expect(plist).toContain('<key>CFBundleName</key><string>AgentX Voice</string>')
+    expect(plist).toContain('<key>CFBundleDisplayName</key><string>AgentX Voice</string>')
+    expect(plist).not.toContain('AgentX Desktop')
+    expect(readFileSync(join(root, 'apps/mac-voice/install.sh'), 'utf8')).toContain(`APP_NAME="${DESKTOP_APP}"`)
   })
 })

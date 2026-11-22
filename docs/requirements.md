@@ -203,7 +203,7 @@ The desktop app can also transcribe with Parakeet, which needs no Python and no 
 
 | Permission | Needed for | App normally requesting it |
 |---|---|---|
-| Microphone | Recording your spoken request | AgentX Desktop |
+| Microphone | Recording your spoken request | AgentX Voice |
 | Accessibility | Reading controls and interacting with apps | AgentX Helper / the invoking app |
 | Screen Recording or Screen & System Audio Recording | Reading text off the screen (OCR, optical character recognition) and screen captures | AgentX Helper / the invoking app |
 
