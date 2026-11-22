@@ -7,6 +7,7 @@ import { configRelationsProblem, memberKey } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
 import { cronExtras, sensorsView } from "@/crons/schedule-view"
 import { expiredHostJobs } from "@/crons/host-jobs"
+import { withdrawGoalCards } from "@/crons/goal-card"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
 import { providerFor } from "@/integrations/providers"
@@ -1250,6 +1251,8 @@ function deleteCron(body: any) {
     delete cfg.crons[id]
     return `removed cron "${id}"`
   })
+  // A deleted job's goal card never expires: withdraw it (#863, n158092).
+  withdrawGoalCards(process.cwd(), id, "was deleted")
   return { summary }
 }
 

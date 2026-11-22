@@ -3,7 +3,7 @@ import { listCards, readCard, type DecisionCard } from "@/approvals/cards"
 import type { MovementReader } from "@/requests/checkers/issue-movement"
 import { ownerChangedSince } from "./change-ledger"
 import { applyGoalAnswer, type GoalAnswerDeps } from "./goal-answer"
-import { raiseGoalCard, RECOMMEND_WAIT_MS } from "./goal-card"
+import { raiseGoalCard, RECOMMEND_WAIT_MS, withdrawGoalCards } from "./goal-card"
 import { cronRunWindows, daysStill, lastMovementAt, NO_MOVEMENT_DAYS, type MovementCache } from "./goal-movement"
 import { addNote, dropNote, jobGoalState, readCronGoalState, updateJobGoalState, type ChangeOwed, type GoalCheckState, type JobGoalState } from "./goal-state"
 
@@ -54,7 +54,7 @@ export interface GoalCheckDeps {
   ledger?: () => Database.Database | null
 }
 
-export interface GoalJob { id: string; agent: string; goal?: string }
+export interface GoalJob { id: string; agent: string; goal?: string; ended?: boolean }
 
 export type FireGate =
   | { hold: null; kept: boolean }
@@ -227,15 +227,37 @@ export async function goalCheckAtFire(job: GoalJob, deps: GoalCheckDeps): Promis
   return { hold: `on goal check since ${day(at)}: waiting for the owner's recommendation` }
 }
 
+/** Withdraw open goal cards whose job is gone or retired, whatever way it
+ *  went (a hand edit, a removed agent, a daemon that was down): a
+ *  cron-goal card never expires (#863, n158092). */
+function withdrawOrphanCards(jobs: GoalJob[], deps: GoalCheckDeps): void {
+  const byId = new Map(jobs.map((j) => [j.id, j]))
+  let open: DecisionCard[]
+  try { open = listCards(deps.root, "pending") } catch (e: any) { deps.log(`[cron-goal] cards unreadable: ${e?.message ?? e}`); return }
+  const done = new Set<string>()
+  for (const card of open) {
+    if (card.origin?.kind !== "cron-goal") continue
+    const id = card.origin.jobId
+    if (done.has(id)) continue
+    const job = byId.get(id)
+    if (job && !job.ended) continue
+    done.add(id)
+    withdrawGoalCards(deps.root, id, job ? "was retired" : "no longer exists", { now: deps.now(), log: deps.log })
+  }
+}
+
 /** The daemon's minute tick: a card 2 h after the ask (the owner's run may
- *  never start), and the changeOwed rule for jobs that seldom fire. */
+ *  never start), the changeOwed rule for jobs that seldom fire, and no
+ *  open card for a job that is gone or retired. */
 export function goalCheckTick(jobs: GoalJob[], deps: GoalCheckDeps): void {
+  withdrawOrphanCards(jobs, deps)
   let all: Record<string, JobGoalState>
   try { all = readCronGoalState(deps.root).jobs } catch (e: any) { deps.log(`[cron-goal] state file unreadable: ${e?.message ?? e}`); return }
   const now = deps.now()
   for (const job of jobs) {
     const s = all[job.id]
-    if (!s) continue
+    // A retired job gets no card and owes no change.
+    if (!s || job.ended) continue
     const g = s.goalCheck
     if (g && !g.cardId && g.reason !== "drop-answered" && g.askedAt && !g.refused && now - Date.parse(g.askedAt) >= RECOMMEND_WAIT_MS) {
       raiseGoalCard(deps.root, job, { now, log: deps.log })

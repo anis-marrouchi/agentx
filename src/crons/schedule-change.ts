@@ -192,7 +192,7 @@ export async function retireAction(args: Record<string, unknown>, c: ChangeConte
   if (!reason) return "Error: retire needs `reason`: why the job ends (it goes in the job's change log)."
   if (reason.length > REASON_MAX) return `Error: \`reason\` is longer than ${REASON_MAX} characters.`
   if (isPendingCreate(c.job)) return `"${c.id}" was never approved; withdraw the request with delete instead.`
-  const ended = await endJobInConfig(c.id, c.now.toISOString(), { configPath: c.configPath, reload: c.reload ?? true })
+  const ended = await endJobInConfig(c.id, c.now.toISOString(), { configPath: c.configPath, reload: c.reload ?? true, root: c.root })
   if (!ended.ok) return `Error: ${ended.error}`
   if (!ended.changed) return `"${c.id}" is already retired.`
   row(c, "retire", c.job.enabled ? "on" : "paused", "retired", reason)

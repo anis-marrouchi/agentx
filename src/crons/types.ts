@@ -51,6 +51,8 @@ export interface CronJobState {
   runAt?: string
   /** Recurring job (#863): ISO time after which it ends for good. */
   until?: string
+  /** Set when the job was retired (agentx.json `endedAt`, #863). */
+  endedAt?: string
   /** A one-time run missed while the daemon was down: how late, in ms. */
   lateBy?: number
   /** The owner's last verdict on its job (#863), for the Wall. */

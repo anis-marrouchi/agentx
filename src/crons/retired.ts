@@ -1,5 +1,6 @@
 import { applyConfigMutation } from "@/daemon/config-mutator"
-import { jobGoalState, type JobGoalState } from "./goal-state"
+import { withdrawGoalCards } from "./goal-card"
+import { jobGoalState, rootOfConfig, type JobGoalState } from "./goal-state"
 
 // --- A retired job stays retired (#863) ---
 //
@@ -38,11 +39,12 @@ export type EndJobResult = { ok: true; changed: boolean; withdrew?: string } | {
  * Retire a job in agentx.json: `enabled: false` and `endedAt`. Used by a
  * drop answer, the owner's retire and `until`. A pending time-change
  * request is withdrawn in the same write, so no dead card stays on the
- * Desk (#2065). A job already ended is left as it is (changed: false), so
- * a retry is harmless. Never reloads: the caller stops the in-memory job,
+ * Desk (#2065). Its open goal card is withdrawn too, since a cron-goal
+ * card never expires (#863, n158092). A job already ended is left as it
+ * is (changed: false), so a retry is harmless. Never reloads: the caller stops the in-memory job,
  * or the daemon's config watcher does.
  */
-export async function endJobInConfig(id: string, endedAt: string, opts: { configPath?: string; reload?: boolean } = {}): Promise<EndJobResult> {
+export async function endJobInConfig(id: string, endedAt: string, opts: { configPath?: string; reload?: boolean; root?: string } = {}): Promise<EndJobResult> {
   let outcome: EndJobResult | null = null
   let withdrew: string | undefined
   const r = await applyConfigMutation((cfg) => {
@@ -59,5 +61,6 @@ export async function endJobInConfig(id: string, endedAt: string, opts: { config
   }, { configPath: opts.configPath, reload: opts.reload ?? false })
   if (outcome) return outcome
   if (!r.success) return { ok: false, error: r.error || "could not write agentx.json" }
+  withdrawGoalCards(opts.root ?? rootOfConfig(opts.configPath), id, "was retired")
   return { ok: true, changed: true, ...(withdrew !== undefined ? { withdrew } : {}) }
 }
