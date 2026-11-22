@@ -121,6 +121,7 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import { applyGoalAnswer } from "@/crons/goal-answer"
 import { movementReader } from "@/requests/checkers/issue-movement"
 import { MovementCache } from "@/crons/goal-movement"
+import { goalCheckWake } from "@/crons/goal-wake"
 import { writeSensorRun } from "@/sensors/run-record"
 import { schedulesExtras } from "@/crons/schedule-view"
 import { runExceptionsDigest } from "@/crons/exceptions-digest"
@@ -2331,10 +2332,8 @@ export class AgentXDaemon {
       movement: movementReader(forgeConnectorsOf(config)),
       movementCache: new MovementCache(),
       operatorNode: () => config.approvals.forwardTo ?? null,
-      wake: async (agentId, text, chatId) => {
-        if (!this.registry.getAgent(agentId)) throw new Error(`agent "${agentId}" is not on this node`)
-        await this.registry.execute({ agentId, message: text, context: { channel: "cron", chatId } })
-      },
+      // A busy owner's turn waits for a slot, up to the 2 h window (goal-wake.ts).
+      wake: goalCheckWake(this.registry),
       ledger: () => this.db,
     })
     cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {

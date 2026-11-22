@@ -94,6 +94,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn, isInsideDelegation } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { wokenJobId } from "@/jobs/wake"
+import { awaitsSlot } from "@/agents/await-slot"
 import { isOperatorTurn } from "@/requests/operator"
 import { dueAtOf, taskTypeOf } from "@/agents/task-context"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
@@ -1995,7 +1996,10 @@ export class AgentRegistry {
       // its reply would be posted to the job's chat when the queue flushes.
       // A sensor's wake ("sensor", #863) is awaited by the sensor loop, which
       // counts it sent only once it starts: queued, it would never start.
-      if (qChannel === "api" || qChannel === "sensor" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context)) {
+      // A schedule's goal-check wake (#863, await-slot.ts) is awaited by the
+      // goal check, which raises the card when the turn ends: queued, the
+      // card would go up at once with no recommendation.
+      if (qChannel === "api" || qChannel === "sensor" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context) || awaitsSlot(task.context)) {
         const start = Date.now()
         const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
