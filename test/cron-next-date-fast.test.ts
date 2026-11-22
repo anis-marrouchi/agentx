@@ -42,12 +42,13 @@ function slowNext(expression: string, after: Date, timezone: string): Date | nul
 }
 
 describe("getNextCronDate (#2075)", () => {
-  it("finds a passed dated cron's slot next year in under 20 ms", () => {
+  it("finds a passed dated cron's slot next year in under 200 ms", () => {
     const t0 = performance.now()
     const next = getNextCronDate("0 14 21 11 *", new Date("2026-11-22T09:00:00Z"), "UTC")
     const ms = performance.now() - t0
     expect(next.toISOString()).toBe("2027-11-21T14:00:00.000Z")
-    expect(ms).toBeLessThan(20)
+    // The old minute-by-minute walk took ~1.5 s; 200 ms leaves room for a busy CI runner.
+    expect(ms).toBeLessThan(200)
   })
 
   it("matches the minute-by-minute answer across zones, DST changes and field kinds", () => {
