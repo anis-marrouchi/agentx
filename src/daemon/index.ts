@@ -4080,6 +4080,9 @@ export class AgentXDaemon {
           knownAgentIds: Object.keys(this.config.agents),
           agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
           noWakeLabel: this.config.channels.gitlab.noWakeLabel,
+          // The CI fix loop's cap (#2102).
+          ci: this.config.channels.gitlab.ci,
+          ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-gitlab.json"),
           // An agent's token declared in its integrations[] (gitlab-user,
           // tokenEnv), read from the live config so a reload applies (#1745).
           integrationToken: (agentId: string) => gitlabIntegrationToken(this.config, agentId).token,
@@ -4184,6 +4187,8 @@ export class AgentXDaemon {
           ignoreOwnChanges: githubConfig.ignoreOwnChanges,
           debounceSeconds: githubConfig.debounceSeconds,
           noWakeLabel: githubConfig.noWakeLabel,
+          ci: githubConfig.ci,
+          ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
         },
         this.log,
       )
