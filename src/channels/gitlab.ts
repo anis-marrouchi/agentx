@@ -1356,8 +1356,10 @@ export class GitLabAdapter implements ChannelAdapter {
     }
     if (!this.handler) { res.writeHead(200); res.end("ok"); return }
 
-    // Skip bot-triggered MR updates (cascade prevention)
+    // Skip bot-triggered MR updates (cascade prevention). Say so in the log:
+    // a silent drop looks like "the webhook never arrived" (#2070).
     if (this.isBotUser(event.user.username)) {
+      this.log(`MR !${event.object_attributes.iid} on ${event.project.path_with_namespace} "${event.object_attributes.action ?? "event"}" by bot "${event.user.username}" — skipped (cascade prevention; no hooks, no dispatch)`)
       res.writeHead(200); res.end("ok"); return
     }
 
