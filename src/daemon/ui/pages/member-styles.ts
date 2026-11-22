@@ -52,7 +52,7 @@ export const WORK_CSS = `
 .wrap h2 { font-size: 15px; font-weight: 700; color: var(--ax-text-2); margin: 32px 0 8px; }
 .wrap h2 .n { font-weight: 400; }
 .need[hidden] + section h2 { margin-top: 0; }
-.need { border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: 0 4px 0 var(--ax-blue-d); }
+.need { border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: var(--ax-shadow-lg); }
 .need[hidden] { display: none; }
 .wrap .need h2 { margin: 0; padding: 14px 20px 0; color: var(--ax-text); font-size: 17px; }
 .need li { padding: 14px 20px 18px; }
@@ -123,7 +123,7 @@ export const LOCKED_CSS = `
 .pair-form input { width: 100%; min-height: 52px; padding: 10px 14px; font: inherit; font-size: 17px; color: var(--ax-text); background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-text-2); border-radius: var(--ax-radius-sm); }
 .pair-form input#pair-code { min-height: 64px; font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
 .pair-form input:focus { border-color: var(--ax-blue); outline: none; }
-.pair-form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-pill); font: inherit; font-size: 19px; font-weight: 700; color: #fff; background: var(--ax-blue-d); box-shadow: 0 4px 0 #134aad; cursor: pointer; }
+.pair-form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-pill); font: inherit; font-size: 19px; font-weight: 700; color: var(--ax-primary-fg); background: var(--ax-primary); cursor: pointer; }
 .pair-form button:disabled { opacity: 0.55; cursor: default; }
 .pair-msg { min-height: 1.5em; }
 .card .pair-msg.bad { color: var(--ax-red-ink); }

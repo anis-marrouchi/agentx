@@ -1,65 +1,70 @@
 // --- Design tokens for every dashboard surface ---
 //
-// SINGLE source of truth. Every page imports AX_TOKENS_CSS and drops it in
-// its <style> block once, so no page carries its own :root copy.
+// SINGLE source of truth for the desktop dashboard AND the phone app (/app):
+// every page drops AX_TOKENS_CSS in its <style> block once, so no page (and
+// no phone palette) carries its own :root copy (#2101).
 //
-// The palette and shape language are ported from the agentina console
-// (packages/console/src/index.ts) — a deliberately plain, friendly system
-// built on three principles worth restating here, because they are as much
-// about what we remove as how it looks:
+// The look follows Orca's desktop app (https://github.com/stablyai/orca,
+// src/renderer/src/assets/main.css): a neutral shadcn-style system with 1px
+// borders, a 10px radius, no hard offset shadows and Geist type. Only colour
+// and size values are taken, no code. Orca is MIT licensed:
+//   Copyright (c) 2026 Lovecast Inc. Permission is hereby granted, free of
+//   charge, to any person obtaining a copy of this software ... (MIT).
 //
-//   1. CONTACTS, NOT CONCEPTS — surface the people and agents you work with;
-//      grants, sessions and adapters stay machinery.
-//   2. ONE SCREEN, ONE JOB — a flow is a short wizard with one obvious next
-//      action, not a dense panel of every option.
-//   3. HONEST UI — nothing simulated. Offline is offline, denied is denied.
+// What stays AgentX: the name, logo and icon, and blue as the accent for
+// links, focus and the active place. The blue is the phone's approved text
+// blue (#488): #1f66e5 on white and #6aa0ff on dark, both above 4.5:1.
+// Primary buttons are neutral (near-black on light, near-white on dark), as
+// in Orca.
 //
-// What was ported and what was not:
-//   - Ported: the four-colour brand palette, 2px borders, generous radii,
-//     pill chips, the hard offset shadow (`0 4px 0 <darker>`) that makes
-//     controls read as physical, and Outfit / Roboto Mono.
-//   - NOT ported: light-only. agentina is a consumer console; this is a
-//     dense ops dashboard people read at 2am, so the dark variant stays and
-//     carries the same shape language with the palette lifted for contrast.
-//   - Removed: the `crt` theme. Two well-maintained themes beat three, and
-//     it had no users.
+// Principles kept from before (agentina): contacts not concepts, one screen
+// one job, honest UI. Dark stays the desktop default; the phone follows the
+// system setting.
 //
 // Guideline for adding tokens: every token must be page-neutral. Page-
 // specific padding/gaps belong in the page's own CSS file, not here.
 
 export const AX_TOKENS_CSS = `:root {
-  /* --- Brand (agentina) --------------------------------------------- */
-  --ax-blue: #2979FF;
-  --ax-blue-d: #1B5FD9;
-  --ax-blue-t: #E7F0FF;
-  --ax-blue-e: #A9CBFF;
-  --ax-green: #22B573;
-  --ax-green-d: #178F58;
-  --ax-green-e: #A9E8C9;
-  --ax-amber: #FFB300;
-  --ax-amber-e: #FFE08A;
-  --ax-amber-t: #FFFCF5;
-  --ax-red: #F23A3A;
-  --ax-red-t: #FEECEC;
-  --ax-red-e: #F9C1C1;
+  /* --- Brand: blue accent + status colours ---------------------------- */
+  --ax-blue: #1f66e5;
+  --ax-blue-d: #1a56c4;
+  --ax-blue-t: #e8f0ff;
+  --ax-blue-e: #b9d0fb;
+  --ax-green: #16a34a;
+  --ax-green-d: #15803d;
+  --ax-green-e: #bbf7d0;
+  --ax-amber: #f59e0b;
+  --ax-amber-e: #fde68a;
+  --ax-amber-t: #fffbeb;
+  --ax-red: #e40014;
+  --ax-red-t: #fef2f2;
+  --ax-red-e: #fecaca;
 
-  /* Ink steps. Amber and red are legible as FILLS, not as small text:
-     #FFB300 on white is ~1.8:1 and #F23A3A ~3.6:1, both under 4.5:1. Use
+  /* Ink steps. Amber and red are legible as FILLS, not as small text. Use
      these wherever the colour carries words rather than area. */
   --ax-amber-ink: #8a5a00;
-  --ax-red-ink: #a52020;
+  --ax-red-ink: #b00010;
 
-  /* --- Surfaces + text ---------------------------------------------- */
-  --ax-bg: #f8f9fa;
-  --ax-bg-elev: #f1f3f4;
+  /* --- Surfaces + text (Orca light) ---------------------------------- */
+  --ax-bg: #ffffff;
+  --ax-bg-elev: #fafafa;
   --ax-surface: #ffffff;
-  --ax-surface-2: #f8f9fa;
-  --ax-surface-3: #f1f3f4;
-  --ax-border: #e8eaed;
-  --ax-border-2: #dadce0;
-  --ax-text: #202124;
-  --ax-text-2: #5f6368;
-  --ax-muted: #9aa0a6;
+  --ax-surface-2: #fafafa;
+  --ax-surface-3: #f5f5f5;
+  --ax-border: #e5e5e5;
+  --ax-border-2: #d4d4d4;
+  --ax-text: #0a0a0a;
+  --ax-text-2: #525252;
+  --ax-muted: #696969;
+
+  /* Primary button: neutral, as in Orca. */
+  --ax-primary: #171717;
+  --ax-primary-fg: #fafafa;
+  --ax-ring: #a1a1a1;
+
+  /* Phone chat bubble + online green (were the phone-only palette). */
+  --phone-bubble: #f5f5f5;
+  --phone-green: #16a34a;
 
   /* --- Semantic ------------------------------------------------------ */
   --ax-accent: var(--ax-blue);
@@ -70,32 +75,31 @@ export const AX_TOKENS_CSS = `:root {
   --ax-err: var(--ax-red);
   --ax-info: var(--ax-blue);
 
-  /* --- Shape ---------------------------------------------------------
-     The offset shadow is the signature move: a solid, un-blurred drop in a
-     darker shade of the element's own colour. It reads as a physical edge
-     rather than a glow, and it is what stops flat 2px-bordered boxes from
-     looking like a wireframe. */
-  --ax-border-w: 2px;
-  --ax-radius: 16px;
-  --ax-radius-lg: 20px;
-  --ax-radius-sm: 12px;
+  /* --- Shape (Orca: 1px lines, 10px radius, soft shadow only on things
+     that float: menus, dialogs, the drawer) ------------------------------ */
+  --ax-border-w: 1px;
+  --ax-radius: 10px;
+  --ax-radius-lg: 14px;
+  --ax-radius-sm: 6px;
   --ax-radius-pill: 999px;
-  --ax-shadow: 0 3px 0 var(--ax-border);
-  --ax-shadow-lg: 0 4px 0 var(--ax-border-2);
-  --ax-shadow-accent: 0 4px 0 var(--ax-blue-d);
-  --ax-shadow-ok: 0 4px 0 var(--ax-green-d);
+  --ax-shadow: none;
+  --ax-shadow-lg: 0 10px 30px -10px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
+  --ax-shadow-accent: none;
+  --ax-shadow-ok: none;
 
   /* --- Spacing ------------------------------------------------------- */
   /* Width of the ask-an-agent drawer. Lives here because pages reflow
      around it; the drawer overwrites it on :root when resized. */
   --ax-as-w: 420px;
+  /* Width of the desktop left sidebar (topbar.ts, >= 1024px). */
+  --ax-side-w: 232px;
   --ax-pad: 16px;
   --ax-pad-sm: 10px;
   --ax-gap: 12px;
 
   /* --- Type ---------------------------------------------------------- */
-  --ax-font: "Outfit", -apple-system, "Segoe UI", system-ui, sans-serif;
-  --ax-mono: "Roboto Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ax-font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ax-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --ax-fs: 14px;
   --ax-fs-sm: 13px;
   --ax-fs-xs: 12px;
@@ -115,42 +119,46 @@ export const AX_TOKENS_CSS = `:root {
   color-scheme: light;
 }
 
-/* Dark is not a tint of light — the brand colours are lifted toward their
-   tints so they keep contrast against a dark ground, and the offset shadow
-   goes DARKER than the surface instead of lighter. Same shape language,
-   inverted physics. */
+/* Orca dark: near-black ground, #171717 cards, borders as white at 7-12%. */
 [data-theme="dark"] {
-  --ax-blue: #6BA5FF;
-  --ax-blue-d: #1B5FD9;
-  --ax-blue-t: #16233d;
+  --ax-blue: #6aa0ff;
+  --ax-blue-d: #4d8af5;
+  --ax-blue-t: #1c2b47;
   --ax-blue-e: #2f4d7a;
-  --ax-green: #4ED89B;
-  --ax-green-d: #178F58;
-  --ax-green-e: #1e4a36;
-  --ax-amber: #FFC948;
+  --ax-green: #4ade80;
+  --ax-green-d: #22c55e;
+  --ax-green-e: #14532d;
+  --ax-amber: #fbbf24;
   --ax-amber-e: #4a3a12;
-  --ax-amber-t: #2a2313;
-  --ax-red: #FF6B6B;
-  --ax-red-t: #3a1c1c;
-  --ax-red-e: #6b2f2f;
-  --ax-amber-ink: #FFC948;
-  --ax-red-ink: #FF8A8A;
+  --ax-amber-t: #262013;
+  --ax-red: #ff6568;
+  --ax-red-t: #2e1517;
+  --ax-red-e: #5c2427;
+  --ax-amber-ink: #fbbf24;
+  --ax-red-ink: #ff8a8c;
 
-  --ax-bg: #14161a;
-  --ax-bg-elev: #191c21;
-  --ax-surface: #1e2228;
-  --ax-surface-2: #23272e;
-  --ax-surface-3: #2a2f37;
-  --ax-border: #2f353e;
-  --ax-border-2: #3d444f;
-  --ax-text: #f1f3f4;
-  --ax-text-2: #b6bcc4;
-  --ax-muted: #858c96;
+  --ax-bg: #0a0a0a;
+  --ax-bg-elev: #111111;
+  --ax-surface: #171717;
+  --ax-surface-2: #1c1c1c;
+  --ax-surface-3: #262626;
+  --ax-border: rgb(255 255 255 / 0.08);
+  --ax-border-2: rgb(255 255 255 / 0.14);
+  --ax-text: #f0f0f0;
+  --ax-text-2: #c4c4c4;
+  --ax-muted: #acacac;
 
-  --ax-shadow: 0 3px 0 #0e1013;
-  --ax-shadow-lg: 0 4px 0 #0e1013;
-  --ax-shadow-accent: 0 4px 0 #14396e;
-  --ax-shadow-ok: 0 4px 0 #11402c;
+  --ax-primary: #e5e5e5;
+  --ax-primary-fg: #171717;
+  --ax-ring: #737373;
+
+  --phone-bubble: #262626;
+  --phone-green: #4ade80;
+
+  --ax-shadow: none;
+  --ax-shadow-lg: 0 10px 30px -10px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --ax-shadow-accent: none;
+  --ax-shadow-ok: none;
   color-scheme: dark;
 }
 

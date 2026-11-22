@@ -25,6 +25,19 @@ describe("design tokens", () => {
     expect([...new Set(missing)]).toEqual([])
   })
 
+  it("follows the Orca look: 1px lines, 10px radius, no hard offset shadow, Geist (#2101)", () => {
+    expect(AX_TOKENS_CSS).toContain("--ax-border-w: 1px")
+    expect(AX_TOKENS_CSS).toContain("--ax-radius: 10px")
+    expect(AX_TOKENS_CSS).toContain('--ax-font: "Geist"')
+    // Orca's values are credited with its MIT notice.
+    expect(readFileSync(join(UI, "tokens.ts"), "utf-8")).toMatch(/Lovecast Inc\.[\s\S]*MIT/)
+    // Neutral primary button in both themes.
+    expect([...AX_TOKENS_CSS.matchAll(/--ax-primary\s*:/g)]).toHaveLength(2)
+    // No page brings back the hard offset shadow ("0 4px 0 <colour>").
+    const offenders = walk(UI).filter(f => /box-shadow:\s*0 [2-5]px 0 [#v]/.test(readFileSync(f, "utf-8")))
+    expect(offenders).toEqual([])
+  })
+
   it("carries a text-safe step for the two colours that fail as small text", () => {
     // Amber and red are the only palette entries that cannot carry words.
     for (const t of ["--ax-amber-ink", "--ax-red-ink"]) {

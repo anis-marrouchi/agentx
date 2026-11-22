@@ -76,7 +76,7 @@ export const TOPBAR_HEAD = `<link rel="icon" type="image/svg+xml" href="/favicon
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`
 
 /**
@@ -91,7 +91,7 @@ export const TOPBAR_CSS = `
 .ax-topbar__left{display:flex;align-items:center;gap:18px;min-width:0}
 .ax-brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.01em;flex-shrink:0}
 .ax-brand__mark{font-family:var(--ax-mono);font-size:12px;padding:2px 8px;
-  border:1px solid var(--ax-border-2);color:var(--ax-accent);border-radius:4px}
+  border:1px solid var(--ax-border-2);color:var(--ax-text);border-radius:var(--ax-radius-sm)}
 .ax-brand__name{font-size:14px}
 .ax-brand__subtitle{font-size:11px;color:var(--ax-muted);
   border-left:1px solid var(--ax-border);padding-left:12px;margin-left:4px}
@@ -124,7 +124,7 @@ export const TOPBAR_CSS = `
 
 /* Mesh selector */
 .ax-mesh-sel{position:relative;display:inline-flex;align-items:center;gap:6px;
-  padding:4px 10px;border:1px solid var(--ax-border-2);border-radius:4px;
+  padding:4px 10px;border:1px solid var(--ax-border-2);border-radius:var(--ax-radius-sm);
   background:var(--ax-surface);cursor:pointer;font:inherit;font-size:11px;
   color:var(--ax-text-2);white-space:nowrap}
 .ax-mesh-sel:hover{border-color:var(--ax-accent);color:var(--ax-text)}
@@ -135,7 +135,7 @@ export const TOPBAR_CSS = `
 .ax-mesh-sel .chev{font-size:9px;opacity:0.6;margin-left:2px}
 .ax-mesh-menu{position:absolute;top:calc(100% + 4px);right:0;min-width:240px;
   background:var(--ax-surface);border:1px solid var(--ax-border-2);
-  border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.4);padding:4px;z-index:30;display:none}
+  border-radius:var(--ax-radius);box-shadow:var(--ax-shadow-lg);padding:4px;z-index:30;display:none}
 .ax-mesh-sel.is-open .ax-mesh-menu{display:block}
 .ax-mesh-menu a{display:block;padding:7px 10px;border-radius:4px;text-decoration:none;
   color:var(--ax-text-2);font-size:12px}
@@ -149,14 +149,14 @@ export const TOPBAR_CSS = `
 
 /* Theme switcher segmented control */
 .ax-theme-switch{display:inline-flex;border:1px solid var(--ax-border-2);
-  border-radius:4px;overflow:hidden}
+  border-radius:var(--ax-radius-sm);overflow:hidden}
 .ax-theme-switch button{background:transparent;border:none;color:var(--ax-muted);
   padding:3px 9px;font:inherit;font-size:10px;cursor:pointer;letter-spacing:0.04em;
   text-transform:uppercase;font-family:var(--ax-mono);border-right:1px solid var(--ax-border-2)}
 .ax-theme-switch button:last-child{border-right:none}
 .ax-theme-switch button:hover{color:var(--ax-text);background:var(--ax-surface-2,var(--ax-surface))}
-.ax-theme-switch button.is-active{color:var(--ax-accent);
-  background:color-mix(in oklch,var(--ax-accent) 12%,var(--ax-surface))}
+.ax-theme-switch button.is-active{color:var(--ax-text);
+  background:var(--ax-surface-3)}
 
 /* Subheader — page-specific toolbar below the main topbar. Kanban uses it
  * for the board picker + search + filters; others can use it for context
@@ -165,7 +165,30 @@ export const TOPBAR_CSS = `
   background:var(--ax-bg-elev);border-bottom:1px solid var(--ax-border);
   flex-wrap:wrap}
 .ax-subheader > * {flex-shrink:0}
-.ax-subheader .spacer{flex:1}`
+.ax-subheader .spacer{flex:1}
+
+/* Orca layout (#2101): on a desktop screen the bar becomes a left sidebar,
+ * brand on top, places in a column, peer picker and theme at the bottom.
+ * Narrow screens keep the top bar. */
+@media (min-width:1024px){
+  body:has(> .ax-topbar){padding-left:var(--ax-side-w)}
+  .ax-topbar{position:fixed;left:0;top:0;bottom:0;width:var(--ax-side-w);
+    flex-direction:column;align-items:stretch;justify-content:space-between;
+    padding:14px 10px;border-bottom:0;border-right:1px solid var(--ax-border);overflow-y:auto}
+  .ax-topbar__left{flex-direction:column;align-items:stretch;gap:14px}
+  .ax-brand{padding:0 6px;flex-wrap:wrap;row-gap:4px}
+  .ax-brand__subtitle{border-left:0;padding-left:0;margin-left:0;flex-basis:100%}
+  .ax-topbar__tabs{flex-direction:column;align-items:stretch;overflow:visible;gap:0}
+  .ax-topbar__group{flex-direction:column;align-items:stretch;border-left:0;padding:0;gap:1px}
+  .ax-topbar__group-label{font-family:inherit;font-size:11px;letter-spacing:0;text-transform:none;padding:4px 10px 6px}
+  .ax-topbar__tab{border-bottom:0;border-radius:var(--ax-radius-sm);padding:6px 10px;font-size:13px}
+  .ax-topbar__tab:hover{background:var(--ax-surface-3)}
+  .ax-topbar__tab.is-active{background:var(--ax-surface-3);font-weight:500}
+  .ax-topbar__right{flex-direction:column;align-items:stretch;gap:8px;padding-top:12px}
+  .ax-topbar__right .ax-theme-switch{align-self:flex-start}
+  .ax-mesh-sel{justify-content:flex-start}
+  .ax-mesh-menu{top:auto;bottom:calc(100% + 4px);left:0;right:auto}
+}`
 
 /**
  * Shared click wiring for the theme switcher + mesh selector. Safe to call

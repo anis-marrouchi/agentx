@@ -15,6 +15,9 @@ const WALL_THEME_KEY = "ax-wall-theme"
 
 export const WALL_SPACE_HEAD = `<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=null;try{t=localStorage.getItem('${WALL_THEME_KEY}')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})();</script>`
 
 export const WALL_SPACE_CSS = `
@@ -59,29 +62,29 @@ button, input, select { font-family: inherit; }
 /* Settings (#1428) has its section list inside the middle column: wider. */
 .ax-wall.is-settings { grid-template-columns: 240px minmax(0, 860px) 300px; }
 .ax-wall__nav { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
-.ax-wall__logo { font-weight: 800; font-size: 22px; padding: 8px 12px 16px; color: var(--ax-text); text-decoration: none; }
+.ax-wall__logo { font-weight: 600; font-size: 16px; letter-spacing: -.01em; padding: 8px 10px 14px; color: var(--ax-text); text-decoration: none; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }
-.ax-wall__item { display: flex; gap: 14px; align-items: center; padding: 9px 12px; border-radius: var(--ax-radius-pill); color: var(--ax-text); font: inherit; font-size: 17px; text-decoration: none; background: none; border: 0; cursor: pointer; text-align: left; width: max-content; max-width: 100%; }
-.ax-wall__item:hover { background: var(--ax-surface); }
-.ax-wall__item.is-on { font-weight: 700; }
-.ax-wall__item svg { width: 24px; height: 24px; flex: none; }
+.ax-wall__item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font: inherit; font-size: 14px; text-decoration: none; background: none; border: 0; cursor: pointer; text-align: left; width: max-content; max-width: 100%; }
+.ax-wall__item:hover { background: var(--ax-surface-3); color: var(--ax-text); }
+.ax-wall__item.is-on { font-weight: 500; color: var(--ax-text); background: var(--ax-surface-3); }
+.ax-wall__item svg { width: 18px; height: 18px; flex: none; }
 /* The nav's groups (#1451 frame 0): Work, Automation, Fleet, Owner. */
-.ax-wall__navlbl { font-size: 12px; font-weight: 700; color: var(--ax-muted); text-transform: uppercase; letter-spacing: .04em; padding: 14px 12px 4px; margin: 0; }
+.ax-wall__navlbl { font-size: 11px; font-weight: 500; color: var(--ax-muted); text-transform: none; letter-spacing: 0; padding: 14px 10px 4px; margin: 0; }
 .ax-wall__item span { white-space: nowrap; }
 /* New post opens the Creator (#1355); More is the phone bar's fifth button. */
 .ax-wall__morebtn { display: none; }
-.ax-wall__newpost { justify-content: center; margin: 12px 0 0; padding: 11px; font-size: 16px; width: 100%; }
+.ax-wall__newpost { justify-content: center; margin: 12px 0 0; padding: 8px; font-size: 14px; width: 100%; }
 /* Counts next to the nav items (#1316); a badge on the icon when the nav is narrow. */
 .ax-wall__item { position: relative; }
 .ax-wall__n { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
 .ax-wall__n:empty { display: none; }
 .ax-wall__item.is-on .ax-wall__n { background: var(--ax-accent); color: var(--ax-accent-ink, #fff); }
-.ax-wall__navfoot { margin-top: 16px; padding: 12px; font-size: var(--ax-fs-xs); color: var(--ax-muted); border: 1px solid var(--ax-border); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ax-wall__navfoot { margin-top: 16px; padding: 12px; font-size: var(--ax-fs-xs); color: var(--ax-muted); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); display: flex; flex-direction: column; gap: 8px; }
 .ax-wall__navfoot .ax-btn { align-self: flex-start; font-size: var(--ax-fs-xs); padding: 3px 12px; }
 .ax-wall__main { grid-column: 2; grid-row: 1 / span 4; min-width: 0; min-height: 100vh; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); }
 .ax-wall__aside { grid-column: 3; grid-row: 1 / span 4; padding: 12px 0 12px 24px; min-width: 0; }
-.ax-wall__box { background: var(--ax-surface); border-radius: var(--ax-radius-lg); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
-.ax-wall__box h2 { font-size: 20px; font-weight: 800; margin: 0 0 8px; color: var(--ax-text); }
+.ax-wall__box { background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
+.ax-wall__box h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ax-text); }
 .ax-wall__about p { margin: 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .ax-wall__classic { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .ax-wall__classic a { font-size: var(--ax-fs-xs); padding: 3px 10px; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); color: var(--ax-text); text-decoration: none; background: var(--ax-bg); }
