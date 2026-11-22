@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.250.1](https://github.com/anis-marrouchi/agentx/compare/v0.250.0...v0.250.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **voice:** one click on the orb talks; a click keeps the hover list open ([#2092](https://github.com/anis-marrouchi/agentx/issues/2092), [#2093](https://github.com/anis-marrouchi/agentx/issues/2093)) ([#2097](https://github.com/anis-marrouchi/agentx/issues/2097)) ([dc9d402](https://github.com/anis-marrouchi/agentx/commit/dc9d402a744c2bd6acc98749e341bb510386bdb2))
+
 ## [0.250.0](https://github.com/anis-marrouchi/agentx/compare/v0.249.0...v0.250.0) (2026-11-22)
 
 
