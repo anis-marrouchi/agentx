@@ -1,10 +1,10 @@
 import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } from "./types"
-import { createHmac, createSign } from "crypto"
+import { createHmac, createSign, timingSafeEqual } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
 import { isStatusComment } from "@/channels/status-tag"
 import { noWakeLabelIn } from "./no-wake"
-import { CI_FIX_ATTEMPTS_DEFAULT, CiFixCounter, ciFixKey, ciStillRedNote } from "./ci-fix"
+import { CI_FIX_ATTEMPTS_DEFAULT, CI_HOLD_SECONDS_DEFAULT, CiFixLoop, ciFixKey, ciNoOwnerNote, ciOwner, ciStillRedNote } from "./ci-fix"
 import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
@@ -79,12 +79,16 @@ export interface GitHubChannelConfig {
    *  without a project rule (noqta/noqta#800). Default "agent:no-wake";
    *  "" turns it off. */
   noWakeLabel?: string
-  /** The CI fix loop (#2102): how many times a failed workflow run on one
-   *  PR head commit wakes the PR's agent before a person is asked instead.
-   *  Default 3; 0 never wakes. */
-  ci?: { fixAttempts?: number }
+  /** The CI fix loop (#2102). fixAttempts: how many wakes one PR gets
+   *  for failed workflow runs, across commits, before a person is asked
+   *  instead (default 3; 0 never wakes). holdSeconds: the red runs of one
+   *  commit within this window make one wake (default 30). */
+  ci?: { fixAttempts?: number; holdSeconds?: number }
   /** Where the CI fix counts persist. Unset: in memory only. */
   ciStateFile?: string
+  /** The agent of the open request homed on issue `n` of `repo`, for a PR
+   *  on branch `agentx/issue-<n>` (#2102). */
+  ciAgentForIssue?: (repo: string, n: number) => string | undefined
 }
 
 /** Defaults for the event gate (#612). `channels.github` in agentx.json
@@ -247,6 +251,7 @@ interface GitHubWorkflowRunEvent {
   action: string
   workflow_run: {
     id: number
+    run_attempt?: number
     name: string
     html_url: string
     head_sha: string
@@ -283,6 +288,9 @@ interface PendingDispatch {
   /** Builds the message from the latest event, naming every action. */
   build: (actions: string[]) => Promise<IncomingMessage>
 }
+
+/** One failed workflow run, held for the CI fix wake of its commit. */
+interface CiFailedRun { id: number; name: string; url: string }
 
 type GitHubEvent = GitHubIssueCommentEvent | GitHubPREvent | GitHubPRReviewEvent
   | GitHubPRReviewCommentEvent | GitHubPushEvent | GitHubIssueEvent | Record<string, unknown>
@@ -334,13 +342,18 @@ export class GitHubAdapter implements ChannelAdapter {
   // GitHub App auth state
   private appPrivateKey?: string
   private installationTokens: Map<string, { token: string; expiresAt: number }> = new Map()
-  /** Wakes per PR head commit for the CI fix loop's cap (#2102). */
-  private ciFix: CiFixCounter
+  /** The CI fix loop's wakes, holds and cap, per PR (#2102). */
+  private ciFix: CiFixLoop<CiFailedRun>
 
   constructor(config: GitHubChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[github]")) {
     this.config = config
     this.log = log
-    this.ciFix = new CiFixCounter(config.ciStateFile)
+    this.ciFix = new CiFixLoop<CiFailedRun>({
+      file: config.ciStateFile,
+      cap: () => this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT,
+      holdSeconds: () => this.config.ci?.holdSeconds ?? CI_HOLD_SECONDS_DEFAULT,
+      log: (m) => this.log(`[github] ${m}`),
+    })
   }
 
   setSendCommentForwarder(fn: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>): void {
@@ -469,6 +482,7 @@ export class GitHubAdapter implements ChannelAdapter {
     // agent while the daemon goes down helps nobody.
     for (const held of this.pending.values()) clearTimeout(held.timer)
     this.pending.clear()
+    this.ciFix.stop()
   }
 
   /**
@@ -1132,18 +1146,26 @@ export class GitHubAdapter implements ChannelAdapter {
     this.handler(incoming).catch(e => this.log(`Error handling push: ${e.message}`))
   }
 
-  /** A completed workflow run (#2102). A failure on a PR wakes the PR
-   *  author's agent, else the repo's route, on the PR's chat to fix CI on
-   *  its branch; past `ci.fixAttempts` wakes on one head commit, one note
-   *  asks a person instead. A success clears the PR's counts. check_suite
-   *  and check_run stay unhandled, so one red run is one wake. */
+  /** A completed workflow run (#2102). A failure on a PR is held for the
+   *  window with the other red runs of its commit, then wakes the agent
+   *  that owns the PR (ciWake) once for that commit. A repeated delivery is
+   *  dropped. A success resets the PR's count once every run of the commit
+   *  is green. check_suite and check_run stay unhandled. */
   private async handleWorkflowRun(event: GitHubWorkflowRunEvent): Promise<void> {
     const run = event.workflow_run
     if (event.action !== "completed" || !run) return
     const repo = event.repository.full_name
+    if (this.ciFix.repeat(`github:${repo}:run:${run.id}:${run.run_attempt ?? 1}`)) {
+      this.log(`[github] workflow run ${run.id} attempt ${run.run_attempt ?? 1} on ${repo} delivered again, dropped`)
+      return
+    }
     const prs = run.pull_requests ?? []
     if (run.conclusion === "success") {
-      for (const pr of prs) this.ciFix.clear("github", repo, pr.number)
+      for (const pr of prs) {
+        const key = ciFixKey("github", repo, pr.number)
+        // One green workflow is not a green commit: another may be red.
+        if (this.ciFix.has(key) && await this.commitGreen(repo, run.head_sha)) this.ciFix.green(key, run.head_sha)
+      }
       return
     }
     if (run.conclusion !== "failure" || !this.handler) return
@@ -1151,62 +1173,98 @@ export class GitHubAdapter implements ChannelAdapter {
       this.log(`[github] workflow run ${run.id} on ${repo} failed with no pull request, no wake`)
       return
     }
-
-    const cap = this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT
     for (const pr of prs) {
-      const chatId = `${repo}:pull:${pr.number}`
-      const author = await this.pullRequestAuthor(repo, pr.number)
-      const lc = author?.toLowerCase()
-      const agentId = (lc && this.config.agentMappings?.find((m) => m.githubUsernames.some((u) => u.toLowerCase() === lc))?.agentId)
-        || this.resolveAgent(repo)
-      const mapping = agentId ? this.config.agentMappings?.find((m) => m.agentId === agentId) : undefined
-
-      const decision = this.ciFix.attempt(ciFixKey("github", repo, pr.number, run.head_sha), cap)
-      if (decision.action === "note") {
-        this.log(`[github] ${chatId}: CI still red after ${decision.count} tries on ${run.head_sha}, asking a person`)
-        await this.send({ channel: "github", chatId, text: ciStillRedNote(decision.count, run.head_sha), agentId })
-          .catch((e: Error) => this.log(`[github] CI still-red note on ${chatId} failed: ${e.message}`))
-        continue
-      }
-      if (decision.action === "silent") {
-        this.log(`[github] ${chatId}: workflow run ${run.id} failed, no wake (ci.fixAttempts ${cap}, ${decision.count} tries on ${run.head_sha})`)
-        continue
-      }
-
-      const incoming: IncomingMessage = {
-        id: `workflow-run-${run.id}-${pr.number}`,
-        channel: "github",
-        accountId: "default",
-        sender: { id: chatId, name: author ?? "github", username: author ?? "github" },
-        text: `[GitHub PR #${pr.number} CI FAILED] ${repo}: workflow "${run.name}" failed\n` +
-          `Run: ${run.html_url}\nBranch: ${run.head_branch}\nCommit: ${run.head_sha}\n` +
-          `\nPlease fix CI on this PR's branch (${run.head_branch}) and push. (CI fix attempt ${decision.count} of ${cap} on this commit.)`,
-        timestamp: new Date(),
-        raw: event,
-        resolvedAgent: agentId,
-        preferNode: mapping?.node,
-      }
-      this.log(`[github] workflow run ${run.id} failed on ${chatId} -> agent "${agentId}"`)
-      this.handler(incoming).catch(e => this.log(`Error handling workflow run: ${e.message}`))
+      const key = ciFixKey("github", repo, pr.number)
+      const status = this.ciFix.red(key, run.head_sha, { id: run.id, name: run.name, url: run.html_url },
+        (sha, failures) => this.ciWake(repo, pr.number, sha, run.head_branch, failures, event))
+      this.log(`[github] workflow run ${run.id} failed on ${repo}#${pr.number} (${run.head_sha}): ${status}`)
     }
   }
 
-  /** A PR's author login; the workflow_run payload carries only its number. */
-  private async pullRequestAuthor(repo: string, number: number): Promise<string | undefined> {
+  /** The CI fix wake of one PR commit: the agent from the PR body's AgentX
+   *  marker, else from the open request of its `agentx/issue-<n>` branch,
+   *  else nobody and one note. Never the route agent or the author. */
+  private async ciWake(repo: string, number: number, sha: string, runBranch: string, failures: CiFailedRun[], event: GitHubWorkflowRunEvent): Promise<void> {
+    const key = ciFixKey("github", repo, number)
+    const chatId = `${repo}:pull:${number}`
+    const pr = await this.pullRequestInfo(repo, number)
+    const branch = pr?.headRef ?? runBranch
+    const owner = ciOwner({ body: pr?.body, branch, agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n) })
+    if (!owner) {
+      if (!pr) { this.log(`[github] ${chatId}: CI failed on ${sha}, PR unreadable and no owner from its branch, no wake`); return }
+      this.log(`[github] ${chatId}: CI failed on ${sha}, no agent owns the PR (no marker, no agentx/issue-<n> request), no wake`)
+      if (this.ciFix.noOwnerNoteOnce(key)) {
+        await this.send({ channel: "github", chatId, text: ciNoOwnerNote(sha) })
+          .catch((e: Error) => this.log(`[github] CI no-owner note on ${chatId} failed: ${e.message}`))
+      }
+      return
+    }
+    const agentId = owner.agentId
+    const cap = this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT
+    const decision = this.ciFix.claim(key)
+    if (decision.action === "note") {
+      this.log(`[github] ${chatId}: CI still red after ${decision.count} tries, asking a person`)
+      await this.send({ channel: "github", chatId, text: ciStillRedNote(decision.count, sha), agentId })
+        .catch((e: Error) => this.log(`[github] CI still-red note on ${chatId} failed: ${e.message}`))
+      return
+    }
+    if (decision.action === "silent") {
+      this.log(`[github] ${chatId}: CI failed on ${sha}, no wake (ci.fixAttempts ${cap}, ${decision.count} tries)`)
+      return
+    }
+
+    const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+    const list = failures.map((f) => `  - "${f.name}": ${f.url}`).join("\n")
+    const what = failures.length === 1 ? `workflow "${failures[0].name}" failed` : `${failures.length} workflows failed`
+    const author = pr?.author
+    const incoming: IncomingMessage = {
+      id: `workflow-run-${failures[0].id}-${number}`,
+      channel: "github",
+      accountId: "default",
+      sender: { id: chatId, name: author ?? "github", username: author ?? "github" },
+      text: `[GitHub PR #${number} CI FAILED] ${repo}: ${what}\n` +
+        `Failed runs:\n${list}\nBranch: ${branch}\nCommit: ${sha}\n` +
+        `\nPlease fix CI on this PR's branch (${branch}) and push. (CI fix attempt ${decision.count} of ${cap} on this PR.)`,
+      timestamp: new Date(),
+      raw: event,
+      resolvedAgent: agentId,
+      preferNode: mapping?.node,
+    }
+    this.log(`[github] CI failed on ${chatId} (${failures.length} run(s), ${sha}) -> agent "${agentId}" (${owner.via})`)
+    void Promise.resolve().then(() => this.handler?.(incoming))
+      .catch((e: Error) => this.log(`Error handling workflow run: ${e?.message ?? e}`))
+  }
+
+  /** A PR's body, head branch and author; the workflow_run payload carries
+   *  only its number. */
+  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; author?: string } | undefined> {
+    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string }; user?: { login?: string } }>(repo, `pulls/${number}`)
+    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, author: data.user?.login } : undefined
+  }
+
+  /** Every workflow run of `sha` finished green (skipped and neutral count
+   *  as green). Unreadable: false, so the count stays. */
+  private async commitGreen(repo: string, sha: string): Promise<boolean> {
+    const data = await this.ciRead<{ workflow_runs?: Array<{ status?: string; conclusion?: string | null }> }>(repo, `actions/runs?head_sha=${sha}&per_page=100`)
+    const runs = data?.workflow_runs
+    if (!runs) return false
+    return runs.every((r) => r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion ?? ""))
+  }
+
+  private async ciRead<T>(repo: string, path: string): Promise<T | undefined> {
     const token = await this.getTokenForRepo(repo)
     try {
-      const res = await fetch(`https://api.github.com/repos/${repo}/pulls/${number}`, {
+      const res = await fetch(`https://api.github.com/repos/${repo}/${path}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           Accept: "application/vnd.github+json",
           "User-Agent": "AgentX",
         },
       })
-      if (!res.ok) { this.log(`[github] PR #${number} lookup failed (${res.status})`); return undefined }
-      const data = await res.json() as { user?: { login?: string } }
-      return data.user?.login
+      if (!res.ok) { this.log(`[github] ${repo} ${path} read failed (${res.status})`); return undefined }
+      return await res.json() as T
     } catch (e: any) {
-      this.log(`[github] PR #${number} lookup error: ${e.message}`)
+      this.log(`[github] ${repo} ${path} read error: ${e.message}`)
       return undefined
     }
   }
@@ -1284,8 +1342,9 @@ export class GitHubAdapter implements ChannelAdapter {
 
   private verifySignature(payload: string, signature?: string): boolean {
     if (!signature || !this.config.webhookSecret) return false
-    const expected = "sha256=" + createHmac("sha256", this.config.webhookSecret).update(payload).digest("hex")
-    return signature === expected
+    const expected = Buffer.from("sha256=" + createHmac("sha256", this.config.webhookSecret).update(payload).digest("hex"))
+    const given = Buffer.from(signature)
+    return given.length === expected.length && timingSafeEqual(given, expected)
   }
 
   private async reactToComment(repo: string, commentId: number): Promise<void> {
