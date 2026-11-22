@@ -226,7 +226,9 @@ export const WALL_DIFF_CSS = `
 .wdf__l.is-add { background: color-mix(in srgb, var(--ax-green) 12%, transparent); }
 .wdf__l.is-del { background: color-mix(in srgb, var(--ax-red) 12%, transparent); }
 .wdf__n { width: 1%; min-width: 3ch; text-align: right; color: var(--ax-muted); user-select: none; white-space: nowrap; }
-.wdf__c { white-space: pre; }
+/* Long lines wrap: a table wider than the post would push the drafts'
+   text and their Edit/Remove buttons out of sight. */
+.wdf__c { white-space: pre-wrap; overflow-wrap: anywhere; }
 .wdf__s { display: inline-block; width: 1.5ch; color: var(--ax-muted); user-select: none; }
 .wdf__ed td, .wdf__dr td { padding: 6px 10px; font-family: var(--ax-font, inherit); background: var(--ax-surface); }
 .wdf__ed .wdo__row { margin-top: 6px; }
