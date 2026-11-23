@@ -263,6 +263,25 @@ describe("AgentRegistry: an issue placed on an SSH server", () => {
     expect(run.calls).toBe(0)
   })
 
+  it("refuses a second run of the same issue while the first is going, and runs again after", async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => { release = r })
+    registry.setSshSpawn(async (args, input) => {
+      calls.push({ args, input })
+      if (calls.length === 1) { await held; return { code: 0, stdout: "READY /srv/.agentx-worktrees/app/issue-7\n", stderr: "" } }
+      return calls.length === 3 ? { code: 0, stdout: "READY /srv/.agentx-worktrees/app/issue-7\n", stderr: "" } : { code: 0, stdout: JSON.stringify({ result: "ok" }), stderr: "" }
+    })
+    const ctx = { channel: "github", chatId: "acme/app:issue:7" } as any
+    const first = registry.execute({ agentId: "coder", message: "a", context: ctx })
+    await new Promise((r) => setTimeout(r, 10))
+    const second = await registry.execute({ agentId: "coder", message: "b", context: ctx })
+    expect(second.error).toContain("still going on ssh:box")
+    expect(calls.length).toBe(1)
+    release()
+    expect((await first).content).toBe("ok")
+    expect((await registry.execute({ agentId: "coder", message: "c", context: ctx })).content).toBe("ok")
+  })
+
   it("B1: a server with no pushLimit fails the run and calls no ssh", async () => {
     registry.setPlacements({ placement: () => at("ssh:open") })
     const res = await registry.execute({ agentId: "coder", message: "x", context: { channel: "github", chatId: "acme/app:issue:7" } as any })

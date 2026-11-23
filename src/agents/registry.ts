@@ -709,6 +709,10 @@ export class AgentRegistry {
    *  we don't create a circular import with src/a2a/mesh.ts. */
   /** See setSshSpawn. Unset: the real `ssh`. */
   private sshSpawn?: SshSpawn
+  /** Issues with an SSH run going from this daemon (`<node> <repo>#<n>`).
+   *  A placed run is sent before the chat queue, so this keeps two runs
+   *  from preparing one worktree at once (#2134 review nit). */
+  private sshRunsGoing = new Set<string>()
   private meshFallback?: {
     findPeerWithSkill: (skillId: string) => { peer: { url: string; token?: string } } | undefined
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number; context?: Record<string, unknown> }) => Promise<string>
@@ -1083,8 +1087,16 @@ export class AgentRegistry {
     const def = this.agents.get(task.agentId)?.def
     const minutes = typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0 ? task.timeoutMinutes : (def?.maxExecutionMinutes ?? 20)
     const start = Date.now()
+    const going = `${node} ${issue.project}#${issue.number}`
+    if (this.sshRunsGoing.has(going)) return { content: "", error: `An earlier run of issue ${issue.number} is still going on ${node}. Wait for it to end, then run again.`, duration: 0 }
+    this.sshRunsGoing.add(going)
     this.log(`[run-on] ${task.agentId} ${key.chatId}: placed on "${node}", running it there over SSH`)
-    const out = await runOverSsh({ server, repo: issue.project, issue: issue.number, prompt: task.message, timeoutMs: minutes * 60_000, model: def?.model }, this.sshSpawn)
+    let out: Awaited<ReturnType<typeof runOverSsh>>
+    try {
+      out = await runOverSsh({ server, repo: issue.project, issue: issue.number, prompt: task.message, timeoutMs: minutes * 60_000, model: def?.model }, this.sshSpawn)
+    } finally {
+      this.sshRunsGoing.delete(going)
+    }
     if (!out.ok) {
       this.log(`[run-on] ${task.agentId} ${key.chatId}: the run on "${node}" failed: ${out.error}`)
       return { content: "", error: out.offline ? `${offlineNoteText(node)} ${out.error}` : out.error, duration: Date.now() - start }
