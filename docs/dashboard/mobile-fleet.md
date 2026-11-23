@@ -61,16 +61,25 @@ This is the same inbox as **Needs you** on the Hub ([Approvals](./approvals.md))
 
 ## Stop or steer a running task
 
-Tasks agents are working on appear under **Running now**, newest first.
+Tasks agents are working on appear under **Running now**, newest first. Anyone with a paired phone sees the list. Watching, stopping and sending to a task need **live control** on that phone, which you turn on from the computer.
 
-1. **Phone:** tap **Activity**.
-2. **Phone:** on the task, tap one of:
-   - **Stop** ends the current task. The agent keeps the conversation.
+1. **Terminal (computer running the dashboard):** find the phone's id, then turn live control on:
+   ```sh
+   agentx app devices
+   agentx app live tok_1a2b3c4d on
+   ```
+   `agentx app devices` now shows `live control on` next to that phone. To pair a new phone with live control already on, run `agentx app pair --live`. To take it away, run `agentx app live tok_1a2b3c4d off`.
+2. **Phone:** tap **Activity**.
+3. **Phone:** on the task, tap one of:
+   - **Watch** opens the Live sheet. It shows the step the agent is on (the tool's name, for example `Bash`) and the latest text, at most 160 characters, as it runs. When the task ends it shows **Done** or **Failed** and the start of the answer. The full answer is on the Hub. In the sheet you can also send a message or stop the task.
+   - **Stop** ends the current task. The agent keeps the conversation. In the Live sheet, tap **Stop** and then **Tap again to stop** within 4 seconds.
    - **Follow up** opens a box for a message. Type it and tap **Send**. The agent reads it when the current step finishes.
+
+Without live control, the phone shows "Live control is off for this phone" above the list, and the buttons are not there.
 
 ## What the phone can see
 
-The tabs show short excerpts only (at most 160 characters), never full prompts, replies or error logs. Every action goes through the dashboard to the computer it concerns, with that computer's mesh token, and the computer records who asked, for example `operator (phone: My phone)`.
+The tabs show short excerpts only (at most 160 characters), never full prompts, replies or error logs. The Live sheet follows the same rule: it gets tool names, never what a tool was given or what it returned, and a task that hit an error shows **Failed** without the error text. The phone never says which computer to connect to: the dashboard looks the task up and connects to the computer running it. Every action goes through the dashboard to the computer it concerns, with that computer's mesh token, and the computer records who asked, for example `operator (phone: My phone)`.
 
 ## Check it worked
 
@@ -89,4 +98,7 @@ The tabs show short excerpts only (at most 160 characters), never full prompts, 
 - **"… failed: node not in dashboard allowlist"** — the dashboard doesn't know that computer. Add it under `dashboard.daemons` in `agentx.json`, or pair it into the mesh.
 - **"… is waiting for approval"** when turning a schedule on — an agent proposed it. Approve it under **Activity** (or run `agentx schedule approve <id>`), then turn it on.
 - **Decisions from another computer are missing** — the app reads them through that computer's dashboard. Set `dashboardUrl` and `dashboardToken` for it under `dashboard.daemons`.
+- **"Live control is off for this phone"** — run `agentx app live <id> on` on the computer running the dashboard (the id is in `agentx app devices`), then open **Activity** again.
+- **The Live sheet says "This task has ended"** — the task finished before the sheet connected, or it was stopped. Its answer is on the Hub.
+- **The Live sheet says "Lost the connection"** — the phone lost the stream and one retry failed. Close the sheet and tap **Watch** again.
 - **A tab stays on "Loading…"** — the phone lost its connection. The yellow bar says so; the tab fills in when the phone reconnects.

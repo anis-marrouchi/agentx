@@ -20,6 +20,11 @@ import { resolve, dirname } from "path"
 //   mesh:peer        — cross-node mesh (forward-compatible — not enforced yet)
 //   app              — the phone app (/app, /api/app/*) and nothing else;
 //                      minted per device by `agentx app pair`
+//   app:live         — next to `app`: this phone may follow a running task
+//                      and Stop or send to it (/api/app/tasks/{stream,
+//                      cancel,followup}). Never logs in on its own. Turned
+//                      on with `agentx app pair --live` or
+//                      `agentx app live <device> on` (#2103)
 //   member:<person>  — one teammate's own work page (/member, /api/member/*)
 //                      and nothing else; minted per machine by
 //                      `agentx people invite` (#385)
@@ -129,6 +134,20 @@ export class TokenStore {
     return rec
   }
 
+  /** Add (`on`) or remove one scope on an existing token. Returns the
+   *  updated record, or null when there is no token with this id. */
+  setScope(id: string, scope: string, on: boolean): TokenRecord | null {
+    if (!isValidScope(scope)) throw new Error(`Invalid scope: ${scope}`)
+    const records = this.load()
+    const rec = records.find((r) => r.id === id)
+    if (!rec) return null
+    const has = rec.scopes.includes(scope)
+    if (on && !has) rec.scopes.push(scope)
+    if (!on && has) rec.scopes = rec.scopes.filter((s) => s !== scope)
+    if (on !== has) this.save(records)
+    return rec
+  }
+
   /** True when the token with this id exists and is neither revoked nor expired. */
   isActive(id: string): boolean {
     const rec = this.load().find((r) => r.id === id)
@@ -178,6 +197,7 @@ function isValidScope(s: string): boolean {
     /^agent:[a-z0-9][a-z0-9_-]*$/.test(s) ||
     s === "mesh:peer" ||
     s === "app" ||
+    s === "app:live" ||
     s === "wall:portfolio" ||
     /^member:[a-z0-9][a-z0-9_-]{0,39}$/.test(s) ||
     /^guest:g-[a-z0-9]+-[a-z0-9]+$/.test(s)

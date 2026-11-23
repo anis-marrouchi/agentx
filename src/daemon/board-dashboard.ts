@@ -70,7 +70,7 @@ import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import { logSlowQueries } from "@/storage/slow-queries"
-import type { AppFleetDeps, NodeApprovals, NodeReply } from "./app-fleet"
+import type { AppFleetDeps, NodeApprovals, NodeReply, TaskStreamOpen } from "./app-fleet"
 import { inboxToDesk, readOwnerList } from "@/desk/owner-list"
 import type { AppDeskDeps } from "./app-desk"
 import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, liveRunRefs, type DeskRequest } from "@/desk/board"
@@ -2593,6 +2593,45 @@ function startLiveStream(req: IncomingMessage, res: ServerResponse, daemon: Daem
 }
 
 /**
+ * Open a daemon's task-stream SSE for a dashboard client: the desktop proxy
+ * below and the phone's /api/app/tasks/stream (#2103). The target must be
+ * on the dashboard's allowlist (its own daemon, configured daemons, known
+ * mesh peers), so this is never an open SSE proxy, and the node's token is
+ * added here, never sent by the caller.
+ */
+async function openTaskStream(
+  config: DaemonConfig,
+  nodeUrl: string,
+  agentId: string,
+  taskId: string,
+  signal: AbortSignal,
+): Promise<TaskStreamOpen> {
+  const target = nodeUrl.replace(/\/+$/, "")
+  const allowed = new Set<string>()
+  allowed.add(config.dashboard.daemonUrl.replace(/\/+$/, ""))
+  for (const d of config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
+  // Also accept any known mesh peer URL discovered at snapshot time.
+  try {
+    const peers = await fetchMeshPeers(config.dashboard.daemonUrl.replace(/\/+$/, ""), config.dashboard.token)
+    for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
+  } catch { /* best effort */ }
+  if (!allowed.has(target)) return { ok: false, status: 403, error: "node not in dashboard allowlist" }
+  const tokenForNode = dashboardTokenForNode(config.dashboard, target)
+  const headers: Record<string, string> = { Accept: "text/event-stream" }
+  if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
+  let upstreamRes: Response
+  try {
+    upstreamRes = await fetch(`${target}/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/stream`, { headers, signal })
+  } catch (e: any) {
+    return { ok: false, status: 502, error: e.message || "upstream connect failed" }
+  }
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    return { ok: false, status: upstreamRes.status || 502, error: `upstream HTTP ${upstreamRes.status}` }
+  }
+  return { ok: true, body: upstreamRes.body }
+}
+
+/**
  * Proxy SSE from a daemon's task-stream endpoint back to the dashboard
  * client. Whitelists the target URL against the dashboard's known nodes
  * to avoid being turned into an open SSE proxy.
@@ -2605,35 +2644,10 @@ async function proxyTaskStream(
   agentId: string,
   taskId: string,
 ): Promise<void> {
-  const target = nodeUrl.replace(/\/+$/, "")
-  const allowed = new Set<string>()
-  allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
-  for (const d of ctx.config.dashboard.daemons) allowed.add(d.url.replace(/\/+$/, ""))
-  // Also accept any known mesh peer URL discovered at snapshot time.
-  try {
-    const peers = await fetchMeshPeers(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), ctx.config.dashboard.token)
-    for (const p of peers) allowed.add(p.url.replace(/\/+$/, ""))
-  } catch { /* best effort */ }
-  if (!allowed.has(target)) {
-    sendJson(res, 403, { error: "node not in dashboard allowlist", target })
-    return
-  }
-  const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
-  const headers: Record<string, string> = { Accept: "text/event-stream" }
-  if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
   const upstreamCtl = new AbortController()
-  let upstreamRes: Response
-  try {
-    upstreamRes = await fetch(`${target}/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/stream`, {
-      headers,
-      signal: upstreamCtl.signal,
-    })
-  } catch (e: any) {
-    sendJson(res, 502, { error: e.message || "upstream connect failed" })
-    return
-  }
-  if (!upstreamRes.ok || !upstreamRes.body) {
-    sendJson(res, upstreamRes.status || 502, { error: `upstream HTTP ${upstreamRes.status}` })
+  const up = await openTaskStream(ctx.config, nodeUrl, agentId, taskId, upstreamCtl.signal)
+  if (!up.ok) {
+    sendJson(res, up.status, up.status === 403 ? { error: up.error, target: nodeUrl.replace(/\/+$/, "") } : { error: up.error })
     return
   }
   res.writeHead(200, {
@@ -2642,7 +2656,7 @@ async function proxyTaskStream(
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
   })
-  const reader = upstreamRes.body.getReader()
+  const reader = up.body.getReader()
   const pump = async () => {
     try {
       while (true) {
@@ -2944,6 +2958,7 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
   const parse = (text: string) => { try { return JSON.parse(text) } catch { return { error: text.slice(0, 200) } } }
   return {
     snapshot: (day) => buildLiveSnapshot(config, day),
+    taskStream: (nodeUrl, agentId, taskId, signal) => openTaskStream(config, nodeUrl, agentId, taskId, signal),
     async nodePost(nodeUrl, path, body) {
       const r = await postToNode(config, nodeUrl, path, body)
       return { status: r.status, body: parse(r.text) }

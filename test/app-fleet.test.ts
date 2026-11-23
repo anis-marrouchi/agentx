@@ -35,7 +35,7 @@ function deps(over: Partial<AppFleetDeps> = {}): AppFleetDeps {
   }
 }
 
-async function call(d: AppFleetDeps, method: string, path: string, body?: unknown) {
+async function call(d: AppFleetDeps, method: string, path: string, body?: unknown, live = true) {
   const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]) as any
   req.url = path
   req.headers = {}
@@ -44,7 +44,7 @@ async function call(d: AppFleetDeps, method: string, path: string, body?: unknow
     writeHead(s: number) { out.status = s },
     end(b: string) { out.body = JSON.parse(b) },
   }
-  const handled = await handleAppFleet(req, res, path.split("?")[0], method, "My phone", d)
+  const handled = await handleAppFleet(req, res, path.split("?")[0], method, "My phone", d, live)
   return { handled, ...out }
 }
 
@@ -90,10 +90,10 @@ describe("handleAppFleet", () => {
 
   it("routes each action to the matching daemon route on the chosen node", async () => {
     const d = deps()
-    await call(d, "POST", "/api/app/tasks/cancel", { node: "http://node-a:18800", taskId: "t 1" })
-    expect(d.nodePost).toHaveBeenLastCalledWith("http://node-a:18800", "/api/tasks/t%201/cancel", { reason: "cancelled by operator (phone: My phone)" })
-    await call(d, "POST", "/api/app/tasks/followup", { node: "n", taskId: "t", message: "also check the logs" })
-    expect(d.nodePost).toHaveBeenLastCalledWith("n", "/api/tasks/t/followup", { message: "also check the logs", sender: "operator (phone: My phone)" })
+    await call(d, "POST", "/api/app/tasks/cancel", { node: "http://node-a:18800", taskId: "t-new" })
+    expect(d.nodePost).toHaveBeenLastCalledWith("http://node-a:18800", "/api/tasks/t-new/cancel", { reason: "cancelled by operator (phone: My phone)" })
+    await call(d, "POST", "/api/app/tasks/followup", { taskId: "t-old", message: "also check the logs" })
+    expect(d.nodePost).toHaveBeenLastCalledWith("http://node-a:18800", "/api/tasks/t-old/followup", { message: "also check the logs", sender: "operator (phone: My phone)" })
     await call(d, "POST", "/api/app/nodes/restart", { node: "n" })
     expect(d.nodePost).toHaveBeenLastCalledWith("n", "/daemon/restart", {})
     await call(d, "POST", "/api/app/nodes/restart", { node: "n", cancel: true })
@@ -116,14 +116,15 @@ describe("handleAppFleet", () => {
 
   it("passes the node's status and body through", async () => {
     const d = deps({ nodePost: vi.fn(async () => ({ status: 404, body: { error: "no running task" } })) })
-    const r = await call(d, "POST", "/api/app/tasks/cancel", { node: "n", taskId: "gone" })
+    const r = await call(d, "POST", "/api/app/tasks/cancel", { taskId: "t-new" })
     expect(r).toMatchObject({ status: 404, body: { error: "no running task" } })
   })
 
   it("rejects incomplete requests before calling any node", async () => {
     const d = deps()
-    expect((await call(d, "POST", "/api/app/tasks/cancel", { taskId: "t" })).status).toBe(400)
-    expect((await call(d, "POST", "/api/app/tasks/followup", { node: "n", taskId: "t" })).status).toBe(400)
+    expect((await call(d, "POST", "/api/app/tasks/cancel", {})).status).toBe(400)
+    expect((await call(d, "POST", "/api/app/tasks/followup", { taskId: "t-new" })).status).toBe(400)
+    expect((await call(d, "POST", "/api/app/nodes/reload", {})).status).toBe(400)
     expect((await call(d, "POST", "/api/app/crons/toggle", { node: "n", cronId: "x", enabled: "no" })).status).toBe(400)
     expect((await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "k", action: "maybe" })).status).toBe(400)
     expect(d.nodePost).not.toHaveBeenCalled()

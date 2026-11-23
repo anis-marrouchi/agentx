@@ -155,11 +155,13 @@ export async function handleAppRequest(
     return send(res, 200, "text/html; charset=utf-8", renderAppPage())
   }
   if (method === "GET" && path === "/api/app/me") {
-    return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
+    return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null, live: rec.scopes.includes("app:live") })
   }
   // A paired call is the owner on the phone app (#1138 step B).
   ctx.reach?.touch("phone")
-  if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
+  // `app:live` is matched exactly: only phones the owner allowed follow,
+  // Stop or send to a running task (#2103).
+  if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet, rec.scopes.includes("app:live"))) return true
   if (ctx.desk && await handleAppDesk(req, res, path, method, ctx.reach ? deskWithReach(ctx.desk, ctx.reach) : ctx.desk)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
   if (ctx.announce && await handleAppAnnounce(req, res, path, method, rec, ctx.announce)) return true

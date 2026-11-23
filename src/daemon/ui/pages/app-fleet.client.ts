@@ -240,11 +240,15 @@ export const APP_FLEET_SCRIPT = `
     appr.nodes.forEach(function (n) { if (n.error) html += '<p class="fx-muted fx-bad">Approvals on ' + esc(n.nodeName) + ' could not be read: ' + esc(n.error) + '</p>'; });
     html += '<h3 class="fx-sub">Running now (' + act.tasks.length + ')</h3>';
     if (!act.tasks.length) html += '<p class="fx-muted">No agent is working right now.</p>';
+    // Following, Stop and send need live control on this phone (#2103):
+    // without it the list stays read-only and says how to turn it on.
+    if (act.tasks.length && !act.live) html += '<p class="fx-muted">Live control is off for this phone. Turn it on from the Mac: agentx app live &lt;device&gt; on</p>';
     act.tasks.forEach(function (t, k) {
       html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(t.agentName) + '</h4><span class="fx-muted">' + esc(ago(t.startedAt)) + '</span></div><p class="fx-working"><span aria-hidden="true">◔</span> Working</p>' +
         '<p>' + esc(t.preview) + '</p><p class="fx-muted">' + esc(t.nodeName) + ' · ' + esc(t.channel) + '</p>' +
-        '<div class="fx-row fx-gap"><button type="button" class="fx-btn" data-act="followup" data-k="' + k + '">Follow up</button>' +
-        '<button type="button" class="fx-btn fx-danger-o" data-act="cancel" data-k="' + k + '">Stop</button></div></article>';
+        (act.live ? '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="watch" data-k="' + k + '">Watch</button>' +
+        '<button type="button" class="fx-btn" data-act="followup" data-k="' + k + '">Follow up</button>' +
+        '<button type="button" class="fx-btn fx-danger-o" data-act="cancel" data-k="' + k + '">Stop</button></div>' : '') + '</article>';
     });
     activityPanel.innerHTML = html;
     activityPanel._act = act;
@@ -297,6 +301,7 @@ export const APP_FLEET_SCRIPT = `
       return;
     }
     var t = activityPanel._act.tasks[k];
+    if (act === 'watch') { if (window.AXLive) window.AXLive.open(t); return; }
     if (act === 'cancel') ask({ panel: activityPanel, title: 'Stop ' + t.agentName + '?', danger: true, ok: 'Stop',
       text: 'The current task is stopped. The agent keeps the conversation.',
       path: '/api/app/tasks/cancel', body: function () { return { node: t.node, taskId: t.taskId }; }, done: function () { return 'Stopped.'; } });
