@@ -145,7 +145,7 @@ export function ltAddWorkers(machines: LtMachine[], nodes: LtNode[], now: number
   const index = ltRunIndex(nodes)
   for (const m of machines || []) {
     for (const p of m.projects || []) {
-      for (const i of p.items) for (const r of i.rows) if (r.task) r.workers = ltWorkersOf(r.task, m.key, index, now, titleOf)
+      for (const i of p.items) for (const r of i.rows) if (r.task) r.workers = ltWorkersOf(r.task, m.id, index, now, titleOf)
     }
   }
   return machines

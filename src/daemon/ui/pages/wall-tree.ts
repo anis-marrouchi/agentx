@@ -89,6 +89,9 @@ export interface LtItem { key: string; label: string; rows: LtRow[] }
 export interface LtProject { key: string; label: string; items: LtItem[] }
 export interface LtMachine {
   key: string
+  /** The node's id (config.node.id), else its URL: what a run's parent
+   *  link names (wall-tree-workers.ts, #2145). `key` is URL first. */
+  id: string
   name: string
   url: string
   /** up, checking (slow, asked again) or silent (does not answer: "not checked"). */
@@ -206,7 +209,7 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     const m: LtMachine = {
       // The URL first: a node still being asked has its URL as id, and its
       // real id once it answers, so an id key would reopen a folded machine.
-      key: String(n.url || n.id || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
+      key: String(n.url || n.id || n.name), id: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
       state: n.checking ? "checking" : silent ? "silent" : "up", error: String(n.error || ""),
       working: 0, projects: [], done: [], idle: [],
     }
