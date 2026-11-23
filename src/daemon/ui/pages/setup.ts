@@ -1,25 +1,27 @@
-// --- Setup wizard page ---
+// --- Setup wizard page: install → model account → first agent → first answer (#2143) ---
 //
-// First-run flow for non-technical operators: team name, first agent,
-// optional Telegram, optional Anthropic key. Writes agentx.json, scaffolds
-// the agent's workspace, writes .env, and points the operator at the next
-// step.
-//
-// The server-side state machine + form handler live in ../../setup-wizard.ts
-// — this file owns ONLY the HTML. That keeps the data flow inspectable
-// (one place) and the visual surface hot-reloadable (edit → rebuild → view).
+// New-user feedback 2026-11-23: setup was not obvious, and the person used
+// another coding agent to edit the config. This page is the one path to a
+// first answer, with nothing to edit by hand:
+//   1. connect the model account (found automatically; else the exact
+//      command to run, or a key field),
+//   2. create the first agent (a name and a folder; a second run finds it),
+//   3. send it a first task and watch the answer arrive,
+//   4. open the Hub's chat on that conversation.
+// `agentx start` opens it on a first run, and "/" and the Hub send a person
+// here while there is no agent. The steps' routes and their decisions live
+// in ../../setup-flow-api.ts and ../../setup-flow.ts; this file is the HTML
+// and the browser script.
 
-import { renderShell, esc, stepCard, field, row, btn } from ".."
+import { renderShell, esc, stepCard, field, btn } from ".."
 import type { WizardState } from "../../setup-wizard"
 import { HUB_PATH } from "../hub-name"
+import { injectFns } from "../inject"
+import { markdownToHtml } from "@/utils/markdown-html"
 
-export function renderSetupPage(state: WizardState, defaultNode: string): string {
-  const heading = state.configExists
-    ? (state.agentCount === 0 ? "Add your first agent" : "Add another agent")
-    : "Set up your team"
+export const FIRST_TASK = "Say hello, then tell me in two sentences what you can help me with."
 
-  // Custom topbar: /setup is pre-dashboard, we skip the tab nav and show
-  // just brand + subtitle + theme switcher + "Skip to dashboard" pill.
+export function renderSetupPage(state: WizardState, localToken?: string): string {
   const customHeader = `<header class="ax-topbar">
   <div class="ax-topbar__left">
     <div class="ax-brand">
@@ -29,7 +31,7 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     </div>
   </div>
   <div class="ax-topbar__right">
-    <a href="${HUB_PATH}#page=live" class="ax-skip">Skip — open dashboard</a>
+    ${state.agentCount > 0 ? `<a href="${HUB_PATH}" class="ax-skip">Skip, open the Hub</a>` : ""}
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>
       <button data-theme-opt="light">Light</button>
@@ -37,104 +39,51 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
   </div>
 </header>`
 
-  const step1 = stepCard(1, "Team basics",
-    field({
-      name: "nodeName",
-      label: "Team name",
-      hint: "(what you'd call this AgentX install)",
-      value: defaultNode,
-      placeholder: "My Team",
-      required: true,
-    })
-  )
-
-  const step2 = stepCard(2, "First agent",
-    row([
-      field({ name: "agentName", label: "Agent name", value: "Assistant", placeholder: "Support Bot", required: true }),
-      field({ name: "agentId", label: "Agent id", hint: "(lowercase, no spaces)", value: "assistant", pattern: "[a-z0-9][a-z0-9_-]*", required: true }),
-    ]) +
-    field({
-      name: "triggerWords",
-      label: "Trigger words",
-      hint: `(comma or space separated — e.g. <code>@support, support</code>)`,
-      value: "@assistant, assistant",
-      required: true,
-    }) +
-    row([
-      field({
-        name: "tier",
-        label: "AI engine",
-        type: "select",
-        options: [
-          { value: "claude-code", label: "Claude Code (recommended)", selected: true },
-          { value: "codex-cli", label: "Codex CLI" },
-          { value: "opencode", label: "OpenCode CLI" },
-          { value: "sdk", label: "Anthropic API (BYO key)" },
-          { value: "orchestrator", label: "Orchestrator (any provider)" },
-        ],
-      }),
-      field({
-        name: "model",
-        label: "Model",
-        hint: "(optional)",
-        value: "claude-sonnet-4-6",
-        placeholder: "claude-sonnet-4-6",
-      }),
-    ]) +
-    field({
-      name: "personality",
-      label: "Personality / instructions",
-      hint: "(optional — what this agent does, in plain English)",
-      type: "textarea",
-      placeholder: "You are a support agent for Acme Co. Answer customer questions about our product, be friendly, keep replies short.",
-    })
-  )
-
-  const step3 = stepCard(3, "First channel", `
-    <label class="ax-toggle"><input type="checkbox" id="enableTelegram" /> Connect Telegram now</label>
-    <div class="ax-optional" id="telegramFields">
-      ${field({ name: "telegramAccountId", label: "Account id", hint: `(a label you choose — e.g. <code>support</code>)`, value: "default" })}
-      ${field({ name: "telegramBotToken", label: "Bot token", hint: `(from <a href="https://t.me/BotFather" target="_blank">@BotFather</a>)`, placeholder: "123456:ABCdef..." })}
-      ${field({ name: "telegramBotUsername", label: "Bot username", hint: `(optional — e.g. <code>my_support_bot</code>)`, placeholder: "my_support_bot" })}
+  const step1 = stepCard(1, "Connect your AI model account", `
+    <p class="sw-status" id="m-status" role="status">Checking this computer…</p>
+    <div class="sw-cmd" id="m-cmd" hidden>
+      <p class="sw-hint">Open the Terminal app, paste this command and press Return:</p>
+      <div class="sw-cmd__row"><code id="m-cmd-text"></code>${btn("Copy", { id: "m-copy" })}</div>
     </div>
-  `)
+    <form id="m-key" class="sw-key" hidden autocomplete="off">
+      ${field({ name: "key", label: "Or paste an Anthropic API key", hint: `(from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>; saved in .env on this computer only)`, type: "password", placeholder: "sk-ant-…", extraAttrs: `autocomplete="off"` })}
+      ${btn("Save key", { type: "submit", id: "m-key-save" })}
+    </form>
+    <div class="sw-actions">
+      <button type="button" class="ax-btn ax-btn--primary" id="m-switch" hidden>Use this account for my agent</button>
+      ${btn("Check again", { id: "m-check" })}
+    </div>
+    <p class="sw-err" id="m-err" role="alert" hidden></p>`)
 
-  const step4 = stepCard(4, "Anthropic API key",
-    field({
-      name: "anthropicApiKey",
-      label: "API key",
-      hint: "(optional — skip if you're using Claude Code)",
-      type: "password",
-      placeholder: "sk-ant-…",
-      extraAttrs: `autocomplete="off"`,
-    }) +
-    `<div class="ax-hint-block">
-      The key is stored in <code>.env</code> as <code>ANTHROPIC_API_KEY</code> and used to authenticate requests to Anthropic. Keep it private.
-    </div>`
-  )
+  const step2 = stepCard(2, "Create your first agent", `
+    <div id="a-done" class="sw-status" hidden></div>
+    <p class="sw-hint" id="a-more" hidden>More agents, Telegram and the agent's instructions are in the Hub's <a href="${HUB_PATH}#page=settings&amp;section=agents">Settings</a>.</p>
+    <form id="a-form" autocomplete="off">
+      ${field({ name: "agentName", label: "Agent name", value: "Assistant", placeholder: "Assistant", required: true })}
+      ${field({ name: "workspace", label: "Its folder", hint: "(optional; leave empty to use the agents folder here)", placeholder: "agents/assistant" })}
+      ${btn("Create agent", { type: "submit", primary: true, id: "a-create" })}
+    </form>
+    <p class="sw-err" id="a-err" role="alert" hidden></p>`)
 
-  const banner = state.configExists
-    ? `<div class="ax-banner">Existing install: <b>${state.agentCount}</b> agent(s), <b>${state.channelCount}</b> channel(s) already configured. This wizard will add to it.</div>`
-    : ""
+  const step3 = stepCard(3, "Give it a first task", `
+    <form id="t-form" autocomplete="off">
+      ${field({ name: "message", label: "Task", type: "textarea", value: FIRST_TASK })}
+      ${btn("Send", { type: "submit", primary: true, id: "t-send" })}
+    </form>
+    <div class="sw-answer" id="t-answer" aria-live="polite" hidden></div>
+    <p class="sw-err" id="t-err" role="alert" hidden></p>`)
+
+  const step4 = stepCard(4, "Done", `
+    <p class="sw-status">Your agent answered. Keep talking to it in the Hub's chat; add Telegram or more agents later in the Hub's Settings.</p>
+    <a class="ax-btn ax-btn--primary" id="d-open" href="${HUB_PATH}#chat=open">Open the chat in the Hub</a>`)
 
   const body = `<div class="ax-wizard">
-  <h1 class="ax-wizard__h1">${esc(heading)}</h1>
-  <p class="ax-wizard__lead">Fill in the basics below. We'll write <code>agentx.json</code>, set up a folder for your first agent, and point you at the next step.</p>
-
-  ${banner}
-
-  <div id="msg" class="ax-msg"></div>
-
-  <form id="wizard" autocomplete="off">
-    ${step1}
-    ${step2}
-    ${step3}
-    ${step4}
-    <footer class="ax-actions">
-      ${btn("Save and continue", { type: "submit", primary: true, id: "submitBtn" })}
-      ${btn("Skip, I'll do it later", { onclick: `window.location.href='${HUB_PATH}#page=live'` })}
-    </footer>
-  </form>
+  <h1 class="ax-wizard__h1">Get your first agent answering</h1>
+  <p class="ax-wizard__lead">Four steps, all on this page. Nothing to edit by hand.</p>
+  <div class="sw-step" id="s1">${step1}</div>
+  <div class="sw-step is-locked" id="s2">${step2}</div>
+  <div class="sw-step is-locked" id="s3">${step3}</div>
+  <div class="sw-step is-locked" id="s4" hidden>${step4}</div>
 </div>`
 
   return renderShell({
@@ -143,148 +92,145 @@ export function renderSetupPage(state: WizardState, defaultNode: string): string
     subtitle: "Setup",
     customHeader,
     noMain: true,
-    // Before setup there is no agent to ask, and no token for the drawer.
+    // Before setup there is no agent to ask from the drawer.
     noAssistant: true,
+    localToken,
     body,
     css: SETUP_PAGE_CSS,
-    scripts: SETUP_SCRIPT,
+    scripts: `<script>${injectFns({ markdownToHtml })}${SETUP_SCRIPT}</script>`,
   })
 }
 
-/** CSS that's specific to the setup page — wizard layout + optional-fields
- *  toggle + result messaging. Everything reusable (form fields, step cards,
- *  buttons) comes from AX_COMPONENTS_CSS. */
 const SETUP_PAGE_CSS = `
-/* Pre-dashboard topbar variant — no tab nav, the pills are the only chrome. */
 .ax-topbar__right a.ax-skip {
   padding: 4px 10px; border: 1px solid var(--ax-border-2); border-radius: 4px;
   color: var(--ax-text-2); font-size: var(--ax-fs-xs); text-decoration: none;
 }
 .ax-topbar__right a.ax-skip:hover { color: var(--ax-accent); border-color: var(--ax-accent); }
-
-/* Wizard frame */
 .ax-wizard { max-width: 680px; margin: 0 auto; padding: 36px 22px 80px; }
 .ax-wizard__h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
 .ax-wizard__lead { color: var(--ax-muted); margin: 0 0 24px; font-size: var(--ax-fs); line-height: 1.55; }
-.ax-wizard__lead code { background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px; color: var(--ax-text); font-size: var(--ax-fs-sm); }
+.ax-wizard [hidden] { display: none !important; }
+.sw-step.is-locked { opacity: .45; pointer-events: none; }
+.sw-step.is-locked form, .sw-step.is-locked .sw-actions { display: none; }
+.sw-status { margin: 4px 0 10px; color: var(--ax-text); line-height: 1.55; }
+.sw-status.is-ok::before { content: "✓ "; color: var(--ax-accent); font-weight: 600; }
+.sw-hint { margin: 0 0 6px; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
+.sw-cmd { margin: 8px 0 12px; }
+.sw-cmd__row { display: flex; gap: 8px; align-items: center; }
+.sw-cmd__row code { flex: 1; background: var(--ax-surface-2); padding: 8px 10px; border-radius: 4px; font-family: var(--ax-mono); font-size: var(--ax-fs-sm); overflow-x: auto; white-space: nowrap; }
+.sw-key { margin: 8px 0; }
+.sw-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.sw-err { margin: 10px 0 0; padding: 10px 14px; border-radius: var(--ax-radius); line-height: 1.5;
+  background: color-mix(in oklch, var(--ax-err) 12%, transparent); color: var(--ax-err);
+  border: 1px solid color-mix(in oklch, var(--ax-err) 40%, transparent); }
+.sw-answer { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius);
+  background: var(--ax-bg-elev); line-height: 1.55; min-height: 2.5em; }
+.sw-answer.is-pending::after { content: "▍"; color: var(--ax-accent); animation: sw-blink 1s steps(2) infinite; }
+@keyframes sw-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sw-answer.is-pending::after { animation: none; } }`
 
-/* Info banner ("You already have N agents…") */
-.ax-banner {
-  background: color-mix(in oklch, var(--ax-accent) 10%, var(--ax-bg-elev));
-  border: 1px solid color-mix(in oklch, var(--ax-accent) 30%, var(--ax-border-2));
-  border-radius: var(--ax-radius);
-  padding: 10px 14px; margin-bottom: 18px;
-  color: var(--ax-text-2); font-size: var(--ax-fs-sm);
-}
-.ax-banner b { color: var(--ax-text); font-weight: 600; }
-
-/* "Connect Telegram now" toggle + collapsible fields */
-.ax-toggle { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; font-size: var(--ax-fs); color: var(--ax-text); cursor: pointer; user-select: none; }
-.ax-toggle input { width: auto; accent-color: var(--ax-accent); }
-.ax-optional { border-left: 2px solid var(--ax-border-2); padding-left: 14px; margin-top: 10px; display: none; }
-.ax-optional.is-show { display: block; }
-.ax-hint-block { font-size: var(--ax-fs-xs); color: var(--ax-muted); margin-top: 8px; line-height: 1.55; }
-.ax-hint-block code { background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px; color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-xs); }
-
-/* Form footer */
-.ax-actions {
-  display: flex; gap: 10px; padding: 20px 0 0; align-items: center;
-  border-top: 1px solid var(--ax-border); margin-top: 20px;
-}
-
-/* Server-response messaging (success / error blocks) */
-.ax-msg { margin: 14px 0; padding: 12px 16px; border-radius: var(--ax-radius); font-size: var(--ax-fs); display: none; }
-.ax-msg.is-ok {
-  display: block;
-  background: color-mix(in oklch, var(--ax-accent) 12%, transparent);
-  color: var(--ax-accent);
-  border: 1px solid color-mix(in oklch, var(--ax-accent) 40%, transparent);
-}
-.ax-msg.is-err {
-  display: block;
-  background: color-mix(in oklch, var(--ax-err) 12%, transparent);
-  color: var(--ax-err);
-  border: 1px solid color-mix(in oklch, var(--ax-err) 40%, transparent);
-}
-.ax-next-steps { margin-top: 12px; padding-left: 20px; color: var(--ax-text-2); }
-.ax-next-steps li { margin: 4px 0; }
-.ax-next-steps code { background: var(--ax-surface-2); padding: 1px 6px; border-radius: 3px; color: var(--ax-text); font-family: var(--ax-mono); font-size: var(--ax-fs-sm); }
-.ax-startd { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.ax-startd__status { color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
-.ax-startd__status a { color: var(--ax-accent); }`
-
-const SETUP_SCRIPT = `<script>
-document.getElementById('enableTelegram').addEventListener('change', (e) => {
-  document.getElementById('telegramFields').classList.toggle('is-show', e.target.checked);
-});
-document.getElementById('wizard').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = e.target;
-  const msg = document.getElementById('msg');
-  const btn = document.getElementById('submitBtn');
-  msg.className = 'ax-msg'; msg.style.display = 'none';
-  btn.disabled = true; btn.textContent = 'Saving…';
-  const telegramEnabled = document.getElementById('enableTelegram').checked;
-  const payload = {
-    nodeName: f.nodeName.value.trim(),
-    agent: {
-      id: f.agentId.value.trim(),
-      name: f.agentName.value.trim(),
-      triggerWords: f.triggerWords.value.trim(),
-      tier: f.tier.value,
-      model: f.model.value.trim() || undefined,
-      personality: f.personality.value.trim() || undefined,
-    },
-    anthropicApiKey: f.anthropicApiKey.value.trim() || undefined,
-  };
-  if (telegramEnabled) {
-    payload.telegram = {
-      accountId: f.telegramAccountId.value.trim() || 'default',
-      botToken: f.telegramBotToken.value.trim(),
-      botUsername: f.telegramBotUsername.value.trim() || undefined,
-    };
-    if (!payload.telegram.botToken) {
-      msg.className = 'ax-msg is-err'; msg.textContent = 'Bot token is required when Telegram is enabled.';
-      btn.disabled = false; btn.textContent = 'Save and continue'; return;
-    }
+const SETUP_SCRIPT = `
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var agent = null, model = null, node = null, threadId = null, es = null, poll = null, live = '';
+  function headers(h) {
+    h = h || {}; h['X-Requested-With'] = 'agentx-board';
+    if (window.AX_LOCAL_TOKEN) h.Authorization = 'Bearer ' + window.AX_LOCAL_TOKEN;
+    return h;
   }
-  try {
-    const r = await fetch('/api/setup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'agentx-wizard' },
-      body: JSON.stringify(payload),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
-    const steps = data.nextSteps.map((s) => '<li>' + s.replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>') + '</li>').join('');
-    msg.className = 'ax-msg is-ok';
-    msg.innerHTML = '<b>' + data.summary + '</b><ol class="ax-next-steps">' + steps + '</ol>'
-      + '<div class="ax-startd"><button type="button" id="startDaemonBtn" class="ax-btn ax-btn--primary">Start daemon now</button>'
-      + ' <span id="startDaemonStatus" class="ax-startd__status"></span></div>';
-    btn.textContent = 'Done';
-    btn.disabled = true;
-    document.getElementById('startDaemonBtn').addEventListener('click', async () => {
-      const sb = document.getElementById('startDaemonBtn');
-      const ss = document.getElementById('startDaemonStatus');
-      sb.disabled = true; sb.textContent = 'Starting…'; ss.textContent = '';
-      try {
-        const r = await fetch('/api/setup/start-daemon', { method: 'POST' });
-        const d = await r.json();
-        if (d.ok) {
-          sb.textContent = d.alreadyRunning ? 'Already running' : 'Daemon up';
-          ss.innerHTML = 'Open <a href="' + d.url + '" target="_blank" rel="noopener">' + d.url + '</a>';
-        } else {
-          sb.disabled = false; sb.textContent = 'Try again';
-          ss.textContent = d.error + (d.manualUrl ? '  Manual: ' + d.manualUrl : '');
-        }
-      } catch (e) {
-        sb.disabled = false; sb.textContent = 'Try again';
-        ss.textContent = e.message;
-      }
-    });
-  } catch (err) {
-    msg.className = 'ax-msg is-err'; msg.textContent = err.message;
-    btn.disabled = false; btn.textContent = 'Save and continue';
+  function api(method, path, body) {
+    return fetch(path, { method: method, headers: headers(body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok || d.error) throw new Error(d.error || ('AgentX did not answer (HTTP ' + r.status + '). Run agentx start in Terminal, then reload this page.'));
+        return d;
+      }); }, function () { throw new Error('This page lost contact with AgentX. Run agentx start in Terminal, then reload this page.'); });
   }
-});
-</script>`
+  function err(id, e) { var el = $(id); el.textContent = e ? (e.message || String(e)) : ''; el.hidden = !e; }
+  function busy(id, on, label) { var b = $(id); b.disabled = on; if (label) b.textContent = label; }
+  function unlock(n, on) { $('s' + n).classList.toggle('is-locked', !on); }
+  function status(id, text, ok) { var el = $(id); el.textContent = text; el.classList.toggle('is-ok', !!ok); }
+
+  function paintModel(m) {
+    model = m;
+    status('m-status', m.message, m.ready);
+    $('m-cmd').hidden = m.ready || !m.command;
+    $('m-cmd-text').textContent = m.command || '';
+    $('m-key').hidden = m.ready || !m.keyVar;
+    $('m-switch').hidden = m.ready || !m.switchTo;
+    $('m-check').hidden = m.ready;
+    unlock(2, m.ready);
+    unlock(3, m.ready && !!agent);
+  }
+  function paintAgent(a, created) {
+    agent = a;
+    $('a-more').hidden = !a;
+    if (!a) { $('a-form').hidden = false; $('a-done').hidden = true; return; }
+    $('a-form').hidden = true; $('a-done').hidden = false;
+    status('a-done', (created ? 'Created ' : 'Your agent is ready: ') + a.name + (a.workspace ? ', in ' + a.workspace : '') + '.', true);
+    unlock(3, !!(model && model.ready));
+  }
+  function load() {
+    err('m-err');
+    return api('GET', '/api/setup/state').then(function (d) { paintAgent(d.agent); paintModel(d.model); })
+      .catch(function (e) { status('m-status', ''); err('m-err', e); });
+  }
+  $('m-check').addEventListener('click', function () { busy('m-check', true, 'Checking…'); load().then(function () { busy('m-check', false, 'Check again'); }); });
+  $('m-copy').addEventListener('click', function () {
+    try { navigator.clipboard.writeText($('m-cmd-text').textContent); $('m-copy').textContent = 'Copied'; } catch (e) { /* select it by hand */ }
+  });
+  $('m-key').addEventListener('submit', function (e) {
+    e.preventDefault(); err('m-err'); busy('m-key-save', true, 'Saving…');
+    api('POST', '/api/setup/model-key', { key: e.target.key.value }).then(function (d) { e.target.key.value = ''; paintModel(d.model); })
+      .catch(function (x) { err('m-err', x); }).then(function () { busy('m-key-save', false, 'Save key'); });
+  });
+  $('m-switch').addEventListener('click', function () {
+    err('m-err'); busy('m-switch', true);
+    api('POST', '/api/setup/engine', { engine: model && model.switchTo }).then(function (d) { paintModel(d.model); })
+      .catch(function (x) { err('m-err', x); }).then(function () { busy('m-switch', false); });
+  });
+  $('a-form').addEventListener('submit', function (e) {
+    e.preventDefault(); err('a-err'); busy('a-create', true, 'Creating and starting… (up to 30 s)');
+    api('POST', '/api/setup/agent', { name: e.target.agentName.value, workspace: e.target.workspace.value })
+      .then(function (d) { paintAgent(d.agent, d.created); })
+      .catch(function (x) { err('a-err', x); return load(); })
+      .then(function () { busy('a-create', false, 'Create agent'); });
+  });
+
+  // --- Step 3: the answer, streamed while the run's id is known ---
+  function paintAnswer(text, pending) {
+    var box = $('t-answer'); box.hidden = false; box.classList.toggle('is-pending', !!pending);
+    try { box.innerHTML = markdownToHtml(text || ''); } catch (e) { box.textContent = text || ''; }
+  }
+  function closeStream() { if (es) { try { es.close(); } catch (e) { /* closed */ } } es = null; }
+  function stream(taskId) {
+    if (es || !taskId || !window.EventSource || !node || !agent) return;
+    try { es = new EventSource('/api/task/stream?node=' + encodeURIComponent(node) + '&agent=' + encodeURIComponent(agent.id) + '&task=' + encodeURIComponent(taskId)); } catch (e) { return; }
+    es.addEventListener('chunk', function (ev) {
+      try { var t = JSON.parse(ev.data).text || ''; if (t && t.indexOf('[task finished]') < 0) { live += t; paintAnswer(live, true); } } catch (e) { /* skip */ }
+    });
+    es.addEventListener('end', function () { closeStream(); check(); });
+    es.addEventListener('error', closeStream);
+  }
+  function finish(ok) { busy('t-send', false, ok ? 'Send another' : 'Try again'); }
+  function check() {
+    clearTimeout(poll);
+    api('GET', '/api/setup/first-task?thread=' + encodeURIComponent(threadId)).then(function (d) {
+      if (d.status === 'pending') { stream(d.taskId); if (!live) paintAnswer('', true); poll = setTimeout(check, es ? 4000 : 1500); return; }
+      closeStream();
+      if (d.status === 'error') { $('t-answer').hidden = !live; err('t-err', new Error(d.error)); finish(false); return; }
+      paintAnswer(d.answer, false); finish(true);
+      $('s4').hidden = false; unlock(4, true);
+      try { localStorage.setItem('ax-assistant-thread', threadId); localStorage.setItem('ax-hub-chat-node', node); } catch (e) { /* private mode */ }
+    }).catch(function (x) { closeStream(); err('t-err', x); finish(false); });
+  }
+  $('t-form').addEventListener('submit', function (e) {
+    e.preventDefault(); err('t-err'); live = ''; closeStream(); busy('t-send', true, 'Waiting for the answer…');
+    $('t-answer').hidden = true;
+    api('POST', '/api/setup/first-task', { message: e.target.message.value }).then(function (d) {
+      threadId = d.threadId; node = d.node; check();
+    }).catch(function (x) { err('t-err', x); finish(false); });
+  });
+  load();
+})();
+`
