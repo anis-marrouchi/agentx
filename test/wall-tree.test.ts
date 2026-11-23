@@ -129,6 +129,11 @@ describe("liveTreeHtml", () => {
     expect(clawd).toContain("not checked")
     expect(clawd).not.toContain("Nothing running")
   })
+  it("starts done lists folded so working rows on every machine show, and keeps the reader's choice", () => {
+    const fresh = liveTreeHtml(tree, () => "#x", {})
+    expect(fresh).toMatch(/data-lt-key="d:mac">/)
+    expect(liveTreeHtml(tree, () => "#x", { "d:mac": false })).toMatch(/data-lt-key="d:mac" open>/)
+  })
   it("keeps a folded group folded", () => {
     expect(html).toMatch(/data-lt-key="d:mac">/)
     expect(html).toMatch(/data-lt-key="m:mac" open>/)

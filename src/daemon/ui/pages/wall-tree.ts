@@ -233,9 +233,11 @@ export function ltSvg(body: string): string {
   return '<svg class="lt__prov" viewBox="0 0 16 16" aria-hidden="true">' + body + "</svg>"
 }
 
-/** A foldable group; `closed` keys stay folded across snapshots. */
-export function ltFold(key: string, cls: string, head: string, body: string, closed: Record<string, boolean>): string {
-  return '<details class="' + cls + '" data-lt-key="' + ltEsc(key) + '"' + (closed[key] ? "" : " open") + "><summary>" + head + "</summary>" + body + "</details>"
+/** A foldable group; `closed` keeps the reader's choice across snapshots
+ *  (true folded, false open). Unset, it is open unless `startFolded`. */
+export function ltFold(key: string, cls: string, head: string, body: string, closed: Record<string, boolean>, startFolded?: boolean): string {
+  const folded = closed[key] === undefined ? !!startFolded : closed[key]
+  return '<details class="' + cls + '" data-lt-key="' + ltEsc(key) + '"' + (folded ? "" : " open") + "><summary>" + head + "</summary>" + body + "</details>"
 }
 
 export function ltProviderIcon(provider: string): string {
@@ -274,7 +276,7 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
       p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m))).join("") + "</div>").join(""), closed)).join("")
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
       m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m))).join("") +
-      (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed) : ""
+      (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed, true) : ""
     const idle = !m.projects.length && !m.done.length ? '<p class="lt__idle">Nothing running.</p>' : ""
     return ltFold("m:" + m.key, "lt__m", head, projects + done + idle, closed)
   }).join("")

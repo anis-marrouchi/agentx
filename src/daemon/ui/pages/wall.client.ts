@@ -1314,7 +1314,7 @@ ${WALL_JOBLEDGER_SCRIPT}
     var d = ev.target;
     if (!d || !d.matches || !d.matches('#wall-tree details[data-lt-key]')) return;
     var k = d.getAttribute('data-lt-key');
-    if (d.open) delete treeClosed[k]; else treeClosed[k] = true;
+    treeClosed[k] = !d.open;
   }, true);
   // Back on the tab or wide again: follow the stream again (or let it go).
   document.addEventListener('visibilitychange', function () { followLive(S.post ? 'post' : S.page); });
