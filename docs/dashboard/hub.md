@@ -11,7 +11,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
-2. The nav on the left starts with **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
+2. The nav on the left opens with **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
@@ -32,6 +32,26 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    ![The Hub on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
 
 ![Mockup take B (left, post text blurred) next to the Hub as built](/screenshots/wall/compare-desktop.png)
+
+## See the fleet at work in the sidebar
+
+**At work now**, at the top of the nav, shows every agent that is working, on every connected machine, without opening a chat. It changes by itself every 2 seconds.
+
+1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
+2. The tree reads from the top down:
+   - **Machine**, with a number: how many runs are working on it now. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
+   - **Project**: the project or repository of the work. Runs with no project are under **No project**, at the end.
+   - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
+   - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
+3. **Done in the last hour**, under each machine, lists the agents that finished a run in the last hour and run nothing now, each with a green dot and the first line of its last answer.
+4. Select a working row to open that run's Task page, with its conversation and steer box. Select a done row to open that agent's Activity.
+5. Select a machine or a project to fold it. It stays folded while the page is open. **All**, next to **At work now**, opens **Running now** with the ops details.
+
+If your system asks for less motion, the ring does not turn; it stays as a still blue ring.
+
+**Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one. When the run ends, the row moves to **Done in the last hour** with a green dot.
+
+**If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the tree is missing, widen the window: it is hidden under 1181 pixels.
 
 ## Read a post
 
