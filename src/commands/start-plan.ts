@@ -65,6 +65,15 @@ export function chatUrl(cfg: { dashboard?: { bind?: string; port?: number } }, a
   return `${dashboardBaseUrl(cfg)}/admin/agents/${encodeURIComponent(agentId)}#chat`
 }
 
+/** Where `agentx start` opens the browser (#2143): the guided setup page
+ *  on a first run, or while the agent's model account is not connected, so
+ *  a new user is walked to a first answer; else the agent's chat. */
+export function startOpenUrl(
+  cfg: { dashboard?: { bind?: string; port?: number } }, agentId: string, opts: { created: boolean; ready: boolean },
+): string {
+  return opts.created || !opts.ready ? `${dashboardBaseUrl(cfg)}/setup` : chatUrl(cfg, agentId)
+}
+
 /** Whether the daemon that answered /health is this folder's install.
  *  Another AgentX on the same port must not be taken for ours. */
 export function isSameInstall(health: any, cfg: { node?: { id?: string } }): boolean {

@@ -16,7 +16,7 @@ import { openBrowser } from "@/utils/open-browser"
 
 export const setup = new Command()
   .name("setup")
-  .description("open the web setup wizard to create or extend your AgentX install")
+  .description("open the web setup wizard: connect a model account, create the first agent, send it a first task")
   .option("--port <n>", "dashboard port (default: from agentx.json, else 4202)")
   .option("--no-open", "don't try to open the browser")
   .action(async (opts) => {
@@ -26,7 +26,7 @@ export const setup = new Command()
 
     console.log()
     if (state.configExists) {
-      console.log(chalk.dim(`  Found agentx.json — the wizard will extend your current install.`))
+      console.log(chalk.dim(`  Found agentx.json — the wizard checks its model account and sends your agent a first task.`))
     } else {
       console.log(chalk.dim(`  No agentx.json yet — the wizard will create one.`))
     }

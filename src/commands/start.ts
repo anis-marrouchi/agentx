@@ -16,14 +16,15 @@ import { shippedTeam, shippedTeams } from "@/teams/catalog"
 import { cliCommand } from "./demo-startup"
 import { install as installTeam } from "./team"
 import {
-  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent, startTeamPlan,
+  chatUrl, daemonBaseUrl, dashboardBaseUrl, existingConfigPath, firstAgentPayload, isSameInstall, pickAgent, startOpenUrl, startTeamPlan,
 } from "./start-plan"
 
 // --- agentx start: one command to a working agent in the browser (#1163) ---
 //
 // Creates a minimal config with one agent when the folder has none, starts
 // the daemon and the dashboard in the background, and opens the browser on
-// that agent's chat. Safe to run again: an existing config is never
+// that agent's chat, or on the guided setup (/setup) on a first run or while
+// its model is not connected (#2143). Safe to run again: an existing config is never
 // touched, and a daemon or dashboard that already answers is reused.
 // Same detached-spawn approach as `agentx demo` and the wizard's
 // "Start daemon" button; logs go to .agentx/ in this folder.
@@ -128,18 +129,20 @@ export const start = new Command()
       hasBinary: (bin) => Boolean(findBinary(bin)),
       cliLoggedIn,
     })
+    const openUrl = startOpenUrl(cfg, agentId, { created, ready: ready.ready })
     console.log()
-    if (ready.ready) {
-      console.log(chalk.bold(`  Your first agent, ${name}, is answering at ${chalk.cyan(url)}`))
+    if (openUrl !== url) {
+      // The guided setup (#2143): connect the model, then a first task.
+      console.log(chalk.bold(`  Finish in your browser: ${chalk.cyan(openUrl)}`))
+      console.log(`  It connects your model account and sends ${name} a first task.`)
     } else {
-      console.log(chalk.bold(`  Your first agent, ${name}, is waiting for a model at ${chalk.cyan(url)}`))
-      if (ready.hint) console.log(`  ${ready.hint}`)
+      console.log(chalk.bold(`  Your first agent, ${name}, is answering at ${chalk.cyan(url)}`))
     }
     console.log(chalk.dim(`  Run \`${cmd} start\` again any time: it reuses what is running.`))
     const boardPid = join(logDir, "board.pid")
     console.log(chalk.dim(`  Stop the daemon: ${cmd} daemon stop` + (existsSync(boardPid) ? `   ·   the dashboard: kill $(cat .agentx/board.pid)` : "")))
     console.log()
-    if (opts.open !== false) openBrowser(url)
+    if (opts.open !== false) openBrowser(openUrl)
   })
 
 /** The first-run question: one assistant, or a ready-made team as well. */
