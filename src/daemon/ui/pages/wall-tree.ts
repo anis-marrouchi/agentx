@@ -12,8 +12,9 @@
 // a green dot once it is done or idle: every agent of a machine that answers
 // has a row, idle ones folded under "N idle", so the whole fleet can be
 // seen without opening a chat (Anis's scope, Hakim post-merge review of
-// #2138). Order in a machine: working, done in the last hour, idle. A machine that does not answer says "not
-// checked" (C3 of the v4 review): its rows are not shown as idle.
+// #2138). Order in a machine: working, done in the last hour, idle. A
+// machine that does not answer says "not checked" (C3 of the v4 review):
+// its rows are not shown as idle.
 //
 // Reads only what the page already has: the live snapshot (/api/live and
 // /api/live/stream, every 2 s) for the runs, and the Hub posts (requests)

@@ -44,17 +44,15 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
    - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
 3. **Done in the last hour**, under each machine, lists the agents that finished a run in the last hour and run nothing now, each with a green dot and the first line of its last answer.
-   - Every other agent on the machine has an **Idle** row with a green dot, grouped under a folded **N idle** line at the end of the machine. Select the line to unfold it. The order is: working, done in the last hour, idle. A machine with nothing working says **Nothing running.** and still shows its idle group.
-4. Select a working row to open that run's Task page, with its conversation and steer box. Select a done row to open that agent's Activity.
+   - Every other agent on the machine has an **Idle** row with a green dot, grouped under a folded **N idle** line at the end of the machine. Select the line to unfold it. The order is: working, done in the last hour, idle. A machine with nothing working says **Nothing running.** and still shows its idle group; a machine with no agents at all says **No agents.**
+4. Select a working row to open that run's Task page, with its conversation and steer box. Select a done or idle row to open that agent's Activity.
 5. Select a machine or a project to fold it. It stays folded while the page is open, also when the machine's details arrive. **All**, next to **At work now**, opens **Running now** with the ops details.
-
-If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back.
 
 If your system asks for less motion, the ring does not turn; it stays as a still blue ring.
 
 **Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one. When the run ends, the row moves to **Done in the last hour** with a green dot.
 
-**If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the tree is missing, widen the window: it is hidden under 1181 pixels.
+**If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back; if it stays stale longer than that, reload the page. If the tree is missing, widen the window: it is hidden under 1181 pixels.
 
 ## Read a post
 
