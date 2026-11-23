@@ -648,6 +648,8 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     // The hand-off journal is the table (#1861); no file is written (#1961).
     store,
     log: w.log,
+    // A callee's parent link names this machine (#2145).
+    nodeId: w.config.node?.id,
     onStarted: w.onStarted,
     onDone: w.onDone,
     callbackNote: w.callbackNote,

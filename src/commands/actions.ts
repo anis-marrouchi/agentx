@@ -270,7 +270,9 @@ actions
     try {
       const res = await fetch(`${base}/api/actions/builtin/${encodeURIComponent(name)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Inside an agent's run, its task id names the calling run (#2145):
+        // agent.call and mesh.delegate show their callee under it.
+        headers: { "Content-Type": "application/json", ...(process.env.AGENTX_TASK_ID ? { "X-AgentX-Task": process.env.AGENTX_TASK_ID } : {}) },
         body: JSON.stringify(input),
       })
       const body = await res.json().catch(() => ({}))

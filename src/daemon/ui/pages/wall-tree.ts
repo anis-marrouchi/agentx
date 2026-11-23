@@ -36,6 +36,10 @@ export interface LtTask {
   sender?: string
   startedAt?: string
   lastActivity?: string
+  /** The run that started it, and the workers it started (#2145,
+   *  wall-tree-workers.ts). */
+  parent?: { taskId: string; agentId: string; node?: string }
+  workers?: import("./wall-tree-workers").LtWorkerIn[]
 }
 export interface LtAgent {
   id: string
@@ -78,11 +82,16 @@ export interface LtRow {
   state: "working" | "done" | "idle"
   /** The run, for a link to its Task page; none on a done or idle row. */
   task: LtTask | null
+  /** What the run started (ltAddWorkers, #2145). */
+  workers?: import("./wall-tree-workers").LtWorker[]
 }
 export interface LtItem { key: string; label: string; rows: LtRow[] }
 export interface LtProject { key: string; label: string; items: LtItem[] }
 export interface LtMachine {
   key: string
+  /** The node's id (config.node.id), else its URL: what a run's parent
+   *  link names (wall-tree-workers.ts, #2145). `key` is URL first. */
+  id: string
   name: string
   url: string
   /** up, checking (slow, asked again) or silent (does not answer: "not checked"). */
@@ -200,7 +209,7 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     const m: LtMachine = {
       // The URL first: a node still being asked has its URL as id, and its
       // real id once it answers, so an id key would reopen a folded machine.
-      key: String(n.url || n.id || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
+      key: String(n.url || n.id || n.name), id: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
       state: n.checking ? "checking" : silent ? "silent" : "up", error: String(n.error || ""),
       working: 0, projects: [], done: [], idle: [],
     }
@@ -279,8 +288,9 @@ export function ltRowHtml(r: LtRow, href: string): string {
 }
 
 /** The whole tree. `hrefOf(row, machine)` links a row; `closed` holds the
- *  keys of folded groups, so a fold survives the next snapshot. */
-export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMachine) => string, closed: Record<string, boolean>): string {
+ *  keys of folded groups, so a fold survives the next snapshot; `under(row,
+ *  machine)`, when given, draws what goes under a row (its workers, #2145). */
+export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMachine) => string, closed: Record<string, boolean>, under?: (r: LtRow, m: LtMachine) => string): string {
   if (!machines.length) return '<p class="lt__empty">Loading the machines…</p>'
   return machines.map((m) => {
     const badge = m.state === "silent" ? '<span class="lt__badge is-silent" title="' + ltEsc(m.error || "does not answer") + '">not checked</span>'
@@ -291,7 +301,7 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
       return ltFold("m:" + m.key, "lt__m", head, '<p class="lt__idle">' + (m.state === "silent" ? "Does not answer, so its agents are not shown." : "Slow to answer; asking again.") + "</p>", closed)
     }
     const projects = m.projects.map((p) => ltFold("p:" + m.key + "|" + p.key, "lt__p", '<span class="lt__proj">' + ltEsc(p.label) + "</span>",
-      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m))).join("") + "</div>").join(""), closed)).join("")
+      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m)) + (under ? under(r, m) : "")).join("") + "</div>").join(""), closed)).join("")
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
       m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m))).join("") +
       (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed, true) : ""

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { getMesh } from "@/a2a/mesh-instance"
 import type { BuiltinAction } from "./types"
+import { parentRunSchema } from "./parent-run"
 
 // --- mesh.delegate ---
 //
@@ -37,6 +38,9 @@ const meshDelegateInput = z.object({
    *  benchmark finding). Pass `false` only when you genuinely want
    *  the worker to keep state across delegations. */
   freshSession: z.boolean().default(true),
+  /** The run that makes the call (#2145). Set by the daemon route from the
+   *  caller's proven turn; the peer's run shows under it on the Hub. */
+  parentRun: parentRunSchema.optional(),
 })
 type MeshDelegateInput = z.infer<typeof meshDelegateInput>
 
@@ -64,6 +68,7 @@ export const meshDelegate: BuiltinAction<MeshDelegateInput, MeshDelegateOutput> 
       timeoutMs: input.timeoutMs,
       senderAgentId: input.senderAgentId,
       freshSession: input.freshSession,
+      ...(input.parentRun ? { context: { parentRun: input.parentRun } } : {}),
     })
     return {
       peer: input.peer,

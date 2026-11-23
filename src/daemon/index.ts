@@ -331,6 +331,8 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { contextWithSendDepth, isDelegationRelay, UNNAMED_CALLER, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
+import { RECENT_RUNS_CAP, RecentRuns, withWorkers } from "@/agents/run-workers"
+import { PARENT_RUN_BUILTINS, withParentRun } from "@/actions/builtin/parent-run"
 import { acceptedBody, agentCallerOf, ignoredFlags, noneBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshDeliverJoined, meshTaskMode, replyBody, resolveCallerTurn, startMeshDeliver, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -442,6 +444,16 @@ export class AgentXDaemon {
   private workflowStore?: WorkflowStore
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
+  /** Recent workflow runs for the workers under each run on GET /agents
+   *  (#2145), read at most every 10 s. The full open-runs read (every run
+   *  file) runs once in the background, started when the store exists, in
+   *  batches that yield; later reads list only the files changed since and
+   *  re-read the open runs by id. */
+  private recentRuns = new RecentRuns(
+    (since) => this.workflowRuns?.list({ since, limit: RECENT_RUNS_CAP }) ?? [],
+    async () => (this.workflowRuns ? this.workflowRuns.listOpenYielding() : null),
+    (id) => this.workflowRuns?.get(id) ?? null,
+  )
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
   /** Shares the daemon's SQLite handle; absent when running without one. */
   private _assistant?: AssistantStore
@@ -4821,6 +4833,9 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // #2145: read every open run for the Hub's workers now, in the
+    // background, not inside the first GET /agents.
+    void this.recentRuns.start()
     // S14 (#1892 phase 4): open talks with closing steps get a missing
     // expiry run back. Does nothing unless situations.closing.enabled.
     void this.situationRuns?.resumeOnStart()
@@ -6448,7 +6463,7 @@ export class AgentXDaemon {
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => {
             const t = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
-            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy), ...(t.workflowRunId ? { workflowRunId: t.workflowRunId } : {}) } : null
+            return t ? { ...warmProcessChat(t.context), taskId: t.taskId, restricted: isRestricted(t.autonomy), ...(t.workflowRunId ? { workflowRunId: t.workflowRunId } : {}) } : null
           },
           ownsRequest: (requestId, agentId) => {
             const r = this.requests?.store.get(requestId)
@@ -7871,7 +7886,11 @@ export class AgentXDaemon {
         if (!getBuiltin(name)) { this.json(res, 404, { error: `unknown built-in: ${name}` }); return }
         if (getBuiltin(name)?.onlyIn) { this.json(res, 403, { error: `built-in ${name} runs only as a step of ${getBuiltin(name)!.onlyIn!.join(", ")}` }); return }
         try {
-          const body = await readJsonBody(req)
+          const raw = await readJsonBody(req)
+          // agent.call / mesh.delegate (#2145): the callee's run names the
+          // proven calling run as its parent, for the Hub.
+          const caller = PARENT_RUN_BUILTINS.has(name) && raw && typeof raw === "object" ? resolveCallerTurn(callerHintFrom(req, raw as Record<string, unknown>), this.registry) : null
+          const body = withParentRun(name, raw, caller, this.config.node.id)
           const output = await runBuiltin(name, body)
           this.json(res, 200, { output })
         } catch (e: any) {
@@ -8205,7 +8224,8 @@ export class AgentXDaemon {
           break
 
         case "GET /agents":
-          this.json(res, 200, this.registry.list().map(agent => ({
+          // Each running task carries the workers it started (#2145).
+          this.json(res, 200, withWorkers(this.registry.list(), this.delegations?.handoffsByRun() ?? [], this.recentRuns.get()).map(agent => ({
             ...agent,
             skillCount: listAgentFiles(agent.workspace).skills.length,
             // The agent's colour on screen: presence.color, else the one

@@ -613,6 +613,9 @@ export const runMetaSchema = z.object({
   tags: z.array(z.string()).default([]),
   /** The agent that started it. */
   startedBy: z.string().optional(),
+  /** The agent run (running task id) that started it (#2145): the Hub
+   *  lists the run under that run. */
+  startedByRun: z.string().optional(),
   /** The open request (src/requests) this run serves. */
   requestId: z.string().optional(),
   /** Followed: nudges, reminders, a blocked notice and one summary at

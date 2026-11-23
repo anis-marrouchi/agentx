@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { getAgentRegistry } from "@/agents/registry-instance"
 import type { BuiltinAction } from "./types"
+import { parentRunSchema } from "./parent-run"
 
 // --- agent.call ---
 //
@@ -47,6 +48,9 @@ const agentCallInput = z.object({
   /** Per-call timeout. Default 90s — long enough for most agent
    *  reasoning; capped at 10min. */
   timeoutMs: z.number().int().min(1).max(600_000).default(90_000),
+  /** The run that makes the call (#2145). Set by the daemon route from the
+   *  caller's proven turn, never by the caller; shown on the Hub. */
+  parentRun: parentRunSchema.optional(),
 })
 type AgentCallInput = z.infer<typeof agentCallInput>
 
@@ -96,6 +100,7 @@ export const agentCall: BuiltinAction<AgentCallInput, AgentCallOutput> = {
       context: {
         channel: input.channel,
         chatId,
+        ...(input.parentRun ? { parentRun: input.parentRun } : {}),
       },
     })
     return {

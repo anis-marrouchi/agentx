@@ -129,6 +129,7 @@ import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, requestedPriorityOf, type A
 import { waitRefusalText } from "@/admission/wait-notice"
 import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
+import { parentRunOf } from "./run-workers"
 
 /** Channels that never have an outbound adapter: a queued reply on them
  *  stays on its task, so skipping the post is expected and not logged. */
@@ -220,6 +221,13 @@ export interface RunningTask {
    *  call, a result or a line of its reply. Filled in when the agent list
    *  is read, never stored. */
   lastActivity?: string
+  /** The run that started this one, when a caller named it (#2145): an
+   *  agent's hand-off, agent.call or mesh.delegate. Shown on the Hub under
+   *  that run; never used for access. */
+  parent?: import("./run-workers").RunParent
+  /** The workers this run started (#2145). Filled in by GET /agents,
+   *  never stored. */
+  workers?: import("./run-workers").RunWorker[]
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -2456,6 +2464,7 @@ export class AgentRegistry {
       startedAt: new Date(),
       ...(task.autonomy ? { autonomy: task.autonomy } : {}),
       ...(task.workflowRunId ? { workflow: { runId: task.workflowRunId } } : {}),
+      ...(parentRunOf(task.context) ? { parent: parentRunOf(task.context) } : {}),
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
