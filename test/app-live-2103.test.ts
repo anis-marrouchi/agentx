@@ -321,7 +321,7 @@ describe("PhoneStreamTrimmer", () => {
   // #2137 review B2: an error marker glued to text with no newline.
   it("an [error] chunk right after text: the run fails and the error text is dropped", () => {
     const t = new PhoneStreamTrimmer()
-    const evs = [...t.feed("…working on it"), ...t.feed("[error] API key invalid\n")]
+    const evs = [...t.feed("…working on it"), ...t.feed("\n[error] API key invalid\n")]
     expect(JSON.stringify(evs)).not.toContain("API key")
     expect(t.text()).not.toContain("API key")
     expect(t.failed).toBe(true)
@@ -390,6 +390,42 @@ describe("PhoneStreamTrimmer", () => {
     expect(buffer).toContain("\n💭 so I will use hunter2\n")
     // Closing a thought the error line already ended adds no blank line.
     expect(buffer).not.toContain("\n\n")
+  })
+
+  // #2137 review B2 (Hakim on #2148, bc8fce47): a text delta that starts
+  // like a marker is answer text, not a dropped segment.
+  it("a text chunk that starts with '. ', '· ' or '→ ' after text stays in the answer", () => {
+    for (const next of [". Next I will check the logs.", "· then the list", "→ the result"]) {
+      const t = new PhoneStreamTrimmer()
+      t.feed("First step done")
+      t.feed(next)
+      t.feed(" And the end.")
+      expect(t.final()).toBe(`First step done${next} And the end.`)
+    }
+  })
+
+  it("a thought split over two chunks stays off the phone", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [...t.feed("💭 a"), ...t.feed(" b"), ...t.feed("\n"), ...t.feed("Answer.")]
+    expect(evs).toEqual([{ event: "text", data: { text: "Answer." } }])
+  })
+
+  // #2137 review B1 (Hakim on #2148, bc8fce47): on an opencode-tier agent
+  // text deltas go into the buffer without the formatter, so the newline
+  // before an [error] line comes from the buffer.
+  it("opencode tier: a text delta, then an error event, fails the run and keeps the error off the phone", () => {
+    let buffer = ""
+    const t = new PhoneStreamTrimmer()
+    const evs: ReturnType<PhoneStreamTrimmer["feed"]> = []
+    const push = (chunk: string) => { buffer += chunk; evs.push(...t.feed(chunk)) }
+    const f = makeStreamEventFormatter(() => !buffer || buffer.endsWith("\n"))
+    push(f({ type: "opencode.ready", reused: false, startupMs: 5 }))
+    push("working on it") // wrappedOnDelta: straight into the buffer
+    push(f({ type: "error", message: "API key invalid" }))
+    expect(buffer).toContain("working on it\n[error] API key invalid\n")
+    expect(t.failed).toBe(true)
+    expect(JSON.stringify(evs)).not.toContain("API key")
+    expect(t.final()).toBe("working on it")
   })
 
   it("a full start buffer that begins inside a thought shows none of it", () => {

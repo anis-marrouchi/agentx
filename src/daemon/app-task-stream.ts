@@ -76,6 +76,8 @@ export class PhoneStreamTrimmer {
   private lastStep = ""
   /** The last chunk ended inside a dropped segment, with no newline yet. */
   private dropping = false
+  /** The last chunk ended with a newline (or nothing came yet). */
+  private lineStart = true
   failed = false
 
   /** One upstream chunk in, phone events out. `glued` is for the start
@@ -87,17 +89,24 @@ export class PhoneStreamTrimmer {
     const parts = chunk.split(SEGMENT_START)
     for (let k = 0; k < parts.length; k++) {
       let seg = parts[k]
-      if (k === 0 && this.dropping && !STARTS_WITH_MARKER.test(seg)) {
+      if (k === 0 && this.dropping) {
         // The chunk goes on with the segment the last chunk dropped: still
-        // dropped up to its first newline.
+        // dropped up to its first newline, marker look-alikes included.
         const nl = seg.indexOf("\n")
         if (nl === -1) continue
         seg = seg.slice(nl + 1)
       }
       if (!seg) continue
+      // A chunk that goes on with the line before it starts with a marker
+      // only if that is a thought: a text delta like ". Next I will…" is
+      // answer text (#2137 review B2, Hakim on #2148). The daemon writes a
+      // newline before every marker line; `💭 ` stays for older daemons, as
+      // no answer chunk starts with it.
+      const midLine = k === 0 && !this.lineStart && !lastDropped
+      const startsWithMarker = midLine ? seg.startsWith("💭 ") : STARTS_WITH_MARKER.test(seg)
       // Text, up to a marker glued to it (start buffer only; none if the
       // segment starts with one).
-      const at = STARTS_WITH_MARKER.test(seg) ? 0 : glued ? seg.search(GLUED_MARKER) : -1
+      const at = startsWithMarker ? 0 : glued ? seg.search(GLUED_MARKER) : -1
       const text = at === -1 ? seg : seg.slice(0, at)
       if (text) {
         this.current += text
@@ -111,6 +120,7 @@ export class PhoneStreamTrimmer {
     // Still inside a dropped segment if the chunk ended in one, before its
     // newline.
     this.dropping = lastDropped && !chunk.endsWith("\n")
+    if (chunk) this.lineStart = chunk.endsWith("\n")
     if (textChanged && this.text()) out.push({ event: "text", data: { text: this.text() } })
     return out
   }
@@ -139,7 +149,7 @@ export class PhoneStreamTrimmer {
   feedStart(initial: string): PhoneEvent[] {
     if (initial.length < NODE_BUFFER_MAX) return this.feed(initial, true)
     const at = initial.search(SEGMENT_START)
-    if (at === -1) this.dropping = true
+    if (at === -1) { this.dropping = true; this.lineStart = initial.endsWith("\n") }
     return this.feed(at === -1 ? "" : initial.slice(at), true)
   }
 

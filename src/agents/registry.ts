@@ -620,8 +620,12 @@ export function makeBufferThinkingWriter(
   }
 }
 
-/** Exported for tests (test/app-live-2103.test.ts). */
-export function makeStreamEventFormatter(): (event: any) => string {
+/** Exported for tests (test/app-live-2103.test.ts). `atLineStart` reads
+ *  the task buffer: on tiers other than claude-code, text deltas go into
+ *  the buffer without passing through this formatter, so only the buffer
+ *  knows whether a marker needs a newline first (#2137 review B1, Hakim on
+ *  #2148). Without it, the formatter goes by what it wrote last. */
+export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: any) => string {
   let textSeen = ""
   let codexTextSeen = ""
   // A text delta ends with no newline, so a marker line that follows it
@@ -629,7 +633,7 @@ export function makeStreamEventFormatter(): (event: any) => string {
   // glued to the answer would read as answer text (#2137 review, Hakim on
   // #2148).
   let lineStart = true
-  const line = (s: string): string => (lineStart ? s : `\n${s}`)
+  const line = (s: string): string => ((atLineStart ? atLineStart() : lineStart) ? s : `\n${s}`)
   const format = (event: any): string => {
     if (!event || typeof event !== "object") return ""
     const t = event.type
@@ -2555,7 +2559,7 @@ export class AgentRegistry {
       // Caller's onDelta still fires only for assistant text (unchanged).
       // Dashboard subscribers see the formatted stream-json firehose via onEvent
       // — this is what makes the modal feel like a live terminal.
-      const formatter = makeStreamEventFormatter()
+      const formatter = makeStreamEventFormatter(() => !output.buffer || output.buffer.endsWith("\n"))
       onEvent = (event: any) => {
         noteFirstEvent()
         const formatted = formatter(event)
