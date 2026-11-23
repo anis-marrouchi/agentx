@@ -369,6 +369,18 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__row.is-done .lt__title { color: var(--ax-text-2); }
 .lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
 .lt__more:hover { color: var(--ax-accent); }
+/* The workers a run started (#2145), indented under its row: a small
+   ring while working, a green dot done, red failed, amber waiting. */
+.lt__ws { margin: 0 0 2px 19px; padding-left: 6px; border-left: 1px dashed var(--ax-border); }
+.lt__wk { display: flex; align-items: flex-start; gap: 6px; padding: 2px 6px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); text-decoration: none; min-width: 0; }
+a.lt__wk:hover { background: var(--ax-surface-3); }
+.lt__wk:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
+.lt__wk .lt__title { font-size: 12px; }
+.lt__wm { flex: none; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; box-sizing: border-box; }
+.lt__wm.is-working { border: 1.5px solid color-mix(in srgb, var(--ax-accent) 25%, transparent); border-top-color: var(--ax-accent); animation: lt-spin .8s linear infinite; width: 8px; height: 8px; }
+.lt__wm.is-done { background: var(--ax-green); }
+.lt__wm.is-failed { background: var(--ax-red); }
+.lt__wm.is-waiting { background: var(--ax-amber); }
 /* Working: a turning ring. Done: a green dot. */
 .lt__spin, .lt__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; }
 .lt__spin { border: 2px solid color-mix(in srgb, var(--ax-accent) 25%, transparent); border-top-color: var(--ax-accent); animation: lt-spin .8s linear infinite; box-sizing: border-box; }
@@ -376,7 +388,7 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 @keyframes lt-spin { to { transform: rotate(360deg); } }
 /* Reduced motion: the ring stops turning and stays still (no movement). */
 @media (prefers-reduced-motion: reduce) {
-  .lt__spin { animation: none; border-color: var(--ax-accent); border-right-color: transparent; }
+  .lt__spin, .lt__wm.is-working { animation: none; border-color: var(--ax-accent); border-right-color: transparent; }
   .lt details > summary::before { transition: none; }
 }
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }

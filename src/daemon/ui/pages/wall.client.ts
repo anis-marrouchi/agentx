@@ -86,6 +86,7 @@ import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
+import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -102,7 +103,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
-  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml })}
+  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
@@ -1313,13 +1314,24 @@ ${WALL_JOBLEDGER_SCRIPT}
       if (n.url && n.name && n.name !== n.url) treeNames[n.url] = n.name;
       return n.url && (!n.name || n.name === n.url) && treeNames[n.url] ? Object.assign({}, n, { name: treeNames[n.url] }) : n;
     });
+    var now = Date.now();
     var html = !live.length && S.liveError ? '<p class="lt__empty">Could not reach the machines just now; trying again.</p>'
-      : liveTreeHtml(liveTreeModel(live, (S.data && S.data.posts) || [], Date.now()), function (r, m) {
+      : liveTreeHtml(ltAddWorkers(liveTreeModel(live, (S.data && S.data.posts) || [], now), live, now, function (t) { return ltTitle(t, null); }), function (r, m) {
         return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
-      }, treeClosed);
+      }, treeClosed, function (r, m) {
+        // The workers the run started (#2145), each opening its chat.
+        return ltWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge);
+      });
     if (html === treeLast) return;
     treeLast = html;
     el.innerHTML = html;
+  }
+  /** A worker's link (#2145): its run's Task page (its chat) when its run
+   *  is known, else its workflow, else its agent's activity. */
+  function workerHref(w, m) {
+    if (w.task && w.agentId) return wallTaskHref(w.task, w.agentId, w.nodeUrl || m.url, w.state !== 'working');
+    if (w.workflowId) return '#page=workflows&w-open=' + encodeURIComponent(w.workflowId);
+    return w.agentId ? activityHref(w.agentId) : '';
   }
   document.addEventListener('toggle', function (ev) {
     var d = ev.target;
