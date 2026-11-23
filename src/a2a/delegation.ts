@@ -214,6 +214,9 @@ export interface DelegationDeps {
   ): Promise<string>
   /** Stop a local callee run that went past the timeout. */
   cancelLocal?(runId: string, reason: string): void
+  /** This node's id (config.node.id), put on a callee's parent link so a
+   *  peer's run names the machine its parent runs on (#2145). */
+  nodeId?: string
   /** Run one turn for the caller (registry.execute). */
   injectTurn(turn: InjectedTurn): Promise<{ content: string; error?: string }>
   /** True while the caller is mid-turn on this chat. */
@@ -551,7 +554,7 @@ function sameTextPattern(key: string): string {
 
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
-  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin; depth?: number }> = []
+  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin; depth?: number; callerRun?: string; calleeRun?: string; request?: string }> = []
   /** One callback at a time per caller chat, in completion order. */
   private chains = new Map<string, Promise<void>>()
   /** Per caller chat, the answers waiting for a callback that has not
@@ -831,7 +834,9 @@ export class DelegationManager {
     const label = senderLabelOf(record.caller, { sender: root?.sender })
     const depth = record.depth ?? 0
     this.pendingById.set(id, record)
-    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
+    // The asking run (#2145): the Hub lists this hand-off under it.
+    const callerRun = opts.caller.taskId
+    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}), ...(callerRun ? { callerRun, request: clip(opts.message, 160) } : {}) })
     // A deliver row is not an open request's hand-off nor a job: nobody
     // waits on it in a turn, so the request and job listeners stay out.
     // A none row has no caller turn either (#2007 piece 2).
@@ -850,6 +855,9 @@ export class DelegationManager {
       // The callee's own sends count on from here (MAX_SEND_DEPTH).
       ...(record.kind === "send" ? { sendDepth: depth + 1 } : {}),
       ...(home ? { home } : {}),
+      // The run that asked (#2145), so the callee's run, here or on a
+      // peer, shows under it on the Hub. Display only.
+      ...(callerRun && record.caller !== UNNAMED_CALLER ? { parentRun: { taskId: callerRun, agentId: record.caller, ...(this.deps.nodeId ? { node: this.deps.nodeId } : {}) } } : {}),
     }
     const who = record.peer ? `${record.callee}@${record.peer}` : record.callee
     const wayHome = record.wayHome === "none" ? "no callback; read it by id" : `${record.wayHome ?? "callback"} to ${origin.channel}:${origin.chatId}`
@@ -956,7 +964,11 @@ export class DelegationManager {
       try {
         started = this.deps.runLocal(record.callee, opts.message, calleeContext, {
           timeoutMs,
-          onStart: (runId) => { this.localRuns.set(id, runId) },
+          onStart: (runId) => {
+            this.localRuns.set(id, runId)
+            const entry = this.recent.find((r) => r.id === id)
+            if (entry) entry.calleeRun = runId
+          },
           extras: opts.extras,
           ...(resumeFrom?.length ? { resumeFrom, ...(useTopic ? { topic: true as const } : {}) } : {}),
           ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
@@ -1229,6 +1241,13 @@ export class DelegationManager {
       startedAt: new Date(r.startedAt).toISOString(),
       ...(r.endedAt ? { endedAt: new Date(r.endedAt).toISOString() } : {}),
     }))
+  }
+
+  /** This process's recent hand-offs with the run that asked each one
+   *  (#2145): the Hub shows them under that run. In memory: a restart
+   *  ends the asking runs too. */
+  handoffsByRun(): Array<{ id: string; callee: string; peer?: string; status: string; startedAt: number; endedAt?: number; callerRun?: string; calleeRun?: string; request?: string }> {
+    return this.recent.filter((r) => !!r.callerRun)
   }
 
   isPending(id: string): boolean {

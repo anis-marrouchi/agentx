@@ -2085,6 +2085,10 @@ interface NodeLive {
       sender?: string
       startedAt: string
       lastActivity?: string
+      /** The run that started it, and the workers it started (#2145):
+       *  passed through from the node's GET /agents for the live tree. */
+      parent?: import("@/agents/run-workers").RunParent
+      workers?: import("@/agents/run-workers").RunWorker[]
     }>
   }>
   /** Today's per-agent usage rollup pulled from /health. */

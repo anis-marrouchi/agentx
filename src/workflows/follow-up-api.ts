@@ -41,7 +41,7 @@ export interface FollowUpApiDeps {
   hasAgent: (agentId: string) => boolean
   /** The channel and chat of the running turn of `agentId` the call
    *  proves (requests/daemon-api CallerProof), or null. */
-  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string; restricted?: boolean; workflowRunId?: string } | null
+  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string; restricted?: boolean; workflowRunId?: string; taskId?: string } | null
   /** The store wrapped tasks keep their run in (#858). Without it, plan
    *  and step are refused. */
   taskRuns?: RunStore
@@ -229,7 +229,7 @@ export async function handleFollowUpApi(
   const res = await deps.dispatcher.startRun({
     workflowId: wf.id,
     inputs: { ...inputs, requestedBy: agentId, channel: turn.channel, chatId: turn.chatId },
-    meta: { title: title || wf.title, tags, startedBy: agentId, ...(requestId ? { requestId } : {}) },
+    meta: { title: title || wf.title, tags, startedBy: agentId, ...(turn.taskId ? { startedByRun: turn.taskId } : {}), ...(requestId ? { requestId } : {}) },
   })
   if (!res.run) return { status: 400, body: { error: res.error ?? "could not start" } }
   if (requestId) deps.linkRequest?.(requestId, res.run.id)
