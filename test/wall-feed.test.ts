@@ -1734,8 +1734,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(w.el("wall-decide").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
     const html = w.el("wall-decide").innerHTML
-    expect(html).toContain("1 waiting for you")
-    expect(html).toContain("Same count as the Desk and the digest")
+    expect(html).toContain('<p class="ax-wall__count wdc__head"><strong>1 waiting for you</strong></p>')
     expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">1<\/span>[\s\S]*data-dtab="later"[^>]*>Put off<[\s\S]*data-dtab="answered"[^>]*>Answered</)
     expect(html).toContain('data-dkind="" class="wdc__chip is-on" aria-pressed="true">All <span class="n">1</span>')
     for (const chip of ["Decisions <span class=\"n\">1", "Schedules <span class=\"n\">0", "Memory", "Wiki", "Drafts", "Requests", "Reviews <span class=\"n\">0"]) expect(html).toContain(chip)

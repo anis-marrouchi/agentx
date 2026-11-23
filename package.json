@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "src/web/task-conversation/elements/LICENSE.affectui",
     "scripts/postinstall.mjs",
     "agentx.example.json",
     "apps/mac-voice/Sources",

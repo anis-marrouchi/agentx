@@ -5,6 +5,7 @@ import { Conversation } from "./elements/Conversation"
 import { Message } from "./elements/Message"
 import { Response } from "./elements/Response"
 import { Tool } from "./elements/Tool"
+import { ThinkingLoader } from "./elements/ThinkingLoader"
 import { Reasoning } from "./elements/Reasoning"
 
 // --- The Task page's conversation, as a React island (#2101 R16) ---
@@ -46,7 +47,7 @@ function Parts({ parts, live }: { parts: Part[]; live: boolean }) {
           case "system": return <div key={i} className="axc-system">{p.text}</div>
         }
       })}
-      {live && parts.length === 0 ? <div className="axc-system">Waiting for the first words…</div> : null}
+      {live && parts.length === 0 ? <ThinkingLoader /> : null}
     </Message>
   )
 }
