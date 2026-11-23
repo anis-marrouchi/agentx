@@ -3098,7 +3098,11 @@ function finishAlertDeps(config: DaemonConfig, url: string, token: string | unde
           headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           // First line is the title (splitTitle in channels/ntfy.ts); the
           // one button's link is where a tap on the notification lands.
-          body: JSON.stringify({ channel: "push", chatId: p.deviceId, text: `${p.title}\n${p.body}`, buttons: [{ label: "Open", url: p.url }] }),
+          // "Reply by voice" opens the same chat with the mic ready (#2103).
+          body: JSON.stringify({
+            channel: "push", chatId: p.deviceId, text: `${p.title}\n${p.body}`, buttons: [{ label: "Open", url: p.url }],
+            pushKind: "finish", voiceReply: `${p.url}&voice=1`,
+          }),
           signal: AbortSignal.timeout(10_000),
         })
         if (!r.ok) console.error(`[app] finish notification not sent: HTTP ${r.status} ${(await r.text()).slice(0, 160)}`)

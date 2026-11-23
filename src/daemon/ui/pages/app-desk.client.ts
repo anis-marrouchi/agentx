@@ -59,7 +59,7 @@ export const APP_DESK_SCRIPT = `
   }
   function card(c, k, openKeys) {
     var key = c.node + '|' + c.key;
-    return '<article class="fx-card"><div class="fx-row"><h4>' + esc(c.title) + '</h4>' + pill(c) + '</div>' +
+    return '<article class="fx-card" data-card="' + k + '"><div class="fx-row"><h4>' + esc(c.title) + '</h4>' + pill(c) + '</div>' +
       (c.ask ? '<p>' + esc(c.ask) + '</p>' : '') +
       (c.need && !c.ask ? '<p class="fx-muted">Needed from you: ' + esc(c.need) + '</p>' : '') +
       (c.said ? '<details data-key="' + esc(key + '|said') + '"' + (openKeys[key + '|said'] ? ' open' : '') + '><summary>You said</summary><p class="fx-muted" dir="auto">' + esc(c.said) + '</p></details>' : '') +
@@ -108,8 +108,8 @@ export const APP_DESK_SCRIPT = `
       },
       done: function () { return v === 'later' ? 'Put off: ' + c.title + '.' : 'Answered ' + (pick ? '' : word + ': ') + c.title + '.'; } });
   }
-  function reply(c) {
-    ax.ask({ panel: panel, refresh: refresh, input: true, ok: 'Send',
+  function reply(c, voice) {
+    ax.ask({ panel: panel, refresh: refresh, input: true, ok: 'Send', mic: true, voice: !!voice,
       title: (c.column === 'yours' ? 'Answer ' : 'Write to ') + (c.agent || 'the agent'),
       text: c.ask || c.title,
       path: '/api/app/desk/reply',
@@ -134,15 +134,48 @@ export const APP_DESK_SCRIPT = `
     if (loading || ax.open() || panel.hidden || document.visibilityState !== 'visible') return;
     if (document.querySelector('main.sw-on')) { clearTimeout(again); again = setTimeout(refresh, 300); return; }
     loading = true;
-    ax.api('GET', '/api/app/desk').then(render)
+    ax.api('GET', '/api/app/desk').then(render).then(openWanted)
       .catch(function (e) { ax.flash(panel, 'Could not load the desk: ' + e.message, true); })
       .then(function () { loading = false; });
   }
+
+  // A notification opens /app#desk=<key>, with &voice=1 from "Reply by
+  // voice" (#2103): that card, in its column, and its answer box with the
+  // mic ready. Read once, then the hash goes back to #desk.
+  var wanted = null;
+  function fromHash() {
+    var t = parseOpenHash(location.hash);
+    if (!t || t.tab !== 'desk') return;
+    wanted = t;
+    try { history.replaceState(null, '', '#desk'); } catch (e) {}
+    // A load already on its way opens it when it lands.
+    refresh();
+  }
+  function openWanted() {
+    var t = wanted;
+    if (!t || !panel._data) return;
+    wanted = null;
+    var k = -1;
+    panel._data.cards.forEach(function (c, n) { if (k < 0 && c.key === t.id && (c.can.reply || !t.voice)) k = n; });
+    if (k < 0) panel._data.cards.forEach(function (c, n) { if (k < 0 && c.key === t.id) k = n; });
+    if (k < 0) { ax.flash(panel, 'That item is no longer waiting for you.', false); return; }
+    var c = panel._data.cards[k];
+    if (c.column !== col) { col = c.column; render(panel._data); }
+    var art = panel.querySelector('article[data-card="' + k + '"]');
+    if (art) { art.scrollIntoView({ block: 'center' }); art.classList.add('dk-wanted'); }
+    if (!t.voice) return;
+    // Written answers go only to this node's requests: a card from another
+    // node keeps its own buttons and says where to write.
+    if (c.can.reply) reply(c, true);
+    else ax.flash(panel, c.can.answer ? 'Answer this card with its buttons. Written answers for it go on ' + (c.nodeName || 'its computer') + '.' : 'This item takes no written answer here.', false);
+  }
+  window.addEventListener('hashchange', fromHash);
   if (!panel.querySelector('.fx-status')) panel.insertAdjacentHTML('beforeend', '<p class="fx-status" role="status" aria-live="polite"></p>');
   document.addEventListener('ax-tab', function () { setTimeout(refresh, 0); });
   document.addEventListener('visibilitychange', refresh);
   window.addEventListener('online', refresh);
   setInterval(refresh, 15000);
-  refresh();
+  if (parseOpenHash(location.hash)) fromHash();
+  else refresh();
 })();
 `

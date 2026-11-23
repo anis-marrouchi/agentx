@@ -196,7 +196,7 @@ import { retireStatusTables } from "@/requests/status-retire"
 import { popNext } from "@/approvals/popup-runner"
 import { HUB_NEEDS_YOU } from "./ui/hub-name"
 import { readOwnerList } from "@/desk/owner-list"
-import { deskNotice, deskRouting, reaches, routeDesk, type DeskRouting } from "@/desk/route"
+import { deskNotice, deskPushTarget, deskRouting, reaches, routeDesk, type DeskRouting } from "@/desk/route"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { loadNativeAdapter } from "@/native"
 import { handleNoteRequest, noteCaller, type NoteReply } from "@/native/notes-api"
@@ -286,7 +286,7 @@ import { handleFloor, isFloorPath } from "@/daemon/voice-floor-api"
 import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
-import { callAppPath, type CallRing } from "@/channels/types"
+import { callAppPath, type CallRing, type OutgoingMessage } from "@/channels/types"
 import { phonePublicUrl } from "@/notify/phone-link"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
@@ -344,6 +344,7 @@ import { TRACKER_WEBHOOK_PATHS, handleTrackerWebhook, trackerClients } from "@/t
 import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
+import { channelPushKind, isPushHeldBySetting } from "@/channels/push"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -3034,9 +3035,12 @@ export class AgentXDaemon {
         const { title, message } = deskNotice(item)
         // Not an urgent tell: an item that expires within a day is no reason
         // to break Focus or skip the repeat check. Higher priority only.
+        // On the phone (#2103): only phones with "decision" on, a tap
+        // opens this card on the Desk, and a written answer can be spoken.
         await this.tellOwner({
           title, message, from: item.agent ?? "desk", priority: urgent ? 5 : 4,
           key: item.key, ...(item.kind === "request" ? { requestId: item.key.slice("request:".length) } : {}),
+          ...deskPushTarget(item),
         }, { soft: true, localAlert: false })
       },
       ...(alert ? {
@@ -3773,7 +3777,12 @@ export class AgentXDaemon {
    *  reached the owner (the send failed and there is no banner), unless
    *  `soft`: then the failure is only logged. */
   private async tellOwner(
-    input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string; ring?: CallRing } & TellMeta,
+    input: {
+      title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string; ring?: CallRing
+      /** For the phone (#2103): the kind its switch filters, what a tap
+       *  opens, and the "Reply by voice" path. Other channels ignore them. */
+      pushKind?: OutgoingMessage["pushKind"]; open?: string; voiceReply?: string
+    } & TellMeta,
     opts: { soft?: boolean; localAlert?: boolean } = {},
   ): Promise<"sent" | "held" | "repeat" | "digest"> {
     // An urgent item goes where the owner was last seen (#1138 step B).
@@ -3792,6 +3801,7 @@ export class AgentXDaemon {
       }
       row = d.rowId
     }
+    let heldByPhone = false
     const res = await notify({ title: input.title, message: input.message, from: input.from, priority: input.priority ?? 4, urgent: input.urgent, channel, chatId }, async (m) => {
       try {
         await this.router.sendOutbound({
@@ -3804,16 +3814,26 @@ export class AgentXDaemon {
           // A call on the phone (#1605); a channel that has no call shape
           // sends it as a plain notice.
           ...(input.ring ? { ring: input.ring } : {}),
+          ...(input.pushKind ? { pushKind: input.pushKind } : {}),
+          ...(input.open ? { open: input.open } : {}),
+          ...(input.voiceReply ? { voiceReply: input.voiceReply } : {}),
         } as any)
       } catch (e: any) {
+        // Every phone has this kind turned off (#2103): the owner's own
+        // choice, so held, not failed, and no other channel is tried.
+        if (isPushHeldBySetting(e)) {
+          heldByPhone = true
+          this.log(`[told] held by phone setting: ${input.title.slice(0, 80)}`)
+          return
+        }
         if (row !== undefined) gate?.outcome(row, "failed")
         this.log(`[told] push "${input.title.slice(0, 80)}" from ${input.from} failed: ${e?.message ?? e}`)
         // No banner on this machine to fall back on: nothing reached the owner.
         if (!this.native.banner && !opts.soft) throw e
       }
     }, { alert: opts.localAlert === false ? false : this.ownerAlert() })
-    if (res.held && row !== undefined) gate?.outcome(row, "held")
-    return res.held ? "held" : "sent"
+    if ((res.held || heldByPhone) && row !== undefined) gate?.outcome(row, "held")
+    return res.held || heldByPhone ? "held" : "sent"
   }
 
   /** The banner and sound for one notice on this machine. The sound waits
@@ -10615,6 +10635,10 @@ export class AgentXDaemon {
         // What a relayed push opens when tapped: a path, such as a request
         // on the Hub (#1655).
         open: typeof body.open === "string" && body.open.startsWith("/") ? body.open : undefined,
+        // Phone switch and "Reply by voice" of a relayed push (#2103): the
+        // host filters by each phone's setting, like a push made here.
+        pushKind: channelPushKind(body.pushKind),
+        voiceReply: typeof body.voiceReply === "string" && body.voiceReply.startsWith("/") ? body.voiceReply : undefined,
         // Posts as this agent (GitLab/GitHub identity), like a live reply.
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.

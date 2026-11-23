@@ -18,6 +18,8 @@ export const PUSH_PREFS = {
   finish: { field: "chatFinish", default: true },
   /** A mesh announcement (#268). */
   announce: { field: "announce", default: true },
+  /** A decision or request waits for the owner on the Desk (#2103). */
+  decision: { field: "decision", default: true },
 } as const
 
 export type PushPrefName = keyof typeof PUSH_PREFS

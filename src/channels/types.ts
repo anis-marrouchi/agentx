@@ -116,6 +116,15 @@ export interface OutgoingMessage {
    *  the Hub. A channel that can open links makes it absolute with
    *  `notifications.publicUrl`. */
   open?: string
+  /** What kind of phone notification this is (#2103), so the push channel
+   *  sends it only to phones whose switch for that kind is on
+   *  (channels/push-prefs.ts). Other channels ignore it. None: every
+   *  phone, as before. */
+  pushKind?: "decision" | "finish" | "announce"
+  /** A path on this node that a "Reply by voice" button on the phone
+   *  notification opens, such as /app#desk=request:r1&voice=1 (#2103).
+   *  Only the push channel reads it. */
+  voiceReply?: string
   /** A voice call on the phone (#1605). "ringing": ntfy sends it as a
    *  call (priority 5 when urgent, else 4, a phone tag, a tap that opens
    *  `url`); Web Push keeps it on screen until tapped. "missed": the same

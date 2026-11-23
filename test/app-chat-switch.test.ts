@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { APP_CHAT_SCRIPT } from "../src/daemon/ui/pages/app-chat.client"
+import { parseOpenHash } from "../src/daemon/ui/pages/app-voice-reply-logic"
 
 // Switching conversations on the phone (2026-11-22): Anis talked to Rassam,
 // switched to Hakim, and his voice notes landed in Rassam's chat. Until the
@@ -54,8 +55,9 @@ function page() {
   const navigator = { onLine: true }
   const location = { hash: "", reload() {} }
   const history = { replaceState() {} }
-  new Function("window", "document", "fetch", "localStorage", "navigator", "location", "history", "CustomEvent", "requestAnimationFrame", APP_CHAT_SCRIPT)(
-    window, document, fetch, localStorage, navigator, location, history, class { constructor(public type: string, public init: any) {} }, () => 0)
+  // parseOpenHash is injected into the page once, ahead of Chat (#2103).
+  new Function("window", "document", "fetch", "localStorage", "navigator", "location", "history", "CustomEvent", "requestAnimationFrame", "parseOpenHash", APP_CHAT_SCRIPT)(
+    window, document, fetch, localStorage, navigator, location, history, class { constructor(public type: string, public init: any) {} }, () => 0, parseOpenHash)
   const tick = () => new Promise((r) => setTimeout(r, 0))
   const conv = (id: string, agent: string) => ({ id, agent, agentName: agent, node: "local", nodeName: "Mac", messages: [], running: false })
   const answer = async (match: (p: Pending) => boolean, body: any, status = 200) => {

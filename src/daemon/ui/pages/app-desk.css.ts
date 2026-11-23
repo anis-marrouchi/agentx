@@ -20,4 +20,6 @@ export const APP_DESK_CSS = `
 .dk-opt { width: 100%; min-height: 48px; padding: 8px 14px; text-align: left; border-radius: var(--ax-radius-sm); overflow-wrap: anywhere; }
 .dk-opt small { display: block; margin-top: 2px; font-weight: 400; color: var(--ax-text-2); }
 .dk-opt em { font-style: normal; font-weight: 400; color: var(--ax-text-2); }
+/* The card a notification opened (#2103). */
+.dk-wanted { outline: 2px solid var(--ax-accent, #2f6fed); outline-offset: 2px; }
 `

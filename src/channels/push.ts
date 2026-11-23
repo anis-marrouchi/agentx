@@ -34,6 +34,27 @@ export function isRemoteDevice(deviceId: string): boolean {
   return deviceId.includes(":")
 }
 
+/** Start of the error PushAdapter.send throws when phones are subscribed
+ *  but every one has the switch for this kind of message off (#2103). It
+ *  crosses the mesh as the host's error text, so a relay can tell it too. */
+export const PUSH_HELD_BY_SETTING = "push: held by phone setting"
+
+/** True for the error above, here or relayed from the push host. The
+ *  owner turned this kind off: held, not failed, and no other channel. */
+export function isPushHeldBySetting(e: unknown): boolean {
+  return String((e as any)?.message ?? e ?? "").includes(PUSH_HELD_BY_SETTING)
+}
+
+/** A pushKind read from a JSON body (a relay's /channel/send), or
+ *  undefined for anything that is not a known kind. */
+export function channelPushKind(v: unknown): OutgoingMessage["pushKind"] {
+  return v === "decision" || v === "finish" || v === "announce" ? v : undefined
+}
+
+/** The service worker's action name for the "Reply by voice" button. */
+export const VOICE_ACTION = "voice"
+export const VOICE_LABEL = "Reply by voice"
+
 /** Where a tap lands when the message has no button of its own. */
 export const DEFAULT_OPEN_URL = "/app#alerts"
 /** Push services refuse payloads over 4096 bytes after encryption (413,
@@ -98,6 +119,14 @@ export function buildPushPayload(msg: OutgoingMessage, defaultTitle = "AgentX"):
     actions,
     ...(msg.ring ? { call: { id: msg.ring.callId, state: msg.ring.state, urgent: msg.ring.urgent } } : {}),
   }
+  // "Reply by voice" (#2103): one more button, after the links, so a plain
+  // tap still opens what it opened before. Its path opens the app with
+  // the mic ready (voice=1); the person taps the mic, the app never
+  // starts it alone.
+  const voice = msg.ring ? undefined : openPath(msg.voiceReply)
+  if (voice) {
+    payload.actions = [...actions.slice(0, MAX_ACTIONS - 1), { action: VOICE_ACTION, title: VOICE_LABEL, url: voice }]
+  }
   // Trim the body by bytes, not characters: Arabic, CJK and emoji take
   // several bytes each.
   const size = () => Buffer.byteLength(JSON.stringify(payload), "utf8")
@@ -146,13 +175,23 @@ export class PushAdapter implements ChannelAdapter {
     if (device && msg.origin && !isRemoteDevice(device)) device = remoteDeviceId(msg.origin, device)
 
     const subs: PushSubscriptionRow[] = []
+    let heldBySetting = 0
     for (const s of this.deps.store.list(device)) {
       // A revoked phone stops getting pushes even if its browser never
       // unsubscribed, and a row made with replaced keys can never be
       // delivered; either goes, so it isn't retried every time. The phone
       // re-subscribes with the new key when the app next opens.
-      if (this.deps.deviceActive(s.deviceId) && s.publicKey === keys.publicKey) subs.push(s)
-      else this.deps.store.unsubscribe(s.endpoint)
+      if (!this.deps.deviceActive(s.deviceId) || s.publicKey !== keys.publicKey) {
+        this.deps.store.unsubscribe(s.endpoint)
+        continue
+      }
+      // The phone's own switch for this kind of message (#2103): the one
+      // place it is read, so the owner notifier knows nothing of phones.
+      if (msg.pushKind && !this.deps.store.prefs.on(s.deviceId, msg.pushKind)) { heldBySetting++; continue }
+      subs.push(s)
+    }
+    if (subs.length === 0 && heldBySetting > 0) {
+      throw new Error(`${PUSH_HELD_BY_SETTING}: every subscribed phone has "${msg.pushKind}" notifications off`)
     }
     if (subs.length === 0) {
       throw new Error(device
@@ -199,6 +238,10 @@ export interface PushRelayPayload {
   buttons?: OutgoingMessage["buttons"]
   /** What a tap opens when there is no button: a path on the host (#1655). */
   open?: string
+  /** The kind, so the host filters by each phone's switch (#2103). */
+  pushKind?: OutgoingMessage["pushKind"]
+  /** The "Reply by voice" path, on the host (#2103). */
+  voiceReply?: string
   relayed: true
   /** The relaying node's name, so the host can find its phones. */
   origin?: string
@@ -235,6 +278,8 @@ export class PushRelayAdapter implements ChannelAdapter {
       text: msg.text,
       ...(msg.buttons?.length ? { buttons: msg.buttons } : {}),
       ...(msg.open ? { open: msg.open } : {}),
+      ...(msg.pushKind ? { pushKind: msg.pushKind } : {}),
+      ...(msg.voiceReply ? { voiceReply: msg.voiceReply } : {}),
       relayed: true,
       ...(this.origin ? { origin: this.origin } : {}),
     })

@@ -43,6 +43,8 @@ import { APP_ORB_SCRIPT } from "./app-orb.client"
 import { APP_VOICE_AUDIO_SCRIPT } from "./app-voice-audio.client"
 import { APP_VOICE_SCRIPT } from "./app-voice.client"
 import { APP_VOICE_CSS } from "./app-voice.css"
+import { APP_DICTATE_CSS, APP_DICTATE_SCRIPT } from "./app-dictate.client"
+import { dictateLabel, parseOpenHash } from "./app-voice-reply-logic"
 import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
 import { injectFns } from "../inject"
 import { formatPairInput, mayBounce, parsePairScan } from "./app-pair-logic"
@@ -105,7 +107,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -125,13 +127,14 @@ ${CAMERA_BODY}
 <script>${injectFns({ swipeMayStart, swipeAxis, swipeOffset, swipeLanding })}${APP_SWIPE_SCRIPT}</script>
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
-<script>${APP_DESK_SCRIPT}</script>
+<script>${injectFns({ parseOpenHash })}${APP_DESK_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>
 <script>${APP_PINS_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
+<script>${injectFns({ dictateLabel })}${APP_DICTATE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>

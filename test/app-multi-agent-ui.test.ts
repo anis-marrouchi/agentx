@@ -8,6 +8,7 @@ import { APP_ALERTS_SCRIPT } from "../src/daemon/ui/pages/app-alerts.client"
 import { APP_VOICE_SCRIPT } from "../src/daemon/ui/pages/app-voice.client"
 import { nextSpeech, queueSpeech, SPEECH_QUEUE_MAX, type SpeechItem } from "../src/daemon/ui/pages/app-speech-queue"
 import { injectFns } from "../src/daemon/ui/inject"
+import { parseOpenHash } from "../src/daemon/ui/pages/app-voice-reply-logic"
 
 // The phone side of juggling several agents (#265): the page scripts, and
 // the speaking queue's rules.
@@ -95,10 +96,10 @@ describe("page scripts", () => {
     expect(APP_SERVICE_WORKER).toContain("openWindow(target)")
     // The tab bar leaves #chat=<id> alone, and Chat opens that conversation.
     expect(renderAppPage()).toContain("location.hash.split('=')[0]")
-    const m = /var m = (\/.+\/)\.exec\(location\.hash\)/.exec(APP_CHAT_SCRIPT)!
-    const re = new Function(`return ${m[1]}`)() as RegExp
-    expect(re.exec("#chat=cmg1abc2def3")?.[1]).toBe("cmg1abc2def3")
-    expect(re.test("#chat=../x")).toBe(false)
-    expect(re.test("#alerts")).toBe(false)
+    // The link is read by parseOpenHash (#2103), which also takes &voice=1.
+    expect(APP_CHAT_SCRIPT).toContain("var t = parseOpenHash(location.hash);")
+    expect(parseOpenHash("#chat=cmg1abc2def3")?.id).toBe("cmg1abc2def3")
+    expect(parseOpenHash("#chat=../x")).toBeNull()
+    expect(parseOpenHash("#alerts")).toBeNull()
   })
 })

@@ -113,6 +113,34 @@ This is on by default. To turn it off or on again for this phone:
 
 The setting is kept on the computer, for this phone's pairing: other phones keep their own, and a phone paired again starts with it on. It only changes notifications: the in-app banner still shows while the app is open.
 
+## Notifications when a decision waits
+
+When a card or a request on your [Desk](./mobile-desk.md) waits for your answer, the phone can get a notification. Tapping it opens that item on the **Desk** tab.
+
+Two settings decide it:
+
+- **On the computer:** whether new Desk items are sent to the phone at all. This is **Sent to your phone at once** (`notifications.desk.phone`), which is off until you choose. See [Choose where new items go](./mobile-desk.md#choose-where-new-items-go).
+- **On each phone:** the **When a decision waits for you** switch in **Alerts**. It is on by default. Turn it off to stop these notifications on this phone only; your other phones keep their own setting.
+
+To turn the phone switch off or on again:
+
+1. **Phone:** open the AgentX app and tap **Alerts**.
+2. **Phone:** tap the switch next to **When a decision waits for you**.
+
+When every phone has the switch off, the item is not sent anywhere else instead: it waits on the Desk and in the digest, and the computer records it as held by the phone setting.
+
+## Reply by voice
+
+A notification about a chat answer, or about a request that takes a written answer, has a **Reply by voice** button.
+
+1. **Phone:** tap **Reply by voice** on the notification. The app opens on that conversation, or on that request's answer box, with the microphone button marked.
+2. **Phone:** tap the microphone and speak. Tap it again when you are done.
+3. **Phone:** your words appear in the box. Fix them if needed, then tap **Send**.
+
+The app never starts the microphone by itself: you always tap it once. A yes/no card has no **Reply by voice** button: answer it with its own buttons. A card from another computer takes written answers on that computer only, so the app says so instead of opening a box.
+
+The answer box on the **Desk** and the **Chat** box also have the microphone button, so you can speak instead of typing at any time.
+
 ## Announcements
 
 An *announcement* is a short note sent to every computer in the mesh, for example "Maintenance tonight at 22:00". The **Alerts** tab lists the most recent ones (up to 50), newest first, from every computer. Each shows the text, who sent it when an agent did, the computer it came from and how long ago. The list refreshes every few seconds while the tab is open.
@@ -148,6 +176,8 @@ The switch shows on any computer with notifications turned on. On a computer tha
 6. **Phone (paired with the other computer):** if a phone is paired with the second computer, open **Alerts** on it and tap **Turn on**. Then run `agentx notify "Hello" --title "Test"` on the host. That phone gets it too, and `agentx app devices` on the host lists it under **Paired with another computer**.
 7. **Phone:** in **Chat**, ask an agent something that takes a while, then close the app. When the answer is ready, a notification with the agent's name appears. Tap it: the app opens on that conversation.
 8. **Terminal (any computer):** run `agentx mesh announce "Hello from the mesh"`. Within a few seconds the phone shows an **Announcement** notification, and the text is at the top of the **Announcements** card in **Alerts**.
+9. **Phone:** with **Sent to your phone at once** set to **Everything new**, wait for a new item on the Desk. A notification with its title appears within about a minute. Tap it: the app opens on the **Desk** with that item marked.
+10. **Phone:** on a chat answer notification, tap **Reply by voice**. The app opens on that conversation with the microphone button marked. Tap it, say a few words, tap it again: the words appear in the box.
 
 ## If something is wrong
 
@@ -167,6 +197,9 @@ The switch shows on any computer with notifications turned on. On a computer tha
 - **A second computer says "is not a mesh peer of this node"** — the name after `--relay-to` doesn't match. Check it with `agentx mesh list`.
 - **Notifications stopped after `agentx app push-keys --force`** — new keys cut off every phone. Open **Alerts** on each phone; the card shows **Off**. Tap **Turn on** again.
 - **No notification when a chat answer finishes** — check that the **When a chat answer finishes** switch is on, and that notifications are **On** for this phone. While the app is open on screen you get a banner instead; close the app or lock the phone to get a notification.
+- **No notification when a decision waits** — check **Sent to your phone at once** on the computer (it is off by default), then the **When a decision waits for you** switch on this phone. If the computer's log says "held by phone setting", every phone has that switch off.
+- **Reply by voice says the microphone is blocked** — allow the microphone for the AgentX app in the phone's settings. Until then, type your answer: the box stays open and keeps what you typed.
+- **Reply by voice says "Speech to text failed"** — speech to text isn't set up on the computer, or it failed this time. Type your answer instead; see [What the computer needs for voice](./mobile-chat.md#what-the-computer-needs-for-voice).
 - **An announcement is listed but no notification came** — check that **Notify me of announcements** is on for this phone and that notifications are **On** in the card above it. Announcements older than ten minutes when they arrive, for example from a computer that was offline, are not sent.
 - **The Announcements card says "Could not load announcements"** — AgentX on this computer isn't answering. Run `agentx daemon status`, and start it if it's stopped.
 - **An announcement from another computer doesn't show** — that computer is not reachable in the mesh. Run `agentx mesh list` and check it is listed as healthy.

@@ -125,7 +125,7 @@ describe("notify switch (one prefs store with the chat-finish switch)", () => {
     const a = phone("F")
     expect(await (await a.call("POST", "/api/app/push/prefs", { chatFinish: false, announce: false })).json())
       .toEqual({ ok: true, chatFinish: false, announce: false })
-    expect(prefs.all(a.id)).toEqual({ chatFinish: false, announce: false })
+    expect(prefs.all(a.id)).toEqual({ chatFinish: false, announce: false, decision: true })
   })
 
   it("refuses a bad body, and is unavailable where push isn't hosted", async () => {
