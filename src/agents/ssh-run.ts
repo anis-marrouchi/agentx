@@ -161,7 +161,8 @@ export function prepareScript(checkout: string, issue: number): string {
     // A run whose time limit passed on this Mac may still be alive here
     // (an ssh drop): two runs on one worktree is refused (review B2). The
     // lock's pid is the run's `timeout`; a pid reused by another program
-    // after a reboot is a stale lock, not a run.
+    // after a reboot is a stale lock, not a run. A box without `ps` reads
+    // every lock as stale, so this guard is off there.
     `L=${shq(sshLockFile(checkout, issue))}`,
     `if [ -f "$L" ]; then P=$(cat "$L" 2>/dev/null); case "$P" in ''|*[!0-9]*) ;; *) case "$(ps -o comm= -p "$P" 2>/dev/null)" in *timeout) echo "BUSY $P"; exit 0 ;; esac ;; esac; fi`,
     `command -v timeout >/dev/null 2>&1 || fail "no timeout command on the box (coreutils)"`,
