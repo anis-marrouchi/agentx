@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { createHmac, timingSafeEqual } from "crypto"
 import type { AgentRegistry } from "@/agents/registry"
+import { LOCAL_NODE } from "@/channels/run-on"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
 import type { WorkflowDispatcher } from "@/workflows"
@@ -265,6 +266,18 @@ export class WebhookHandler {
       }).then(
         (response) => this.log(`Mesh-forwarded webhook [${source}] -> ${meshEntry.node}/${agentId}: ${response?.slice(0, 100) || "ok"}`),
         (e: any) => this.log(`Mesh forward failed [${source}] -> ${meshEntry.node}/${agentId}: ${e.message}`),
+      )
+      return
+    }
+
+    // An issue placed on a peer (#2104 C4): answer 202 first, as for the
+    // mapping forward above. The registry then sends the run to the peer
+    // and waits for it, after the delivery is answered.
+    if (placed && placed.node !== LOCAL_NODE) {
+      this.sendJson(res, 202, { ok: true, agent: agentId, source, node: placed.node, status: "accepted" })
+      this.registry.execute({ message: summary, agentId, context: context as any }).then(
+        (response) => this.log(`Placed webhook [${source}] -> ${placed.node}/${agentId}: ${response.error ? `error: ${response.error}` : "ok"}`),
+        (e: any) => this.log(`Placed webhook failed [${source}] -> ${placed.node}/${agentId}: ${e.message}`),
       )
       return
     }

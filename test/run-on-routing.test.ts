@@ -343,6 +343,35 @@ describe("a mapped webhook loses to the placement", () => {
     await call()
     expect(sendTask).toHaveBeenCalledTimes(1)
   })
+
+  it("C4: a run placed on a peer answers 202 before the registry sends it", async () => {
+    let finish!: (v: unknown) => void
+    const execute = vi.fn(() => new Promise((r) => { finish = r }))
+    const registry: any = { execute, placementOf: () => ({ node: "clawd", key: { channel: "github", chatId: ISSUE_CHAT } }), getAgent: () => ({}) }
+    const handler = new WebhookHandler(registry, {}, () => {}, undefined as any, [] as any)
+    const h = handler as any
+    h.readBody = async () => ({ raw: Buffer.from("{}"), parsed: { action: "created", repository: { full_name: "acme/app" }, issue: { number: 7, title: "t" }, comment: { body: "hi" } } })
+    h.validateSignature = () => null
+    h.fireHookSafe = async () => {}
+    const res: any = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() }
+    await h.handle({ headers: { "x-github-event": "issue_comment" }, url: "/webhook/coder/github", method: "POST" }, res, "/webhook/coder/github")
+    expect(res.writeHead).toHaveBeenCalledWith(202, expect.anything())
+    expect(execute).toHaveBeenCalledTimes(1)
+    finish({ content: "ok", duration: 1 })
+  })
+
+  it("C4: a run placed local still answers with the run's result", async () => {
+    const execute = vi.fn(async () => ({ content: "ok", duration: 1 }))
+    const registry: any = { execute, placementOf: () => ({ node: "local", key: { channel: "github", chatId: ISSUE_CHAT } }), getAgent: () => ({}) }
+    const handler = new WebhookHandler(registry, {}, () => {}, undefined as any, [] as any)
+    const h = handler as any
+    h.readBody = async () => ({ raw: Buffer.from("{}"), parsed: { action: "opened", repository: { full_name: "acme/app" }, issue: { number: 7, title: "t" } } })
+    h.validateSignature = () => null
+    h.fireHookSafe = async () => {}
+    const res: any = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() }
+    await h.handle({ headers: { "x-github-event": "issues" }, url: "/webhook/coder/github", method: "POST" }, res, "/webhook/coder/github")
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything())
+  })
 })
 
 describe("checkouts advertised", () => {
