@@ -16,3 +16,11 @@ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 Response renders markdown with Streamdown (https://github.com/vercel/streamdown,
 Apache-2.0) and highlights code with Shiki (https://github.com/shikijs/shiki, MIT).
 The diff view uses jsdiff (https://github.com/kpdecker/jsdiff, BSD-3-Clause).
+
+The compact tool card status treatment, eight-ray thinking indicator and
+Needs you inbox heading are
+adapted from [affectUI](https://github.com/flohoeller/affectui/tree/8b3963021e3442a5350c89cd14324a45e51dc48c)
+(`tool-call-card-clean.tsx` `thinking-loader-clean.tsx` and `decision-inbox-clean.tsx`).
+The MIT terms and copyright are in `LICENSE.affectui`. AgentX renders the first two in its existing React conversation bundle and
+the inbox heading in the Hub’s server-rendered page script. These adaptations
+use AgentX’s stream states, approval handling and design tokens.
