@@ -2,7 +2,8 @@
 //
 // Chat with an agent from the Hub. The chat is the Hub's middle pane
 // (#page=chat&agent=<id>, Orca's chat mode), in place of the page it was
-// opened from; ← or Escape goes back there. It opens from the Chat box in
+// opened from; ← or Escape goes back there. A bare Hub starts in chat.
+// Chat also opens from the Chat box in
 // the side column, the header's chat button under 1180 px, "/" and the
 // agent links (a profile's Chat, a Hub chat run in the left tree).
 //
@@ -113,6 +114,12 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // the message's context names. pushed: the chat's hash is a history
   // entry of its own, so ← is the browser's Back.
   var fromHash = '', pushed = false;
+  var defaultChat = location.pathname === '${HUB_PATH}' && !location.hash && !location.search;
+  var feedHash = '#status=open&view=feed';
+  if (defaultChat && hist) {
+    fromHash = feedHash;
+    hist.replaceState(null, '', chatHash(''));
+  }
   function chatRoute(h) {
     var q = new URLSearchParams(String(h || '').replace(/^#/, ''));
     return q.get('page') === 'chat' ? { agent: q.get('agent') || '' } : null;
@@ -136,7 +143,10 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if ($('hc-btn')) $('hc-btn').setAttribute('aria-expanded', String(v));
     if (v && !guest) { paintCtx(); markSeen(); loadThread(threadId); if (!quiet) routeTo(currentAgent()); }
     // Closed: no stream; a pending answer is read every 10 s, for the dot.
-    if (!v && !guest) { closeStream(); if (!quiet) routeAway(); }
+    if (!v) {
+      if (!guest) closeStream();
+      if (!quiet) routeAway();
+    }
   }
   if ($('hc-btn')) $('hc-btn').addEventListener('click', function () { open(panel.hidden); });
   $('hc-close').addEventListener('click', function () { open(false); });
@@ -167,7 +177,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     else { open(true); $('hc-text').focus(); }
   });
   if (guest) {
-    if (chatRoute(location.hash)) open(true, true);
+    if (defaultChat || chatRoute(location.hash)) open(true, true);
     return;
   }
 
@@ -217,6 +227,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var r = chatRoute(location.hash);
     if (r && r.agent && r.agent !== (thread && thread.agentId)) switchAgent(r.agent);
     else if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
+    else if (defaultChat && !threadId && list.length) switchAgent(list[0].id || list[0].name);
     paintLog();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
@@ -566,6 +577,6 @@ export const WALL_CHAT_SCRIPT = String.raw`
   if (/(^#|&)chat=open(&|$)/.test(location.hash)) open(true);
   loadLast();
   // Opened by its link: #page=chat&agent=<id> (the agent once the list is in).
-  if (chatRoute(location.hash)) open(true, true);
+  if (defaultChat || chatRoute(location.hash)) open(true, true);
 })();
 ` + WALL_CHAT_INPUT_SCRIPT

@@ -10,7 +10,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## Open the Hub
 
-1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
+1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in **To** to open its conversation. Use **Back to the page** in Chat to see the feed. A link to a post or another Hub page opens that page directly.
 2. The nav on the left opens with **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
@@ -24,7 +24,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list the classic pages that still hold something the Hub does not have yet: **Operations**, **Monitor**, **Org**, **Activity** and **Workflows**. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Light / dark**, at the bottom of the nav, switches the colours. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
-6. **Phone:** the feed comes first, and the nav is a bar at the bottom: **Hub**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
+6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running now**, **Projects** and **More**. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Running now, Agents and the classic page links sit under the feed. On a tablet, the classic page links and Running now come before the feed.
 
    ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
 
