@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http"
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from "fs"
+import { lstatSync, mkdirSync, realpathSync, writeFileSync } from "fs"
 import { basename, join, relative, resolve, isAbsolute } from "path"
 import { randomBytes } from "crypto"
 import { readRaw } from "./voice-io-api"
@@ -48,6 +48,7 @@ export function isUploadPath(workspace: string, p: unknown): boolean {
   const rel = relative(dir, resolve(p))
   if (!rel || rel.startsWith("..") || isAbsolute(rel) || rel.includes("/") || rel.includes("\\")) return false
   try {
+    if (!lstatSync(dir).isDirectory()) return false
     const real = realpathSync(p)
     return relative(realpathSync(dir), real) === rel
   } catch { return false }
@@ -88,9 +89,13 @@ export async function handleAssistantUpload(req: IncomingMessage, res: ServerRes
 
   const dir = uploadsDirOf(workspace)
   mkdirSync(dir, { recursive: true })
+  if (!lstatSync(dir).isDirectory()) return json(res, 409, { error: "Uploads must be a directory in the agent workspace." })
   // The workspace is often a git repository: uploads stay out of it.
-  const ignore = join(dir, ".gitignore")
-  if (!existsSync(ignore)) writeFileSync(ignore, "*\n")
+  try {
+    writeFileSync(join(dir, ".gitignore"), "*\n", { flag: "wx" })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+  }
   const stamp = new Date().toISOString().slice(0, 10)
   const path = join(dir, `${stamp}-${randomBytes(4).toString("hex")}-${name}`)
   writeFileSync(path, body, { mode: 0o600, flag: "wx" })

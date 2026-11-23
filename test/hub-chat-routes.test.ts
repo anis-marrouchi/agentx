@@ -39,7 +39,7 @@ function buildDaemon() {
     _assistant: new AssistantStore(db),
     registry: {
       list: () => [{ id: "helper", workspace }, { id: "other", workspace: join(tmp, "other") }],
-      getAgent: (id: string) => (id === "helper" ? { workspace } : undefined),
+      getAgent: (id: string) => (id === "helper" ? { workspace } : id === "other" ? { workspace: join(tmp, "other") } : undefined),
       execute: async (a: { message: string }) => { executed.push(a.message); return { content: "answer" } },
     },
   })
@@ -99,6 +99,20 @@ describe("POST /api/assistant/upload (#2101 R14)", () => {
     expect(d.path.endsWith("-notes.txt")).toBe(true)
     expect(readFileSync(d.path, "utf8")).toBe("hello file")
     expect(readFileSync(join(workspace, "uploads", ".gitignore"), "utf8")).toBe("*\n")
+  })
+
+  it("refuses an uploads directory linked outside its workspace", async () => {
+    const other = join(tmp, "other")
+    const target = join(tmp, "upload-target")
+    mkdirSync(other)
+    mkdirSync(target)
+    writeFileSync(join(target, "report.txt"), "demo")
+    symlinkSync(target, join(other, "uploads"), "dir")
+
+    const board = await serveBoard(await serveDaemon(buildDaemon(), LOCAL))
+    expect((await up(board, "agent=other&name=new.txt", "demo", owner)).status).toBe(409)
+    expect(acceptAttachments(other, [{ name: "report.txt", path: join(other, "uploads", "report.txt") }])).toEqual([])
+    expect(existsSync(join(target, ".gitignore"))).toBe(false)
   })
 
   it("sends an uploaded file with the next message: its path in the prompt, its name in the thread", async () => {
