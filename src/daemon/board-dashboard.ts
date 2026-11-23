@@ -2169,6 +2169,10 @@ interface LiveSnapshot {
 /** Each live node's agent → worktree key, kept off the snapshot so a
  *  workspace path never leaves the dashboard host. */
 const nodeWorktrees = new WeakMap<NodeLive, Map<string, string | null>>()
+/** Each node URL's id and name from its last good /health: a snapshot
+ *  whose /health fails but whose /agents answers keeps the node's id, so
+ *  workers that name it (parent.node, #2145) still find their parent. */
+const nodeIdentity = new Map<string, { id: string; name: string }>()
 
 /** Runs going now that share a chat (across the mesh) or a worktree (on
  *  one node). Unreachable and stale nodes are left out: their runs are
@@ -2268,9 +2272,14 @@ export async function fetchDaemonAgents(
       if (h.restart && typeof h.restart.state === "string") base.restart = h.restart
       base.name = h.node?.name || h.node?.id || url
       base.id = h.node?.id || url
+      if (h.node?.id) nodeIdentity.set(url, { id: base.id, name: base.name })
       // /health already embeds today's usage rollup — reuse it so the
       // dashboard doesn't need a separate /usage call per node.
       if (h.usage) base.usage = h.usage
+    }
+    if (!(healthRes && healthRes.ok)) {
+      const known = nodeIdentity.get(url)
+      if (known) { base.id = known.id; base.name = known.name }
     }
     if (stoppedRes && stoppedRes.ok) {
       const data: any = await stoppedRes.json().catch(() => ({}))
@@ -2530,6 +2539,7 @@ export function withLastGood(url: string, node: NodeLive, now: number = Date.now
 /** Test-only. */
 export function resetLiveCaches(): void {
   lastGoodNode.clear()
+  nodeIdentity.clear()
   inflightSnapshots.clear()
   recentSnapshots.clear()
   inflightNodes.clear()

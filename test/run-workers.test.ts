@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { RecentRuns, WORKERS_PER_RUN, parentRunOf, withWorkers, workersByRun, type HandoffEntry, type RunLike } from "../src/agents/run-workers"
+import { RECENT_RUNS_CAP, RecentRuns, WORKERS_PER_RUN, parentRunOf, withWorkers, workersByRun, type HandoffEntry, type RunLike } from "../src/agents/run-workers"
 import { withParentRun } from "../src/actions/builtin/parent-run"
 import { agentCall } from "../src/actions/builtin/agent"
 import { meshDelegate } from "../src/actions/builtin/mesh"
@@ -101,7 +101,7 @@ describe("RecentRuns", () => {
   it("reads the runs at most once per ttl, from an hour back", () => {
     let t = NOW
     const asked: number[] = []
-    const cache = new RecentRuns((since) => { asked.push(since); return [] }, 10_000, () => t)
+    const cache = new RecentRuns((since) => { asked.push(since); return [] }, () => [], 10_000, () => t)
     cache.get(); cache.get()
     t += 9_000; cache.get()
     t += 2_000; cache.get()
@@ -109,6 +109,40 @@ describe("RecentRuns", () => {
   })
   it("answers no runs when the list fails", () => {
     expect(new RecentRuns(() => { throw new Error("disk") }).get()).toEqual([])
+  })
+  it("keeps a workflow waiting on the owner for more than an hour under its parent", () => {
+    const old: RunLike = {
+      id: "wf-old", workflowId: "approve-invoice", status: "paused",
+      createdAt: iso(5 * 3_600_000), updatedAt: iso(3 * 3_600_000), meta: { startedByRun: "run-1" },
+    }
+    const done: RunLike = {
+      id: "wf-done", workflowId: "report", status: "completed",
+      createdAt: iso(20 * 60_000), updatedAt: iso(10 * 60_000), meta: { startedByRun: "run-1" },
+    }
+    // The recent read skips files older than the window, as the store does.
+    const all = [old, done]
+    const cache = new RecentRuns(
+      (since) => all.filter((r) => Date.parse(r.updatedAt) >= since),
+      () => all.filter((r) => r.status === "running" || r.status === "paused"),
+      10_000, () => NOW,
+    )
+    const runs = cache.get()
+    expect(runs.map((r) => r.id)).toEqual(["wf-old", "wf-done"])
+    const w = workersByRun(TASKS, [], runs, NOW).get("run-1")!
+    expect(w.map((x) => [x.id, x.status])).toEqual([["wf-done", "done"], ["wf-old", "waiting"]])
+  })
+  it("reads open runs first, once each, and caps the total", () => {
+    const run = (id: string, status: string): RunLike => ({ id, workflowId: "w", status, createdAt: iso(0), updatedAt: iso(0) })
+    const open = Array.from({ length: 150 }, (_, i) => run(`o${i}`, "running"))
+    const recent = [run("o0", "running"), ...Array.from({ length: 150 }, (_, i) => run(`r${i}`, "completed"))]
+    const runs = new RecentRuns(() => recent, () => open, 10_000, () => NOW).get()
+    expect(runs).toHaveLength(RECENT_RUNS_CAP)
+    expect(runs.slice(0, 150).every((r) => r.id.startsWith("o"))).toBe(true)
+    expect(new Set(runs.map((r) => r.id)).size).toBe(RECENT_RUNS_CAP)
+  })
+  it("still reads the recent runs when the open read fails", () => {
+    const r: RunLike = { id: "a", workflowId: "w", status: "completed", createdAt: iso(0), updatedAt: iso(0) }
+    expect(new RecentRuns(() => [r], () => { throw new Error("disk") }).get()).toEqual([r])
   })
 })
 

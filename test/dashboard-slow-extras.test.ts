@@ -137,4 +137,23 @@ describe("board reads kept small", () => {
       expect(full.nodes[0].data.actions.total).toBe(1)
     })
   }, 10_000)
+
+  it("keeps a node's id from its last good /health when /health fails (#2145)", async () => {
+    resetLiveCaches()
+    let healthy = true
+    server = createServer((req, res) => {
+      const path = (req.url || "/").split("?")[0]
+      const json = (b: unknown) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(b)) }
+      if (path === "/agents") return json([{ id: "writer", name: "Writer" }])
+      if (path === "/health" && healthy) return json({ uptime: 1, node: { id: "node-b", name: "Node B" } })
+      res.writeHead(500); res.end("{}")
+    })
+    const url = await new Promise<string>((r) => server!.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${(server!.address() as any).port}`)))
+    expect(await fetchDaemonAgents(url, undefined, AbortSignal.timeout(3000))).toMatchObject({ id: "node-b", name: "Node B" })
+    healthy = false
+    const node = await fetchDaemonAgents(url, undefined, AbortSignal.timeout(3000))
+    expect(node).toMatchObject({ id: "node-b", name: "Node B", reachable: true })
+    resetLiveCaches()
+    expect((await fetchDaemonAgents(url, undefined, AbortSignal.timeout(3000))).id).toBe(url)
+  }, 10_000)
 })

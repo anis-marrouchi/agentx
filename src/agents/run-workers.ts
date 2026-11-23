@@ -173,21 +173,49 @@ export function withWorkers<A extends { runningTasks: ReadonlyArray<{ id: string
   }))
 }
 
+/** At most this many workflow runs are read per refresh. */
+export const RECENT_RUNS_CAP = 200
+
 /**
- * The recent workflow runs, read at most once per `ttlMs`: GET /agents is
- * polled every 2 s per Hub, and listing runs reads their files. Runs
- * untouched for longer than the done window are not read.
+ * The workflow runs to look for workers in, read at most once per
+ * `ttlMs`: GET /agents is polled every 2 s per Hub, and listing runs reads
+ * their files. Runs still open (running, or waiting on the owner) are
+ * always read, however old: a workflow that has waited for a day is what
+ * the owner needs to see. Ended runs untouched for longer than the done
+ * window are not read. RECENT_RUNS_CAP at most, open runs first.
  */
 export class RecentRuns {
   private at = 0
   private runs: RunLike[] = []
-  constructor(private list: (sinceMs: number) => RunLike[], private ttlMs = 10_000, private now: () => number = Date.now) {}
+  constructor(
+    private recent: (sinceMs: number) => RunLike[],
+    private open: () => RunLike[] = () => [],
+    private ttlMs = 10_000,
+    private now: () => number = Date.now,
+  ) {}
   get(): RunLike[] {
     const t = this.now()
     if (t - this.at >= this.ttlMs) {
-      try { this.runs = this.list(t - WORKER_DONE_WINDOW_MS) } catch { this.runs = [] }
+      this.runs = this.read(t)
       this.at = t
     }
     return this.runs
+  }
+  private read(t: number): RunLike[] {
+    const out: RunLike[] = []
+    const seen = new Set<string>()
+    const take = (list: () => RunLike[]) => {
+      let runs: RunLike[]
+      try { runs = list() } catch { return }
+      for (const r of runs) {
+        if (out.length >= RECENT_RUNS_CAP) return
+        if (seen.has(r.id)) continue
+        seen.add(r.id)
+        out.push(r)
+      }
+    }
+    take(this.open)
+    take(() => this.recent(t - WORKER_DONE_WINDOW_MS))
+    return out
   }
 }

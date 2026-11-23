@@ -331,7 +331,7 @@ import { rootInitiatorOf } from "@/a2a/initiator"
 import { contextWithSendDepth, isDelegationRelay, UNNAMED_CALLER, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
 import { ChainBudget } from "@/a2a/chain-budget"
-import { RecentRuns, withWorkers } from "@/agents/run-workers"
+import { RECENT_RUNS_CAP, RecentRuns, withWorkers } from "@/agents/run-workers"
 import { PARENT_RUN_BUILTINS, withParentRun } from "@/actions/builtin/parent-run"
 import { acceptedBody, agentCallerOf, ignoredFlags, noneBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverCronResult, deliverToChat, gateAnswer, hopRefusal, joinedBody, meshDeliverJoined, meshTaskMode, replyBody, resolveCallerTurn, startMeshDeliver, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { a2aSendBody, duplicateBody, repeatOf, SendAgentDedupe, sendAgentKey, SEND_AGENT_SLOT_WAIT_MS } from "@/daemon/send-agent"
@@ -446,7 +446,10 @@ export class AgentXDaemon {
   private workflowRuns?: WorkflowRunStore
   /** Recent workflow runs for the workers under each run on GET /agents
    *  (#2145), read at most every 10 s. */
-  private recentRuns = new RecentRuns((since) => this.workflowRuns?.list({ since, limit: 200 }) ?? [])
+  private recentRuns = new RecentRuns(
+    (since) => this.workflowRuns?.list({ since, limit: RECENT_RUNS_CAP }) ?? [],
+    () => this.workflowRuns?.list({ active: true, limit: RECENT_RUNS_CAP }) ?? [],
+  )
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
   /** Shares the daemon's SQLite handle; absent when running without one. */
   private _assistant?: AssistantStore
