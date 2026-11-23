@@ -577,10 +577,23 @@ async function testDriveAgent(body: any) {
   return { chatId, response: parsed }
 }
 
+/** Where a new agent works (#2144): the folder the form names (`~/` is the
+ *  home folder, a relative path is under the daemon's folder), or
+ *  agents/<id>. `custom` says the owner picked it. */
+export function agentWorkspace(raw: unknown, id: string, home = process.env.HOME || ""): { path: string; custom: boolean } {
+  const s = typeof raw === "string" ? raw.trim() : ""
+  if (!s) return { path: resolve(process.cwd(), "agents", id), custom: false }
+  if (s.length > 500 || /[\0\r\n]/.test(s)) throw new Error("The workspace is a folder path on one line.")
+  if ((s === "~" || s.startsWith("~/")) && !home) throw new Error("No home folder is known here: write the workspace as a full path.")
+  return { path: s === "~" ? home : s.startsWith("~/") ? resolve(home, s.slice(2)) : resolve(process.cwd(), s), custom: true }
+}
+
 /** A new agent. With `reportsTo` (an `agent:` or `person:` ref) and `role`,
  *  "Add agent here" (#1678): the agent, its place in the org chart and its
  *  reports-to line are one write, so a refused line leaves nothing behind.
- *  The org part is the owner's, as on POST /api/admin/org/chart. */
+ *  With `role` alone (the Hub's Agents form, #2144) it joins the chart with
+ *  that role and no line. The org part is the owner's, as on POST
+ *  /api/admin/org/chart. `workspace` picks its folder (agentWorkspace). */
 function addAgent(body: any, owner: boolean) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
@@ -589,12 +602,15 @@ function addAgent(body: any, owner: boolean) {
   const model = body?.model ? String(body.model).trim() : undefined
   const personality = body?.personality ? String(body.personality).trim() : undefined
   const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
+  const role = typeof body?.role === "string" ? body.role.trim() : ""
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Agent id must be lowercase (letters, digits, -, _).")
   if (!name) throw new Error("Agent name is required.")
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
-  if (reportsTo && !owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
+  if ((reportsTo || role) && !owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
 
-  const workspace = resolve(process.cwd(), "agents", id)
+  const { path: workspace, custom } = agentWorkspace(body?.workspace, id)
+  // A folder the owner picked that exists already is theirs: nothing is written in it.
+  const scaffold = !custom || !existsSync(workspace)
   const { summary } = mutateAgentxConfig((cfg) => {
     cfg.agents = cfg.agents || {}
     if (cfg.agents[id]) throw new Error(`Agent "${id}" already exists.`)
@@ -604,13 +620,14 @@ function addAgent(body: any, owner: boolean) {
     if (model) block.model = model
     if (personality) block.systemPrompt = personality.slice(0, 400)
     cfg.agents[id] = block
-    if (!reportsTo) return `added agent "${id}"`
+    if (!reportsTo && !role) return `added agent "${id}"`
+    if (!reportsTo) return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role })}`
     applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role: body?.role })
     return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-relation", from: `agent:${id}`, type: "reports-to", to: reportsTo })}`
   })
   // Scaffold the workspace if it doesn't exist.
   const claudeMd = resolve(workspace, "CLAUDE.md")
-  if (!existsSync(claudeMd)) {
+  if (scaffold && !existsSync(claudeMd)) {
     try {
       mkdirSync(workspace, { recursive: true })
       writeFileSync(claudeMd, `# ${name}\n\n${personality || "You are " + name + "."}\n`)
