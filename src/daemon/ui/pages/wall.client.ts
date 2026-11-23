@@ -72,6 +72,8 @@ import { WALL_BUILD_SCRIPT } from "./wall-build.client"
 import { WALL_NUMBERS_SCRIPT } from "./wall-numbers.client"
 import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml } from "./wall-numbers"
 import { WALL_JOBLEDGER_SCRIPT } from "./wall-jobledger.client"
+import { WALL_AGENTS_SCRIPT } from "./wall-agents.client"
+import { agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml } from "./wall-agents"
 import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlQueueHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
 import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
@@ -104,6 +106,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
+  ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
@@ -126,6 +129,7 @@ ${WALL_ACTIVITY_SCRIPT}
 ${WALL_BUILD_SCRIPT}
 ${WALL_NUMBERS_SCRIPT}
 ${WALL_JOBLEDGER_SCRIPT}
+${WALL_AGENTS_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -1021,11 +1025,13 @@ ${WALL_JOBLEDGER_SCRIPT}
     });
   }
   function agentsPageHtml() {
-    var list = allAgents();
+    // The owner's manager (#2144, wall-agents.client.ts): New agent on top,
+    // a status on each card and its buttons under it.
+    var list = agmMerge(allAgents()), top = agmTop();
     var down = ((S.live && S.live.nodes) || []).filter(nodeDown);
     var note = down.length ? '<p class="ax-wall__count wag__note">' + esc(down.map(function (n) { return n.name; }).join(', ')) + (down.length === 1 ? ' does' : ' do') + ' not answer: agents only there are missing.</p>' : '';
     // Read-only: the org chart is edited on /org (#1420).
-    note += '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
+    note = top + note + '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
     return note + called + list.map(function (a) {
@@ -1038,7 +1044,7 @@ ${WALL_JOBLEDGER_SCRIPT}
         a.lastActive ? 'last active ' + when(a.lastActive) : '',
       ].filter(Boolean).map(function (x) { return '<span>' + x + '</span>'; }).join('');
       return '<article class="wag" id="agent-' + esc(a.id) + '">' + avatar(a.id) + '<div class="wag__b">' +
-        '<div class="wp__by"><button type="button" class="name" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button><span class="h">@' + esc(a.id) + '</span>' +
+        '<div class="wp__by"><button type="button" class="name" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button><span class="h">@' + esc(a.id) + '</span>' + agmChip(a) +
           (a.running ? '<span class="chip state">running ' + a.running + '</span>' : '') + '</div>' +
         orgLineHtml(a.id) + '<div class="wp__meta">' + meta + '</div>' +
         '<div class="wpf__stats"><span><b>' + s.open + '</b> open</span><span><b>' + s.owner + '</b> waiting on the owner</span>' +
@@ -1048,7 +1054,7 @@ ${WALL_JOBLEDGER_SCRIPT}
         (a.nodes.length ? '<div class="wag__acts">' + agentActsHtml(a.id) + '</div>' : '') +
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
           agentPageLink(a.id) + '<a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
-        '</div></article>';
+        agmTools(a) + '</div></article>';
     }).join('');
   }
 
@@ -1407,7 +1413,8 @@ ${WALL_JOBLEDGER_SCRIPT}
     // A line comment being typed in the Diff view (#2102) keeps the post as it is.
     if (page === 'post' && !diffTyping()) $('wall-post').innerHTML = postPageHtml();
     if (page === 'running') $('wall-running').innerHTML = nodesHtml();
-    if (page === 'agents') $('wall-agents-page').innerHTML = agentsPageHtml();
+    // The Agents manager (#2144) keeps a field in use: no repaint over it.
+    if (page === 'agents') { agmEnsure(); if (!agmTyping()) $('wall-agents-page').innerHTML = agentsPageHtml(); }
     // The People page (#1441): wall-people.client.ts.
     renderPeople(page);
     // The Org page (#1419): wall-org.client.ts. It needs no feed.

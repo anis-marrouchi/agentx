@@ -980,7 +980,8 @@ describe("Every other Wall page sends no settings write (#1428)", () => {
       const w = openWall({ hash })
       await w.settle()
       expect(w.writes(), hash).toEqual([])
-      expect(w.calls.some((c) => c.url === "/api/admin/state"), hash).toBe(false)
+      // The Agents manager (#2144) reads the owner's saved agent settings; it writes only on a click.
+      if (hash !== "#page=agents") expect(w.calls.some((c) => c.url === "/api/admin/state"), hash).toBe(false)
     }
   })
 
