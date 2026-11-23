@@ -250,6 +250,8 @@ interface TaskOutput {
   subscribers: Set<TaskOutputSubscriber>
   done: boolean
   endedAt?: Date
+  /** Events reached the buffer while the run went (#2101 R16). */
+  streamed?: boolean
 }
 
 /** Cap per-task buffer to keep memory bounded; recent tail wins. */
@@ -695,10 +697,15 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
       let out = ""
       for (const block of event.message.content) {
         if (block.type === "text" && typeof block.text === "string") {
-          if (block.text.length > textSeen.length) {
+          // A growing message (partial events) adds its new tail; a new
+          // message after a tool step starts over, so it is written whole
+          // even when shorter than the one before (#2101 R16).
+          if (block.text.startsWith(textSeen)) {
             out += block.text.slice(textSeen.length)
-            textSeen = block.text
+          } else {
+            out += line("") + block.text
           }
+          textSeen = block.text
         } else if (block.type === "thinking" && typeof block.thinking === "string") {
           out += `\n💭 ${clip(block.thinking, 600)}\n`
         } else if (block.type === "tool_use") {
@@ -2587,10 +2594,17 @@ export class AgentRegistry {
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     } else {
-      // Even without a dashboard subscriber, we want trace steps for
-      // /traces/:id. Build a minimal onEvent that ONLY emits steps.
+      // No caller onDelta: the run keeps its own mode. When the runtime still
+      // sends stream-json events (the persistent claude-code process does,
+      // whatever the caller), the task's live output gets them too, so a run
+      // started from Telegram, a2a, GitLab or a schedule streams on its Task
+      // page while it works (#2101 R16). Before, only the final reply landed,
+      // in one piece, when the run ended.
+      const formatter = makeStreamEventFormatter(() => !output.buffer || output.buffer.endsWith("\n"))
       onEvent = (event: any) => {
         noteFirstEvent()
+        const formatted = formatter(event)
+        if (formatted) { output.streamed = true; pushToBuffer(formatted) }
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
@@ -4432,7 +4446,13 @@ export class AgentRegistry {
       // For non-streaming runs (no caller onDelta) we never captured incremental
       // chunks — surface the final response in one shot so the dashboard modal
       // shows something meaningful when subscribers are attached.
-      if (!onDelta && (response.content || response.error)) {
+      // A run whose events already streamed (#2101 R16) keeps what it wrote;
+      // only an error the stream did not carry is added, on its own line.
+      if (!onDelta && output.streamed) {
+        if (response.error && !output.buffer.includes(response.error)) {
+          pushToBuffer(`${output.buffer && !output.buffer.endsWith("\n") ? "\n" : ""}[error] ${response.error}\n`)
+        }
+      } else if (!onDelta && (response.content || response.error)) {
         const finalText = response.error ? `[error] ${response.error}` : response.content
         output.buffer = finalText
         for (const sub of output.subscribers) {
