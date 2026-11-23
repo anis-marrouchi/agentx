@@ -58,46 +58,40 @@ export const AX_COMPONENTS_CSS = `
   color: var(--ax-muted); border-color: var(--ax-border); background: var(--ax-surface-2);
 }
 
-/* --- Buttons --- */
+/* --- Buttons (Orca: flat, 1px line, neutral primary) --- */
 .ax-btn {
-  background: var(--ax-surface); color: var(--ax-text-2);
-  border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius);
-  padding: 8px 16px; font: inherit; font-size: var(--ax-fs); font-weight: 600;
+  background: var(--ax-surface); color: var(--ax-text);
+  border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-sm);
+  padding: 6px 12px; font: inherit; font-size: var(--ax-fs-sm); font-weight: 500;
   cursor: pointer; line-height: 1.4;
-  box-shadow: var(--ax-shadow);
-  transition: border-color 0.1s, color 0.1s, background 0.1s, transform 0.06s, box-shadow 0.06s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
 }
-.ax-btn:hover:not(:disabled) { color: var(--ax-text); border-color: var(--ax-accent); }
-/* The offset shadow collapses on press so the control physically sinks —
-   the whole point of an un-blurred drop rather than a glow. */
-.ax-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--ax-border); }
+.ax-btn:hover:not(:disabled) { background: var(--ax-surface-3); }
+.ax-btn:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: 1px; }
 .ax-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
 .ax-btn--primary {
-  background: color-mix(in oklch, var(--ax-accent) 15%, var(--ax-surface));
-  color: var(--ax-accent);
-  border-color: color-mix(in oklch, var(--ax-accent) 50%, var(--ax-border-2));
-  font-weight: 700;
-  box-shadow: var(--ax-shadow-accent);
+  background: var(--ax-primary); color: var(--ax-primary-fg);
+  border-color: var(--ax-primary);
 }
 .ax-btn--primary:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--ax-accent) 25%, var(--ax-surface));
-  border-color: var(--ax-accent);
+  background: color-mix(in oklch, var(--ax-primary) 88%, var(--ax-bg));
+  border-color: var(--ax-primary);
 }
 
 .ax-btn--ghost {
-  background: transparent; color: var(--ax-muted);
-  border-color: var(--ax-border); box-shadow: none;
+  background: transparent; color: var(--ax-text-2);
+  border-color: transparent; box-shadow: none;
 }
-.ax-btn--ghost:active:not(:disabled) { transform: none; }
+.ax-btn--ghost:hover:not(:disabled) { color: var(--ax-text); }
 
 .ax-btn--danger {
-  color: var(--ax-err);
+  color: var(--ax-red-ink);
   border-color: var(--ax-red-e);
-  box-shadow: 0 4px 0 var(--ax-red-e);
 }
 .ax-btn--danger:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--ax-err) 12%, var(--ax-surface));
+  background: var(--ax-red-t);
   border-color: var(--ax-err);
 }
 

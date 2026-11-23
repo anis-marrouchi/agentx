@@ -1,23 +1,7 @@
-// Approved phone design, Chat 1a (#488). Scoped to the phone pages, leaving
-// the desktop tokens alone. System fonts keep the cached app self-contained.
-
-// The colours, for every phone page: the app, and the pairing pages before
-// it. Blue text is #1f66e5 on white and #6aa0ff on dark, both above 4.5:1.
-export const APP_PHONE_PALETTE_CSS = `
-:root {
-  --ax-bg: #fff; --ax-surface: #fff; --ax-surface-2: #f4f5f7; --ax-surface-3: #f6f7f9;
-  --ax-text: #0b0d10; --ax-text-2: #5a616c; --ax-border: #e5e7eb;
-  --ax-accent: #1f66e5; --ax-accent-2: #1f66e5; --ax-accent-t: #e8f0ff;
-  --ax-radius: 20px; --ax-radius-sm: 12px; --ax-border-w: 1px;
-  --phone-bubble: #e8f0ff; --phone-green: #1e8e4e;
-}
-:root[data-theme=dark] {
-  --ax-bg: #14161a; --ax-surface: #1c1f24; --ax-surface-2: #1b1e23; --ax-surface-3: #101215;
-  --ax-text: #f2f4f7; --ax-text-2: #a3aab5; --ax-border: #2a2e35;
-  --ax-accent: #6aa0ff; --ax-accent-2: #6aa0ff; --ax-accent-t: #1c2b47;
-  --phone-bubble: #1d2f52; --phone-green: #3dbe74;
-}
-`
+// Phone layout, first approved as Chat 1a (#488). The colours now come from
+// the one shared style set in tokens.ts (#2101, Orca look), so the phone has
+// no palette of its own. System fonts keep the cached app self-contained:
+// the phone pages do not load the Geist web font, the token stack falls back.
 
 // The app's layout: the header, tabs, chat, voice dock, cards and sheets.
 // The body is pinned to the screen (position: fixed; inset: 0), not sized
@@ -59,11 +43,11 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .cs-list { gap: 8px; touch-action: pan-x; }
 .cs-state { font-weight: 400; color: var(--ax-text-2); }
 .cs-chip { border-color: var(--ax-border); background: var(--ax-surface); }
-.cs-chip[aria-current=true] { border-color: #2979ff; background: var(--ax-accent-t); }
+.cs-chip[aria-current=true] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
 .cx-log { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; gap: 16px; padding: 8px 0 16px; }
 #cx-empty { padding: 16px 4px; }
 .cx-msg { flex: none; padding: 12px 14px; font-size: 16px; line-height: 1.45; }
-.cx-user { max-width: 80%; background: var(--phone-bubble); border: 0; border-radius: 20px 20px 6px 20px; }
+.cx-user { max-width: 80%; background: var(--phone-bubble); border: 0; border-radius: 14px 14px 4px 14px; }
 .cx-agent { border-radius: 6px 20px 20px 20px; }
 .cx-msg .md pre { border: 1px solid var(--ax-border); padding: 10px 12px; touch-action: pan-x; }
 .cx-msg .md table { touch-action: pan-x; }
@@ -87,17 +71,17 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .cx-typing-on .vx-orb canvas { width: 74px; height: 74px; top: -15px; left: -15px; }
 .cx-typing-on .vx-mic { width: 22px; height: 22px; top: 11px; left: 11px; }
 .cx-typing-on .vx { gap: 8px; }
-.cam-primary { background: #1f66e5; border-color: #1f66e5; color: #fff; }
-.cx-send { background: #1f66e5; color: #fff; border: 0; border-radius: 22px; }
+.cam-primary { background: var(--ax-primary); border-color: var(--ax-primary); color: var(--ax-primary-fg); }
+.cx-send { background: var(--ax-primary); color: var(--ax-primary-fg); border: 0; border-radius: 22px; }
 .tabs { flex: none; position: relative; padding: 2px env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--ax-bg); }
-.tabs [role=tab] { position: relative; min-width: 0; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 500; border-radius: 16px; }
+.tabs [role=tab] { position: relative; min-width: 0; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 500; border-radius: var(--ax-radius); }
 .tabs [role=tab][aria-selected=true], [data-theme=dark] .tabs [role=tab][aria-selected=true] { background: transparent; color: var(--ax-accent); font-weight: 600; }
-.tab-icon { display: grid; place-items: center; width: 56px; height: 30px; border-radius: 16px; }
+.tab-icon { display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--ax-radius); }
 .tab-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.tabs::before { content: ''; position: absolute; pointer-events: none; top: 4px; width: 56px; height: 30px; border-radius: 16px; background: var(--ax-accent-t); left: calc((var(--tab-position, 0) + .5) * 20% - 28px); }
+.tabs::before { content: ''; position: absolute; pointer-events: none; top: 4px; width: 56px; height: 30px; border-radius: var(--ax-radius); background: var(--ax-surface-3); left: calc((var(--tab-position, 0) + .5) * 20% - 28px); }
 .tab-icon { position: relative; }
 .tabs button:active .tab-icon { background: var(--ax-surface-2); transform: scale(.92); }
-.fx-card { border-radius: 16px; padding: 16px; }
+.fx-card { border-radius: var(--ax-radius-lg); padding: 16px; }
 .fx-row > h3, .fx-row > h4, .fx-row > strong { min-width: 0; overflow-wrap: anywhere; }
 .fx-row > .fx-muted { text-align: right; }
 .fx-working { color: var(--ax-accent); font-size: 14px; }
@@ -111,7 +95,7 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .fx-switch span { top: 9px; }
 .fx-sheet { max-height: 85dvh; border-radius: 24px 24px 0 0; padding: 0 0 env(safe-area-inset-bottom); overscroll-behavior: contain; }
 .fx-sheet::backdrop { background: rgb(11 13 16 / .34); }
-[data-theme=dark] .fx-sheet { background: #1f2228; }
+[data-theme=dark] .fx-sheet { background: var(--ax-surface); }
 [data-theme=dark] .fx-sheet::backdrop { background: rgb(0 0 0 / .55); }
 .sheet-handle { display: block; width: 100%; height: 44px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: grab; }
 .sheet-handle::after { content: ''; display: block; width: 36px; height: 5px; border-radius: 3px; margin: auto; background: var(--ax-text-2); opacity: .5; }
@@ -119,12 +103,12 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .sheet-head h3 { margin: 0; font-size: 20px; }
 .cx-sheet { border: 0; border-radius: 0; padding: 0 20px 20px; max-height: 60dvh; background: transparent; }
 .cx-sheet li button { min-height: 48px; background: transparent; border: 0; border-bottom: 1px solid var(--ax-border); border-radius: 0; }
-#al-list { background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: 20px; overflow: hidden; }
+#al-list { background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); overflow: hidden; }
 #al-list li { padding: 16px; }
 #al-list li:first-child { border-top: 0; }
 #al-list p { line-height: 1.45; margin: 8px 0 0; overflow-wrap: anywhere; }
 #al-list a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ax-accent); }
-.tabs .has-unread .tab-icon::after { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #2979ff; top: 6px; margin-left: 24px; }
+.tabs .has-unread .tab-icon::after { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-accent); top: 6px; margin-left: 24px; }
 #al-list .al-unread { background: var(--ax-accent-t); }
 .al-item { width: 100%; min-height: 44px; padding: 0; font: inherit; text-align: left; border: 0; color: inherit; background: none; cursor: pointer; }
 .al-body { display: block; margin-top: 8px; line-height: 1.45; overflow-wrap: anywhere; }

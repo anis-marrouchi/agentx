@@ -19,9 +19,9 @@
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
 
-import { APP_PHONE_PALETTE_CSS, APP_REDESIGN_CSS } from "./app-redesign.css"
+import { APP_REDESIGN_CSS } from "./app-redesign.css"
 import { APP_SHEET_SCRIPT } from "./app-sheet.client"
-import { AX_TOKENS_CSS } from "../tokens"
+import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_DESK_SCRIPT } from "./app-desk.client"
@@ -57,12 +57,13 @@ import { swipeAxis, swipeLanding, swipeMayStart, swipeOffset } from "./app-swipe
 
 export { APP_SERVICE_WORKER } from "./app-sw"
 
-const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})();</script>`
+const THEME_BOOT = AX_THEME_BOOT
 
 function head(title: string): string {
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2979FF">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
 <meta name="referrer" content="no-referrer">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="AgentX">
@@ -72,7 +73,7 @@ function head(title: string): string {
 <link rel="apple-touch-icon" href="/app/icon-192.png">
 <title>${title}</title>
 ${THEME_BOOT}
-<style>${AX_TOKENS_CSS}${APP_PHONE_PALETTE_CSS}${BASE_CSS}</style>`
+<style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
 }
 
 const TAB_ICONS: Record<string, string> = {
@@ -179,8 +180,10 @@ export function renderAppManifest(): string {
     start_url: "/app",
     scope: "/app",
     display: "standalone",
+    // The shared palette's ground (#2101). The Android app's own splash and
+    // toolbar colour stay in its APK (apps/android res/values/colors.xml).
     background_color: "#FFFFFF",
-    theme_color: "#2979FF",
+    theme_color: "#FFFFFF",
     icons: [
       { src: "/app/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/app/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

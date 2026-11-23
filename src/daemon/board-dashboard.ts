@@ -1115,8 +1115,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path.startsWith("/assets/")) {
     const rel = path.slice("/assets/".length)
     // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
-    // whitelist narrow to script/map/style files.
-    if (!/^[a-zA-Z0-9._-]+\.(js|map|css)$/.test(rel)) {
+    // whitelist narrow to script/map/style files, plus the self-hosted
+    // Geist fonts and their licence (#2101).
+    if (!/^[a-zA-Z0-9._-]+\.(js|map|css|woff2|txt)$/.test(rel)) {
       sendJson(res, 400, { error: "invalid asset name" }); return
     }
     const assetPath = resolveFromHere("web/" + rel)
@@ -1124,6 +1125,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       const buf = await readAsset(assetPath)
       const ct = rel.endsWith(".map") ? "application/json; charset=utf-8"
         : rel.endsWith(".css") ? "text/css; charset=utf-8"
+        : rel.endsWith(".woff2") ? "font/woff2"
+        : rel.endsWith(".txt") ? "text/plain; charset=utf-8"
         : "application/javascript; charset=utf-8"
       // A hashed URL names exactly one build, so it can be cached hard; a bare
       // one must keep revalidating because its bytes change under it.
