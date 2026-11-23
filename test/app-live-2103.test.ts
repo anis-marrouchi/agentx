@@ -49,6 +49,7 @@ let upstream: () => TaskStreamOpen = () => ({
   ]),
 })
 
+let snapshot = async () => ({ ts: "2026-11-23T08:00:00Z", nodes: [node] })
 let dir: string
 let tokens: TokenStore
 let server: Server
@@ -60,7 +61,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "agentx-app-live-"))
   tokens = new TokenStore(dir)
   const fleet: AppFleetDeps = {
-    snapshot: async () => ({ ts: "2026-11-23T08:00:00Z", nodes: [node] }),
+    snapshot: () => snapshot(),
     nodePost,
     approvals: async () => [],
     decide: async () => ({ status: 200, body: {} }),
@@ -211,6 +212,38 @@ describe("GET /api/app/tasks/stream", () => {
     } finally { upstream = saved }
   })
 
+  it("a phone that leaves while the snapshot is slow opens no upstream (#2137 follow-up)", async () => {
+    const saved = snapshot
+    let release = () => {}
+    let entered = () => {}
+    const inSnapshot = new Promise<void>((r) => { entered = r })
+    snapshot = () => new Promise((r) => { entered(); release = () => r({ ts: "2026-11-23T08:00:00Z", nodes: [node] }) })
+    taskStream.mockClear()
+    // What the node is asked with: whether the phone was already gone then.
+    const abortedAtOpen: boolean[] = []
+    taskStream.mockImplementationOnce(async (_n, _a, _t, signal) => {
+      abortedAtOpen.push(signal.aborted)
+      return { ok: true, body: new ReadableStream({ start(c) { signal.addEventListener("abort", () => c.close()) } }) }
+    })
+    try {
+      const p = phone(["app", "app:live"])
+      const ac = new AbortController()
+      const req = fetch(`${base}/api/app/tasks/stream?taskId=t-run`, { headers: { Authorization: `Bearer ${p.token}` }, signal: ac.signal })
+      await inSnapshot
+      ac.abort()
+      await req.catch(() => {})
+      await new Promise((r) => setTimeout(r, 50))
+      release()
+      await new Promise((r) => setTimeout(r, 50))
+      // Either the node is never asked, or it is asked with a signal already aborted.
+      expect(abortedAtOpen.every(Boolean)).toBe(true)
+    } finally {
+      snapshot = saved
+      taskStream.mockReset()
+      taskStream.mockImplementation(async () => upstream())
+    }
+  })
+
   it("a peer that refuses or is offline gives a plain message, not a raw 403", async () => {
     const saved = upstream
     try {
@@ -256,6 +289,52 @@ describe("PhoneStreamTrimmer", () => {
     const t = new PhoneStreamTrimmer()
     t.feed("[error] something\n")
     expect(t.failed).toBe(true)
+  })
+
+  // #2137 review B1: runtimes that are not claude-code mark only the first
+  // thinking token with 💭; the rest come bare in later chunks.
+  it("keeps thinking dropped across chunks until the thought's newline", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [
+      ...t.feed("💭 The user's"),
+      ...t.feed(" password is hunter2"),
+      ...t.feed(" and more"),
+      ...t.feed("\n💭 a second line of the thought"),
+    ]
+    expect(JSON.stringify(evs)).not.toContain("password")
+    expect(evs).toEqual([])
+    // The daemon ends the thought with a newline, then the answer comes.
+    expect(t.feed("\n")).toEqual([])
+    expect(t.feed("Here is the answer.")).toEqual([{ event: "text", data: { text: "Here is the answer." } }])
+    expect(t.final()).toBe("Here is the answer.")
+  })
+
+  it("drops a thought glued to text, and its later tokens", () => {
+    const t = new PhoneStreamTrimmer()
+    expect(t.feed("Checking.💭 secret plan")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(t.feed(" more secret plan")).toEqual([])
+    expect(JSON.stringify(t.final())).not.toContain("secret")
+  })
+
+  // #2137 review B2: an error marker glued to text with no newline.
+  it("splits an [error] glued to text: the run fails and the error text is dropped", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [...t.feed("…working on it"), ...t.feed("…working on it[error] API key invalid\n")]
+    expect(JSON.stringify(evs)).not.toContain("API key")
+    expect(t.text()).not.toContain("API key")
+    expect(t.failed).toBe(true)
+    const one = new PhoneStreamTrimmer()
+    one.feed("Working on it[error] API key invalid\n")
+    expect(one.failed).toBe(true)
+    expect(one.final()).toBe("Working on it")
+  })
+
+  it("a full start buffer that begins inside a thought shows none of it", () => {
+    const t = new PhoneStreamTrimmer()
+    const initial = "x".repeat(64 * 1024 - 17) + " hunter2 thinking"
+    expect(t.feedStart(initial)).toEqual([])
+    expect(t.feed(" still thinking hunter2")).toEqual([])
+    expect(t.feed("\nAnswer.")).toEqual([{ event: "text", data: { text: "Answer." } }])
   })
 })
 

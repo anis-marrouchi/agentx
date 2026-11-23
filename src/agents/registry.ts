@@ -4220,16 +4220,20 @@ export class AgentRegistry {
       // modal buffer with a `💭 ` prefix only on the first chunk so
       // the dashboard's line-based renderer treats the whole run of
       // reasoning as a single thought event instead of one per token.
+      // Each new line of reasoning starts with `💭 ` again: the renderers
+      // and the phone's trimmer (app-task-stream.ts) read the buffer line
+      // by line, and a bare line would read as the answer (#2137 B1).
       let thinkingOpen = false
       const wrappedOnThinking: ThinkingCallback | undefined = tierUsesStreamJson
         ? onThinking
         : (text) => {
             if (text) {
+              const lines = text.replace(/\n/g, "\n💭 ")
               if (!thinkingOpen) {
-                pushToBuffer(`💭 ${text}`)
+                pushToBuffer(`💭 ${lines}`)
                 thinkingOpen = true
               } else {
-                pushToBuffer(text)
+                pushToBuffer(lines)
               }
             }
             if (onThinking) onThinking(text)
