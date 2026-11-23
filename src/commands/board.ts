@@ -3,7 +3,7 @@ import chalk from "chalk"
 import { readFileSync } from "fs"
 import { resolve } from "path"
 import { loadEnvFileIntoProcess } from "@/utils/workspace-env"
-import { loadDaemonConfig } from "@/daemon/config"
+import { daemonConfigSchema, loadDaemonConfig } from "@/daemon/config"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 
 export const board = new Command()
@@ -47,24 +47,18 @@ function resolveServerConfig(portOpt?: string, bindOpt?: string): any {
   } catch (e: any) {
     console.log(chalk.yellow("  No agentx.json found — starting dashboard in setup-only mode."))
     console.log(chalk.dim("  Visit http://127.0.0.1:" + (portOpt || "4202") + " to run the wizard.\n"))
-    return {
+    // Through the schema, so every section the dashboard reads has its
+    // defaults: a hand-made object missed some and crashed `agentx setup`
+    // on a fresh machine before the wizard could show (#2143).
+    return daemonConfigSchema.parse({
       node: { id: "setup", name: "Setup", bind: "127.0.0.1:18800" },
-      providers: {},
-      agents: {},
-      channels: {},
-      crons: {},
-      mesh: { enabled: false, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } },
-      boards: [],
       dashboard: {
         enabled: true,
         port: portOpt ? parseInt(portOpt, 10) : 4202,
         bind: bindOpt || "127.0.0.1",
         daemonUrl: "http://localhost:18800",
-        daemons: [],
       },
-      business: undefined,
-      session: { staleMinutes: 120 },
-    }
+    })
   }
 }
 

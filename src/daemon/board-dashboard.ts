@@ -23,6 +23,9 @@ import type { WorkSource, WorkItem } from "@/business/work-pool"
 import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
 import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
+import { setupRedirect } from "./setup-flow"
+import { handleSetupFlowApi, SETUP_API_PREFIX } from "./setup-flow-api"
+import { setupFlowDeps } from "./setup-flow-daemon"
 import { handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
@@ -352,9 +355,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     //
     // The one exception is a machine with no agents yet, where there is
     // nothing live to show and the wizard is the only useful destination.
-    const wz = wizardState()
-    if (!wz.configExists || wz.agentCount === 0) {
-      res.writeHead(302, { Location: "/setup" })
+    const toSetup = setupRedirect(path, wizardState(), req.headers)
+    if (toSetup) {
+      res.writeHead(302, { Location: toSetup })
       res.end()
       return
     }
@@ -381,6 +384,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (method === "GET" && path === HUB_PATH) {
+    // No agent yet (#2143): a person opening the Hub lands on the wizard.
+    const toSetup = setupRedirect(path, wizardState(), req.headers)
+    if (toSetup) {
+      res.writeHead(302, { Location: toSetup })
+      res.end()
+      return
+    }
     if (!pageAllowed(req, res, ctx, path)) return
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWallPage(wallPageOpts(req, ctx)))
@@ -636,8 +646,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Setup wizard — form-driven first-run experience for non-technical operators.
   if (method === "GET" && path === "/setup") {
-    handleWizardGet(req, res)
+    handleWizardGet(req, res, pageToken(req, ctx.token))
     return
+  }
+  // The guided first run's steps (#2143): the owner's alone, as they save a
+  // key, start the daemon and ask the agent.
+  if (path.startsWith(SETUP_API_PREFIX)) {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "Only the owner can run the setup. Open it on the computer that runs AgentX." }); return }
+    if (await handleSetupFlowApi(req, res, url, setupFlowDeps(process.cwd(), configNodeTargets(ctx.config)[0], readJson))) return
   }
   if (method === "POST" && path === "/api/setup") {
     await handleWizardPost(req, res)

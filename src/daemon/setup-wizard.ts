@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs"
 import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
-import { hostname } from "os"
 import { spawn } from "child_process"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig, writeAgentxConfig } from "./config-mutate"
@@ -39,6 +38,8 @@ export interface WizardPayload {
     /** providers.<name> the engine uses (sdk/orchestrator); unset = engine default. */
     provider?: string
     personality?: string   // short free text → CLAUDE.md
+    /** The agent's folder, absolute or relative to baseDir; unset = agents/<id>. */
+    workspace?: string
   }
   telegram?: {
     accountId: string
@@ -105,7 +106,9 @@ export function runWizard(payload: WizardPayload, baseDir: string = process.cwd(
 
   const configPath = resolve(baseDir, "agentx.json")
   const envPath = resolve(baseDir, ".env")
-  const workspaceDir = resolve(baseDir, "agents", payload.agent.id)
+  const workspaceDir = payload.agent.workspace?.trim()
+    ? resolve(baseDir, payload.agent.workspace.trim())
+    : resolve(baseDir, "agents", payload.agent.id)
   const state = wizardState(baseDir)
 
   // --- scaffold workspace ---
@@ -277,10 +280,8 @@ function ensureEnvEntries(envPath: string, payload: WizardPayload, telegramToken
 
 // --- HTTP handlers used by board-dashboard.ts ---
 
-export function handleWizardGet(_req: IncomingMessage, res: ServerResponse): void {
-  const state = wizardState()
-  const defaultNode = state.nodeName || hostname().replace(/\.local$/, "")
-  const html = renderSetupPage(state, defaultNode)
+export function handleWizardGet(_req: IncomingMessage, res: ServerResponse, localToken?: string): void {
+  const html = renderSetupPage(wizardState(), localToken)
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
   res.end(html)
 }

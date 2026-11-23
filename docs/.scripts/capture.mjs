@@ -140,13 +140,8 @@ const shots = [
   { name: "channels/gitlab", path: "/hub#page=settings&section=channels", wait: "#wall-settings .wsj__tabs", steps: [{ click: '[data-st-act=ch][data-ch="gitlab"]' }, { wait: "#st-gl-env" }, { fill: "#st-gl-env", text: "GITLAB_TOKEN" }, { scroll: "#wall-settings [data-st-form=gitlab]" }] },
   { name: "agent-memory/wiki-absorb", path: "/admin/agents/cx", wait: '.ax-opts[data-field="wikiAbsorb"] button.is-active', steps: [{ scroll: '.ax-opts[data-field="wikiAbsorb"]' }] },
   { name: "agents/personality", path: "/admin/agents/cx", wait: "#f-triggers .ax-trig-pill", steps: [{ click: 'a[data-tab="identity"]' }] },
-  { name: "setup/filled", path: "/setup", wait: "#wizard", steps: [
-    { fill: '[name="agentName"]', text: "Support" }, { fill: '[name="agentId"]', text: "support" },
-    { fill: '[name="triggerWords"]', text: "@support, support" }, { select: '[name="tier"]', value: "sdk" },
-    { fill: '[name="personality"]', text: "Answer questions about our opening hours and returns policy. Keep replies short." },
-    { scroll: '[name="agentName"]' },
-  ] },
-  { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
+  // The guided first run (#2143): the four steps on one page.
+  { name: "setup/steps", path: "/setup", wait: "#m-status.is-ok" },
   // The Wall's Cost page (#1423), which /admin/cost now opens: the page, a
   // phone, the details it folds, and the monthly budgets with their form.
   { name: "wall/cost", path: "/hub#status=open&view=cost&range=30", wait: "#wall-cost .wc__row" },

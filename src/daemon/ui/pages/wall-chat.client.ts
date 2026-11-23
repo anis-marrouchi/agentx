@@ -431,6 +431,9 @@ export const WALL_CHAT_SCRIPT = String.raw`
     $('hc-text').focus();
   });
 
+  // The setup wizard's Done link (#2143): #chat=open opens the panel on
+  // the conversation the wizard started.
+  if (/(^#|&)chat=open(&|$)/.test(location.hash)) open(true);
   loadLast();
 })();
 `

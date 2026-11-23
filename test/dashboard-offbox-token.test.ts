@@ -188,10 +188,14 @@ describe("dashboard pages off-box (#1306)", () => {
       const off = await (await fetch(base + page, { headers: OFF, redirect: "manual" })).text()
       expect(off, page).not.toContain(TOKEN)
     }
-    // Setup comes before any agent: no drawer to feed.
+    // Setup comes before any agent: no drawer to feed. Its own steps
+    // (#2143) are the owner's, so on this machine it carries the token for
+    // them; off the box it never does.
     const setup = await (await fetch(base + "/setup", { redirect: "manual" })).text()
     expect(setup).not.toContain('id="ax-as-dock"')
-    expect(setup).not.toContain(TOKEN)
+    expect(setup).toContain(`window.AX_LOCAL_TOKEN = "${TOKEN}"`)
+    const setupOff = await (await fetch(base + "/setup", { headers: OFF, redirect: "manual" })).text()
+    expect(setupOff).not.toContain(TOKEN)
   })
 
   it("changes nothing when no dashboard.token is set", async () => {
