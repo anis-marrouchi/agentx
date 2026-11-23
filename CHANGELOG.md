@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.252.0](https://github.com/anis-marrouchi/agentx/compare/v0.251.0...v0.252.0) (2026-11-23)
+
+
+### Features
+
+* **ui:** AgentX blue for the primary button, focus and current place ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR 1b) ([#2127](https://github.com/anis-marrouchi/agentx/issues/2127)) ([43c4b4e](https://github.com/anis-marrouchi/agentx/commit/43c4b4e006b3d35e7afa74cca4b5004639e5eefb))
+* **ui:** desktop and phone take the Orca look from one style set ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2111](https://github.com/anis-marrouchi/agentx/issues/2111)) ([e8a673b](https://github.com/anis-marrouchi/agentx/commit/e8a673b927c83f8717924a7f9afafe498c1f946d))
+* **voice:** show the app version; status and doctor flag old builds ([#2094](https://github.com/anis-marrouchi/agentx/issues/2094), [#2091](https://github.com/anis-marrouchi/agentx/issues/2091)) ([#2100](https://github.com/anis-marrouchi/agentx/issues/2100)) ([0d9deb4](https://github.com/anis-marrouchi/agentx/commit/0d9deb4ebf0e6d0bf4dfdc545021eceead028253))
+
 ## [0.251.0](https://github.com/anis-marrouchi/agentx/compare/v0.250.1...v0.251.0) (2026-11-23)
 
 
