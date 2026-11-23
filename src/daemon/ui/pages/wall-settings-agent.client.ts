@@ -158,7 +158,7 @@ export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
     if (k === 'tier') ctl = '<select' + attr + '>' + stOptions(ST_ENGINES, v) + '</select>';
     else if (k === 'permissionMode') ctl = '<select' + attr + '>' + stOptions(ST_PERMS, v) + '</select>';
     else if (f[2] === 'check') ctl = '<input type="checkbox"' + attr + (v === 'on' ? ' checked' : '') + '>';
-    else if (f[2] === 'area') ctl = '<textarea' + attr + ' rows="6">' + esc(v) + '</textarea>';
+    else if (f[2] === 'area') ctl = '<textarea' + attr + ' rows="6" maxlength="4000">' + esc(v) + '</textarea>';
     else if (f[2] === 'number') ctl = '<input type="number" min="1" max="' + (k === 'maxConcurrent' ? 20 : 240) + '"' + attr + ' value="' + esc(v) + '">';
     else ctl = '<input' + attr + ' value="' + esc(v) + '"' + (k === 'model' ? ' placeholder="the engine\'s default"' : '') + (k === 'name' ? ' maxlength="80"' : '') + '>';
     var was = '<small class="wsf__was" id="st-fh-' + k + '">' + (changed ? esc(stWasText(a, k)) : '') + '</small>';

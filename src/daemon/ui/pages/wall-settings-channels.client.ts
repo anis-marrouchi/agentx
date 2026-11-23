@@ -107,6 +107,8 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   }
 
   // --- Slack, Discord, GitLab: one connection each ---
+  // The Default agent select shows whom the bot answers as and is the
+  // owner's explicit pick, so it moves the bot (moveBot, admin-panel.ts).
   function stOneHtml(o) {
     return '<section class="wsc"><h3>' + esc(o.label) + ' ' + stChState(o.on, o.configured) + '</h3>' +
       (o.meta ? '<p class="wsj__sub">' + o.meta + '</p>' : '') + (o.configured ? stChSwitch(o.toggle, o.on, o.label + ' on') : '') +
@@ -223,8 +225,8 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
       imapHost: stVal('st-em-imap').trim(), imapPort: stVal('st-em-imap-port').trim(), smtpHost: stVal('st-em-smtp').trim(), smtpPort: stVal('st-em-smtp-port').trim(),
       passwordEnv: stVal('st-em-env').trim(), allowFrom: stVal('st-em-allow'), send: stChecked('st-em-auto') ? 'auto' : 'approve',
     });
-    else if (kind === 'slack') stChSave('slack', 'POST', 'slack', { botTokenEnv: stVal('st-sl-bot').trim(), appTokenEnv: stVal('st-sl-app').trim(), agentBinding: stVal('st-sl-agent') });
-    else if (kind === 'discord') stChSave('discord', 'POST', 'discord', { tokenEnv: stVal('st-dc-env').trim(), agentBinding: stVal('st-dc-agent') });
+    else if (kind === 'slack') stChSave('slack', 'POST', 'slack', { botTokenEnv: stVal('st-sl-bot').trim(), appTokenEnv: stVal('st-sl-app').trim(), agentBinding: stVal('st-sl-agent'), moveBot: true });
+    else if (kind === 'discord') stChSave('discord', 'POST', 'discord', { tokenEnv: stVal('st-dc-env').trim(), agentBinding: stVal('st-dc-agent'), moveBot: true });
     else if (kind === 'gitlab') stChSave('gitlab', 'POST', 'gitlab', { host: stVal('st-gl-host').trim(), tokenEnv: stVal('st-gl-env').trim(), webhookPort: parseInt(stVal('st-gl-port'), 10) });
   });
 `

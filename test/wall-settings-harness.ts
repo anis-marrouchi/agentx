@@ -125,7 +125,10 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
   }
   const submit = async (attrs: Record<string, string>) => {
     const form: any = { getAttribute: (k: string) => attrs[k] ?? null }
-    for (const f of onDoc.submit ?? []) f({ target: { closest: () => form }, preventDefault() {} })
+    // As in a browser, only a selector the form matches finds it (#2144:
+    // the Agents manager's forms are not Settings forms).
+    const closest = (sel: string) => sel.split(",").some((s) => Object.keys(attrs).some((k) => s.trim() === `[${k}]`)) ? form : null
+    for (const f of onDoc.submit ?? []) f({ target: { closest }, preventDefault() {} })
     await settle()
   }
   /** Typing in a field, or ticking a box: the field changes, then its input event. */

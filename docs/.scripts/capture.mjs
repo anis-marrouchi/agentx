@@ -38,6 +38,9 @@ const shots = [
   { name: "wall/post", path: "/hub#status=&post=req-docs-wall-done", wait: "#open-req-docs-wall-done .wt li" },
   { name: "wall/task", path: "/hub#status=&post=req-docs-plan", wait: "#open-req-docs-plan .wtk__plan", clipTo: "#open-req-docs-plan" },
   { name: "wall/agents", path: "/hub#page=agents", wait: ".wag" },
+  // #2144: the owner's Agents manager: a status per agent, New agent's one form.
+  { name: "wall/agents-manager", path: "/hub#page=agents", wait: ".wag .agm-acts" },
+  { name: "wall/agents-new", path: "/hub#page=agents", wait: ".agm-head", steps: [{ click: "[data-agm-act=new]" }, { type: "#agm-f-name", text: "Sales Desk" }, { wait: ".agm-form" }], clipTo: ".agm-form" },
   { name: "wall/running", path: "/hub#page=running", wait: "#wall-running .wn" },
   // #1355: the feed keeps posts compact; these flags show on the opened post.
   { name: "wall/concurrent", path: "/hub#status=&post=req-docs-wall-question", wait: "#open-req-docs-wall-question .ax-conc", clipTo: "#open-req-docs-wall-question" },

@@ -302,6 +302,31 @@ The spend line uses the same figures as **Monthly budgets** on the Cost page, fr
 When a machine does not answer, the page names it at the top: agents that run only there are missing until it answers again.
 
 Avatars show an agent's or a person's profile picture when one is set on the machine that serves this dashboard, and the coloured circle with initials otherwise. An agent's profile has **Upload picture**, **Replace picture** and **Remove picture** for the agents this machine runs. See [Give agents and people a picture](../jobs/profile-pictures.md).
+
+### Set up agents from the Agents page
+
+Each agent on the **Agents** page has a status next to its @handle: **Working** (it runs something now), **Needs you** (a card or a post waits on you, or it waits for your approval), **Idle**, **Paused**, or **Not started** (saved, but no machine runs it yet). Anyone who opens the Hub sees the statuses. You, the owner, also get the buttons below; they use the same settings as **Settings** › **Agents**.
+
+1. **Browser:** in the nav, select **Agents**, then **New agent**.
+2. Type a name. The agent id comes from the name unless you type one. Role, workspace, AI engine, model, wake words and instructions are optional: the role puts the agent on the org chart, and the workspace is a folder (`~/` is your home folder; empty means `agents/<id>`). A folder that already exists is used as it is; nothing is written in it. Instructions take up to 4000 characters, here and in **Edit**; put longer ones in the agent's `CLAUDE.md`.
+3. Optional: under **Channels**, type the name of the environment variable that holds a Telegram, Discord or Slack token (the name, never the token). Tick **Answers on the public API** to open it there.
+   - A machine has one Slack bot and one Discord bot. The form says which agent each answers as now. If it answers as another agent, tick **Move the Slack bot** (or **Move the Discord bot**) to make it answer as the new agent instead; that agent then stops answering there. Without the tick, nothing is saved.
+4. Select **Create agent**. The line at the top says **Created**. If a part is refused, the form stays open with what you typed and says what was saved and what was not. Fix that field and select **Create agent** again: the parts already saved are not sent twice.
+5. Select **Restart when idle**. The daemon restarts once no task runs, and the agent starts.
+6. Under the new agent, **Test drive** is open: type a message and select **Send**. Its answer shows under it. It is a real run, so it can cost money.
+
+![The Agents page as the owner: a status per agent, New agent, and Edit, Pause, Test drive and Remove on an agent this machine runs](/screenshots/wall/agents-manager.png)
+
+![The New agent form: name, id, role, workspace, AI engine, model, wake words, instructions and channels](/screenshots/wall/agents-new.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+On an agent this machine runs:
+
+- **Edit** opens the same form with what is saved. **Save** changes only what you changed. Channels, skills and files are under **Settings**.
+- **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Needs you** instead.
+- **Remove** asks first, then takes the agent out of `agentx.json` and out of the org chart (with its lines and departments), and unbinds the Telegram, Slack and Discord bots that answered as it. You can then create an agent with the same id and a role. An agent that manages a project is not removed: give the project another manager first. Its workspace folder stays on disk. Select **Restart when idle** to stop it.
+
 ## Change settings
 
 **Settings** on the Hub is where you, the owner, change your agents. It is the only Hub page that changes settings; every other Hub page only reads them. The owner is whoever opens the dashboard on the machine that serves it, or signs in with the dashboard token (see [Sign in from another device](../jobs/reverse-proxy.md#sign-in-from-another-device)). Anyone else gets no **Settings** entry; opening its address, or an old `/admin` link, shows **Settings are for the owner**, and the settings API refuses them. Without a dashboard token there is no sign-in, so that page tells them to use the machine that serves the dashboard.
@@ -971,7 +996,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 1. **Browser:** open the dashboard. The Hub opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Operations page opens, and its **Hub** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
-4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list.
+4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list. Each agent has a status (**Working**, **Needs you**, **Idle**, **Paused** or **Not started**). As the owner, select **New agent**, type a name and select **Create agent**, then **Restart when idle**. After the restart, **Test drive** the new agent: it answers, and you edited no file.
 5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
 7. Select **Live** in the nav. The Hub's **Live** page opens.

@@ -382,7 +382,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         '<label><span>Trigger words <small>comma or space separated</small></span><input id="st-a-triggers" placeholder="@sales, sales"></label>' +
         '<div class="wsf__row"><label>AI engine<select id="st-a-tier">' + stOptions(ST_ENGINES, 'claude-code') + '</select></label>' +
         '<label><span>Model <small>optional</small></span><input id="st-a-model" placeholder="the engine\'s default"></label></div>' +
-        '<label><span>Personality / instructions <small>optional</small></span><textarea id="st-a-personality" rows="3" placeholder="You answer pricing questions and pass support questions to @support."></textarea></label>' +
+        '<label><span>Personality / instructions <small>optional</small></span><textarea id="st-a-personality" rows="3" maxlength="4000" placeholder="You answer pricing questions and pass support questions to @support."></textarea></label>' +
         '<label class="wsf__check"><input type="checkbox" id="st-a-public"> Answer on the public API (a token with agent:&lt;id&gt; scope can reach it)</label>' +
         '<p class="wsf__hint">A new agent starts working after a daemon restart: ' + esc(ST_RESTART) + '.</p>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Add agent</button>' + stNoteHtml('add') + '</div>' +
