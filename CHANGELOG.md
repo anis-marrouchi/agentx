@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.256.1](https://github.com/anis-marrouchi/agentx/compare/v0.256.0...v0.256.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **hub:** idle agents in the live tree, reopen a dropped stream ([#2138](https://github.com/anis-marrouchi/agentx/issues/2138) follow-up) ([#2147](https://github.com/anis-marrouchi/agentx/issues/2147)) ([b9efb4a](https://github.com/anis-marrouchi/agentx/commit/b9efb4a49168b3fec310fa19834ed3a5eeedda88))
+* **phone:** keep thinking and glued errors off the Live sheet ([#2137](https://github.com/anis-marrouchi/agentx/issues/2137) follow-up) ([#2148](https://github.com/anis-marrouchi/agentx/issues/2148)) ([432f6a8](https://github.com/anis-marrouchi/agentx/commit/432f6a8e69f2dbcb229e9b1669d73e4a99d503fc))
+* **ssh-run:** a lock pid reused by another program is not a run ([#2104](https://github.com/anis-marrouchi/agentx/issues/2104)) ([#2146](https://github.com/anis-marrouchi/agentx/issues/2146)) ([5a1f76d](https://github.com/anis-marrouchi/agentx/commit/5a1f76d67959acef17d820e5eb03dbcad0cefefc))
+
 ## [0.256.0](https://github.com/anis-marrouchi/agentx/compare/v0.255.0...v0.256.0) (2026-11-23)
 
 
