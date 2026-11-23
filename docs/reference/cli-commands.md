@@ -775,6 +775,12 @@ Drop a request you no longer want.
 |---|---|---|
 | `--reason <text>` | — | Why it is dropped. |
 
+### `agentx requests due <id> <time>`
+
+Set or change the due time of an open request after the run that made it has ended. `<time>` is an ISO date such as `2030-01-31T17:00:00Z`, ahead of now. A wake stands behind it: the agent that owes it is woken at that time. When the request already had a wake for its old due time, that wake moves. An earlier wake stays. The command says which one happened. Nothing wakes at a due time you owe yourself.
+
+No flags.
+
 ### `agentx requests contract`
 
 Measure what agents owe you when they deliver or go quiet: five numbers per agent and for this node. Read only. See [Measure what agents tell you](../jobs/open-requests.md#measure-what-agents-tell-you). It ends with a **Due times** table: each agent's correction factor (how long its work really took against its estimates), and, from the rows `requests.dueTimes` recorded, the middle gap between the due times the agent wrote and the ones AgentX would give. See [Due times the daemon gives](../jobs/open-requests.md#due-times-the-daemon-gives-the-queue). With `--json`, the same is under `dueTimes`.
