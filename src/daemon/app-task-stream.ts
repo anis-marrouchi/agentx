@@ -26,6 +26,8 @@ import { PREVIEW_CHARS, clip, summarizeActivity, type SnapshotNode, type TaskStr
 
 const TEXT_EVERY_MS = 700
 const STEP_NAME_MAX = 60
+/** TASK_OUTPUT_BUFFER_MAX in registry.ts: how much output a node keeps. */
+const NODE_BUFFER_MAX = 64 * 1024
 
 export interface AppTaskStreamDeps {
   snapshot(): Promise<{ ts: string; nodes: SnapshotNode[] }>
@@ -39,47 +41,116 @@ export type PhoneEvent =
   | { event: "text"; data: { text: string } }
 
 /** Marker lines the daemon's stream formatter writes (registry.ts
- *  makeStreamEventFormatter). Each starts a segment. */
-const SEGMENT_START = /\n(?=→ |← |💭 |· |\. |> codex |< codex |\[error\] |\[task finished\])/
+ *  makeStreamEventFormatter, and the thinking/text wrappers for runtimes
+ *  that are not claude-code). Each starts a segment. */
+const MARKER = String.raw`→ |← |💭 |· |\. |> codex |< codex |\[error\] |\[task finished\]`
+const STARTS_WITH_MARKER = new RegExp(`^(?:${MARKER})`)
+/** A marker after a newline starts a segment. */
+const SEGMENT_START = new RegExp(`\\n(?=${MARKER})`)
+/** Markers that also start a segment with no newline before them (#2137
+ *  review B2), read ONLY in the start buffer (feedStart). A daemon older
+ *  than this fix writes a marker right after a text delta, glued to it:
+ *  `…working on it[error] API key invalid`. Live chunks are never searched
+ *  for them: an answer that quotes "[error] connection refused", "A ← B" or
+ *  "Step 1 · done" would mark the run failed and cut the answer (Hakim on
+ *  #2148). Live, a marker starts a segment only after a newline or at the
+ *  start of a chunk, and the daemon now writes a newline before every
+ *  marker line (registry.ts makeStreamEventFormatter). Only markers that
+ *  do not read as prose: not `→ ` (always written after a newline) and not
+ *  `. ` (ends every sentence). */
+const GLUED_MARKER = /← |💭 |· (?:done|init)\b|< codex |\[error\] |\[task finished\]/
 
 /** Turns the daemon's formatted task output into phone events. Stateful:
  *  text since the last step is the "current" text, so at the end it is the
- *  final answer. */
+ *  final answer.
+ *
+ *  Privacy rule (#2137 review B1): a segment that is not for the phone
+ *  (thinking, a tool result, an error, …) runs until the next marker inside
+ *  a chunk, and on into the next chunks until a newline. Runtimes that are
+ *  not claude-code send thinking token by token with `💭 ` only on the
+ *  first token, so the kind has to outlive the chunk; the daemon starts
+ *  every new thinking line with `💭 ` again and ends the thought with a
+ *  newline before the answer (registry.ts). */
 export class PhoneStreamTrimmer {
   private current = ""
   private lastStep = ""
+  /** The last chunk ended inside a dropped segment, with no newline yet. */
+  private dropping = false
+  /** The last chunk ended with a newline (or nothing came yet). */
+  private lineStart = true
   failed = false
 
-  /** One upstream chunk (or the start buffer) in, phone events out. */
-  feed(chunk: string): PhoneEvent[] {
+  /** One upstream chunk in, phone events out. `glued` is for the start
+   *  buffer only (see GLUED_MARKER). */
+  feed(chunk: string, glued = false): PhoneEvent[] {
     const out: PhoneEvent[] = []
     let textChanged = false
-    for (const raw of chunk.split(SEGMENT_START)) {
-      const seg = raw.replace(/^\n+/, "")
+    let lastDropped = this.dropping
+    const parts = chunk.split(SEGMENT_START)
+    for (let k = 0; k < parts.length; k++) {
+      let seg = parts[k]
+      if (k === 0 && this.dropping) {
+        // The chunk goes on with the segment the last chunk dropped: still
+        // dropped up to its first newline, marker look-alikes included.
+        const nl = seg.indexOf("\n")
+        if (nl === -1) continue
+        seg = seg.slice(nl + 1)
+      }
       if (!seg) continue
-      const tool = seg.match(/^→ ([^(\s]+)\(/)
-      if (tool) {
-        this.step(stepName(tool[1]), out)
-        textChanged = false
-        continue
+      // A chunk that goes on with the line before it starts with a marker
+      // only if that is a thought: a text delta like ". Next I will…" is
+      // answer text (#2137 review B2, Hakim on #2148). The daemon writes a
+      // newline before every marker line; `💭 ` stays for older daemons, as
+      // no answer chunk starts with it.
+      const midLine = k === 0 && !this.lineStart && !lastDropped
+      const startsWithMarker = midLine ? seg.startsWith("💭 ") : STARTS_WITH_MARKER.test(seg)
+      // Text, up to a marker glued to it (start buffer only; none if the
+      // segment starts with one).
+      const at = startsWithMarker ? 0 : glued ? seg.search(GLUED_MARKER) : -1
+      const text = at === -1 ? seg : seg.slice(0, at)
+      if (text) {
+        this.current += text
+        textChanged = true
+        lastDropped = false
       }
-      const codex = seg.match(/^> codex (\S+)(?: ([^\n]*))?/)
-      if (codex) {
-        // The item's name only when it is a plain identifier: a shell
-        // command or its arguments never reach the phone.
-        const name = codex[2] && /^[\w.:-]+$/.test(codex[2].trim()) ? `${codex[1]} ${codex[2].trim()}` : codex[1]
-        this.step(stepName(name), out)
-        textChanged = false
-        continue
-      }
-      if (/^\[error\] /.test(seg)) { this.failed = true; continue }
-      // Tool results, thinking, init/done lines and the finish marker: not for the phone.
-      if (/^(← |💭 |· |\. |< codex |\[task finished\])/.test(seg)) continue
-      this.current += raw
-      textChanged = true
+      if (at === -1) continue
+      if (this.marker(seg.slice(at), out)) textChanged = false
+      lastDropped = true
     }
+    // Still inside a dropped segment if the chunk ended in one, before its
+    // newline.
+    this.dropping = lastDropped && !chunk.endsWith("\n")
+    if (chunk) this.lineStart = chunk.endsWith("\n")
     if (textChanged && this.text()) out.push({ event: "text", data: { text: this.text() } })
     return out
+  }
+
+  /** A segment that starts with a marker: a step name, a failure, or
+   *  nothing (tool results, thinking, init/done lines, the finish marker,
+   *  a look-alike tool line). True when it was a step. */
+  private marker(seg: string, out: PhoneEvent[]): boolean {
+    const tool = seg.match(/^→ ([^(\s]+)\(/)
+    if (tool) { this.step(stepName(tool[1]), out); return true }
+    const codex = seg.match(/^> codex (\S+)(?: ([^\n]*))?/)
+    if (codex) {
+      // The item's name only when it is a plain identifier: a shell
+      // command or its arguments never reach the phone.
+      const name = codex[2] && /^[\w.:-]+$/.test(codex[2].trim()) ? `${codex[1]} ${codex[2].trim()}` : codex[1]
+      this.step(stepName(name), out)
+      return true
+    }
+    if (/^\[error\] /.test(seg)) this.failed = true
+    return false
+  }
+
+  /** The start buffer. A node keeps only the last NODE_BUFFER_MAX chars of
+   *  a task's output, so a full buffer can begin inside a thought or a tool
+   *  result: drop up to its first marker line. */
+  feedStart(initial: string): PhoneEvent[] {
+    if (initial.length < NODE_BUFFER_MAX) return this.feed(initial, true)
+    const at = initial.search(SEGMENT_START)
+    if (at === -1) { this.dropping = true; this.lineStart = initial.endsWith("\n") }
+    return this.feed(at === -1 ? "" : initial.slice(at), true)
   }
 
   /** The latest text, flattened and cut to PREVIEW_CHARS from the end. */
@@ -142,13 +213,22 @@ export async function handleAppTaskStream(
   const agentId = (url.searchParams.get("agentId") || "").trim()
   if (!taskId) return json(res, 400, { error: "taskId is required" })
 
+  // Before the first await: a phone that leaves while the snapshot or the
+  // node is slow must not leave the upstream open until the task ends.
+  // The response's close fires when the phone's connection goes, at any
+  // point (and after our own end, where aborting does nothing).
+  const abort = new AbortController()
+  res.on("close", () => abort.abort())
   const snap = await deps.snapshot()
+  if (abort.signal.aborted) return true
   const task = summarizeActivity(snap.nodes).find((t) => t.taskId === taskId && (!agentId || t.agentId === agentId))
   if (!task) return json(res, 404, { error: "this task has ended" })
 
-  const abort = new AbortController()
-  req.on("close", () => abort.abort())
   const up = await deps.taskStream(task.node, task.agentId, task.taskId, abort.signal)
+  if (abort.signal.aborted) {
+    if (up.ok) up.body.cancel().catch(() => {})
+    return true
+  }
   if (!up.ok) {
     const msg = up.status === 403 ? `${task.nodeName} does not let this computer follow its tasks`
       : up.status === 404 ? "this task has ended"
@@ -218,7 +298,7 @@ export async function handleAppTaskStream(
         let data: any = {}
         try { data = JSON.parse(f.data) } catch { continue }
         if (f.event === "start") {
-          trim.feed(typeof data.initial === "string" ? data.initial : "")
+          trim.feedStart(typeof data.initial === "string" ? data.initial : "")
           send("start", {
             taskId: task.taskId,
             agentId: task.agentId,

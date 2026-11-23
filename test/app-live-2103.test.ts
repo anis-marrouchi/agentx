@@ -7,6 +7,7 @@ import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { LIVE_OFF_ERROR, PREVIEW_CHARS, type AppFleetDeps, type SnapshotNode, type TaskStreamOpen } from "../src/daemon/app-fleet"
 import { PhoneStreamTrimmer, SseFrames } from "../src/daemon/app-task-stream"
+import { makeBufferThinkingWriter, makeStreamEventFormatter } from "../src/agents/registry"
 import { setLiveControl } from "../src/commands/app"
 import { liveLabel, liveReduce, liveSseFrames, type LiveView } from "../src/daemon/ui/pages/app-live-logic"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
@@ -49,6 +50,7 @@ let upstream: () => TaskStreamOpen = () => ({
   ]),
 })
 
+let snapshot = async () => ({ ts: "2026-11-23T08:00:00Z", nodes: [node] })
 let dir: string
 let tokens: TokenStore
 let server: Server
@@ -60,7 +62,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "agentx-app-live-"))
   tokens = new TokenStore(dir)
   const fleet: AppFleetDeps = {
-    snapshot: async () => ({ ts: "2026-11-23T08:00:00Z", nodes: [node] }),
+    snapshot: () => snapshot(),
     nodePost,
     approvals: async () => [],
     decide: async () => ({ status: 200, body: {} }),
@@ -211,6 +213,38 @@ describe("GET /api/app/tasks/stream", () => {
     } finally { upstream = saved }
   })
 
+  it("a phone that leaves while the snapshot is slow opens no upstream (#2137 follow-up)", async () => {
+    const saved = snapshot
+    let release = () => {}
+    let entered = () => {}
+    const inSnapshot = new Promise<void>((r) => { entered = r })
+    snapshot = () => new Promise((r) => { entered(); release = () => r({ ts: "2026-11-23T08:00:00Z", nodes: [node] }) })
+    taskStream.mockClear()
+    // What the node is asked with: whether the phone was already gone then.
+    const abortedAtOpen: boolean[] = []
+    taskStream.mockImplementationOnce(async (_n, _a, _t, signal) => {
+      abortedAtOpen.push(signal.aborted)
+      return { ok: true, body: new ReadableStream({ start(c) { signal.addEventListener("abort", () => c.close()) } }) }
+    })
+    try {
+      const p = phone(["app", "app:live"])
+      const ac = new AbortController()
+      const req = fetch(`${base}/api/app/tasks/stream?taskId=t-run`, { headers: { Authorization: `Bearer ${p.token}` }, signal: ac.signal })
+      await inSnapshot
+      ac.abort()
+      await req.catch(() => {})
+      await new Promise((r) => setTimeout(r, 50))
+      release()
+      await new Promise((r) => setTimeout(r, 50))
+      // Either the node is never asked, or it is asked with a signal already aborted.
+      expect(abortedAtOpen.every(Boolean)).toBe(true)
+    } finally {
+      snapshot = saved
+      taskStream.mockReset()
+      taskStream.mockImplementation(async () => upstream())
+    }
+  })
+
   it("a peer that refuses or is offline gives a plain message, not a raw 403", async () => {
     const saved = upstream
     try {
@@ -256,6 +290,150 @@ describe("PhoneStreamTrimmer", () => {
     const t = new PhoneStreamTrimmer()
     t.feed("[error] something\n")
     expect(t.failed).toBe(true)
+  })
+
+  // #2137 review B1: runtimes that are not claude-code mark only the first
+  // thinking token with 💭; the rest come bare in later chunks.
+  it("keeps thinking dropped across chunks until the thought's newline", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [
+      ...t.feed("💭 The user's"),
+      ...t.feed(" password is hunter2"),
+      ...t.feed(" and more"),
+      ...t.feed("\n💭 a second line of the thought"),
+    ]
+    expect(JSON.stringify(evs)).not.toContain("password")
+    expect(evs).toEqual([])
+    // The daemon ends the thought with a newline, then the answer comes.
+    expect(t.feed("\n")).toEqual([])
+    expect(t.feed("Here is the answer.")).toEqual([{ event: "text", data: { text: "Here is the answer." } }])
+    expect(t.final()).toBe("Here is the answer.")
+  })
+
+  it("drops a thought that starts a chunk right after text, and its later tokens", () => {
+    const t = new PhoneStreamTrimmer()
+    expect(t.feed("Checking.")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(t.feed("💭 secret plan")).toEqual([])
+    expect(t.feed(" more secret plan")).toEqual([])
+    expect(JSON.stringify(t.final())).not.toContain("secret")
+  })
+
+  // #2137 review B2: an error marker glued to text with no newline.
+  it("an [error] chunk right after text: the run fails and the error text is dropped", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [...t.feed("…working on it"), ...t.feed("\n[error] API key invalid\n")]
+    expect(JSON.stringify(evs)).not.toContain("API key")
+    expect(t.text()).not.toContain("API key")
+    expect(t.failed).toBe(true)
+  })
+
+  it("in the start buffer, splits markers glued to text (older daemons)", () => {
+    const one = new PhoneStreamTrimmer()
+    one.feedStart("Working on it[error] API key invalid\n")
+    expect(one.failed).toBe(true)
+    expect(one.final()).toBe("Working on it")
+    const two = new PhoneStreamTrimmer()
+    expect(two.feedStart("Checking.💭 secret plan")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(two.feed(" more secret plan")).toEqual([])
+  })
+
+  // Hakim on #2148: live text that quotes a marker is answer text.
+  it("live answer text that quotes [error], ← or · done does not fail or cut the answer", () => {
+    for (const quote of ["The log line `[error] connection refused` is harmless.", "Data flows A ← B here.", "Step 1 · done, step 2 next."]) {
+      const t = new PhoneStreamTrimmer()
+      t.feed("Answer: ")
+      t.feed(quote)
+      t.feed(" More text.")
+      expect(t.failed).toBe(false)
+      expect(t.final()).toBe(`Answer: ${quote} More text.`)
+    }
+  })
+
+  it("the daemon writes every marker line on a line of its own, after a text delta too", () => {
+    const f = makeStreamEventFormatter()
+    // At the start: no blank line first.
+    expect(f({ type: "system", subtype: "init", model: "m" })).toBe("· init model=m\n")
+    expect(f({ type: "assistant", message: { content: [{ type: "text", text: "Working on it" }] } })).toBe("Working on it")
+    expect(f({ type: "error", message: "API key invalid" })).toBe("\n[error] API key invalid\n")
+    f({ type: "assistant", message: { content: [{ type: "text", text: "Working on it, still" }] } })
+    expect(f({ type: "user", message: { content: [{ type: "tool_result", content: "ok" }, { type: "tool_result", content: "two" }] } })).toBe("\n← ok\n← two\n")
+    expect(f({ type: "result", duration_ms: 2000 })).toBe("· done (2s)\n")
+    // The trimmer reads the whole formatted stream right.
+    const t = new PhoneStreamTrimmer()
+    const g = makeStreamEventFormatter()
+    for (const ev of [
+      { type: "assistant", message: { content: [{ type: "text", text: "Quoting `[error] x` here" }] } },
+      { type: "error", message: "real failure" },
+    ]) t.feed(g(ev))
+    expect(t.failed).toBe(true)
+    expect(t.final()).toBe("Quoting `[error] x` here")
+  })
+
+  // #2137 review C2 (Hakim on #2148): on the orchestrator tier an
+  // `[error] …\n` can land in the middle of a thought (a provider error that
+  // is then retried). The thought tokens after it must stay off the phone.
+  it("thinking, then an [error] line, then more thinking: none of the thought leaks", () => {
+    let buffer = ""
+    const t = new PhoneStreamTrimmer()
+    const evs: ReturnType<PhoneStreamTrimmer["feed"]> = []
+    const push = (chunk: string) => { buffer += chunk; evs.push(...t.feed(chunk)) }
+    const w = makeBufferThinkingWriter(() => buffer, push)
+    const f = makeStreamEventFormatter()
+    w.think("The password")
+    w.think(" is hunter2")
+    push(f({ type: "error", message: "overloaded, retrying" }))
+    w.think("so I will")
+    w.think(" use hunter2")
+    w.close()
+    push("Done.")
+    expect(evs).toEqual([{ event: "text", data: { text: "Done." } }])
+    expect(buffer).toContain("\n💭 so I will use hunter2\n")
+    // Closing a thought the error line already ended adds no blank line.
+    expect(buffer).not.toContain("\n\n")
+  })
+
+  // #2137 review B2 (Hakim on #2148, bc8fce47): a text delta that starts
+  // like a marker is answer text, not a dropped segment.
+  it("a text chunk that starts with '. ', '· ' or '→ ' after text stays in the answer", () => {
+    for (const next of [". Next I will check the logs.", "· then the list", "→ the result"]) {
+      const t = new PhoneStreamTrimmer()
+      t.feed("First step done")
+      t.feed(next)
+      t.feed(" And the end.")
+      expect(t.final()).toBe(`First step done${next} And the end.`)
+    }
+  })
+
+  it("a thought split over two chunks stays off the phone", () => {
+    const t = new PhoneStreamTrimmer()
+    const evs = [...t.feed("💭 a"), ...t.feed(" b"), ...t.feed("\n"), ...t.feed("Answer.")]
+    expect(evs).toEqual([{ event: "text", data: { text: "Answer." } }])
+  })
+
+  // #2137 review B1 (Hakim on #2148, bc8fce47): on an opencode-tier agent
+  // text deltas go into the buffer without the formatter, so the newline
+  // before an [error] line comes from the buffer.
+  it("opencode tier: a text delta, then an error event, fails the run and keeps the error off the phone", () => {
+    let buffer = ""
+    const t = new PhoneStreamTrimmer()
+    const evs: ReturnType<PhoneStreamTrimmer["feed"]> = []
+    const push = (chunk: string) => { buffer += chunk; evs.push(...t.feed(chunk)) }
+    const f = makeStreamEventFormatter(() => !buffer || buffer.endsWith("\n"))
+    push(f({ type: "opencode.ready", reused: false, startupMs: 5 }))
+    push("working on it") // wrappedOnDelta: straight into the buffer
+    push(f({ type: "error", message: "API key invalid" }))
+    expect(buffer).toContain("working on it\n[error] API key invalid\n")
+    expect(t.failed).toBe(true)
+    expect(JSON.stringify(evs)).not.toContain("API key")
+    expect(t.final()).toBe("working on it")
+  })
+
+  it("a full start buffer that begins inside a thought shows none of it", () => {
+    const t = new PhoneStreamTrimmer()
+    const initial = "x".repeat(64 * 1024 - 17) + " hunter2 thinking"
+    expect(t.feedStart(initial)).toEqual([])
+    expect(t.feed(" still thinking hunter2")).toEqual([])
+    expect(t.feed("\nAnswer.")).toEqual([{ event: "text", data: { text: "Answer." } }])
   })
 })
 
