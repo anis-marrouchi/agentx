@@ -40,6 +40,12 @@
 //   getClaudeCodeUsage()        — counters + the last provider signal
 //   liftProviderHolds()         — operator override: drop the active holds
 //   preflightQuotaGate(…)       — short-circuit for cold dispatches
+//
+// When the plan fills up, cold runs also go by priority (#2161): a person
+// writing first, cron jobs last. See agents/plan-priority.ts.
+
+import { planUsageReader } from "./claude-plan-usage"
+import { planPriorityHold, type RunPriority, type WindowUse } from "./plan-priority"
 
 export interface DispatchBudget {
   /** Optional hard hourly ceiling on new claude-code runs. Unset or 0 = off. */
@@ -334,12 +340,33 @@ export function getClaudeCodeUsage(now: number = Date.now()): ClaudeCodeUsage {
 
 export interface QuotaGateAbort {
   abort: true
-  reason: "provider_rate_limit" | "hourly_cap" | "five_hour_cap"
+  reason: "provider_rate_limit" | "plan_priority" | "hourly_cap" | "five_hour_cap"
   message: string
   usage: ClaudeCodeUsage
   /** When a cold dispatch can go again (ms), when known: the plan window's
    *  reset, or when the oldest counted dispatch leaves the local window. */
   retryAt?: number
+}
+
+const PRIORITY_RECHECK_MS = 15 * 60_000
+
+/**
+ * How full each plan window is, for the priority gate: the usage reader's
+ * reading (agents/claude-plan-usage.ts) when it is recent, else the
+ * utilization Claude Code last reported with a run. The newer one wins.
+ */
+export function planWindowUse(now: number = Date.now()): WindowUse[] {
+  const out = new Map<string, WindowUse & { at: number }>()
+  for (const s of providerSignals.values()) {
+    if (s.utilization === undefined) continue
+    out.set(s.window, { window: s.window, utilization: s.utilization, ...(s.resetsAt && { resetsAt: s.resetsAt }), at: s.seenAt })
+  }
+  const reading = planUsageReader.freshReading(now)
+  for (const w of reading?.windows ?? []) {
+    const seen = out.get(w.window)
+    if (!seen || reading!.readAt >= seen.at) out.set(w.window, { ...w, at: reading!.readAt })
+  }
+  return [...out.values()].map(({ at: _at, ...w }) => w)
 }
 
 /** When the dispatch `max` places back leaves a window of `windowMs`. */
@@ -368,7 +395,7 @@ function resetLabel(resetsAt: number | undefined, now: number): string {
  * The function DOES NOT mutate state. Call `recordClaudeCodeDispatch()`
  * separately once the caller commits to the dispatch.
  */
-export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now(), model?: string): QuotaGateAbort | null {
+export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now(), model?: string, priority?: RunPriority): QuotaGateAbort | null {
   const usage = getClaudeCodeUsage(now)
   if (hasWarmSession) return null
   const hold = activeProviderHold(now, model)
@@ -384,6 +411,25 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
       retryAt: hold.resetsAt,
     }
   }
+  if (priority) {
+    const held = planPriorityHold(priority, planWindowUse(now), model)
+    if (held) {
+      return {
+        abort: true,
+        reason: "plan_priority",
+        message:
+          `Claude plan at ${held.usedPercent}% of the ${windowLabel(held.window)} window: ${priority} runs are held past ${held.thresholdPercent}% ` +
+          `(it resets ${resetLabel(held.resetsAt, now)}). A person writing and open conversations still go through. ` +
+          `Change the thresholds under session.planPriority in agentx.json (applies on save).`,
+        usage,
+        // A rolling window frees up before its reset: look again soon.
+        retryAt: Math.min(held.resetsAt ?? Infinity, now + PRIORITY_RECHECK_MS),
+      }
+    }
+  }
+  // The local count caps keep agents from crowding out the owner, so a
+  // person writing is not refused by them (#2161).
+  if (priority === "person") return null
   if (usage.maxPerHour && usage.lastHour >= usage.maxPerHour) {
     return {
       abort: true,
