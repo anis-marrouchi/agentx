@@ -32,6 +32,18 @@ swiftc -O \
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# The AgentX version and commit, so the menu and `agentx desktop status`
+# can tell which build this is. `agentx desktop install` passes them; a
+# build from a checkout reads package.json and git.
+VERSION="${AGENTX_VERSION:-$(sed -n 's/^  "version": "\(.*\)",$/\1/p' ../../package.json 2>/dev/null | head -n 1)}"
+COMMIT="${AGENTX_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+if [ -n "$VERSION" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+fi
+if [ -n "$COMMIT" ]; then
+  /usr/libexec/PlistBuddy -c "Add :AgentXCommit string $COMMIT" "$APP/Contents/Info.plist"
+fi
+
 # The AX symbol (written by scripts/gen-icons.ts), as Finder and the
 # permission prompts show it.
 SET="build/AppIcon.iconset" && mkdir -p "$SET"

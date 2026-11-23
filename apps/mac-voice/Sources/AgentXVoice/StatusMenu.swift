@@ -315,8 +315,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(action("Dashboard…", #selector(openDashboardHome), key: "d"))
         menu.addItem(action("History…", #selector(openHistory), key: "y"))
         menu.addItem(.separator())
+        menu.addItem(disabled(versionLine()))
         menu.addItem(NSMenuItem(title: "Quit AgentX Voice",
                                 action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    /// The AgentX version build.sh stamped into Info.plist, with its commit.
+    private func versionLine() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+        guard let commit = info?["AgentXCommit"] as? String else { return "Version \(version)" }
+        return "Version \(version) (\(commit))"
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

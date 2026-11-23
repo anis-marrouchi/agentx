@@ -10,6 +10,8 @@ import { BUILTIN_PROVIDERS, providerFor } from "@/integrations/providers"
 import { integrationStatus } from "@/integrations/status"
 import { headerEnvNames } from "@/agent/mcp-policy"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
+import { macVoiceWarnings, readPlist } from "@/desktop/voice-checks"
+import { getPackageInfo } from "@/utils/get-package-info"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
 import { loadNativeAdapter, type NativeAdapter } from "@/native"
@@ -274,8 +276,16 @@ function runDesktopChecks(checks: Check[]): void {
   let names: string[] = []
   try { names = readdirSync(agents).filter(n => /agentx\.voice.*\.plist$/.test(n)) } catch { return }
   const isExecutable = (file: string) => { try { accessSync(file, constants.X_OK); return true } catch { return false } }
-  for (const name of names) {
-    const path = plistPathEnv(readFileSync(join(agents, name), "utf-8"))
+  // Quit that doesn't quit, two copies, an app older than the CLI (#2091, #2094).
+  // readPlist goes through plutil, so binary plists are read too.
+  const items = names.flatMap(name => {
+    const plist = readPlist(join(agents, name))
+    return plist === null ? [] : [{ name, file: join(agents, name), plist }]
+  })
+  for (const w of macVoiceWarnings(items, homedir(), getPackageInfo().version ?? "0.0.0"))
+    checks.push({ severity: "warn", group: "Desktop", title: w.title, detail: w.detail, fix: w.fix })
+  for (const { name, plist } of items) {
+    const path = plistPathEnv(plist)
     const ffmpeg = findOnPath("ffmpeg", path, isExecutable)
     checks.push(ffmpeg
       ? { severity: "ok", group: "Desktop", title: "ffmpeg reachable by the desktop app", detail: `${ffmpeg} (${name})` }

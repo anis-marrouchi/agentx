@@ -1,10 +1,11 @@
 import { Command } from 'commander'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir, release, tmpdir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
+import { type VoiceWarning, appVersion, macVoiceWarnings, startedApp } from '@/desktop/voice-checks'
 import { DESKTOP_APP, HELPER_APP, OLD_DESKTOP_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
 
 function checkPlatform() {
@@ -13,7 +14,7 @@ function checkPlatform() {
 }
 /** The voice app's login item, adopting one an older install left under
  *  another label, and any duplicates of it. */
-function loginItems(): { keep: LoginItem; remove: LoginItem[] } {
+function loginItems(): { keep: LoginItem; remove: LoginItem[]; items: { file: string; plist: string }[] } {
   const dir = join(homedir(), 'Library/LaunchAgents')
   let names: string[] = []
   try { names = readdirSync(dir).filter(isVoiceLoginItemFile) } catch { /* no LaunchAgents folder yet */ }
@@ -23,7 +24,22 @@ function loginItems(): { keep: LoginItem; remove: LoginItem[] } {
     try { return [{ file, plist: execFileSync('plutil', ['-convert', 'xml1', '-o', '-', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) }] }
     catch { return [] }
   })
-  return adoptLoginItem(dir, items)
+  return { ...adoptLoginItem(dir, items), items }
+}
+/** This package's version, from the package.json at its root. */
+function cliVersion(root: string | null): string {
+  try { return JSON.parse(readFileSync(join(root ?? '', 'package.json'), 'utf8')).version ?? '0.0.0' }
+  catch { return '0.0.0' }
+}
+/** The checkout's short commit, or '' for an npm install. */
+function gitCommit(root: string): string {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }
+  catch { return '' }
+}
+function printWarnings(warnings: VoiceWarning[]) {
+  for (const w of warnings) console.warn(`Warning: ${w.title}
+  ${w.detail}
+  Fix: ${w.fix}`)
 }
 function launchTarget(item: LoginItem) { return `gui/${process.getuid!()}/${item.label}` }
 async function stop(item: LoginItem) {
@@ -59,7 +75,9 @@ desktop.command('install').description('build, install, and start voice and comp
     const url = config.dashboard?.daemonUrl || `http://${config.node.bind.replace(/^0\.0\.0\.0:/, '127.0.0.1:')}`
     const root = sourceRoot()
     const apps = join(homedir(), 'Applications')
-    const { keep, remove } = loginItems()
+    const { keep, remove, items } = loginItems()
+    const version = cliVersion(root)
+    printWarnings(macVoiceWarnings(items, homedir(), version))
     // The app was installed as "AgentX Desktop" before it had one name (#2095).
     const oldApp = join(apps, OLD_DESKTOP_APP)
     const replacesOld = existsSync(join(oldApp, 'Contents/MacOS/AgentXVoice'))
@@ -76,7 +94,9 @@ desktop.command('install').description('build, install, and start voice and comp
       for (const name of ['mac-helper', 'mac-voice']) {
         cpSync(join(root, 'apps', name), join(stage, name), { recursive: true, filter: source => !source.split('/').includes('build') })
         const args = name === 'mac-helper' ? helperBuildArgs(config.notifications.local.icon) : []
-        execFileSync('/bin/bash', [join(stage, name, 'build.sh'), ...args], { stdio: 'inherit' })
+        // The staged copy has no package.json or git: build.sh stamps these into the app.
+        const env = { ...process.env, AGENTX_VERSION: version, AGENTX_COMMIT: gitCommit(root) }
+        execFileSync('/bin/bash', [join(stage, name, 'build.sh'), ...args], { stdio: 'inherit', env })
       }
       const log = join(homedir(), 'Library/Logs/agentx-desktop.err.log')
       const plist = desktopPlist({ label: keep.label, executable: join(apps, DESKTOP_APP, 'Contents/MacOS/AgentXVoice'), cwd: process.cwd(), agent: pinned, url,
@@ -99,6 +119,8 @@ desktop.command('install').description('build, install, and start voice and comp
       mkdirSync(dirname(log), { recursive: true })
       writeFileSync(keep.file, plist, { mode: 0o600 })
       start(keep)
+      // What the install can't fix itself: other copies of the app.
+      printWarnings(macVoiceWarnings(loginItems().items, homedir(), version))
       console.log('AgentX Voice is running. Hold Option–Space to speak; Command–Option–V for smart paste.\nAllow Microphone for the app and Accessibility / Screen Recording for the helper when macOS asks.\nThe AgentX daemon and a speech transcription backend must also be available. Run agentx desktop status to inspect the login service.')
     } finally { rmSync(stage, { recursive: true, force: true }) }
   })
@@ -106,7 +128,11 @@ desktop.command('start').description('start the installed AgentX Voice').action(
 desktop.command('stop').description('stop AgentX Voice until started again or next login').action(async () => { checkPlatform(); await stop(loginItems().keep); console.log('AgentX Voice stopped.') })
 desktop.command('status').description('show the desktop login service status').action(() => {
   checkPlatform()
-  const { keep } = loginItems()
+  const { keep, items } = loginItems()
   try { console.log(execFileSync('launchctl', ['print', launchTarget(keep)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch { console.log(existsSync(keep.file) ? 'Installed, but not running. Run agentx desktop start.' : 'Not installed. Run agentx desktop install.') }
+  const started = startedApp(items)
+  const version = started?.infoPlist ? appVersion(started.infoPlist) : null
+  if (started) console.log(`AgentX Voice ${version ?? '(version unknown)'} → ${started.app}`)
+  printWarnings(macVoiceWarnings(items, homedir(), cliVersion(packageRoot())))
 })
