@@ -233,6 +233,41 @@ export const APP_CHAT_SCRIPT = `
     follow(function (signal) { return post('/api/app/chat', body, signal); }, agentMsg(), null);
     return true;
   }
+  // Where words would go now: the conversation on screen or being opened,
+  // or the agent of a new one. The voice bar takes it when recording starts.
+  function pin() {
+    var id = state.opening || (state.conv && state.conv.id) || null;
+    return { id: id, target: state.opening ? null : state.target };
+  }
+  function samePin(p) {
+    var now = pin();
+    if (p.id || now.id) return p.id === now.id;
+    return !!(p.target && now.target && p.target.node === now.target.node && p.target.agent === now.target.agent);
+  }
+  // Sends to the pinned conversation. Still on screen: a normal send. The
+  // screen moved on meanwhile (a banner, a chip, a notification): the words
+  // go to the pinned one in the background and a line says where they went.
+  function sendTo(p, text, opts) {
+    text = String(text || '').trim();
+    if (!text) return false;
+    if (!p || (!p.id && !p.target) || samePin(p)) return send(text, opts);
+    var who = p.target ? (p.target.agentName || p.target.agent) : 'the conversation you were in';
+    var body = p.id ? { conversationId: p.id, message: text } : { node: p.target.node, agent: p.target.agent, message: text };
+    if (opts && opts.spoken) body.spoken = true;
+    function back(why) {
+      input.value = [text].concat(input.value.trim() ? [input.value] : []).join(V.NL + V.NL);
+      flash('Not sent to ' + who + ': ' + why + ' Your words are in the text box; Send puts them in this chat.');
+    }
+    post('/api/app/chat', body).then(function (r) {
+      // Still answering there: they go as its next turn, like a held follow-up.
+      if (r.status === 409 && p.id) { held[p.id] = (held[p.id] || []).concat(text); flash('Sent to ' + who + ' when its answer is done.'); return; }
+      if (!r.ok) { back('it failed (HTTP ' + r.status + ').'); return; }
+      if (p.id) sentHere[p.id] = 1;
+      if (r.body && r.body.cancel) r.body.cancel().catch(function () {});
+      flash('Sent to ' + who + '. Its answer shows in the strip.');
+    }).catch(function () { back('AgentX could not be reached.'); });
+    return true;
+  }
   function sendQueued() {
     if (!state.queue.length || state.busy || state.opening) return;
     var next = state.queue.splice(0);
@@ -356,7 +391,7 @@ export const APP_CHAT_SCRIPT = `
   }
   window.addEventListener('hashchange', fromHash);
   window.addEventListener('online', function () { if (state.conv && !state.busy) openConversation(state.conv.id); });
-  window.AXChat = { send: send, busy: function () { return state.busy; }, target: function () { return state.target; },
+  window.AXChat = { send: send, sendTo: sendTo, pin: pin, busy: function () { return state.busy; }, target: function () { return state.target; },
     pick: function () { toggle(picker, true); sheets.loadPicker(); },
     open: openConversation, current: function () { return state.conv && state.conv.id; },
     held: function (id) { return (held[id] || []).length; }, flushHeld: flushHeld, sentHere: function (id) { return !!sentHere[id]; },

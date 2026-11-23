@@ -136,3 +136,81 @@ describe("switching conversation on the phone", () => {
     expect(p.chatPosts()).toEqual([{ conversationId: rassam, message: "still Rassam" }])
   })
 })
+
+// Second path (2026-11-23 06:07Z): the voice bar took the chat at the moment
+// the words came back, so a switch during recording or transcribing (the
+// "Rassam finished" banner, a chip, a notification) moved them. The voice
+// bar now pins the chat when recording starts and sends with sendTo.
+describe("voice pinned to the chat open when recording started", () => {
+  async function onHakim() {
+    const p = page()
+    p.C.open(hakim)
+    await p.answer((x) => x.path.endsWith(hakim), p.conv(hakim, "pm-agent"))
+    return p
+  }
+
+  it("a switch during recording does not move the words", async () => {
+    const p = await onHakim()
+    const pin = p.C.pin() // recording starts on Hakim
+    p.C.open(rassam) // banner tap while speaking
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    expect(p.C.sendTo(pin, "this is for Hakim", { spoken: true })).toBe(true)
+    expect(p.chatPosts()).toEqual([{ conversationId: hakim, message: "this is for Hakim", spoken: true }])
+    await p.answer((x) => x.path === "/api/app/chat", {})
+    expect(p.flashes.join(" ")).toMatch(/Sent to pm-agent/)
+    expect(p.C.sentHere(hakim)).toBe(true)
+  })
+
+  it("a switch still loading when the words come back does not move them", async () => {
+    const p = await onHakim()
+    const pin = p.C.pin()
+    p.C.open(rassam) // transcribe returns before Rassam's chat has loaded
+    p.C.sendTo(pin, "this is for Hakim", { spoken: true })
+    expect(p.chatPosts()).toEqual([{ conversationId: hakim, message: "this is for Hakim", spoken: true }])
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    expect(p.chatPosts()).toEqual([{ conversationId: hakim, message: "this is for Hakim", spoken: true }])
+  })
+
+  it("no switch: a normal send in the chat on screen", async () => {
+    const p = await onHakim()
+    const pin = p.C.pin()
+    p.C.sendTo(pin, "hello Hakim", { spoken: true })
+    expect(p.chatPosts()).toEqual([{ conversationId: hakim, message: "hello Hakim", spoken: true }])
+    expect(p.flashes).toEqual([])
+  })
+
+  it("recording started while a switch loaded: the words go to the chat being opened", async () => {
+    const p = page()
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    p.C.open(hakim)
+    const pin = p.C.pin()
+    expect(pin.id).toBe(hakim)
+    await p.answer((x) => x.path.endsWith(hakim), p.conv(hakim, "pm-agent"))
+    p.C.sendTo(pin, "for Hakim")
+    expect(p.chatPosts()).toEqual([{ conversationId: hakim, message: "for Hakim" }])
+  })
+
+  it("the pinned chat still answering: held as its next turn", async () => {
+    const p = await onHakim()
+    const pin = p.C.pin()
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    p.C.sendTo(pin, "for Hakim later")
+    await p.answer((x) => x.path === "/api/app/chat", { error: "busy" }, 409)
+    expect(p.C.held(hakim)).toBe(1)
+    expect(p.flashes.join(" ")).toMatch(/Sent to pm-agent when its answer is done/)
+  })
+
+  it("a failed background send gives the words back and says where they were meant", async () => {
+    const p = await onHakim()
+    const pin = p.C.pin()
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    p.C.sendTo(pin, "for Hakim")
+    await p.answer((x) => x.path === "/api/app/chat", { error: "x" }, 500)
+    expect(p.els["cx-input"].value).toBe("for Hakim")
+    expect(p.flashes.join(" ")).toMatch(/Not sent to pm-agent/)
+    expect(p.chatPosts()).toEqual([])
+  })
+})

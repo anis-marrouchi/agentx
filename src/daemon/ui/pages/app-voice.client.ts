@@ -99,6 +99,9 @@ export const APP_VOICE_SCRIPT = `
     if (!C.target()) { C.pick(); show('idle', 'Choose an agent first, then hold the orb to talk.'); return; }
     if (!IO.canRecord()) { show('idle', 'This browser can’t record here. Tap the keyboard to type.', true); return; }
     v.pressed = true; v.cancel = false;
+    // The words go to the chat open now, even if the screen switches before
+    // they are written out (#2123: a banner tap mid-recording sent them to Rassam).
+    v.pin = C.pin();
     show('arming');
     IO.record().then(function (rec) {
       if (!v.pressed) { rec.stop(false); idle('Hold the orb while you speak, then let go.'); return; }
@@ -122,10 +125,10 @@ export const APP_VOICE_SCRIPT = `
     rec.stop(keep).then(function (take) {
       if (!take) { buzz(8); idle(v.cancel ? 'Cancelled.' : 'Hold the orb while you speak, then let go.'); return; }
       buzz([10, 40, 10]);
-      transcribe(take);
+      transcribe(take, v.pin);
     });
   }
-  function transcribe(take) {
+  function transcribe(take, pin) {
     show('sending');
     fetch('/api/app/voice/transcribe', {
       method: 'POST', credentials: 'same-origin', body: take.blob,
@@ -135,7 +138,7 @@ export const APP_VOICE_SCRIPT = `
       return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
     }).then(function (x) {
       if (!x) return;
-      if (x.ok && x.j.text) { C.send(x.j.text, { spoken: true }); idle(); return; }
+      if (x.ok && x.j.text) { C.sendTo(pin, x.j.text, { spoken: true }); idle(); return; }
       if (x.status === 503 && x.j.hint) { idle(x.j.error + ' ' + x.j.hint + ' You can type instead.', true); setTyping(true, false); return; }
       idle(x.j.error || ('Speech to text failed (HTTP ' + x.status + ').'), true);
     }).catch(function () { idle('Could not reach AgentX. Check the connection and try again.', true); });
