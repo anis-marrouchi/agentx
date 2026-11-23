@@ -86,6 +86,21 @@ Each entry in `mesh.inboxes`:
 | `agent` | string | required | Local agent that handles it. Not shown to other machines. |
 | `enabled` | boolean | `true` | Whether the inbox accepts work. |
 
+## sshServers
+
+Servers with no AgentX that an issue can run on, chosen from the Hub as `ssh:<name>`. This machine runs the agent there over SSH. See [Run an issue on an SSH server](/jobs/second-machine#run-an-issue-on-an-ssh-server). Default `[]`. Each entry:
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `name` | string | required | The name the Hub shows. Letters, digits, `.`, `_` and `-`; unique. |
+| `host` | string | required | The server's host name or address. |
+| `user` | string | — | The SSH user. Unset: `ssh`'s default or `~/.ssh/config`. |
+| `port` | number | — | The SSH port. |
+| `identityFile` | string | — | An absolute path to a key file on this machine. |
+| `checkouts` | object | `{}` | The server's checkouts, by repository: `{ "owner/repo": "/abs/path" }`. Only repositories listed here can run there. |
+| `claudeCommand` | string | `"claude"` | The Claude Code command on the server. |
+| `pushLimit` | string | — | The forge rule that lets the server push only `agentx/issue-*` branches (a GitHub ruleset, GitLab protected branches). Required to run there: unset, a move to the server and a run there are refused. |
+
 ## events
 
 The daemon keeps its most recent events in memory so a late reader can catch up. See [Events](/reference/events).

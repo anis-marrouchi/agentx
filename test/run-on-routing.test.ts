@@ -172,6 +172,16 @@ describe("MessageRouter with a placement", () => {
     expect(sendTask.mock.calls.map((c: any[]) => c[0])).toEqual(["nas", "clawd"])
   })
 
+  it("PR 2: an issue placed on an SSH server goes to the local registry, never held as an offline peer", async () => {
+    localAgent = true
+    place.placement = at("ssh:box")
+    await (router as any).processResolvedMessage(adapter, msg({ preferNode: "nas" }), "coder", ISSUE_CHAT)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(router.getDeferredMeshCounts()).toEqual({})
+    expect(sent.map((s) => s.text)).not.toContain(offlineNoteText("ssh:box"))
+  })
+
   it("C-d: with nothing set, the mesh fallback skips a host keeping left-behind work, and tells the issue when every host does", async () => {
     const r = router as any
     left = ["clawd"]

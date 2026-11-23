@@ -42,6 +42,7 @@ import { personLimitsOf } from "@/people/people"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "@/agents/mesh-safety"
 import type { Placement } from "@/requests/store"
 import { droppedNoteText, leftBehindNoteText, leftBehindOfTask, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
+import { isSshNode } from "@/agents/ssh-run"
 import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
@@ -1209,7 +1210,11 @@ export class MessageRouter {
       // message (one note on the issue); else the local registry sends the
       // run to the placed node itself, so its records stay here. With no
       // local agent, the message goes to the node directly.
-      if (pick.node) {
+      // An SSH server (#2104 PR 2) is no mesh peer: the local registry
+      // runs it there over SSH, and says so when the box does not answer.
+      if (pick.node && isSshNode(pick.node)) {
+        this.log(`[run-on] ${chatId} runs on "${pick.node}": the local registry runs it there over SSH`)
+      } else if (pick.node) {
         const node = pick.node
         const peer = this.mesh?.directory().find((p) => p.peer === node)
         if (!peer?.healthy) {

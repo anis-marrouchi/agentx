@@ -4,6 +4,7 @@ import type { ExecFn } from "@/agents/spec-tests"
 import { parseRef } from "@/requests/checkers/issue"
 import type { Placement, RequestRecord, RequestStore } from "@/requests/store"
 import { OPEN_STATES } from "@/requests/store"
+import { isSshNode, sshChoices, sshNodeHealthy, sshTargetRefusal, type SshRunOnDeps } from "./issue-run-on-ssh"
 
 // --- Run an issue on another machine (#2104) ---
 //
@@ -93,6 +94,8 @@ export interface NodeNumbers { swapUsedPct?: number; load1?: number }
 export interface RunOnChoice {
   node: string
   label: string
+  /** "ssh": an SSH server this Mac runs the agent on (#2104 PR 2). */
+  kind?: "ssh"
   healthy: boolean
   hostsAgent: boolean
   hasCheckout: boolean
@@ -100,7 +103,7 @@ export interface RunOnChoice {
   load1?: number
 }
 
-export interface RunOnDeps {
+export interface RunOnDeps extends SshRunOnDeps {
   store: () => RequestStore | null
   /** Mesh peers (A2AMesh.directory). */
   directory: () => PeerEntry[]
@@ -112,6 +115,10 @@ export interface RunOnDeps {
   localIssueState: (chatId: string, channel: string) => Promise<IssueState>
   /** A peer's /mesh/issue-state; throws when it does not answer. */
   peerIssueState: (peer: string, chatId: string, channel: string) => Promise<IssueState>
+  /** An SSH server's state of the issue (#2104 PR 2): a run open here
+   *  (this Mac runs it) and the issue's worktree on the box; throws when
+   *  the box does not answer. */
+  sshIssueState?: (node: string, chatId: string, channel: string) => Promise<IssueState>
   forge?: "github" | "gitlab"
   now?: () => number
   /** The commit `branch` points at on the forge, or null (#2104 Q4). */
@@ -157,7 +164,8 @@ export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> 
   const placement = deps.store()!.placement(issue.provider, issue.chatId)
   const current = placement?.node ?? LOCAL
   const currentPeer = current !== LOCAL ? peers.find((p) => p.peer === current) : undefined
-  const stale = current !== LOCAL && !currentPeer?.healthy
+  const ssh = await sshChoices(issue.project, deps.localHostsAgent(agentId), deps)
+  const stale = current !== LOCAL && (isSshNode(current) ? !(ssh.find((c) => c.node === current)?.healthy ?? await sshNodeHealthy(current, deps)) : !currentPeer?.healthy)
   const fit = peers.filter((p) => fits(p, agentId, issue.project))
   const [localNums, ...peerNums] = await Promise.all([
     deps.localNumbers().catch(() => null),
@@ -166,6 +174,7 @@ export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> 
   const choices: RunOnChoice[] = [
     { node: LOCAL, label: LOCAL_LABEL, healthy: true, hostsAgent: deps.localHostsAgent(agentId), hasCheckout: has(deps.localCheckouts(), issue.project), ...(localNums ?? {}) },
     ...fit.map((p, i) => ({ node: p.peer, label: p.peer, healthy: p.healthy, hostsAgent: true, hasCheckout: true, ...(peerNums[i] ?? {}) })),
+    ...ssh,
   ]
   return {
     status: 200,
@@ -220,7 +229,10 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
   const defaultRefusal = (): Reply => ({ status: 409, body: { error: `The agent's default for ${issue.label} is ${defaultTo}, which keeps work left behind by a forced move. Pick a node by name, or recover that work and clear it first.` } })
   if (defaultHeld()) return defaultRefusal()
 
-  if (node !== LOCAL && node !== DEFAULT) {
+  if (isSshNode(node)) {
+    const refused = await sshTargetRefusal(node, issue.project, agentId, deps.localHostsAgent(agentId), deps)
+    if (refused) return { status: 409, body: { error: refused } }
+  } else if (node !== LOCAL && node !== DEFAULT) {
     const peer = peers.find((p) => p.peer === node)
     if (!peer) return { status: 404, body: { error: `"${node}" is not a node of this mesh.` } }
     if (!peer.healthy) return { status: 409, body: { error: `${node} is offline.` } }
@@ -231,7 +243,8 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
 
   // 1. The holder's state.
   const holder = current === LOCAL ? "this Mac" : current
-  const holderOffline = current !== LOCAL && !peers.find((p) => p.peer === current)?.healthy
+  const holderUp = async () => current === LOCAL || (isSshNode(current) ? sshNodeHealthy(current, deps) : !!peers.find((p) => p.peer === current)?.healthy)
+  const holderOffline = !(await holderUp())
   const by = typeof body.by === "string" && body.by ? body.by : "owner"
   const now = deps.now?.() ?? Date.now()
   const write = () => {
@@ -243,6 +256,13 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
   if (holderOffline && body.force === true) return forceMove()
   const ask = async (): Promise<IssueState | string> => {
     if (current === LOCAL) return deps.localIssueState(issue.chatId, issue.provider)
+    if (isSshNode(current)) {
+      if (!deps.sshIssueState) return `This Mac cannot read ${current}'s state of the issue.`
+      if (!(await sshNodeHealthy(current, deps))) return `${current} does not answer over SSH, so its work on the issue cannot be checked. Start it again, then move the issue, or force the move and leave its unpushed work there.`
+      try { return await deps.sshIssueState(current, issue.chatId, issue.provider) } catch (e: any) {
+        return `${current} did not answer over SSH, so its work on the issue cannot be checked: ${e?.message ?? e}. Start it again, then move the issue, or force the move and leave its unpushed work there.`
+      }
+    }
     if (!peers.find((p) => p.peer === current)?.healthy) return `${current} is offline, so its work on the issue cannot be checked. Start it again, then move the issue, or force the move and leave its unpushed work there.`
     try {
       return await deps.peerIssueState(current, issue.chatId, issue.provider)

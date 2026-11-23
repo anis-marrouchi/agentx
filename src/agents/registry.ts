@@ -68,7 +68,8 @@ import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "./mesh-safety"
-import { fromPeer, issueKeyOfChat, leftBehindNoteText, leftBehindOfTask, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
+import { isSshNode, runOverSsh, sshServerOf, type SshSpawn } from "./ssh-run"
+import { fromPeer, issueKeyOfChat, issueOfChat, leftBehindNoteText, leftBehindOfTask, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -706,6 +707,12 @@ export class AgentRegistry {
   /** Mesh handle. When set, `execute` falls back to a peer that advertises
    *  the requested agent before returning "Unknown agent". Duck-typed so
    *  we don't create a circular import with src/a2a/mesh.ts. */
+  /** See setSshSpawn. Unset: the real `ssh`. */
+  private sshSpawn?: SshSpawn
+  /** Issues with an SSH run going from this daemon (`<node> <repo>#<n>`).
+   *  A placed run is sent before the chat queue, so this keeps two runs
+   *  from preparing one worktree at once (#2134 review nit). */
+  private sshRunsGoing = new Set<string>()
   private meshFallback?: {
     findPeerWithSkill: (skillId: string) => { peer: { url: string; token?: string } } | undefined
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number; context?: Record<string, unknown> }) => Promise<string>
@@ -1034,6 +1041,7 @@ export class AgentRegistry {
       this.log(`[run-on] ${task.agentId} ${key.chatId} runs on "${node}": refused: ${blocked.error}`)
       return { content: placedRefusalText(node), duration: 0 }
     }
+    if (isSshNode(node)) return this.runOnSshServer(task, node, key)
     const peer = this.meshFallback?.directory().find((p) => p.peer === node)
     if (!this.meshFallback || !peer) return { content: "", error: `This issue runs on ${node}, which is not a node of this mesh. Bring it back to this Mac from the Hub.` }
     if (!peer.healthy) return { content: "", error: offlineNoteText(node) }
@@ -1059,6 +1067,41 @@ export class AgentRegistry {
       this.log(`[run-on] ${task.agentId} ${key.chatId}: the run on "${node}" failed: ${e?.message ?? e}`)
       return { content: "", error: `The run on ${node} failed: ${e?.message ?? e}`, duration: Date.now() - start }
     }
+  }
+
+  /** Runs `ssh` for an issue placed on an SSH server; tests inject a fake. */
+  setSshSpawn(fn: SshSpawn | undefined): void {
+    this.sshSpawn = fn
+  }
+
+  /** A task whose issue is placed on an SSH server (#2104 PR 2) runs
+   *  there, started by this daemon (agents/ssh-run.ts). The safety refusal
+   *  above has already applied. The answer is this execute's answer, with
+   *  the job state its last `State:` line gives; `viaMesh` names the
+   *  server, so nothing asks a local session about a run it did not do. */
+  private async runOnSshServer(task: AgentTask, node: string, key: IssueKey): Promise<AgentResponse> {
+    const server = sshServerOf(node, this.config.sshServers)
+    if (!server) return { content: "", error: `This issue runs on ${node}, which is not in sshServers on this Mac. Bring it back to this Mac from the Hub.` }
+    const issue = issueOfChat(key.channel, key.chatId)
+    if (!issue) return { content: "", error: `This issue runs on ${node}, but ${key.chatId} is not a forge issue.` }
+    const def = this.agents.get(task.agentId)?.def
+    const minutes = typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0 ? task.timeoutMinutes : (def?.maxExecutionMinutes ?? 20)
+    const start = Date.now()
+    const going = `${node} ${issue.project}#${issue.number}`
+    if (this.sshRunsGoing.has(going)) return { content: "", error: `An earlier run of issue ${issue.number} is still going on ${node}. Wait for it to end, then run again.`, duration: 0 }
+    this.sshRunsGoing.add(going)
+    this.log(`[run-on] ${task.agentId} ${key.chatId}: placed on "${node}", running it there over SSH`)
+    let out: Awaited<ReturnType<typeof runOverSsh>>
+    try {
+      out = await runOverSsh({ server, repo: issue.project, issue: issue.number, prompt: task.message, timeoutMs: minutes * 60_000, model: def?.model }, this.sshSpawn)
+    } finally {
+      this.sshRunsGoing.delete(going)
+    }
+    if (!out.ok) {
+      this.log(`[run-on] ${task.agentId} ${key.chatId}: the run on "${node}" failed: ${out.error}`)
+      return { content: "", error: out.offline ? `${offlineNoteText(node)} ${out.error}` : out.error, duration: Date.now() - start }
+    }
+    return { content: out.content, viaMesh: node, duration: Date.now() - start, ...(out.jobState ? { jobState: out.jobState } : {}) } as AgentResponse
   }
 
   /** The folders of this node's project rules (`runbook:`), where a task

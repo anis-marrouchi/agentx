@@ -26,6 +26,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `procedures`, `graph`, `business`, `boards`, `plugins` | Optional layers: learned procedures, the intent graph, org chart and projects, kanban boards, and plugins |
 | `dashboard` | Browser bind address, port and `daemonUrl` |
 | `mesh` | Peer URLs and authentication |
+| `sshServers` | Servers with no AgentX that an issue can run on over SSH ([run an issue on an SSH server](/jobs/second-machine#run-an-issue-on-an-ssh-server)) |
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
 | `people` | The humans who talk to your agents, one entry per person whatever channel they use; empty by default ([Tell agents who is who](../jobs/people.md)) |
 | `requests` | Records what you asked agents for and follows it until it is closed; off by default ([Configuration: automation](./config-automation.md#requests)) |
@@ -37,7 +38,7 @@ Every field, with its type, default and what it does, is listed on four pages:
 | [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `people`, `session`, `processPool`, `plugins` |
 | [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, phone app notifications, ntfy, browser calls |
 | [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `requests`, `shutdown`, `resume` |
-| [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
+| [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `sshServers`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
 
 These pages are checked against the schema in `src/daemon/config.ts`. If your installed version differs, that file is the final word.
 
