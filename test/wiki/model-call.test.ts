@@ -9,9 +9,9 @@ let dir: string
 let path: string | undefined
 
 /** A `claude` on PATH that answers with `envelope` as its JSON output. */
-function fakeClaude(envelope: string): void {
+function fakeClaude(envelope: string, code = 0): void {
   const bin = join(dir, "claude")
-  writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\nprintf '%s' '${envelope}'\n`)
+  writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\nprintf '%s' '${envelope}'\nexit ${code}\n`)
   chmodSync(bin, 0o755)
 }
 
@@ -52,4 +52,23 @@ describe("metered model call", () => {
     await expect(meteredModelCall(spend)("q", "haiku", 5000)).rejects.toThrow(/exited 1/)
     expect(spend).toEqual({ calls: 1, usd: 0, unpriced: 1 })
   })
+})
+
+describe("Claude model errors", () => {
+  it("surfaces a short quota diagnostic from a failed CLI with empty stderr", async () => {
+    fakeClaude(JSON.stringify({
+      is_error: true,
+      result: "\u001b[31mUsage limit reached.\u001b[0m\nTry again at 9pm. " + "x".repeat(250),
+    }), 1)
+    const detail = ("Usage limit reached. Try again at 9pm. " + "x".repeat(250)).slice(0, 200)
+    await expect(claudeModelCall("q", "haiku", 5000)).rejects.toMatchObject({ message: `model error: ${detail}` })
+  })
+
+  it.each(["", "raw output", "null", '{"result":"raw model reply"}'])(
+    "reports only the exit code for unusable error output (%s)",
+    async (output) => {
+      fakeClaude(output, 1)
+      await expect(claudeModelCall("q", "haiku", 5000)).rejects.toThrow(/^claude exited 1$/)
+    },
+  )
 })
