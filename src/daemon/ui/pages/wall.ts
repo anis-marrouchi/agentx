@@ -292,6 +292,7 @@ ${navItems}
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
     <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
     <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
+    ${wallChatPanelHtml(chat)}
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
     ${wallChatQuickHtml(chat)}
@@ -316,7 +317,6 @@ ${navItems}
       <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
-  ${wallChatPanelHtml(chat)}
   <div id="wall-wf-dialog" hidden></div>
 </div>`
 

@@ -11,6 +11,8 @@ export interface ChatMessage {
   status: "pending" | "done" | "error"
   /** The run answering a pending message, once it has started. */
   taskId?: string | null
+  /** ms; a pending answer's "Working for …" counts from it. */
+  createdAt?: number
 }
 
 /** What the Hub's window.axPageContext returns (wall.client.ts). */
@@ -35,25 +37,70 @@ export function chatContextLine(c: ChatPageContext | null | undefined): string {
   return bits.join(" · ") || "this page"
 }
 
+/** A user message's text and the files it carried: the daemon ends such a
+ *  message with "Attached: a.png, b.pdf" (assistant-upload.ts attachedLine). */
+export function chatAttached(content: string): { text: string; files: string[] } {
+  const m = /\n\nAttached: ([^\n]+)$/.exec(String(content || ""))
+  if (!m) return { text: String(content || ""), files: [] }
+  return { text: String(content).slice(0, m.index), files: m[1].split(", ").filter(Boolean) }
+}
+
+/** The tool steps of one answer, as the thread read sends them (assistant-runs.ts). */
+export interface ChatRun { ms: number | null; steps: Array<{ tool: string; input: string; error: boolean }> }
+/** The fold functions (wall-chat-fold.ts), passed in so this file stays self-contained. */
+export interface ChatFold {
+  parse: (text: string) => { steps: ChatRun["steps"]; errors: string[]; answer: string }
+  html: (o: { key: string; steps: ChatRun["steps"]; ms: number | null; live?: boolean; open?: boolean }) => string
+}
+
+/**
+ * A pending answer's live part (#2101 R14): the fold of its tool steps so
+ * far, each "[error] …" line as a notice, then the answer as it is written.
+ * Raw tool, init and thought lines never show. Null when nothing came yet.
+ */
+export function chatLiveHtml(live: string, o: { key: string; fold?: ChatFold; md?: (s: string) => string; ms?: number | null; open?: boolean }): string | null {
+  const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string))
+  const p = o.fold ? o.fold.parse(live || "") : { steps: [], errors: [], answer: String(live || "") }
+  if (!p.steps.length && !p.errors.length && !p.answer) return null
+  let body = ""
+  if (p.answer) { body = esc(p.answer); if (o.md) { try { body = o.md(p.answer) } catch { /* plain text above */ } } }
+  return (o.fold && p.steps.length ? o.fold.html({ key: o.key, steps: p.steps, ms: o.ms ?? null, live: true, open: o.open }) : "") +
+    p.errors.map((e) => '<div class="hc__notice" role="alert"><b>Error</b>' + esc(e) + "</div>").join("") +
+    (p.answer ? '<div class="b">' + body + "</div>" : "")
+}
+
 /**
  * The conversation as HTML. `agent` is the display name of who answers;
  * `md` renders a reply's markdown (it escapes first). `notSent` is a
  * message the node did not take: it shows with "Not sent", and its text
  * stays in the composer. A failed reply offers Try again and Ask another
  * agent when it is the last message. A pending answer whose run has
- * started shows `live`, the text streamed so far, with Stop and, when
- * `runHref` names it, Open the run (`stopFailed`: a Stop that did not
- * take, so its button says so). Its text sits in `[data-hc-live]`, so
- * a new chunk repaints that alone and leaves Stop as it is.
+ * started shows `live`, the run's output so far (chatLiveHtml), with Stop
+ * and, when `runHref` names it, Open the run (`stopFailed`: a Stop that
+ * did not take, so its button says so). Its part sits in `[data-hc-live]`,
+ * so a new chunk repaints that alone and leaves Stop as it is. A finished
+ * answer with tool steps in `runs` shows them folded above it (R14).
  */
-export function chatLogHtml(msgs: ChatMessage[], o: { agent: string; md?: (s: string) => string; notSent?: string; live?: string; runHref?: string; stopFailed?: boolean }): string {
+export function chatLogHtml(msgs: ChatMessage[], o: {
+  agent: string; md?: (s: string) => string; notSent?: string; live?: string; runHref?: string; stopFailed?: boolean
+  runs?: Record<string, ChatRun>; fold?: ChatFold; open?: Record<string, boolean>; now?: number
+}): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string))
   const who = esc(o.agent || "The agent")
-  const me = (t: string) => '<div class="hc__me"><div class="b">' + esc(t) + "</div></div>"
-  const them = (cls: string, body: string, meta: string, live?: boolean) =>
-    '<div class="hc__them' + (cls ? " " + cls : "") + '"><div class="b"' + (live ? " data-hc-live" : "") + ">" + body + "</div>" + (meta ? '<div class="hc__meta">' + meta + "</div>" : "") + "</div>"
+  const me = (t: string) => {
+    const a = chatAttached(t)
+    return '<div class="hc__me"><div class="b">' + esc(a.text) + "</div>" +
+      (a.files.length ? '<div class="hc__files">' + a.files.map((f) => '<span class="hc__file">' + esc(f) + "</span>").join("") + "</div>" : "") + "</div>"
+  }
+  const them = (cls: string, body: string, meta: string, live?: boolean, pre?: string) =>
+    '<div class="hc__them' + (cls ? " " + cls : "") + '">' + (pre || "") + (live ? "<div data-hc-live>" + body + "</div>" : '<div class="b">' + body + "</div>") +
+    (meta ? '<div class="hc__meta">' + meta + "</div>" : "") + "</div>"
+  const foldOf = (m: ChatMessage) => {
+    const r = m.taskId && o.runs ? o.runs[m.taskId] : null
+    return r && o.fold && r.steps && r.steps.length ? o.fold.html({ key: String(m.taskId), steps: r.steps, ms: r.ms, open: !!(o.open && o.open[String(m.taskId)]) }) : ""
+  }
   if (!msgs.length && !o.notSent) {
-    return '<div class="hc__empty"><b>Ask about what you see</b>The page you are on and what is in view go with your message. Answers stay here when you move to another page.</div>'
+    return '<div class="hc__empty"><b>Ask ' + who + '</b>Type, attach a file or record a voice message. Each agent keeps its own conversation: pick another and come back, it is still here.</div>'
   }
   const out = msgs.map((m, i) => {
     if (m.role === "user") return me(m.content)
@@ -62,18 +109,18 @@ export function chatLogHtml(msgs: ChatMessage[], o: { agent: string; md?: (s: st
         ? '<button type="button" class="hc__stop" data-hc-stop="' + esc(m.taskId) + '">' + (o.stopFailed ? "Not stopped. Try again" : "Stop") + "</button>" +
           (o.runHref ? '<a class="hc__run" href="' + esc(o.runHref) + '">Open the run</a>' : "")
         : ""
-      let body = "Thinking…"
-      if (o.live) { body = esc(o.live); if (o.md) { try { body = o.md(o.live) } catch { /* plain text above */ } } }
-      return them(o.live ? "hc__md" : "hc__wait", body, '<span class="hc__live">' + who + " is answering</span>" + run, true)
+      const ms = m.createdAt && o.now ? Math.max(0, o.now - m.createdAt) : null
+      const live = o.live ? chatLiveHtml(o.live, { key: String(m.taskId || ""), fold: o.fold, md: o.md, ms, open: !!(o.open && o.open[String(m.taskId)]) }) : null
+      return them(live ? "hc__md" : "hc__wait", live || '<div class="b">Thinking…</div>', '<span class="hc__live">' + who + " is answering</span>" + run, true)
     }
     if (m.status === "error") {
       const last = i === msgs.length - 1 && !o.notSent
-      return them("hc__err", "<b>" + who + " could not answer</b>" + esc(m.content), "") +
+      return them("hc__err", "<b>" + who + " could not answer</b>" + esc(m.content), "", false, foldOf(m)) +
         (last ? '<div class="hc__btnrow"><button type="button" class="ax-btn ax-btn--ghost" data-hc-retry>Try again</button><button type="button" class="ax-btn ax-btn--ghost" data-hc-other>Ask another agent</button></div>' : "")
     }
     let body = esc(m.content || "(no reply)")
     if (o.md && m.content) { try { body = o.md(m.content) } catch { /* plain text above */ } }
-    return them("hc__md", body, "")
+    return them("hc__md", body, "", false, foldOf(m))
   })
   if (o.notSent) {
     out.push(me(o.notSent), them("hc__err", "<b>Not sent</b>This node does not answer just now. Your message is kept below; send it again when it is back.", ""))

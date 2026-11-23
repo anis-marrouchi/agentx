@@ -69,6 +69,7 @@ import { AppChatStore } from "./app-chat-store"
 import { appPresence, type AppChatDeps, type AppMeshPeer } from "./app-chat"
 import { AppCallbackPuller, type CallbackEvent, type CallbackReplyBody } from "./app-chat-callbacks"
 import type { AppVoiceDeps } from "./app-voice"
+import { handleHubChatMedia, isHubChatMediaPath } from "./hub-chat-media"
 import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
@@ -436,6 +437,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // and a conversation belongs to the node that holds it.
   // The proxy sends the node's own token, so it is the owner's alone: reads
   // too, as they hold the conversations.
+  // The Hub chat's files and voice (#2101 PR 2): the same owner check.
+  if (isHubChatMediaPath(path)) {
+    await handleHubChatMedia(req, res, path, url, {
+      owner: isDashboardOwner(req, ctx),
+      targets: () => resolveNodeTargets(ctx.config),
+      daemon: appVoiceDeps(ctx.config).daemon,
+    })
+    return
+  }
   if (path === "/api/assistant" || path.startsWith("/api/assistant/")) {
     if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
     try {

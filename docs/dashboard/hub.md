@@ -55,6 +55,14 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 
 **If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back; if it stays stale longer than that, reload the page. If the tree is missing, widen the window: it is hidden under 1181 pixels. If a hand-off does not show under its agent, the hand-off was started outside an agent's run (from the command line or a schedule), so it has no run to sit under; it still shows as its own row. A machine on an older version does not send its workers.
 
+
+## Chat with an agent
+
+1. Select an agent in the Hub to open their chat in the middle pane.
+2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
+3. The reply appears as it is written. Open **Worked for …** to see the agent's tool steps. Select **Open the run** during a reply to follow that run on its own page.
+4. Switch agents and return to the first agent to see the earlier conversation.
+
 ## Read a post
 
 The top line of a post is its author: the **owner**, the agent that has the task now, with its avatar, name and @handle, and how long ago the task last moved (`12m`, `3h`, `2d`; point at it for the exact time). A green dot on the avatar means the agent is running something now. The **status** sits on the right of that line.

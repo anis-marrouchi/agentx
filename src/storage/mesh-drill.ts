@@ -85,8 +85,9 @@ export interface RunShape {
   outputTokens?: number | null
   /** Tool name → { used, failed }. The "what it touched" evidence. */
   tools: Array<{ tool: string; used: number; failed: number }>
-  /** Ordered step skeleton: kind, tool, outcome, elapsed. No payloads. */
-  steps: Array<{ seq: number; name: string; action: string | null; status: string | null; ms: number | null }>
+  /** Ordered step skeleton: kind, tool, outcome, elapsed. No payloads,
+   *  unless the caller asked for `inputs` (see getRunShape). */
+  steps: Array<{ seq: number; name: string; action: string | null; status: string | null; ms: number | null; input?: string | null }>
   /** True when the trace exists but its steps were pruned by retention. */
   stepsPruned: boolean
   writes: number
@@ -98,7 +99,17 @@ const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"])
 const READ_TOOLS = new Set(["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"])
 const SEND_TOOLS = new Set(["SendMessage", "channel_send", "Artifact", "PushNotification"])
 
-export function getRunShape(db: Database.Database, taskId: string, stepCap = 300): RunShape {
+/** Characters of a tool call's input kept with `inputs`: enough for the
+ *  file, command or pattern a one-line step names. */
+export const STEP_INPUT_MAX = 300
+
+/**
+ * One run's shape. `inputs` adds each step's input summary, cut to
+ * STEP_INPUT_MAX: only for the owner's own Hub chat (#2101 PR 2), which
+ * names the file read or the command run on each line. The mesh reads
+ * never ask for it, so what crosses the mesh stays content-free.
+ */
+export function getRunShape(db: Database.Database, taskId: string, stepCap = 300, opts: { inputs?: boolean } = {}): RunShape {
   const t = db.prepare(`
     SELECT agent_id agent, channel, chat_id chatId, started_at startedAt,
            duration_ms durationMs, status, model, error, output_tokens outputTokens
@@ -107,7 +118,7 @@ export function getRunShape(db: Database.Database, taskId: string, stepCap = 300
   if (!t) return { taskId, found: false, tools: [], steps: [], stepsPruned: false, writes: 0, reads: 0, sends: 0 }
 
   const rows = db.prepare(`
-    SELECT seq, name, action, status, ms FROM task_trace_steps
+    SELECT seq, name, action, status, ms${opts.inputs ? ", input_summary input" : ""} FROM task_trace_steps
     WHERE task_id = ? ORDER BY seq LIMIT ?
   `).all(taskId, Math.max(1, Math.min(2000, stepCap))) as Array<Record<string, any>>
 
@@ -143,7 +154,10 @@ export function getRunShape(db: Database.Database, taskId: string, stepCap = 300
     model: t.model, outputTokens: t.outputTokens,
     cause: t.status === "ok" ? null : classifyCause(t.error),
     tools: [...tally.entries()].map(([tool, v]) => ({ tool, ...v })).sort((a, b) => b.used - a.used),
-    steps: rows.map((r) => ({ seq: r.seq, name: r.name, action: r.action, status: r.status, ms: r.ms })),
+    steps: rows.map((r) => ({
+      seq: r.seq, name: r.name, action: r.action, status: r.status, ms: r.ms,
+      ...(opts.inputs ? { input: typeof r.input === "string" ? r.input.slice(0, STEP_INPUT_MAX) : null } : {}),
+    })),
     stepsPruned: rows.length === 0,
     writes, reads, sends,
   }
