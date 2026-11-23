@@ -65,7 +65,14 @@ describe("action paging", () => {
     expect(ASSISTANT_HTML).not.toContain('id="ax-as-input"')
     expect(ASSISTANT_CSS).toContain(".ax-as-dock{position:fixed;bottom:0;left:calc((100vw + var(--dashboard-side-offset, 0px)) / 2);transform:translateX(-50%)")
     // Centred in the space that is left, not the space the drawer covers.
-    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-dock{left:calc((100vw + var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px)) / 2)}")
+    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-dock{left:calc((100vw + var(--dashboard-side-offset, 0px) - var(--ax-as-dock-offset, 0px)) / 2)}")
+  })
+
+  it("keeps the composer clear of the visible drawer when page padding is removed", () => {
+    expect(ASSISTANT_CSS).toContain("--ax-as-dock-offset:var(--ax-as-drawer-width)")
+    expect(ASSISTANT_CSS).toContain("width:var(--ax-as-drawer-width);box-sizing:border-box")
+    expect(ASSISTANT_CSS).toContain("@media (max-width:900px){body.ax-as-open{--dashboard-drawer-offset:0px}}")
+    expect(ASSISTANT_CSS).toContain("width:calc(var(--ax-as-drawer-width) - 24px);z-index:62")
   })
 
   it("slides away and leaves something to bring it back", () => {
