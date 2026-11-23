@@ -187,6 +187,59 @@ Example output:
 
 AgentX keeps this state in memory. After a daemon restart the list is empty until Claude Code reports again, and no hold is in place.
 
+## Decide which work runs first when the plan fills up
+
+Before the plan runs out, AgentX starts holding back the work that can wait, so the plan lasts for the work a person is waiting on. Every fresh Claude Code session gets one of four classes, highest first:
+
+| Class | What it covers | Held from (5-hour window) | Held from (weekly window) |
+|---|---|---|---|
+| `person` | A person writing: a chat app, the phone app, the dashboard, a comment a person posted on GitHub or GitLab | never | never |
+| `work` | Workflow steps, and work agents hand each other for something a person asked | 95% | 95% |
+| `agent` | Agents waking or asking each other for work no person asked for | 85% | 85% |
+| `background` | Scheduled jobs, reminders and checks | 80% | 70% |
+
+A held session is tried again later, at most 15 minutes on, and goes through once the window has room again. A conversation that is already open always goes through, whatever its class.
+
+### Where the numbers come from
+
+Every 5 minutes, AgentX asks Claude how full the 5-hour and weekly windows are. This is the same reading Claude Code's own `/usage` command shows. It uses the Claude login Claude Code already keeps on the machine: the macOS Keychain on a Mac, or the file `~/.claude/.credentials.json` elsewhere. AgentX only reads that login. It never renews or changes it, so your agents can't be signed out by it. Asking costs nothing from the plan.
+
+When that login has lapsed, AgentX waits until Claude Code saves a fresh one, and meanwhile uses the figures Claude Code reports with each session.
+
+### Change the thresholds
+
+1. **Editor:** open `agentx.json`.
+2. Under `"session"`, add the classes you want to change. Each number is a percent of the window:
+   ```json
+   "session": {
+     "planPriority": {
+       "background": { "fiveHour": 60, "weekly": 50 },
+       "agent": { "weekly": 80 }
+     }
+   }
+   ```
+3. Save the file. AgentX applies it at once; no restart is needed. A class or window you leave out keeps its default.
+
+To turn the classes off, set `"planPriority": { "enabled": false }`. To stop asking Claude for the reading, set `"planUsage": { "enabled": false }`. AgentX then uses only the figures Claude Code reports with each session.
+
+### See what is held now
+
+1. **Terminal:** in the folder with `agentx.json`, run:
+   ```sh
+   agentx usage plan
+   ```
+2. Under **Claude plan use (read from Claude)**, read each window, how full it is, when it resets, and how long ago it was read.
+3. Read the line under it: either `No run class is held`, or one `Holding … runs` line per class that is held now.
+
+```text
+  Claude plan use (read from Claude)
+
+  five hour          35% used     resets in 4 h
+  seven day          72% used     resets in 2 days
+  Read 2 min ago.
+  Holding background runs: seven day at 72% (limit 70%)
+```
+
 ## Put a local ceiling on fresh Claude Code sessions
 
 On top of the plan limit, you can cap how many fresh Claude Code sessions AgentX starts across all its agents. This is off unless you set it. Two settings in `agentx.json` control it:
@@ -198,7 +251,7 @@ On top of the plan limit, you can cap how many fresh Claude Code sessions AgentX
 }
 ```
 
-Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a change when you save the file; no restart is needed. When a cap is reached, fresh sessions are held and the error names the setting to raise.
+Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a change when you save the file; no restart is needed. When a cap is reached, fresh sessions are held and the error names the setting to raise. The cap never refuses a person writing (see [Decide which work runs first](#decide-which-work-runs-first-when-the-plan-fills-up)); it holds the other classes.
 
 ## Set a monthly budget for an agent
 
@@ -279,8 +332,9 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 3. **Terminal (developers, in a source copy):** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
-6. **Browser:** the Cost page shows **Monthly budgets** with **Budget for** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
-7. **Terminal:** while that agent is paused, send it a chat message, then run `agentx daemon restart`. Raise its budget on the Cost page: the message runs and its answer reaches the chat.
+6. **Terminal:** `agentx usage plan` also prints `Claude plan use (read from Claude)` with a line per window and `Read … min ago.`, then either `No run class is held` or a `Holding … runs` line.
+7. **Browser:** the Cost page shows **Monthly budgets** with **Budget for** and **Save**. To try the pause, choose a test agent, type `0.01`, select **Save**, and send it two messages: the first runs, the second is refused with `Monthly budget reached`.
+8. **Terminal:** while that agent is paused, send it a chat message, then run `agentx daemon restart`. Raise its budget on the Cost page: the message runs and its answer reaches the chat.
 
 ## If something is wrong
 
@@ -297,6 +351,11 @@ A project works like an agent: one notice at 80%, and at 100% new runs for that 
 - **Monitor's Reviews failed keeps going up:** the reviewer can't run Claude Code on the daemon's machine. **Terminal:** on that machine, run `claude --version`. If it's not found, install Claude Code and sign in, or accept that Monitor stays empty; this costs nothing. See [Monitor's reviewer](#monitor-s-reviewer).
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
 - **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. Run `agentx usage plan` to see every window, and `agentx usage plan --lift` if you know the plan is accepting work again. If this happens every day, consider a larger plan or fewer scheduled jobs.
+- **`Claude plan at …% of the … window: … runs are held past …%`:** that class of work waits so the plan lasts for people. It goes through once the window has room again. To let it through sooner, raise that class's number under `session.planPriority` in `agentx.json`.
+- **`Last read failed: the stored Claude login has lapsed`:** Claude Code has not saved a fresh login on this machine since the old one expired. AgentX uses the figures Claude Code reports with each session meanwhile. If it stays like this for hours while agents are running, Claude Code on this machine keeps its login only in memory; signing in again with `claude` in a terminal on that machine saves a fresh one.
+- **`Last read failed: the stored Claude login was revoked`:** sign in to Claude Code again on that machine (run `claude`, then `/login`).
+- **`Last read failed: no stored Claude login on this node`:** Claude Code is not signed in on this machine, or its agents use an API key. The classes then work from the figures Claude Code reports with each session.
+- **`Last read failed: usage endpoint rate limited`:** Claude asked AgentX to ask less often. It waits at least 15 minutes, then reads again by itself.
 - **`agentx usage plan` says `Daemon answered 404`:** the running daemon is older than the command. Restart it with `agentx daemon restart`.
 - **`Local dispatch cap reached: …`:** you set `session.maxClaudeCodeDispatchesPerHour` or `session.maxClaudeCodeDispatchesPer5h` and the fleet reached it. Raise the setting or remove it; the change applies when you save `agentx.json`.
 - **`Monthly budget reached: agent … has spent …`:** the agent used its budget for this month. Raise it on the Cost page, or `agents.<id>.budget.monthlyUsd` in `agentx.json`, or wait for the next month.
