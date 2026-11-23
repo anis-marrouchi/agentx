@@ -51,7 +51,11 @@ const TASK_MOUNT_FN = `
 function mountTaskPage(root, opts) {
   opts = opts || {};
   var timer = 0, es = null;
-  function close() { clearInterval(timer); if (es) { try { es.close(); } catch (e) {} } }
+  function close() {
+    clearInterval(timer);
+    if (es) { try { es.close(); } catch (e) {} }
+    if (conv) { try { conv.unmount(); } catch (e) {} conv = null; }
+  }
   var taskId  = root.getAttribute('data-task-id');
   var agentId = root.getAttribute('data-agent-id');
   var nodeUrl = root.getAttribute('data-node-url');
@@ -204,7 +208,8 @@ function mountTaskPage(root, opts) {
   function toolResult(text) {
     closeText();
     var isErr = text.indexOf('[error] ') === 0;
-    var body = isErr ? text.slice(8) : text;
+    // A result's own newlines come as U+2028, to keep it on one line (R16).
+    var body = (isErr ? text.slice(8) : text).replace(/\\u2028/g, '\\n');
     block('ax-ev--tool-result' + (isErr ? ' is-err' : ''),
       label('result', isErr ? 'tool error' : 'tool result') +
       '<pre class="ax-ev__code ' + (isErr ? 'ax-ev__code--err' : 'ax-ev__code--muted') + '">' +
@@ -273,15 +278,69 @@ function mountTaskPage(root, opts) {
   }
   function append(text) {
     if (!text) return;
+    raw += text;
+    if (conv) { conv.append(text); return; }
+    if (convWaiting) return; // kept in raw until the bundle loads or fails
     buffer += text;
     if (!raf) raf = requestAnimationFrame(flush);
   }
   /** Render whatever partial line is left. Call when the stream ends. */
   function drain() {
+    ended = true;
+    if (conv) { conv.end(); return; }
+    if (convWaiting) return;
     flush();
     if (lineBuf) { processLine(lineBuf); lineBuf = ''; }
     renderOpenText();
   }
+
+  // --- The conversation, rendered by the React island (#2101 R16) ---
+  //
+  // The run's output goes to src/web/task-conversation (AI Elements parts:
+  // markdown with highlighted code, folded tool steps, edits as diffs). The
+  // bundle loads the first time a Task page opens; until it is in, output
+  // is kept, then handed over whole. If it fails to load, the renderer
+  // above takes the same output: the page never goes blank.
+  var raw = '', conv = null, convWaiting = false, ended = false;
+  function convStart() {
+    outputEl.innerHTML = '';
+    buffer = ''; lineBuf = ''; openText = null; openRaw = '';
+    conv = window.AXTaskConversation.mount(outputEl, { plain: plain });
+    if (raw) conv.append(raw);
+    if (ended) conv.end();
+  }
+  function convFallback() {
+    var r = raw;
+    raw = '';
+    append(r);
+    if (ended) drain();
+  }
+  function convLoad() {
+    if (window.AXTaskConversation) { convStart(); return; }
+    if (window.AX_TASK_CONVERSATION_FAILED) return;
+    convWaiting = true;
+    var settled = false;
+    function done(ok) {
+      if (settled) return;
+      settled = true;
+      convWaiting = false;
+      if (!ok) window.AX_TASK_CONVERSATION_FAILED = true;
+      if (ok && window.AXTaskConversation && !closed()) convStart(); else convFallback();
+    }
+    document.addEventListener('ax:task-conversation-ready', function () { done(true); }, { once: true });
+    setTimeout(function () { done(!!window.AXTaskConversation); }, 10000);
+    var s = document.getElementById('ax-task-conversation-js');
+    if (!s) {
+      s = document.createElement('script');
+      s.id = 'ax-task-conversation-js';
+      s.src = window.AX_TASK_CONVERSATION_SRC || '/assets/task-conversation.global.js';
+      document.head.appendChild(s);
+    }
+    s.addEventListener('error', function () { done(false); });
+  }
+  function closed() { return outputEl.isConnected === false; }
+  // A page where the bundle cannot even be asked for keeps the plain renderer.
+  try { convLoad(); } catch (e) { convWaiting = false; window.AX_TASK_CONVERSATION_FAILED = true; }
 
   /** Render the request that started this run. Hidden until we have one —
    *  an empty labelled box is worse than no box. */

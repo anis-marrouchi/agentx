@@ -635,6 +635,9 @@ export function makeBufferThinkingWriter(
  *  the buffer without passing through this formatter, so only the buffer
  *  knows whether a marker needs a newline first (#2137 review B1, Hakim on
  *  #2148). Without it, the formatter goes by what it wrote last. */
+/** Tools whose input the Task page shows as a diff (#2101 R16). */
+const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"])
+
 export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: any) => string {
   let textSeen = ""
   let codexTextSeen = ""
@@ -707,10 +710,13 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
           }
           textSeen = block.text
         } else if (block.type === "thinking" && typeof block.thinking === "string") {
-          out += `\n💭 ${clip(block.thinking, 600)}\n`
+          // Every line of a thought carries the marker (#2101 R16).
+          out += `\n💭 ${clip(block.thinking, 600).replace(/\n/g, "\n💭 ")}\n`
         } else if (block.type === "tool_use") {
           const name = block.name || "tool"
-          const input = block.input ? clip(JSON.stringify(block.input), 400) : ""
+          // An edit keeps enough of its input for the Task page to show it
+          // as a diff (#2101 R16); other calls stay short.
+          const input = block.input ? clip(JSON.stringify(block.input), EDIT_TOOLS.has(name) ? 8000 : 400) : ""
           out += `\n→ ${name}(${input})\n`
         }
       }
@@ -724,7 +730,9 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
             ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
             : typeof block.content === "string" ? block.content : ""
           const flag = block.is_error ? "← [error] " : "← "
-          out += (out ? "" : line("")) + `${flag}${clip(redactSourcesRead(c), 800)}\n`
+          // One line per result: its own newlines become U+2028, so the
+          // reply that follows is never read as part of it (#2101 R16).
+          out += (out ? "" : line("")) + `${flag}${clip(redactSourcesRead(c), 800).replace(/\r?\n/g, "\u2028")}\n`
         }
       }
       return out
