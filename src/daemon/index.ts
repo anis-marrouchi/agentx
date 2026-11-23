@@ -63,6 +63,7 @@ import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter, gitlabErrorDetail } from "@/channels/gitlab"
 import { sendAnswer, type PostingIdentity } from "./send-answer"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
+import { issueHomeLinks } from "@/channels/ci-fix"
 import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { WebRtcBot, nativeI420ToRgba } from "@/channels/webrtc-bot"
 import { CameraWatchManager } from "@/camera/watch"
@@ -4080,6 +4081,11 @@ export class AgentXDaemon {
           knownAgentIds: Object.keys(this.config.agents),
           agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
           noWakeLabel: this.config.channels.gitlab.noWakeLabel,
+          // The CI fix loop's cap (#2102).
+          ci: this.config.channels.gitlab.ci,
+          ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-gitlab.json"),
+          ciAgentForIssue: (project: string, n: number) => requestStoreFor({ root: process.cwd() })
+            ?.newestOpenOnIssue(issueHomeLinks("gitlab", project, n, this.config.channels.gitlab.host))?.agentId,
           // An agent's token declared in its integrations[] (gitlab-user,
           // tokenEnv), read from the live config so a reload applies (#1745).
           integrationToken: (agentId: string) => gitlabIntegrationToken(this.config, agentId).token,
@@ -4184,6 +4190,11 @@ export class AgentXDaemon {
           ignoreOwnChanges: githubConfig.ignoreOwnChanges,
           debounceSeconds: githubConfig.debounceSeconds,
           noWakeLabel: githubConfig.noWakeLabel,
+          ci: githubConfig.ci,
+          ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
+          knownAgentIds: Object.keys(this.config.agents),
+          ciAgentForIssue: (repo: string, n: number) => requestStoreFor({ root: process.cwd() })
+            ?.newestOpenOnIssue(issueHomeLinks("github", repo, n))?.agentId,
         },
         this.log,
       )

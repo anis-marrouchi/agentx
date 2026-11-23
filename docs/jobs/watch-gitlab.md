@@ -38,7 +38,7 @@ If your team names its GitLab bot accounts with a common prefix, for example `te
 2. Open **Settings › Webhooks**.
 3. Select **Add new webhook**.
 4. Under **URL**, enter the AgentX machine's address and the webhook port, for example `http://agentx.example.internal:18810/`.
-5. Tick **Comments**, **Issues events** and **Merge request events**. Add **Pipeline events** if the agent should see pipelines.
+5. Tick **Comments**, **Issues events** and **Merge request events**. Add **Pipeline events** if the agent should see pipelines: a failed pipeline on a merge request starts the agent that owns the merge request to fix it (see [Failed pipelines](../reference/config-channels.md#failed-pipelines)).
 6. Optional: under **Secret token**, enter a long random value. Then, in AgentX, add `"webhookSecret": "<the same value>"` to `channels.gitlab` in **Settings › Advanced**, and select **Save**. AgentX then refuses events without it.
 7. Select **Add webhook**.
 

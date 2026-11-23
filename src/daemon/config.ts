@@ -718,6 +718,15 @@ const channelsConfigSchema = z.object({
      *  note, with or without a project rule (noqta/noqta#800). "" turns
      *  it off. */
     noWakeLabel: z.string().default("agent:no-wake"),
+    /** The CI fix loop (#2102): red pipelines on an MR/PR wake the agent
+     *  that owns it at most `fixAttempts` times in all (one wake per head
+     *  commit; a green run resets), then one note asks a person to look.
+     *  0 never wakes. The red runs of one commit within `holdSeconds` make
+     *  one wake. */
+    ci: z.object({
+      fixAttempts: z.number().int().min(0).default(3),
+      holdSeconds: z.number().min(0).max(3600).default(30),
+    }).default({}),
   }).default({}),
   github: z.object({
     enabled: z.boolean().default(false),
@@ -776,6 +785,15 @@ const channelsConfigSchema = z.object({
      *  opening, a label change or a comment, with or without a project
      *  rule (noqta/noqta#800). "" turns it off. */
     noWakeLabel: z.string().default("agent:no-wake"),
+    /** The CI fix loop (#2102): red pipelines on an MR/PR wake the agent
+     *  that owns it at most `fixAttempts` times in all (one wake per head
+     *  commit; a green run resets), then one note asks a person to look.
+     *  0 never wakes. The red runs of one commit within `holdSeconds` make
+     *  one wake. */
+    ci: z.object({
+      fixAttempts: z.number().int().min(0).default(3),
+      holdSeconds: z.number().min(0).max(3600).default(30),
+    }).default({}),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides
