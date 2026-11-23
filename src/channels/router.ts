@@ -41,7 +41,7 @@ import { situationKeyOf } from "@/situations/key"
 import { personLimitsOf } from "@/people/people"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "@/agents/mesh-safety"
 import type { Placement } from "@/requests/store"
-import { droppedNoteText, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
+import { droppedNoteText, issueKeyOfChat, leftBehindNoteText, leftBehindOn, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
 import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
@@ -360,6 +360,8 @@ export class MessageRouter {
     workflowHome?: (entity: { backend: string; id: string }) => string | null
     /** The issue chat's placement (requests/store.ts issue_placements). */
     placement?: (channel: string, chatId: string) => Placement | null
+    /** The nodes keeping work left behind on the issue chat (#2104 C-d). */
+    leftBehind?: (channel: string, chatId: string) => string[]
   }
   /** Issues already told their node is offline, per outage (#2104 B5):
    *  `<peer>\n<chatId>`, cleared when the peer comes back. */
@@ -550,7 +552,8 @@ export class MessageRouter {
    *  entry point reads (channels/run-on.ts): an active workflow run's home
    *  node on the entity, the issue's placement ("local" included), the
    *  agent mapping's node (`msg.preferNode`), else nothing (local, then
-   *  mesh). A read that fails counts as nothing set. */
+   *  mesh). A read that fails counts as nothing set. `held` when the node
+   *  picked keeps work left behind on the issue (C-d). */
   resolvePreferNode(msg: IncomingMessage, _agentId: string): PreferNodePick {
     const chatId = msg.group?.id || msg.sender.id
     let workflowHome: string | null = null
@@ -560,7 +563,8 @@ export class MessageRouter {
     }
     const placementOf = this.placement?.placement
     const placed = !workflowHome && placementOf ? resolveRunNode({ context: { channel: msg.channel, chatId } }, { placement: placementOf }) : null
-    return pickPreferNode({ workflowHome, placement: placed?.placement ?? null, mapping: msg.preferNode })
+    const leftBehind = leftBehindOn({ leftBehind: this.placement?.leftBehind }, issueKeyOfChat(msg.channel, chatId))
+    return pickPreferNode({ workflowHome, placement: placed?.placement ?? null, mapping: msg.preferNode, leftBehind })
   }
 
   setServiceMatcher(matcher: ServiceMatcher): void {
@@ -1185,6 +1189,15 @@ export class MessageRouter {
     // The node the run goes to (#2104 B1): a workflow run's home, the
     // issue's placement, the agent mapping.
     const pick = this.resolvePreferNode(msg, agentId)
+    if (pick.held && pick.node) {
+      // The node keeps the issue's left-behind work (C-d): the run is not
+      // sent there, nor run here on top of it; the issue says why.
+      const text = leftBehindNoteText(pick.node)
+      this.log(`[run-on] ${chatId} would run on "${pick.node}" (${pick.source}), which keeps left-behind work: not sent`)
+      await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
+      this.resolveIntent(msg, "completed", Date.now(), text)
+      return
+    }
     if (pick.source === "placement") {
       // Placed: never forwarded on the mapping. An offline node holds the
       // message (one note on the issue); else the local registry sends the
@@ -2419,7 +2432,7 @@ export class MessageRouter {
         // issue goes through the normal path, where the local registry
         // sends it to its node (or holds it again).
         const again = this.resolvePreferNode(d.msg, d.agentId)
-        if (again.source === "placement") {
+        if (again.source === "placement" || again.held) {
           await this.processResolvedMessage(d.adapter, d.msg, d.agentId, d.msg.group?.id || d.msg.sender.id)
           this.log(`[mesh-defer] replayed ${d.key} -> "${d.agentId}" (placed issue)`)
           continue

@@ -709,12 +709,14 @@ export class AgentXDaemon {
         return home && home === d?.homeNodeId ? LOCAL_NODE : home
       },
       placement: (channel, chatId) => this.requests?.store.placement(channel, chatId) ?? null,
+      leftBehind: (channel, chatId) => this.requests?.store.leftBehind(channel, chatId).map((l) => l.node) ?? [],
     })
     // The same placement, at the start of every registry.execute (#2104
     // B1): Hub turns, crons with a home and workflow steps too. A pick-up
     // turn names its request, whose home is the issue.
     this.registry.setPlacements({
       placement: (channel, chatId) => this.requests?.store.placement(channel, chatId) ?? null,
+      leftBehind: (channel, chatId) => this.requests?.store.leftBehind(channel, chatId).map((l) => l.node) ?? [],
       requestHome: (id) => {
         const r = this.requests?.store.get(id)
         return r?.home?.kind === "issue" ? r.home.link : null
@@ -2783,6 +2785,8 @@ export class AgentXDaemon {
       noteOnIssue: async (provider, chatId, text) => {
         await this.router.sendOutbound({ channel: provider, chatId, text })
       },
+      // C-d: the node the agent's mapping sends the forge's runs to.
+      defaultNode: (provider, agentId) => (this.config.channels as any)?.[provider]?.agentMappings?.find((m: any) => m?.agentId === agentId)?.node,
     }
   }
 

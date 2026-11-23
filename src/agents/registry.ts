@@ -68,7 +68,7 @@ import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "./mesh-safety"
-import { fromPeer, issueKeyOfChat, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
+import { fromPeer, issueKeyOfChat, issueKeysOfTask, leftBehindNoteText, leftBehindOn, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -993,16 +993,23 @@ export class AgentRegistry {
   /** The placement of the issue a task names, "local" included, or null
    *  when there is none (or the task came from a peer). A mapping does not
    *  apply to a placed issue (#2104 B1). */
-  placementOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey } | null {
+  placementOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey; held?: true } | null {
     const ctx = task.context as Record<string, unknown> | undefined
     if (!this.placements || fromPeer(ctx)) return null
     const hit = resolveRunNode({ context: ctx }, this.placements)
-    return hit ? { node: hit.placement.node, key: hit.key } : null
+    return hit ? { node: hit.placement.node, key: hit.key, ...(hit.held ? { held: true as const } : {}) } : null
+  }
+
+  /** The nodes keeping work left behind on the issue a task names (#2104
+   *  C-d): a mapped webhook's node is not sent its runs. */
+  leftBehindOf(task: Pick<AgentTask, "context">): string[] {
+    if (!this.placements) return []
+    return [...new Set(issueKeysOfTask(task.context as Record<string, unknown> | undefined, this.placements).flatMap((k) => leftBehindOn(this.placements!, k)))]
   }
 
   /** The node a task's issue is placed on, or null: no placed issue, a
    *  placement on this node, or a task a peer sent (never forwarded twice). */
-  placedNodeOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey } | null {
+  placedNodeOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey; held?: true } | null {
     const hit = this.placementOf(task)
     return hit && hit.node !== LOCAL_NODE ? hit : null
   }
@@ -1017,6 +1024,10 @@ export class AgentRegistry {
     const placed = this.placedNodeOf(task)
     if (!placed) return null
     const { node, key } = placed
+    if (placed.held) {
+      this.log(`[run-on] ${task.agentId} ${key.chatId} runs on "${node}", which keeps left-behind work: not sent`)
+      return { content: "", error: leftBehindNoteText(node) }
+    }
     const limits = personLimitsOf(this.config.people, task.context as any)
     const blocked = meshForwardBlock(task.agentId, task.autonomy, limits)
     if (blocked) {

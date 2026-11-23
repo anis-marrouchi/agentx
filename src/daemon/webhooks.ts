@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { createHmac, timingSafeEqual } from "crypto"
 import type { AgentRegistry } from "@/agents/registry"
-import { LOCAL_NODE } from "@/channels/run-on"
+import { leftBehindNoteText, LOCAL_NODE } from "@/channels/run-on"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
 import type { WorkflowDispatcher } from "@/workflows"
@@ -246,6 +246,14 @@ export class WebhookHandler {
       w => w.enabled && w.node && w.agentId === agentId && w.source === source,
     )
     const placed = home ? this.registry.placementOf({ context }) : null
+
+    // C-d: the mapped node keeps the issue's left-behind work, so the run
+    // is not forwarded there.
+    if (meshEntry?.node && !placed && home && this.registry.leftBehindOf?.({ context }).includes(meshEntry.node)) {
+      this.log(`Webhook [${source}] for ${home}: ${meshEntry.node} keeps left-behind work, not forwarded`)
+      this.sendJson(res, 409, { ok: false, agent: agentId, source, node: meshEntry.node, error: leftBehindNoteText(meshEntry.node) })
+      return
+    }
 
     if (meshEntry?.node && this.mesh && !placed) {
       // Respond immediately — GitHub/GitLab have short delivery timeouts.

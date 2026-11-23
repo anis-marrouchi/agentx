@@ -19,7 +19,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
 
 import { MessageRouter } from "../src/channels/router"
 import type { IncomingMessage } from "../src/channels/types"
-import { droppedNoteText, issueKeysOfHome, issueKeysOfTask, issueOfChat, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs } from "../src/channels/run-on"
+import { droppedNoteText, issueKeysOfHome, issueKeysOfTask, issueOfChat, leftBehindNoteText, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs } from "../src/channels/run-on"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "../src/agents/mesh-safety"
 import { AgentRegistry } from "../src/agents/registry"
 import { checkoutsOf } from "../src/agents/task-worktrees"
@@ -58,6 +58,18 @@ describe("the order", () => {
     const placement = (c: string, id: string) => rows[`${c} ${id}`] ?? null
     expect(resolveRunNode({ context: { channel: "cron", home: "g/p#3" } }, { placement })).toEqual({ key: { channel: "gitlab", chatId: "g/p:issue:3" }, placement: at("clawd") })
     expect(resolveRunNode({ context: { channel: "cron", home: "g/p#4" } }, { placement })).toBeNull()
+  })
+
+  it("C-d: a picked node keeping left-behind work is held, whichever tier picked it", () => {
+    const leftBehind = ["clawd"]
+    expect(pickPreferNode({ workflowHome: "clawd", leftBehind })).toEqual({ node: "clawd", source: "workflow", held: true })
+    expect(pickPreferNode({ placement: at("clawd"), leftBehind })).toEqual({ node: "clawd", source: "placement", held: true })
+    expect(pickPreferNode({ mapping: "clawd", leftBehind })).toEqual({ node: "clawd", source: "mapping", held: true })
+    expect(pickPreferNode({ mapping: "nas", leftBehind })).toEqual({ node: "nas", source: "mapping" })
+    expect(pickPreferNode({ placement: at("local"), mapping: "clawd", leftBehind })).toEqual({ source: "placement" })
+    const placement = () => at("clawd")
+    expect(resolveRunNode({ context: { channel: "cron", home: "g/p#3" } }, { placement, leftBehind: (_c, id) => (id === "g/p:issue:3" ? ["clawd"] : []) })).toMatchObject({ held: true })
+    expect(resolveRunNode({ context: { channel: "cron", home: "g/p#3" } }, { placement, leftBehind: () => { throw new Error("db") } })).not.toHaveProperty("held")
   })
 })
 
@@ -136,7 +148,41 @@ describe("MessageRouter with a placement", () => {
       sendTask,
       onPeerChange: (cb: any) => { recovered = () => cb({ peer: "clawd", healthy: true, skills: ["coder"], delta: "recovered" }) },
     } as any)
-    router.setPlacement({ workflowHome: () => place.workflow, placement: (c, id) => (c === "github" && id === ISSUE_CHAT ? place.placement : null) })
+    left = []
+    router.setPlacement({ workflowHome: () => place.workflow, placement: (c, id) => (c === "github" && id === ISSUE_CHAT ? place.placement : null), leftBehind: (c, id) => (c === "github" && id === ISSUE_CHAT ? left : []) })
+  })
+  let left: string[]
+
+  it("C-d: a mapping or a workflow home on a node keeping left-behind work is not sent there, nor run here; the issue is told", async () => {
+    localAgent = true
+    left = ["clawd"]
+    const r = router as any
+    await r.processResolvedMessage(adapter, msg({ preferNode: "clawd" }), "coder", ISSUE_CHAT)
+    place.workflow = "clawd"
+    await r.processResolvedMessage(adapter, msg(), "coder", ISSUE_CHAT)
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(router.getDeferredMeshCounts()).toEqual({})
+    expect(sent).toEqual([{ chatId: ISSUE_CHAT, text: leftBehindNoteText("clawd") }, { chatId: ISSUE_CHAT, text: leftBehindNoteText("clawd") }])
+    // Another node, or the record cleared: it goes as before.
+    place.workflow = null
+    await r.processResolvedMessage(adapter, msg({ preferNode: "nas" }), "coder", ISSUE_CHAT)
+    left = []
+    await r.processResolvedMessage(adapter, msg({ preferNode: "clawd" }), "coder", ISSUE_CHAT)
+    expect(sendTask.mock.calls.map((c: any[]) => c[0])).toEqual(["nas", "clawd"])
+  })
+
+  it("C-d: a message held for an offline node is not replayed there once it keeps left-behind work", async () => {
+    localAgent = true
+    healthy = false
+    const r = router as any
+    await r.processResolvedMessage(adapter, msg({ preferNode: "clawd" }), "coder", ISSUE_CHAT)
+    expect(router.getDeferredMeshCounts()).toEqual({ clawd: 1 })
+    left = ["clawd"]
+    healthy = true
+    await r.replayDeferred("clawd")
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(sent.map((s) => s.text)).toContain(leftBehindNoteText("clawd"))
   })
 
   it("resolves workflow home > placement > mapping > none", () => {
@@ -292,6 +338,15 @@ describe("AgentRegistry: placement at the start of execute", () => {
     expect(run.calls).toBe(0)
   })
 
+  it("C-d: a placement on a node keeping left-behind work fails the run with the reason, not sent", async () => {
+    registry.setPlacements({ placement: (c, id) => placements[`${c} ${id}`] ?? null, leftBehind: () => ["clawd"] })
+    const res = await registry.execute({ agentId: "coder", message: "x", context: { channel: "github", chatId: ISSUE_CHAT } as any })
+    expect(res.error).toBe(leftBehindNoteText("clawd"))
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(run.calls).toBe(0)
+    expect(registry.leftBehindOf({ context: { channel: "cron", home: "acme/app#7" } as any })).toEqual(["clawd"])
+  })
+
   it("an offline node fails the run with the reason", async () => {
     peers[0].healthy = false
     const res = await registry.execute({ agentId: "coder", message: "x", context: { channel: "cron", chatId: "c", home: "acme/app#7" } as any })
@@ -349,6 +404,23 @@ describe("a mapped webhook loses to the placement", () => {
     placed = false
     await call()
     expect(sendTask).toHaveBeenCalledTimes(1)
+  })
+
+  it("C-d: a mapped webhook's node keeping left-behind work is not forwarded the run", async () => {
+    const execute = vi.fn(async () => ({ content: "ok", duration: 1 }))
+    const sendTask = vi.fn(async () => "on nas")
+    const registry: any = { execute, placementOf: () => null, leftBehindOf: () => ["nas"], getAgent: () => ({}) }
+    const handler = new WebhookHandler(registry, {}, () => {}, { sendTask } as any, [{ id: "w", enabled: true, source: "github", agentId: "coder", node: "nas" }] as any)
+    const h = handler as any
+    h.readBody = async () => ({ raw: Buffer.from("{}"), parsed: { action: "opened", repository: { full_name: "acme/app" }, issue: { number: 7, title: "t" } } })
+    h.validateSignature = () => null
+    h.fireHookSafe = async () => {}
+    const res: any = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() }
+    await h.handle({ headers: { "x-github-event": "issues" }, url: "/webhook/coder/github", method: "POST" }, res, "/webhook/coder/github")
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(res.writeHead).toHaveBeenCalledWith(409, expect.anything())
+    expect(String(res.end.mock.calls[0][0])).toContain("keeps unpushed work")
   })
 
   it("C4: a run placed on a peer answers 202 before the registry sends it", async () => {

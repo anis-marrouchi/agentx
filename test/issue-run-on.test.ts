@@ -410,6 +410,28 @@ describe("GET and POST /issue-run-on", () => {
     expect(placed()?.node).toBe("old")
   })
 
+  it("C-d: Use the agent's default is refused when the default is a node keeping left-behind work, forced or not", async () => {
+    // Forced off old, whose mapping is the agent's default: refused, nothing written.
+    store.setPlacement("github", "acme/app:issue:7", { node: "old", setBy: "owner", setAt: 1 })
+    const d: RunOnDeps = { ...deps(), defaultNode: (p, a) => (p === "github" && a === "coder" ? "old" : undefined), noteOnIssue: async () => {} }
+    const forced = await moveRunOn({ id: "wp-1", node: "default", force: true, confirm: "old" }, d)
+    expect(forced.status).toBe(409)
+    expect((forced.body as any).error).toContain("The agent's default for acme/app#7 is old")
+    expect(placed()?.node).toBe("old")
+    expect(store.leftBehind("github", "acme/app:issue:7")).toEqual([])
+    // Forced to this Mac instead: old keeps the work; default is refused while it does.
+    expect((await moveRunOn({ id: "wp-1", node: "local", force: true, confirm: "old" }, d)).status).toBe(200)
+    peers.find((p) => p.peer === "old").healthy = true
+    states.local = { runOpen: false, worktree: null }
+    const later = await moveRunOn({ id: "wp-1", node: "default" }, d)
+    expect(later.status).toBe(409)
+    expect(placed()?.node).toBe("local")
+    // Another default, or the record cleared: it moves.
+    expect((await moveRunOn({ id: "wp-1", dropLeftBehind: "old" }, d)).status).toBe(200)
+    expect((await moveRunOn({ id: "wp-1", node: "default" }, d)).status).toBe(200)
+    expect(placed()).toBeNull()
+  })
+
   it("Q4: force on a holder that is online changes nothing: the normal checks run", async () => {
     store.setPlacement("github", "acme/app:issue:7", { node: "clawd", setBy: "owner", setAt: 1 })
     states.clawd = { runOpen: false, worktree: { branch: "agentx/issue-7", dirty: true, ahead: 0 } }

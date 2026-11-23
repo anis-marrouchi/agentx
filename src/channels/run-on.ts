@@ -17,7 +17,9 @@ import { LOCAL_PLACEMENT, type Placement } from "@/requests/store"
 //      `preferNode`), or `webhookEntries[].node` for a mapped webhook;
 //   4. nothing: local, then the mesh fallback.
 // A task a peer sent (`placed`, or arrived on /task from the mesh) is
-// never forwarded again.
+// never forwarded again. A picked node that keeps an issue's work left
+// behind by a forced move (`issue_left_behind`, #2104 Q4) never gets its
+// runs: they are held with a note until the owner clears the record (C-d).
 
 export const LOCAL_NODE = LOCAL_PLACEMENT
 
@@ -51,6 +53,8 @@ export interface RunNodeDeps {
   placement: (channel: string, chatId: string) => Placement | null
   /** The home of a request, for a pick-up turn whose chat is the request. */
   requestHome?: (requestId: string) => string | null | undefined
+  /** The nodes keeping work left behind on an issue chat (#2104 C-d). */
+  leftBehind?: (channel: string, chatId: string) => string[]
 }
 
 /** The pick-up channel (requests/tracker.ts PICKUP_CHANNEL), named here so
@@ -74,14 +78,22 @@ export function issueKeysOfTask(ctx: Record<string, unknown> | undefined | null,
 }
 
 /** The placement of the issue a task names, with the issue chat it is
- *  kept under, or null when the task names no placed issue. */
-export function resolveRunNode(task: { context?: Record<string, unknown> | null }, deps: RunNodeDeps): { key: IssueKey; placement: Placement } | null {
+ *  kept under, or null when the task names no placed issue. `held`: the
+ *  placed node keeps work left behind on the issue (C-d). */
+export function resolveRunNode(task: { context?: Record<string, unknown> | null }, deps: RunNodeDeps): { key: IssueKey; placement: Placement; held?: true } | null {
   for (const key of issueKeysOfTask(task.context, deps)) {
     let p: Placement | null = null
     try { p = deps.placement(key.channel, key.chatId) } catch { p = null }
-    if (p) return { key, placement: p }
+    if (p) return leftBehindOn(deps, key).includes(p.node) ? { key, placement: p, held: true } : { key, placement: p }
   }
   return null
+}
+
+/** The nodes keeping work left behind on an issue chat; a read that fails
+ *  counts as none. */
+export function leftBehindOn(deps: Pick<RunNodeDeps, "leftBehind">, key: IssueKey | null): string[] {
+  if (!key || !deps.leftBehind) return []
+  try { return deps.leftBehind(key.channel, key.chatId) } catch { return [] }
 }
 
 /** Whether a task came from a peer: it is never forwarded again. */
@@ -104,20 +116,33 @@ export function workflowEntityRefs(channel: string | undefined, chatId: string |
 }
 
 /** Where the run goes and why. `node` unset: this node (or, with source
- *  "none", the local then mesh fallback). */
+ *  "none", the local then mesh fallback). `held`: `node` keeps work left
+ *  behind on the issue, so the run is not sent there (C-d). */
 export interface PreferNodePick {
   node?: string
   source: "workflow" | "placement" | "mapping" | "none"
+  held?: true
 }
 
 /** The order above. `workflowHome`: the active run's home node, LOCAL_NODE
  *  when it is this node, null when none is active. A placement of
  *  LOCAL_NODE keeps the run here, whatever the mapping says. */
-export function pickPreferNode(input: { workflowHome?: string | null; placement?: Placement | null; mapping?: string | null }): PreferNodePick {
+export function pickPreferNode(input: { workflowHome?: string | null; placement?: Placement | null; mapping?: string | null; leftBehind?: string[] }): PreferNodePick {
+  const pick = orderedPick(input)
+  return pick.node && input.leftBehind?.includes(pick.node) ? { ...pick, held: true } : pick
+}
+
+function orderedPick(input: { workflowHome?: string | null; placement?: Placement | null; mapping?: string | null }): PreferNodePick {
   if (input.workflowHome) return input.workflowHome === LOCAL_NODE ? { source: "workflow" } : { node: input.workflowHome, source: "workflow" }
   if (input.placement) return input.placement.node === LOCAL_NODE ? { source: "placement" } : { node: input.placement.node, source: "placement" }
   if (input.mapping) return { node: input.mapping, source: "mapping" }
   return { source: "none" }
+}
+
+/** The note on an issue whose run was not sent to a node keeping its
+ *  left-behind work (#2104 C-d). */
+export function leftBehindNoteText(node: string): string {
+  return `${node} keeps unpushed work on this issue from a forced move, so this run was not sent there. Recover or drop that work on ${node}, clear it from the Hub (or run the issue on another node), then write again.`
 }
 
 /** The one note posted on an issue whose node is offline (#2104 B5). */

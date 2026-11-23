@@ -118,6 +118,9 @@ export interface RunOnDeps {
   pushedSha?: (provider: "github" | "gitlab", project: string, branch: string) => Promise<string | null>
   /** Posts a note on the issue chat, as this node's agent (#2104 Q4). */
   noteOnIssue?: (provider: "github" | "gitlab", chatId: string, text: string) => Promise<void>
+  /** The node the agent's mapping on that forge names, if any: where
+   *  "Use the agent's default" sends the runs (#2104 C-d). */
+  defaultNode?: (provider: "github" | "gitlab", agentId: string) => string | undefined
 }
 
 export type Reply = { status: number; body: unknown }
@@ -210,6 +213,12 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
   if (node === current && before) return { status: 200, body: { ok: true, current, message: node === LOCAL ? "It already runs on this Mac." : `It already runs on ${node}.` } }
   const left = store.leftBehind(issue.provider, issue.chatId).find((l) => l.node === node)
   if (left) return { status: 409, body: { error: `${node} keeps work on ${issue.label} left behind by a forced move. Recover or drop it there, then clear it here first.` } }
+  // C-d: "default" would send the runs to the agent's mapped node; not to
+  // one keeping left-behind work (a forced move's holder counts).
+  const defaultTo = node === DEFAULT ? deps.defaultNode?.(issue.provider, agentId) : undefined
+  const defaultHeld = (also?: string) => !!defaultTo && (defaultTo === also || store.leftBehind(issue.provider, issue.chatId).some((l) => l.node === defaultTo))
+  const defaultRefusal = (): Reply => ({ status: 409, body: { error: `The agent's default for ${issue.label} is ${defaultTo}, which keeps work left behind by a forced move. Pick a node by name, or recover that work and clear it first.` } })
+  if (defaultHeld()) return defaultRefusal()
 
   if (node !== LOCAL && node !== DEFAULT) {
     const peer = peers.find((p) => p.peer === node)
@@ -264,6 +273,7 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
   async function forceMove(): Promise<Reply> {
     const confirm = typeof body.confirm === "string" ? body.confirm.trim() : ""
     if (confirm !== current) return { status: 409, body: { error: `To force the move, confirm with the name of the offline node, ${current}: its unpushed work on ${issue.label} stays there.` } }
+    if (defaultHeld(current)) return defaultRefusal()
     const branch = `agentx/issue-${issue.number}`
     const sha = await deps.pushedSha?.(issue.provider, issue.project, branch).catch(() => null) ?? null
     store.addLeftBehind(issue.provider, issue.chatId, { node: current, pushedSha: sha, setBy: by, setAt: now })
