@@ -425,3 +425,40 @@ process.stdin.on("data", (c) => {
     }
   })
 })
+
+describe("ClaudeProcessFactory — partial messages (#2101 R16, #2163 B1)", () => {
+  // Stands in for Claude Code: answers with its own arguments, so the test
+  // reads what the persistent process was started with.
+  const standIn = `#!/usr/bin/env node
+const args = process.argv.slice(2)
+let buf = ""
+process.stdin.on("data", (c) => {
+  buf += c
+  const nl = buf.indexOf("\\n")
+  if (nl === -1) return
+  const q = JSON.parse(buf.slice(0, nl))
+  buf = buf.slice(nl + 1)
+  const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n")
+  out({ type: "user", uuid: q.uuid, isReplay: true, message: q.message })
+  out({ type: "result", result: JSON.stringify(args), session_id: "sid-1" })
+})
+`
+  it("starts claude with --include-partial-messages, so the answer streams", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-args-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, standIn)
+    chmodSync(binary, 0o755)
+    const handle = new ClaudeProcessFactory({ binary, log: () => {} }).spawn(KEY, OPTS())
+    try {
+      let result = ""
+      for await (const evt of handle.runTurn({ message: "q", taskId: "t", deadlineMs: 5_000 })) {
+        if (evt.type === "result") result = String((evt.raw as any).result)
+      }
+      const args = JSON.parse(result) as string[]
+      expect(args).toContain("--include-partial-messages")
+      expect(args).toContain("stream-json")
+    } finally {
+      await handle.kill("test-done")
+    }
+  })
+})

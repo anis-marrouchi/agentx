@@ -159,6 +159,31 @@ describe("executeTask routing — persistent flag", () => {
     expect(r.content).toBe("Done.")
   })
 
+  it("streams partial text deltas once, without repeating them when the whole message follows (#2101 R16)", async () => {
+    const se = (event: unknown, parent: string | null = null): TurnEvent => ({ type: "stream_event", raw: { type: "stream_event", event, parent_tool_use_id: parent } })
+    const start = se({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })
+    const text = (t: string, parent: string | null = null) => se({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } }, parent)
+    const assistant = (content: unknown[]): TurnEvent => ({ type: "assistant", raw: { type: "assistant", message: { content } } })
+    const events: TurnEvent[] = [
+      start, text("Checking"), text(" the repo."),
+      assistant([{ type: "text", text: "Checking the repo." }]),
+      se({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"command\"" } }),
+      assistant([{ type: "tool_use", name: "Bash", input: { command: "ls" } }]),
+      // A sub-agent's partial text is not the answer.
+      text("sub-agent words", "toolu_1"),
+      start, text("Do"), text("ne."),
+      assistant([{ type: "text", text: "Done." }]),
+      { type: "result", raw: { type: "result", is_error: false, result: "Done.", session_id: "s" } },
+    ]
+    setProcessRegistry(new ProcessRegistry({ factory: new ScriptedFactory(events), sweepIntervalMs: 1_000_000 }))
+
+    const deltas: string[] = []
+    const r = await executeTask(baseAgent({ persistentProcess: true }), baseTask("hi") as any, {}, (d) => deltas.push(d))
+
+    expect(deltas).toEqual(["Checking", " the repo.", "\n\nDo", "ne."])
+    expect(r.content).toBe("Done.")
+  })
+
   it("does NOT call the persistent path when agent.persistentProcess is false", async () => {
     // No registry set. If runtime mistakenly tried to use it, executeClaudeCode
     // would fire and shell out to a missing or unintended `claude` binary.
