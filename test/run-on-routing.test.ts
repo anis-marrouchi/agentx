@@ -307,6 +307,13 @@ describe("AgentRegistry: placement at the start of execute", () => {
     expect(opts.context.runbookPath).toBeUndefined()
   })
 
+  it("C-b: a placed task for an agent this node does not host is refused, never passed on to another peer", async () => {
+    const res = await registry.execute({ agentId: "atlas", message: "hi", context: { channel: "github", chatId: "o/r:issue:1", placed: true, fromPeer: true } as any })
+    expect(res.error).toContain("does not host atlas")
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(run.calls).toBe(0)
+  })
+
   it("C3: a placed task here with no checkout of its repository is refused, not run in the workspace", async () => {
     const res = await registry.execute({ agentId: "coder", message: "hi", context: { channel: "github", chatId: "other/repo:issue:3", placed: true, fromPeer: true } as any })
     expect(res.error).toContain("no checkout")

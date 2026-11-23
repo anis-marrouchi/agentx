@@ -2011,6 +2011,13 @@ export class AgentRegistry {
       if (blocked) {
         return blocked.kind === "autonomy" ? { content: "", error: blocked.error, autonomy: task.autonomy } : { content: "", error: blocked.error }
       }
+      // A task placed here (#2104 C-b) runs in this node's checkout or is
+      // refused, and the refusal goes back to the node that placed it:
+      // never passed on to another peer the owner did not choose.
+      if ((task.context as Record<string, unknown> | undefined)?.placed === true) {
+        this.log(`[run-on] ${task.agentId} was placed here but does not run on this node: refused`)
+        return { content: "", error: `This issue was placed on a node that does not host ${task.agentId}, so the run was refused there. Move it to another machine from the Hub.` }
+      }
       // Mesh fallback: the agent isn't local but a healthy peer may host
       // it. Look it up in the mesh directory and forward via A2A sendTask.
       // Streaming callbacks are dropped — sendTask doesn't stream today.
