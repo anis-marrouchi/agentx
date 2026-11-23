@@ -586,6 +586,40 @@ export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, e
   }
 }
 
+/** Writes a non-claude-code runtime's thinking tokens into the task
+ *  buffer. Each line of reasoning starts with `💭 `: the renderers and the
+ *  phone's trimmer (app-task-stream.ts) read the buffer line by line, and a
+ *  bare line would read as the answer (#2137 B1). A formatted event (an
+ *  `[error] …\n` from a retried provider error, a tool line) can land in
+ *  the buffer in the middle of a thought; the thought is then no longer the
+ *  buffer's last line, so the next token starts a new `💭 ` line (#2137
+ *  review C2, Hakim on #2148). Exported for tests. */
+export function makeBufferThinkingWriter(
+  buffer: () => string,
+  push: (chunk: string) => void,
+): { think(text: string): void; close(): void } {
+  let open = false
+  const thoughtIsLastLine = () => {
+    const b = buffer()
+    return b.slice(b.lastIndexOf("\n") + 1).startsWith("💭 ")
+  }
+  return {
+    think(text) {
+      if (!text) return
+      const lines = text.replace(/\n/g, "\n💭 ")
+      if (open && thoughtIsLastLine()) { push(lines); return }
+      // On its own line: after a text delta the buffer has no newline.
+      const b = buffer()
+      push(`${b && !b.endsWith("\n") ? "\n" : ""}💭 ${lines}`)
+      open = true
+    },
+    close() {
+      if (open && thoughtIsLastLine()) push("\n")
+      open = false
+    },
+  }
+}
+
 /** Exported for tests (test/app-live-2103.test.ts). */
 export function makeStreamEventFormatter(): (event: any) => string {
   let textSeen = ""
@@ -4232,32 +4266,18 @@ export class AgentRegistry {
       // modal buffer with a `💭 ` prefix only on the first chunk so
       // the dashboard's line-based renderer treats the whole run of
       // reasoning as a single thought event instead of one per token.
-      // Each new line of reasoning starts with `💭 ` again: the renderers
-      // and the phone's trimmer (app-task-stream.ts) read the buffer line
-      // by line, and a bare line would read as the answer (#2137 B1).
-      let thinkingOpen = false
+      // Line and mid-thought rules: makeBufferThinkingWriter.
+      const thinkingWriter = makeBufferThinkingWriter(() => output.buffer, pushToBuffer)
       const wrappedOnThinking: ThinkingCallback | undefined = tierUsesStreamJson
         ? onThinking
         : (text) => {
-            if (text) {
-              const lines = text.replace(/\n/g, "\n💭 ")
-              if (!thinkingOpen) {
-                // On its own line: after a text delta the buffer has no newline.
-                const nl = output.buffer && !output.buffer.endsWith("\n") ? "\n" : ""
-                pushToBuffer(`${nl}💭 ${lines}`)
-                thinkingOpen = true
-              } else {
-                pushToBuffer(lines)
-              }
-            }
+            thinkingWriter.think(text)
             if (onThinking) onThinking(text)
           }
       // When the agent transitions back to text, close any open
       // thought block in the modal so the next text chunk doesn't
       // get folded into the same line.
-      const closeThinkingIfOpen = () => {
-        if (thinkingOpen) { pushToBuffer("\n"); thinkingOpen = false }
-      }
+      const closeThinkingIfOpen = () => thinkingWriter.close()
       const wrappedOnDeltaWithThinkingClose: StreamCallback | undefined = tierUsesStreamJson
         ? wrappedOnDelta
         : wrappedOnDelta

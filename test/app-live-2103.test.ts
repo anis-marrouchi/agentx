@@ -7,7 +7,7 @@ import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { LIVE_OFF_ERROR, PREVIEW_CHARS, type AppFleetDeps, type SnapshotNode, type TaskStreamOpen } from "../src/daemon/app-fleet"
 import { PhoneStreamTrimmer, SseFrames } from "../src/daemon/app-task-stream"
-import { makeStreamEventFormatter } from "../src/agents/registry"
+import { makeBufferThinkingWriter, makeStreamEventFormatter } from "../src/agents/registry"
 import { setLiveControl } from "../src/commands/app"
 import { liveLabel, liveReduce, liveSseFrames, type LiveView } from "../src/daemon/ui/pages/app-live-logic"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
@@ -367,6 +367,29 @@ describe("PhoneStreamTrimmer", () => {
     ]) t.feed(g(ev))
     expect(t.failed).toBe(true)
     expect(t.final()).toBe("Quoting `[error] x` here")
+  })
+
+  // #2137 review C2 (Hakim on #2148): on the orchestrator tier an
+  // `[error] …\n` can land in the middle of a thought (a provider error that
+  // is then retried). The thought tokens after it must stay off the phone.
+  it("thinking, then an [error] line, then more thinking: none of the thought leaks", () => {
+    let buffer = ""
+    const t = new PhoneStreamTrimmer()
+    const evs: ReturnType<PhoneStreamTrimmer["feed"]> = []
+    const push = (chunk: string) => { buffer += chunk; evs.push(...t.feed(chunk)) }
+    const w = makeBufferThinkingWriter(() => buffer, push)
+    const f = makeStreamEventFormatter()
+    w.think("The password")
+    w.think(" is hunter2")
+    push(f({ type: "error", message: "overloaded, retrying" }))
+    w.think("so I will")
+    w.think(" use hunter2")
+    w.close()
+    push("Done.")
+    expect(evs).toEqual([{ event: "text", data: { text: "Done." } }])
+    expect(buffer).toContain("\n💭 so I will use hunter2\n")
+    // Closing a thought the error line already ended adds no blank line.
+    expect(buffer).not.toContain("\n\n")
   })
 
   it("a full start buffer that begins inside a thought shows none of it", () => {
