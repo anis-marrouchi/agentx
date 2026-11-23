@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { execFileSync, spawnSync } from "child_process"
+import { execFileSync, spawn, spawnSync } from "child_process"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -175,10 +175,16 @@ describe("the box's worktree and hook (real git, local sh)", () => {
   it("B2: prepare refuses while the lock's run is alive, and goes on once it ended", async () => {
     expect(await prepare()).toMatch(/^READY /)
     const lock = sshLockFile(checkout, 7)
-    writeFileSync(lock, `${process.pid}\n`)
-    expect(await prepare()).toBe(`BUSY ${process.pid}`)
+    const live = spawn("timeout", ["30", "sleep", "30"], { stdio: "ignore" })
+    try {
+      writeFileSync(lock, `${live.pid}\n`)
+      expect(await prepare()).toBe(`BUSY ${live.pid}`)
+    } finally { live.kill() }
     const dead = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim()
     writeFileSync(lock, `${dead}\n`)
+    expect(await prepare()).toMatch(/^READY /)
+    // A pid reused by another program (here this test's node) is stale.
+    writeFileSync(lock, `${process.pid}\n`)
     expect(await prepare()).toMatch(/^READY /)
   })
 
