@@ -136,7 +136,7 @@ One command, on macOS or Linux with **Node.js 22.19 or newer, up to 26**:
 npx agentix-cli start
 ```
 
-It creates `agentx.json` with one agent in the current folder, starts AgentX in the background, and ends with your first agent's chat open in the browser. If no model is set up yet, the chat asks for an API key, or for the Claude Code login, and then answers. Run it again any time: it reuses what is running and never overwrites your config.
+It creates `agentx.json` with one agent in the current folder, starts AgentX in the background, and opens the setup page in the browser: it connects your model account (an API key, or the Claude Code login), then sends your first agent a first task and shows the answer. Nothing to edit by hand. Run it again any time: it reuses what is running and never overwrites your config.
 
 Then add the team for the job you want, for example:
 

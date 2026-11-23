@@ -33,14 +33,13 @@ AgentX runs as two programs: the **daemon** (the background service that runs ag
    ```
    The first build downloads what AgentX needs and takes a few minutes. It creates an empty team in the `agentx-data/` folder, then starts the daemon and the dashboard in separate containers. They are reachable only from this machine (`127.0.0.1`).
 6. **Browser:** open `http://127.0.0.1:4202/setup`.
-7. **Browser:** fill in the setup page as described in [Your first agent](./first-agent.md). In the Docker image, the simplest **AI engine** is **Anthropic API (BYO key)** ("bring your own key"): choose it and paste your key under **Anthropic API key**. Claude Code, Codex CLI and OpenCode aren't installed in the image; someone must add and sign in to them first.
-8. **Browser:** select **Save and continue**. Docker already runs the daemon, so you don't need the **Start daemon now** button.
+7. **Browser:** follow the setup page as described in [Your first agent](./first-agent.md). In the Docker image, paste an Anthropic API key in step 1: Claude Code, Codex CLI and OpenCode aren't installed in the image; someone must add and sign in to them first.
+8. **Browser:** select **Create agent**. The setup page says the agent is saved but not loaded yet, because Docker runs the daemon in its own container.
 9. **Terminal:** restart AgentX so it loads the new agent:
    ```sh
    docker compose restart daemon dashboard
    ```
-
-![The setup page with Anthropic API (BYO key) chosen as the AI engine and the Anthropic API key field below](/screenshots/setup/engine.png)
+10. **Browser:** reload the setup page and send the first task.
 
 Keep the `agentx-data/` folder. It holds your settings, agent folders, credentials and task history. `docker compose down` stops AgentX without deleting it.
 
@@ -70,13 +69,7 @@ Back up your data first. An existing `agentx.json` needs `node.bind: "0.0.0.0:18
    ```sh
    node dist/cli.js setup
    ```
-6. **Browser:** at `http://127.0.0.1:4202/setup`, fill in the page as described in [Your first agent](./first-agent.md), then select **Save and continue**.
-7. **Browser:** select **Start daemon now**. Or, in a second terminal in the same folder, start it yourself:
-   ```sh
-   node dist/cli.js daemon start --detach
-   ```
-
-Opening the setup page doesn't start the daemon; one of the two options in step 7 does.
+6. **Browser:** at `http://127.0.0.1:4202/setup`, follow the page as described in [Your first agent](./first-agent.md). **Create agent** also starts the daemon.
 
 ## Install from npm
 
@@ -88,7 +81,7 @@ The quickest way is one command. **Terminal**, in the folder AgentX should live 
 npx agentix-cli start
 ```
 
-It creates `agentx.json` with one agent (Claude Code when the `claude` command is installed, otherwise the built-in engine with an Anthropic API key), starts the daemon and the dashboard in the background, and opens that agent's chat in your browser. If no model is set up yet, the chat asks for an API key, which it saves to `.env` in that folder, or tells you to log in to the CLI. Then the same chat answers. Logs go to `.agentx/daemon.log` and `.agentx/board.log`.
+It creates `agentx.json` with one agent (Claude Code when the `claude` command is installed, otherwise the built-in engine with an Anthropic API key), starts the daemon and the dashboard in the background, and opens the setup page in your browser. It checks the model account, asks for an API key (saved to `.env` in that folder) or gives you the command to sign in to the CLI, and sends your agent a first task. See [Your first agent](./first-agent.md). Later runs open that agent's chat instead, once its model is connected. Logs go to `.agentx/daemon.log` and `.agentx/board.log`.
 
 Running it again is safe: an existing `agentx.json` is left as it is, and a daemon or dashboard that already answers is reused. If ports 18800 or 4202 are taken by another AgentX, give a new folder its own: `npx agentix-cli start --port 18810 --dashboard-port 4212`.
 
@@ -103,7 +96,7 @@ To install the `agentx` command globally and use the setup page instead:
    ```sh
    agentx setup
    ```
-3. **Browser:** fill in the setup page as described in [Your first agent](./first-agent.md), select **Save and continue**, then **Start daemon now**.
+3. **Browser:** follow the setup page as described in [Your first agent](./first-agent.md). **Create agent** also starts the daemon.
 
 The installer does step 1 and then runs `agentx start`. **Terminal:**
 
