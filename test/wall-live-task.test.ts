@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { WALL_LIVE_SCRIPT } from "../src/daemon/ui/pages/wall-live.client"
@@ -107,7 +107,9 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
     }
     for (const f of onDoc.click ?? []) f(ev)
   }
-  return { el, calls, settle, loc, streams, go, press }
+  /** The tab goes to the background (or comes back). */
+  const hide = (hidden = true) => { doc.hidden = hidden; for (const f of onDoc.visibilitychange ?? []) f({}) }
+  return { el, calls, settle, loc, streams, go, press, hide }
 }
 
 describe("Wall Live: sessions and jobs running now (#1381)", () => {
@@ -471,6 +473,62 @@ describe("The live tree in the nav (#2101 PR 1c)", () => {
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ name: "node-a", url: "http://node-a", reachable: false, error: "unreachable", agents: [] }] }) })
     expect(w.el("wall-tree-body").innerHTML).toContain("not checked")
     expect(w.el("wall-tree-body").innerHTML).not.toContain("lt__spin")
+  })
+
+  it("keeps the stream open on the server's snapshot error, and reopens a dropped one soon (Hakim post-merge review of #2138)", async () => {
+    const w = openWall({ hash: "#status=open&view=feed", wide: true })
+    await w.settle()
+    const first = w.streams.filter((s) => s.url === "/api/live/stream")
+    expect(first).toHaveLength(1)
+    // event: error from startLiveStream carries data: one snapshot failed, the stream goes on.
+    first[0].on.error({ data: JSON.stringify({ message: "boom" }) })
+    expect(first[0].closed).toBe(false)
+    vi.useFakeTimers()
+    try {
+      // A real drop has no data: closed, then reopened after 2 s, not at the one-minute refresh.
+      first[0].on.error({})
+      expect(first[0].closed).toBe(true)
+      vi.advanceTimersByTime(1900)
+      expect(w.streams.filter((s) => s.url === "/api/live/stream")).toHaveLength(1)
+      vi.advanceTimersByTime(200)
+      const live = w.streams.filter((s) => s.url === "/api/live/stream")
+      expect(live).toHaveLength(2)
+      // Dropped again: the next wait is longer (5 s).
+      live[1].on.error({})
+      vi.advanceTimersByTime(4900)
+      expect(w.streams.filter((s) => s.url === "/api/live/stream")).toHaveLength(2)
+      vi.advanceTimersByTime(200)
+      const third = w.streams.filter((s) => s.url === "/api/live/stream")
+      expect(third).toHaveLength(3)
+      // A snapshot starts the waits over: the next drop waits 2 s again.
+      third[2].on.snapshot({ data: JSON.stringify(LIVE) })
+      third[2].on.error({})
+      vi.advanceTimersByTime(2100)
+      expect(w.streams.filter((s) => s.url === "/api/live/stream")).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("leaving the page cancels a pending reopen of a dropped stream (Hakim review of #2147)", async () => {
+    const w = openWall({ hash: "#status=open&view=feed", wide: true })
+    await w.settle()
+    const live = () => w.streams.filter((s) => s.url === "/api/live/stream")
+    expect(live()).toHaveLength(1)
+    vi.useFakeTimers()
+    try {
+      live()[0].on.error({})
+      expect(live()[0].closed).toBe(true)
+      // The tab is hidden before the 2 s wait ends: nothing reopens, even much later.
+      w.hide()
+      vi.advanceTimersByTime(60000)
+      expect(live()).toHaveLength(1)
+      // Back on the tab: the stream opens again at once.
+      w.hide(false)
+      expect(live()).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("on a narrow screen (tree hidden) the home page opens no stream", async () => {

@@ -11,6 +11,8 @@ import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 const NOW = Date.parse("2026-11-23T12:00:00Z")
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
+/** The tree keys a machine by its URL (stable while its id comes in). */
+const MAC = "http://127.0.0.1:18800"
 
 const POSTS: LtPost[] = [
   { id: "req-A", headline: "Live sidebar for the Hub", project: "agentx", home: "https://github.com/anis-marrouchi/agentx/issues/2101", owner: "dev-session" },
@@ -105,6 +107,8 @@ describe("liveTreeModel", () => {
     expect(mac.done.map((r) => r.agentId)).toEqual(["nadia"])
     expect(mac.done[0].state).toBe("done")
     expect(mac.done[0].title).toBe("Posted the Counting video.")
+    // The older one is not gone: it is idle.
+    expect(mac.idle.map((r) => r.agentId)).toEqual(["old"])
   })
   it("marks a silent machine not checked and a slow one checking (C3)", () => {
     expect(tree[1].state).toBe("silent")
@@ -115,11 +119,13 @@ describe("liveTreeModel", () => {
 
 describe("liveTreeHtml", () => {
   const tree = liveTreeModel(NODES, POSTS, NOW)
-  const html = liveTreeHtml(tree, (r) => (r.task ? "#page=task&task=" + r.task.id : "#page=activity&a-agent=" + r.agentId), { "d:mac": true })
+  const html = liveTreeHtml(tree, (r) => (r.task ? "#page=task&task=" + r.task.id : "#page=activity&a-agent=" + r.agentId), { ["d:" + MAC]: true })
 
-  it("draws a spinner per working row and a green dot per done row", () => {
+  it("draws a spinner per working row and a green dot per done or idle row", () => {
     expect(html.match(/class="lt__spin"/g)).toHaveLength(4)
-    expect(html.match(/class="lt__dot"/g)).toHaveLength(1)
+    expect(html.match(/class="lt__dot"/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="done"')
+    expect(html).toContain('aria-label="idle"')
   })
   it("shows the count badge, the model and the age", () => {
     expect(html).toContain('<span class="lt__badge is-live" title="4 working now">4</span>')
@@ -133,12 +139,12 @@ describe("liveTreeHtml", () => {
   })
   it("starts done lists folded so working rows on every machine show, and keeps the reader's choice", () => {
     const fresh = liveTreeHtml(tree, () => "#x", {})
-    expect(fresh).toMatch(/data-lt-key="d:mac">/)
-    expect(liveTreeHtml(tree, () => "#x", { "d:mac": false })).toMatch(/data-lt-key="d:mac" open>/)
+    expect(fresh).toContain(`data-lt-key="d:${MAC}">`)
+    expect(liveTreeHtml(tree, () => "#x", { ["d:" + MAC]: false })).toContain(`data-lt-key="d:${MAC}" open>`)
   })
   it("keeps a folded group folded", () => {
-    expect(html).toMatch(/data-lt-key="d:mac">/)
-    expect(html).toMatch(/data-lt-key="m:mac" open>/)
+    expect(html).toContain(`data-lt-key="d:${MAC}">`)
+    expect(html).toContain(`data-lt-key="m:${MAC}" open>`)
   })
   it("escapes fleet text", () => {
     const bad = liveTreeHtml(liveTreeModel([{ name: "<b>x</b>", reachable: true, agents: [{ id: "a", name: "<img>", runningTasks: [{ id: "t", messagePreview: "<script>alert(1)</script>" }] }] }], [], NOW), () => "", {})
@@ -167,6 +173,63 @@ describe("done rows", () => {
     const html = liveTreeHtml(m, () => "#a", {})
     expect(html.match(/class="lt__dot"/g)).toHaveLength(6)
     expect(html).toContain("+2 more</a>")
+  })
+})
+
+describe("idle rows (Hakim post-merge review of #2138)", () => {
+  // Anis's scope: "a green dot when it is done or idle ... the whole fleet
+  // can be seen without opening a chat". Every agent of a machine that
+  // answers gets a row; the idle ones fold under "N idle".
+  const idleNode: LtNode = { id: "box", name: "Box", url: "http://box", reachable: true, agents: [
+    { id: "w", name: "Worker", model: "claude-opus-5-5", runningTasks: [{ id: "tw", channel: "a2a", startedAt: ago(30_000), messagePreview: "busy" }] },
+    { id: "d", name: "Doner", lastActive: ago(5 * 60_000), lastSummary: { text: "Shipped it", at: "", ok: true }, runningTasks: [] },
+    { id: "i1", name: "Zed", lastActive: ago(2 * 86_400_000), runningTasks: [] },
+    { id: "i2", name: "Amy", runningTasks: [] },
+    { id: "i3", name: "Bob", model: "gpt-6-astra", lastActive: ago(3 * 3_600_000) },
+  ] }
+
+  it("lists every agent that is neither working nor done as idle, newest move first", () => {
+    const [m] = liveTreeModel([idleNode], [], NOW)
+    expect(m.idle.map((r) => r.agentId)).toEqual(["i3", "i1", "i2"])
+    expect(m.idle.every((r) => r.state === "idle" && r.task === null)).toBe(true)
+    expect(m.idle[2].ageMs).toBe(-1)
+    // Every agent of the machine has exactly one row.
+    const all = [...m.projects.flatMap((p) => p.items.flatMap((i) => i.rows)), ...m.done, ...m.idle].map((r) => r.agentId).sort()
+    expect(all).toEqual(["d", "i1", "i2", "i3", "w"])
+  })
+
+  it("folds idle rows under N idle by default, after working and done, and keeps the reader's choice", () => {
+    const [m] = liveTreeModel([idleNode], [], NOW)
+    const html = liveTreeHtml([m], (r) => "#page=activity&a-agent=" + r.agentId, {})
+    expect(html).toContain('data-lt-key="i:http://box"><summary><span class="lt__proj">3 idle</span>')
+    expect(html.match(/aria-label="idle"/g)).toHaveLength(3)
+    const working = html.indexOf('aria-label="working"'), done = html.indexOf('aria-label="done"'), idle = html.indexOf('aria-label="idle"')
+    expect(working).toBeGreaterThan(0)
+    expect(done).toBeGreaterThan(working)
+    expect(idle).toBeGreaterThan(done)
+    expect(html).toContain('href="#page=activity&amp;a-agent=i2"')
+    // An agent that never moved shows no age.
+    expect(html).toContain('title="Amy, idle"')
+    expect(html.split('title="Amy, idle"')[1].split("</a>")[0]).not.toContain("<time>")
+    expect(liveTreeHtml([m], () => "#x", { "i:http://box": false })).toContain('data-lt-key="i:http://box" open>')
+  })
+
+  it("shows a quiet machine's agents instead of only Nothing running", () => {
+    const quiet = liveTreeModel([{ id: "q", name: "Quiet", url: "http://q", reachable: true, agents: [
+      { id: "a", name: "A", runningTasks: [] }, { id: "b", name: "B", lastActive: ago(9 * 3_600_000), runningTasks: [] },
+    ] }], [], NOW)
+    const html = liveTreeHtml(quiet, () => "#x", {})
+    expect(html).toContain("Nothing running.")
+    expect(html).toContain('<span class="lt__proj">2 idle</span>')
+    expect(html.match(/class="lt__dot"/g)).toHaveLength(2)
+    expect(liveTreeHtml(liveTreeModel([{ name: "Empty", url: "http://e", reachable: true, agents: [] }], [], NOW), () => "#x", {})).toContain("No agents.")
+  })
+
+  it("keeps a machine's fold key when its id comes in after the URL", () => {
+    const asking = liveTreeModel([{ id: "http://box", name: "http://box", url: "http://box", reachable: false, checking: true, agents: [] }], [], NOW)
+    const answered = liveTreeModel([idleNode], [], NOW)
+    expect(asking[0].key).toBe(answered[0].key)
+    expect(liveTreeHtml(answered, () => "#x", { "m:http://box": true })).toContain('data-lt-key="m:http://box">')
   })
 })
 

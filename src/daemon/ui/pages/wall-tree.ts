@@ -9,8 +9,12 @@
 //
 // Each agent row carries its provider icon, a short task title, the model
 // and how long ago it moved ("now", "3m", "2h"); a spinner while it works,
-// a green dot once it is done. A machine that does not answer says "not
-// checked" (C3 of the v4 review): its rows are not shown as idle.
+// a green dot once it is done or idle: every agent of a machine that answers
+// has a row, idle ones folded under "N idle", so the whole fleet can be
+// seen without opening a chat (Anis's scope, Hakim post-merge review of
+// #2138). Order in a machine: working, done in the last hour, idle. A
+// machine that does not answer says "not checked" (C3 of the v4 review):
+// its rows are not shown as idle.
 //
 // Reads only what the page already has: the live snapshot (/api/live and
 // /api/live/stream, every 2 s) for the runs, and the Hub posts (requests)
@@ -69,10 +73,10 @@ export interface LtRow {
   model: string
   provider: string
   title: string
-  /** ms since it last moved. */
+  /** ms since it last moved; -1 when it never did (an idle agent). */
   ageMs: number
-  state: "working" | "done"
-  /** The run, for a link to its Task page; none on a done row. */
+  state: "working" | "done" | "idle"
+  /** The run, for a link to its Task page; none on a done or idle row. */
   task: LtTask | null
 }
 export interface LtItem { key: string; label: string; rows: LtRow[] }
@@ -88,6 +92,8 @@ export interface LtMachine {
   projects: LtProject[]
   /** Agents that finished in the last hour, with nothing running now. */
   done: LtRow[]
+  /** Every other agent: nothing running, nothing in the last hour. */
+  idle: LtRow[]
 }
 
 /** Escape for HTML text and attributes. */
@@ -192,9 +198,11 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
   return (nodes || []).map((n) => {
     const silent = (!n.reachable || !!n.error) && !n.checking
     const m: LtMachine = {
-      key: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
+      // The URL first: a node still being asked has its URL as id, and its
+      // real id once it answers, so an id key would reopen a folded machine.
+      key: String(n.url || n.id || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
       state: n.checking ? "checking" : silent ? "silent" : "up", error: String(n.error || ""),
-      working: 0, projects: [], done: [],
+      working: 0, projects: [], done: [], idle: [],
     }
     if (m.state !== "up") return m
     const projects: Record<string, LtProject> = {}
@@ -222,6 +230,8 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
         let sum = a.lastSummary && a.lastSummary.text ? ltPlain(a.lastSummary.text) : ""
         if (/^\s*(<json>|[[{])/.test(sum)) sum = ""
         m.done.push({ ...base, title: (sum || "Finished a run").slice(0, 120), ageMs: Math.max(0, now - last), state: "done", task: null })
+      } else if (!running.length) {
+        m.idle.push({ ...base, title: "Idle", ageMs: Number.isFinite(last) ? Math.max(0, now - last) : -1, state: "idle", task: null })
       }
     }
     // Named projects first, by name; "No project" last. Rows newest move first.
@@ -229,6 +239,8 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
       .sort((x, y) => (x.key === "-" ? 1 : 0) - (y.key === "-" ? 1 : 0) || x.label.localeCompare(y.label))
     for (const p of m.projects) for (const i of p.items) i.rows.sort((x, y) => x.ageMs - y.ageMs)
     m.done.sort((x, y) => x.ageMs - y.ageMs)
+    // Idle: the latest to have moved first, never-moved last, then by name.
+    m.idle.sort((x, y) => (x.ageMs < 0 ? 1 : 0) - (y.ageMs < 0 ? 1 : 0) || x.ageMs - y.ageMs || x.agentName.localeCompare(y.agentName))
     return m
   })
 }
@@ -255,12 +267,13 @@ export function ltProviderIcon(provider: string): string {
 /** One agent row. `href(row)` gives its link (the run's Task page). */
 export function ltRowHtml(r: LtRow, href: string): string {
   const live = r.state === "working"
-  const mark = live ? '<span class="lt__spin" role="img" aria-label="working"></span>' : '<span class="lt__dot" role="img" aria-label="done"></span>'
+  const word = live ? "working" : r.state === "idle" ? "idle" : "done"
+  const mark = live ? '<span class="lt__spin" role="img" aria-label="working"></span>' : '<span class="lt__dot" role="img" aria-label="' + word + '"></span>'
   const tint = r.color && /^#[0-9a-fA-F]{6}$/.test(r.color) ? ' style="color:' + r.color + '"' : ""
-  const sub = '<span class="lt__who"' + tint + ">" + ltEsc(r.agentName) + "</span>" + (r.model ? " · " + ltEsc(r.model) : "") + ' · <time>' + ltAge(r.ageMs) + "</time>"
+  const sub = '<span class="lt__who"' + tint + ">" + ltEsc(r.agentName) + "</span>" + (r.model ? " · " + ltEsc(r.model) : "") + (r.ageMs >= 0 ? ' · <time>' + ltAge(r.ageMs) + "</time>" : "")
   const inner = mark + '<span class="lt__ico">' + ltProviderIcon(r.provider) + "</span>" +
     '<span class="lt__txt"><span class="lt__title">' + ltEsc(r.title) + '</span><span class="lt__sub">' + sub + "</span></span>"
-  const label = ltEsc(r.agentName + (live ? ", working: " : ", done: ") + r.title)
+  const label = ltEsc(r.agentName + ", " + word + (r.state === "idle" ? "" : ": " + r.title))
   return href ? '<a class="lt__row' + (live ? " is-live" : " is-done") + '" href="' + ltEsc(href) + '" title="' + label + '">' + inner + "</a>"
     : '<div class="lt__row is-done" title="' + label + '">' + inner + "</div>"
 }
@@ -282,7 +295,11 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
       m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m))).join("") +
       (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed, true) : ""
-    const idle = !m.projects.length && !m.done.length ? '<p class="lt__idle">Nothing running.</p>' : ""
-    return ltFold("m:" + m.key, "lt__m", head, projects + done + idle, closed)
+    // Idle agents: one green-dot row each, folded under "N idle" so the
+    // tree stays short and the working rows of every machine show first.
+    const idle = m.idle.length ? ltFold("i:" + m.key, "lt__p lt__done", '<span class="lt__proj">' + m.idle.length + " idle</span>",
+      m.idle.map((r) => ltRowHtml(r, hrefOf(r, m))).join(""), closed, true) : ""
+    const none = m.projects.length || m.done.length ? "" : '<p class="lt__idle">' + (m.idle.length ? "Nothing running." : "No agents.") + "</p>"
+    return ltFold("m:" + m.key, "lt__m", head, none + projects + done + idle, closed)
   }).join("")
 }
