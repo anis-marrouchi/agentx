@@ -63,9 +63,9 @@ describe("action paging", () => {
     // The drawer is the transcript; two inputs for one conversation is a
     // question about which one you are typing into.
     expect(ASSISTANT_HTML).not.toContain('id="ax-as-input"')
-    expect(ASSISTANT_CSS).toContain(".ax-as-dock{position:fixed;bottom:0;left:50%;transform:translateX(-50%)")
+    expect(ASSISTANT_CSS).toContain(".ax-as-dock{position:fixed;bottom:0;left:calc((100vw + var(--dashboard-side-offset, 0px)) / 2);transform:translateX(-50%)")
     // Centred in the space that is left, not the space the drawer covers.
-    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-dock{left:calc((100vw - var(--ax-as-w)) / 2)}")
+    expect(ASSISTANT_CSS).toContain("body.ax-as-open .ax-as-dock{left:calc((100vw + var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px)) / 2)}")
   })
 
   it("slides away and leaves something to bring it back", () => {

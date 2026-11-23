@@ -216,7 +216,7 @@ describe("the /org page (#1681)", () => {
   it("fits a wide /org chart to the page, floor 60%, with a 100% control, and names who is off screen", () => {
     const page = renderOrgPage()
     // The chart takes the window width, and a department band has the same 14px inner padding as the Departments view.
-    expect(page).toContain(".org-tree { overflow-x: auto; padding: 12px 0 8px; width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px);")
+    expect(page).toContain(".org-tree { overflow-x: auto; padding: 12px 0 8px; --org-content-width: calc(100vw - var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px)); width: calc(var(--org-content-width) - 48px);")
     expect(page).toContain(".org-tree li.org-dept > .org-dept-box { padding: 10px 14px 4px;")
     // Zoom control in the toolbar, with a way back to 100%.
     expect(page).toMatch(/<div id="org-zoom" class="org-views org-zoom" role="group" aria-label="Zoom" hidden>.*data-org-zoom="-1".*id="org-zoom-at" data-org-zoom="0" title="Back to 100%">100%<.*data-org-zoom="1"/)
@@ -236,11 +236,10 @@ describe("the /org page (#1681)", () => {
 
   it("gives a person's card a warm fill and keeps an agent's plain, on /org and the Hub", () => {
     const page = renderOrgPage()
-    expect(page).toContain(".org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink);")
-    expect(page).toMatch(/\.org \{ --org-person-bg: color-mix\(in oklch, #f08c3c 16%, var\(--ax-bg\)\)/)
-    expect(WALL_ORG_CSS).toContain(".wog__card.is-person { background: var(--wog-person-bg); border-color: var(--wog-person-ink);")
-    expect(WALL_ORG_CSS).toMatch(/\.ax-wall__org, \.ax-wall__orgrail \{ --wog-person-bg: color-mix/)
-    expect(WALL_ORG_CSS).toContain(".wog__key.is-person { background: var(--wog-person-bg);")
+    expect(page).toContain(".org-card.is-person { background: var(--ax-person-t); border-color: var(--ax-person-ink);")
+    expect(page).toMatch(/--ax-person-t: color-mix\(in oklch, #f08c3c 16%, var\(--ax-bg\)\)/)
+    expect(WALL_ORG_CSS).toContain(".wog__card.is-person { background: var(--ax-person-t); border-color: var(--ax-person-ink);")
+    expect(WALL_ORG_CSS).toContain(".wog__key.is-person { background: var(--ax-person-t);")
     // The agent card's own fill stays the page ground.
     expect(WALL_ORG_CSS).toMatch(/\.wog__card \{[^}]*background: var\(--ax-bg\)/)
   })
