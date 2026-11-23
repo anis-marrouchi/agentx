@@ -10,7 +10,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## Open the Hub
 
-1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in **To** to open its conversation. Use **Back to the page** in Chat to see the feed. A link to a post or another Hub page opens that page directly.
+1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in **To** to open its conversation. Close Chat to see the feed. On a phone, use **Back to the page**. A link to a post or another Hub page opens that page directly.
 2. The nav on the left opens with **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
