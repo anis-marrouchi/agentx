@@ -308,9 +308,10 @@ Avatars show an agent's or a person's profile picture when one is set on the mac
 Each agent on the **Agents** page has a status next to its @handle: **Working** (it runs something now), **Needs you** (a card or a post waits on you, or it waits for your approval), **Idle**, **Paused**, or **Not started** (saved, but no machine runs it yet). Anyone who opens the Hub sees the statuses. You, the owner, also get the buttons below; they use the same settings as **Settings** › **Agents**.
 
 1. **Browser:** in the nav, select **Agents**, then **New agent**.
-2. Type a name. The agent id comes from the name unless you type one. Role, workspace, AI engine, model, wake words and instructions are optional: the role puts the agent on the org chart, and the workspace is a folder (`~/` is your home folder; empty means `agents/<id>`). A folder that already exists is used as it is; nothing is written in it.
+2. Type a name. The agent id comes from the name unless you type one. Role, workspace, AI engine, model, wake words and instructions are optional: the role puts the agent on the org chart, and the workspace is a folder (`~/` is your home folder; empty means `agents/<id>`). A folder that already exists is used as it is; nothing is written in it. Instructions take up to 4000 characters, here and in **Edit**; put longer ones in the agent's `CLAUDE.md`.
 3. Optional: under **Channels**, type the name of the environment variable that holds a Telegram, Discord or Slack token (the name, never the token). Tick **Answers on the public API** to open it there.
-4. Select **Create agent**. The line at the top says **Created**, or which part was not saved and why.
+   - A machine has one Slack bot and one Discord bot. The form says which agent each answers as now. If it answers as another agent, tick **Move the Slack bot** (or **Move the Discord bot**) to make it answer as the new agent instead; that agent then stops answering there. Without the tick, nothing is saved.
+4. Select **Create agent**. The line at the top says **Created**. If a part is refused, the form stays open with what you typed and says what was saved and what was not. Fix that field and select **Create agent** again: the parts already saved are not sent twice.
 5. Select **Restart when idle**. The daemon restarts once no task runs, and the agent starts.
 6. Under the new agent, **Test drive** is open: type a message and select **Send**. Its answer shows under it. It is a real run, so it can cost money.
 
@@ -324,7 +325,7 @@ On an agent this machine runs:
 
 - **Edit** opens the same form with what is saved. **Save** changes only what you changed. Channels, skills and files are under **Settings**.
 - **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Needs you** instead.
-- **Remove** asks first, then takes the agent out of `agentx.json` and unbinds its Telegram bots. Its workspace folder stays on disk. Select **Restart when idle** to stop it.
+- **Remove** asks first, then takes the agent out of `agentx.json` and out of the org chart (with its lines and departments), and unbinds the Telegram, Slack and Discord bots that answered as it. You can then create an agent with the same id and a role. An agent that manages a project is not removed: give the project another manager first. Its workspace folder stays on disk. Select **Restart when idle** to stop it.
 
 ## Change settings
 

@@ -15,8 +15,13 @@
 // kept in AGM.form, so the Hub's refresh does not lose it.
 
 export const WALL_AGENTS_SCRIPT = String.raw`
-  var AGM = { state: null, at: 0, loading: false, error: '', open: '', form: {}, note: '', flash: '', confirm: '', test: '', td: null, restart: '' };
+  var AGM = { state: null, at: 0, loading: false, error: '', open: '', form: {}, note: '', flash: '', confirm: '', test: '', td: null, restart: '', saved: null };
   function agmOwner() { return !!window.AX_WALL_SETTINGS; }
+  /** Which agent this machine's Slack and Discord bots answer as now. */
+  function agmBound() {
+    var st = AGM.state || {};
+    return { slack: (st.slack && st.slack.agentBinding) || '', discord: (st.discord && st.discord.agentBinding) || '' };
+  }
   /** An agent saved on this machine, from GET /api/admin/state. */
   function agmSaved(id) { return ((AGM.state && AGM.state.agents) || []).find(function (a) { return a.id === id; }) || null; }
   /** Its node in the org view: status (paused, waiting), title. */
@@ -62,7 +67,7 @@ export const WALL_AGENTS_SCRIPT = String.raw`
   }
   function agmTop() {
     var top = agmHeadHtml(agmOwner(), AGM.flash, AGM.restart, AGM.error);
-    return top + (AGM.open === 'new' ? agmFormHtml(AGM.form, 'new', ST_ENGINES, AGM.note) : '');
+    return top + (AGM.open === 'new' ? agmFormHtml(AGM.form, 'new', ST_ENGINES, AGM.note, agmBound()) : '');
   }
   function agmTyping() {
     var el = document.activeElement;
@@ -91,21 +96,33 @@ export const WALL_AGENTS_SCRIPT = String.raw`
     for (var i = 0; i < plan.steps.length; i++) {
       var s = plan.steps[i];
       var r = await act(s.method, s.path, s.body);
-      if (!r.ok) return { ok: false, done: done, error: (done.length ? 'Saved ' + done.join(', ') + '; not ' : 'Not saved ') + s.what + ': ' + r.error };
+      if (!r.ok) return { ok: false, done: done, what: s.what, reason: r.error, error: (done.length ? 'Saved ' + done.join(', ') + '; not ' : 'Not saved ') + s.what + ': ' + r.error };
       done.push(s.what);
     }
     return { ok: true, done: done };
   }
+  /** Creates the agent. On a refused step the form stays open with what is
+   *  typed; the steps saved before it (AGM.saved) are not sent again when the
+   *  owner fixes the field and presses Create agent once more. */
   async function agmCreate() {
-    var plan = agmCreateSteps(AGM.form);
+    var plan = agmCreateSteps(AGM.form, agmBound());
     if (plan.error) { agmFormNote(plan.error); return; }
+    var before = AGM.saved && AGM.saved.id === plan.id ? AGM.saved.done : [];
+    var todo = { id: plan.id, steps: plan.steps.filter(function (s) { return before.indexOf(s.what) < 0; }), error: '' };
     agmFormNote('Creating @' + plan.id + '…');
-    var r = await agmRun(plan);
-    if (!r.ok && !r.done.length) { agmFormNote(r.error); return; }
-    AGM.open = ''; AGM.form = {}; AGM.note = '';
+    var r = await agmRun(todo);
+    var done = before.concat(r.done);
+    if (!r.ok) {
+      AGM.saved = done.length ? { id: plan.id, done: done } : null;
+      if (done.length) { AGM.restart = 'needed'; agmReload(); }
+      agmFormNote((done.length ? 'Saved ' + done.join(', ') + '; not ' : 'Not saved ') + r.what + ': ' + r.reason +
+        (done.length ? ' Fix it and press Create agent again: what is saved is not sent again.' : ''));
+      return;
+    }
+    AGM.open = ''; AGM.form = {}; AGM.note = ''; AGM.saved = null;
     AGM.restart = 'needed';
     AGM.test = plan.id; AGM.td = null;
-    AGM.flash = r.ok ? 'Created @' + plan.id + '. Restart when idle to start it, then test drive it below.' : r.error;
+    AGM.flash = 'Created @' + plan.id + '. Restart when idle to start it, then test drive it below.';
     await agmReload();
   }
   async function agmSaveEdit(id) {
@@ -169,7 +186,7 @@ export const WALL_AGENTS_SCRIPT = String.raw`
     var t = ev.target.closest('[data-agm-act]');
     if (!t) return;
     var k = t.getAttribute('data-agm-act'), id = t.getAttribute('data-id');
-    if (k === 'new') { AGM.open = 'new'; AGM.form = { tier: 'claude-code' }; AGM.note = ''; render(); }
+    if (k === 'new') { AGM.open = 'new'; AGM.form = { tier: 'claude-code' }; AGM.note = ''; AGM.saved = null; render(); }
     else if (k === 'edit') { var a = agmSaved(id); if (!a) return; AGM.open = 'edit:' + id; AGM.form = agmFormOf(a, agmRole(id)); AGM.note = ''; AGM.test = ''; render(); }
     else if (k === 'close') { AGM.open = ''; AGM.test = ''; AGM.note = ''; render(); }
     else if (k === 'pause' || k === 'resume') agmHoldSet(id, k === 'pause');
@@ -188,14 +205,14 @@ export const WALL_AGENTS_SCRIPT = String.raw`
   });
   document.addEventListener('input', function (ev) {
     var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-agm-f');
-    if (k) AGM.form[k] = k === 'publicApi' ? !!t.checked : t.value;
+    if (k) AGM.form[k] = t.type === 'checkbox' ? !!t.checked : t.value;
     // The id the name gives shows as it is typed (the form is not repainted then).
     var idBox = k === 'name' && $('agm-f-id');
     if (idBox) idBox.placeholder = agmSlug(t.value) || 'sales';
   });
   document.addEventListener('change', function (ev) {
     var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-agm-f');
-    if (k) AGM.form[k] = k === 'publicApi' ? !!t.checked : t.value;
+    if (k) AGM.form[k] = t.type === 'checkbox' ? !!t.checked : t.value;
   });
   document.addEventListener('keydown', function (ev) {
     if (S.page !== 'agents' || !ev.target) return;

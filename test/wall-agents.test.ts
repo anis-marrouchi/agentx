@@ -9,7 +9,7 @@ import { wallSettingsTarget, isWallWrite } from "../src/daemon/wall-actions"
 import {
   agmActsHtml, agmCreateSteps, agmEditSteps, agmFormHtml, agmFormOf, agmHeadHtml, agmSlug, agmStatus, agmStatusHtml, agmTestHtml,
 } from "../src/daemon/ui/pages/wall-agents"
-import { LIVE, openWall } from "./wall-settings-harness"
+import { LIVE, STATE, openWall } from "./wall-settings-harness"
 
 // The Hub's Agents manager (#2144): every agent with a status, and for the
 // owner one form to create an agent (name, role, workspace, model,
@@ -66,6 +66,28 @@ describe("agmCreateSteps: one form, the existing routes in order", () => {
     expect(agmCreateSteps({ name: "X", id: "Bad Id" }).error).toMatch(/lowercase/)
     expect(agmCreateSteps({ name: "X", telegramEnv: "123:abc" }).error).toMatch(/^Telegram token: write the environment variable's name/)
     expect(agmCreateSteps({ name: "X", slackBotEnv: "SLACK_BOT" }).error).toMatch(/both token names/)
+    expect(agmCreateSteps({ name: "X", instructions: "a".repeat(4001) }).error).toMatch(/up to 4000 characters/)
+    expect(agmCreateSteps({ name: "X", instructions: "a".repeat(4000) }).error).toBe("")
+  })
+  it("asks before taking this machine's one Slack or Discord bot from another agent", () => {
+    const f = { name: "Sales", slackBotEnv: "SLACK_BOT", slackAppEnv: "SLACK_APP", discordEnv: "DISCORD_TOKEN" }
+    const bound = { slack: "cx", discord: "ops" }
+    expect(agmCreateSteps(f, bound).error).toBe('Slack\'s bot answers as @cx now. Tick "Move the Slack bot" to make it answer as @sales, or leave the Slack fields empty.')
+    expect(agmCreateSteps({ ...f, moveSlack: true }, bound).error).toMatch(/^Discord's bot answers as @ops now/)
+    const plan = agmCreateSteps({ ...f, moveSlack: true, moveDiscord: true }, bound)
+    expect(plan.steps[1].body).toEqual({ botTokenEnv: "SLACK_BOT", appTokenEnv: "SLACK_APP", agentBinding: "sales", moveBot: true })
+    expect(plan.steps[2].body).toEqual({ tokenEnv: "DISCORD_TOKEN", agentBinding: "sales", moveBot: true })
+    // A bot bound to no agent, or to this one, needs no yes and sends none.
+    const free = agmCreateSteps(f, { slack: "", discord: "sales" })
+    expect(free.error).toBe("")
+    expect(free.steps.every((s) => !("moveBot" in s.body))).toBe(true)
+    // The form says whom each bot answers as, and offers the move.
+    const html = agmFormHtml({ name: "Sales" }, "new", ENGINES, "", { slack: "cx", discord: "" })
+    expect(html).toContain("It answers as <b>@cx</b> now.")
+    expect(html).toContain('id="agm-f-moveSlack"')
+    expect(html).not.toContain('id="agm-f-moveDiscord"')
+    expect(html).toContain("Discord bot. It answers as no agent now.")
+    expect(html).toContain('maxlength="4000"')
   })
 })
 
@@ -85,6 +107,7 @@ describe("agmEditSteps: only what changed", () => {
     expect(agmEditSteps(A, "", false, agmFormOf(A, "")).error).toBe("Nothing changed.")
     expect(agmEditSteps(A, "", false, { ...agmFormOf(A, ""), triggers: " " }).error).toMatch(/wake word/)
     expect(agmEditSteps(A, "Lead", true, { ...agmFormOf(A, "Lead"), role: "" }).error).toMatch(/keeps a role/)
+    expect(agmEditSteps(A, "", false, { ...agmFormOf(A, ""), instructions: "a".repeat(4001) }).error).toMatch(/up to 4000 characters/)
   })
 })
 
@@ -100,6 +123,7 @@ describe("the manager's markup escapes fleet text", () => {
     expect(edit).toContain('data-agm-form="edit" data-id="cx"')
     expect(edit).not.toContain('id="agm-f-workspace"')
     expect(edit).toContain("<code>/w/&lt;cx&gt;</code>")
+    expect(agmFormHtml({ id: "a&b", name: "D" }, "edit", ENGINES, "")).toContain("agent=a%26b\"")
     const acts = agmActsHtml("cx", evil, agmStatus({ running: 0, needs: 0, hold: "", started: true }), "", "cx")
     expect(acts).not.toContain("<img")
     expect(acts).toContain('data-agm-act="pause" data-id="cx"')
@@ -122,11 +146,11 @@ describe("POST /api/admin/agents: workspace and role from the Hub form", () => {
     process.chdir(dir)
   })
   afterEach(() => { process.chdir(prevCwd); rmSync(dir, { recursive: true, force: true }) })
-  async function call(body: unknown, owner?: boolean): Promise<{ status: number; json: any }> {
-    const req = Object.assign(Readable.from([JSON.stringify(body)]), { method: "POST" }) as unknown as IncomingMessage
+  async function call(body: unknown, owner?: boolean, method = "POST", path = "/api/admin/agents"): Promise<{ status: number; json: any }> {
+    const req = Object.assign(Readable.from([JSON.stringify(body)]), { method }) as unknown as IncomingMessage
     let status = 200, out = ""
     const res = { writeHead: (s: number) => { status = s; return res }, end: (b: string) => { out = b } } as unknown as ServerResponse
-    await handleAdminApi(req, res, "/api/admin/agents", owner === undefined ? undefined : { owner })
+    await handleAdminApi(req, res, path, owner === undefined ? undefined : { owner })
     return { status, json: JSON.parse(out) }
   }
   const saved = () => JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
@@ -186,6 +210,104 @@ describe("POST /api/admin/agents: workspace and role from the Hub form", () => {
       expect((await call({ id: "sec", name: "Sec", triggerWords: "@sec", workspace: "work/sec" }, true)).status).toBe(200)
       expect(saved().agents.sec.workspace).toBe(join(dir, "work", "sec"))
     } finally { fetchMock.mockRestore() }
+  })
+})
+
+describe("DELETE /api/admin/agents and the bots: Remove leaves nothing behind (#2144)", () => {
+  let dir: string
+  const prevCwd = process.cwd()
+  let fetchMock: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), "agentx-hub-agents-rm-")))
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({
+      agents: { lead: { name: "Lead", workspace: join(dir, "agents", "lead"), mentions: ["@lead"] } },
+      channels: {
+        telegram: { enabled: true, accounts: { sales: { agentBinding: "lead", botToken: "${TG}" } } },
+        slack: { enabled: true, botToken: "${SLACK_BOT}", appToken: "${SLACK_APP}", agentBinding: "lead" },
+        discord: { enabled: true, token: "${DISCORD}", agentBinding: "lead" },
+      },
+    }))
+    process.chdir(dir)
+    fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"))
+  })
+  afterEach(() => { fetchMock.mockRestore(); process.chdir(prevCwd); rmSync(dir, { recursive: true, force: true }) })
+  const saved = () => JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
+  async function call(body: unknown, method = "POST", path = "/api/admin/agents", owner = true): Promise<{ status: number; json: any }> {
+    const req = Object.assign(Readable.from([JSON.stringify(body)]), { method }) as unknown as IncomingMessage
+    let status = 200, out = ""
+    const res = { writeHead: (s: number) => { status = s; return res }, end: (b: string) => { out = b } } as unknown as ServerResponse
+    await handleAdminApi(req, res, path, { owner })
+    return { status, json: JSON.parse(out) }
+  }
+
+  it("takes the agent out of the org chart with its lines, so the same id is created again with a role", async () => {
+    expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales", role: "Sales lead" })).status).toBe(200)
+    expect((await call({ op: "add-member", member: "agent:lead", role: "Boss" }, "POST", "/api/admin/org/chart")).status).toBe(200)
+    expect((await call({ op: "add-relation", from: "agent:sales", type: "reports-to", to: "agent:lead" }, "POST", "/api/admin/org/chart")).status).toBe(200)
+    expect(saved().business.orgChart.sales).toBeTruthy()
+    const r = await call({ id: "sales" }, "DELETE")
+    expect(r.status).toBe(200)
+    expect(r.json.summary).toMatch(/^removed agent "sales"; .*removed from the org chart, with 1 line/)
+    const cfg = saved()
+    expect(cfg.agents.sales).toBeUndefined()
+    expect(cfg.business.orgChart.sales).toBeUndefined()
+    expect(JSON.stringify(cfg.business)).not.toContain("agent:sales")
+    // The round trip the review found: create, Remove, create again with a role.
+    const again = await call({ id: "sales", name: "Sales", triggerWords: "@sales", role: "Sales lead" })
+    expect(again.status).toBe(200)
+    expect(saved().business.orgChart.sales).toMatchObject({ role: "sales-lead" })
+  })
+
+  it("refuses to remove a project's manager, with org-edit's sentence, and changes nothing", async () => {
+    expect((await call({ id: "pm", name: "PM", triggerWords: "@pm", role: "Manager" })).status).toBe(200)
+    const cfg = saved()
+    cfg.business.projects = [{ id: "site", name: "Site", pm: "pm" }]
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify(cfg))
+    const before = readFileSync(join(dir, "agentx.json"), "utf-8")
+    const r = await call({ id: "pm" }, "DELETE")
+    expect(r.status).toBe(400)
+    expect(r.json.error).toMatch(/is the project manager of "site"\. Give that project another manager first\./)
+    expect(readFileSync(join(dir, "agentx.json"), "utf-8")).toBe(before)
+  })
+
+  it("unbinds the Telegram, Slack and Discord bots that answered as it", async () => {
+    expect((await call({ id: "lead" }, "DELETE")).status).toBe(200)
+    const ch = saved().channels
+    expect(ch.telegram.accounts.sales.agentBinding).toBe("")
+    expect(ch.slack.agentBinding).toBe("")
+    expect(ch.discord.agentBinding).toBe("")
+    // The tokens stay: the bot is free for the next agent.
+    expect(ch.slack.botToken).toBe("${SLACK_BOT}")
+  })
+
+  it("refuses to move the Slack or Discord bot from another agent without moveBot", async () => {
+    expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales" })).status).toBe(200)
+    const slack = { botTokenEnv: "NEW_BOT", appTokenEnv: "NEW_APP", agentBinding: "sales" }
+    const r = await call(slack, "POST", "/api/admin/channels/slack")
+    expect(r).toMatchObject({ status: 409, json: { error: "Slack's bot answers as @lead now. Confirm to move it to @sales: @lead then stops answering on Slack." } })
+    const d = await call({ tokenEnv: "NEW_DC", agentBinding: "sales" }, "POST", "/api/admin/channels/discord")
+    expect(d.status).toBe(409)
+    expect(d.json.error).toMatch(/^Discord's bot answers as @lead now/)
+    // Nothing was written: not the binding, not the token names.
+    expect(saved().channels.slack).toMatchObject({ agentBinding: "lead", botToken: "${SLACK_BOT}" })
+    expect(saved().channels.discord).toMatchObject({ agentBinding: "lead", token: "${DISCORD}" })
+    // The same binding, no binding, or a yes go through.
+    expect((await call({ ...slack, agentBinding: "lead" }, "POST", "/api/admin/channels/slack")).status).toBe(200)
+    expect((await call({ ...slack, moveBot: true }, "POST", "/api/admin/channels/slack")).status).toBe(200)
+    expect(saved().channels.slack).toMatchObject({ agentBinding: "sales", botToken: "${NEW_BOT}" })
+    expect((await call({ tokenEnv: "NEW_DC", agentBinding: "sales", moveBot: true }, "POST", "/api/admin/channels/discord")).status).toBe(200)
+    expect(saved().channels.discord.agentBinding).toBe("sales")
+  })
+
+  it("keeps the same instructions limit on create and edit, and does not cut them", async () => {
+    const long = "a".repeat(4001)
+    expect((await call({ id: "w", name: "W", triggerWords: "@w", personality: long })).json.error).toMatch(/longer than 4000 characters/)
+    expect(saved().agents.w).toBeUndefined()
+    const ok = "b".repeat(1200)
+    expect((await call({ id: "w", name: "W", triggerWords: "@w", personality: ok })).status).toBe(200)
+    expect(saved().agents.w.systemPrompt).toBe(ok)
+    expect((await call({ id: "w", patch: { systemPrompt: long } }, "PATCH")).json.error).toMatch(/longer than 4000 characters/)
+    expect((await call({ id: "w", patch: { systemPrompt: "c".repeat(4000) } }, "PATCH")).status).toBe(200)
   })
 })
 
@@ -252,6 +374,39 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.submit({ "data-agm-form": "new" })
     expect(w.el("agm-n-form").textContent).toBe('Not saved the agent: Agent "cx" already exists.')
     expect(page(w)).toContain('data-agm-form="new"')
+  })
+
+  it("keeps the form and its values when a later step fails, and does not send the saved steps again", async () => {
+    let telegramFails = true
+    const w = openWall({ hash: "#page=agents", route: (u, i) =>
+      u === "/api/admin/state" ? { status: 200, body: { ...STATE, slack: { agentBinding: "cx" }, discord: { agentBinding: "" } } }
+      : u === P + "/channels/telegram" && i.method === "POST" && telegramFails ? { status: 400, body: { error: "Account id is taken." } } : undefined })
+    await w.settle()
+    await w.click({ "data-agm-act": "new" })
+    expect(page(w)).toContain("It answers as <b>@cx</b> now.")
+    await w.type("agm-f-name", "Sales")
+    await w.type("agm-f-telegramEnv", "SALES_TG")
+    await w.type("agm-f-slackBotEnv", "SLACK_BOT")
+    await w.type("agm-f-slackAppEnv", "SLACK_APP")
+    await w.submit({ "data-agm-form": "new" })
+    // The Slack bot answers as @cx: nothing is sent until the owner says yes.
+    expect(w.writes()).toEqual([])
+    expect(w.el("agm-n-form").textContent).toMatch(/^Slack's bot answers as @cx now/)
+    await w.type("agm-f-moveSlack", true)
+    await w.submit({ "data-agm-form": "new" })
+    expect(w.writes().map((c) => c.url)).toEqual([P + "/agents", P + "/channels/telegram"])
+    // The repaint after the reload draws the note in the form that stays open.
+    expect(page(w)).toContain("Saved the agent; not Telegram: Account id is taken. Fix it and press Create agent again: what is saved is not sent again.")
+    expect(page(w)).toContain('data-agm-form="new"')
+    expect(page(w)).toContain('value="SALES_TG"')
+    telegramFails = false
+    await w.submit({ "data-agm-form": "new" })
+    expect(w.writes().slice(2).map((c) => [c.url, c.body])).toEqual([
+      [P + "/channels/telegram", { id: "sales", agentBinding: "sales", botTokenEnv: "SALES_TG" }],
+      [P + "/channels/slack", { botTokenEnv: "SLACK_BOT", appTokenEnv: "SLACK_APP", agentBinding: "sales", moveBot: true }],
+    ])
+    expect(page(w)).not.toContain('data-agm-form="new"')
+    expect(page(w)).toContain("Created @sales.")
   })
 
   it("edits, pauses, resumes and removes (after a confirm)", async () => {

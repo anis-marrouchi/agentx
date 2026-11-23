@@ -595,6 +595,11 @@ export function agentWorkspace(raw: unknown, id: string, home = process.env.HOME
  *  that role and no line. The org part is the owner's, as on POST
  *  /api/admin/org/chart. `workspace` picks its folder (agentWorkspace), also
  *  the owner's only. */
+/** The longest instructions (systemPrompt) the forms save, on create and on
+ *  edit alike. Longer instructions go in the agent's CLAUDE.md. */
+export const INSTRUCTIONS_MAX = 4000
+const INSTRUCTIONS_TOO_LONG = `The instructions are longer than ${INSTRUCTIONS_MAX} characters. Put long instructions in the agent's CLAUDE.md.`
+
 function addAgent(body: any, owner: boolean) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
@@ -602,6 +607,7 @@ function addAgent(body: any, owner: boolean) {
   const mentions = normaliseMentions(body?.triggerWords)
   const model = body?.model ? String(body.model).trim() : undefined
   const personality = body?.personality ? String(body.personality).trim() : undefined
+  if (personality && personality.length > INSTRUCTIONS_MAX) throw new Error(INSTRUCTIONS_TOO_LONG)
   const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
   const role = typeof body?.role === "string" ? body.role.trim() : ""
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Agent id must be lowercase (letters, digits, -, _).")
@@ -621,7 +627,7 @@ function addAgent(body: any, owner: boolean) {
       name, workspace, tier, mentions, maxConcurrent: 2, permissionMode: "default",
     }
     if (model) block.model = model
-    if (personality) block.systemPrompt = personality.slice(0, 400)
+    if (personality) block.systemPrompt = personality
     cfg.agents[id] = block
     if (!reportsTo && !role) return `added agent "${id}"`
     if (!reportsTo) return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role })}`
@@ -652,7 +658,11 @@ function editAgent(body: any) {
     if (typeof patch.name === "string" && patch.name.trim()) a.name = patch.name.trim()
     if (typeof patch.model === "string") a.model = patch.model.trim() || undefined
     if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
-    if (typeof patch.systemPrompt === "string") a.systemPrompt = patch.systemPrompt.trim() || undefined
+    if (typeof patch.systemPrompt === "string") {
+      // Instructions saved longer before the limit stay as they are until changed.
+      if (patch.systemPrompt.trim() !== (a.systemPrompt || "") && patch.systemPrompt.trim().length > INSTRUCTIONS_MAX) throw new Error(INSTRUCTIONS_TOO_LONG)
+      a.systemPrompt = patch.systemPrompt.trim() || undefined
+    }
     if (Array.isArray(patch.mentions)) {
       a.mentions = patch.mentions.map((m: any) => String(m).trim()).filter(Boolean)
     } else if (typeof patch.triggerWords === "string") {
@@ -675,6 +685,11 @@ function deleteAgent(body: any) {
   if (!id) throw new Error("Agent id is required.")
   const { summary } = mutateAgentxConfig((cfg) => {
     if (!cfg.agents || !cfg.agents[id]) throw new Error(`Agent "${id}" not found.`)
+    // Out of the org chart first, with its lines and departments (#2144), so
+    // the same id can be created again with a role. A project manager is
+    // refused with org-edit's sentence, and nothing is removed.
+    const chart = cfg.business?.orgChart && Object.prototype.hasOwnProperty.call(cfg.business.orgChart, id)
+      ? applyOrgEdit(cfg, { op: "remove-member", member: `agent:${id}` }) : ""
     delete cfg.agents[id]
     // Also clear any channel bindings pointing at this agent.
     if (cfg.channels?.telegram?.accounts) {
@@ -684,7 +699,10 @@ function deleteAgent(body: any) {
         }
       }
     }
-    return `removed agent "${id}"`
+    for (const ch of ["slack", "discord"]) {
+      if (cfg.channels?.[ch]?.agentBinding === id) cfg.channels[ch].agentBinding = ""
+    }
+    return `removed agent "${id}"` + (chart ? `; ${chart}` : "")
   })
   return { summary }
 }
@@ -1052,6 +1070,15 @@ function deleteWebhook(body: any) {
   return { summary }
 }
 
+/** This machine has one Slack bot and one Discord bot (#2144). Binding it to
+ *  `to` while it answers as another agent that still exists takes it away
+ *  from that agent: refused unless the caller says so (`moveBot: true`). */
+function botMoveCheck(cfg: any, ch: "slack" | "discord", label: string, to: string, move: boolean): void {
+  const now = String(cfg.channels?.[ch]?.agentBinding || "")
+  if (!to || !now || now === to || !cfg.agents?.[now] || move) return
+  throw Object.assign(new Error(`${label}'s bot answers as @${now} now. Confirm to move it to @${to}: @${now} then stops answering on ${label}.`), { status: 409 })
+}
+
 function configureSlack(body: any) {
   const botTokenEnv = String(body?.botTokenEnv || "").trim()
   const appTokenEnv = String(body?.appTokenEnv || "").trim()
@@ -1061,6 +1088,7 @@ function configureSlack(body: any) {
   const { summary } = mutateAgentxConfig((cfg) => {
     cfg.channels = cfg.channels || {}
     cfg.channels.slack = cfg.channels.slack || { enabled: false }
+    botMoveCheck(cfg, "slack", "Slack", agentBinding, body?.moveBot === true)
     cfg.channels.slack.enabled = true
     cfg.channels.slack.botToken = "${" + botTokenEnv + "}"
     cfg.channels.slack.appToken = "${" + appTokenEnv + "}"
@@ -1145,6 +1173,7 @@ function configureDiscord(body: any) {
   const { summary } = mutateAgentxConfig((cfg) => {
     cfg.channels = cfg.channels || {}
     cfg.channels.discord = cfg.channels.discord || { enabled: false }
+    botMoveCheck(cfg, "discord", "Discord", agentBinding, body?.moveBot === true)
     cfg.channels.discord.enabled = true
     cfg.channels.discord.token = "${" + tokenEnv + "}"
     if (agentBinding) {

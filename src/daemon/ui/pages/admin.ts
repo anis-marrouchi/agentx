@@ -3019,7 +3019,7 @@ function renderDiscordPane() {
   });
 }
 async function configureDiscord() {
-  const body = { tokenEnv: $('dc-env').value.trim(), agentBinding: $('dc-agent').value };
+  const body = { tokenEnv: $('dc-env').value.trim(), agentBinding: $('dc-agent').value, moveBot: true };
   try { const r = await req('POST', '/api/admin/channels/discord', body); showMsg($('dc-msg'), 'ok', (r.summary || 'Saved.') + (r.hint ? ' — ' + r.hint : '')); refresh(); }
   catch (e) { showMsg($('dc-msg'), 'err', e.message); }
 }
@@ -3306,6 +3306,7 @@ async function configureSlack() {
     botTokenEnv: $('slack-bot-env').value.trim(),
     appTokenEnv: $('slack-app-env').value.trim(),
     agentBinding: $('slack-agent').value,
+    moveBot: true,
   };
   try {
     const r = await req('POST', '/api/admin/channels/slack', body);
