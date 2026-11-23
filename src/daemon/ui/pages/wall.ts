@@ -207,6 +207,10 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
+    <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
+      <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
+      <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
+    </section>
 ${navItems}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
@@ -325,6 +329,56 @@ const WALL_PAGE_CSS = `
 /* A display rule beats the user agent's [hidden] rule: keep hidden hidden. */
 .ax-wall [hidden] { display: none !important; }
 /* The three-column layout lives in wall-space.ts (#1242). */
+
+/* The live tree at the top of the nav (#2101 PR 1c, wall-tree.ts):
+   machine → project → work item → agent; a spinner while an agent works,
+   a green dot once it is done, a count per machine. */
+.lt { flex: none; margin: 0 0 10px; padding: 0 0 10px; border-bottom: 1px solid var(--ax-border); min-width: 0; }
+.lt__h { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; font-weight: 500; color: var(--ax-muted); margin: 0; padding: 4px 10px 6px; }
+.lt__h a { color: var(--ax-muted); text-decoration: none; font-size: 11px; }
+.lt__h a:hover { color: var(--ax-accent); }
+/* No scroll area of its own: the nav scrolls as a whole, so no row or
+   machine is ever hidden inside the tree (Hakim review of 64407073). */
+.lt__empty, .lt__idle { margin: 0; padding: 2px 10px 6px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.lt details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: var(--ax-radius-sm); }
+.lt details > summary::-webkit-details-marker { display: none; }
+.lt details > summary::before { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid currentColor; border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; color: var(--ax-muted); transition: transform .12s ease; }
+.lt details[open] > summary::before { transform: rotate(90deg); }
+.lt details > summary:hover { background: var(--ax-surface-3); }
+.lt details > summary:focus-visible, .lt__row:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
+.lt__m > summary { padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--ax-text); }
+.lt__mach { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt__badge { flex: none; font-size: 11px; font-weight: 600; min-width: 20px; padding: 0 6px; line-height: 18px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
+.lt__badge.is-live { background: color-mix(in srgb, var(--ax-accent) 16%, transparent); color: var(--ax-accent); }
+.lt__badge.is-silent { background: var(--ax-amber-t); color: var(--ax-amber-ink); font-weight: 500; }
+.lt__p { margin-left: 10px; }
+.lt__p > summary { padding: 3px 8px; font-size: 12px; color: var(--ax-text-2); }
+.lt__proj { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt__n { font-size: 11px; color: var(--ax-muted); font-variant-numeric: tabular-nums; }
+.lt__i { margin-left: 12px; padding-left: 6px; border-left: 1px solid var(--ax-border); }
+.lt__item { font-size: 11px; color: var(--ax-muted); padding: 4px 6px 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt__done .lt__row { margin-left: 12px; }
+.lt__row { display: flex; align-items: flex-start; gap: 7px; padding: 4px 6px; border-radius: var(--ax-radius-sm); color: var(--ax-text); text-decoration: none; min-width: 0; }
+a.lt__row:hover { background: var(--ax-surface-3); }
+.lt__ico { flex: none; display: inline-flex; margin-top: 2px; color: var(--ax-muted); }
+.lt__prov { width: 13px; height: 13px; }
+.lt__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lt__title { font-size: 12.5px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt__sub { font-size: 11px; color: var(--ax-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lt__who { font-weight: 500; }
+.lt__row.is-done .lt__title { color: var(--ax-text-2); }
+.lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
+.lt__more:hover { color: var(--ax-accent); }
+/* Working: a turning ring. Done: a green dot. */
+.lt__spin, .lt__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; }
+.lt__spin { border: 2px solid color-mix(in srgb, var(--ax-accent) 25%, transparent); border-top-color: var(--ax-accent); animation: lt-spin .8s linear infinite; box-sizing: border-box; }
+.lt__dot { background: var(--ax-green); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ax-green) 22%, transparent); width: 8px; height: 8px; margin: 5px 1px 0; }
+@keyframes lt-spin { to { transform: rotate(360deg); } }
+/* Reduced motion: the ring stops turning and stays still (no movement). */
+@media (prefers-reduced-motion: reduce) {
+  .lt__spin { animation: none; border-color: var(--ax-accent); border-right-color: transparent; }
+  .lt details > summary::before { transition: none; }
+}
 .ax-wall__empty, .ax-wall__count { color: var(--ax-muted); font-size: var(--ax-fs-sm); margin: 0; }
 .ax-wall__feed .ax-wall__empty, .ax-wall__list > .ax-wall__empty { padding: 32px 16px; text-align: center; }
 

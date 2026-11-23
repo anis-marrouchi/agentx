@@ -563,15 +563,21 @@ export const WALL_TASK_SCRIPT = String.raw`
     $('wtask-ops').innerHTML = taskOpsHtml(want);
   }
 
-  /** While Live or a Task is open, follow the live snapshot stream. */
+  /** While Live or a Task is open, or the live tree is on screen (#2101
+   *  PR 1c), follow the live snapshot stream. */
   function followLive(page) {
-    var want = page === 'live' || page === 'task';
+    var want = page === 'live' || page === 'task' || treeShown();
     if (want && !S.liveEs) {
       try {
         S.liveEs = new EventSource('/api/live/stream');
         S.liveEs.addEventListener('snapshot', function (ev) {
           try { S.live = JSON.parse(ev.data); } catch (e) { return; }
-          render();
+          // Only Live and a Task page redraw on every snapshot; elsewhere the
+          // tree and Happening now do, and the feed keeps its place.
+          var pg = S.post ? 'post' : S.page;
+          if (pg === 'live' || pg === 'task') { render(); return; }
+          $('wall-nodes').innerHTML = happeningHtml();
+          renderTree();
         });
         // Dropped: close it; the next render (the one-minute refresh) reopens it.
         S.liveEs.addEventListener('error', function () { if (S.liveEs) { S.liveEs.close(); S.liveEs = null; } });
