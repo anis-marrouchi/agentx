@@ -36,6 +36,14 @@ You can also run them yourself in a terminal:
 
 `check-model` and `draft` read the list from GitHub. Add `--models <path or URL>` to read another copy, such as `contrib/models.json` in a checkout.
 
+## Work on the look
+
+If you design or change an AgentX screen (the dashboard, the Hub or the phone app), give your agent the AgentX look first. The `agentx-design` skill lists the colours, shapes, type and parts AgentX uses, and the things that keep AgentX distinct from the apps its look borrows from.
+
+1. In a terminal, in your agent's workspace folder, install the skill: `npx -y skills add anis-marrouchi/agentx --skill agentx-design`.
+2. Ask your agent for the change, for example "Mock a new Hub panel for …". The skill loads when the request is about an AgentX screen.
+3. To brief a design tool such as Claude Design, paste the skill's "Briefing a design tool" section into it.
+
 ## Vote for what matters to you
 
 The community decides together what matters most.
