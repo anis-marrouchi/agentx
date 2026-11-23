@@ -3,6 +3,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
+import { WikiHub } from "../../src/wiki/hub"
+import { agenticQuery } from "../../src/wiki/query"
 import { claudeModelCall, meteredModelCall } from "../../src/wiki/model-call"
 
 let dir: string
@@ -71,4 +73,40 @@ describe("Claude model errors", () => {
       await expect(claudeModelCall("q", "haiku", 5000)).rejects.toThrow(/^claude exited 1$/)
     },
   )
+})
+
+describe("catalog synthesis", () => {
+  it.each([
+    { reply: { result: "The launch word is amber. [Launch Guide]" }, exit: 0,
+      expected: { status: "ok", answer: "The launch word is amber. [Launch Guide]" } },
+    { reply: { is_error: true, result: "Usage limit reached." }, exit: 1,
+      expected: { status: "error", answer: "", error: "Synthesis: model error: Usage limit reached." } },
+    { reply: { result: "  " }, exit: 0,
+      expected: { status: "error", answer: "", error: "Synthesis: Wiki model returned an empty answer" } },
+  ])("returns the expected status for synthesis reply $reply", async ({ reply, exit, expected }) => {
+    const store = new WikiHub(join(dir, "wiki"), () => {}).getAgentWiki("test")
+    store.writeArticle("projects/launch.md", {
+      title: "Launch Guide", owner: "test", access: "public", tags: [], sources: [],
+      created: "2026-01-01", lastUpdated: "2026-01-01",
+    }, "The launch word is amber.", "test")
+    store.rebuildIndex()
+
+    const bin = join(dir, "claude")
+    const selector = JSON.stringify({ result: JSON.stringify([{ title: "Launch Guide", path: "projects/launch.md" }]) })
+    writeFileSync(bin, `#!/bin/sh
+prompt=$(cat)
+case "$prompt" in
+  *"## Articles"*) printf '%s' '${JSON.stringify(reply)}'; exit ${exit} ;;
+  *) printf '%s' '${selector}' ;;
+esac
+`)
+    chmodSync(bin, 0o755)
+
+    const result = await agenticQuery("What is the launch word?", store, "test", { log: () => {} })
+    expect(result).toMatchObject({
+      ...expected,
+      walked: [{ title: "Launch Guide", path: "projects/launch.md" }],
+    })
+    if (result.status === "ok") expect(result.citations).toMatchObject([{ title: "Launch Guide", path: "projects/launch.md" }])
+  })
 })
