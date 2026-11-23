@@ -16,7 +16,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
   return { ...real, executeTask: () => { run.calls++; return Promise.resolve({ content: "ran here", duration: 1 }) } }
 })
 
-import { claudeCommand, parseState, prePushHook, prepareScript, runOverSsh, shq, sshArgs, sshIssueWorktreeState, sshServerOf, sshWorktreeDir, stateScript, type SshServer, type SshSpawn } from "../src/agents/ssh-run"
+import { SSH_LIMIT_GRACE_MS, claudeCommand, parseState, prePushHook, prepareScript, runOverSsh, shq, sshArgs, sshLockFile, sshIssueWorktreeState, sshServerOf, sshWorktreeDir, stateScript, type SshServer, type SshSpawn } from "../src/agents/ssh-run"
 import { placedRefusalText } from "../src/agents/mesh-safety"
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -27,7 +27,7 @@ import { getEventBus } from "../src/events/bus"
 const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" }
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: gitEnv }).trim()
 const commit = (dir: string, file: string, msg: string) => { writeFileSync(join(dir, file), msg + "\n"); git(dir, "add", "."); git(dir, "commit", "-q", "-m", msg) }
-const server = (over: Partial<SshServer> = {}): SshServer => ({ name: "box", host: "box.example", checkouts: { "acme/app": "/srv/app" }, claudeCommand: "claude", ...over })
+const server = (over: Partial<SshServer> = {}): SshServer => ({ name: "box", host: "box.example", checkouts: { "acme/app": "/srv/app" }, claudeCommand: "claude", pushLimit: "github ruleset 1", ...over })
 const at = (node: string): Placement => ({ node, setBy: "owner", setAt: 1 })
 
 /** Runs the remote script with a local `sh`, as the box would. */
@@ -58,8 +58,8 @@ describe("the pieces", () => {
   })
 
   it("the command line runs claude in the worktree, with no part of the task in it", () => {
-    const cmd = claudeCommand(server(), "/srv/.agentx-worktrees/app/issue-7", "opus")
-    expect(cmd).toBe(`cd '/srv/.agentx-worktrees/app/issue-7' && 'claude' -p --output-format json --allowedTools 'Bash,Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite' --model 'opus'`)
+    const cmd = claudeCommand(server(), "/srv/.agentx-worktrees/app/issue-7", "opus", 600)
+    expect(cmd).toBe(`cd '/srv/.agentx-worktrees/app/issue-7' && echo $$ > '/srv/.agentx-worktrees/app/issue-7.lock' && exec timeout -k 30 600 'claude' -p --output-format json --strict-mcp-config --allowedTools 'Bash,Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite' --model 'opus'`)
   })
 })
 
@@ -75,7 +75,8 @@ describe("runOverSsh (fake ssh)", () => {
     const out = await runOverSsh({ server: server(), repo: "Acme/App", issue: 7, prompt, timeoutMs: 600_000 }, fake)
     expect(out).toMatchObject({ ok: true, content: "Fixed it.\n\nState: done — PR #9", sessionId: "s1", jobState: { state: "done", proof: "PR #9" } })
     expect(calls[1].input).toBe(prompt)
-    expect(calls[1].timeoutMs).toBe(600_000)
+    expect(calls[1].timeoutMs).toBe(600_000 + SSH_LIMIT_GRACE_MS)
+    expect(calls[1].args.at(-1)).toContain("exec timeout -k 30 600 ")
     for (const c of calls) expect(c.args.join(" ")).not.toContain("SECRET-PROMPT")
     expect(calls[0].input).toContain("agentx/issue-7")
   })
@@ -89,6 +90,24 @@ describe("runOverSsh (fake ssh)", () => {
     const down: SshSpawn = async () => ({ code: 255, stdout: "", stderr: "ssh: connect to host box.example port 22: Connection refused" })
     expect(await runOverSsh({ server: server(), repo: "acme/app", issue: 7, prompt: "x", timeoutMs: 1 }, down)).toMatchObject({ ok: false, offline: true })
     expect(await runOverSsh({ server: server(), repo: "acme/other", issue: 7, prompt: "x", timeoutMs: 1 }, down)).toMatchObject({ ok: false, error: expect.stringContaining("no checkout of acme/other") })
+  })
+
+  it("B1: a server with no pushLimit is refused before any ssh call", async () => {
+    const calls: string[][] = []
+    const fake: SshSpawn = async (args) => { calls.push(args); return { code: 0, stdout: "READY /x\n", stderr: "" } }
+    const out = await runOverSsh({ server: server({ pushLimit: undefined }), repo: "acme/app", issue: 7, prompt: "x", timeoutMs: 1 }, fake)
+    expect(out).toMatchObject({ ok: false, error: expect.stringContaining("no pushLimit") })
+    expect(calls).toEqual([])
+  })
+
+  it("B2: an earlier run still alive on the box refuses the run; the box's timeout counts as the time limit", async () => {
+    let n = 0
+    const busy: SshSpawn = async () => { n++; return { code: 0, stdout: "BUSY 4242\n", stderr: "" } }
+    expect(await runOverSsh({ server: server(), repo: "acme/app", issue: 7, prompt: "x", timeoutMs: 1000 }, busy)).toMatchObject({ ok: false, error: expect.stringContaining("still going on ssh:box (pid 4242)") })
+    expect(n).toBe(1)
+    let m = 0
+    const timedOut: SshSpawn = async () => (++m === 1 ? { code: 0, stdout: "READY /w\n", stderr: "" } : { code: 124, stdout: "", stderr: "" })
+    expect(await runOverSsh({ server: server(), repo: "acme/app", issue: 7, prompt: "x", timeoutMs: 1000 }, timedOut)).toMatchObject({ ok: false, error: expect.stringContaining("passed its time limit") })
   })
 })
 
@@ -153,6 +172,29 @@ describe("the box's worktree and hook (real git, local sh)", () => {
     expect(git(sshWorktreeDir(checkout, 7), "log", "-1", "--format=%s")).toBe("pushed elsewhere")
   })
 
+  it("B2: prepare refuses while the lock's run is alive, and goes on once it ended", async () => {
+    expect(await prepare()).toMatch(/^READY /)
+    const lock = sshLockFile(checkout, 7)
+    writeFileSync(lock, `${process.pid}\n`)
+    expect(await prepare()).toBe(`BUSY ${process.pid}`)
+    const dead = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim()
+    writeFileSync(lock, `${dead}\n`)
+    expect(await prepare()).toMatch(/^READY /)
+  })
+
+  it("B2: the run command writes its pid to the lock and the box's timeout ends it (exit 124)", async () => {
+    expect(await prepare()).toMatch(/^READY /)
+    const wt = sshWorktreeDir(checkout, 7)
+    const fakeClaude = join(tmp, "fake-claude")
+    writeFileSync(fakeClaude, "#!/bin/sh\ncat >/dev/null\nsleep 20\n")
+    chmodSync(fakeClaude, 0o755)
+    const started = Date.now()
+    const r = spawnSync("sh", ["-c", claudeCommand(server({ claudeCommand: fakeClaude }), wt, undefined, 1)], { input: "prompt", encoding: "utf8", env: gitEnv })
+    expect(r.status).toBe(124)
+    expect(Date.now() - started).toBeLessThan(15_000)
+    expect(readFileSync(sshLockFile(checkout, 7), "utf8").trim()).toMatch(/^\d+$/)
+  })
+
   it("the state script reads none, dirty and not pushed", async () => {
     const box = server({ checkouts: { "acme/app": checkout } })
     expect(await sshIssueWorktreeState(box, "acme/app", 7, localSh)).toBeNull()
@@ -191,7 +233,7 @@ describe("AgentRegistry: an issue placed on an SSH server", () => {
     run.calls = 0
     registry = new AgentRegistry(daemonConfigSchema.parse({
       node: { id: "mac", name: "mac" }, jobState: { enabled: false }, people,
-      sshServers: [{ name: "box", host: "box.example", checkouts: { "acme/app": "/srv/app" } }],
+      sshServers: [{ name: "box", host: "box.example", checkouts: { "acme/app": "/srv/app" }, pushLimit: "github ruleset 1" }, { name: "open", host: "open.example", checkouts: { "acme/app": "/srv/app" } }],
       agents: { coder: { name: "Coder", tier: "claude-code", workspace: dir, maxExecutionMinutes: 45 } },
     }), () => {})
     calls = []
@@ -217,6 +259,14 @@ describe("AgentRegistry: an issue placed on an SSH server", () => {
     expect(auto.content).toBe(placedRefusalText("ssh:box"))
     const limited = await registry.execute({ agentId: "coder", message: "x", context: { channel: "github", chatId: "acme/app:issue:7", sender: "sara-b", senderUsername: "sara-b" } as any })
     expect(limited.content).toBe(placedRefusalText("ssh:box"))
+    expect(calls).toEqual([])
+    expect(run.calls).toBe(0)
+  })
+
+  it("B1: a server with no pushLimit fails the run and calls no ssh", async () => {
+    registry.setPlacements({ placement: () => at("ssh:open") })
+    const res = await registry.execute({ agentId: "coder", message: "x", context: { channel: "github", chatId: "acme/app:issue:7" } as any })
+    expect(res.error).toContain("no pushLimit")
     expect(calls).toEqual([])
     expect(run.calls).toBe(0)
   })
@@ -272,6 +322,10 @@ describe("the Hub: SSH servers in Run on", () => {
     expect(((await moveRunOn({ id: "wp-1", node: "ssh:box" }, deps())).body as any).error).toContain("does not answer over SSH")
     expect(((await moveRunOn({ id: "wp-1", node: "ssh:elsewhere" }, deps())).body as any).error).toContain("no checkout of acme/app")
     expect(((await moveRunOn({ id: "wp-1", node: "ssh:ghost" }, deps())).body as any).error).toContain("not in sshServers")
+    // B1: no pushLimit, no Move.
+    const open = { ...deps(), sshServers: () => [server({ pushLimit: undefined })] }
+    expect(((await moveRunOn({ id: "wp-1", node: "ssh:box" }, open)).body as any).error).toContain("no pushLimit")
+    expect(placed()?.node ?? "local").toBe("local")
     up.box = true
     const r = await moveRunOn({ id: "wp-1", node: "ssh:box" }, deps())
     expect(r.status).toBe(200)

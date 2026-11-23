@@ -44,6 +44,11 @@ export const sshServerSchema = z.object({
   checkouts: z.record(z.string().min(1), z.string().regex(ABS)).default({}),
   /** The `claude` command on the box. */
   claudeCommand: z.string().regex(/^[A-Za-z0-9._/-]+$/).default("claude"),
+  /** Where the forge limits this box's pushes to issue branches (a GitHub
+   *  ruleset, a GitLab protected-branch rule), e.g. "github ruleset 4211".
+   *  The run can use Bash, so `git push --no-verify` skips the worktree's
+   *  hook: with no note here, the Move and the run are refused. */
+  pushLimit: z.string().trim().min(1).max(300).optional(),
 })
 
 export type SshServer = z.infer<typeof sshServerSchema>
@@ -56,6 +61,11 @@ export function sshServerOf(node: string, servers: readonly SshServer[] | undefi
   if (!isSshNode(node)) return undefined
   const name = node.slice(SSH_PREFIX.length)
   return servers?.find((s) => s.name === name)
+}
+
+/** Why this server may not run issues (no `pushLimit` note), or null. */
+export function sshPushLimitRefusal(server: SshServer): string | null {
+  return server.pushLimit ? null : `${sshNodeOf(server.name)} has no pushLimit in sshServers: set it to the forge rule that lets this box push only issue branches (the worktree's hook alone can be skipped).`
 }
 
 /** The box's checkout of a repository, compared without case. */
@@ -74,6 +84,11 @@ export function shq(s: string): string {
 export function sshWorktreeDir(checkout: string, issue: number): string {
   const c = checkout.replace(/\/+$/, "")
   return posix.join(posix.dirname(c), ".agentx-worktrees", posix.basename(c), `issue-${issue}`)
+}
+
+/** The issue run's PID file on the box, beside its worktree. */
+export function sshLockFile(checkout: string, issue: number): string {
+  return `${sshWorktreeDir(checkout, issue)}.lock`
 }
 
 /** `ssh` arguments for one remote command. BatchMode: never a password
@@ -143,6 +158,11 @@ export function prepareScript(checkout: string, issue: number): string {
     `C=${shq(checkout)}; W=${shq(wt)}; B=${shq(branch)}; H=${shq(hooks)}`,
     `fail() { echo "FAILED $*"; exit 0; }`,
     `[ -d "$C/.git" ] || [ -f "$C/.git" ] || fail "no checkout at $C"`,
+    // A run whose time limit passed on this Mac may still be alive here
+    // (an ssh drop): two runs on one worktree is refused (review B2).
+    `L=${shq(sshLockFile(checkout, issue))}`,
+    `if [ -f "$L" ]; then P=$(cat "$L" 2>/dev/null); case "$P" in ''|*[!0-9]*) ;; *) kill -0 "$P" 2>/dev/null && { echo "BUSY $P"; exit 0; } ;; esac; fi`,
+    `command -v timeout >/dev/null 2>&1 || fail "no timeout command on the box (coreutils)"`,
     `git -C "$C" fetch --quiet origin || fail "git fetch failed in $C"`,
     `if git -C "$C" rev-parse --verify --quiet "refs/remotes/origin/$B" >/dev/null; then BASE="origin/$B"; else`,
     `  BASE=$(git -C "$C" symbolic-ref --quiet --short refs/remotes/origin/HEAD) || fail "origin has no default branch in $C"; fi`,
@@ -204,13 +224,22 @@ export function parseState(stdout: string): { branch: string; dirty: boolean; ah
  *  AgentX tools; it cannot reach anything beyond the box's own git. */
 export const SSH_ALLOWED_TOOLS = ["Bash", "Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "TodoWrite"]
 
+/** Extra time this Mac waits past the box's own limit, so the box's
+ *  `timeout` (and its kill 30 s later) ends the run before ssh is cut. */
+export const SSH_LIMIT_GRACE_MS = 60_000
+
 /** The remote command that runs the agent in the worktree. The prompt is
- *  read from stdin; nothing of the task is in the command line. */
-export function claudeCommand(server: SshServer, worktree: string, model?: string): string {
+ *  read from stdin; nothing of the task is in the command line. The box
+ *  ends the run itself at `limitSec` (`timeout`, then SIGKILL 30 s on),
+ *  and its PID is in the lock file prepare reads (review B2). */
+export function claudeCommand(server: SshServer, worktree: string, model?: string, limitSec = 20 * 60): string {
   return [
     `cd ${shq(worktree)} &&`,
+    `echo $$ > ${shq(`${worktree}.lock`)} &&`,
+    "exec timeout -k 30", String(Math.max(1, Math.floor(limitSec))),
     shq(server.claudeCommand), "-p",
     "--output-format", "json",
+    "--strict-mcp-config",
     "--allowedTools", shq(SSH_ALLOWED_TOOLS.join(",")),
     ...(model && /^[A-Za-z0-9._-]+$/.test(model) ? ["--model", shq(model)] : []),
   ].join(" ")
@@ -233,6 +262,8 @@ export type SshRunOutcome =
 export async function runOverSsh(input: SshRunInput, run: SshSpawn = spawnSsh): Promise<SshRunOutcome> {
   const { server, repo, issue } = input
   const node = sshNodeOf(server.name)
+  const noLimit = sshPushLimitRefusal(server)
+  if (noLimit) return { ok: false, error: noLimit }
   const checkout = sshCheckoutOf(server, repo)
   if (!checkout) return { ok: false, error: `${node} has no checkout of ${repo} (sshServers[].checkouts).` }
   const prep = await run(sshArgs(server, "sh -s"), prepareScript(checkout, issue), 5 * 60_000)
@@ -240,11 +271,14 @@ export async function runOverSsh(input: SshRunInput, run: SshSpawn = spawnSsh): 
   const said = lastLine(prep.stdout)
   const diverged = said.match(/^DIVERGED (\S+) (\S+)$/)
   if (diverged) return { ok: false, error: `On ${node}, agentx/issue-${issue} (${diverged[1].slice(0, 12)}) and origin/agentx/issue-${issue} (${diverged[2].slice(0, 12)}) have diverged. Reconcile the branch there by hand, then run again.` }
+  const busy = said.match(/^BUSY (\d+)$/)
+  if (busy) return { ok: false, error: `An earlier run of issue ${issue} is still going on ${node} (pid ${busy[1]}). Wait for it to end (its time limit stops it), then run again.` }
   const ready = said.match(/^READY (.+)$/)
   if (!ready) return { ok: false, error: `${node} could not get the issue's worktree ready: ${said.replace(/^FAILED /, "") || lastLine(prep.stderr) || `exit ${prep.code}`}` }
   const worktree = ready[1]
-  const res = await run(sshArgs(server, claudeCommand(server, worktree, input.model)), input.prompt, input.timeoutMs)
-  if (res.timedOut) return { ok: false, error: `The run on ${node} passed its time limit and was stopped.` }
+  const res = await run(sshArgs(server, claudeCommand(server, worktree, input.model, input.timeoutMs / 1000)), input.prompt, input.timeoutMs + SSH_LIMIT_GRACE_MS)
+  // 124: the box's `timeout` ended it; 137: its kill after 30 s more.
+  if (res.timedOut || res.code === 124 || res.code === 137) return { ok: false, error: `The run on ${node} passed its time limit and was stopped.` }
   if (res.code === 255 && !res.stdout.trim()) return { ok: false, offline: true, error: `${node} did not answer over SSH: ${lastLine(res.stderr) || "connection failed"}` }
   let parsed: { result?: unknown; is_error?: unknown; session_id?: unknown } | null = null
   try { parsed = JSON.parse(res.stdout.trim().split("\n").pop() || "null") } catch { parsed = null }

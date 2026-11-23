@@ -1,4 +1,4 @@
-import { isSshNode, sshCheckoutOf, sshNodeOf, sshServerOf, type SshServer } from "@/agents/ssh-run"
+import { isSshNode, sshCheckoutOf, sshNodeOf, sshPushLimitRefusal, sshServerOf, type SshServer } from "@/agents/ssh-run"
 
 // --- SSH servers in the Hub's "Run on" (#2104 PR 2) ---
 //
@@ -32,6 +32,8 @@ export async function sshNodeHealthy(node: string, deps: SshRunOnDeps): Promise<
 export async function sshTargetRefusal(node: string, repo: string, agentId: string, localHostsAgent: boolean, deps: SshRunOnDeps): Promise<string | null> {
   const server = sshServerOf(node, deps.sshServers?.())
   if (!server) return `"${node}" is not in sshServers on this Mac.`
+  const noLimit = sshPushLimitRefusal(server)
+  if (noLimit) return noLimit
   if (!sshCheckoutOf(server, repo)) return `${node} has no checkout of ${repo} (sshServers[].checkouts).`
   if (!localHostsAgent) return `${agentId} is not on this Mac, which runs it on ${node}.`
   if (!(await healthOf(server, deps))) return `${node} does not answer over SSH.`

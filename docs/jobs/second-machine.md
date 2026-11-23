@@ -73,6 +73,7 @@ A server that runs no AgentX can take an issue too, over SSH. This Mac starts th
 - A run that has to be limited (a person with tool or skill limits, or a schedule with `autonomy: report` or `propose`) is refused, with the same reply as above. The server can't apply those limits.
 - The agent on the server has the coding tools only (Bash, Read, Edit, Write, Glob, Grep). It has no AgentX tools, so it states its job's state with a last line such as `State: done — <proof>`.
 - Each run starts a new Claude Code session on the server. It reads the issue's branch and the prompt, not the earlier conversation.
+- The server stops the run itself at the agent's time limit (`timeout`, from coreutils, must be on the server). While an earlier run of the issue is still going there, a new run is refused.
 
 **Before you start**, whoever runs the server sets up:
 
@@ -84,7 +85,7 @@ A server that runs no AgentX can take an issue too, over SSH. This Mac starts th
 - **Claude Code**, signed in on the server.
 - **SSH access from this Mac**, with a key and no password prompt (AgentX uses `BatchMode`). AgentX ships no keys or tokens: `ssh` uses this Mac's own keys and `~/.ssh/config`.
 
-The issue's worktree on the server also gets a pre-push hook that refuses every branch but `agentx/issue-<n>`. That hook only gives an early message. The forge rule above is the real limit, because a push with `--no-verify` skips any hook.
+The issue's worktree on the server also gets a pre-push hook that refuses every branch but `agentx/issue-<n>`. That hook only gives an early message. The forge rule above is the real limit, because a push with `--no-verify` skips any hook. So the server's entry must name that rule in `pushLimit`. With no `pushLimit`, a move to the server and a run there are refused.
 
 Steps:
 
@@ -92,7 +93,8 @@ Steps:
    ```json
    "sshServers": [
      { "name": "build-box", "host": "build-box.example.com", "user": "agentx",
-       "checkouts": { "anis-marrouchi/agentx": "/srv/agentx" } }
+       "checkouts": { "anis-marrouchi/agentx": "/srv/agentx" },
+       "pushLimit": "GitHub ruleset agentx-bot-issue-branches" }
    ]
    ```
    `port` and `identityFile` (a key file on this Mac) are optional. Then restart the daemon.

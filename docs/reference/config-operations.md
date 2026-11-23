@@ -99,6 +99,7 @@ Servers with no AgentX that an issue can run on, chosen from the Hub as `ssh:<na
 | `identityFile` | string | — | An absolute path to a key file on this machine. |
 | `checkouts` | object | `{}` | The server's checkouts, by repository: `{ "owner/repo": "/abs/path" }`. Only repositories listed here can run there. |
 | `claudeCommand` | string | `"claude"` | The Claude Code command on the server. |
+| `pushLimit` | string | — | The forge rule that lets the server push only `agentx/issue-*` branches (a GitHub ruleset, GitLab protected branches). Required to run there: unset, a move to the server and a run there are refused. |
 
 ## events
 
