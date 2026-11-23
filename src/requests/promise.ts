@@ -268,6 +268,28 @@ export function armPromiseWake(store: RequestStore, id: string, dueAt: number | 
   return store.armDueWake(id, dueAt, `It is due now (${new Date(dueAt).toISOString()}), owed to ${r.owedTo ?? "the owner"}: ${words}`, now)
 }
 
+export type DueWake = "armed" | "moved" | "kept" | "none"
+
+/** Set or change the due time of an open request outside a run (#2081,
+ *  `agentx requests due`), and stand a wake behind it (R4): a new wake
+ *  when none is armed, the old due time's wake moved, an earlier wake
+ *  kept. "none": nothing wakes at it (the owner owes it, or no wake can
+ *  be armed on this request). Errors in plain words. */
+export function setDueTime(store: RequestStore, id: string, dueAt: number, now: number): { wake: DueWake } | string {
+  const r = store.get(id)
+  if (!r || r.state === "candidate") return `no request "${id}"`
+  if (!(OPEN_STATES as readonly string[]).includes(r.state)) return `${id} is closed (${r.state})`
+  if (dueAt <= now) return "the due time must be ahead"
+  const oldDue = r.dueAt ?? null
+  store.setLoop(id, { dueAt }, now)
+  if (r.owedBy === OWED_TO_OWNER) return { wake: "none" }
+  if (armPromiseWake(store, id, dueAt, now)) return { wake: "armed" }
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  const note = `It is due now (${new Date(dueAt).toISOString()}), owed to ${r.owedTo ?? "the owner"}: ${words}`
+  if (store.moveDueWake(id, dueAt, oldDue, note, now)) return { wake: "moved" }
+  return { wake: store.hasWakeBefore(id, dueAt) ? "kept" : "none" }
+}
+
 /** The one escalation (#1138 D): the loop that follows this work needs
  *  attention, and the requests check tells the owner once. The work's own
  *  request when one follows it (any of `links`); else a promise of the

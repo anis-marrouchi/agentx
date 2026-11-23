@@ -112,7 +112,9 @@ Turn it off with `agentx requests settings --auto-resend off`. Change the wait w
 - **You checked it yourself:** `agentx requests done <id> --reason "checked by hand"`. This also closes a request whose check cannot tell. The proof then reads `closed by owner: checked by hand`. On the Hub, write the reason in the comment box, then select **Done**.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
-Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one. An agent that runs `agentx requests drop` or `agentx requests done` from its own run is recorded as that agent, not as you, and its close is checked as described below.
+- **Give it a due time later:** `agentx requests due <id> 2030-01-31T17:00:00Z`. This works after the agent's run has ended. The agent is woken at that time, so the due time is checked.
+
+Agents close their own requests as done or declined. A run that ends with the line `State: done — <proof>` closes the open request it worked on, with that proof. A promise closes this way only when the proof has a link. A standing order and a request with a check of its own stay open. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one. An agent that runs `agentx requests drop` or `agentx requests done` from its own run is recorded as that agent, not as you, and its close is checked as described below.
 
 ### When handed-on work came back and nobody closed it
 

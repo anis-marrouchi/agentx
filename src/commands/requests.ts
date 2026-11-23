@@ -13,7 +13,8 @@ import { PlanStore, waitsText, type PlanStep } from "@/requests/plan-store"
 import { ownerStepAction, type OwnerStepAction } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKind } from "@/requests/checkers"
-import { activeStepAgentOf, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
+import { activeStepAgentOf, parseDue, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
+import { setDueTime, type DueWake } from "@/requests/promise"
 import { drift } from "./requests-drift"
 import { sprints } from "./requests-sprints"
 import { contract } from "./requests-contract"
@@ -279,6 +280,29 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
 }
 closeCommand("done", "close a request as finished, with a link to the evidence or the reason", "--evidence <link>", "a finished request needs --evidence <link> or --reason <text>")
 closeCommand("drop", "drop a request you no longer want", "--reason <text>", "")
+
+const DUE_WAKE_WORDS: Record<DueWake, string> = {
+  armed: "its agent is woken at that time",
+  moved: "its wake moved to that time",
+  kept: "an earlier wake already stands before it",
+  none: "nothing wakes at it (the owner owes it, or this request takes no wake)",
+}
+
+// Set or change a due time after the run that made the request ended
+// (#2081): the agentx_request tool works only inside a run.
+requests
+  .command("due <id> <time>")
+  .description("set or change the due time of an open request, and arm the wake that checks it then")
+  .action((id: string, time: string) => {
+    const now = Date.now()
+    const at = parseDue(time, now)
+    if (typeof at !== "number") { console.error(chalk.red(`  ${at ?? "give a due time: an ISO date (2030-01-31T17:00:00Z)"}`)); process.exitCode = 1; return }
+    const s = store()
+    if (!s) return
+    const out = setDueTime(s, id, at, now)
+    if (typeof out === "string") { console.error(chalk.red(`  ${out}`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ ${id} due ${when(at)}`) + chalk.dim(`: ${DUE_WAKE_WORDS[out.wake]}`))
+  })
 
 requests
   .command("settings")
