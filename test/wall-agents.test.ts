@@ -169,6 +169,24 @@ describe("POST /api/admin/agents: workspace and role from the Hub form", () => {
     expect(r).toMatchObject({ status: 403, json: { error: "Only the owner can change the org chart." } })
     expect(saved().agents.ops).toBeUndefined()
   })
+
+  it("keeps a picked workspace the owner's: refused for anyone else, with nothing written", async () => {
+    const before = readFileSync(join(dir, "agentx.json"), "utf-8")
+    for (const owner of [false, undefined]) {
+      const r = await call({ id: "ops", name: "Ops", triggerWords: "@ops", workspace: "/etc" }, owner)
+      expect(r).toMatchObject({ status: 403, json: { error: "Only the owner can pick an agent's workspace." } })
+    }
+    expect(readFileSync(join(dir, "agentx.json"), "utf-8")).toBe(before)
+    expect(existsSync(join(dir, "agents", "ops"))).toBe(false)
+    // Blank is the default folder, not a pick; the owner's pick is saved.
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"))
+    try {
+      expect((await call({ id: "ops", name: "Ops", triggerWords: "@ops", workspace: "  " }, false)).status).toBe(200)
+      expect(saved().agents.ops.workspace).toBe(join(dir, "agents", "ops"))
+      expect((await call({ id: "sec", name: "Sec", triggerWords: "@sec", workspace: "work/sec" }, true)).status).toBe(200)
+      expect(saved().agents.sec.workspace).toBe(join(dir, "work", "sec"))
+    } finally { fetchMock.mockRestore() }
+  })
 })
 
 describe("the Hub's Agents page (#2144)", () => {

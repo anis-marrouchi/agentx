@@ -593,7 +593,8 @@ export function agentWorkspace(raw: unknown, id: string, home = process.env.HOME
  *  reports-to line are one write, so a refused line leaves nothing behind.
  *  With `role` alone (the Hub's Agents form, #2144) it joins the chart with
  *  that role and no line. The org part is the owner's, as on POST
- *  /api/admin/org/chart. `workspace` picks its folder (agentWorkspace). */
+ *  /api/admin/org/chart. `workspace` picks its folder (agentWorkspace), also
+ *  the owner's only. */
 function addAgent(body: any, owner: boolean) {
   const id = String(body?.id || "").trim()
   const name = String(body?.name || "").trim()
@@ -607,6 +608,8 @@ function addAgent(body: any, owner: boolean) {
   if (!name) throw new Error("Agent name is required.")
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
   if ((reportsTo || role) && !owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
+  // Any folder but agents/<id> is the owner's choice, as the org chart is.
+  if (typeof body?.workspace === "string" && body.workspace.trim() && !owner) throw Object.assign(new Error("Only the owner can pick an agent's workspace."), { status: 403 })
 
   const { path: workspace, custom } = agentWorkspace(body?.workspace, id)
   // A folder the owner picked that exists already is theirs: nothing is written in it.
