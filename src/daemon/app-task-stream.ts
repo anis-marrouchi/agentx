@@ -48,10 +48,16 @@ const STARTS_WITH_MARKER = new RegExp(`^(?:${MARKER})`)
 /** A marker after a newline starts a segment. */
 const SEGMENT_START = new RegExp(`\\n(?=${MARKER})`)
 /** Markers that also start a segment with no newline before them (#2137
- *  review B2). Text deltas end with no newline, so the next marker can be
- *  glued to them: `…working on it[error] API key invalid`. Only markers
- *  that do not read as prose: not `→ ` (always written after a newline)
- *  and not `. ` (ends every sentence). */
+ *  review B2), read ONLY in the start buffer (feedStart). A daemon older
+ *  than this fix writes a marker right after a text delta, glued to it:
+ *  `…working on it[error] API key invalid`. Live chunks are never searched
+ *  for them: an answer that quotes "[error] connection refused", "A ← B" or
+ *  "Step 1 · done" would mark the run failed and cut the answer (Hakim on
+ *  #2148). Live, a marker starts a segment only after a newline or at the
+ *  start of a chunk, and the daemon now writes a newline before every
+ *  marker line (registry.ts makeStreamEventFormatter). Only markers that
+ *  do not read as prose: not `→ ` (always written after a newline) and not
+ *  `. ` (ends every sentence). */
 const GLUED_MARKER = /← |💭 |· (?:done|init)\b|< codex |\[error\] |\[task finished\]/
 
 /** Turns the daemon's formatted task output into phone events. Stateful:
@@ -72,8 +78,9 @@ export class PhoneStreamTrimmer {
   private dropping = false
   failed = false
 
-  /** One upstream chunk (or the start buffer) in, phone events out. */
-  feed(chunk: string): PhoneEvent[] {
+  /** One upstream chunk in, phone events out. `glued` is for the start
+   *  buffer only (see GLUED_MARKER). */
+  feed(chunk: string, glued = false): PhoneEvent[] {
     const out: PhoneEvent[] = []
     let textChanged = false
     let lastDropped = this.dropping
@@ -88,16 +95,17 @@ export class PhoneStreamTrimmer {
         seg = seg.slice(nl + 1)
       }
       if (!seg) continue
-      // Text, up to a marker glued to it (none if the segment starts with one).
-      const glued = STARTS_WITH_MARKER.test(seg) ? 0 : seg.search(GLUED_MARKER)
-      const text = glued === -1 ? seg : seg.slice(0, glued)
+      // Text, up to a marker glued to it (start buffer only; none if the
+      // segment starts with one).
+      const at = STARTS_WITH_MARKER.test(seg) ? 0 : glued ? seg.search(GLUED_MARKER) : -1
+      const text = at === -1 ? seg : seg.slice(0, at)
       if (text) {
         this.current += text
         textChanged = true
         lastDropped = false
       }
-      if (glued === -1) continue
-      if (this.marker(seg.slice(glued), out)) textChanged = false
+      if (at === -1) continue
+      if (this.marker(seg.slice(at), out)) textChanged = false
       lastDropped = true
     }
     // Still inside a dropped segment if the chunk ended in one, before its
@@ -129,10 +137,10 @@ export class PhoneStreamTrimmer {
    *  a task's output, so a full buffer can begin inside a thought or a tool
    *  result: drop up to its first marker line. */
   feedStart(initial: string): PhoneEvent[] {
-    if (initial.length < NODE_BUFFER_MAX) return this.feed(initial)
+    if (initial.length < NODE_BUFFER_MAX) return this.feed(initial, true)
     const at = initial.search(SEGMENT_START)
     if (at === -1) this.dropping = true
-    return this.feed(at === -1 ? "" : initial.slice(at))
+    return this.feed(at === -1 ? "" : initial.slice(at), true)
   }
 
   /** The latest text, flattened and cut to PREVIEW_CHARS from the end. */

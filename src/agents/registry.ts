@@ -586,34 +586,41 @@ export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, e
   }
 }
 
-function makeStreamEventFormatter(): (event: any) => string {
+/** Exported for tests (test/app-live-2103.test.ts). */
+export function makeStreamEventFormatter(): (event: any) => string {
   let textSeen = ""
   let codexTextSeen = ""
-  return (event: any): string => {
+  // A text delta ends with no newline, so a marker line that follows it
+  // starts with one: readers split the buffer at "\n<marker>", and a marker
+  // glued to the answer would read as answer text (#2137 review, Hakim on
+  // #2148).
+  let lineStart = true
+  const line = (s: string): string => (lineStart ? s : `\n${s}`)
+  const format = (event: any): string => {
     if (!event || typeof event !== "object") return ""
     const t = event.type
-    if (t === "opencode.ready") return `. opencode ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`
-    if (t === "opencode.first_output") return `. opencode first output=${event.elapsedMs}ms\n`
-    if (t === "opencode.fallback") return `. opencode using CLI fallback: ${event.reason}\n`
-    if (t === "codex.ready") return `. codex ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`
-    if (t === "codex.first_output") return `. codex first output=${event.elapsedMs}ms\n`
-    if (t === "codex.fallback") return `. codex using CLI fallback: ${event.reason}\n`
+    if (t === "opencode.ready") return line(`. opencode ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`)
+    if (t === "opencode.first_output") return line(`. opencode first output=${event.elapsedMs}ms\n`)
+    if (t === "opencode.fallback") return line(`. opencode using CLI fallback: ${event.reason}\n`)
+    if (t === "codex.ready") return line(`. codex ${event.reused ? "reused" : "started"} ready=${event.startupMs}ms\n`)
+    if (t === "codex.first_output") return line(`. codex first output=${event.elapsedMs}ms\n`)
+    if (t === "codex.fallback") return line(`. codex using CLI fallback: ${event.reason}\n`)
     if (t === "codex.spawned") {
       const model = event.model ? ` model=${event.model}` : ""
       const resume = event.resumeSessionId ? ` resume=${String(event.resumeSessionId).slice(0, 8)}` : ""
-      return `. codex started${model}${resume}\n`
+      return line(`. codex started${model}${resume}\n`)
     }
     if (t === "thread.started") {
       const tid = event.thread_id ? ` thread=${String(event.thread_id).slice(0, 8)}` : ""
-      return `. codex thread started${tid}\n`
+      return line(`. codex thread started${tid}\n`)
     }
-    if (t === "turn.started") return ". codex turn started\n"
+    if (t === "turn.started") return line(". codex turn started\n")
     if (t === "turn.completed") {
       const usage = event.usage || {}
       const input = usage.input_tokens ?? usage.inputTokens
       const output = usage.output_tokens ?? usage.outputTokens
       const tokens = input || output ? ` input=${input || 0} output=${output || 0}` : ""
-      return `. codex turn completed${tokens}\n`
+      return line(`. codex turn completed${tokens}\n`)
     }
     if (t === "item.started" || t === "item.completed") {
       const item = event.item || {}
@@ -627,16 +634,16 @@ function makeStreamEventFormatter(): (event: any) => string {
       const name = item.name || item.command || item.tool_name || item.id || ""
       if (t === "item.started") return `\n> codex ${label}${name ? ` ${name}` : ""}\n`
       const summary = item.output || item.result || item.text || item.error || ""
-      return `< codex ${label}${name ? ` ${name}` : ""}${summary ? `: ${clip(redactSourcesRead(String(summary)), 800)}` : ""}\n`
+      return line(`< codex ${label}${name ? ` ${name}` : ""}${summary ? `: ${clip(redactSourcesRead(String(summary)), 800)}` : ""}\n`)
     }
     if (t === "error" || t === "turn.failed") {
       const msg = event.message || event.error || event.reason || JSON.stringify(event)
-      return `[error] ${clip(String(msg), 800)}\n`
+      return line(`[error] ${clip(String(msg), 800)}\n`)
     }
     if (t === "system" && event.subtype === "init") {
       const m = event.model ? ` model=${event.model}` : ""
       const sid = event.session_id ? ` session=${event.session_id.slice(0, 8)}` : ""
-      return `· init${m}${sid}\n`
+      return line(`· init${m}${sid}\n`)
     }
     if (t === "assistant" && event.message?.content) {
       let out = ""
@@ -664,16 +671,21 @@ function makeStreamEventFormatter(): (event: any) => string {
             ? block.content.map((b: any) => (typeof b?.text === "string" ? b.text : "")).join("")
             : typeof block.content === "string" ? block.content : ""
           const flag = block.is_error ? "← [error] " : "← "
-          out += `${flag}${clip(redactSourcesRead(c), 800)}\n`
+          out += (out ? "" : line("")) + `${flag}${clip(redactSourcesRead(c), 800)}\n`
         }
       }
       return out
     }
     if (t === "result") {
       const dur = event.duration_ms ? ` (${Math.round(event.duration_ms / 1000)}s)` : ""
-      return `· done${dur}\n`
+      return line(`· done${dur}\n`)
     }
     return ""
+  }
+  return (event: any): string => {
+    const s = format(event)
+    if (s) lineStart = s.endsWith("\n")
+    return s
   }
 }
 
@@ -4230,7 +4242,9 @@ export class AgentRegistry {
             if (text) {
               const lines = text.replace(/\n/g, "\n💭 ")
               if (!thinkingOpen) {
-                pushToBuffer(`💭 ${lines}`)
+                // On its own line: after a text delta the buffer has no newline.
+                const nl = output.buffer && !output.buffer.endsWith("\n") ? "\n" : ""
+                pushToBuffer(`${nl}💭 ${lines}`)
                 thinkingOpen = true
               } else {
                 pushToBuffer(lines)

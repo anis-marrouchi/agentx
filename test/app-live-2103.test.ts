@@ -7,6 +7,7 @@ import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { LIVE_OFF_ERROR, PREVIEW_CHARS, type AppFleetDeps, type SnapshotNode, type TaskStreamOpen } from "../src/daemon/app-fleet"
 import { PhoneStreamTrimmer, SseFrames } from "../src/daemon/app-task-stream"
+import { makeStreamEventFormatter } from "../src/agents/registry"
 import { setLiveControl } from "../src/commands/app"
 import { liveLabel, liveReduce, liveSseFrames, type LiveView } from "../src/daemon/ui/pages/app-live-logic"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
@@ -309,24 +310,63 @@ describe("PhoneStreamTrimmer", () => {
     expect(t.final()).toBe("Here is the answer.")
   })
 
-  it("drops a thought glued to text, and its later tokens", () => {
+  it("drops a thought that starts a chunk right after text, and its later tokens", () => {
     const t = new PhoneStreamTrimmer()
-    expect(t.feed("Checking.💭 secret plan")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(t.feed("Checking.")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(t.feed("💭 secret plan")).toEqual([])
     expect(t.feed(" more secret plan")).toEqual([])
     expect(JSON.stringify(t.final())).not.toContain("secret")
   })
 
   // #2137 review B2: an error marker glued to text with no newline.
-  it("splits an [error] glued to text: the run fails and the error text is dropped", () => {
+  it("an [error] chunk right after text: the run fails and the error text is dropped", () => {
     const t = new PhoneStreamTrimmer()
-    const evs = [...t.feed("…working on it"), ...t.feed("…working on it[error] API key invalid\n")]
+    const evs = [...t.feed("…working on it"), ...t.feed("[error] API key invalid\n")]
     expect(JSON.stringify(evs)).not.toContain("API key")
     expect(t.text()).not.toContain("API key")
     expect(t.failed).toBe(true)
+  })
+
+  it("in the start buffer, splits markers glued to text (older daemons)", () => {
     const one = new PhoneStreamTrimmer()
-    one.feed("Working on it[error] API key invalid\n")
+    one.feedStart("Working on it[error] API key invalid\n")
     expect(one.failed).toBe(true)
     expect(one.final()).toBe("Working on it")
+    const two = new PhoneStreamTrimmer()
+    expect(two.feedStart("Checking.💭 secret plan")).toEqual([{ event: "text", data: { text: "Checking." } }])
+    expect(two.feed(" more secret plan")).toEqual([])
+  })
+
+  // Hakim on #2148: live text that quotes a marker is answer text.
+  it("live answer text that quotes [error], ← or · done does not fail or cut the answer", () => {
+    for (const quote of ["The log line `[error] connection refused` is harmless.", "Data flows A ← B here.", "Step 1 · done, step 2 next."]) {
+      const t = new PhoneStreamTrimmer()
+      t.feed("Answer: ")
+      t.feed(quote)
+      t.feed(" More text.")
+      expect(t.failed).toBe(false)
+      expect(t.final()).toBe(`Answer: ${quote} More text.`)
+    }
+  })
+
+  it("the daemon writes every marker line on a line of its own, after a text delta too", () => {
+    const f = makeStreamEventFormatter()
+    // At the start: no blank line first.
+    expect(f({ type: "system", subtype: "init", model: "m" })).toBe("· init model=m\n")
+    expect(f({ type: "assistant", message: { content: [{ type: "text", text: "Working on it" }] } })).toBe("Working on it")
+    expect(f({ type: "error", message: "API key invalid" })).toBe("\n[error] API key invalid\n")
+    f({ type: "assistant", message: { content: [{ type: "text", text: "Working on it, still" }] } })
+    expect(f({ type: "user", message: { content: [{ type: "tool_result", content: "ok" }, { type: "tool_result", content: "two" }] } })).toBe("\n← ok\n← two\n")
+    expect(f({ type: "result", duration_ms: 2000 })).toBe("· done (2s)\n")
+    // The trimmer reads the whole formatted stream right.
+    const t = new PhoneStreamTrimmer()
+    const g = makeStreamEventFormatter()
+    for (const ev of [
+      { type: "assistant", message: { content: [{ type: "text", text: "Quoting `[error] x` here" }] } },
+      { type: "error", message: "real failure" },
+    ]) t.feed(g(ev))
+    expect(t.failed).toBe(true)
+    expect(t.final()).toBe("Quoting `[error] x` here")
   })
 
   it("a full start buffer that begins inside a thought shows none of it", () => {
