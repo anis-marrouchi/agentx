@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.256.0](https://github.com/anis-marrouchi/agentx/compare/v0.255.0...v0.256.0) (2026-11-23)
+
+
+### Features
+
+* **mesh:** run an issue on an SSH server, chosen from the Hub ([#2104](https://github.com/anis-marrouchi/agentx/issues/2104) PR 2) ([#2134](https://github.com/anis-marrouchi/agentx/issues/2134)) ([71eb854](https://github.com/anis-marrouchi/agentx/commit/71eb8541aa6c1977414c85bf7f8c24025fac0349))
+
+
+### Bug Fixes
+
+* **hub:** stream the chat panel's answer while it is written ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R13) ([#2141](https://github.com/anis-marrouchi/agentx/issues/2141)) ([ad850e5](https://github.com/anis-marrouchi/agentx/commit/ad850e5408fa62ba22738b264f16b4e1fb028e42))
+
 ## [0.255.0](https://github.com/anis-marrouchi/agentx/compare/v0.254.0...v0.255.0) (2026-11-23)
 
 
