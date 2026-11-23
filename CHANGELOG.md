@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.257.0](https://github.com/anis-marrouchi/agentx/compare/v0.256.1...v0.257.0) (2026-11-23)
+
+
+### Features
+
+* **hub:** show workers under their agent ([#2145](https://github.com/anis-marrouchi/agentx/issues/2145)) ([#2154](https://github.com/anis-marrouchi/agentx/issues/2154)) ([09851a8](https://github.com/anis-marrouchi/agentx/commit/09851a82662167c19d8fb53598af81f4013b9e79))
+* **setup:** first-run setup for new users ([#2143](https://github.com/anis-marrouchi/agentx/issues/2143)) ([#2157](https://github.com/anis-marrouchi/agentx/issues/2157)) ([b200224](https://github.com/anis-marrouchi/agentx/commit/b2002249f58ff3c2f7bd0bd6b261e2b8971c8332))
+
 ## [0.256.1](https://github.com/anis-marrouchi/agentx/compare/v0.256.0...v0.256.1) (2026-11-23)
 
 
