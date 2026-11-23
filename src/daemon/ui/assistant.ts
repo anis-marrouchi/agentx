@@ -12,11 +12,11 @@
 // that do not still get the path and tab.
 
 export const ASSISTANT_CSS = `
-.ax-as-dock{position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:59;
+.ax-as-dock{position:fixed;bottom:0;left:calc((100vw + var(--dashboard-side-offset, 0px)) / 2);transform:translateX(-50%);z-index:59;
   display:flex;flex-direction:column;align-items:center;
-  width:min(620px,calc(100vw - 36px));transition:transform 160ms ease}
+  width:min(620px,calc(100vw - var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px) - 36px));transition:transform 160ms ease}
 /* Centred in the space that is left, not in the space the drawer covers. */
-body.ax-as-open .ax-as-dock{left:calc((100vw - var(--ax-as-w)) / 2)}
+body.ax-as-open .ax-as-dock{left:calc((100vw + var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px)) / 2)}
 /* Tucked: slide out of the way but leave the grip, or there is nothing to
    click to bring it back. */
 .ax-as-dock.is-tucked{transform:translateX(-50%) translateY(calc(100% - 26px))}
@@ -51,8 +51,8 @@ body{padding-bottom:86px}
 /* Open pushes the page over rather than covering it: a drawer that hides the
    rows you are asking about is worse than no drawer. Below 900px there is no
    room to give, so it overlays. */
-body.ax-as-open{padding-right:var(--ax-as-w)}
-@media (max-width:900px){body.ax-as-open{padding-right:0}}
+body.ax-as-open{--dashboard-drawer-offset:var(--ax-as-w);padding-right:var(--dashboard-drawer-offset)}
+@media (max-width:900px){body.ax-as-open{--dashboard-drawer-offset:0px}}
 .ax-as{position:fixed;top:0;right:0;height:100vh;width:var(--ax-as-w);max-width:92vw;z-index:61;
   display:flex;flex-direction:column;background:var(--ax-surface);
   border-left:var(--ax-border-w) solid var(--ax-border);

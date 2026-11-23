@@ -113,6 +113,12 @@ export const TOPBAR_CSS = `
   color:var(--ax-muted);flex-shrink:0}
 .ax-topbar__right .ax-mono{color:var(--ax-text-2)}
 
+@media (min-width:641px) and (max-width:1023px){
+  .ax-topbar{flex-wrap:wrap}
+  .ax-topbar__left{display:contents}
+  .ax-topbar__tabs{order:1;flex:0 0 100%}
+}
+
 /* Running build: version, commit, running since; warns when the code on
  * disk has moved on. */
 .ax-build{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
@@ -171,7 +177,7 @@ export const TOPBAR_CSS = `
  * brand on top, places in a column, peer picker and theme at the bottom.
  * Narrow screens keep the top bar. */
 @media (min-width:1024px){
-  body:has(> .ax-topbar){padding-left:var(--ax-side-w)}
+  body:has(> .ax-topbar){--dashboard-side-offset:var(--ax-side-w);padding-left:var(--dashboard-side-offset)}
   .ax-topbar{position:fixed;left:0;top:0;bottom:0;width:var(--ax-side-w);
     flex-direction:column;align-items:stretch;justify-content:space-between;
     padding:14px 10px;border-bottom:0;border-right:1px solid var(--ax-border);overflow-y:auto}

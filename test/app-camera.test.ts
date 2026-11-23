@@ -373,7 +373,7 @@ describe("the machine that watches", () => {
   })
 
   it("the call page's watch mode opens nothing and offers to receive", () => {
-    const script = CALL_PAGE_HTML.split("<script>")[1].split("</script>")[0]
+    const script = CALL_PAGE_HTML.split("<script>").at(-1)!.split("</script>")[0]
     expect(() => new Function(script)).not.toThrow()
     expect(script).toContain('qs.get("watch") === "1"')
     expect(script).toContain('addTransceiver("video", { direction: "recvonly" })')

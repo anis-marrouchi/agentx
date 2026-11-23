@@ -930,7 +930,7 @@ const ADMIN_PAGE_BODY = `
       <div class="actions"><button class="primary" onclick="createToken()">Create token</button><div id="t-msg" class="msg"></div></div>
       <div id="t-reveal" style="display:none;margin-top:14px;padding:14px 16px;border-radius:6px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3)">
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Copy this now — it won't be shown again.</div>
-        <code id="t-secret" style="display:block;word-break:break-all;color:var(--green);font-family:ui-monospace,monospace;font-size:12px;padding:8px;background:#0e1119;border-radius:4px"></code>
+        <code id="t-secret" style="display:block;word-break:break-all;color:var(--green);font-family:ui-monospace,monospace;font-size:12px;padding:8px;background:var(--ax-surface-2);border-radius:4px"></code>
       </div>
     </div>
   </section>
@@ -3974,7 +3974,7 @@ function renderScopeChoices() {
   host.innerHTML = all.map((c) => {
     return '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);font-weight:400;margin:0">' +
       '<input type="checkbox" value="' + escapeHtml(c.value) + '" style="width:auto" /> ' +
-      '<code style="background:#0e1119;padding:1px 6px;border-radius:3px;font-family:ui-monospace,monospace;font-size:11px;color:var(--accent)">' + escapeHtml(c.value) + '</code>' +
+      '<code style="background:var(--ax-surface-2);padding:1px 6px;border-radius:3px;font-family:ui-monospace,monospace;font-size:11px;color:var(--accent)">' + escapeHtml(c.value) + '</code>' +
       '<span style="color:var(--muted)">— ' + escapeHtml(c.label) + '</span>' +
     '</label>';
   }).join('');

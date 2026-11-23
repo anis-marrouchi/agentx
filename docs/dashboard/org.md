@@ -6,6 +6,8 @@ Your org chart lists who reports to whom: you and other people, and your agents.
 
 The Hub only shows the chart. Changing the chart and pausing an agent are done on the org chart page at `/org`, kept as a tool page for these forms. Open it from the Hub's **Open the org chart** link. When an agent creates another agent, the new one does not start on its own. It waits in [Approvals](./approvals.md) until you say yes.
 
+On desktop, the chart stays within the space between the navigation and the Assistant drawer. Scroll the chart sideways to see members beyond the visible area.
+
 ## Edit the org chart
 
 On `/org`, you, the owner, decide who is in the chart, the role each one holds, each agent's working hours, and who reports to whom, people included. Each change is checked, saved to `agentx.json` (with a backup copy of the old file next to it), and used at once, with no restart. Anyone else sees the chart only: there is no **Edit org** button for them, and the dashboard refuses their changes. The same editor is open in **Settings → Business** on the Hub, so a change made in either place shows in both. There, the chart sits above the editor as a short tree: each member under their boss, with their role and their other lines.

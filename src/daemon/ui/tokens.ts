@@ -33,6 +33,8 @@ export const AX_THEME_BOOT_JS = `(function(){var t=null;try{var o=localStorage.g
 
 export const AX_THEME_BOOT = `<script>${AX_THEME_BOOT_JS}</script>`
 
+export const AX_PRIMARY_COLOR = "#1f66e5"
+
 export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by the daemon, no font CDN.
    Licence at /assets/OFL-Geist.txt. Offline, the system stack takes over. */
 @font-face { font-family: "Geist"; src: url("/assets/Geist-Variable.woff2") format("woff2");
@@ -51,6 +53,8 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-amber: #f59e0b;
   --ax-amber-e: #fde68a;
   --ax-amber-t: #fffbeb;
+  --ax-person-t: color-mix(in oklch, #f08c3c 16%, var(--ax-bg));
+  --ax-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text));
   --ax-red: #e40014;
   --ax-red-t: #fef2f2;
   --ax-red-e: #fecaca;
@@ -76,7 +80,7 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
      2026-11-22 22:01Z: vivid blue, no purple): the primary button, the
      focus ring and the current place are AgentX blue. White on #1f66e5 is
      5.1:1. */
-  --ax-primary: #1f66e5;
+  --ax-primary: ${AX_PRIMARY_COLOR};
   --ax-primary-fg: #ffffff;
   --ax-ring: #2979FF;
 
@@ -167,7 +171,7 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-text-2: #c4c4c4;
   --ax-muted: #acacac;
 
-  --ax-primary: #1f66e5;
+  --ax-primary: ${AX_PRIMARY_COLOR};
   --ax-primary-fg: #ffffff;
   --ax-ring: #4d94ff;
   /* Ink on --ax-accent (the Hub nav count badge): white on #4d94ff is

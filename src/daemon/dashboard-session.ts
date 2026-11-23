@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto"
 import type { IncomingMessage, ServerResponse } from "http"
+import { AX_TOKENS_CSS } from "./ui/tokens"
 import { isLoopback } from "./mesh-auth"
 
 // --- Who may see dashboard.token in a page (#1306) ---
@@ -104,9 +105,12 @@ function loginPage(next: string, failed: boolean): string {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in · AgentX</title>
-<style>body{font:15px system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f6f6f4;color:#222}
-form{background:#fff;padding:24px;border-radius:10px;box-shadow:0 1px 4px #0002;display:grid;gap:12px;min-width:280px}
-input,button{font:inherit;padding:8px 10px}p.err{color:#b00020;margin:0}</style></head><body>
+<style>${AX_TOKENS_CSS}
+body{font:15px var(--ax-font);display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box;background:var(--ax-bg);color:var(--ax-text)}
+form{background:var(--ax-surface);padding:24px;border:1px solid var(--ax-border);border-radius:var(--ax-radius);display:grid;gap:12px;width:min(100%, 320px);box-sizing:border-box}
+input,button{font:inherit;padding:8px 10px;border-radius:var(--ax-radius-sm)}
+input{box-sizing:border-box;width:100%;color:var(--ax-text);background:var(--ax-bg);border:1px solid var(--ax-border-2)}
+button{color:var(--ax-primary-fg);background:var(--ax-primary);border:1px solid transparent;cursor:pointer}p.err{color:var(--ax-red-ink);margin:0}</style></head><body>
 <form method="post" action="/login">
 <h1 style="font-size:18px;margin:0">Sign in to this dashboard</h1>
 <label>Dashboard token<br><input type="password" name="token" autocomplete="current-password" autofocus required></label>

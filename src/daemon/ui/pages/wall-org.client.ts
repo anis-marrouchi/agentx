@@ -436,14 +436,13 @@ ${ORG_PROJECTS_JS}
 export const WALL_ORG_CSS = ORG_PROJECTS_CSS + `
 /* Org (#1419): a top-down chart; an indented list on a phone. */
 .ax-wall__org { padding: 0 0 24px; }
-.ax-wall__org, .ax-wall__orgrail { --wog-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --wog-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
 /* The toolbar row (#1681): the view switch and the chart's tools, with room for more. */
 .wog__toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 30px; padding: 10px 16px 0; }
 .wog__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 16px 10px; border-bottom: 1px solid var(--ax-border); }
 .wog__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wog__legend li { display: inline-flex; align-items: center; gap: 6px; }
 .wog__key { display: inline-block; width: 18px; height: 12px; border: 1px solid var(--ax-border-2); border-radius: 4px; background: var(--ax-bg); }
-.wog__key.is-person { background: var(--wog-person-bg); border: 1px solid var(--wog-person-ink); border-left-width: 4px; border-radius: 999px; }
+.wog__key.is-person { background: var(--ax-person-t); border: 1px solid var(--ax-person-ink); border-left-width: 4px; border-radius: 999px; }
 .wog__key.is-dept { border: 1.5px dashed var(--ax-accent); background: var(--ax-blue-t); }
 .wog__legend .wog__kind { position: static; }
 .wog__tools { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--ax-fs-xs); }
@@ -492,12 +491,12 @@ export const WALL_ORG_CSS = ORG_PROJECTS_CSS + `
   padding: 10px 12px; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
 /* A person's card has a warm fill and edge, an agent's stays plain (#1681), so
    the two differ by colour too, on the blue department boxes as well. */
-.wog__card.is-person { background: var(--wog-person-bg); border-color: var(--wog-person-ink); border-left-width: 4px; border-radius: 22px; }
+.wog__card.is-person { background: var(--ax-person-t); border-color: var(--ax-person-ink); border-left-width: 4px; border-radius: 22px; }
 .wog__kind { position: absolute; top: -9px; right: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px;
   border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); }
 .wog__kind svg { fill: currentColor; }
 .wog__kind .org-eye { fill: var(--ax-bg); }
-.wog__kind.is-person { border-color: var(--wog-person-ink); color: var(--wog-person-ink); }
+.wog__kind.is-person { border-color: var(--ax-person-ink); color: var(--ax-person-ink); }
 .wog__band { fill: var(--ax-blue-t); stroke: var(--ax-accent); stroke-width: 1.5; stroke-dasharray: 6 4; opacity: 0.7; }
 .wog__band-t { fill: var(--ax-accent); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--ax-bg); stroke-width: 4px; stroke-linejoin: round; }
 .wog__card.is-paused, .wog__card.is-waiting { box-shadow: inset 3px 0 0 var(--ax-amber); }
