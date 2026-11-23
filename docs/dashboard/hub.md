@@ -35,7 +35,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## See the fleet at work in the sidebar
 
-**At work now**, at the top of the nav, shows every agent that is working, on every connected machine, without opening a chat. It changes by itself every 2 seconds.
+**At work now**, at the top of the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
 2. The tree reads from the top down:
@@ -44,8 +44,11 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
    - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
 3. **Done in the last hour**, under each machine, lists the agents that finished a run in the last hour and run nothing now, each with a green dot and the first line of its last answer.
+   - Every other agent on the machine has an **Idle** row with a green dot, grouped under a folded **N idle** line at the end of the machine. Select the line to unfold it. The order is: working, done in the last hour, idle. A machine with nothing working says **Nothing running.** and still shows its idle group.
 4. Select a working row to open that run's Task page, with its conversation and steer box. Select a done row to open that agent's Activity.
-5. Select a machine or a project to fold it. It stays folded while the page is open. **All**, next to **At work now**, opens **Running now** with the ops details.
+5. Select a machine or a project to fold it. It stays folded while the page is open, also when the machine's details arrive. **All**, next to **At work now**, opens **Running now** with the ops details.
+
+If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back.
 
 If your system asks for less motion, the ring does not turn; it stays as a still blue ring.
 
