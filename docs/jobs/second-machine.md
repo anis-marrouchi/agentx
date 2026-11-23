@@ -64,6 +64,43 @@ When the other machine goes offline, comments on the issue wait for it. The issu
 
 If the branch on this Mac and the pushed `agentx/issue-<n>` have both moved on (diverged), the run is refused, with both commits named. Reconcile the branch by hand, then run again.
 
+## Run an issue on an SSH server
+
+A server that runs no AgentX can take an issue too, over SSH. This Mac starts the agent there and waits for its answer, so the records, the post's thread and the reply stay on this Mac, as for its own run. The server shows in **Run on** with "(SSH)" after its name. Everything above applies: the move checks, **Back to this Mac**, an offline server (one that does not answer over SSH), and a diverged branch.
+
+**What is different from a mesh machine:**
+
+- A run that has to be limited (a person with tool or skill limits, or a schedule with `autonomy: report` or `propose`) is refused, with the same reply as above. The server can't apply those limits.
+- The agent on the server has the coding tools only (Bash, Read, Edit, Write, Glob, Grep). It has no AgentX tools, so it states its job's state with a last line such as `State: done — <proof>`.
+- Each run starts a new Claude Code session on the server. It reads the issue's branch and the prompt, not the earlier conversation.
+
+**Before you start**, whoever runs the server sets up:
+
+- **A git identity of its own for the server**, never yours. On GitHub, use a bot account with a fine-grained token or a deploy key. On GitLab, use a token with the Developer role.
+- **The limit on what it can push, on the forge.** This is what stops a push to `main`:
+  - **GitHub:** a repository ruleset that blocks the bot account from updating every branch except `agentx/issue-*`. Add people and the release bot to the bypass list.
+  - **GitLab:** protect `main` and the release branches for Maintainers only. A Developer then can't push to them.
+- **A checkout of the repository** on the server, whose `origin` is the repository.
+- **Claude Code**, signed in on the server.
+- **SSH access from this Mac**, with a key and no password prompt (AgentX uses `BatchMode`). AgentX ships no keys or tokens: `ssh` uses this Mac's own keys and `~/.ssh/config`.
+
+The issue's worktree on the server also gets a pre-push hook that refuses every branch but `agentx/issue-<n>`. That hook only gives an early message. The forge rule above is the real limit, because a push with `--no-verify` skips any hook.
+
+Steps:
+
+1. **`agentx.json`, on this Mac:** add the server:
+   ```json
+   "sshServers": [
+     { "name": "build-box", "host": "build-box.example.com", "user": "agentx",
+       "checkouts": { "anis-marrouchi/agentx": "/srv/agentx" } }
+   ]
+   ```
+   `port` and `identityFile` (a key file on this Mac) are optional. Then restart the daemon.
+2. **Browser:** open the issue's post on the Hub. In **Run on**, pick `build-box (SSH)`, then select **Move**.
+3. The next run on the issue gets the worktree `.agentx-worktrees/<checkout name>/issue-<n>` beside the checkout on the server, on the branch `agentx/issue-<n>`, and starts there.
+
+**Check the push limit once, before you rely on it.** On the server, in any checkout of the repository, run `git push --no-verify origin HEAD:main`. The forge must reject it. If it is accepted, the ruleset or the branch protection is missing: fix it before you move an issue there.
+
 ## Check it worked
 
 1. **Terminal, on either machine:** run `agentx mesh list`. The other machine is listed as `healthy`, with its number of agents.
@@ -90,3 +127,5 @@ Agents on the second machine sometimes need your yes or no. If your screen is on
 - **"was placed on a node that does not host" a run:** the machine the issue was moved to no longer has the agent. Move the issue to another machine, or bring it back to this Mac.
 - **The issue says held messages were dropped:** the machine was offline more than 30 minutes, or more than 50 messages waited. Write on the issue again once it is back.
 - **The run was refused with "have diverged":** the issue's branch on this machine and the pushed one both have commits the other lacks. In the issue's worktree, merge or rebase onto `origin/agentx/issue-<n>` and push, then run again.
+- **An SSH server is not in Run on, or "does not answer over SSH":** check that `sshServers[].checkouts` names the issue's repository, and that `ssh <user>@<host> true` works from this Mac with no password prompt.
+- **An SSH server's run fails with "gave no answer":** Claude Code is missing or signed out on the server. Run `claude -p "hi"` there.
