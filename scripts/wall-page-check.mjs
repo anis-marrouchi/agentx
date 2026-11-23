@@ -71,7 +71,13 @@ function onEvent(method, p) {
   // loads them), it fails their CORS check.
   if (method === "Fetch.requestPaused") {
     const headers = Object.entries({ ...p.request.headers, Authorization: `Bearer ${token}` }).map(([name, value]) => ({ name, value }))
-    cdp("Fetch.continueRequest", { requestId: p.requestId, headers }).catch((e) => problems.push(`token not added: ${p.request.url} (${e.message})`))
+    // "Invalid InterceptionId": the page dropped the request while it waited
+    // here (for example an /api/live/stream EventSource it closed or reopened).
+    // Like a canceled load below, that is not a failure; a request that does
+    // fail still shows as an HTTP error or a failed load.
+    cdp("Fetch.continueRequest", { requestId: p.requestId, headers }).catch((e) => {
+      if (!/Invalid InterceptionId/i.test(e.message)) problems.push(`token not added: ${p.request.url} (${e.message})`)
+    })
   }
   if (method === "Runtime.exceptionThrown") problems.push(`uncaught: ${p.exceptionDetails.exception?.description || p.exceptionDetails.text}`)
   if (method === "Runtime.consoleAPICalled" && (p.type === "error" || p.type === "assert")) {
