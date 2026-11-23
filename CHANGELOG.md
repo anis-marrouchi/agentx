@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.251.0](https://github.com/anis-marrouchi/agentx/compare/v0.250.1...v0.251.0) (2026-11-23)
+
+
+### Features
+
+* **channels:** CI fix loop, a failed MR/PR pipeline wakes the agent that owns it ([#2102](https://github.com/anis-marrouchi/agentx/issues/2102)) ([#2110](https://github.com/anis-marrouchi/agentx/issues/2110)) ([66de2ab](https://github.com/anis-marrouchi/agentx/commit/66de2abd733357a53357470eaf415ba45c8cfb1d))
+* **hub:** diff view with line comments sent to the agent ([#2102](https://github.com/anis-marrouchi/agentx/issues/2102)) ([#2114](https://github.com/anis-marrouchi/agentx/issues/2114)) ([2cde231](https://github.com/anis-marrouchi/agentx/commit/2cde231c1e053343d61c506332327e7c7a61d562))
+* **worktrees:** MR/PR tasks run on their source branch; in-progress issues stay put ([#2102](https://github.com/anis-marrouchi/agentx/issues/2102)) ([#2112](https://github.com/anis-marrouchi/agentx/issues/2112)) ([851c353](https://github.com/anis-marrouchi/agentx/commit/851c353daddf292086aa4a4e2601ead99186a399))
+
+
+### Bug Fixes
+
+* **app:** voice after a chat switch no longer goes to the old agent ([#2123](https://github.com/anis-marrouchi/agentx/issues/2123)) ([#2124](https://github.com/anis-marrouchi/agentx/issues/2124)) ([69499b6](https://github.com/anis-marrouchi/agentx/commit/69499b67bc8bf2c2aaa0cbf74437e052201bde7a))
+* **voice:** one name for the widget, AgentX Voice ([#2095](https://github.com/anis-marrouchi/agentx/issues/2095)) ([#2099](https://github.com/anis-marrouchi/agentx/issues/2099)) ([378a180](https://github.com/anis-marrouchi/agentx/commit/378a1800c14662fbd3b57de062a4eb43fbd179d3))
+
 ## [0.250.1](https://github.com/anis-marrouchi/agentx/compare/v0.250.0...v0.250.1) (2026-11-22)
 
 
