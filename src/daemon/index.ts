@@ -7116,7 +7116,12 @@ export class AgentXDaemon {
                 context: operatorContext({ channel: "dashboard", chatId: "assistant", sender: "operator" }) as any,
                 // The run's id, so the Hub's panel can stream and stop it (#1528).
                 onStart: (taskId: string) => store.setTask(thread!.id, seq, taskId),
-              })
+              },
+              // A caller's onDelta is what puts the run in streaming mode and
+              // feeds the run's live output, which /api/task/stream relays to
+              // the panel as it is written (#2101 R13). The text itself
+              // reaches the thread from resp below, so nothing is kept here.
+              () => {})
               store.resolve(thread!.id, seq, resp.error ? String(resp.error) : (resp.content ?? ""),
                 resp.error ? "error" : "done")
             } catch (e: any) {
