@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.255.0](https://github.com/anis-marrouchi/agentx/compare/v0.254.0...v0.255.0) (2026-11-23)
+
+
+### Features
+
+* **mesh:** run an issue on another machine, chosen from the Hub ([#2104](https://github.com/anis-marrouchi/agentx/issues/2104) PR 1) ([#2131](https://github.com/anis-marrouchi/agentx/issues/2131)) ([e6cf447](https://github.com/anis-marrouchi/agentx/commit/e6cf447cc98304f4830bdd6281239884ebd8cb2b))
+
+
+### Bug Fixes
+
+* **app:** voice goes to the chat open when recording started ([#2123](https://github.com/anis-marrouchi/agentx/issues/2123)) ([#2139](https://github.com/anis-marrouchi/agentx/issues/2139)) ([8d83828](https://github.com/anis-marrouchi/agentx/commit/8d838285b49e32c89bd1f9950a2cfe12b9e893bd))
+
 ## [0.254.0](https://github.com/anis-marrouchi/agentx/compare/v0.253.0...v0.254.0) (2026-11-23)
 
 
