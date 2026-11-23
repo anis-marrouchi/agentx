@@ -10,6 +10,7 @@
 // subheader? } and compose their own <main> below.
 
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH } from "./ui/hub-name"
+import { AX_THEME_BOOT } from "./ui/tokens"
 
 export type TopbarTab = "wall" | "monitor" | "activity" | "live" | "mesh" | "admin" | "graph" | "workflows" | "health" | "cost" | "wiki" | "inbox" | "projects" | "approvals" | "people" | "org"
 
@@ -70,14 +71,12 @@ export interface TopbarOpts {
 // never layout.
 //
 // The theme bootstrap runs before first paint to avoid a flash. A stored
-// "crt" from before that theme was removed falls back to dark rather than
-// leaving data-theme set to a value no stylesheet defines.
+// value other than light/dark (e.g. the removed "crt") falls back to the
+// computer's setting; the boot itself lives in ui/tokens.ts (#2101).
 export const TOPBAR_HEAD = `<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`
+<link rel="preload" href="/assets/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+${AX_THEME_BOOT}`
 
 /**
  * CSS for topbar + subheader + theme switch + mesh selector. No token
@@ -108,6 +107,7 @@ export const TOPBAR_CSS = `
   padding:8px 12px;font:inherit;cursor:pointer;font-size:12px;text-decoration:none;
   border-bottom:2px solid transparent;letter-spacing:-0.005em;white-space:nowrap}
 .ax-topbar__tab:hover{color:var(--ax-text)}
+.ax-topbar__tab:focus-visible{outline:2px solid var(--ax-ring);outline-offset:1px;color:var(--ax-text)}
 .ax-topbar__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent)}
 .ax-topbar__right{display:flex;align-items:center;gap:10px;font-size:11px;
   color:var(--ax-muted);flex-shrink:0}
@@ -183,7 +183,7 @@ export const TOPBAR_CSS = `
   .ax-topbar__group-label{font-family:inherit;font-size:11px;letter-spacing:0;text-transform:none;padding:4px 10px 6px}
   .ax-topbar__tab{border-bottom:0;border-radius:var(--ax-radius-sm);padding:6px 10px;font-size:13px}
   .ax-topbar__tab:hover{background:var(--ax-surface-3)}
-  .ax-topbar__tab.is-active{background:var(--ax-surface-3);font-weight:500}
+  .ax-topbar__tab.is-active{background:var(--ax-surface-3);font-weight:500;box-shadow:inset 2px 0 0 var(--ax-accent)}
   .ax-topbar__right{flex-direction:column;align-items:stretch;gap:8px;padding-top:12px}
   .ax-topbar__right .ax-theme-switch{align-self:flex-start}
   .ax-mesh-sel{justify-content:flex-start}

@@ -24,7 +24,22 @@
 // Guideline for adding tokens: every token must be page-neutral. Page-
 // specific padding/gaps belong in the page's own CSS file, not here.
 
-export const AX_TOKENS_CSS = `:root {
+/** The one theme boot for every page (dashboard, Hub, phone), run in <head>
+ *  before first paint. Key `ax-theme`; with no choice saved it follows the
+ *  computer's setting (#2101 Q2). The Hub's old key `ax-wall-theme` is read
+ *  once: a saved Hub choice moves to `ax-theme`, then the old key is dropped
+ *  (#2101 condition 6). */
+export const AX_THEME_BOOT_JS = `(function(){var t=null;try{var o=localStorage.getItem('ax-wall-theme');if(o!==null){if(o==='light'||o==='dark')localStorage.setItem('ax-theme',o);localStorage.removeItem('ax-wall-theme')}t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})();`
+
+export const AX_THEME_BOOT = `<script>${AX_THEME_BOOT_JS}</script>`
+
+export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by the daemon, no font CDN.
+   Licence at /assets/OFL-Geist.txt. Offline, the system stack takes over. */
+@font-face { font-family: "Geist"; src: url("/assets/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/assets/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap; }
+:root {
   /* --- Brand: blue accent + status colours ---------------------------- */
   --ax-blue: #1f66e5;
   --ax-blue-d: #1a56c4;

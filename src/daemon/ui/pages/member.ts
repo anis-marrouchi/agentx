@@ -11,7 +11,7 @@
 // No backticks, backslashes or dollar-brace inside the client scripts:
 // they sit in TS template literals.
 
-import { AX_TOKENS_CSS } from "../tokens"
+import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { esc } from "../util"
 import { HUB_NAME } from "../hub-name"
@@ -20,14 +20,15 @@ import { agentLine, connectionNote, freedAgents, plainPreview, requestState, sen
 import { WORK_SCRIPT } from "./member-work.client"
 import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
 
-const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})()</script>`
+const THEME_BOOT = AX_THEME_BOOT
 
 /** The <head> every page under /member shares. A client's page names its
  *  own manifest and app title (client.ts). */
 export function memberHead(title: string, opts: { manifest?: string; appTitle?: string } = {}): string {
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2979FF">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
 <meta name="referrer" content="no-referrer">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="${opts.appTitle ?? "My work"}">
@@ -48,8 +49,10 @@ export function renderMemberManifest(): string {
     start_url: "/member",
     scope: "/member",
     display: "standalone",
+    // The shared palette's ground (#2101). The Android app's own splash and
+    // toolbar colour stay in its APK (apps/android res/values/colors.xml).
     background_color: "#FFFFFF",
-    theme_color: "#2979FF",
+    theme_color: "#FFFFFF",
     icons: [
       { src: "/member/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/member/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

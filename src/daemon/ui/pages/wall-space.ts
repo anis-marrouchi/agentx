@@ -1,54 +1,35 @@
 // --- Wall space (#1242) ---
 //
-// The Wall is its own space, the way the wiki is: its own document, its own
-// look, no dashboard top bar. The look follows the mockup the owner approved
-// (take B, X-like): a left nav, one feed column, a side column, a system
-// font, a white or black page and a blue accent.
+// The Wall (Hub) is its own space, the way the wiki is: its own document and
+// layout, no dashboard top bar. The layout follows the mockup the owner
+// approved (take B): a left nav, one feed column, a side column.
 //
-// The Wall's page CSS and script were written against the dashboard's
-// --ax-* tokens. They keep working because this space defines the same
-// token names with its own values; the dashboard's tokens, components and
-// top bar are not loaded here.
+// Its colours, type, borders and radius come from the one shared style set,
+// AX_TOKENS_CSS in ../tokens.ts, like every dashboard page and the phone app
+// (#2101, Orca look). This file defines no --ax-* values of its own.
 
-/** Theme: the Wall keeps its own choice; with none, it follows the system. */
-const WALL_THEME_KEY = "ax-wall-theme"
+import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
+
+/** Theme: the shared key; the boot in tokens.ts moves an old Hub choice. */
+const WALL_THEME_KEY = "ax-theme"
 
 export const WALL_SPACE_HEAD = `<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script>(function(){var t=null;try{t=localStorage.getItem('${WALL_THEME_KEY}')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})();</script>`
+<link rel="preload" href="/assets/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+${AX_THEME_BOOT}`
 
 export const WALL_SPACE_CSS = `
-:root { color-scheme: light;
-  --ax-bg: #fff; --ax-bg-elev: #fff; --ax-surface: #f7f9f9; --ax-surface-2: #eff3f4;
-  --ax-border: #eff3f4; --ax-border-2: #cfd9de;
-  --ax-text: #0f1419; --ax-text-2: #0f1419; --ax-muted: #536471;
-  --ax-accent: #1d9bf0; --ax-accent-ink: #fff; --ax-blue-t: #e8f5fd;
-  --ax-green: #00ba7c; --ax-green-d: #00875a;
-  --ax-amber: #f59e0b; --ax-amber-ink: #a15c00; --ax-amber-t: #fdf1dc; --ax-warn: #a15c00;
-  --ax-red: #f4212e; --ax-red-ink: #d0141f; --ax-red-t: #fde6e8; --ax-err: #d0141f;
-  --ax-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --ax-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --ax-fs: 15px; --ax-fs-sm: 14px; --ax-fs-xs: 13px;
-  --ax-radius-sm: 4px; --ax-radius: 8px; --ax-radius-lg: 16px; --ax-radius-pill: 9999px; }
-[data-theme="dark"] { color-scheme: dark;
-  --ax-bg: #000; --ax-bg-elev: #000; --ax-surface: #16181c; --ax-surface-2: #202327;
-  --ax-border: #2f3336; --ax-border-2: #536471;
-  --ax-text: #e7e9ea; --ax-text-2: #d6d9db; --ax-muted: #71767b; --ax-blue-t: #0b2a3f;
-  --ax-green-d: #00ba7c;
-  --ax-amber-ink: #fbbf24; --ax-amber-t: #3a2a06; --ax-warn: #fbbf24;
-  --ax-red-ink: #ff6b74; --ax-red-t: #3a0d11; --ax-err: #ff6b74; }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); }
 body { font: var(--ax-fs)/1.4 var(--ax-font); -webkit-font-smoothing: antialiased; }
-a { color: var(--ax-accent); }
+a { color: var(--ax-accent); font-weight: inherit; }
+a:hover { text-decoration: none; }
 button, input, select { font-family: inherit; }
 
 /* The few shared components the Wall's script draws, in this space's look. */
-.ax-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-weight: 700; font-size: var(--ax-fs-sm);
-  background: var(--ax-text); color: var(--ax-bg); border: 1px solid transparent; border-radius: var(--ax-radius-pill); padding: 6px 16px; cursor: pointer; text-decoration: none; }
+.ax-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-weight: 600; font-size: var(--ax-fs-sm);
+  background: var(--ax-primary); color: var(--ax-primary-fg); border: 1px solid transparent; border-radius: var(--ax-radius-sm); padding: 6px 14px; cursor: pointer; text-decoration: none; }
+.ax-btn:focus-visible, .ax-wall__item:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: 1px; }
 .ax-btn--ghost { background: none; color: var(--ax-text); border-color: var(--ax-border-2); }
 .ax-btn--ghost:hover { background: var(--ax-surface); }
 .ax-badge { display: inline-block; font-size: 12px; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 9px; background: var(--ax-blue-t); color: var(--ax-accent); white-space: nowrap; }
@@ -66,7 +47,8 @@ button, input, select { font-family: inherit; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }
 .ax-wall__item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font: inherit; font-size: 14px; text-decoration: none; background: none; border: 0; cursor: pointer; text-align: left; width: max-content; max-width: 100%; }
 .ax-wall__item:hover { background: var(--ax-surface-3); color: var(--ax-text); }
-.ax-wall__item.is-on { font-weight: 500; color: var(--ax-text); background: var(--ax-surface-3); }
+.ax-wall__item.is-on { font-weight: 500; color: var(--ax-text); background: var(--ax-surface-3); box-shadow: inset 2px 0 0 var(--ax-accent); }
+.ax-wall__item.is-on svg { color: var(--ax-accent); }
 .ax-wall__item svg { width: 18px; height: 18px; flex: none; }
 /* The nav's groups (#1451 frame 0): Work, Automation, Fleet, Owner. */
 .ax-wall__navlbl { font-size: 11px; font-weight: 500; color: var(--ax-muted); text-transform: none; letter-spacing: 0; padding: 14px 10px 4px; margin: 0; }
@@ -181,7 +163,7 @@ export function renderWallDocument(opts: WallDocumentOpts): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${opts.title.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] as string))}</title>
 ${WALL_SPACE_HEAD}
-<style>${WALL_SPACE_CSS}\n${opts.css}</style>
+<style>${AX_TOKENS_CSS}\n${WALL_SPACE_CSS}\n${opts.css}</style>
 </head>
 <body>
 ${opts.body}

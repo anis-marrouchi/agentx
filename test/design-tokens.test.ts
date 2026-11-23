@@ -38,6 +38,23 @@ describe("design tokens", () => {
     expect(offenders).toEqual([])
   })
 
+  it("no page defines --ax-* values outside tokens.ts: one style set (#2101)", () => {
+    const offenders: string[] = []
+    for (const file of walk("src/daemon")) {
+      if (file.endsWith("ui/tokens.ts")) continue
+      if (/--ax-[a-z0-9-]+\s*:/.test(readFileSync(file, "utf-8"))) offenders.push(file)
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it("serves Geist from the daemon, never a font CDN (#2101 condition 1)", () => {
+    expect(AX_TOKENS_CSS).toContain('url("/assets/Geist-Variable.woff2")')
+    for (const file of walk("src/daemon")) expect(readFileSync(file, "utf-8")).not.toContain("fonts.googleapis.com")
+    for (const f of ["Geist-Variable.woff2", "GeistMono-Variable.woff2", "OFL-Geist.txt"]) {
+      expect(readFileSync(join("src/web/public/fonts", f)).length).toBeGreaterThan(1000)
+    }
+  })
+
   it("carries a text-safe step for the two colours that fail as small text", () => {
     // Amber and red are the only palette entries that cannot carry words.
     for (const t of ["--ax-amber-ink", "--ax-red-ink"]) {

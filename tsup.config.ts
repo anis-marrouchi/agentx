@@ -48,5 +48,13 @@ export default defineConfig({
     for (const name of ["linear", "branching", "extract", "retry", "situation-close", "situation-expiry"]) {
       cpSync(resolve(src, `${name}.yaml`), resolve(dst, `${name}.yaml`))
     }
+    // Geist (SIL OFL 1.1), served by the daemon at /assets/<file> so the
+    // dashboard never calls a font CDN (#2101). The licence goes with it.
+    const fonts = resolve("src/web/public/fonts")
+    const web = resolve("dist/web")
+    mkdirSync(web, { recursive: true })
+    for (const name of ["Geist-Variable.woff2", "GeistMono-Variable.woff2", "OFL-Geist.txt"]) {
+      cpSync(resolve(fonts, name), resolve(web, name))
+    }
   },
 })

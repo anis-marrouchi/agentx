@@ -75,7 +75,7 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .cx-send { background: var(--ax-primary); color: var(--ax-primary-fg); border: 0; border-radius: 22px; }
 .tabs { flex: none; position: relative; padding: 2px env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--ax-bg); }
 .tabs [role=tab] { position: relative; min-width: 0; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 500; border-radius: var(--ax-radius); }
-.tabs [role=tab][aria-selected=true], [data-theme=dark] .tabs [role=tab][aria-selected=true] { background: transparent; color: var(--ax-text); font-weight: 600; }
+.tabs [role=tab][aria-selected=true], [data-theme=dark] .tabs [role=tab][aria-selected=true] { background: transparent; color: var(--ax-accent); font-weight: 600; }
 .tab-icon { display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--ax-radius); }
 .tab-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tabs::before { content: ''; position: absolute; pointer-events: none; top: 4px; width: 56px; height: 30px; border-radius: var(--ax-radius); background: var(--ax-surface-3); left: calc((var(--tab-position, 0) + .5) * 20% - 28px); }

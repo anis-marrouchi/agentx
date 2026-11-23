@@ -152,6 +152,8 @@ describe("page scripts parse", () => {
       // 5.13:1 on white and 6.4:1 on the dark ground; #2979FF would be 3.98:1.
       expect(html).toContain("--ax-blue: #1f66e5")
       expect(html).toContain("--ax-blue: #6aa0ff")
+      // Phone chrome follows the palette (#2101 condition 2).
+      expect(html).toContain('<meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">')
       expect(html).toContain("--ax-accent: var(--ax-blue)")
       // No phone-only palette on top of the shared tokens.
       expect(html).not.toContain("--ax-accent: #1f66e5")
