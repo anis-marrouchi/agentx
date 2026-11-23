@@ -1293,7 +1293,7 @@ ${WALL_JOBLEDGER_SCRIPT}
   // machine → project → work item → agent, from the live snapshot and the
   // posts already on the page (wall-tree.ts). Drawn only when it changed,
   // so a fold, a hover or the keyboard focus is not lost every 2 s.
-  var treeClosed = {}, treeLast = '';
+  var treeClosed = {}, treeLast = '', treeNames = {};
   var treeWide = window.matchMedia ? window.matchMedia('(min-width: 1181px)') : null;
   function treeShown() {
     return !!$('wall-tree') && !document.hidden && !!treeWide && treeWide.matches;
@@ -1301,7 +1301,12 @@ ${WALL_JOBLEDGER_SCRIPT}
   function renderTree() {
     var el = $('wall-tree-body');
     if (!el) return;
-    var live = (S.live && S.live.nodes) || [];
+    // A snapshot can name a node by its URL while its name is still on the
+    // way: keep the last real name seen for that URL.
+    var live = ((S.live && S.live.nodes) || []).map(function (n) {
+      if (n.url && n.name && n.name !== n.url) treeNames[n.url] = n.name;
+      return n.url && (!n.name || n.name === n.url) && treeNames[n.url] ? Object.assign({}, n, { name: treeNames[n.url] }) : n;
+    });
     var html = !live.length && S.liveError ? '<p class="lt__empty">Could not reach the machines just now; trying again.</p>'
       : liveTreeHtml(liveTreeModel(live, (S.data && S.data.posts) || [], Date.now()), function (r, m) {
         return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
