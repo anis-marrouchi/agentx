@@ -35,17 +35,7 @@ export async function handleAppVoice(
   if (path !== "/api/app/voice/transcribe" && path !== "/api/app/voice/speak") return false
   if (method !== "POST") return json(res, 405, { error: "POST" })
 
-  if (path === "/api/app/voice/transcribe") {
-    const mime = String(req.headers["content-type"] || "")
-    if (!audioExt(mime)) return json(res, 415, { error: "Send the recording as audio (webm, mp4, ogg, mp3 or wav)." })
-    const stated = checkDurationHeader(req.headers["x-audio-duration-ms"])
-    if (stated) { req.resume(); return json(res, stated.status, { error: stated.error }) }
-    const audio = await readRaw(req, AUDIO_LIMITS.bytes)
-    if (!audio) return json(res, 413, { error: tooBigMessage() })
-    if (!audio.length) return json(res, 400, { error: "The recording is empty." })
-    const headers = { "Content-Type": mime, "X-Audio-Duration-Ms": String(req.headers["x-audio-duration-ms"]).trim() }
-    return forward(res, deps.daemon, "/voice/transcribe", audio, headers, 180_000)
-  }
+  if (path === "/api/app/voice/transcribe") return transcribeVia(req, res, deps.daemon)
 
   let body: any
   const raw = await readRaw(req, 64 * 1024)
@@ -63,8 +53,30 @@ export async function handleAppVoice(
   // An answer from a conversation in the background starts with who is
   // talking (#265). The name comes from the conversation, not the phone.
   const said = body?.announce === true ? `${conv.agentName || conv.agent}: ${text}` : text
-  const upstream = { agent: conv.agent, text: said, ...(conv.node !== "local" ? { peer: conv.node } : {}) }
-  return forward(res, deps.daemon, "/voice/speak", Buffer.from(JSON.stringify(upstream)), { "Content-Type": "application/json" }, 90_000)
+  return speakVia(res, deps.daemon, conv.agent, said, conv.node !== "local" ? conv.node : undefined)
+}
+
+/** Bounds a recording and has `daemon` write it down. The phone's route
+ *  above and the Hub chat's mic (board-dashboard.ts, #2101 PR 2) both
+ *  come here, each behind its own owner check: one copy of the rules. */
+export async function transcribeVia(req: IncomingMessage, res: ServerResponse, daemon: DaemonTarget): Promise<true> {
+  const mime = String(req.headers["content-type"] || "")
+  if (!audioExt(mime)) return json(res, 415, { error: "Send the recording as audio (webm, mp4, ogg, mp3 or wav)." })
+  const stated = checkDurationHeader(req.headers["x-audio-duration-ms"])
+  if (stated) { req.resume(); return json(res, stated.status, { error: stated.error }) }
+  const audio = await readRaw(req, AUDIO_LIMITS.bytes)
+  if (!audio) return json(res, 413, { error: tooBigMessage() })
+  if (!audio.length) return json(res, 400, { error: "The recording is empty." })
+  const headers = { "Content-Type": mime, "X-Audio-Duration-Ms": String(req.headers["x-audio-duration-ms"]).trim() }
+  return forward(res, daemon, "/voice/transcribe", audio, headers, 180_000)
+}
+
+/** Has `daemon` say `text` in `agent`'s voice and passes the audio on (or
+ *  its JSON answer, e.g. no voice set). The caller has checked that the
+ *  text is an answer the agent gave in a conversation of the asker's. */
+export function speakVia(res: ServerResponse, daemon: DaemonTarget, agent: string, text: string, peer?: string): Promise<true> {
+  const upstream = { agent, text, ...(peer ? { peer } : {}) }
+  return forward(res, daemon, "/voice/speak", Buffer.from(JSON.stringify(upstream)), { "Content-Type": "application/json" }, 90_000)
 }
 
 /** POSTs to the daemon and passes its answer on: audio as bytes, the rest as JSON. */

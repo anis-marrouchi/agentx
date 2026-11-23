@@ -492,6 +492,21 @@ function withOutbox(workspace: string | undefined, hint: string): string {
   return hint
 }
 
+/** A run's short preview for lists (the Hub's tree, Running now, a trace
+ *  row): the sentence the person typed when the caller kept it apart from
+ *  the prompt around it (requestText), so a Hub chat question reads as the
+ *  question and not as the "You are answering…" wrapper (#2101 R14). */
+export function runPreview(task: { message?: string; requestText?: string }): string {
+  return (task.requestText?.trim() || task.message || "").slice(0, 200)
+}
+
+/** A tool result or a thought on one line of the live output: the Hub chat
+ *  and the phone read that output line by line (a marker opens a line), so
+ *  a result's second line must not pass for the agent's answer. */
+function oneLine(s: string): string {
+  return s.replace(/\s*\n\s*/g, " ↵ ").trim()
+}
+
 export function clipForTrace(s: string): string {
   if (s.length <= TRACE_STEP_SUMMARY_BYTES) return s
   const remaining = s.length - TRACE_STEP_SUMMARY_BYTES
@@ -2473,7 +2488,7 @@ export class AgentRegistry {
     const runningTask: RunningTask = {
       ...(homes.length ? { homes } : {}),
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      messagePreview: (task.message || "").slice(0, 200),
+      messagePreview: runPreview(task),
       message: task.message || "",
       channel: task.context?.channel || "api",
       chatId: task.context?.chatId || task.context?.group,
@@ -2944,7 +2959,7 @@ export class AgentRegistry {
       agentId: task.agentId,
       channel,
       chatId,
-      messagePreview: (task.message || "").slice(0, 200),
+      messagePreview: runPreview(task),
       fullMessage: task.message || "",
       requestText: task.requestText,
       at: new Date(taskStartedAt).toISOString(),
@@ -4239,6 +4254,10 @@ export class AgentRegistry {
             for (const sub of output.subscribers) {
               try { sub(output.buffer) } catch { /* */ }
             }
+          } else {
+            // A streaming caller (the Hub chat, #2101 R14) shows the
+            // refusal while it waits, as an error line of the live output.
+            pushToBuffer(`\n[error] ${oneLine(abort.message)}\n`)
           }
           return preflightResponse
         }
@@ -4263,6 +4282,8 @@ export class AgentRegistry {
           for (const sub of output.subscribers) {
             try { sub(output.buffer) } catch { /* */ }
           }
+        } else {
+          pushToBuffer(`\n[error] ${oneLine(overBudget.message)}\n`)
         }
         state.errors++
         finalResponse = { content: "", error: overBudget.message, errorKind: "budget_cap", duration: 0 }

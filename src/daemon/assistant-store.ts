@@ -41,7 +41,9 @@ export class AssistantStore {
       thread_id TEXT NOT NULL, seq INTEGER NOT NULL, role TEXT NOT NULL,
       content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'done',
       created_at INTEGER NOT NULL, PRIMARY KEY (thread_id, seq));
-      CREATE INDEX IF NOT EXISTS assistant_threads_recent ON assistant_threads(updated_at DESC);`)
+      CREATE INDEX IF NOT EXISTS assistant_threads_recent ON assistant_threads(updated_at DESC);
+      -- The Hub chat opens an agent's latest conversation (#2101 PR 2).
+      CREATE INDEX IF NOT EXISTS assistant_threads_agent_recent ON assistant_threads(agent_id, updated_at DESC);`)
     const cols = db.prepare("PRAGMA table_info(assistant_messages)").all() as Array<{ name: string }>
     if (!cols.some(c => c.name === "task_id")) db.exec("ALTER TABLE assistant_messages ADD COLUMN task_id TEXT")
     // A turn in flight when the daemon stopped is never coming back; leaving
@@ -65,13 +67,18 @@ export class AssistantStore {
     return { id, title: AssistantStore.titleFrom(firstMessage), agentId, node, createdAt: now, updatedAt: now }
   }
 
-  listThreads(limit = 30): Array<AssistantThread & { messages: number }> {
+  /** Newest first; `agentId` keeps one agent's conversations, so the Hub
+   *  chat reopens that agent's history when it is picked again (#2101). */
+  listThreads(limit = 30, agentId?: string): Array<AssistantThread & { messages: number }> {
+    const where = agentId ? "WHERE t.agent_id = ?" : ""
+    const args: unknown[] = agentId ? [agentId, limit] : [limit]
     return this.db.prepare(`SELECT t.id, t.title, t.agent_id AS agentId, t.node,
       t.created_at AS createdAt, t.updated_at AS updatedAt,
       (SELECT COUNT(*) FROM assistant_messages m WHERE m.thread_id = t.id) AS messages
+      FROM assistant_threads t ${where}
       -- rowid breaks the tie: two conversations started in the same
       -- millisecond must not swap places between refreshes.
-      FROM assistant_threads t ORDER BY t.updated_at DESC, t.rowid DESC LIMIT ?`).all(limit) as any
+      ORDER BY t.updated_at DESC, t.rowid DESC LIMIT ?`).all(...args) as any
   }
 
   messages(threadId: string): AssistantMessage[] {
