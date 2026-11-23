@@ -10,6 +10,7 @@ import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { monthlyBudgetSchema } from "@/agents/budget-schema"
 import { CACHE_TTL_MINUTES } from "@/agents/prompt-cache"
 import { autonomyLevelSchema } from "@/guard/autonomy"
+import { sshServerSchema } from "@/agents/ssh-run"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, VOICE_READY_SOUNDS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
@@ -2739,6 +2740,16 @@ export const daemonConfigSchema = z.object({
   }).default({}),
   screen: screenSchema,
   mesh: meshConfigSchema.default({}),
+  /** SSH servers an issue can run on, chosen from the Hub as `ssh:<name>`
+   *  (#2104 PR 2, src/agents/ssh-run.ts). This daemon runs the agent there
+   *  over SSH; the box needs its own git access and a signed-in `claude`. */
+  sshServers: z.array(sshServerSchema).default([]).superRefine((list, ctx) => {
+    const seen = new Set<string>()
+    for (const s of list) {
+      if (seen.has(s.name)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `sshServers: "${s.name}" is listed twice` })
+      seen.add(s.name)
+    }
+  }),
   /** Voices for agents on mesh peers, keyed by remote agent id, or by
    *  "<peer>/<id>" for one peer's agent (it wins over the id). The Mac
    *  speaks for them, so their nodes need no ElevenLabs key. Unset fields
