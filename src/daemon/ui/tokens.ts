@@ -170,6 +170,9 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-primary: #1f66e5;
   --ax-primary-fg: #ffffff;
   --ax-ring: #4d94ff;
+  /* Ink on --ax-accent (the Hub nav count badge): white on #4d94ff is
+     about 3.0:1, near-black is about 6.9:1 (DevOps nit on #2127). */
+  --ax-accent-ink: #0a0a0a;
 
   --phone-bubble: #262626;
   --phone-green: #4ade80;

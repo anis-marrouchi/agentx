@@ -72,6 +72,11 @@ describe("design tokens", () => {
     for (let i = 0; i < 2; i++) expect(ratio(bg[i], fg[i])).toBeGreaterThanOrEqual(4.5)
     // Links and focus blue on the dark ground (Hakim's v2 nit).
     expect(ratio(all("--ax-blue")[1], "#0a0a0a")).toBeGreaterThanOrEqual(4.5)
+    // Ink on the accent (Hub nav count badge), light and dark (DevOps nit on #2127).
+    const blue = all("--ax-blue")
+    const ink = all("--ax-accent-ink")
+    expect(ink).toHaveLength(2)
+    for (let i = 0; i < 2; i++) expect(ratio(blue[i], ink[i])).toBeGreaterThanOrEqual(4.5)
   })
 
   it("carries a text-safe step for the two colours that fail as small text", () => {
