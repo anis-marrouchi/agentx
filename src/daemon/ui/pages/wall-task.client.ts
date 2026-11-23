@@ -565,13 +565,19 @@ export const WALL_TASK_SCRIPT = String.raw`
 
   /** While Live or a Task is open, or the live tree is on screen (#2101
    *  PR 1c), follow the live snapshot stream. */
+  // A dropped stream is reopened after 2 s, 5 s, 10 s, then every 30 s, not
+  // at the one-minute refresh: the tree is on every tab (Hakim post-merge
+  // review of #2138). A snapshot that arrives starts the waits over.
+  var LIVE_RETRY_MS = [2000, 5000, 10000, 30000], liveRetry = 0, liveRetryTimer = null;
   function followLive(page) {
     var want = page === 'live' || page === 'task' || treeShown();
     if (want && !S.liveEs) {
+      if (liveRetryTimer) { clearTimeout(liveRetryTimer); liveRetryTimer = null; }
       try {
-        S.liveEs = new EventSource('/api/live/stream');
-        S.liveEs.addEventListener('snapshot', function (ev) {
+        var es = S.liveEs = new EventSource('/api/live/stream');
+        es.addEventListener('snapshot', function (ev) {
           try { S.live = JSON.parse(ev.data); } catch (e) { return; }
+          liveRetry = 0;
           // Only Live and a Task page redraw on every snapshot; elsewhere the
           // tree and Happening now do, and the feed keeps its place.
           var pg = S.post ? 'post' : S.page;
@@ -579,12 +585,23 @@ export const WALL_TASK_SCRIPT = String.raw`
           $('wall-nodes').innerHTML = happeningHtml();
           renderTree();
         });
-        // Dropped: close it; the next render (the one-minute refresh) reopens it.
-        S.liveEs.addEventListener('error', function () { if (S.liveEs) { S.liveEs.close(); S.liveEs = null; } });
+        es.addEventListener('error', function (ev) {
+          // The server's own "event: error" (one snapshot failed) carries
+          // data, and the stream goes on: the next snapshot comes in 2 s.
+          if (ev && ev.data != null) return;
+          // The connection dropped: close it and reopen it soon.
+          if (S.liveEs !== es) return;
+          es.close();
+          S.liveEs = null;
+          if (liveRetryTimer) clearTimeout(liveRetryTimer);
+          var wait = LIVE_RETRY_MS[Math.min(liveRetry, LIVE_RETRY_MS.length - 1)];
+          liveRetry++;
+          liveRetryTimer = setTimeout(function () { liveRetryTimer = null; followLive(S.post ? 'post' : S.page); }, wait);
+        });
       } catch (e) { S.liveEs = null; }
-    } else if (!want && S.liveEs) {
-      S.liveEs.close();
-      S.liveEs = null;
+    } else if (!want) {
+      if (liveRetryTimer) { clearTimeout(liveRetryTimer); liveRetryTimer = null; }
+      if (S.liveEs) { S.liveEs.close(); S.liveEs = null; }
     }
   }
 `
