@@ -366,6 +366,8 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__sub { font-size: 11px; color: var(--ax-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .lt__who { font-weight: 500; }
 .lt__row.is-done .lt__title { color: var(--ax-text-2); }
+.lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
+.lt__more:hover { color: var(--ax-accent); }
 /* Working: a turning ring. Done: a green dot. */
 .lt__spin, .lt__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; }
 .lt__spin { border: 2px solid color-mix(in srgb, var(--ax-accent) 25%, transparent); border-top-color: var(--ax-accent); animation: lt-spin .8s linear infinite; box-sizing: border-box; }

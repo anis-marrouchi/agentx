@@ -152,6 +152,17 @@ describe("the Hub page", () => {
   })
 })
 
+describe("done rows", () => {
+  it("skips summaries that are data and caps the list at 6 with a more link", () => {
+    const agents = Array.from({ length: 8 }, (_, i) => ({ id: "a" + i, name: "A" + i, lastActive: ago((i + 1) * 60_000), lastSummary: { text: i === 0 ? "<json>[1]" : "Did " + i, at: "", ok: true }, runningTasks: [] }))
+    const m = liveTreeModel([{ id: "n", name: "N", reachable: true, agents }], [], NOW)
+    expect(m[0].done[0].title).toBe("Finished a run")
+    const html = liveTreeHtml(m, () => "#a", {})
+    expect(html.match(/class="lt__dot"/g)).toHaveLength(6)
+    expect(html).toContain("+2 more</a>")
+  })
+})
+
 describe("shipped to the browser", () => {
   it("runs from its own source alone, with no import left in it (injectFns)", () => {
     const fns = Object.fromEntries(Object.entries(tree).filter(([, v]) => typeof v === "function")) as Record<string, Function>

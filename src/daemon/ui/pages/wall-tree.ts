@@ -213,7 +213,9 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
       }
       const last = Date.parse(a.lastActive || "")
       if (!running.length && Number.isFinite(last) && now - last <= DONE_WINDOW) {
-        const sum = a.lastSummary && a.lastSummary.text ? ltPlain(a.lastSummary.text) : ""
+        // A summary that is data, not words (<json>, {, [), says nothing to a person.
+        let sum = a.lastSummary && a.lastSummary.text ? ltPlain(a.lastSummary.text) : ""
+        if (/^\s*(<json>|[[{])/.test(sum)) sum = ""
         m.done.push({ ...base, title: (sum || "Finished a run").slice(0, 120), ageMs: Math.max(0, now - last), state: "done", task: null })
       }
     }
@@ -271,7 +273,8 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
     const projects = m.projects.map((p) => ltFold("p:" + m.key + "|" + p.key, "lt__p", '<span class="lt__proj">' + ltEsc(p.label) + "</span>",
       p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m))).join("") + "</div>").join(""), closed)).join("")
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
-      m.done.map((r) => ltRowHtml(r, hrefOf(r, m))).join(""), closed) : ""
+      m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m))).join("") +
+      (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed) : ""
     const idle = !m.projects.length && !m.done.length ? '<p class="lt__idle">Nothing running.</p>' : ""
     return ltFold("m:" + m.key, "lt__m", head, projects + done + idle, closed)
   }).join("")
