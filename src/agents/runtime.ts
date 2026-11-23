@@ -27,7 +27,7 @@ function buildErrorEnvelope(raw: string | undefined | null): { error: string; er
   }
   return { error: renderFriendlyError(friendly), errorKind: friendly.kind }
 }
-import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
+import { buildAgentEnv, claudeBillingEnv, withToolPath } from "@/utils/workspace-env"
 import { withOwnClaudeMd } from "./claude-md-chain"
 import type { AgentDef } from "@/daemon/config"
 import { noteCallUsage, type CallUsage } from "@/daemon/token-tracker"
@@ -961,7 +961,11 @@ export async function executeClaudeCode(
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
     const { stdout, stderr, exitCode, killed } = await new Promise<{ stdout: string; stderr: string; exitCode: number | string; killed: boolean }>((resolve) => {
-      const childEnv = withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd)
+      // withToolPath: Claude Code's own installer puts `claude` in
+      // ~/.local/bin, which a daemon's PATH often lacks; the setup found it
+      // there (findBinary), so the run must too (#2143). Codex and OpenCode
+      // get the same folders from buildRuntimeEnv.
+      const childEnv = withToolPath(withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd))
       let killed = false
       const proc = execFile("claude", args, {
         cwd: task.cwd ?? agent.workspace,
@@ -1124,7 +1128,8 @@ export async function executeClaudeCodeStreaming(
 
   try {
     const streamTimeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    const spawnEnv = withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd)
+    // withToolPath: `claude` in ~/.local/bin, as in the spawn path (#2143).
+    const spawnEnv = withToolPath(withOwnClaudeMd(claudeBillingEnv(withIsolationEnv(withCallerEnv(buildAgentEnv(agent.workspace), task), task), agent.billing), task.ownClaudeMd))
     const proc = execa("claude", args, {
       cwd: task.cwd ?? agent.workspace,
       timeout: streamTimeoutMs,
