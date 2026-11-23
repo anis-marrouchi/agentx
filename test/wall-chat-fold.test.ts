@@ -5,7 +5,7 @@ import { runPreview } from "../src/agents/registry"
 // #2101 PR 2, R14: the Hub chat reads a run's live output like Claude Code.
 
 describe("cfParseLive: the live output, line by line", () => {
-  it("keeps tool calls and the answer after the last one, drops results, thoughts and init lines", () => {
+  it("keeps tool calls and the answer after the last one, folds results and drops thoughts and init lines", () => {
     const out = cfParseLive([
       "· init model=claude-opus",
       "💭 I should read the log ↵ first",
@@ -20,8 +20,8 @@ describe("cfParseLive: the live output, line by line", () => {
       "[task finished]",
     ].join("\n"))
     expect(out.steps).toEqual([
-      { tool: "Read", input: '{"file_path":"/var/log/backup.log"}', error: false },
-      { tool: "Bash", input: '{"command":"df -h"}', error: true },
+      { tool: "Read", input: '{"file_path":"/var/log/backup.log"}', error: false, result: "2026-11-23 disk full ↵ retry failed" },
+      { tool: "Bash", input: '{"command":"df -h"}', error: true, result: "permission denied" },
     ])
     expect(out.answer).toBe("The disk is **full**.\nFree 2 GB and run it again.")
     expect(out.errors).toEqual([])

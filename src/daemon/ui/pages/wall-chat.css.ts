@@ -53,6 +53,9 @@ export const WALL_CHAT_CSS = `
 .hc__them .b table { display: block; overflow-x: auto; border-collapse: collapse; }
 .hc__them .b th, .hc__them .b td { border: 1px solid var(--ax-border); padding: 3px 6px; }
 .hc__wait .b { color: var(--ax-muted); }
+.hc__me .b > :first-child { margin-top: 0; }
+.hc__me .b > :last-child { margin-bottom: 0; }
+.hc__step pre, .hc__me pre { max-width: 100%; overflow: auto; }
 .hc__meta { font-size: 12px; color: var(--ax-muted); margin: 3px 0 0 2px; }
 .hc__live { display: inline-flex; align-items: center; gap: 6px; color: var(--ax-green-d); font-weight: 700; }
 .hc__live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-green); }

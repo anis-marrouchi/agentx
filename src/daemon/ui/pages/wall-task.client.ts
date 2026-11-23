@@ -95,86 +95,6 @@ function mountTaskPage(root, opts) {
   // error — is what makes a long run scannable: you can find the tool that
   // failed without reading everything above it.
 
-  // --- Minimal markdown for assistant replies ---
-  //
-  // Agents answer in markdown, and the stream used to render it as literal
-  // characters: **bold**, backticks and fenced blocks all showed as source.
-  //
-  // Deliberately small and dependency-free — this is a self-hosted dashboard
-  // with a strict no-CDN posture, and a full parser is not worth a bundle for
-  // bold/code/lists/headings/links, which is what replies actually contain.
-  //
-  // SECURITY: escape first, THEN apply markup. Agent output is text from the
-  // outside world (a Telegram message can steer what an agent echoes), so it
-  // must never be able to inject HTML. Fenced blocks are extracted before any
-  // inline pass so their contents are never treated as markup.
-  function mdToHtml(src) {
-    var fences = [];
-    var text = String(src == null ? '' : src).replace(/\\u0060\\u0060\\u0060([\\s\\S]*?)\\u0060\\u0060\\u0060/g, function (_m, code) {
-      fences.push(code.replace(/^[a-zA-Z0-9_-]*\\n/, ''));
-      return '\\u0000FENCE' + (fences.length - 1) + '\\u0000';
-    });
-
-    text = esc(text);
-
-    // Block level, line by line.
-    var lines = text.split('\\n');
-    var out = [];
-    var listOpen = null;
-    var para = [];
-    function flushPara() {
-      if (!para.length) return;
-      out.push('<p>' + para.join('\\n') + '</p>');
-      para = [];
-    }
-    // Note: closing a list must NOT flush the open paragraph — closeList()
-    // runs before every plain line, so doing both here emitted one <p> per
-    // line and defeated the grouping entirely. Callers flush explicitly.
-    function closeList() { if (listOpen) { out.push('</' + listOpen + '>'); listOpen = null; } }
-    for (var i = 0; i < lines.length; i++) {
-      var ln = lines[i];
-      var h = ln.match(/^(#{1,4})\\s+(.*)$/);
-      if (h) { flushPara(); closeList(); out.push('<h' + (h[1].length + 2) + '>' + inline(h[2]) + '</h' + (h[1].length + 2) + '>'); continue; }
-      var ul = ln.match(/^\\s*[-*]\\s+(.*)$/);
-      if (ul) {
-        flushPara();
-        if (listOpen !== 'ul') { closeList(); out.push('<ul>'); listOpen = 'ul'; }
-        out.push('<li>' + inline(ul[1]) + '</li>'); continue;
-      }
-      var ol = ln.match(/^\\s*\\d+\\.\\s+(.*)$/);
-      if (ol) {
-        flushPara();
-        if (listOpen !== 'ol') { closeList(); out.push('<ol>'); listOpen = 'ol'; }
-        out.push('<li>' + inline(ol[1]) + '</li>'); continue;
-      }
-      closeList();
-      if (ln.trim() === '') { flushPara(); continue; }
-      // Consecutive non-blank lines are ONE paragraph, not one each. Agents
-      // dump JSON and log tails into replies; a <p> per line turned those into
-      // a column of double-spaced fragments. Blank lines still break.
-      para.push(inline(ln));
-    }
-    flushPara();
-    closeList();
-
-    var html = out.join('\\n');
-    // Restore fenced blocks last so nothing inside them was ever parsed.
-    html = html.replace(/(?:<p>)?\\u0000FENCE(\\d+)\\u0000(?:<\\/p>)?/g, function (_m, n) {
-      return '<pre class="ax-ev__code">' + esc(fences[Number(n)]) + '</pre>';
-    });
-    return html;
-  }
-
-  function inline(s) {
-    return s
-      .replace(/\\u0060([^\\u0060]+)\\u0060/g, '<code>$1</code>')
-      .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
-      .replace(/(^|[^*])\\*([^*]+)\\*/g, '$1<em>$2</em>')
-      // Links: only http(s), and the label is already escaped.
-      .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)/g,
-               '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  }
-
   var openText = null;
   var openRaw = '';
   function block(cls, html) {
@@ -201,9 +121,9 @@ function mountTaskPage(root, opts) {
     var name = o > 0 ? text.slice(0, o) : text;
     var args = (o > 0 && c > o) ? text.slice(o + 1, c) : '';
     block('ax-ev--tool',
-      '<div class="ax-ev__head"><span class="ax-ev__label ax-ev__label--tool">tool call</span>' +
-      '<span class="ax-ev__tool">' + esc(name) + '</span></div>' +
-      (args ? '<pre class="ax-ev__code">' + esc(args) + '</pre>' : ''));
+      '<details><summary class="ax-ev__head"><span class="ax-ev__label ax-ev__label--tool">tool call</span>' +
+      '<span class="ax-ev__tool">' + esc(name) + '</span></summary>' +
+      (args ? '<pre class="ax-ev__code">' + esc(args) + '</pre>' : '') + '</details>');
   }
   function toolResult(text) {
     closeText();
@@ -211,9 +131,9 @@ function mountTaskPage(root, opts) {
     // A result's own newlines come as U+2028, to keep it on one line (R16).
     var body = (isErr ? text.slice(8) : text).replace(/\\u2028/g, '\\n');
     block('ax-ev--tool-result' + (isErr ? ' is-err' : ''),
-      label('result', isErr ? 'tool error' : 'tool result') +
+      '<details><summary>' + esc(isErr ? 'tool error' : 'tool result') + '</summary>' +
       '<pre class="ax-ev__code ' + (isErr ? 'ax-ev__code--err' : 'ax-ev__code--muted') + '">' +
-      esc(body) + '</pre>');
+      esc(body) + '</pre></details>');
   }
   function thought(text) {
     closeText();
@@ -238,7 +158,7 @@ function mountTaskPage(root, opts) {
    *  per frame rather than per line — markdown is whole-block by nature
    *  (a fence isn't valid until it closes). */
   function renderOpenText() {
-    if (openText) openText.innerHTML = mdToHtml(plain(openRaw));
+    if (openText) openText.innerHTML = markdownToHtml(plain(openRaw));
   }
   /** Close the current reply block, rendering it on the way out. Every event
    *  that interrupts a reply must go through here — nulling openText without
@@ -250,6 +170,8 @@ function mountTaskPage(root, opts) {
     if (line.indexOf('· ') === 0)   return systemEvent(line.slice(2));
     if (line.indexOf('→ ') === 0)   return toolUse(line.slice(2));
     if (line.indexOf('← ') === 0)   return toolResult(line.slice(2));
+    if (line.indexOf('> codex ') === 0) return toolUse(line.slice(8));
+    if (line.indexOf('< codex ') === 0) return toolResult(line.slice(8));
     if (line.indexOf('💭 ') === 0)  return thought(line.slice(2));
     if (line.indexOf('[error] ') === 0) return errorEvent(line.slice(8));
     if (line.indexOf('[task finished]') === 0) return systemEvent('task finished', true);
@@ -347,7 +269,7 @@ function mountTaskPage(root, opts) {
   function showAsk(message, sender, startedAt) {
     var text = plain(message || '').trim();
     if (!text) return;
-    document.getElementById('task-ask-body').innerHTML = mdToHtml(text);
+    document.getElementById('task-ask-body').innerHTML = markdownToHtml(text);
     document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
     var when = document.getElementById('task-ask-when');
     if (startedAt) {
@@ -742,7 +664,7 @@ export const WALL_TASK_CSS = `
   background: var(--ax-bg-elev); border: 1px solid var(--ax-border);
   border-radius: 5px; color: var(--ax-text);
 }
-.ax-ev__text pre.ax-ev__code code { background: none; border: none; padding: 0; }
+.ax-ev__text pre code { background: none; border: none; padding: 0; }
 .ax-ev__text strong { color: var(--ax-text); font-weight: 700; }
 
 /* Stream events. The agent's output is not a wall of text — it is a sequence

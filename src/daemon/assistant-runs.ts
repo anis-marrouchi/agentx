@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { redactSourcesRead } from "@/situations/sources/redact"
 import { getRunShape } from "@/storage/mesh-drill"
 
 // --- The tool steps behind each Hub chat answer (#2101 PR 2, R14) ---
@@ -14,6 +15,7 @@ export interface AnswerStep {
   tool: string
   input: string
   error: boolean
+  result?: string
 }
 export interface AnswerRun {
   ms: number | null
@@ -41,13 +43,16 @@ export function assistantRuns(
 }
 
 /** Tool calls in order; a failed result marks the call before it. */
-export function answerSteps(rows: Array<{ name: string; action: string | null; status: string | null; input?: string | null }>): AnswerStep[] {
+export function answerSteps(rows: Array<{ name: string; action: string | null; status: string | null; input?: string | null; output?: string | null }>): AnswerStep[] {
   const steps: AnswerStep[] = []
   for (const r of rows) {
     if (r.name === "tool_use") {
-      if (steps.length < ANSWER_STEPS_MAX) steps.push({ tool: r.action || "tool", input: r.input || "", error: r.status === "error" })
-    } else if (r.name === "tool_result" && r.status === "error" && steps.length) {
-      steps[steps.length - 1].error = true
+      if (steps.length < ANSWER_STEPS_MAX) steps.push({ tool: r.action || "tool", input: redactSourcesRead(r.input || ""), error: r.status === "error",
+        ...(r.output ? { result: redactSourcesRead(r.output) } : {}) })
+    } else if (r.name === "tool_result" && steps.length) {
+      const step = steps[steps.length - 1]
+      if (r.status === "error") step.error = true
+      if (r.output) step.result = redactSourcesRead(r.output)
     }
   }
   return steps

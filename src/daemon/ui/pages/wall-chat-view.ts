@@ -46,7 +46,7 @@ export function chatAttached(content: string): { text: string; files: string[] }
 }
 
 /** The tool steps of one answer, as the thread read sends them (assistant-runs.ts). */
-export interface ChatRun { ms: number | null; steps: Array<{ tool: string; input: string; error: boolean }> }
+export interface ChatRun { ms: number | null; steps: Array<{ tool: string; input: string; error: boolean; result?: string }> }
 /** The fold functions (wall-chat-fold.ts), passed in so this file stays self-contained. */
 export interface ChatFold {
   parse: (text: string) => { steps: ChatRun["steps"]; errors: string[]; answer: string }
@@ -89,7 +89,9 @@ export function chatLogHtml(msgs: ChatMessage[], o: {
   const who = esc(o.agent || "The agent")
   const me = (t: string) => {
     const a = chatAttached(t)
-    return '<div class="hc__me"><div class="b">' + esc(a.text) + "</div>" +
+    let body = esc(a.text)
+    if (o.md && a.text) { try { body = o.md(a.text) } catch { /* plain text above */ } }
+    return '<div class="hc__me hc__md"><div class="b">' + body + "</div>" +
       (a.files.length ? '<div class="hc__files">' + a.files.map((f) => '<span class="hc__file">' + esc(f) + "</span>").join("") + "</div>" : "") + "</div>"
   }
   const them = (cls: string, body: string, meta: string, live?: boolean, pre?: string) =>
