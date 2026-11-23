@@ -156,10 +156,17 @@ Refuses to run while `tailscale serve` shares the whole dashboard (for example a
 |---|---|---|
 | `--name <name>` | `Phone` | Name for this phone (shown in `agentx app devices`). |
 | `--url <origin>` | this machine's Tailscale name | Address the phone opens, e.g. `https://my-mac.tailnet-name.ts.net`. |
+| `--live` | off | Turn live control on for this phone at once (see `agentx app live`). |
+
+### `agentx app live <id> on|off`
+
+Turn live control on or off for a paired phone. With it on, the phone can watch a running task, stop it and send it a message from **Activity** ([Fleet and Activity on your phone](../dashboard/mobile-fleet.md#stop-or-steer-a-running-task)). With it off, the phone still sees the list of running tasks. The id is the one `agentx app devices` shows.
+
+No flags.
 
 ### `agentx app devices`
 
-List paired phones. On the computer that sends notifications, it also lists the phones paired with other computers that turned notifications on here, with ids like `laptop:tok_…`.
+List paired phones, with `live control on` next to the ones that have it. On the computer that sends notifications, it also lists the phones paired with other computers that turned notifications on here, with ids like `laptop:tok_…`.
 
 No flags.
 
