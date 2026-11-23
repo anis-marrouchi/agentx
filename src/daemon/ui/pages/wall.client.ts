@@ -45,7 +45,8 @@
 // owner's answers (#1440): Yes, No or Later on what waits for them, and a
 // review's Approve or Reject, through the same calls the classic pages make.
 // On an open post the owner also hands the request to another agent, or
-// closes it as done or dropped (wall-close.client.ts), as /approvals did.
+// closes it as done or dropped (wall-close.client.ts), as /approvals did,
+// and picks the machine an issue's runs go to (wall-run-on.client.ts, #2104).
 //
 // Settings (#1428, wall-settings.client.ts) changes settings, for the owner
 // only: the owner replaced #1180's rule 4, so the Wall may write wherever a
@@ -60,6 +61,7 @@ import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_CLOSE_SCRIPT } from "./wall-close.client"
 import { WALL_DIFF_SCRIPT } from "./wall-diff.client"
+import { WALL_RUN_ON_SCRIPT } from "./wall-run-on.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
@@ -107,6 +109,7 @@ ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
 ${WALL_CLOSE_SCRIPT}
 ${WALL_DIFF_SCRIPT}
+${WALL_RUN_ON_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
 ${WALL_ORG_SCRIPT}
@@ -552,6 +555,8 @@ ${WALL_JOBLEDGER_SCRIPT}
       : '<span title="Home">' + ICON.link + 'Home: ' + esc(p.home.link) + '</span>');
     // A PR or MR home has its diff (#2102, wall-diff.client.ts).
     acts.push(diffButtonHtml(p));
+    // The node its issue runs on (#2104), when the owner moved it.
+    if (p.runOn) acts.push('<span class="wro__on" title="This issue\'s runs go to ' + esc(p.runOn) + '">Runs on ' + esc(p.runOn) + '</span>');
     if (p.evidence) acts.push(/^https?:\/\//.test(p.evidence)
       ? '<a href="' + esc(p.evidence) + '" target="_blank" rel="noopener">' + ICON.proof + 'Proof</a>'
       : '<span>' + ICON.proof + 'Proof: ' + esc(p.evidence) + '</span>');
@@ -863,6 +868,7 @@ ${WALL_JOBLEDGER_SCRIPT}
           : '') +
       '</div>' +
       '<div id="wdo-close">' + closeHtml(p) + '</div>' +
+      '<div id="wdo-runon">' + runOnHtml(p) + '</div>' +
       '<p class="wdo__n" id="wdo-note" role="status">' + esc(S.doNote || '') + '</p>' +
       '<div id="wdo-space">' + spaceHtml() + '</div>' +
     '</div>';

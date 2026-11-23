@@ -67,6 +67,8 @@ import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
+import { meshContextOf, meshForwardBlock, placedRefusalText } from "./mesh-safety"
+import { fromPeer, issueKeyOfChat, leftBehindNoteText, leftBehindOfTask, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -706,7 +708,7 @@ export class AgentRegistry {
    *  we don't create a circular import with src/a2a/mesh.ts. */
   private meshFallback?: {
     findPeerWithSkill: (skillId: string) => { peer: { url: string; token?: string } } | undefined
-    sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number }) => Promise<string>
+    sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number; context?: Record<string, unknown> }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
   /** See setTraceToolCalls. */
@@ -715,6 +717,10 @@ export class AgentRegistry {
   private timeLimitHandoff?: (runIds: Array<string | undefined>, note: string) => string | null
   /** See setDueTimeGate. */
   private openRequestOnIssue?: (provider: "github" | "gitlab", project: string, number: number, agentId: string) => boolean
+  /** See setCheckoutDirs. */
+  private checkoutDirs?: () => string[]
+  /** See setPlacements. */
+  private placements?: RunNodeDeps
   private dueTimeGate?: (
     run: { agentId: string; channel: string; chatId: string; runIds: string[]; startedAt: number; reply: string },
     askAgent: (text: string) => Promise<{ reply?: string; error?: string }>,
@@ -976,6 +982,90 @@ export class AgentRegistry {
    *  checkout (#2102). Unset: no issue counts as in progress by request. */
   setOpenRequestOnIssue(fn: AgentRegistry["openRequestOnIssue"]): void {
     this.openRequestOnIssue = fn
+  }
+
+  /** Where an issue's runs go (#2104 B1): the placement store and a
+   *  request's home. Read at the start of every execute. */
+  setPlacements(deps: RunNodeDeps): void {
+    this.placements = deps
+  }
+
+  /** The placement of the issue a task names, "local" included, or null
+   *  when there is none (or the task came from a peer). A mapping does not
+   *  apply to a placed issue (#2104 B1). */
+  placementOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey; held?: true } | null {
+    const ctx = task.context as Record<string, unknown> | undefined
+    if (!this.placements || fromPeer(ctx)) return null
+    const hit = resolveRunNode({ context: ctx }, this.placements)
+    return hit ? { node: hit.placement.node, key: hit.key, ...(hit.held ? { held: true as const } : {}) } : null
+  }
+
+  /** The nodes keeping work left behind on the issue a task names (#2104
+   *  C-d): a mapped webhook's node is not sent its runs. */
+  leftBehindOf(task: Pick<AgentTask, "context">): string[] {
+    if (!this.placements) return []
+    return leftBehindOfTask(task.context as Record<string, unknown> | undefined, this.placements)
+  }
+
+  /** The node a task's issue is placed on, or null: no placed issue, a
+   *  placement on this node, or a task a peer sent (never forwarded twice). */
+  placedNodeOf(task: Pick<AgentTask, "context">): { node: string; key: IssueKey; held?: true } | null {
+    const hit = this.placementOf(task)
+    return hit && hit.node !== LOCAL_NODE ? hit : null
+  }
+
+  /** A task whose issue is placed on a peer (#2104 B1) runs there: sent
+   *  synchronously with its context, `placed: true` and the agent's time
+   *  limit, and the peer's answer is this execute's answer, so records,
+   *  links and the reply are written here as for a local run. Refused,
+   *  not sent, when the peer cannot apply the run's autonomy or the
+   *  person's limits (B2). Null: the task runs here. */
+  private async runOnPlacedNode(task: AgentTask): Promise<AgentResponse | null> {
+    const placed = this.placedNodeOf(task)
+    if (!placed) return null
+    const { node, key } = placed
+    if (placed.held) {
+      this.log(`[run-on] ${task.agentId} ${key.chatId} runs on "${node}", which keeps left-behind work: not sent`)
+      return { content: "", error: leftBehindNoteText(node) }
+    }
+    const limits = personLimitsOf(this.config.people, task.context as any)
+    const blocked = meshForwardBlock(task.agentId, task.autonomy, limits)
+    if (blocked) {
+      this.log(`[run-on] ${task.agentId} ${key.chatId} runs on "${node}": refused: ${blocked.error}`)
+      return { content: placedRefusalText(node), duration: 0 }
+    }
+    const peer = this.meshFallback?.directory().find((p) => p.peer === node)
+    if (!this.meshFallback || !peer) return { content: "", error: `This issue runs on ${node}, which is not a node of this mesh. Bring it back to this Mac from the Hub.` }
+    if (!peer.healthy) return { content: "", error: offlineNoteText(node) }
+    const def = this.agents.get(task.agentId)?.def
+    const minutes = typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0 ? task.timeoutMinutes : def?.maxExecutionMinutes
+    const ctx = (task.context ?? {}) as Record<string, unknown>
+    // The peer runs it in the issue's chat (its worktree and session); a
+    // turn that started elsewhere (a pick-up, a cron) says where.
+    const sameChat = issueKeyOfChat(ctx.channel as string | undefined, ctx.chatId as string | undefined)?.chatId === key.chatId
+    const context = {
+      ...meshContextOf(ctx),
+      channel: sameChat ? ctx.channel : key.channel,
+      chatId: sameChat ? ctx.chatId : key.chatId,
+      ...(sameChat ? {} : { placedFrom: { channel: ctx.channel ?? null, chatId: ctx.chatId ?? null } }),
+      placed: true,
+    }
+    const start = Date.now()
+    this.log(`[run-on] ${task.agentId} ${key.chatId}: placed on "${node}", sending the run there`)
+    try {
+      const content = await this.meshFallback.sendTask(node, task.message, task.agentId, { ...(minutes ? { timeoutMs: minutes * 60_000 } : {}), context })
+      return { content, viaMesh: node, duration: Date.now() - start } as AgentResponse
+    } catch (e: any) {
+      this.log(`[run-on] ${task.agentId} ${key.chatId}: the run on "${node}" failed: ${e?.message ?? e}`)
+      return { content: "", error: `The run on ${node} failed: ${e?.message ?? e}`, duration: Date.now() - start }
+    }
+  }
+
+  /** The folders of this node's project rules (`runbook:`), where a task
+   *  another node placed here (#2104) looks for its checkout: the sender's
+   *  own runbook path means nothing on this machine. */
+  setCheckoutDirs(fn: () => string[]): void {
+    this.checkoutDirs = fn
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1435,19 +1525,30 @@ export class AgentRegistry {
    *  open request of this agent has the issue as its home, or that lookup
    *  failed) and with no worktree yet stays in the checkout (#2102 review
    *  B5): a new worktree would start it again from the default branch. */
-  private async inTaskWorktree(def: AgentDef, task: AgentTask, opts: { sessionKept?: boolean } = {}): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean }> {
+  private async inTaskWorktree(def: AgentDef, task: AgentTask, opts: { sessionKept?: boolean } = {}): Promise<{ def: AgentDef; task: AgentTask; fresh?: boolean; refused?: string }> {
     const settings = { ...TASK_WORKTREE_DEFAULTS, ...(def.worktrees ?? {}) }
-    if (!settings.enabled) return { def, task }
+    // A task another node placed here (#2104 B4) runs in a checkout of its
+    // repository or not at all: the workspace may be another project.
+    const placed = (task.context as Record<string, unknown> | undefined)?.placed === true
+    if (!settings.enabled && !placed) return { def, task }
     const target = worktreeTarget(task.context?.channel, task.context?.chatId)
     if (!target) return { def, task }
     const label = target.kind === "change"
       ? `${target.repo}${target.source === "gitlab" ? "!" : " PR #"}${target.id}`
       : `${target.repo ? `${target.repo}#` : ""}${target.id}`
-    const picked = pickCheckout(target, [task.context?.runbookPath, def.workspace].filter((d): d is string => !!d))
+    const candidates = placed
+      ? [def.workspace, ...(this.checkoutDirs?.() ?? [])]
+      : [task.context?.runbookPath, def.workspace]
+    const picked = pickCheckout(target, candidates.filter((d): d is string => !!d))
     if ("reason" in picked) {
+      if (placed) {
+        this.log(`[worktrees] ${task.agentId} ${label}: placed here, refused: ${picked.reason}`)
+        return { def, task, refused: `This node has no checkout for ${label}, so the run placed here was refused: ${picked.reason}` }
+      }
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${picked.reason}`)
       return { def, task }
     }
+    if (!settings.enabled) return { def, task }
     const branch = task.context?.sourceBranch
     if (target.kind === "change" && (task.context?.sourceFork || !branch)) {
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${task.context?.sourceFork ? `fork (${branch ?? "unknown branch"} is in another repository)` : "source branch unknown"}`)
@@ -1484,6 +1585,12 @@ export class AgentRegistry {
       wt = { error: e?.message || String(e) }
     }
     if ("error" in wt) {
+      // Diverged from the pushed branch (#2104 B3): refused, never run on
+      // old code nor in the workspace instead.
+      if ("refuse" in wt && wt.refuse) {
+        this.log(`[worktrees] ${task.agentId} ${label}: refused: ${wt.error}`)
+        return { def, task, refused: `The issue's worktree could not be brought up to date, so the run was refused: ${wt.error}` }
+      }
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: ${wt.error}`)
       return { def, task }
     }
@@ -1868,6 +1975,11 @@ export class AgentRegistry {
     // cannot enforce it refuse, rather than run it with its usual tools.
     if (task.isolated) task.autonomy = "report"
 
+    // An issue placed on another node (#2104) runs there, whatever started
+    // the task: a channel message, a Hub turn, a cron, a workflow step.
+    const placedRun = await this.runOnPlacedNode(task)
+    if (placedRun) return placedRun
+
     // Attach mode: a live Claude Code session may have claimed this identity.
     // If so it gets first refusal — but only for a bounded window. When the
     // human doesn't pick the message up we fall through to the normal spawn
@@ -1903,23 +2015,35 @@ export class AgentRegistry {
 
     const state = this.agents.get(task.agentId)
     if (!state) {
-      // The autonomy hook is spawned by THIS daemon; a peer would receive a
-      // bare message and run it at full power. Refuse instead.
-      if (restricted) {
-        return { content: "", error: `autonomy "${task.autonomy}" cannot be enforced on a mesh peer — agent "${task.agentId}" is not local`, autonomy: task.autonomy }
+      // The autonomy hook is spawned by THIS daemon, and the person's limits
+      // by this node's people list: a peer would run the task at full
+      // power. Refuse instead (mesh-safety.ts, shared with the router).
+      const blocked = meshForwardBlock(task.agentId, task.autonomy, limits)
+      if (blocked) {
+        return blocked.kind === "autonomy" ? { content: "", error: blocked.error, autonomy: task.autonomy } : { content: "", error: blocked.error }
       }
-      // This forward carries the message only, so the peer would not know
-      // whose turn it is and would run it without the person's limits.
-      if (limits) {
-        return { content: "", error: `${limits.name}'s tool and skill limits cannot be enforced on a mesh peer — agent "${task.agentId}" is not local` }
+      // A task placed here (#2104 C-b) runs in this node's checkout or is
+      // refused, and the refusal goes back to the node that placed it:
+      // never passed on to another peer the owner did not choose.
+      if ((task.context as Record<string, unknown> | undefined)?.placed === true) {
+        this.log(`[run-on] ${task.agentId} was placed here but does not run on this node: refused`)
+        return { content: "", error: `This issue was placed on a node that does not host ${task.agentId}, so the run was refused there. Move it to another machine from the Hub.` }
       }
       // Mesh fallback: the agent isn't local but a healthy peer may host
       // it. Look it up in the mesh directory and forward via A2A sendTask.
       // Streaming callbacks are dropped — sendTask doesn't stream today.
       if (this.meshFallback) {
-        const peerEntry = this.meshFallback.directory().find(
+        // C-d: a node keeping work left behind on the task's issue is not
+        // sent its runs; another host is, else the run fails with the note.
+        const held = this.leftBehindOf(task)
+        const hosts = this.meshFallback.directory().filter(
           (p) => p.healthy && p.skills.some((s) => s.id === task.agentId),
         )
+        const peerEntry = hosts.find((p) => !held.includes(p.peer))
+        if (!peerEntry && hosts.length) {
+          this.log(`[run-on] ${task.agentId}: every host keeps left-behind work on the issue (${hosts.map((p) => p.peer).join(", ")}): not sent`)
+          return { content: "", error: leftBehindNoteText(hosts[0].peer) }
+        }
         if (peerEntry) {
           this.log(`[${task.agentId}] not local — routing to mesh peer "${peerEntry.peer}"`)
           try {
@@ -1930,7 +2054,10 @@ export class AgentRegistry {
             const timeoutMs = typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0
               ? task.timeoutMinutes * 60 * 1000
               : undefined
-            const content = await this.meshFallback.sendTask(peerEntry.peer, task.message, task.agentId, { timeoutMs })
+            // With the task's context (channel, chat, home…), so the peer
+            // keys the session and finds the issue as a local run would
+            // (#2104); paths that only mean something here are left out.
+            const content = await this.meshFallback.sendTask(peerEntry.peer, task.message, task.agentId, { timeoutMs, context: meshContextOf(task.context as Record<string, unknown> | undefined) })
             return { content, viaMesh: peerEntry.peer } as AgentResponse
           } catch (e: any) {
             this.log(`[${task.agentId}] mesh fallback to "${peerEntry.peer}" failed: ${e?.message ?? e}`)
@@ -4087,6 +4214,7 @@ export class AgentRegistry {
           if (gated) return gated
         }
         const local = await this.inTaskWorktree(state.def, taskWithSystemPrompt, { sessionKept: sessionBefore })
+        if (local.refused) return { content: "", error: local.refused } as AgentResponse
         // Claude Code's auto-memory is not cut: it lists its newest notes
         // last, and Claude Code's own 200-line rule is kept until the hand
         // trim of #2002 step 4 (review of PR #2035).
@@ -4779,6 +4907,13 @@ export class AgentRegistry {
     if (!run) return null
     const context = this.runningContexts.get(run.id)
     return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}), ...(run.workflow ? { workflowRunId: run.workflow.runId } : {}) } : null
+  }
+
+  /** Whether a run is open on this chat on this node, for any agent
+   *  (#2104 B3): a move of the chat's issue waits for it to end. */
+  runOpenOnChat(chatId: string): boolean {
+    for (const s of this.agents.values()) if (s.runningTasks.some((r) => r.chatId === chatId)) return true
+    return false
   }
 
   /** Whether every slot of `agentId` is taken, and by which runs. Lets a

@@ -662,6 +662,12 @@ export class A2AMesh {
     healthy: boolean
     skills: AgentSkill[]
     channels: string[]
+    /** The repositories the peer has checked out, "owner/repo" (#2104 B4),
+     *  from its agent card. Empty for a peer from before. */
+    checkouts?: string[]
+    /** 1 when the peer runs a placed issue's task in its own checkout or
+     *  refuses it (#2104 C2); unset for an older peer. */
+    placement?: number
     /** The node's own name, from its agent card. */
     node?: string
     /** The GitHub logins the peer posts with, from its agent card (#522).
@@ -677,6 +683,10 @@ export class A2AMesh {
       channels: Array.isArray((state.agentCard as any)?.channels)
         ? ((state.agentCard as any).channels as unknown[]).map((c) => String(c))
         : [],
+      checkouts: Array.isArray((state.agentCard as any)?.checkouts)
+        ? ((state.agentCard as any).checkouts as unknown[]).filter((c): c is string => typeof c === "string")
+        : [],
+      ...(typeof (state.agentCard as any)?.placement === "number" ? { placement: (state.agentCard as any).placement as number } : {}),
       node: typeof state.agentCard?.name === "string" ? state.agentCard.name : undefined,
       githubLogins: [...(state.githubLogins ?? [])],
       lastCheck: state.lastCheck,

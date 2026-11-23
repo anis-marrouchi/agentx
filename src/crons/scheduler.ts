@@ -31,9 +31,9 @@ import { endByUntil, lateLine, pastUntil, withLateFirst, type UntilDeps } from "
  * the model. Keeps a cheap knob available for operators without us needing
  * to invent our own token counter or hack a post-response truncate.
  */
-/** A cron run's context, with its `taskType` when set. */
+/** A cron run's context, with its `taskType` and `home` when set. */
 function cronContext(jobId: string, job: CronJobState): AgentTask["context"] {
-  return { channel: "cron", chatId: `cron:${jobId}`, ...(job.taskType ? { taskType: job.taskType } : {}) }
+  return { channel: "cron", chatId: `cron:${jobId}`, ...(job.taskType ? { taskType: job.taskType } : {}), ...(job.home ? { home: job.home } : {}) } as AgentTask["context"]
 }
 
 function withOutputCap(prompt: string, maxOutputTokens?: number): string {
@@ -252,6 +252,7 @@ export class CronScheduler {
         model: def.model,
         maxOutputTokens: def.maxOutputTokens,
         taskType: def.taskType,
+        home: def.home,
         autonomy: def.autonomy,
         onError: def.onError,
         value: def.value,

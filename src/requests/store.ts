@@ -194,6 +194,15 @@ export interface RequestRecord {
   standing?: StandingOrder | null
 }
 
+/** Where an issue's runs go (#2104): a mesh peer's name, or LOCAL_PLACEMENT
+ *  for this node, who chose it and when. */
+export interface Placement { node: string; setBy: string; setAt: number }
+export interface LeftBehind { node: string; pushedSha: string | null; setBy: string; setAt: number }
+
+/** "Back to this Mac": an explicit choice of this node, which a mapping
+ *  does not take over. */
+export const LOCAL_PLACEMENT = "local"
+
 const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
 
 /** A stored proof, or null when there is none or it does not read. */
@@ -265,6 +274,29 @@ export function ensureRequestTables(db: Database.Database): void {
       FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_request_verdicts_request ON request_verdicts(request_id, at);
+    -- Where an issue's runs go (#2104 B2): one row per issue chat, written
+    -- from the Hub. Never pruned, and no request row is needed for it: a
+    -- chat has many request rows, and those come and go.
+    CREATE TABLE IF NOT EXISTS issue_placements (
+      channel TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      node TEXT NOT NULL,
+      set_by TEXT NOT NULL,
+      set_at INTEGER NOT NULL,
+      PRIMARY KEY (channel, chat_id)
+    );
+    -- Work left on a node an issue was moved away from while that node was
+    -- offline (#2104 Q4): the issue is never placed there again until the
+    -- owner drops the row. Never pruned.
+    CREATE TABLE IF NOT EXISTS issue_left_behind (
+      channel TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      node TEXT NOT NULL,
+      pushed_sha TEXT,
+      set_by TEXT NOT NULL,
+      set_at INTEGER NOT NULL,
+      PRIMARY KEY (channel, chat_id, node)
+    );
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
@@ -874,6 +906,53 @@ export class RequestStore {
       const ref = parseRef(provider, row.ref.trim())
       return !!ref && !ref.mr && ref.number === number && ref.project.toLowerCase() === project.toLowerCase()
     })
+  }
+
+  /** Where an issue chat's runs go (#2104), or null when nobody chose.
+   *  Chat ids are compared without case. */
+  placement(channel: string, chatId: string): Placement | null {
+    const row = this.db.prepare("SELECT node, set_by, set_at FROM issue_placements WHERE channel = ? AND chat_id = ?")
+      .get(channel, chatId.toLowerCase()) as { node: string; set_by: string; set_at: number } | undefined
+    return row ? { node: row.node, setBy: row.set_by, setAt: row.set_at } : null
+  }
+
+  /** Writes where an issue chat's runs go: a peer, or LOCAL_PLACEMENT. */
+  setPlacement(channel: string, chatId: string, p: Placement): void {
+    this.db.prepare(
+      `INSERT INTO issue_placements (channel, chat_id, node, set_by, set_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(channel, chat_id) DO UPDATE SET node = excluded.node, set_by = excluded.set_by, set_at = excluded.set_at`,
+    ).run(channel, chatId.toLowerCase(), p.node, p.setBy, p.setAt)
+  }
+
+  /** Puts back what was there before (a move undone): the row, or none. */
+  restorePlacement(channel: string, chatId: string, before: Placement | null): void {
+    if (before) this.setPlacement(channel, chatId, before)
+    else this.clearPlacement(channel, chatId)
+  }
+
+  /** "Use the agent's default" (#2104 C-c): no row, so the agent's own
+   *  rule (a mapping, else this node) decides again. */
+  clearPlacement(channel: string, chatId: string): void {
+    this.db.prepare("DELETE FROM issue_placements WHERE channel = ? AND chat_id = ?").run(channel, chatId.toLowerCase())
+  }
+
+  /** Nodes holding work left behind by a forced move (#2104 Q4). */
+  leftBehind(channel: string, chatId: string): LeftBehind[] {
+    const rows = this.db.prepare("SELECT node, pushed_sha, set_by, set_at FROM issue_left_behind WHERE channel = ? AND chat_id = ? ORDER BY set_at")
+      .all(channel, chatId.toLowerCase()) as Array<{ node: string; pushed_sha: string | null; set_by: string; set_at: number }>
+    return rows.map((r) => ({ node: r.node, pushedSha: r.pushed_sha, setBy: r.set_by, setAt: r.set_at }))
+  }
+
+  addLeftBehind(channel: string, chatId: string, l: LeftBehind): void {
+    this.db.prepare(
+      `INSERT INTO issue_left_behind (channel, chat_id, node, pushed_sha, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(channel, chat_id, node) DO UPDATE SET pushed_sha = excluded.pushed_sha, set_by = excluded.set_by, set_at = excluded.set_at`,
+    ).run(channel, chatId.toLowerCase(), l.node, l.pushedSha, l.setBy, l.setAt)
+  }
+
+  /** The owner recovered or dropped the work on `node`. True when a row went. */
+  dropLeftBehind(channel: string, chatId: string, node: string): boolean {
+    return this.db.prepare("DELETE FROM issue_left_behind WHERE channel = ? AND chat_id = ? AND node = ?").run(channel, chatId.toLowerCase(), node).changes > 0
   }
 
   /** The newest open request homed on an issue named by one of `links`,

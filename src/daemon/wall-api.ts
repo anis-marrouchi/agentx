@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { issueKeysOfHome, LOCAL_NODE } from "@/channels/run-on"
 import { redactSecrets } from "@/agents/memory-trust"
 import type { DecisionCard, IfSilent } from "@/approvals/cards"
 import { cardWords, loopOf, summarize, type RequestCard } from "@/requests/card-view"
@@ -154,6 +155,9 @@ export interface WallPost {
    *  "group/project!12"): it has or may have pull or merge requests, so
    *  the opened post offers its Diff (#2102). Null: no forge home. */
   mergeRef: string | null
+  /** The mesh node its issue runs on (#2104), chosen from the Hub
+   *  (issue_placements). Null: this node, or where the mapping says. */
+  runOn: string | null
   createdAt: number
   updatedAt: number
   /** Last time its state changed, else last activity. */
@@ -574,6 +578,16 @@ export interface WallPostReads {
 
 const forgeCommentPost = (r: RequestRecord) => ({ home: r.home, group: { channel: r.channel, chatId: r.chatId }, createdAt: r.createdAt, closedAt: r.closedAt })
 
+/** The peer an issue home is placed on (#2104), or null: none, or "local". */
+function placedNodeOfHome(db: Database.Database | null, home: string): string | null {
+  if (!db) return null
+  for (const key of issueKeysOfHome(home)) {
+    const row = db.prepare("SELECT node FROM issue_placements WHERE channel = ? AND chat_id = ?").get(key.channel, key.chatId) as { node: string } | undefined
+    if (row) return row.node === LOCAL_NODE ? null : row.node
+  }
+  return null
+}
+
 export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads): WallPost {
   const runs = reads ? reads.runs : runsOf(deps.db, r.id)
   const runMs = runs.reduce((n, x) => n + (x.durationMs ?? 0), 0)
@@ -614,6 +628,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),
     home: r.home,
     mergeRef: diffHomeOf(r, deps.gitlabUrl)?.key ?? null,
+    runOn: r.home?.kind === "issue" ? safe(() => placedNodeOfHome(deps.db, r.home!.link), null) : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     lastMoveAt,

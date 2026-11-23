@@ -38,16 +38,21 @@ describe("send list (#1892 j)", () => {
       "channels/ntfy.ts": 1, // push notice: false
       "channels/push.ts": 1, // push notice: false
       // 18 adapterSend calls (each with its own flag) + its definition,
-      // 2 sendToChat, 3 sendOutbound (definition and two notice paths)
-      "channels/router.ts": 24,
+      // 2 sendToChat, 3 sendOutbound (definition and two notice paths),
+      // 5 run-on notices on the issue (#2104: held for left-behind work,
+      // every mesh host left behind, placed run refused, runs dropped,
+      // node offline): all false
+      "channels/router.ts": 29,
       "situations/send-to-chat.ts": 2, // the one adapter.send, the definition
       "daemon/delegation-wiring.ts": 5, // deliverToChat: as the caller says
       // 15 sendOutbound (/send, /channel/send, mesh answers, alerts…) +
       // deliverToChat + the closing note on a forge home (#1892 phase 4: an
       // issue comment, not a chat reply). /mesh/task async left for the
       // hand-off journal's deliver (#2007 S5). The battery sensor's
-      // model-free push to the owner (#863): a notice, false.
-      "daemon/index.ts": 18,
+      // model-free push to the owner (#863): a notice, false. The note on
+      // an issue forced off an offline node (#2104 Q4) and on a webhook
+      // run held for left-behind work (C-d): notices, false.
+      "daemon/index.ts": 20,
       "workflows/nodes/follow-up.ts": 1, // deliver → sendToChat
       "workflows/nodes/handlers.ts": 1, // action.send: true
     })

@@ -874,6 +874,19 @@ export class WorkflowDispatcher {
     return out.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
   }
 
+  /** The node an active run on the entity is homed on (#2104): this node's
+   *  id, a peer's name, or null when no run is active. The router reads it
+   *  first when it picks a run's node, so a choice never splits a live
+   *  workflow. */
+  activeHomeNode(entityRef: EntityRef): string | null {
+    return this.runs.getActiveByEntity(entityRef) ? this.runs.getHomeNodeByEntity(entityRef) : null
+  }
+
+  /** This node's id, as run home nodes name it. */
+  get homeNodeId(): string {
+    return this.nodeId
+  }
+
   /** The entity's state the claim rule reads. The state is the entity's,
    *  not the workflow's: every workflow on the entity reads the same run. */
   private claimState(workflow: Workflow, entityRef: EntityRef): {

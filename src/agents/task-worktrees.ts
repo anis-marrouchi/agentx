@@ -193,7 +193,7 @@ export async function hasTargetWorktree(target: WorktreeTarget, branch: string |
  *  deletes anything in the checkout: the branch is created only when it
  *  does not exist yet, from the remote branch of the same name when there
  *  is one (an earlier task pushed it), else from the default branch. */
-export async function prepareTaskWorktree(target: WorktreeTarget, checkout: string, settings: TaskWorktreeSettings, deps: WorktreeDeps): Promise<TaskWorktree | { error: string }> {
+export async function prepareTaskWorktree(target: WorktreeTarget, checkout: string, settings: TaskWorktreeSettings, deps: WorktreeDeps): Promise<TaskWorktree | { error: string; refuse?: boolean }> {
   const git = (args: string[], cwd: string) => deps.exec("git", args, { cwd, timeoutMs: 120_000 })
   const branch = worktreeBranch(target)
   const root = worktreeRoot(checkout, settings)
@@ -202,6 +202,12 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
   if (existsSync(join(dir, ".git"))) {
     const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], dir)
     if (head.code === 0 && head.stdout.trim() === branch) {
+      // Reused: brought up to the issue's pushed branch first (#2104 B3),
+      // which another node may have moved on since.
+      const fetched = await git(["fetch", "origin", branch], checkout)
+      if (fetched.code !== 0) deps.log?.(`[worktrees] fetch of ${branch} in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
+      const synced = await syncIssueBranch(dir, branch, deps.exec)
+      if (synced) return synced
       touch(dir, deps.now)
       return { dir, branch, checkout, reused: true }
     }
@@ -213,23 +219,56 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
   // A worktree removed by hand leaves a stale entry that blocks `add`.
   await git(["worktree", "prune"], checkout)
   const local = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], checkout)
+  const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], checkout)
   let args: string[]
   if (local.code === 0) {
     args = ["worktree", "add", dir, branch]
+  } else if (remote.code === 0) {
+    // From the issue's pushed branch: an earlier task, or the node it ran
+    // on before a move (#2104 B3).
+    args = ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]
   } else {
-    const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], checkout)
-    let base = `origin/${branch}`
-    if (remote.code !== 0) {
-      const head = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], checkout)
-      base = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : "origin/main"
-    }
-    args = ["worktree", "add", "--no-track", "-b", branch, dir, base]
+    const head = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], checkout)
+    const base = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : "origin/main"
+    args = ["worktree", "add", "-b", branch, dir, base]
   }
   mkdirSync(root, { recursive: true })
   const added = await git(args, checkout)
   if (added.code !== 0) return { error: `could not create the worktree for ${branch}: ${short(added.stderr)}` }
+  // The branch tracks origin/<branch> (#2104 B3), pushed or not: a plain
+  // `git push` goes there, never to the default branch it was made from,
+  // and the move check counts what is not pushed against it.
+  await git(["config", `branch.${branch}.remote`, "origin"], dir)
+  await git(["config", `branch.${branch}.merge`, `refs/heads/${branch}`], dir)
+  // An existing local branch is brought up to the pushed one too.
+  if (local.code === 0) {
+    const synced = await syncIssueBranch(dir, branch, deps.exec)
+    if (synced) return synced
+  }
   touch(dir, deps.now)
   return { dir, branch, checkout, reused: false }
+}
+
+/** Brings an issue worktree up to `origin/<branch>` (#2104 B3): a fast
+ *  forward when it is behind, nothing when it is level or ahead or the
+ *  branch was never pushed. Diverged: the run is refused, with both
+ *  commits named, rather than run on old code or overwrite pushed work.
+ *  Null when the worktree is ready. */
+export async function syncIssueBranch(dir: string, branch: string, exec: ExecFn): Promise<{ error: string; refuse: true } | null> {
+  const git = (args: string[]) => exec("git", args, { cwd: dir, timeoutMs: 120_000 })
+  const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`])
+  if (remote.code !== 0) return null
+  const theirs = remote.stdout.trim()
+  const head = await git(["rev-parse", "HEAD"])
+  const ours = head.stdout.trim()
+  if (head.code !== 0 || ours === theirs) return null
+  if ((await git(["merge-base", "--is-ancestor", theirs, ours])).code === 0) return null
+  if ((await git(["merge-base", "--is-ancestor", ours, theirs])).code !== 0) {
+    return { refuse: true, error: `${branch} in ${dir} (${ours.slice(0, 12)}) and origin/${branch} (${theirs.slice(0, 12)}) have diverged; reconcile them by hand, then run again` }
+  }
+  const ff = await git(["merge", "--ff-only", "--quiet", `origin/${branch}`])
+  if (ff.code !== 0) return { refuse: true, error: `could not fast-forward ${branch} in ${dir} from ${ours.slice(0, 12)} to origin/${branch} (${theirs.slice(0, 12)}): ${short(ff.stderr)}` }
+  return null
 }
 
 /** Makes (or finds) the worktree for a pull or merge request, on its
@@ -355,4 +394,49 @@ export function worktreeInstructions(wt: TaskWorktree): string {
     `Make your changes there, commit them on \`${wt.branch}\`, push that branch, and open the pull request (or merge request) from it.`,
     `Do not switch branches and do not edit ${wt.checkout}: other tasks use it.`,
   ].join(" ")
+}
+
+// --- Running an issue on another node (#2104) ---
+
+/** "owner/repo" of each folder's origin, once each (case-insensitive), in
+ *  order: what this node advertises as `checkouts` in its agent card, so
+ *  the Hub offers only nodes that have the issue's repository (B4). */
+export function checkoutsOf(dirs: string[], remoteOf: (dir: string) => string | undefined = originRemoteOf): string[] {
+  const out = new Map<string, string>()
+  for (const dir of new Set(dirs.filter(Boolean))) {
+    const path = remotePath(remoteOf(dir))
+    if (path && !out.has(path.toLowerCase())) out.set(path.toLowerCase(), path)
+  }
+  return [...out.values()]
+}
+
+/** The issue worktree folder of a target, made or not. */
+export function issueWorktreePath(target: WorktreeTarget, checkout: string, settings: Pick<TaskWorktreeSettings, "root">): string {
+  return issueWorktreeDir(target, checkout, settings)
+}
+
+export interface IssueWorktreeState { branch: string; dirty: boolean; ahead: number }
+
+/** The state of an issue worktree a move checks (#2104 B3): its branch,
+ *  whether it holds uncommitted changes (`git status --porcelain`), and
+ *  how many commits are not pushed: against `origin/<branch>`, or for a
+ *  branch never pushed, the commits on no origin branch.
+ *  Null when the folder is no worktree. A git command that fails counts
+ *  as dirty, so a move is refused rather than made on a guess. */
+export async function issueWorktreeState(dir: string, exec: ExecFn): Promise<IssueWorktreeState | null> {
+  if (!existsSync(join(dir, ".git"))) return null
+  const git = (args: string[]) => exec("git", args, { cwd: dir, timeoutMs: 60_000 })
+  const head = await git(["rev-parse", "--abbrev-ref", "HEAD"])
+  const branch = head.code === 0 ? head.stdout.trim() : "unknown"
+  const status = await git(["status", "--porcelain"])
+  const dirty = status.code !== 0 || !!status.stdout.trim()
+  // Against origin/<branch> when it was pushed; a branch never pushed is
+  // "not pushed" by the commits it has that no origin branch has (its
+  // commits beyond the base it was made from).
+  const pushed = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`])
+  const count = pushed.code === 0
+    ? await git(["rev-list", "--count", `origin/${branch}..HEAD`])
+    : await git(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"])
+  const ahead = count.code === 0 ? Number(count.stdout.trim()) || 0 : 1
+  return { branch, dirty, ahead }
 }

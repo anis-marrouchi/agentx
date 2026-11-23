@@ -130,7 +130,11 @@ export function isMeshGatedPath(path: string): boolean {
     // Where the owner is and was last seen (#1138 step B).
     path === "/owner/presence" ||
     // What each agent is on and what it finished (agentx_lookup).
-    path === "/lookup"
+    path === "/lookup" ||
+    // Run an issue on another machine (#2104): a node's open runs and
+    // worktree state for a chat, and the Hub's read and move of where an
+    // issue runs (the move is the owner's).
+    path === "/mesh/issue-state" || path === "/issue-run-on"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -163,6 +167,18 @@ export function isControlPost(path: string): boolean {
     path === "/api/signals/stop-all/report" ||
     // Replaying past PRs through the review gate spends model budget (#990).
     path === "/api/review-gate/replay"
+}
+
+/** POSTs only the owner may send (#2104 C-a): the mesh token lets a peer
+ *  read them, never write. Moving where an issue runs is the owner's. */
+export function isOwnerOnlyPost(path: string): boolean {
+  return path === "/issue-run-on"
+}
+
+/** An owner-only POST passes from this host, or with the operator key
+ *  (the Hub sends it, board-dashboard wallDaemon). Not with a mesh token. */
+export function ownerPostAllowed(remoteAddress: string, operatorKeyOk: boolean): boolean {
+  return LOOPBACK.has(remoteAddress) || operatorKeyOk
 }
 
 /** True when the socket peer is on this host. Used by loopback-only
