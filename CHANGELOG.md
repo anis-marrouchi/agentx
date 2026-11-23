@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.254.0](https://github.com/anis-marrouchi/agentx/compare/v0.253.0...v0.254.0) (2026-11-23)
+
+
+### Features
+
+* **hub:** live sidebar tree of the fleet at work ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR 1c) ([#2138](https://github.com/anis-marrouchi/agentx/issues/2138)) ([89a504c](https://github.com/anis-marrouchi/agentx/commit/89a504ca535799e39057909c1ec80fc5efe8c8ab))
+* **phone:** Live sheet follows a running task, behind app:live ([#2103](https://github.com/anis-marrouchi/agentx/issues/2103) PR B) ([#2137](https://github.com/anis-marrouchi/agentx/issues/2137)) ([763d363](https://github.com/anis-marrouchi/agentx/commit/763d3636ec93bfb021b8cb2da83ef20d1a34109a))
+
+
+### Bug Fixes
+
+* **requests:** State: done closes the run's request; CLI sets a due time ([#2081](https://github.com/anis-marrouchi/agentx/issues/2081)) ([#2135](https://github.com/anis-marrouchi/agentx/issues/2135)) ([01d72bc](https://github.com/anis-marrouchi/agentx/commit/01d72bcf2d58bbe7cf37bef7ce06fd07e659f724))
+
 ## [0.253.0](https://github.com/anis-marrouchi/agentx/compare/v0.252.0...v0.253.0) (2026-11-23)
 
 
