@@ -11,11 +11,11 @@
 //   Copyright (c) 2026 Lovecast Inc. Permission is hereby granted, free of
 //   charge, to any person obtaining a copy of this software ... (MIT).
 //
-// What stays AgentX: the name, logo and icon, and blue as the accent for
-// links, focus and the active place. The blue is the phone's approved text
-// blue (#488): #1f66e5 on white and #6aa0ff on dark, both above 4.5:1.
-// Primary buttons are neutral (near-black on light, near-white on dark), as
-// in Orca.
+// What is AgentX's own: the name, logo and icon, and the vivid AgentX blue
+// for the primary button, links, focus and the current place, where Orca
+// stays monochrome. Text blue is #1f66e5 on white (5.1:1) and #4d94ff on
+// the dark ground (6.6:1 on #0a0a0a). The primary button is #1f66e5 in both
+// themes, so its white label stays at 5.1:1 (white on #2979FF is 3.98:1).
 //
 // Principles kept from before (agentina): contacts not concepts, one screen
 // one job, honest UI. Dark stays the desktop default; the phone follows the
@@ -72,14 +72,18 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-text-2: #525252;
   --ax-muted: #696969;
 
-  /* Primary button: neutral, as in Orca. */
-  --ax-primary: #171717;
-  --ax-primary-fg: #fafafa;
-  --ax-ring: #a1a1a1;
+  /* What makes it AgentX, not a copy of Orca's monochrome (owner
+     2026-11-22 22:01Z: vivid blue, no purple): the primary button, the
+     focus ring and the current place are AgentX blue. White on #1f66e5 is
+     5.1:1. */
+  --ax-primary: #1f66e5;
+  --ax-primary-fg: #ffffff;
+  --ax-ring: #2979FF;
 
   /* Phone chat bubble + online green (were the phone-only palette). */
   --phone-bubble: #f5f5f5;
   --phone-green: #16a34a;
+  --ax-accent-ink: #ffffff;
 
   /* --- Semantic ------------------------------------------------------ */
   --ax-accent: var(--ax-blue);
@@ -136,8 +140,8 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
 
 /* Orca dark: near-black ground, #171717 cards, borders as white at 7-12%. */
 [data-theme="dark"] {
-  --ax-blue: #6aa0ff;
-  --ax-blue-d: #4d8af5;
+  --ax-blue: #4d94ff;
+  --ax-blue-d: #2979FF;
   --ax-blue-t: #1c2b47;
   --ax-blue-e: #2f4d7a;
   --ax-green: #4ade80;
@@ -163,9 +167,9 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-text-2: #c4c4c4;
   --ax-muted: #acacac;
 
-  --ax-primary: #e5e5e5;
-  --ax-primary-fg: #171717;
-  --ax-ring: #737373;
+  --ax-primary: #1f66e5;
+  --ax-primary-fg: #ffffff;
+  --ax-ring: #4d94ff;
 
   --phone-bubble: #262626;
   --phone-green: #4ade80;

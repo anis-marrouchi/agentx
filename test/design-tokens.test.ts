@@ -31,7 +31,7 @@ describe("design tokens", () => {
     expect(AX_TOKENS_CSS).toContain('--ax-font: "Geist"')
     // Orca's values are credited with its MIT notice.
     expect(readFileSync(join(UI, "tokens.ts"), "utf-8")).toMatch(/Lovecast Inc\.[\s\S]*MIT/)
-    // Neutral primary button in both themes.
+    // One primary button value per theme.
     expect([...AX_TOKENS_CSS.matchAll(/--ax-primary\s*:/g)]).toHaveLength(2)
     // No page brings back the hard offset shadow ("0 4px 0 <colour>").
     const offenders = walk(UI).filter(f => /box-shadow:\s*0 [2-5]px 0 [#v]/.test(readFileSync(f, "utf-8")))
@@ -53,6 +53,25 @@ describe("design tokens", () => {
     for (const f of ["Geist-Variable.woff2", "GeistMono-Variable.woff2", "OFL-Geist.txt"]) {
       expect(readFileSync(join("src/web/public/fonts", f)).length).toBeGreaterThan(1000)
     }
+  })
+
+  it("keeps the blue primary button label readable in both themes (#2101 PR 1b)", () => {
+    const lum = (hex: string) => {
+      const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map(x => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    }
+    const ratio = (a: string, b: string) => {
+      const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m)
+      return (x + 0.05) / (y + 0.05)
+    }
+    const all = (name: string) => [...AX_TOKENS_CSS.matchAll(new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{6})`, "g"))].map(m => m[1])
+    const bg = all("--ax-primary")
+    const fg = all("--ax-primary-fg")
+    expect(bg).toHaveLength(2)
+    for (let i = 0; i < 2; i++) expect(ratio(bg[i], fg[i])).toBeGreaterThanOrEqual(4.5)
+    // Links and focus blue on the dark ground (Hakim's v2 nit).
+    expect(ratio(all("--ax-blue")[1], "#0a0a0a")).toBeGreaterThanOrEqual(4.5)
   })
 
   it("carries a text-safe step for the two colours that fail as small text", () => {

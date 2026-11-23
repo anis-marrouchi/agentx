@@ -149,9 +149,9 @@ describe("page scripts parse", () => {
 
   it("every phone page uses the one shared style set, with readable blue text (#488, #2101)", () => {
     for (const html of [renderAppPage(), renderAppPairPage(), renderAppLockedPage()]) {
-      // 5.13:1 on white and 6.4:1 on the dark ground; #2979FF would be 3.98:1.
+      // 5.13:1 on white and 6.6:1 on the dark ground; #2979FF on white would be 3.98:1.
       expect(html).toContain("--ax-blue: #1f66e5")
-      expect(html).toContain("--ax-blue: #6aa0ff")
+      expect(html).toContain("--ax-blue: #4d94ff")
       // Phone chrome follows the palette (#2101 condition 2).
       expect(html).toContain('<meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">')
       expect(html).toContain("--ax-accent: var(--ax-blue)")
