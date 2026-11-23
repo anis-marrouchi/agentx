@@ -196,6 +196,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     : opts.signIn ? `<script>window.AX_WALL_SIGN_IN = true;</script>` : ""
   // The workflow editor's bundle, loaded when its page opens (#1524).
   const editorCfg = `<script>window.AX_WALL_EDITOR = ${JSON.stringify({ src: assetUrl("workflow-editor.global.js"), owner })};</script>`
+    // The Task page conversation's bundle (#2101 R16), by its hashed URL.
+    + `<script>window.AX_TASK_CONVERSATION_SRC = ${JSON.stringify(assetUrl("task-conversation.global.js"))};</script>`
   const groups = wallNavGroups(owner)
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
