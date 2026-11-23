@@ -176,46 +176,72 @@ export function withWorkers<A extends { runningTasks: ReadonlyArray<{ id: string
 /** At most this many workflow runs are read per refresh. */
 export const RECENT_RUNS_CAP = 200
 
+const isOpen = (r: RunLike) => r.status === "running" || r.status === "paused"
+
 /**
  * The workflow runs to look for workers in, read at most once per
  * `ttlMs`: GET /agents is polled every 2 s per Hub, and listing runs reads
  * their files. Runs still open (running, or waiting on the owner) are
- * always read, however old: a workflow that has waited for a day is what
- * the owner needs to see. Ended runs untouched for longer than the done
- * window are not read. RECENT_RUNS_CAP at most, open runs first.
+ * always kept, however old: a workflow that has waited for a day is what
+ * the owner needs to see. Ended runs older than the done window are not.
+ * RECENT_RUNS_CAP at most, open runs first.
+ *
+ * Reading every open run means reading every run file (24k on the Mac,
+ * ~10 s), so that is done once (`allOpen`, retried until it answers).
+ * After it, each read lists only the files written since the last read
+ * (or the done window, if longer ago) and re-reads the known open runs by
+ * id (`byId`): a run that opens or ends writes its file, so it is seen.
  */
 export class RecentRuns {
   private at = 0
   private runs: RunLike[] = []
+  /** Ids of the runs open at the last read; null until allOpen answers. */
+  private openIds: Set<string> | null = null
   constructor(
-    private recent: (sinceMs: number) => RunLike[],
-    private open: () => RunLike[] = () => [],
+    private changed: (sinceMs: number) => RunLike[],
+    private allOpen: () => RunLike[] | null = () => [],
+    private byId: (id: string) => RunLike | null = () => null,
     private ttlMs = 10_000,
     private now: () => number = Date.now,
   ) {}
   get(): RunLike[] {
     const t = this.now()
     if (t - this.at >= this.ttlMs) {
-      this.runs = this.read(t)
+      this.runs = this.read(t, this.at)
       this.at = t
     }
     return this.runs
   }
-  private read(t: number): RunLike[] {
-    const out: RunLike[] = []
-    const seen = new Set<string>()
-    const take = (list: () => RunLike[]) => {
-      let runs: RunLike[]
-      try { runs = list() } catch { return }
-      for (const r of runs) {
-        if (out.length >= RECENT_RUNS_CAP) return
-        if (seen.has(r.id)) continue
-        seen.add(r.id)
-        out.push(r)
+  private read(t: number, last: number): RunLike[] {
+    const windowStart = t - WORKER_DONE_WINDOW_MS
+    let changed: RunLike[] = []
+    try { changed = this.changed(last ? Math.min(last, windowStart) : windowStart) } catch { /* disk: open runs only */ }
+    const byIdNow = new Map(changed.map((r) => [r.id, r]))
+    const open = new Map<string, RunLike>()
+    let seeded = this.openIds !== null
+    if (!this.openIds) {
+      let all: RunLike[] | null = null
+      try { all = this.allOpen() } catch { /* retried next read */ }
+      if (all) {
+        seeded = true
+        for (const r of all) open.set(r.id, byIdNow.get(r.id) ?? r)
+      }
+    } else {
+      for (const id of this.openIds) {
+        let r: RunLike | null | undefined = byIdNow.get(id)
+        if (!r) { try { r = this.byId(id) } catch { r = null } }
+        if (r) open.set(id, r)
       }
     }
-    take(this.open)
-    take(() => this.recent(t - WORKER_DONE_WINDOW_MS))
-    return out
+    for (const r of changed) open.set(r.id, r)
+    for (const [id, r] of open) if (!isOpen(r)) open.delete(id)
+    if (seeded) this.openIds = new Set(open.keys())
+    const out: RunLike[] = [...open.values()]
+    for (const r of changed) {
+      if (open.has(r.id)) continue
+      if (Date.parse(r.updatedAt) < windowStart) continue
+      out.push(r)
+    }
+    return out.slice(0, RECENT_RUNS_CAP)
   }
 }

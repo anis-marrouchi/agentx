@@ -101,7 +101,7 @@ describe("RecentRuns", () => {
   it("reads the runs at most once per ttl, from an hour back", () => {
     let t = NOW
     const asked: number[] = []
-    const cache = new RecentRuns((since) => { asked.push(since); return [] }, () => [], 10_000, () => t)
+    const cache = new RecentRuns((since) => { asked.push(since); return [] }, () => [], () => null, 10_000, () => t)
     cache.get(); cache.get()
     t += 9_000; cache.get()
     t += 2_000; cache.get()
@@ -124,7 +124,7 @@ describe("RecentRuns", () => {
     const cache = new RecentRuns(
       (since) => all.filter((r) => Date.parse(r.updatedAt) >= since),
       () => all.filter((r) => r.status === "running" || r.status === "paused"),
-      10_000, () => NOW,
+      () => null, 10_000, () => NOW,
     )
     const runs = cache.get()
     expect(runs.map((r) => r.id)).toEqual(["wf-old", "wf-done"])
@@ -135,14 +135,62 @@ describe("RecentRuns", () => {
     const run = (id: string, status: string): RunLike => ({ id, workflowId: "w", status, createdAt: iso(0), updatedAt: iso(0) })
     const open = Array.from({ length: 150 }, (_, i) => run(`o${i}`, "running"))
     const recent = [run("o0", "running"), ...Array.from({ length: 150 }, (_, i) => run(`r${i}`, "completed"))]
-    const runs = new RecentRuns(() => recent, () => open, 10_000, () => NOW).get()
+    const runs = new RecentRuns(() => recent, () => open, () => null, 10_000, () => NOW).get()
     expect(runs).toHaveLength(RECENT_RUNS_CAP)
     expect(runs.slice(0, 150).every((r) => r.id.startsWith("o"))).toBe(true)
     expect(new Set(runs.map((r) => r.id)).size).toBe(RECENT_RUNS_CAP)
   })
   it("still reads the recent runs when the open read fails", () => {
     const r: RunLike = { id: "a", workflowId: "w", status: "completed", createdAt: iso(0), updatedAt: iso(0) }
-    expect(new RecentRuns(() => [r], () => { throw new Error("disk") }).get()).toEqual([r])
+    expect(new RecentRuns(() => [r], () => { throw new Error("disk") }, () => null, 10_000, () => NOW).get()).toEqual([r])
+  })
+  it("reads every open run once, then only changed files and the known open runs (B1)", () => {
+    let t = NOW
+    const run = (id: string, status: string, ago = 0): RunLike => ({ id, workflowId: "w", status, createdAt: iso(ago), updatedAt: iso(ago) })
+    const files = new Map<string, RunLike>([["old", run("old", "paused", 5 * 3_600_000)]])
+    let fullReads = 0
+    const asked: number[] = []
+    const byIdAsked: string[] = []
+    const cache = new RecentRuns(
+      (since) => { asked.push(since); return [...files.values()].filter((r) => Date.parse(r.updatedAt) >= since) },
+      () => { fullReads++; return [...files.values()].filter((r) => r.status === "running" || r.status === "paused") },
+      (id) => { byIdAsked.push(id); return files.get(id) ?? null },
+      10_000, () => t,
+    )
+    expect(cache.get().map((r) => r.id)).toEqual(["old"])
+    // A new run opens; the next read sees it from the changed files.
+    t += 10_000
+    files.set("new", { ...run("new", "running"), updatedAt: new Date(t).toISOString() })
+    expect(cache.get().map((r) => r.id).sort()).toEqual(["new", "old"])
+    expect(asked[1]).toBe(NOW + 10_000 - 3_600_000) // the window: the last read is inside it
+    // Hours later, with no read in between: both are still kept, read by id.
+    t += 3 * 3_600_000
+    const before = t - 3 * 3_600_000
+    expect(cache.get().map((r) => r.id).sort()).toEqual(["new", "old"])
+    expect(asked[2]).toBe(before) // files changed since the last read, not just the window
+    expect(byIdAsked).toContain("old")
+    // "old" ends: it drops out of the open set and, ended long ago, out of the list.
+    files.set("old", { ...run("old", "completed", 5 * 3_600_000) })
+    t += 10_000
+    expect(cache.get().map((r) => r.id)).toEqual(["new"])
+    t += 10_000
+    byIdAsked.length = 0
+    cache.get()
+    expect(byIdAsked).toEqual(["new"])
+    expect(fullReads).toBe(1)
+  })
+  it("retries the full open read until the store answers", () => {
+    let t = NOW
+    let ready = false
+    let fullReads = 0
+    const open: RunLike = { id: "o", workflowId: "w", status: "paused", createdAt: iso(9 * 3_600_000), updatedAt: iso(9 * 3_600_000) }
+    const cache = new RecentRuns(() => [], () => { fullReads++; return ready ? [open] : null }, () => open, 10_000, () => t)
+    expect(cache.get()).toEqual([])
+    ready = true; t += 10_000
+    expect(cache.get()).toEqual([open])
+    t += 10_000
+    expect(cache.get()).toEqual([open])
+    expect(fullReads).toBe(2)
   })
 })
 

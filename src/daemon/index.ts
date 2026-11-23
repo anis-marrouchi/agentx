@@ -445,10 +445,13 @@ export class AgentXDaemon {
   private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
   /** Recent workflow runs for the workers under each run on GET /agents
-   *  (#2145), read at most every 10 s. */
+   *  (#2145), read at most every 10 s. The full open-runs read (every run
+   *  file) runs once, after the store exists; later reads list only the
+   *  files changed since and re-read the open runs by id. */
   private recentRuns = new RecentRuns(
     (since) => this.workflowRuns?.list({ since, limit: RECENT_RUNS_CAP }) ?? [],
-    () => this.workflowRuns?.list({ active: true, limit: RECENT_RUNS_CAP }) ?? [],
+    () => this.workflowRuns?.list({ active: true }) ?? null,
+    (id) => this.workflowRuns?.get(id) ?? null,
   )
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
   /** Shares the daemon's SQLite handle; absent when running without one. */
