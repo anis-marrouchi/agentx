@@ -1,4 +1,5 @@
 import { spawn } from "child_process"
+import { stripVTControlCharacters } from "node:util"
 import { claudeCliEnv } from "@/utils/workspace-env"
 
 /** One model call: prompt in, text out. Tests pass their own. */
@@ -45,7 +46,7 @@ async function claudeCall(prompt: string, model: string, timeoutMs: number): Pro
   const args = ["-p", "-", "--output-format", "json", "--max-turns", "1", "--model", model,
     "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--settings", '{"disableAllHooks":true}', "--setting-sources", "", "--no-session-persistence"]
-  const out = await new Promise<string>((ok, fail) => {
+  const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number | null }>((ok, fail) => {
     const child = spawn("claude", args, { env: claudeCliEnv(), stdio: ["pipe", "pipe", "pipe"] })
     let stdout = ""
     let stderr = ""
@@ -55,20 +56,32 @@ async function claudeCall(prompt: string, model: string, timeoutMs: number): Pro
     child.on("error", (err) => { clearTimeout(timer); fail(err) })
     child.on("close", (code) => {
       clearTimeout(timer)
-      if (code === 0) ok(stdout)
-      else fail(new Error(`claude exited ${code}: ${stderr.trim().slice(0, 200)}`))
+      ok({ stdout, stderr, code })
     })
     child.stdin.end(prompt)
   })
+  let envelope: { result?: unknown; is_error?: boolean; total_cost_usd?: unknown } | null = null
   try {
-    const envelope = JSON.parse(out) as { result?: string; is_error?: boolean; total_cost_usd?: unknown }
-    if (envelope.is_error) throw new Error(`model error: ${String(envelope.result).slice(0, 200)}`)
-    const cost = envelope.total_cost_usd
-    return { text: String(envelope.result ?? ""), costUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : undefined }
-  } catch (err) {
-    if (err instanceof SyntaxError) return { text: out }
-    throw err
+    envelope = JSON.parse(stdout)
+  } catch {
+    // Successful calls can also return plain text.
   }
+  if (envelope?.is_error === true && typeof envelope.result === "string") {
+    const detail = diagnostic(envelope.result)
+    if (detail) throw new Error(`model error: ${detail}`)
+  }
+  if (code !== 0) {
+    const detail = diagnostic(stderr)
+    throw new Error(detail ? `claude exited ${code}: ${detail}` : `claude exited ${code}`)
+  }
+  if (envelope?.is_error === true) throw new Error("model error")
+  if (envelope === null) return { text: stdout }
+  const cost = envelope.total_cost_usd
+  return { text: String(envelope.result ?? ""), costUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : undefined }
+}
+
+function diagnostic(value: string): string {
+  return stripVTControlCharacters(value).replace(/[\s\p{Cc}\p{Cf}]+/gu, " ").trim().slice(0, 200)
 }
 
 /** The first JSON object in a model reply, or null. */
