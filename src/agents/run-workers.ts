@@ -187,26 +187,55 @@ const isOpen = (r: RunLike) => r.status === "running" || r.status === "paused"
  * RECENT_RUNS_CAP at most, open runs first.
  *
  * Reading every open run means reading every run file (24k on the Mac,
- * ~10 s), so that is done once (`allOpen`, retried until it answers).
- * After it, each read lists only the files written since the last read
- * (or the done window, if longer ago) and re-reads the known open runs by
- * id (`byId`): a run that opens or ends writes its file, so it is seen.
+ * ~10 s), so that is done once, in the background (`allOpen`, async and
+ * yielding; started by start() when the store exists, retried until it
+ * answers). get() never waits for it: until it ends, get() answers the
+ * runs changed in the window. After it, each read lists only the files
+ * written since the last read (or the done window, if longer ago) and
+ * re-reads the known open runs by id (`byId`): a run that opens or ends
+ * writes its file, so it is seen.
  */
 export class RecentRuns {
   private at = 0
   private runs: RunLike[] = []
   /** Ids of the runs open at the last read; null until allOpen answers. */
   private openIds: Set<string> | null = null
+  /** Open runs seen in changed files while the full read is going. */
+  private seenOpen = new Set<string>()
+  /** The full read, while it runs. */
+  private seeding: Promise<void> | null = null
+  /** The full read ended: read again on the next get(). */
+  private stale = false
   constructor(
     private changed: (sinceMs: number) => RunLike[],
-    private allOpen: () => RunLike[] | null = () => [],
+    private allOpen: () => Promise<RunLike[] | null> = async () => [],
     private byId: (id: string) => RunLike | null = () => null,
     private ttlMs = 10_000,
     private now: () => number = Date.now,
   ) {}
+  /** Start the full open-runs read in the background, once. Resolves when
+   *  it ends (answered, not ready, or failed: then the next get() retries). */
+  start(): Promise<void> {
+    if (this.openIds) return Promise.resolve()
+    if (this.seeding) return this.seeding
+    let p: Promise<RunLike[] | null>
+    try { p = this.allOpen() } catch (e) { p = Promise.reject(e) }
+    const run = p.then((all) => {
+      if (!all) return
+      const ids = new Set(this.seenOpen)
+      for (const r of all) if (isOpen(r)) ids.add(r.id)
+      this.openIds = ids
+      this.seenOpen.clear()
+      this.stale = true
+    }, () => { /* retried on the next read */ }).finally(() => { this.seeding = null })
+    this.seeding = run
+    return run
+  }
   get(): RunLike[] {
     const t = this.now()
-    if (t - this.at >= this.ttlMs) {
+    if (this.stale || t - this.at >= this.ttlMs) {
+      if (!this.openIds && !this.seeding) void this.start()
+      this.stale = false
       this.runs = this.read(t, this.at)
       this.at = t
     }
@@ -218,15 +247,7 @@ export class RecentRuns {
     try { changed = this.changed(last ? Math.min(last, windowStart) : windowStart) } catch { /* disk: open runs only */ }
     const byIdNow = new Map(changed.map((r) => [r.id, r]))
     const open = new Map<string, RunLike>()
-    let seeded = this.openIds !== null
-    if (!this.openIds) {
-      let all: RunLike[] | null = null
-      try { all = this.allOpen() } catch { /* retried next read */ }
-      if (all) {
-        seeded = true
-        for (const r of all) open.set(r.id, byIdNow.get(r.id) ?? r)
-      }
-    } else {
+    if (this.openIds) {
       for (const id of this.openIds) {
         let r: RunLike | null | undefined = byIdNow.get(id)
         if (!r) { try { r = this.byId(id) } catch { r = null } }
@@ -235,7 +256,8 @@ export class RecentRuns {
     }
     for (const r of changed) open.set(r.id, r)
     for (const [id, r] of open) if (!isOpen(r)) open.delete(id)
-    if (seeded) this.openIds = new Set(open.keys())
+    if (this.openIds) this.openIds = new Set(open.keys())
+    else for (const id of open.keys()) this.seenOpen.add(id)
     const out: RunLike[] = [...open.values()]
     for (const r of changed) {
       if (open.has(r.id)) continue

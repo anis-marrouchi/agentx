@@ -446,11 +446,12 @@ export class AgentXDaemon {
   private workflowRuns?: WorkflowRunStore
   /** Recent workflow runs for the workers under each run on GET /agents
    *  (#2145), read at most every 10 s. The full open-runs read (every run
-   *  file) runs once, after the store exists; later reads list only the
-   *  files changed since and re-read the open runs by id. */
+   *  file) runs once in the background, started when the store exists, in
+   *  batches that yield; later reads list only the files changed since and
+   *  re-read the open runs by id. */
   private recentRuns = new RecentRuns(
     (since) => this.workflowRuns?.list({ since, limit: RECENT_RUNS_CAP }) ?? [],
-    () => this.workflowRuns?.list({ active: true }) ?? null,
+    async () => (this.workflowRuns ? this.workflowRuns.listOpenYielding() : null),
     (id) => this.workflowRuns?.get(id) ?? null,
   )
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
@@ -4832,6 +4833,9 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // #2145: read every open run for the Hub's workers now, in the
+    // background, not inside the first GET /agents.
+    void this.recentRuns.start()
     // S14 (#1892 phase 4): open talks with closing steps get a missing
     // expiry run back. Does nothing unless situations.closing.enabled.
     void this.situationRuns?.resumeOnStart()

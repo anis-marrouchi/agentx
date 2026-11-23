@@ -344,6 +344,25 @@ export class RunStore {
     return out
   }
 
+  /** Every open run (running or paused; task runs left out), newest
+   *  first. Reading every run file takes ~10 s on a big store (24k files
+   *  on the Mac), so it reads `batch` files at a time and waits on
+   *  `pause` (setImmediate) between batches: the daemon keeps answering
+   *  webhooks, channels and /health meanwhile (#2145). */
+  async listOpenYielding(opts: { batch?: number; pause?: () => Promise<void> } = {}): Promise<WorkflowRun[]> {
+    const batch = Math.max(1, opts.batch ?? 50)
+    const pause = opts.pause ?? (() => new Promise<void>((r) => setImmediate(r)))
+    const names = readdirSync(this.runsDir).filter((f) => f.endsWith(".jsonl"))
+    const out: WorkflowRun[] = []
+    for (let i = 0; i < names.length; i++) {
+      if (i > 0 && i % batch === 0) await pause()
+      const run = this.readRun(resolve(this.runsDir, names[i]))
+      if (!run || run.workflowId === TASK_WORKFLOW_ID) continue
+      if (run.status === "running" || run.status === "paused") out.push(run)
+    }
+    return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+  }
+
   /** Task runs still open (#883): their entity index entry is kept until
    *  they end, so this reads the open ones only, however many have ended.
    *  An entry whose run is gone is removed. */

@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest"
+import { mkdtempSync, rmSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { RunStore } from "../src/workflows/run-store"
 import { RECENT_RUNS_CAP, RecentRuns, WORKERS_PER_RUN, parentRunOf, withWorkers, workersByRun, type HandoffEntry, type RunLike } from "../src/agents/run-workers"
 import { withParentRun } from "../src/actions/builtin/parent-run"
 import { agentCall } from "../src/actions/builtin/agent"
@@ -98,10 +102,11 @@ describe("withWorkers", () => {
 })
 
 describe("RecentRuns", () => {
-  it("reads the runs at most once per ttl, from an hour back", () => {
+  it("reads the runs at most once per ttl, from an hour back", async () => {
     let t = NOW
     const asked: number[] = []
-    const cache = new RecentRuns((since) => { asked.push(since); return [] }, () => [], () => null, 10_000, () => t)
+    const cache = new RecentRuns((since) => { asked.push(since); return [] }, async () => [], () => null, 10_000, () => t)
+    await cache.start()
     cache.get(); cache.get()
     t += 9_000; cache.get()
     t += 2_000; cache.get()
@@ -110,7 +115,7 @@ describe("RecentRuns", () => {
   it("answers no runs when the list fails", () => {
     expect(new RecentRuns(() => { throw new Error("disk") }).get()).toEqual([])
   })
-  it("keeps a workflow waiting on the owner for more than an hour under its parent", () => {
+  it("keeps a workflow waiting on the owner for more than an hour under its parent", async () => {
     const old: RunLike = {
       id: "wf-old", workflowId: "approve-invoice", status: "paused",
       createdAt: iso(5 * 3_600_000), updatedAt: iso(3 * 3_600_000), meta: { startedByRun: "run-1" },
@@ -123,28 +128,33 @@ describe("RecentRuns", () => {
     const all = [old, done]
     const cache = new RecentRuns(
       (since) => all.filter((r) => Date.parse(r.updatedAt) >= since),
-      () => all.filter((r) => r.status === "running" || r.status === "paused"),
-      () => null, 10_000, () => NOW,
+      async () => all.filter((r) => r.status === "running" || r.status === "paused"),
+      (id) => all.find((r) => r.id === id) ?? null, 10_000, () => NOW,
     )
+    await cache.start()
     const runs = cache.get()
     expect(runs.map((r) => r.id)).toEqual(["wf-old", "wf-done"])
     const w = workersByRun(TASKS, [], runs, NOW).get("run-1")!
     expect(w.map((x) => [x.id, x.status])).toEqual([["wf-done", "done"], ["wf-old", "waiting"]])
   })
-  it("reads open runs first, once each, and caps the total", () => {
+  it("reads open runs first, once each, and caps the total", async () => {
     const run = (id: string, status: string): RunLike => ({ id, workflowId: "w", status, createdAt: iso(0), updatedAt: iso(0) })
     const open = Array.from({ length: 150 }, (_, i) => run(`o${i}`, "running"))
     const recent = [run("o0", "running"), ...Array.from({ length: 150 }, (_, i) => run(`r${i}`, "completed"))]
-    const runs = new RecentRuns(() => recent, () => open, () => null, 10_000, () => NOW).get()
+    const cache = new RecentRuns(() => recent, async () => open, (id) => open.find((r) => r.id === id) ?? null, 10_000, () => NOW)
+    await cache.start()
+    const runs = cache.get()
     expect(runs).toHaveLength(RECENT_RUNS_CAP)
     expect(runs.slice(0, 150).every((r) => r.id.startsWith("o"))).toBe(true)
     expect(new Set(runs.map((r) => r.id)).size).toBe(RECENT_RUNS_CAP)
   })
-  it("still reads the recent runs when the open read fails", () => {
+  it("still reads the recent runs when the open read fails", async () => {
     const r: RunLike = { id: "a", workflowId: "w", status: "completed", createdAt: iso(0), updatedAt: iso(0) }
-    expect(new RecentRuns(() => [r], () => { throw new Error("disk") }, () => null, 10_000, () => NOW).get()).toEqual([r])
+    const cache = new RecentRuns(() => [r], async () => { throw new Error("disk") }, () => null, 10_000, () => NOW)
+    await cache.start()
+    expect(cache.get()).toEqual([r])
   })
-  it("reads every open run once, then only changed files and the known open runs (B1)", () => {
+  it("reads every open run once, then only changed files and the known open runs (B1)", async () => {
     let t = NOW
     const run = (id: string, status: string, ago = 0): RunLike => ({ id, workflowId: "w", status, createdAt: iso(ago), updatedAt: iso(ago) })
     const files = new Map<string, RunLike>([["old", run("old", "paused", 5 * 3_600_000)]])
@@ -153,10 +163,11 @@ describe("RecentRuns", () => {
     const byIdAsked: string[] = []
     const cache = new RecentRuns(
       (since) => { asked.push(since); return [...files.values()].filter((r) => Date.parse(r.updatedAt) >= since) },
-      () => { fullReads++; return [...files.values()].filter((r) => r.status === "running" || r.status === "paused") },
+      async () => { fullReads++; return [...files.values()].filter((r) => r.status === "running" || r.status === "paused") },
       (id) => { byIdAsked.push(id); return files.get(id) ?? null },
       10_000, () => t,
     )
+    await cache.start()
     expect(cache.get().map((r) => r.id)).toEqual(["old"])
     // A new run opens; the next read sees it from the changed files.
     t += 10_000
@@ -179,18 +190,65 @@ describe("RecentRuns", () => {
     expect(byIdAsked).toEqual(["new"])
     expect(fullReads).toBe(1)
   })
-  it("retries the full open read until the store answers", () => {
+  it("retries the full open read until the store answers", async () => {
     let t = NOW
     let ready = false
     let fullReads = 0
     const open: RunLike = { id: "o", workflowId: "w", status: "paused", createdAt: iso(9 * 3_600_000), updatedAt: iso(9 * 3_600_000) }
-    const cache = new RecentRuns(() => [], () => { fullReads++; return ready ? [open] : null }, () => open, 10_000, () => t)
-    expect(cache.get()).toEqual([])
+    const cache = new RecentRuns(() => [], async () => { fullReads++; return ready ? [open] : null }, () => open, 10_000, () => t)
+    expect(cache.get()).toEqual([]) // starts the first full read: not ready
+    await cache.start() // waits for that read
     ready = true; t += 10_000
+    cache.get() // starts the second full read
+    await cache.start()
     expect(cache.get()).toEqual([open])
     t += 10_000
     expect(cache.get()).toEqual([open])
     expect(fullReads).toBe(2)
+  })
+  it("answers at once while the first full read is still going (C1)", async () => {
+    let t = NOW
+    const old: RunLike = { id: "old", workflowId: "w", status: "paused", createdAt: iso(9 * 3_600_000), updatedAt: iso(9 * 3_600_000) }
+    const recent: RunLike = { id: "recent", workflowId: "w", status: "running", createdAt: iso(60_000), updatedAt: iso(60_000) }
+    let finish!: (runs: RunLike[]) => void
+    let fullReads = 0
+    const files = [old, recent]
+    const cache = new RecentRuns(
+      (since) => files.filter((r) => Date.parse(r.updatedAt) >= since),
+      () => { fullReads++; return new Promise<RunLike[]>((res) => { finish = res }) },
+      (id) => files.find((r) => r.id === id) ?? null,
+      10_000, () => t,
+    )
+    const started = cache.start()
+    // The full read has not ended: get() does not wait, it answers the changed runs.
+    expect(cache.get().map((r) => r.id)).toEqual(["recent"])
+    t += 10_000
+    expect(cache.get().map((r) => r.id)).toEqual(["recent"])
+    expect(fullReads).toBe(1) // not started again while it runs
+    finish([old, recent])
+    await started
+    // The next get() reads again at once, with the old open run in.
+    expect(cache.get().map((r) => r.id).sort()).toEqual(["old", "recent"])
+    expect(fullReads).toBe(1)
+  })
+})
+
+describe("RunStore.listOpenYielding (C1)", () => {
+  it("reads every open run in batches, yielding between them, and leaves out ended and task runs", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-2145-"))
+    try {
+      const store = new RunStore({ baseDir: dir, nodeId: "n" })
+      const mk = (wf: string, id: string) => store.create({ workflowId: wf, initialPending: [], entityRef: { backend: "test", id } as never })
+      const a = mk("w", "a"); const b = mk("w", "b"); const c = mk("w", "c")
+      mk("task", "t") // a task run: kept in _tasks, never read here
+      store.setStatus(b.id, "paused")
+      store.setStatus(c.id, "completed")
+      const pauses: number[] = []
+      let reads = 0
+      const got = await store.listOpenYielding({ batch: 1, pause: async () => { pauses.push(reads); reads++ } })
+      expect(got.map((r) => r.id).sort()).toEqual([a.id, b.id].sort())
+      expect(pauses.length).toBe(2) // 3 files, 1 per batch: 2 yields
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
 
