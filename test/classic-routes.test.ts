@@ -22,7 +22,9 @@ function wallHrefs(): string[] {
 }
 
 /** Same-site addresses on the Wall that are not dashboard pages. */
-const NOT_PAGES = [/^\/(#|$)/, /^\/hub([?#]|$)/, /^\/admin\/wiki\//, /^\/(favicon\.svg|apple-touch-icon\.png)$/]
+const NOT_PAGES = [/^\/(#|$)/, /^\/hub([?#]|$)/, /^\/admin\/wiki\//, /^\/(favicon\.svg|apple-touch-icon\.png)$/,
+  // The self-hosted Geist font the Hub preloads (#2101): a file, not a page.
+  /^\/assets\/[A-Za-z0-9._-]+\.woff2$/]
 
 describe("classic routes registry", () => {
   it("gives every pending page an issue to wait on, and every Wall page a target", () => {
