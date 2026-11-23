@@ -51,6 +51,10 @@ button, input, select { font-family: inherit; }
 .ax-wall__item.is-on svg { color: var(--ax-accent); }
 .ax-wall__item svg { width: 18px; height: 18px; flex: none; }
 /* The nav's groups (#1451 frame 0): Work, Automation, Fleet, Owner. */
+.ax-wall__navgroup summary { cursor: pointer; padding: 8px 10px; color: var(--ax-text-2); font-size: 13px; border-radius: var(--ax-radius-sm); }
+.ax-wall__navgroup summary:hover, .ax-wall__navgroup summary:focus-visible { background: var(--ax-surface-2); }
+.ax-wall__navgroup > .ax-wall__item { display: flex; margin-left: 10px; }
+.ax-wall__nav > .ax-wall__shortcut { display: none; }
 .ax-wall__navlbl { font-size: 11px; font-weight: 500; color: var(--ax-muted); text-transform: none; letter-spacing: 0; padding: 14px 10px 4px; margin: 0; }
 .ax-wall__item span { white-space: nowrap; }
 /* New post opens the Creator (#1355); More is the phone bar's fifth button. */
@@ -93,7 +97,7 @@ button, input, select { font-family: inherit; }
   .ax-wall.is-settings { grid-template-columns: 72px minmax(0, 1fr); }
   .ax-wall.is-settings .ax-wall__aside { display: none; }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
-  .ax-wall__logo small, .ax-wall__item span, .ax-wall__navfoot, .ax-wall__nav > .lt { display: none; }
+  .ax-wall__logo small, .ax-wall__nav > .ax-wall__item span, .ax-wall__navfoot, .ax-wall__nav > .lt { display: none; }
   .ax-wall__nav > .ax-wall__navlbl { font-size: 0; padding: 0; height: 1px; width: 32px; background: var(--ax-border-2); margin: 8px 0; }
   .ax-wall__newpost { width: 48px; height: 48px; padding: 0; font-size: 0; }
   .ax-wall__newpost::before { content: "+"; font-size: 26px; font-weight: 400; }
@@ -116,7 +120,8 @@ button, input, select { font-family: inherit; }
   /* Wall, Needs you, Running now, Projects and More (#1355); More opens
      a sheet with the rest, in the nav's groups (#1451 frame 0). New post
      is a round + over the feed. */
-  .ax-wall__morebtn { display: flex; }
+  .ax-wall__morebtn, .ax-wall__nav > .ax-wall__shortcut { display: flex; }
+  .ax-wall__navgroup { display: none; }
   .ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn), .ax-wall__nav > .ax-wall__navlbl, .ax-wall__navfoot { display: none; }
   .ax-wall__morebtn[aria-expanded="true"] svg { color: var(--ax-accent); }
   .ax-wall__more:not([hidden]) { display: block; }

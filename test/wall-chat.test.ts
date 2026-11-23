@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
-import { chatContextLine, chatLogHtml } from "../src/daemon/ui/pages/wall-chat-view"
+import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "../src/daemon/ui/pages/wall-chat-view"
+import { cfFoldHtml, cfParseLive } from "../src/daemon/ui/pages/wall-chat-fold"
 import { openWall } from "./wall-settings-harness"
 
 // #1528: the Hub chat panel, option A (notes/design/hub-chat-panel.md).
@@ -9,7 +10,7 @@ import { openWall } from "./wall-settings-harness"
 
 type Reply = { status: number; body: unknown } | "down"
 
-function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; node?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
+function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; node?: string; hash?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
   const page = renderWallPage({ owner: opts.owner ?? true, signIn: opts.signIn })
   const els = new Map<string, any>()
   const on = (e: any) => (t: string, f: (ev: any) => void) => { (e.on[t] ??= []).push(f) }
@@ -69,7 +70,7 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
   const timers: Array<() => void> = []
   const delays: number[] = []
   new Function("document", "window", "fetch", "location", "localStorage", "setTimeout", "clearTimeout", WALL_CHAT_SCRIPT)(
-    doc, win, fetchStub, { pathname: "/hub", hash: "#status=failed" }, storage, (f: () => void, ms: number) => { timers.push(f); delays.push(ms); return timers.length }, () => {},
+    doc, win, fetchStub, { pathname: "/hub", hash: opts.hash ?? "#status=failed" }, storage, (f: () => void, ms: number) => { timers.push(f); delays.push(ms); return timers.length }, () => {},
   )
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const fire = async (id: string, type: string, ev: any = {}) => {
@@ -80,7 +81,7 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     for (const f of docOn.on.keydown ?? []) f({ preventDefault() {}, defaultPrevented: false, target: {}, ...ev })
     await settle()
   }
-  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key }
+  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key, win }
 }
 
 describe("Hub chat: what it draws (#1528)", () => {
@@ -92,7 +93,7 @@ describe("Hub chat: what it draws (#1528)", () => {
   })
 
   it("draws the empty state, a pending answer and a rendered reply", () => {
-    expect(chatLogHtml([], { agent: "Scout" })).toContain("Ask about what you see")
+    expect(chatLogHtml([], { agent: "Scout" })).toContain("<b>Ask Scout</b>")
     const html = chatLogHtml([
       { role: "user", content: "Why <did> it fail?", status: "done" },
       { role: "assistant", content: "**403**", status: "done" },
@@ -125,7 +126,7 @@ describe("Hub chat: what it draws (#1528)", () => {
     expect(html).not.toContain("Thinking…")
     expect(html).toContain('data-hc-stop="task-7"')
     expect(html).toContain('<a class="hc__run" href="#page=task&amp;task=task-7">Open the run</a>')
-    expect(html).toContain('<div class="b" data-hc-live><p>Looking at the log</p></div>')
+    expect(html).toContain('<div data-hc-live><div class="b"><p>Looking at the log</p></div></div>')
     expect(chatLogHtml(msgs, { agent: "Scout", live: "x", stopFailed: true })).toContain('data-hc-stop="task-7">Not stopped. Try again</button>')
     // Not started yet: no run to stop or open.
     const waiting = chatLogHtml([msgs[0], { ...msgs[1], taskId: null }], { agent: "Scout" })
@@ -137,16 +138,17 @@ describe("Hub chat: what it draws (#1528)", () => {
     const html = chatLogHtml([], { agent: "Scout", notSent: "Is <it> up?" })
     expect(html).toContain("Is &lt;it&gt; up?")
     expect(html).toContain("<b>Not sent</b>")
-    expect(html).not.toContain("Ask about what you see")
+    expect(html).not.toContain("hc__empty")
   })
 })
 
 describe("Hub chat: on the page (#1528)", () => {
-  it("puts the Chat box first in the side column and the panel beside it, for the owner", () => {
+  it("puts the Chat box first in the side column and the chat in the middle pane, for the owner", () => {
     const page = renderWallPage({ owner: true })
     expect(page).toMatch(/<aside class="ax-wall__aside" id="wall-aside">\s*<section class="ax-wall__box hcq" id="hc-quick"/)
     expect(page).toContain('id="hc-quick-form"')
-    expect(page).toMatch(/<\/aside>\s*<section class="hc" id="hc" aria-label="Chat" hidden>/)
+    // The middle pane (#2101 PR 2): last in the main column, no column of its own.
+    expect(page).toMatch(/hidden><\/section>\s*<section class="hc" id="hc" aria-label="Chat" hidden>[\s\S]*<\/section>\s*<\/div>\s*<aside class="ax-wall__aside"/)
     expect(page).toContain('id="hc-form"')
     expect(page).toContain('id="hc-btn"')
     expect(page).not.toMatch(/post as a task/i)
@@ -434,4 +436,174 @@ describe("Hub chat: on the page (#1528)", () => {
 it("the chat script is its own, mounted once next to the page script", () => {
   const page = renderWallPage({ owner: true })
   expect(page.split(WALL_CHAT_SCRIPT.slice(0, 80)).length).toBe(2)
+})
+
+// #2101 PR 2: the chat is the Hub's middle pane, one conversation per agent
+// (R12), answers folded like Claude Code (R14).
+const FOLD = { parse: cfParseLive, html: cfFoldHtml }
+const thread = (id: string, agentId: string, title: string, extra: object = {}) => ({
+  status: 200, body: { thread: { id, title, agentId }, messages: [{ role: "user", content: title, status: "done" }, { role: "assistant", content: "ok", status: "done", taskId: "task-" + id }], ...extra },
+})
+
+describe("Hub chat: each agent keeps its own conversation (#2101 R12)", () => {
+  it("opens the agent's newest conversation on a switch, and the first one as it was on the way back", async () => {
+    const w = openChat({
+      thread: "s1",
+      route: (url) => url === "/api/assistant/thread?id=s1" ? thread("s1", "scout", "Disk space?")
+        : url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [{ id: "f1", title: "Deploy?", agentId: "forge" }] } }
+        : url === "/api/assistant/thread?id=f1" ? thread("f1", "forge", "Deploy?")
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-sub").textContent).toBe("Disk space?")
+    expect(w.el("hc-who").textContent).toBe("Scout")
+
+    w.el("hc-agent").value = "forge"
+    await w.fire("hc-agent", "change")
+    expect(w.calls.filter((c) => c.url === "/api/assistant/threads?agent=forge")).toHaveLength(1)
+    expect(w.el("hc-sub").textContent).toBe("Deploy?")
+    expect(w.el("hc-who").textContent).toBe("Forge")
+    expect(w.ls.get("ax-assistant-thread")).toBe("f1")
+
+    // Back to Scout: its conversation from memory, no list read.
+    w.el("hc-agent").value = "scout"
+    await w.fire("hc-agent", "change")
+    expect(w.calls.some((c) => c.url.startsWith("/api/assistant/threads?agent=scout"))).toBe(false)
+    expect(w.el("hc-sub").textContent).toBe("Disk space?")
+    expect(w.ls.get("ax-assistant-thread")).toBe("s1")
+
+    // And Forge again: remembered too.
+    w.el("hc-agent").value = "forge"
+    await w.fire("hc-agent", "change")
+    expect(w.calls.filter((c) => c.url === "/api/assistant/threads?agent=forge")).toHaveLength(1)
+    expect(w.el("hc-sub").textContent).toBe("Deploy?")
+    expect(JSON.parse(w.ls.get("ax-hub-chat-agents")!)).toMatchObject({ scout: { t: "s1" }, forge: { t: "f1" } })
+  })
+
+  it("starts a new conversation for an agent that has none, and sends it to that agent", async () => {
+    const w = openChat({
+      thread: "s1",
+      route: (url, init) => url === "/api/assistant/thread?id=s1" ? thread("s1", "scout", "Disk space?")
+        : url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [] } }
+        : url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "f2" } }
+        : url === "/api/assistant/thread?id=f2" ? thread("f2", "forge", "Hello forge")
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    w.el("hc-agent").value = "forge"
+    await w.fire("hc-agent", "change")
+    expect(w.el("hc-log").innerHTML).toContain("<b>Ask Forge</b>")
+    expect(w.ls.get("ax-assistant-thread")).toBeUndefined()
+    w.el("hc-text").value = "Hello forge"
+    await w.fire("hc-form", "submit")
+    const post = w.calls.find((c) => c.method === "POST")!
+    expect(post.body).toMatchObject({ agentId: "forge", message: "Hello forge" })
+    expect(post.body.threadId).toBeUndefined()
+    expect(JSON.parse(w.ls.get("ax-hub-chat-agents")!)).toMatchObject({ scout: { t: "s1" }, forge: { t: "f2" } })
+  })
+
+  it("opens from its link, #page=chat&agent=<id>", async () => {
+    const w = openChat({
+      hash: "#page=chat&agent=forge",
+      route: (url) => url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [{ id: "f1", title: "Deploy?", agentId: "forge" }] } }
+        : url === "/api/assistant/thread?id=f1" ? thread("f1", "forge", "Deploy?")
+        : undefined,
+    })
+    await w.settle()
+    expect(w.el("hc").hidden).toBe(false)
+    expect(w.wallCls.has("hc-open")).toBe(true)
+    expect(w.el("hc-agent").value).toBe("forge")
+    expect(w.el("hc-sub").textContent).toBe("Deploy?")
+  })
+})
+
+describe("Hub chat: answers like Claude Code (#2101 R14)", () => {
+  it("folds a finished answer's steps under Worked for, one line each", async () => {
+    const runs = { "task-s1": { ms: 72_000, steps: [
+      { tool: "Read", input: '{"file_path":"/repo/src/wall.ts"}', error: false },
+      { tool: "Edit", input: '{"file_path":"/repo/src/index.ts","old_string":"a"}', error: false },
+      { tool: "Bash", input: '{"command":"npm test\\nnpm run lint"}', error: true },
+    ] } }
+    const w = openChat({ thread: "s1", route: (url) => url === "/api/assistant/thread?id=s1" ? thread("s1", "scout", "Fix it", { runs }) : undefined })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const log = w.el("hc-log").innerHTML
+    expect(log).toContain("Worked for 1m 12s · 3 steps")
+    expect(log).toContain(">Read wall.ts</li>")
+    expect(log).toContain(">Edited index.ts</li>")
+    expect(log).toContain("Ran npm test <b>failed</b>")
+    expect(log).toContain('data-hc-fold="task-s1"')
+    // Folded: the answer itself shows, the steps wait behind the summary.
+    expect(log).not.toContain('data-hc-fold="task-s1" open')
+  })
+
+  it("streams the fold and the answer, never the raw tool, thought or init lines, and keeps an error line", async () => {
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url) => url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: {
+        node: "http://studio", thread: { id: "t1", title: "Why?", agentId: "scout" },
+        messages: [{ role: "user", content: "Why?", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-7" }],
+      } } : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    w.streams[0].emit("start", { initial: "· init model=opus\n💭 let me look ↵ closer\n" })
+    w.streams[0].emit("chunk", { text: '→ Read({"file_path":"/var/log/backup.log"})\n← line one ↵ line two\n[error] Daily budget reached for scout\nThe backup ran out of disk.' })
+    const log = w.el("hc-log").innerHTML
+    expect(log).toContain("Working")
+    expect(log).toContain("Read backup.log")
+    expect(log).toContain("The backup ran out of disk.")
+    expect(log).toContain('<div class="hc__notice" role="alert"><b>Error</b>Daily budget reached for scout</div>')
+    for (const raw of ["→ Read", "line one", "💭", "let me look", "init model"]) expect(log).not.toContain(raw)
+  })
+
+  it("says a spoken message's answer back through the speak route", async () => {
+    let pending = true
+    const w = openChat({
+      route: (url, init) => url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "v1", node: "http://studio" } }
+        : url.startsWith("/api/assistant/thread?id=v1") ? { status: 200, body: { thread: { id: "v1", title: "Status?", agentId: "scout" },
+          messages: [{ role: "user", content: "Status?", status: "done" }, pending ? { role: "assistant", content: "", status: "pending" } : { role: "assistant", content: "All green.", status: "done" }] } }
+        : url === "/api/assistant/voice/speak" ? { status: 200, body: { fallback: "browser", text: "All green." } }
+        : undefined,
+    })
+    await w.settle()
+    w.el("hc-agent").value = "scout"
+    await w.win.AXHubChat.send("Status?", { spoken: true })
+    await w.settle()
+    expect(w.calls.find((c) => c.url === "/api/assistant")!.body).toMatchObject({ message: "Status?", spoken: true })
+    expect(w.calls.some((c) => c.url === "/api/assistant/voice/speak")).toBe(false)
+    pending = false
+    w.timers.at(-1)!()
+    await w.settle()
+    const speak = w.calls.filter((c) => c.url === "/api/assistant/voice/speak")
+    expect(speak).toHaveLength(1)
+    expect(speak[0].body).toEqual({ threadId: "v1", node: "http://studio", text: "All green." })
+  })
+
+  it("sends the uploaded files with the message and shows them as chips", async () => {
+    const w = openChat({
+      route: (url, init) => url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "a1" } }
+        : url === "/api/assistant/thread?id=a1" ? { status: 200, body: { thread: { id: "a1", title: "Look", agentId: "scout" },
+          messages: [{ role: "user", content: "Look\n\nAttached: chart.png", status: "done" }] } }
+        : undefined,
+    })
+    await w.settle()
+    w.win.AXHubChat.attachments = () => [{ name: "chart.png", path: "/ws/uploads/x-chart.png" }]
+    w.el("hc-agent").value = "scout"
+    w.el("hc-text").value = "Look"
+    await w.fire("hc-form", "submit")
+    expect(w.calls.find((c) => c.url === "/api/assistant")!.body.attachments).toEqual([{ name: "chart.png", path: "/ws/uploads/x-chart.png" }])
+    expect(w.el("hc-log").innerHTML).toContain('<div class="b">Look</div><div class="hc__files"><span class="hc__file">chart.png</span></div>')
+  })
+
+  it("draws the fold and the live part from the parser", () => {
+    const p = cfParseLive('→ Grep({"pattern":"TODO"})\n← [error] no match\n> codex command_execution ls -la\nDone.')
+    expect(p.steps.map((s) => [s.tool, s.error])).toEqual([["Grep", true], ["Bash", false]])
+    expect(p.answer).toBe("Done.")
+    expect(chatLiveHtml("", { key: "k", fold: FOLD })).toBeNull()
+    expect(chatAttached("Hi\n\nAttached: a.png, b.pdf")).toEqual({ text: "Hi", files: ["a.png", "b.pdf"] })
+    expect(chatAttached("Plain")).toEqual({ text: "Plain", files: [] })
+  })
 })

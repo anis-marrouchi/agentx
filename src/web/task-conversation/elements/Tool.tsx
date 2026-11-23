@@ -7,6 +7,9 @@ import { DiffView, diffCounts, diffRows } from "./DiffView"
 // its state); open it for the input and the result. An edit shows its diff
 // and is open by default, so the change is read without a click.
 
+// The compact status treatment is adapted from affectUI’s clean Tool Call Card.
+const stateLabels = { running: "Running", done: "Completed", stopped: "No result", error: "Failed" }
+
 type ToolPart = Extract<Part, { kind: "tool" }>
 
 export function Tool({ part, running }: { part: ToolPart; running: boolean }) {
@@ -28,7 +31,7 @@ export function Tool({ part, running }: { part: ToolPart; running: boolean }) {
           </span>
         ) : null}
         <span className={`axc-tool__state axc-tool__state--${state}`}>
-          {state === "running" ? "running" : state === "error" ? "failed" : state === "stopped" ? "no result" : ""}
+          {stateLabels[state]}
         </span>
       </button>
       {open ? (

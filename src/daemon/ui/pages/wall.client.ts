@@ -1616,7 +1616,8 @@ ${WALL_AGENTS_SCRIPT}
     applyHash();
   });
   // openPost applies its own hash; skip the hashchange that follows it.
-  window.addEventListener('hashchange', function () { if (location.hash !== S.applied) applyHash(); });
+  // The chat's own link (#page=chat, wall-chat.client.ts) leaves the page under it as it is.
+  window.addEventListener('hashchange', function () { if (location.hash !== S.applied && !/^#(.*&)?page=chat(&|$)/.test(location.hash)) applyHash(); });
 
   // What a chat message carries (#1528, wall-chat.client.ts): the page, the
   // status tab and filters that are set, the open post or run, and the

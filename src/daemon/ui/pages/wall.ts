@@ -164,10 +164,10 @@ function wallNavGroups(owner: boolean): typeof WALL_NAV_GROUPS {
 /** The four pages in the phone's bottom bar; More holds the rest (#1355). */
 export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
 
-function navItemHtml(i: NavItem): string {
+function navItemHtml(i: NavItem, mobileShortcut = false): string {
   const bar = WALL_BAR_KEYS.includes(i.key) ? " data-bar" : ""
-  const n = i.count ? `<b class="ax-wall__n" id="${i.count}"></b>` : ""
-  return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
+  const n = i.count ? (mobileShortcut ? `<b class="ax-wall__n" data-n-for="${i.count}" hidden></b>` : `<b class="ax-wall__n" id="${i.count}"></b>`) : ""
+  return `<a class="ax-wall__item${mobileShortcut ? " ax-wall__shortcut" : ""}${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
 }
 
 /** The phone's More sheet: every page not in the bar, in the same groups. */
@@ -201,9 +201,15 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const groups = wallNavGroups(owner)
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
-  const navItems = groups.map((g) =>
-    (g.label ? `    <span class="ax-wall__navlbl" aria-hidden="true">${g.label}</span>\n` : "") + g.items.map((i) => `    ${navItemHtml(i)}`).join("\n"),
-  ).join("\n") + `\n    <a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
+  const navItems = groups.map((group) => {
+    const items = group.items.map((item) => navItemHtml(item)).join("\n")
+    if (!group.label) return items
+    if (group.label === "Owner") return `<span class="ax-wall__navlbl" aria-hidden="true">Owner</span>\n${items}`
+    return `<details class="ax-wall__navgroup"><summary>${group.label}</summary>\n${items}\n</details>`
+  }).join("\n")
+  const shortcuts = groups.filter((group) => group.label).flatMap((group) => group.items)
+    .filter((item) => WALL_BAR_KEYS.includes(item.key)).map((item) => navItemHtml(item, true)).join("\n")
+  const dashboard = `<a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
   const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
   // Take B's three columns (#1242): a nav on the left, the feed in the
   // middle, Running now, Agents and the dashboard links on the right.
@@ -215,6 +221,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
       <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
     </section>
 ${navItems}
+${dashboard}
+${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
     <div class="ax-wall__navfoot">
@@ -292,6 +300,7 @@ ${navItems}
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
     <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
     <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
+    ${wallChatPanelHtml(chat)}
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
     ${wallChatQuickHtml(chat)}
@@ -316,7 +325,6 @@ ${navItems}
       <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
     </section>
   </aside>
-  ${wallChatPanelHtml(chat)}
   <div id="wall-wf-dialog" hidden></div>
 </div>`
 

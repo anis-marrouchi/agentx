@@ -11,7 +11,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub is the first page you see. Its address is `/hub`. From a classic dashboard page, select **Hub** to come back.
-2. The nav on the left opens with **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). The rest is in four groups, each under a small grey heading:
+2. The nav on the left opens with **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Running now**, **Projects** and **Activity**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
@@ -54,6 +54,14 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 **Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one. When the run ends, the row moves to **Done in the last hour** with a green dot. To see workers, ask an agent to hand part of a task to another agent: within a few seconds the hand-off is listed under the first agent's row with a turning ring, and selecting it opens the other agent's run.
 
 **If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back; if it stays stale longer than that, reload the page. If the tree is missing, widen the window: it is hidden under 1181 pixels. If a hand-off does not show under its agent, the hand-off was started outside an agent's run (from the command line or a schedule), so it has no run to sit under; it still shows as its own row. A machine on an older version does not send its workers.
+
+
+## Chat with an agent
+
+1. Select an agent in the Hub to open their chat in the middle pane.
+2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
+3. The reply appears as it is written. Open **Worked for …** to see the agent's tool steps. Select **Open the run** during a reply to follow that run on its own page.
+4. Switch agents and return to the first agent to see the earlier conversation.
 
 ## Read a post
 
@@ -567,11 +575,15 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Hub opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
 2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
 3. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
-4. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. A background run using the non-streaming Claude Code path shows its reply when it finishes. The reply shows as formatted text with highlighted code and tables. Each tool step is one line, such as **Read** `net/retry.ts` or **Ran** `Run the tests`, with **running** while it works. Select a step to see its input and result. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom; scroll up to read and it stops following.
+4. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. A background run using the non-streaming Claude Code path shows its reply when it finishes. The reply shows as formatted text with highlighted code and tables. A spinner shows while the conversation waits for its first output. Each tool step shows its state on one line, such as **Read** `net/retry.ts` with **Running** while it works and **Completed** when a result arrives. Select a step to see its input and result. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom; scroll up to read and it stops following.
 5. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn. **Pause**, at the top, stops the task with a resume plan so it can go on later (select **Pause it?** to confirm). A paused run's page shows its plan with **Resume** and **Drop**, as on Live.
 6. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
 
 ![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
+
+![A demo conversation waiting for output and the Needs you count](/screenshots/wall/run-waiting.png)
+
+![Demo tool steps on a narrow screen, showing an edit diff and the Completed, Failed and Running states](/screenshots/wall/run-tool-states.png)
 
 ## See what the agents ran
 

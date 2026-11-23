@@ -270,8 +270,9 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var errs = (v.errors || []).map(function (e) { return 'the ' + (DEC_BADGE[e.kind] || e.kind).toLowerCase() + ' items'; });
     if (D.reqs && D.reqs.error) errs.push('the requests');
     var err = errs.length ? '<div class="wdc__err is-part"><p>Could not read ' + esc(errs.join(', ')) + '. The rest is shown.</p><button type="button" class="ax-btn ax-btn--ghost" data-dreload>Try again</button></div>' : '';
-    var head = '<p class="ax-wall__count wdc__head">' + decideCount() + ' waiting for ' + (decOwner() ? 'you' : 'the owner') + (decLater() ? ', ' + decLater() + ' put off for later' : '') +
-      '<span class="k">Same count as the Desk and the digest</span></p>';
+    // The count-led heading follows affectUI’s clean Decision Inbox (LICENSE.affectui).
+    var head = '<p class="ax-wall__count wdc__head"><strong>' + decideCount() + ' waiting for ' + (decOwner() ? 'you' : 'the owner') + (decLater() ? ', ' + decLater() + ' put off for later' : '') +
+      '</strong></p>';
     var ro = decOwner() ? '' : '<p class="wdc__ro">Only the owner can answer these. You see them read only.</p>';
     if (D.tab === 'answered') return note + head + decTabs() + ro + decAnsweredHtml(v.answered || [], v.answered_since);
     var tabList = all.filter(function (o) { return D.tab === 'later' ? o.snoozed : !o.snoozed; });
@@ -465,8 +466,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
 
 export const WALL_DECIDE_CSS = `
 .ax-wall__decide { padding: 0 0 12px; }
-.wdc__head { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0 16px 6px; }
-.wdc__head .k { color: var(--ax-muted); }
+.wdc__head { margin: 0; padding: 8px 16px; color: var(--ax-text); background: var(--ax-surface); border-bottom: 1px solid var(--ax-border); }
 .wdc__tabs { display: flex; border-bottom: 1px solid var(--ax-border); }
 .wdc__tabs button { flex: 1 1 0; }
 .wdc__tabs .n { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); font-size: var(--ax-fs-xs); }

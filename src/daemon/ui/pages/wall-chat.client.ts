@@ -1,11 +1,17 @@
-// --- Hub chat panel (#1528, option A of notes/design/hub-chat-panel.md) ---
+// --- Hub chat (#1528; the middle pane since #2101 PR 2) ---
 //
-// Ask an agent from the Hub. A Chat box is the first box of the side
-// column; asking there opens the panel, which takes the side column's
-// place (full height, sticky), so the feed and the open post stay where
-// they are. Under 1180 px the Hub has no side column: a chat button sits in
-// the header and the panel opens over the right of the page, full screen
-// on a phone.
+// Chat with an agent from the Hub. The chat is the Hub's middle pane
+// (#page=chat&agent=<id>, Orca's chat mode), in place of the page it was
+// opened from; ← or Escape goes back there. It opens from the Chat box in
+// the side column, the header's chat button under 1180 px, "/" and the
+// agent links (a profile's Chat, a Hub chat run in the left tree).
+//
+// Each agent keeps its own conversation (R12): switching agent opens that
+// agent's last conversation (remembered here, else the newest from
+// GET /api/assistant/threads?agent=), and coming back finds the first one
+// as it was. An answer reads like Claude Code (R14, wall-chat-fold.ts):
+// the tool steps folded under "Worked for …", the answer plainly. Files
+// and the mic are wall-chat-input.client.ts, through window.AXHubChat.
 //
 // One back end, the classic drawer's (assistant.ts): POST /api/assistant,
 // GET /api/assistant/thread and /threads, POST /api/assistant/delete, and
@@ -23,7 +29,10 @@
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
 import { HUB_PATH } from "../hub-name"
-import { chatContextLine, chatLogHtml } from "./wall-chat-view"
+import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "./wall-chat-view"
+import { cfBase, cfDuration, cfField, cfFoldHtml, cfParseLive, cfStepLine } from "./wall-chat-fold"
+import { WALL_CHAT_INPUT_SCRIPT, wallChatInputHtml } from "./wall-chat-input.client"
+export { WALL_CHAT_CSS } from "./wall-chat.css"
 
 const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>'
 const ICON_LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
@@ -69,34 +78,65 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
   </section>`
   }
   return `<section class="hc" id="hc" aria-label="Chat" hidden>
-    <div class="hc__head">${close}<div class="hc__title"><b>Chat</b><small id="hc-sub">New conversation</small></div>
+    <div class="hc__head">${close}<div class="hc__title"><b id="hc-who">Chat</b><small id="hc-sub">New conversation</small></div>
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
     <div class="hc__to"><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <form class="hc__foot" id="hc-form">
       <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
-      <div class="hc__row"><textarea id="hc-text" rows="1" maxlength="4000" placeholder="Message…" aria-label="Message"></textarea><button class="ax-btn" id="hc-send" type="submit">Send</button></div>
+      ${wallChatInputHtml()}
     </form>
   </section>`
 }
 
+
+/** The Hub's hash for the chat with `agent` (#2101 R12). */
+export function chatHash(agent: string): string {
+  return "#page=chat" + (agent ? "&agent=" + encodeURIComponent(agent) : "")
+}
+
 export const WALL_CHAT_SCRIPT = String.raw`
+// The Hub chat, the middle pane (wall-chat.client.ts).
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var panel = $('hc'), wall = document.querySelector('.ax-wall');
   if (!panel || !wall) return;
-  ${injectFns({ markdownToHtml, chatContextLine, chatLogHtml })}
-  var THREAD_KEY = 'ax-assistant-thread', NODE_KEY = 'ax-hub-chat-node', SEEN_KEY = 'ax-hub-chat-seen';
+  ${injectFns({ markdownToHtml, chatContextLine, chatAttached, chatLiveHtml, chatLogHtml, cfBase, cfField, cfStepLine, cfDuration, cfParseLive, cfFoldHtml, chatHash })}
+  var THREAD_KEY = 'ax-assistant-thread', NODE_KEY = 'ax-hub-chat-node', SEEN_KEY = 'ax-hub-chat-seen', AGENTS_KEY = 'ax-hub-chat-agents';
+  var FOLD = { parse: cfParseLive, html: cfFoldHtml };
   var guest = !$('hc-form');
+  var hist = window.history && window.history.pushState ? window.history : null;
 
-  function open(v) {
+  // --- The middle pane and its link: #page=chat&agent=<id> ---
+  // fromHash: the page it was opened from, which ← goes back to and which
+  // the message's context names. pushed: the chat's hash is a history
+  // entry of its own, so ← is the browser's Back.
+  var fromHash = '', pushed = false;
+  function chatRoute(h) {
+    var q = new URLSearchParams(String(h || '').replace(/^#/, ''));
+    return q.get('page') === 'chat' ? { agent: q.get('agent') || '' } : null;
+  }
+  function routeTo(agent) {
+    if (!hist || panel.hidden) return;
+    var h = chatHash(agent || '');
+    if (location.hash === h) return;
+    if (chatRoute(location.hash)) hist.replaceState(null, '', h);
+    else { fromHash = location.hash; hist.pushState(null, '', h); pushed = true; }
+  }
+  function routeAway() {
+    if (!hist || !chatRoute(location.hash)) return;
+    if (pushed) { pushed = false; hist.back(); }
+    else hist.replaceState(null, '', fromHash || location.pathname + location.search);
+  }
+
+  function open(v, quiet) {
     panel.hidden = !v;
     wall.classList.toggle('hc-open', v);
     if ($('hc-btn')) $('hc-btn').setAttribute('aria-expanded', String(v));
-    if (v && !guest) { paintCtx(); markSeen(); loadThread(threadId); }
+    if (v && !guest) { paintCtx(); markSeen(); loadThread(threadId); if (!quiet) routeTo(currentAgent()); }
     // Closed: no stream; a pending answer is read every 10 s, for the dot.
-    if (!v && !guest) closeStream();
+    if (!v && !guest) { closeStream(); if (!quiet) routeAway(); }
   }
   if ($('hc-btn')) $('hc-btn').addEventListener('click', function () { open(panel.hidden); });
   $('hc-close').addEventListener('click', function () { open(false); });
@@ -126,7 +166,10 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (panel.hidden && q && q.offsetParent) q.focus();
     else { open(true); $('hc-text').focus(); }
   });
-  if (guest) return;
+  if (guest) {
+    if (chatRoute(location.hash)) open(true, true);
+    return;
+  }
 
   function headers(h) {
     h = h || {};
@@ -144,24 +187,36 @@ export const WALL_CHAT_SCRIPT = String.raw`
   function pageContext() {
     var c = {};
     try { if (typeof window.axPageContext === 'function') c = window.axPageContext() || {}; } catch (e) { c = {}; }
-    return Object.assign({ path: location.pathname + location.hash }, c);
+    var h = chatRoute(location.hash) ? fromHash : location.hash;
+    return Object.assign({ path: location.pathname + h }, c);
   }
   function paintCtx() {
     var c = pageContext();
     $('hc-ctx').textContent = chatContextLine(c);
     $('hc-ctx-full').textContent = JSON.stringify(c, null, 2);
   }
-  window.addEventListener('hashchange', function () { if (!panel.hidden) paintCtx(); });
+  window.addEventListener('hashchange', function () {
+    var r = chatRoute(location.hash);
+    // Back from the chat, or a link to it (a profile's Chat, a chat run).
+    if (!r) { pushed = false; if (!panel.hidden) open(false, true); return; }
+    if (panel.hidden) open(true, true);
+    if (r.agent && r.agent !== currentAgent()) switchAgent(r.agent);
+    paintCtx();
+  });
 
   // --- Who answers ---
-  var agentNames = {};
+  var agentNames = {}, agentsKnown = false;
+  function currentAgent() { return (thread && thread.agentId) || $('hc-agent').value || ''; }
   fetch('/api/agents', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var list = (Array.isArray(d) ? d : (d.agents || [])).filter(function (a) { return a && (a.id || a.name); });
     list.forEach(function (a) { agentNames[a.id || a.name] = a.name || a.id; });
     $('hc-agent').innerHTML = list.length
       ? list.map(function (a) { var id = a.id || a.name; return '<option value="' + esc(id) + '">' + esc(agentNames[id]) + ' @' + esc(id) + '</option>'; }).join('')
       : '<option value="">No agents on this node</option>';
-    if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
+    agentsKnown = true;
+    var r = chatRoute(location.hash);
+    if (r && r.agent && r.agent !== (thread && thread.agentId)) switchAgent(r.agent);
+    else if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
     paintLog();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
@@ -175,12 +230,48 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // --- The conversation: it lives on the daemon, the page keeps its id ---
   // threadNode: the node that holds it, as the Hub's proxy names it; its
   // reads go there, and its run streams and stops from there.
-  var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], notSent = '', poll = null, busy = false, loaded = false;
+  var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], runs = {}, notSent = '', poll = null, busy = false, loaded = false;
+  // spoken: the conversation whose next answer is said aloud (the mic).
+  var spoken = null, openFolds = {};
   function setThread(id, node) {
-    if ((id || null) !== threadId) closeStream();
+    if ((id || null) !== threadId) { closeStream(); runs = {}; }
     threadId = id || null; threadNode = (threadId && node) || null;
     store(THREAD_KEY, threadId); store(NODE_KEY, threadNode);
   }
+
+  // --- Each agent keeps its own conversation (#2101 R12) ---
+  // agentId → { t: its open conversation (null: a new one), n: its node }.
+  function mem() { try { return JSON.parse(read(AGENTS_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function remember(agent, id, node) {
+    if (!agent) return;
+    var m = mem();
+    m[agent] = { t: id || null, n: (id && node) || null };
+    store(AGENTS_KEY, JSON.stringify(m));
+  }
+  /** Opens the agent's conversation: the one it had open here, else its
+   *  newest (GET /api/assistant/threads?agent=), else a new one. */
+  function switchAgent(agent) {
+    if (!agent) return;
+    if (thread && thread.agentId) remember(thread.agentId, threadId, threadNode);
+    else if (!threadId) remember($('hc-agent').value, null, null);
+    $('hc-agent').value = agent;
+    notSent = '';
+    var m = mem()[agent];
+    routeTo(agent);
+    if (m && m.t) { setThread(m.t, m.n); thread = null; msgs = []; loaded = false; loadThread(threadId); return; }
+    setThread(null); thread = null; msgs = []; loaded = true; paintLog();
+    if (m) return;
+    var q = '/api/assistant/threads?agent=' + encodeURIComponent(agent);
+    if (!$('hc-node').hidden && $('hc-node').value) q += '&node=' + encodeURIComponent($('hc-node').value);
+    fetch(q, { headers: headers() }).then(function (r) { return r.ok ? r.json() : { threads: [] }; }).then(function (d) {
+      var t = (d.threads || [])[0];
+      // Still on that agent, still on a new conversation: open its newest.
+      if (!t || threadId || $('hc-agent').value !== agent) return;
+      setThread(t.id, d.node || null); loaded = false;
+      loadThread(threadId);
+    }).catch(function () { /* none to open: a new conversation */ });
+  }
+  $('hc-agent').addEventListener('change', function () { switchAgent($('hc-agent').value); });
 
   // --- The pending answer, live: its run's stream (GET /api/task/stream) ---
   // The thread read stays as the fallback: slower while the stream is open,
@@ -227,36 +318,46 @@ export const WALL_CHAT_SCRIPT = String.raw`
     });
   }
   var FINISHED = '\n[task finished]\n';
-  /** A chunk: repaint the streamed text alone, so Stop and its label stay
-   *  as they are. The first text, or a log without it, repaints it all. */
+  /** A chunk: repaint the live part alone (the fold, any error line, the
+   *  answer so far), so Stop and its label stay as they are. The first
+   *  text, or a log without it, repaints it all. */
   function paintLive(had) {
     var log = $('hc-log');
     var b = had && log.querySelector ? log.querySelector('[data-hc-live]') : null;
     if (!b) { paintLog(); return; }
-    var html = esc(live);
-    try { html = markdownToHtml(live); } catch (e) { /* plain text above */ }
-    b.innerHTML = html;
+    var p = pendingMsg();
+    b.innerHTML = chatLiveHtml(live, { key: String((p && p.taskId) || ''), fold: FOLD, md: markdownToHtml, ms: p && p.createdAt ? Date.now() - p.createdAt : null, open: !!(p && openFolds[p.taskId]) }) || '<div class="b">Thinking…</div>';
     log.scrollTop = log.scrollHeight;
   }
+  // A fold the reader opened stays open across repaints.
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (!d || !d.getAttribute || !d.hasAttribute || !d.hasAttribute('data-hc-fold')) return;
+    openFolds[d.getAttribute('data-hc-fold')] = !!d.open;
+  }, true);
   /** The pending answer's Task page on the Hub (wall-task.client.ts). */
   function runHref(m) {
     if (!m || !m.taskId || !threadNode || !thread) return '';
     var q = new URLSearchParams();
     q.set('page', 'task'); q.set('task', m.taskId); q.set('agent', thread.agentId); q.set('node', threadNode);
     var ask = msgs.filter(function (x) { return x.role === 'user'; }).pop();
-    if (ask) q.set('ask', String(ask.content).slice(0, 400));
+    if (ask) q.set('ask', chatAttached(String(ask.content)).text.slice(0, 400));
     return '#' + q.toString();
   }
   function pendingMsg() { return msgs.filter(function (m) { return m.status === 'pending'; }).pop(); }
   function agentName() {
-    var id = (thread && thread.agentId) || $('hc-agent').value;
+    var id = currentAgent();
     return agentNames[id] || id || 'The agent';
   }
   function paintLog() {
     var log = $('hc-log');
     var p = pendingMsg();
-    log.innerHTML = chatLogHtml(msgs, { agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p), stopFailed: !!p && p.taskId === stopFailed });
+    log.innerHTML = chatLogHtml(msgs, {
+      agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p),
+      stopFailed: !!p && p.taskId === stopFailed, runs: runs, fold: FOLD, open: openFolds, now: Date.now(),
+    });
     log.scrollTop = log.scrollHeight;
+    $('hc-who').textContent = agentsKnown || thread ? agentName() : 'Chat';
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }
   function signedOut() {
@@ -285,43 +386,71 @@ export const WALL_CHAT_SCRIPT = String.raw`
       if (!r.ok) { setThread(null); thread = null; msgs = []; loaded = true; paintLog(); return; }
       return r.json().then(function (d) {
         if (id !== threadId) return;
-        thread = d.thread || null; msgs = d.messages || []; loaded = true;
+        thread = d.thread || null; msgs = d.messages || []; runs = d.runs || {}; loaded = true;
         if (d.node && !threadNode) { threadNode = d.node; store(NODE_KEY, threadNode); }
-        if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
+        if (thread && thread.agentId) { $('hc-agent').value = thread.agentId; remember(thread.agentId, id, threadNode); }
         var p = pendingMsg();
         if (p && !panel.hidden) stream(p);
         if (!p) closeStream();
         paintLog();
         if (p) poll = setTimeout(function () { loadThread(id); }, panel.hidden ? 10000 : es ? 5000 : 1500);
-        else loadLast();
+        else {
+          sayAnswer(id);
+          loadLast();
+        }
       });
     }).catch(function () { clearTimeout(slow); });
   }
+  /** The answer to a spoken message, said back (wall-chat-input.client.ts). */
+  function sayAnswer(id) {
+    if (spoken !== id) return;
+    spoken = null;
+    var last = msgs[msgs.length - 1];
+    if (!last || last.role !== 'assistant' || last.status !== 'done' || !last.content) return;
+    if (typeof api.onSpokenAnswer === 'function') api.onSpokenAnswer({ threadId: id, node: threadNode, text: last.content });
+  }
 
-  function send(text) {
+  function send(text, extra) {
     text = String(text || '').trim();
-    if (!text || busy) return;
+    extra = extra || {};
+    var files = typeof api.attachments === 'function' ? api.attachments() : [];
+    if (!text && files.length) text = files.length === 1 ? 'See the attached file.' : 'See the attached files.';
+    if (!text || busy) return Promise.resolve(false);
     var agent = $('hc-agent').value;
-    if (!agent && !threadId) { $('hc-agent').focus(); return; }
+    if (!agent && !threadId) { $('hc-agent').focus(); return Promise.resolve(false); }
     busy = true; notSent = ''; $('hc-send').disabled = true; $('hc-text').value = '';
     // A conversation stays on its node; a new one goes to the node picked.
     var node = threadId ? threadNode || undefined : ($('hc-node').hidden ? undefined : $('hc-node').value || undefined);
+    var ok = false;
     return fetch('/api/assistant', {
       method: 'POST', headers: headers({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ threadId: threadId || undefined, agentId: agent, node: node, message: text, context: pageContext() }),
+      body: JSON.stringify({
+        threadId: threadId || undefined, agentId: agent, node: node, message: text, context: pageContext(),
+        attachments: files.length ? files : undefined, spoken: extra.spoken ? true : undefined,
+      }),
     }).then(function (r) {
       if (r.status === 401) { $('hc-text').value = text; signedOut(); return; }
       if (r.status === 502) { $('hc-text').value = text; return nodeDown(r); }
       return r.json().then(function (d) {
         if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+        ok = true;
         setThread(d.threadId, d.node || node);
+        remember(agent, d.threadId, d.node || node);
+        spoken = extra.spoken ? d.threadId : null;
+        if (typeof api.onSent === 'function') api.onSent();
         return loadThread(d.threadId);
       });
     }).catch(function () {
       // The node did not take it: say so, and keep the text to send again.
       notSent = text; $('hc-text').value = text; paintLog();
-    }).then(function () { busy = false; $('hc-send').disabled = false; });
+    }).then(function () { busy = false; $('hc-send').disabled = false; return ok; });
   }
+  // The ask box's files and mic (wall-chat-input.client.ts) use these.
+  var api = window.AXHubChat = {
+    send: send, headers: headers, agent: currentAgent,
+    node: function () { return threadId ? threadNode || '' : ($('hc-node').hidden ? '' : $('hc-node').value || ''); },
+    attachments: null, onSent: null, onSpokenAnswer: null,
+  };
   $('hc-form').addEventListener('submit', function (e) { e.preventDefault(); send($('hc-text').value); });
   $('hc-text').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send($('hc-text').value); }
@@ -350,7 +479,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       }).catch(function () { stopFailed = task; stop.disabled = false; stop.textContent = 'Not stopped. Try again'; });
     } else if (t.closest('[data-hc-retry]')) {
       var last = msgs.filter(function (m) { return m.role === 'user'; }).pop();
-      if (last) send(last.content);
+      if (last) send(chatAttached(last.content).text);
     } else if (t.closest('[data-hc-other]')) $('hc-agent').focus();
   });
 
@@ -411,7 +540,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
           if (r.status === 401) { $('hc-hist-panel').hidden = true; $('hc-hist').setAttribute('aria-expanded', 'false'); signedOut(); return; }
           return r.json().catch(function () { return {}; }).then(function (d) {
             if (!r.ok || (d && d.error)) throw new Error((d && d.error) || ('HTTP ' + r.status));
-            if (id === threadId) { setThread(null); loadThread(null); }
+            if (id === threadId) { if (thread && thread.agentId) remember(thread.agentId, null, null); setThread(null); loadThread(null); }
             return paintHist();
           });
         })
@@ -426,6 +555,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     loadThread(threadId);
   });
   $('hc-new').addEventListener('click', function () {
+    remember(currentAgent(), null, null);
     setThread(null); notSent = ''; loadThread(null);
     $('hc-hist-panel').hidden = true; $('hc-hist').setAttribute('aria-expanded', 'false');
     $('hc-text').focus();
@@ -435,96 +565,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // the conversation the wizard started.
   if (/(^#|&)chat=open(&|$)/.test(location.hash)) open(true);
   loadLast();
+  // Opened by its link: #page=chat&agent=<id> (the agent once the list is in).
+  if (chatRoute(location.hash)) open(true, true);
 })();
-`
-
-export const WALL_CHAT_CSS = `
-/* Hub chat panel (#1528, option A): the Chat box, then the panel in the side column's place. */
-.hcq h2 { display: flex; align-items: center; gap: 8px; }
-.hcq h2 svg { width: 20px; height: 20px; }
-.hcq h2 kbd { margin-left: auto; font: 600 11px var(--ax-mono); color: var(--ax-muted); border: 1px solid var(--ax-border-2); border-radius: 5px; padding: 1px 6px; }
-.hcq form { display: flex; gap: 8px; }
-.hcq input { flex: 1; min-width: 0; font: inherit; font-size: 14.5px; padding: 8px 14px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
-.hcq p { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); overflow-wrap: anywhere; }
-.hcq p a, .hcq p button { font: inherit; font-weight: 600; color: var(--ax-accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; }
-.hc__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ax-accent); margin-right: 4px; }
-.hc-btn { display: none; margin-left: 8px; position: relative; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; border: 0; background: none; color: var(--ax-text); cursor: pointer; }
-.hc-btn:hover { background: var(--ax-surface); }
-.hc-btn svg { width: 22px; height: 22px; }
-.hc-btn .hc__dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--ax-bg); }
-
-.hc { grid-column: 3; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; margin-left: 24px; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ax-bg); border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); }
-@media (min-width: 1181px) { .ax-wall.hc-open .ax-wall__aside { display: none; } }
-.hc__head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--ax-border); }
-.hc__title { flex: 1; min-width: 0; }
-.hc__title b { display: block; font-size: 17px; font-weight: 800; }
-.hc__title small { display: block; color: var(--ax-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hc__ib { font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ax-text); background: none; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 10px; cursor: pointer; }
-.hc__ib[aria-expanded="true"] { background: var(--ax-blue-t); }
-.hc__x, .hc__back { font: inherit; font-size: 22px; line-height: 1; background: none; border: 0; color: var(--ax-muted); padding: 0 2px 2px; cursor: pointer; }
-.hc__back { display: none; color: var(--ax-text); }
-.hc__hist { border-bottom: 1px solid var(--ax-border); max-height: 40vh; overflow-y: auto; }
-.hc__histe { margin: 0; padding: 10px 14px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
-.hc__histe--err { color: var(--ax-red-ink); }
-.hc__hist ul { list-style: none; margin: 0; padding: 0; }
-.hc__hist li { display: flex; align-items: center; border-top: 1px solid var(--ax-border); }
-.hc__hist li.is-on { background: var(--ax-blue-t); }
-.hc__histt { flex: 1; min-width: 0; text-align: left; font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: none; border: 0; padding: 8px 14px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hc__histt small { margin-left: 6px; color: var(--ax-muted); }
-.hc__histx { font: inherit; font-size: 16px; background: none; border: 0; color: var(--ax-muted); padding: 0 12px; cursor: pointer; }
-.hc__to { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--ax-border); font-size: 13px; color: var(--ax-muted); }
-.hc__to select { min-width: 0; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--ax-text); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 3px 10px; }
-.hc__to select:first-of-type { flex: 1; }
-.hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-.hc__me { align-self: flex-end; max-width: 86%; }
-.hc__me .b { background: var(--ax-accent); color: #fff; border-radius: 18px 18px 4px 18px; padding: 8px 13px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hc__them { max-width: 94%; min-width: 0; }
-.hc__them .b { background: var(--ax-surface-2); border-radius: 18px 18px 18px 4px; padding: 8px 13px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
-.hc__them .b p { margin: 0 0 6px; } .hc__them .b p:last-child { margin: 0; }
-.hc__them .b ul, .hc__them .b ol { margin: 0 0 6px; padding-left: 18px; }
-.hc__them .b code { font-family: var(--ax-mono); font-size: 12.5px; background: var(--ax-bg); border-radius: 4px; padding: 0 4px; }
-.hc__them .b pre { overflow-x: auto; background: var(--ax-bg); border-radius: 8px; padding: 8px; }
-.hc__them .b table { display: block; overflow-x: auto; border-collapse: collapse; }
-.hc__them .b th, .hc__them .b td { border: 1px solid var(--ax-border); padding: 3px 6px; }
-.hc__wait .b { color: var(--ax-muted); }
-.hc__meta { font-size: 12px; color: var(--ax-muted); margin: 3px 0 0 2px; }
-.hc__live { display: inline-flex; align-items: center; gap: 6px; color: var(--ax-green-d); font-weight: 700; }
-.hc__live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-green); }
-.hc__stop, .hc__run { font: inherit; font-weight: 700; color: var(--ax-accent); background: none; border: 0; padding: 0; margin-left: 10px; cursor: pointer; text-decoration: none; }
-.hc__stop[disabled] { opacity: .45; cursor: default; }
-.hc__err .b { background: var(--ax-red-t); color: var(--ax-red-ink); }
-.hc__err .b b { display: block; margin-bottom: 2px; }
-.hc__btnrow { display: flex; gap: 8px; }
-.hc__btnrow .ax-btn { font-size: 12.5px; padding: 3px 12px; }
-.hc__empty { margin: auto 6px; text-align: center; color: var(--ax-muted); font-size: 14px; line-height: 1.5; }
-.hc__empty b { display: block; color: var(--ax-text); font-size: 17px; margin-bottom: 4px; }
-.hc__sk { height: 34px; border-radius: 18px; background: var(--ax-surface-2); }
-.hc__sk--me { width: 60%; align-self: flex-end; }
-.hc__sk--them { width: 84%; height: 96px; }
-.hc__guest { margin: auto 8px; text-align: center; color: var(--ax-muted); font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.hc__guest svg { width: 30px; height: 30px; }
-.hc__guest b { color: var(--ax-text); font-size: 17px; }
-.hc__foot { border-top: 1px solid var(--ax-border); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; }
-.hc__sends { font-size: 12px; color: var(--ax-muted); }
-.hc__sends summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hc__sends code { display: block; max-height: 30vh; overflow: auto; margin-top: 6px; padding: 8px 10px; background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: 10px; font-family: var(--ax-mono); font-size: 11.5px; color: var(--ax-text); white-space: pre-wrap; }
-.hc__row { display: flex; gap: 8px; align-items: flex-end; }
-.hc__row textarea { flex: 1; min-width: 0; resize: none; font: inherit; font-size: 14.5px; padding: 9px 14px; border-radius: 20px; border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); min-height: 40px; max-height: 140px; }
-.hc__row .ax-btn { height: 36px; }
-.hc__row .ax-btn[disabled] { opacity: .45; }
-
-/* Under 1180 px there is no side column: a button in the header, the panel over the page. */
-@media (max-width: 1180px) {
-  .hc-btn { display: inline-flex; }
-  .hcq { display: none; }
-  .hc { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 100vw; height: auto; margin: 0; z-index: 20; box-shadow: -6px 0 24px rgb(0 0 0 / 18%); }
-}
-/* Phone: full screen, with ← back to the page. */
-@media (max-width: 640px) {
-  .hc { left: 0; width: auto; border: 0; box-shadow: none; }
-  .hc-btn { margin-left: auto; }
-  .hc__back { display: block; }
-  .hc__x { display: none; }
-  .hc__foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
-}
-`
+` + WALL_CHAT_INPUT_SCRIPT

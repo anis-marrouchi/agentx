@@ -337,9 +337,10 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     // Settings and its Owner group are the owner's only (#1428).
     const page = renderWallPage({ owner: true })
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
-    const order = [...nav.matchAll(/data-nav="([\w]+)"|ax-wall__navlbl" aria-hidden="true">(\w+)</g)].map((m) => m[1] || m[2])
+    const order = [...nav.matchAll(/data-nav="([\w]+)"|(?:<summary>|ax-wall__navlbl" aria-hidden="true">)(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual(["wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
-      "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "creator"])
+      "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "running", "projects", "creator"])
+    expect([...nav.matchAll(/<details class="ax-wall__navgroup"><summary>(\w+)<\/summary>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
     // People (#1441), Org (#1419) and Workflows (#1445) are on the Wall.
     expect(nav).toContain('data-nav="workflows" href="#page=workflows"')
     expect(nav).toContain('data-nav="people" href="#page=people"')
