@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.253.0](https://github.com/anis-marrouchi/agentx/compare/v0.252.0...v0.253.0) (2026-11-23)
+
+
+### Features
+
+* **phone:** decision push switch and Reply by voice ([#2103](https://github.com/anis-marrouchi/agentx/issues/2103) PR A) ([#2132](https://github.com/anis-marrouchi/agentx/issues/2132)) ([3f29676](https://github.com/anis-marrouchi/agentx/commit/3f296765c36c4b276cda8dd63410ad3effe1ed9f))
+
 ## [0.252.0](https://github.com/anis-marrouchi/agentx/compare/v0.251.0...v0.252.0) (2026-11-23)
 
 
