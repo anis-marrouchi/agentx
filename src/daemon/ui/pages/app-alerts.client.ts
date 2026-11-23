@@ -14,12 +14,19 @@ export const APP_ALERTS_SCRIPT = `
 (function () {
   var panel = document.getElementById('panel-alerts');
   if (!panel) return;
+  // The per-phone switches (channels/push-prefs.ts), by their API field.
+  var SWITCHES = [
+    { id: 'al-finish', field: 'chatFinish', label: 'When a chat answer finishes', hint: 'Only for conversations you are not looking at' },
+    { id: 'al-decision', field: 'decision', label: 'When a decision waits for you', hint: 'Desk cards and requests that need your answer' },
+  ];
   panel.innerHTML = '<h2>Alerts</h2>' +
     '<div class="fx-card"><div class="fx-row"><h3>Notifications on this phone</h3><span id="al-pill" class="fx-pill"></span></div>' +
     '<p id="al-text" class="fx-muted">Checking…</p>' +
     '<div class="fx-row fx-gap"><button type="button" id="al-btn" class="fx-btn fx-primary" hidden></button></div>' +
-    '<div id="al-finish" class="fx-row al-finish" hidden><p id="al-finish-l">When a chat answer finishes<small>Only for conversations you are not looking at</small></p>' +
-    '<button type="button" id="al-finish-sw" class="fx-switch" role="switch" aria-checked="true" aria-labelledby="al-finish-l"><span></span></button></div>' +
+    SWITCHES.map(function (w) {
+      return '<div id="' + w.id + '" class="fx-row al-finish" hidden><p id="' + w.id + '-l">' + w.label + '<small>' + w.hint + '</small></p>' +
+        '<button type="button" id="' + w.id + '-sw" class="fx-switch" role="switch" aria-checked="true" aria-labelledby="' + w.id + '-l" data-field="' + w.field + '"><span></span></button></div>';
+    }).join('') +
     '<p id="al-error" class="fx-error fx-bad" role="alert"></p></div>' +
     '<div id="al-recent-head" class="fx-row"><h3 class="fx-sub">Recent</h3><button type="button" id="al-read-all" class="fx-btn">Mark all read</button></div><ul id="al-list" class="fx-list"></ul>';
   var pill = document.getElementById('al-pill');
@@ -27,8 +34,6 @@ export const APP_ALERTS_SCRIPT = `
   var btn = document.getElementById('al-btn');
   var err = document.getElementById('al-error');
   var list = document.getElementById('al-list');
-  var finishRow = document.getElementById('al-finish');
-  var finishSw = document.getElementById('al-finish-sw');
   var server = null;
   var busy = false;
 
@@ -89,8 +94,10 @@ export const APP_ALERTS_SCRIPT = `
     text.textContent = message;
     btn.hidden = !action;
     // Settable before notifications are turned on, so it is ready then.
-    finishRow.hidden = state === 'na';
-    if (server) finishSw.setAttribute('aria-checked', server.chatFinish === false ? 'false' : 'true');
+    SWITCHES.forEach(function (w) {
+      document.getElementById(w.id).hidden = state === 'na';
+      if (server) document.getElementById(w.id + '-sw').setAttribute('aria-checked', server[w.field] === false ? 'false' : 'true');
+    });
     if (action) { btn.textContent = action; btn.className = 'fx-btn ' + (action === 'Turn off' ? 'fx-danger-o' : 'fx-primary'); }
   }
 
@@ -154,14 +161,19 @@ export const APP_ALERTS_SCRIPT = `
       .then(function () { busy = false; btn.disabled = false; });
   });
 
-  finishSw.addEventListener('click', function () {
-    var on = finishSw.getAttribute('aria-checked') !== 'true';
-    finishSw.disabled = true;
-    err.textContent = '';
-    api('POST', '/api/app/push/prefs', { chatFinish: on }).then(function (b) {
-      if (server) server.chatFinish = b.chatFinish;
-      finishSw.setAttribute('aria-checked', b.chatFinish ? 'true' : 'false');
-    }).catch(function (e) { err.textContent = e.message; }).then(function () { finishSw.disabled = false; });
+  SWITCHES.forEach(function (w) {
+    var sw = document.getElementById(w.id + '-sw');
+    sw.addEventListener('click', function () {
+      var on = sw.getAttribute('aria-checked') !== 'true';
+      var change = {};
+      change[w.field] = on;
+      sw.disabled = true;
+      err.textContent = '';
+      api('POST', '/api/app/push/prefs', change).then(function (b) {
+        if (server) server[w.field] = b[w.field];
+        sw.setAttribute('aria-checked', b[w.field] ? 'true' : 'false');
+      }).catch(function (e) { err.textContent = e.message; }).then(function () { sw.disabled = false; });
+    });
   });
 
   var read = [], recent = [];

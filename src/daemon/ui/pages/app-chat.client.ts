@@ -40,6 +40,8 @@ export const APP_CHAT_SCRIPT = `
     '<form id="cx-form" class="cx-composer"><label for="cx-input" class="cx-sr">Message</label>' +
     '<textarea id="cx-input" rows="1" placeholder="Message" enterkeyhint="send" autocomplete="off"></textarea>' +
     '<button type="button" id="cx-stop" class="fx-btn fx-danger" hidden>Stop</button>' +
+    // Speak the message into the box, then Send (#2103, app-dictate.client.ts).
+    '<button type="button" id="cx-mic" class="fx-btn dc-mic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>' +
     '<button type="submit" id="cx-send" class="cx-send">Send</button></form></div>';
 
   function $(id) { return document.getElementById(id); }
@@ -317,12 +319,39 @@ export const APP_CHAT_SCRIPT = `
   histBtn.addEventListener('click', function () { var open = hist.hidden; toggle(hist, open); if (open) sheets.loadHistory(); });
   newBtn.addEventListener('click', function () { startNew(); input.focus(); });
 
-  // A notification opens /app#chat=<id>.
+  // The composer's mic (#2103): the words go into the box, the person
+  // sends them. Made once the dictation script (loaded after this one) is in.
+  var mic = null;
+  function withMic(fn) {
+    function go() {
+      if (!mic && window.AXDictate) {
+        mic = window.AXDictate.attach({
+          button: $('cx-mic'),
+          onText: function (t) { input.value = input.value.trim() ? input.value.trim() + ' ' + t : t; input.dispatchEvent(new Event('input')); },
+          onNote: function (m, bad) { showNote(m, bad); },
+        });
+      }
+      if (mic && fn) fn(mic);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+    else go();
+  }
+  function showNote(m, bad) {
+    input.placeholder = m;
+    input.classList.toggle('fx-bad', !!bad);
+    clearTimeout(showNote.t);
+    showNote.t = setTimeout(function () { input.placeholder = 'Message'; input.classList.remove('fx-bad'); }, 6000);
+  }
+  withMic(null);
+
+  // A notification opens /app#chat=<id>; "Reply by voice" adds &voice=1,
+  // which shows the mic ready (one tap, never started by itself).
   function fromHash() {
-    var m = /^#chat=(c[a-z0-9]{8,32})$/.exec(location.hash);
-    if (!m) return false;
+    var t = parseOpenHash(location.hash);
+    if (!t || t.tab !== 'chat') return false;
     try { history.replaceState(null, '', '#chat'); } catch (e) {}
-    openConversation(m[1]);
+    openConversation(t.id);
+    if (t.voice) withMic(function (m) { m.ready(); showNote('Tap the mic and speak, then Send.', false); });
     return true;
   }
   window.addEventListener('hashchange', fromHash);

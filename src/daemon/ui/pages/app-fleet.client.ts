@@ -58,6 +58,10 @@ export const APP_FLEET_SCRIPT = `
   sheet.innerHTML = '<form method="dialog"><h3 id="fx-title"></h3><p id="fx-text"></p>' +
     '<fieldset id="fx-choices" class="fx-choices" hidden></fieldset>' +
     '<label id="fx-field" hidden><span id="fx-field-label">Message</span><textarea id="fx-input" rows="3"></textarea></label>' +
+    // Speak the answer instead of typing it (#2103, app-dictate.client.ts).
+    '<div id="fx-mic-row" class="fx-row fx-gap" hidden><button type="button" id="fx-mic" class="fx-btn dc-mic">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>' +
+    '<span id="fx-mic-note" class="fx-muted" role="status" aria-live="polite"></span></div>' +
     '<p id="fx-error" class="fx-error" role="alert"></p>' +
     '<div class="fx-actions"><button value="cancel" class="fx-btn" formnovalidate>Cancel</button>' +
     '<button value="ok" id="fx-ok" class="fx-btn fx-primary">OK</button></div></form>';
@@ -101,8 +105,19 @@ export const APP_FLEET_SCRIPT = `
     input.rows = p && p.draft ? 6 : 3;
     input.value = p && p.draft ? fill(p.draft, sel >= 0 ? p.choices[sel] : '') : '';
     delete input.dataset.edited;
+    // opts.mic: a written answer that may be spoken; opts.voice: opened
+    // from "Reply by voice", so the mic is shown ready (one tap, never
+    // started by itself).
+    var mic = opts.input && opts.mic ? dictation() : null;
+    document.getElementById('fx-mic-row').hidden = !mic;
+    document.getElementById('fx-mic-note').textContent = '';
+    if (mic) mic.cancel();
     pending = opts;
-    if (sheet.showModal) { sheet.showModal(); if (opts.input) input.focus(); }
+    if (sheet.showModal) {
+      sheet.showModal();
+      if (mic && opts.voice) { mic.ready(); document.getElementById('fx-mic-note').textContent = 'Tap the mic and speak your answer.'; }
+      else if (opts.input) input.focus();
+    }
     else if (p) flash(opts.panel, 'This card offers choices: pick one on the dashboard.', true);
     else if (window.confirm(opts.title)) run(opts, opts.input ? window.prompt('Message') || '' : '');
   }
@@ -112,7 +127,22 @@ export const APP_FLEET_SCRIPT = `
     input.value = fill(p.draft, p.choices[+t.value - 1]);
   });
   document.getElementById('fx-input').addEventListener('input', function (ev) { ev.target.dataset.edited = '1'; });
+  // The sheet's mic, made the first time a sheet asks for it: the
+  // dictation script loads after this one.
+  var dictate = null;
+  function dictation() {
+    if (dictate || !window.AXDictate) return dictate;
+    var input = document.getElementById('fx-input');
+    dictate = window.AXDictate.attach({
+      button: document.getElementById('fx-mic'),
+      // Added to what is already typed, never replacing it.
+      onText: function (t) { input.value = input.value.trim() ? input.value.trim() + ' ' + t : t; input.dataset.edited = '1'; },
+      onNote: function (m, bad) { var n = document.getElementById('fx-mic-note'); n.textContent = m; n.className = bad ? 'fx-bad' : 'fx-muted'; },
+    });
+    return dictate;
+  }
   sheet.addEventListener('close', function () {
+    if (dictate) dictate.cancel();
     var opts = pending;
     pending = null;
     if (!opts || sheet.returnValue !== 'ok') return;

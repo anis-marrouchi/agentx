@@ -199,6 +199,16 @@ export async function routeDesk(deps: DeskRouteDeps): Promise<DeskRouteResult> {
   return result
 }
 
+/** Where a phone push for one item lands (#2103): kind "decision" (the
+ *  phone's switch), a tap opens the card on the Desk tab, and "Reply by
+ *  voice" opens the same card with the mic ready. Voice only where the
+ *  phone can write an answer (can.reply: a request on this node); a yes/no
+ *  card keeps its own buttons, and a peer's card has no voice button. */
+export function deskPushTarget(item: Pick<DeskCard, "key" | "can">): { pushKind: "decision"; open: string; voiceReply?: string } {
+  const open = `/app#desk=${encodeURIComponent(item.key)}`
+  return { pushKind: "decision", open, ...(item.can?.reply ? { voiceReply: `${open}&voice=1` } : {}) }
+}
+
 /** The push or banner text for one item: its title, and what it asks. */
 export function deskNotice(item: DeskCard): { title: string; message: string } {
   const what = item.ask ?? item.need ?? item.facts ?? "It waits for you."
