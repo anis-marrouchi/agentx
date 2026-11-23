@@ -25,7 +25,10 @@ import { OPEN_STATES } from "@/requests/store"
 //        the repository), or a failed move check (a run open, uncommitted
 //        changes, commits not pushed, the holder offline). `node: "local"`
 //        brings it back to this Mac: an explicit choice, which beats a
-//        mapping.
+//        mapping. `node: "default"` deletes the row (C-c). `force` with
+//        `confirm: <holder>` moves it off an offline holder (Q4), and
+//        `dropLeftBehind: <node>` clears what that left behind.
+//        Owner only: loopback or the operator key (C-a, mesh-auth.ts).
 
 export interface IssueState { runOpen: boolean; worktree: IssueWorktreeState | null }
 
@@ -111,11 +114,17 @@ export interface RunOnDeps {
   peerIssueState: (peer: string, chatId: string, channel: string) => Promise<IssueState>
   forge?: "github" | "gitlab"
   now?: () => number
+  /** The commit `branch` points at on the forge, or null (#2104 Q4). */
+  pushedSha?: (provider: "github" | "gitlab", project: string, branch: string) => Promise<string | null>
+  /** Posts a note on the issue chat, as this node's agent (#2104 Q4). */
+  noteOnIssue?: (provider: "github" | "gitlab", chatId: string, text: string) => Promise<void>
 }
 
 export type Reply = { status: number; body: unknown }
 
 const LOCAL = "local"
+/** `node` for "Use the agent's default": the placement row is deleted. */
+export const DEFAULT = "default"
 const LOCAL_LABEL = "This Mac"
 const has = (list: string[] | undefined, repo: string) => !!list?.some((c) => c.toLowerCase() === repo.toLowerCase())
 
@@ -159,6 +168,7 @@ export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> 
     status: 200,
     body: {
       id: r.id, issue: issue.label, agentId, current, placement, stale,
+      leftBehind: deps.store()!.leftBehind(issue.provider, issue.chatId),
       ...(stale && currentPeer?.lastCheck ? { staleSince: new Date(currentPeer.lastCheck).toISOString() } : {}),
       choices,
     },
@@ -170,22 +180,38 @@ export async function runOnChoices(id: string, deps: RunOnDeps): Promise<Reply> 
  *  placement, ask the holder again whether a run opened meanwhile, and if
  *  one did put the old placement back and refuse. A holder that does not
  *  answer (offline) refuses the move, "Back to this Mac" included: its
- *  state cannot be known (a forced way out waits on Q4). */
-export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unknown }, deps: RunOnDeps): Promise<Reply> {
+ *  state cannot be known, unless the owner forces it (Q4).
+ *
+ *  `node: "default"` deletes the placement row (C-c, "Use the agent's
+ *  default"), after the same checks. `force: true` with `confirm` naming
+ *  the offline holder moves it anyway (Q4): the holder's unpushed work
+ *  stays there, recorded in `issue_left_behind`, and the issue is not
+ *  placed on that node again until the owner drops the record
+ *  (`{id, dropLeftBehind: <node>}`). A note on the issue says who, when,
+ *  the node, and the last pushed commit of its branch. */
+export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unknown; force?: unknown; confirm?: unknown; dropLeftBehind?: unknown }, deps: RunOnDeps): Promise<Reply> {
   const id = typeof body.id === "string" ? body.id.trim() : ""
   const node = typeof body.node === "string" ? body.node.trim() : ""
-  if (!id || !node) return { status: 400, body: { error: "send { id, node }" } }
+  const drop = typeof body.dropLeftBehind === "string" ? body.dropLeftBehind.trim() : ""
+  if (!id || (!node && !drop)) return { status: 400, body: { error: "send { id, node }" } }
   const post = postOf(id, deps)
   if ("status" in post) return post
   const { r, issue, agentId } = post
-  if (!(OPEN_STATES as readonly string[]).includes(r.state)) return { status: 409, body: { error: `The post is ${r.state}; open it again first.` } }
   const store = deps.store()!
+  if (drop) {
+    if (!store.dropLeftBehind(issue.provider, issue.chatId, drop)) return { status: 404, body: { error: `No work left behind on ${drop} is recorded for ${issue.label}.` } }
+    return { status: 200, body: { ok: true, message: `${drop} can run ${issue.label} again.` } }
+  }
+  if (!(OPEN_STATES as readonly string[]).includes(r.state)) return { status: 409, body: { error: `The post is ${r.state}; open it again first.` } }
   const peers = deps.directory()
   const before = store.placement(issue.provider, issue.chatId)
   const current = before?.node ?? LOCAL
+  if (node === DEFAULT && !before) return { status: 200, body: { ok: true, current, message: "It already uses the agent's default." } }
   if (node === current && before) return { status: 200, body: { ok: true, current, message: node === LOCAL ? "It already runs on this Mac." : `It already runs on ${node}.` } }
+  const left = store.leftBehind(issue.provider, issue.chatId).find((l) => l.node === node)
+  if (left) return { status: 409, body: { error: `${node} keeps work on ${issue.label} left behind by a forced move. Recover or drop it there, then clear it here first.` } }
 
-  if (node !== LOCAL) {
+  if (node !== LOCAL && node !== DEFAULT) {
     const peer = peers.find((p) => p.peer === node)
     if (!peer) return { status: 404, body: { error: `"${node}" is not a node of this mesh.` } }
     if (!peer.healthy) return { status: 409, body: { error: `${node} is offline.` } }
@@ -196,9 +222,19 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
 
   // 1. The holder's state.
   const holder = current === LOCAL ? "this Mac" : current
+  const holderOffline = current !== LOCAL && !peers.find((p) => p.peer === current)?.healthy
+  const by = typeof body.by === "string" && body.by ? body.by : "owner"
+  const now = deps.now?.() ?? Date.now()
+  const write = () => {
+    if (node === DEFAULT) { store.clearPlacement(issue.provider, issue.chatId); return null }
+    const p: Placement = { node, setBy: by, setAt: now }
+    store.setPlacement(issue.provider, issue.chatId, p)
+    return p
+  }
+  if (holderOffline && body.force === true) return forceMove()
   const ask = async (): Promise<IssueState | string> => {
     if (current === LOCAL) return deps.localIssueState(issue.chatId, issue.provider)
-    if (!peers.find((p) => p.peer === current)?.healthy) return `${current} is offline, so its work on the issue cannot be checked. Start it again, then move the issue.`
+    if (!peers.find((p) => p.peer === current)?.healthy) return `${current} is offline, so its work on the issue cannot be checked. Start it again, then move the issue, or force the move and leave its unpushed work there.`
     try {
       return await deps.peerIssueState(current, issue.chatId, issue.provider)
     } catch (e: any) {
@@ -206,14 +242,12 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
     }
   }
   const first = await ask()
-  if (typeof first === "string") return { status: 409, body: { error: first } }
+  if (typeof first === "string") return { status: 409, body: { error: first, ...(holderOffline ? { forcible: true, holder: current } : {}) } }
   const refusal = moveRefusal(holder, first)
   if (refusal) return { status: 409, body: { error: refusal } }
 
   // 2. Written: from here, a new run goes to the new node.
-  const now = deps.now?.() ?? Date.now()
-  const placement: Placement = { node, setBy: typeof body.by === "string" && body.by ? body.by : "owner", setAt: now }
-  store.setPlacement(issue.provider, issue.chatId, placement)
+  const placement = write()
 
   // 3. A run that opened on the holder between 1 and 2 would split the
   // work: the move is undone.
@@ -223,15 +257,34 @@ export async function moveRunOn(body: { id?: unknown; node?: unknown; by?: unkno
     store.restorePlacement(issue.provider, issue.chatId, before)
     return { status: 409, body: { error: opened } }
   }
-  return {
-    status: 200,
-    body: {
-      ok: true, current: node, placement,
-      message: node === LOCAL
-        ? `Back to this Mac: ${issue.label}'s next run starts here, from the issue's pushed branch.`
-        : `${issue.label}'s next run starts on ${node}, from the issue's pushed branch.`,
-    },
+  return { status: 200, body: { ok: true, current: placement?.node ?? LOCAL, placement, message: movedText(node, issue.label) } }
+
+  /** Q4: the holder is offline. Only with a confirm that names it; its
+   *  unpushed work stays there, and the issue says so. */
+  async function forceMove(): Promise<Reply> {
+    const confirm = typeof body.confirm === "string" ? body.confirm.trim() : ""
+    if (confirm !== current) return { status: 409, body: { error: `To force the move, confirm with the name of the offline node, ${current}: its unpushed work on ${issue.label} stays there.` } }
+    const branch = `agentx/issue-${issue.number}`
+    const sha = await deps.pushedSha?.(issue.provider, issue.project, branch).catch(() => null) ?? null
+    store.addLeftBehind(issue.provider, issue.chatId, { node: current, pushedSha: sha, setBy: by, setAt: now })
+    const placement = write()
+    const to = node === LOCAL ? "this Mac" : node === DEFAULT ? "the agent's default" : node
+    const text = `Moved by ${by} at ${new Date(now).toISOString()}: ${issue.label} no longer runs on ${current}, which was offline; it now runs on ${to} (forced, #2104).\n\n` +
+      `The next run starts from origin/${branch} at ${sha ? sha.slice(0, 12) : "(no pushed commit found)"}. Work on ${current} that was not pushed stays there: ${current} will not run this issue or push that worktree. Recover or drop it there, then clear it from the Hub.`
+    let noted = false
+    try {
+      if (deps.noteOnIssue) { await deps.noteOnIssue(issue.provider, issue.chatId, text); noted = true }
+    } catch (e: any) {
+      return { status: 200, body: { ok: true, forced: true, current: placement?.node ?? LOCAL, placement, pushedSha: sha, message: `${movedText(node, issue.label)} The note on the issue failed: ${e?.message ?? e}` } }
+    }
+    return { status: 200, body: { ok: true, forced: true, noted, current: placement?.node ?? LOCAL, placement, pushedSha: sha, message: movedText(node, issue.label) + ` ${current}'s unpushed work stays there.` } }
   }
+}
+
+function movedText(node: string, label: string): string {
+  if (node === LOCAL) return `Back to this Mac: ${label}'s next run starts here, from the issue's pushed branch.`
+  if (node === DEFAULT) return `${label} uses the agent's default again: its next run starts where the agent's own rule says, from the issue's pushed branch.`
+  return `${label}'s next run starts on ${node}, from the issue's pushed branch.`
 }
 
 /** /api/node's numbers: swap used (percent of total) and the 1-minute load. */

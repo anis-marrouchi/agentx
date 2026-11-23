@@ -169,6 +169,18 @@ export function isControlPost(path: string): boolean {
     path === "/api/review-gate/replay"
 }
 
+/** POSTs only the owner may send (#2104 C-a): the mesh token lets a peer
+ *  read them, never write. Moving where an issue runs is the owner's. */
+export function isOwnerOnlyPost(path: string): boolean {
+  return path === "/issue-run-on"
+}
+
+/** An owner-only POST passes from this host, or with the operator key
+ *  (the Hub sends it, board-dashboard wallDaemon). Not with a mesh token. */
+export function ownerPostAllowed(remoteAddress: string, operatorKeyOk: boolean): boolean {
+  return LOOPBACK.has(remoteAddress) || operatorKeyOk
+}
+
 /** True when the socket peer is on this host. Used by loopback-only
  *  endpoints (e.g. the guard hook) that must never be reachable off-box. */
 export function isLoopback(remoteAddress: string): boolean {

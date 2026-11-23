@@ -11,7 +11,7 @@ import { RequestStore } from "../src/requests/store"
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { handleWallAction, isWallActionPath, isWallWrite, WALL_RUN_ON_PATH } from "../src/daemon/wall-actions"
-import { isMeshGatedPath } from "../src/daemon/mesh-auth"
+import { isMeshGatedPath, isOwnerOnlyPost, ownerPostAllowed } from "../src/daemon/mesh-auth"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { runOnChoiceText, runOnStaleText, WALL_RUN_ON_SCRIPT } from "../src/daemon/ui/pages/wall-run-on.client"
 
@@ -342,6 +342,90 @@ describe("GET and POST /issue-run-on", () => {
     expect(back.status).toBe(409)
     expect(asked).toEqual([])
     expect(placed()?.node).toBe("old")
+    // The refusal says the owner may force it.
+    expect((back.body as any).forcible).toBe(true)
+  })
+
+  it("C-c: Use the agent's default deletes the row, after the same checks", async () => {
+    expect(((await moveRunOn({ id: "wp-1", node: "default" }, deps())).body as any).message).toContain("already uses")
+    store.setPlacement("github", "acme/app:issue:7", { node: "clawd", setBy: "owner", setAt: 5 })
+    states.clawd = { runOpen: true, worktree: null }
+    expect((await moveRunOn({ id: "wp-1", node: "default" }, deps())).status).toBe(409)
+    expect(placed()?.node).toBe("clawd")
+    states.clawd = { runOpen: false, worktree: null }
+    const r = await moveRunOn({ id: "wp-1", node: "default" }, deps())
+    expect(r.status).toBe(200)
+    expect((r.body as any).message).toContain("agent's default")
+    expect(placed()).toBeNull()
+    expect(asked).toEqual(["clawd", "clawd", "clawd"])
+    // A run that opens meanwhile puts the row back.
+    store.setPlacement("github", "acme/app:issue:7", { node: "clawd", setBy: "owner", setAt: 5 })
+    states.clawd = [{ runOpen: false, worktree: null }, { runOpen: true, worktree: null }]
+    expect((await moveRunOn({ id: "wp-1", node: "default" }, deps())).status).toBe(409)
+    expect(placed()).toEqual({ node: "clawd", setBy: "owner", setAt: 5 })
+  })
+
+  it("Q4: a forced move off an offline holder needs its name, notes the issue, and keeps the issue off that node until cleared", async () => {
+    store.setPlacement("github", "acme/app:issue:7", { node: "old", setBy: "owner", setAt: 1 })
+    const notes: Array<[string, string, string]> = []
+    const shas: string[] = []
+    const d: RunOnDeps = {
+      ...deps(),
+      pushedSha: async (_p, project, branch) => { shas.push(`${project} ${branch}`); return "abcdef1234567890" },
+      noteOnIssue: async (p, chat, text) => { notes.push([p, chat, text]) },
+    }
+    // No confirm, or the wrong name: refused, nothing written.
+    for (const confirm of [undefined, "clawd"]) {
+      const r = await moveRunOn({ id: "wp-1", node: "local", force: true, confirm }, d)
+      expect(r.status).toBe(409)
+      expect((r.body as any).error).toContain("confirm with the name of the offline node, old")
+    }
+    expect(placed()?.node).toBe("old")
+    expect(notes).toEqual([])
+    // With it: moved, the holder never asked, one note with who, when, node and sha.
+    const r = await moveRunOn({ id: "wp-1", node: "local", force: true, confirm: "old", by: "owner" }, d)
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ forced: true, noted: true, current: "local", pushedSha: "abcdef1234567890" })
+    expect(placed()?.node).toBe("local")
+    expect(asked).toEqual([])
+    expect(shas).toEqual(["acme/app agentx/issue-7"])
+    expect(notes).toHaveLength(1)
+    expect(notes[0][0]).toBe("github")
+    expect(notes[0][1]).toBe("acme/app:issue:7")
+    expect(notes[0][2]).toContain("Moved by owner at 1970-01-01T00:00:01.000Z")
+    expect(notes[0][2]).toContain("no longer runs on old")
+    expect(notes[0][2]).toContain("origin/agentx/issue-7 at abcdef123456")
+    expect(store.leftBehind("github", "acme/app:issue:7")).toEqual([{ node: "old", pushedSha: "abcdef1234567890", setBy: "owner", setAt: 1000 }])
+    // old is back online: the issue is not placed there until the owner clears it.
+    peers.find((p) => p.peer === "old").healthy = true
+    states.local = { runOpen: false, worktree: null }
+    const again = await moveRunOn({ id: "wp-1", node: "old" }, d)
+    expect(again.status).toBe(409)
+    expect((again.body as any).error).toContain("left behind")
+    expect((await runOnChoices("wp-1", d)).body).toMatchObject({ leftBehind: [{ node: "old" }] })
+    // Cleared: it can go there again.
+    expect((await moveRunOn({ id: "wp-1", dropLeftBehind: "old" }, d)).status).toBe(200)
+    expect((await moveRunOn({ id: "wp-1", dropLeftBehind: "old" }, d)).status).toBe(404)
+    expect((await moveRunOn({ id: "wp-1", node: "old" }, d)).status).toBe(200)
+    expect(placed()?.node).toBe("old")
+  })
+
+  it("Q4: force on a holder that is online changes nothing: the normal checks run", async () => {
+    store.setPlacement("github", "acme/app:issue:7", { node: "clawd", setBy: "owner", setAt: 1 })
+    states.clawd = { runOpen: false, worktree: { branch: "agentx/issue-7", dirty: true, ahead: 0 } }
+    const r = await moveRunOn({ id: "wp-1", node: "local", force: true, confirm: "clawd" }, deps())
+    expect(r.status).toBe(409)
+    expect(placed()?.node).toBe("clawd")
+    expect(store.leftBehind("github", "acme/app:issue:7")).toEqual([])
+  })
+
+  it("Q4: the move stands when the note fails, and says so", async () => {
+    store.setPlacement("github", "acme/app:issue:7", { node: "old", setBy: "owner", setAt: 1 })
+    const d: RunOnDeps = { ...deps(), pushedSha: async () => null, noteOnIssue: async () => { throw new Error("forge down") } }
+    const r = await moveRunOn({ id: "wp-1", node: "clawd", force: true, confirm: "old" }, d)
+    expect(r.status).toBe(200)
+    expect((r.body as any).message).toContain("The note on the issue failed: forge down")
+    expect(placed()?.node).toBe("clawd")
   })
 
   it("reads /api/node numbers", () => {
@@ -358,6 +442,27 @@ describe("the Wall's run-on route", () => {
     expect(isWallWrite("GET", WALL_RUN_ON_PATH)).toBe(false)
     expect(isMeshGatedPath("/issue-run-on")).toBe(true)
     expect(isMeshGatedPath("/mesh/issue-state")).toBe(true)
+  })
+
+  it("C-a: the move is the owner's: loopback or the operator key, never the mesh token alone", () => {
+    expect(isOwnerOnlyPost("/issue-run-on")).toBe(true)
+    expect(isOwnerOnlyPost("/mesh/issue-state")).toBe(false)
+    expect(ownerPostAllowed("127.0.0.1", false)).toBe(true)
+    expect(ownerPostAllowed("::1", false)).toBe(true)
+    expect(ownerPostAllowed("100.64.0.7", true)).toBe(true)
+    // A peer with a valid mesh token but no operator key.
+    expect(ownerPostAllowed("100.64.0.7", false)).toBe(false)
+  })
+
+  it("passes a forced move, the default and a clear to the daemon", async () => {
+    const daemon = vi.fn(async () => ({ status: 200, body: { ok: true } }))
+    const deps = { inbox: { root: "/nowhere" }, daemon } as any
+    await handleWallAction("POST", WALL_RUN_ON_PATH, { id: "wp-1", node: "local", force: true, confirm: "old" }, deps)
+    expect(daemon).toHaveBeenLastCalledWith("POST", "/issue-run-on", { id: "wp-1", node: "local", by: "owner", force: true, confirm: "old" })
+    await handleWallAction("POST", WALL_RUN_ON_PATH, { id: "wp-1", node: "default" }, deps)
+    expect(daemon).toHaveBeenLastCalledWith("POST", "/issue-run-on", { id: "wp-1", node: "default", by: "owner" })
+    await handleWallAction("POST", WALL_RUN_ON_PATH, { id: "wp-1", dropLeftBehind: "old" }, deps)
+    expect(daemon).toHaveBeenLastCalledWith("POST", "/issue-run-on", { id: "wp-1", dropLeftBehind: "old", by: "owner" })
   })
 
   it("passes the read and the move to the daemon", async () => {

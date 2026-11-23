@@ -43,14 +43,20 @@ Steps:
 2. Under the comment box, in **Run on**, pick the machine. Only machines that host the agent, have the repository and run an AgentX that supports this are listed, each with its swap use and load (for example "clawd — swap 12%, load 0.8").
 3. Select **Move**. The next run on the issue starts on that machine, in a worktree made from the issue's pushed branch `agentx/issue-<n>`. A worktree that is already there is brought up to that branch first.
 4. To bring it back, select **Back to this Mac**. That is a choice too: the issue then stays on this Mac even if its agent is mapped to another machine (`agentMappings[].node`, or a webhook's `node`).
+5. To undo your choice, select **Use the agent's default**. The issue then runs where the agent's own rule says: its mapping, or this Mac. The same checks apply as for a move.
+
+Only you can move an issue: from this computer, or from the Hub. Another machine of the mesh can read where an issue runs, but cannot move it.
 
 A move is refused, with the reason, while:
 
 - a run is open on the issue on the machine that has it now;
 - the issue's worktree there has uncommitted changes;
 - its branch has commits not pushed, or was never pushed and has commits of its own. Push first, then move;
-- the machine that has it now is offline: its work can't be checked. Start it again first. This applies to **Back to this Mac** too;
-- a run opened there while the move was being made. The issue stays where it was.
+- the machine that has it now is offline: its work can't be checked. Start it again first, or force the move (below). This applies to **Back to this Mac** too;
+- a run opened there while the move was being made. The issue stays where it was;
+- the machine you pick keeps work left behind by a forced move (below). Clear it first.
+
+**Forcing a move off an offline machine.** When the machine that has the issue is offline, **Move** and **Back to this Mac** first ask you to confirm. The question names the machine and says that its work that was not pushed stays there. If you confirm, the issue moves. The issue gets one comment with who moved it, when, the machine it left, and the last pushed commit of `agentx/issue-<n>`. The next run starts from that pushed branch. The machine that was offline does not run the issue again, and does not use or push its worktree for it. The post shows "clawd keeps unpushed work". Recover the work there (push it) or delete it, then select **Clear** next to that line. Until then, the issue cannot be moved back to that machine.
 
 What stays on this Mac: a run that a person with tool or skill limits starts is refused instead of running on the other machine, which can't apply those limits. The issue gets the reply "This issue runs on clawd, which can't apply your limits. Ask the owner to bring it back to this Mac." A workflow run that is already going on the issue keeps running where it is. A run that the other machine sent here is never sent on again.
 
@@ -80,6 +86,7 @@ Agents on the second machine sometimes need your yes or no. If your screen is on
 - **Run on is not shown on a post:** the post has no issue as its home, it is closed, or you are not signed in as the owner.
 - **"A run is open on this issue", "uncommitted changes" or "not pushed" when you move:** wait for the run to end, or commit and push the branch `agentx/issue-<n>` on the machine that has it, then move again.
 - **The run was refused with "has no checkout":** the other machine has no checkout of the repository. Add one there (see above), or select **Back to this Mac**.
-- **The issue says the machine is offline:** start its daemon there (`agentx daemon status`). The held comments run when it is back, if that is within 30 minutes. **Back to this Mac** is refused while it is offline.
+- **The issue says the machine is offline:** start its daemon there (`agentx daemon status`). The held comments run when it is back, if that is within 30 minutes. If you can't wait, force the move from the Hub (see above).
+- **"was placed on a node that does not host" a run:** the machine the issue was moved to no longer has the agent. Move the issue to another machine, or bring it back to this Mac.
 - **The issue says held messages were dropped:** the machine was offline more than 30 minutes, or more than 50 messages waited. Write on the issue again once it is back.
 - **The run was refused with "have diverged":** the issue's branch on this machine and the pushed one both have commits the other lacks. In the issue's worktree, merge or rebase onto `origin/agentx/issue-<n>` and push, then run again.

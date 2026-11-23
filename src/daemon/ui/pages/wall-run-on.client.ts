@@ -29,8 +29,19 @@ export function runOnStaleText(d: { current: string; stale?: boolean; staleSince
   return d.current + " offline" + (d.staleSince ? " since " + new Date(d.staleSince).toLocaleString() : "") + ": this issue's runs wait for it."
 }
 
+/** The confirm for a forced move (#2104 Q4): names the node, and says its
+ *  unpushed work is left behind. */
+export function runOnForceText(node: string): string {
+  return node + " is offline. Move this issue anyway? Work on " + node + " that was not pushed stays there: the next run starts from the issue's pushed branch, and " + node + " will not run this issue until you clear it."
+}
+
+/** A node keeping work left behind by a forced move. */
+export function runOnLeftText(l: { node: string; pushedSha?: string | null; setAt?: number }): string {
+  return l.node + " keeps unpushed work" + (l.setAt ? " (left " + new Date(l.setAt).toLocaleString() + ")" : "") + ": recover or drop it there, then clear."
+}
+
 export const WALL_RUN_ON_SCRIPT = String.raw`
-  ${injectFns({ runOnChoiceText, runOnStaleText })}
+  ${injectFns({ runOnChoiceText, runOnStaleText, runOnForceText, runOnLeftText })}
   /** Read per post: { loading } | { data } | { error }. */
   var RUNON = {};
   function runOnFits(p) {
@@ -55,7 +66,12 @@ export const WALL_RUN_ON_SCRIPT = String.raw`
       '<label for="wro-node">Run on</label> <select id="wro-node"' + off + '>' + opts.join('') + '</select>' +
       '<button type="button" class="ax-btn ax-btn--ghost" data-runon="move"' + off + '>Move</button>' +
       (d.current !== 'local' ? '<button type="button" class="ax-btn ax-btn--ghost" data-runon="back"' + off + '>Back to this Mac</button>' : '') +
+      (d.placement ? '<button type="button" class="ax-btn ax-btn--ghost" data-runon="default"' + off + '>Use the agent\'s default</button>' : '') +
       (stale ? ' <span class="ax-badge ax-badge--warn" role="note">⚠ ' + esc(stale) + '</span>' : '') +
+      (d.leftBehind || []).map(function (l) {
+        return ' <span class="ax-badge ax-badge--warn" role="note">' + esc(runOnLeftText(l)) + '</span>' +
+          '<button type="button" class="ax-btn ax-btn--ghost" data-runon="drop" data-node="' + esc(l.node) + '"' + off + '>Clear</button>';
+      }).join('') +
       '</div>';
   }
   function paintRunOn() {
@@ -69,14 +85,22 @@ export const WALL_RUN_ON_SCRIPT = String.raw`
     RUNON[id] = r.ok ? { data: r.body } : { error: r.error };
     paintRunOn();
   }
-  async function runOnMove(node) {
+  async function runOnMove(node, drop) {
     var p = findPost(S.post), r = p && RUNON[p.id];
     if (!p || !r || !r.data || r.sending) return;
-    if (node === r.data.current) { note(node === 'local' ? 'It already runs on this Mac.' : 'It already runs on ' + node + '.'); return; }
+    var body = { id: p.id, node: node };
+    if (drop) body = { id: p.id, dropLeftBehind: drop };
+    else if (node === r.data.current && node !== 'default') { note(node === 'local' ? 'It already runs on this Mac.' : 'It already runs on ' + node + '.'); return; }
+    else if (r.data.stale) {
+      // The node holding it is offline (#2104 Q4): the owner may force it, knowingly.
+      if (!window.confirm(runOnForceText(r.data.current))) return;
+      body.force = true;
+      body.confirm = r.data.current;
+    }
     r.sending = true;
     paintRunOn();
-    note('Checking the move…');
-    var m = await act('POST', '/api/admin/wall/run-on', { id: p.id, node: node }, p.node && p.node.peer);
+    note(drop ? 'Clearing…' : 'Checking the move…');
+    var m = await act('POST', '/api/admin/wall/run-on', body, p.node && p.node.peer);
     r.sending = false;
     note(m.ok ? (m.body.message || 'Moved.') : 'Not moved: ' + m.error);
     delete RUNON[p.id];
@@ -86,7 +110,10 @@ export const WALL_RUN_ON_SCRIPT = String.raw`
   document.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest && ev.target.closest('[data-runon]');
     if (!b) return;
-    if (b.getAttribute('data-runon') === 'back') runOnMove('local');
+    var what = b.getAttribute('data-runon');
+    if (what === 'back') runOnMove('local');
+    else if (what === 'default') runOnMove('default');
+    else if (what === 'drop') runOnMove('', b.getAttribute('data-node'));
     else runOnMove(($('wro-node') && $('wro-node').value) || 'local');
   });
 `

@@ -233,7 +233,7 @@ import { checkoutsOf } from "@/agents/task-worktrees"
 import { execProcess } from "@/agents/spec-tests"
 import { issueState, moveRunOn, nodeNumbersOf, runOnChoices, type IssueState, type RunOnDeps } from "@/daemon/issue-run-on"
 import { LOCAL_NODE } from "@/channels/run-on"
-import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
+import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, isOwnerOnlyPost, ownerPostAllowed, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
 import { AGENT_PICTURE_PATH } from "@/pictures/pictures"
@@ -2770,6 +2770,19 @@ export class AgentXDaemon {
         return { runOpen: body.runOpen, worktree: body.worktree ?? null }
       },
       forge: forges.length === 1 ? forges[0] as "github" | "gitlab" : undefined,
+      // Q4: the branch's pushed commit, read from the forge with this
+      // node's checkout of the repository (the holder is offline).
+      pushedSha: async (_provider, project, branch) => {
+        const dirs = [...(this.projectRules?.list().map((r) => r.runbook) ?? []), ...Object.values(this.config.agents ?? {}).map((a: any) => a?.workspace)]
+          .filter((d): d is string => typeof d === "string" && !!d)
+        const dir = dirs.find((d) => checkoutsOf([d]).some((c) => c.toLowerCase() === project.toLowerCase()))
+        if (!dir) return null
+        const r = await execProcess("git", ["ls-remote", "origin", `refs/heads/${branch}`], { cwd: dir, timeoutMs: 15_000 })
+        return r.code === 0 ? (r.stdout.trim().split(/\s+/)[0] || null) : null
+      },
+      noteOnIssue: async (provider, chatId, text) => {
+        await this.router.sendOutbound({ channel: provider, chatId, text })
+      },
     }
   }
 
@@ -6698,6 +6711,11 @@ export class AgentXDaemon {
         return
       }
       if (path === "/issue-run-on" && (req.method === "GET" || req.method === "POST")) {
+        // A peer may read where an issue runs; only the owner moves it (C-a).
+        if (req.method === "POST" && isOwnerOnlyPost(path) && !ownerPostAllowed(req.socket?.remoteAddress || "", operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]))) {
+          this.json(res, 403, { error: "Moving where an issue runs is the owner's: from this computer or the Hub only." })
+          return
+        }
         const reply = req.method === "GET"
           ? await runOnChoices(url.searchParams.get("id") || "", this.runOnDeps())
           : await moveRunOn(await readJsonBody(req).catch(() => ({})) as Record<string, unknown>, this.runOnDeps())

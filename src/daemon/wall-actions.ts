@@ -348,10 +348,17 @@ export async function handleWallAction(method: string, path: string, body: Recor
     }
     if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
     const id = str(body.id)
+    const drop = str(body.dropLeftBehind)
+    if (id && drop) {
+      if (!AGENT_RE.test(drop)) return { status: 400, body: { error: "dropLeftBehind: a mesh node's name" } }
+      return deps.daemon("POST", "/issue-run-on", { id, dropLeftBehind: drop, by: "owner" })
+    }
     const node = str(body.node)
     if (!id || !node) return { status: 400, body: { error: "send { id, node }" } }
-    if (!AGENT_RE.test(node)) return { status: 400, body: { error: "node: a mesh node's name, or \"local\"" } }
-    return deps.daemon("POST", "/issue-run-on", { id, node, by: "owner" })
+    if (!AGENT_RE.test(node)) return { status: 400, body: { error: "node: a mesh node's name, \"local\" or \"default\"" } }
+    // A forced move (#2104 Q4) carries the owner's confirm: the offline node's name.
+    const force = body.force === true ? { force: true, confirm: str(body.confirm) } : {}
+    return deps.daemon("POST", "/issue-run-on", { id, node, by: "owner", ...force })
   }
 
   // The Space: talk mode, on this computer.
