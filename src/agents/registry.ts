@@ -76,6 +76,7 @@ import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, recordSessionInit, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { priorityOfTask, setPlanPriority } from "./plan-priority"
 import { budgetConfigFrom, budgetProjectOf, preflightBudgetGate, setAgentBudgets, setBudgetProjectResolver } from "./agent-budget"
 import { holdMessage, holdsRoot } from "./holds"
 import { budgetProjectResolver } from "./budget-projects"
@@ -949,6 +950,7 @@ export class AgentRegistry {
       maxPerHour: config.session.maxClaudeCodeDispatchesPerHour,
       maxPer5h: config.session.maxClaudeCodeDispatchesPer5h,
     })
+    setPlanPriority(config.session.planPriority)
     // Monthly money budgets (#1162, #1290). The daemon re-applies them on save.
     setAgentBudgets(budgetConfigFrom(config))
     setBudgetProjectResolver(budgetProjectResolver(config))
@@ -4220,7 +4222,7 @@ export class AgentRegistry {
         const hasWarmSession = Boolean(resumeSessionId) || hasLiveProcess
         const gates = [
           preflightOverageGate(hasWarmSession),
-          preflightQuotaGate(hasWarmSession, undefined, task.model || state.def.model),
+          preflightQuotaGate(hasWarmSession, undefined, task.model || state.def.model, priorityOfTask(task)),
         ]
         const abort = gates.find((g) => g && g.abort)
         if (abort) {

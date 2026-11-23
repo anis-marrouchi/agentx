@@ -109,6 +109,7 @@ usage
         console.log(`  ${label(s.window).padEnd(18)} ${status.padEnd(12)} ${[used, reset, hold].filter(Boolean).join(", ")}`)
       }
       console.log()
+      printPlanReading(data, now)
       const cap = (n?: number) => (n ? ` of ${n}` : "")
       console.log(`  Fresh sessions started: ${data.lastHour}${cap(data.maxPerHour)} in the last hour, ${data.last5h}${cap(data.maxPer5h)} in the last 5 hours`)
       if (held.size) console.log(chalk.dim("  To try again now: agentx usage plan --lift"))
@@ -121,6 +122,40 @@ usage
       }
     }
   })
+
+function resetIn(resetsAt: number | undefined, now: number): string {
+  if (!resetsAt || !(resetsAt > now)) return ""
+  const mins = Math.max(1, Math.round((resetsAt - now) / 60_000))
+  return mins < 60 ? `resets in ${mins} min` : mins < 48 * 60 ? `resets in ${Math.round(mins / 60)} h` : `resets in ${Math.round(mins / 1440)} days`
+}
+
+/** The usage reader's reading and the run classes it holds (#2161). */
+function printPlanReading(data: any, now: number): void {
+  const reader = data.reader
+  if (!reader) return
+  const label = (w: string) => w.replace(/_/g, " ")
+  console.log(chalk.bold("  Claude plan use (read from Claude)"))
+  console.log()
+  if (!reader.enabled) {
+    console.log(chalk.dim("  Off (session.planUsage.enabled is false)."))
+  } else if (reader.reading) {
+    const age = Math.max(0, Math.round((now - reader.reading.readAt) / 60_000))
+    for (const w of reader.reading.windows as Array<any>) {
+      console.log(`  ${label(w.window).padEnd(18)} ${`${Math.round(w.utilization * 100)}% used`.padEnd(12)} ${resetIn(w.resetsAt, now)}`)
+    }
+    console.log(chalk.dim(`  Read ${age} min ago.`))
+  } else {
+    console.log(chalk.dim("  No reading yet."))
+  }
+  if (reader.enabled && reader.lastError) console.log(chalk.yellow(`  Last read failed: ${reader.lastError.message}`))
+  const held = (data.priority?.held ?? []) as Array<any>
+  const cfg = data.priority?.config
+  if (cfg && !cfg.enabled) console.log(chalk.dim("  Run priority is off (session.planPriority.enabled is false)."))
+  else if (held.length) {
+    for (const h of held) console.log(chalk.red(`  Holding ${h.priority} runs: ${label(h.window)} at ${h.usedPercent}% (limit ${h.thresholdPercent}%)`))
+  } else console.log("  No run class is held. A person writing is never held.")
+  console.log()
+}
 
 // `agentx usage serve` was removed — the same data now lives on the
 // Wall's Cost page (/wall, Cost; /admin/cost sends there), so there's no

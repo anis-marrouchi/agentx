@@ -22,6 +22,8 @@ import { closeOnStatedDone } from "@/requests/stated-done"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
+import { planUsageReader, planUsageSettings } from "@/agents/claude-plan-usage"
+import { setPlanPriority } from "@/agents/plan-priority"
 import { budgetConfigFrom, budgetProjectOf, getBudgetView, monthStart, recordAgentSpend, seedMonthSpend, setAgentBudgets, setBudgetProjectResolver } from "@/agents/agent-budget"
 import { budgetProjectResolver, spendByProject } from "@/agents/budget-projects"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
@@ -1267,6 +1269,9 @@ export class AgentXDaemon {
     // Host and program versions for GET /api/node (#1531). Not awaited:
     // reading a dozen `--version`s must not hold the boot.
     void this.nodeEnv.start().catch((e) => this.log(`  [node] environment read failed: ${e?.message ?? e}`))
+    // Plan usage reader (#2161): the 5-hour and weekly use for the priority gate.
+    planUsageReader.setLog((m) => this.log(m))
+    planUsageReader.configure(planUsageSettings(this.config))
     // Before any channel polls or pushes: Node's 250 ms per-address connect
     // attempt fails every fetch on a slow dual-stack link (#930).
     const attemptMs = applyConnectAttemptTimeout(this.config.node.connectAttemptTimeoutMs ?? DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS)
@@ -1629,6 +1634,7 @@ export class AgentXDaemon {
     const start = Date.now()
     this.shuttingDown = true
     this.delegations.stop()
+    planUsageReader.stop()
     this.voiceTalk.close()
     this.stopAllReporter?.close()
     this.screenBuffer?.stop()
@@ -2460,6 +2466,15 @@ export class AgentXDaemon {
         maxPer5h: next.session.maxClaudeCodeDispatchesPer5h,
       })
       applied.push("dispatch-budget")
+    }
+    // Plan priority and the plan usage reader (#2161): module settings too.
+    if (JSON.stringify(this.config.session.planPriority) !== JSON.stringify(next.session.planPriority)) {
+      setPlanPriority(next.session.planPriority)
+      applied.push("plan-priority")
+    }
+    if (JSON.stringify(this.config.session.planUsage) !== JSON.stringify(next.session.planUsage)) {
+      planUsageReader.configure(planUsageSettings(next))
+      applied.push("plan-usage")
     }
     // Monthly money budgets (#1162): raising a cap resumes a paused agent.
     // A changed project list re-maps the month's spend to projects (#1290).

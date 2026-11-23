@@ -76,6 +76,12 @@ const providerConfigSchema = z.object({
 /** The only tools of an MCP server an agent may use (#1698). Exact names
  *  as the server lists them, `*` as a wildcard. Left out, every tool is
  *  allowed; an empty list allows none. */
+/** Percent of a plan window (0-100) past which a run class is held (#2161). */
+const planThresholdsSchema = z.object({
+  fiveHour: z.number().min(0).max(100).optional(),
+  weekly: z.number().min(0).max(100).optional(),
+}).strict()
+
 const mcpAllowToolsSchema = z.array(z.string().min(1)).optional()
 
 const mcpStdioServerSchema = z.object({
@@ -3059,6 +3065,23 @@ export const daemonConfigSchema = z.object({
      *  through. Changing them applies on save, no restart. */
     maxClaudeCodeDispatchesPerHour: z.number().int().min(0).max(10_000).optional(),
     maxClaudeCodeDispatchesPer5h: z.number().int().min(0).max(50_000).optional(),
+    /** Which cold claude-code runs go first when the plan fills up (#2161).
+     *  Each class is held past its percent of the plan's 5-hour or weekly
+     *  window; a person writing and open conversations are never held by
+     *  it. Applies on save. See agents/plan-priority.ts. */
+    planPriority: z.object({
+      enabled: z.boolean().default(true),
+      work: planThresholdsSchema.optional(),
+      agent: planThresholdsSchema.optional(),
+      background: planThresholdsSchema.optional(),
+    }).optional(),
+    /** Read the plan's 5-hour and weekly use from Claude with the login
+     *  Claude Code already stores on this node (#2161). AgentX never renews
+     *  that login. Applies on save. */
+    planUsage: z.object({
+      enabled: z.boolean().default(true),
+      intervalMinutes: z.number().int().min(2).max(60).default(5),
+    }).optional(),
     /** How many requests BEFORE the immediate predecessor to show the
      *  session-continuity seat. 0 keeps today's two-message state exactly.
      *

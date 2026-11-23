@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process"
+import { execFile, spawnSync } from "child_process"
 
 // --- OS keyring: where `auth: "keyring"` integrations keep their tokens ---
 //
@@ -90,4 +90,20 @@ export function memoryKeyring(initial: Record<string, string> = {}): KeyringStor
     set: (a, v) => { entries.set(a, v) },
     delete: (a) => entries.delete(a),
   }
+}
+
+// --- Claude Code's own login (#2161) ---
+//
+// Claude Code keeps its OAuth login in the macOS Keychain under a service
+// name of its own (agents/claude-plan-usage.ts picks the name). Read-only:
+// AgentX never writes or renews that login. Elsewhere Claude Code keeps it
+// in a file, so there is nothing to read here.
+
+export function readClaudeCodeKeychainEntry(service: string, platform: NodeJS.Platform = process.platform): Promise<string | null> {
+  if (platform !== "darwin") return Promise.resolve(null)
+  return new Promise((resolve) => {
+    execFile("security", ["find-generic-password", "-s", service, "-w"], { timeout: 3000 }, (err, stdout) => {
+      resolve(err ? null : String(stdout).trim() || null)
+    })
+  })
 }
