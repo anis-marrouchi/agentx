@@ -12,11 +12,15 @@
 // that do not still get the path and tab.
 
 export const ASSISTANT_CSS = `
-.ax-as-dock{position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:59;
+/* Reserve a usable composer beside the drawer, even when a wider drawer
+   preference was saved on a larger screen. */
+body{--assistant-drawer-width:min(var(--ax-as-w),calc(100vw - var(--dashboard-side-offset, 0px) - 220px))}
+body.ax-as-open{--assistant-dock-offset:var(--assistant-drawer-width)}
+.ax-as-dock{position:fixed;bottom:0;left:calc((100vw + var(--dashboard-side-offset, 0px)) / 2);transform:translateX(-50%);z-index:59;
   display:flex;flex-direction:column;align-items:center;
-  width:min(620px,calc(100vw - 36px));transition:transform 160ms ease}
+  width:min(620px,calc(100vw - var(--dashboard-side-offset, 0px) - var(--assistant-dock-offset, 0px) - 36px));transition:transform 160ms ease}
 /* Centred in the space that is left, not in the space the drawer covers. */
-body.ax-as-open .ax-as-dock{left:calc((100vw - var(--ax-as-w)) / 2)}
+body.ax-as-open .ax-as-dock{left:calc((100vw + var(--dashboard-side-offset, 0px) - var(--assistant-dock-offset, 0px)) / 2)}
 /* Tucked: slide out of the way but leave the grip, or there is nothing to
    click to bring it back. */
 .ax-as-dock.is-tucked{transform:translateX(-50%) translateY(calc(100% - 26px))}
@@ -39,8 +43,13 @@ body.ax-as-open .ax-as-dock.is-tucked{transform:translateX(-50%) translateY(calc
 .ax-as-bar button{flex:none}
 /* Keep the last row of a page clear of the dock. */
 body{padding-bottom:86px}
-@media (max-width:640px){.ax-as-dock{width:calc(100vw - 24px)}
-  body.ax-as-open .ax-as-dock{left:50%}}
+@media (max-width:640px){
+  body{--assistant-drawer-width:min(var(--ax-as-w),92vw)}
+  .ax-as-dock{width:calc(100vw - 24px)}
+  body.ax-as-open .ax-as-dock{left:calc(100vw - var(--assistant-drawer-width) / 2);
+    width:calc(var(--assistant-drawer-width) - 24px);z-index:62}
+  .ax-as.is-open{padding-bottom:86px}
+}
 .ax-as-handle{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:60;
   display:flex;align-items:center;gap:6px;writing-mode:vertical-rl;
   background:var(--ax-surface);color:var(--ax-text);cursor:pointer;
@@ -51,9 +60,9 @@ body{padding-bottom:86px}
 /* Open pushes the page over rather than covering it: a drawer that hides the
    rows you are asking about is worse than no drawer. Below 900px there is no
    room to give, so it overlays. */
-body.ax-as-open{padding-right:var(--ax-as-w)}
-@media (max-width:900px){body.ax-as-open{padding-right:0}}
-.ax-as{position:fixed;top:0;right:0;height:100vh;width:var(--ax-as-w);max-width:92vw;z-index:61;
+body.ax-as-open{--dashboard-drawer-offset:var(--assistant-drawer-width);padding-right:var(--dashboard-drawer-offset)}
+@media (max-width:900px){body.ax-as-open{--dashboard-drawer-offset:0px}}
+.ax-as{position:fixed;top:0;right:0;height:100vh;width:var(--assistant-drawer-width);box-sizing:border-box;z-index:61;
   display:flex;flex-direction:column;background:var(--ax-surface);
   border-left:var(--ax-border-w) solid var(--ax-border);
   transform:translateX(100%);transition:transform 160ms ease}

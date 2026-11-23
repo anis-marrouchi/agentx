@@ -41,7 +41,7 @@ export const APP_CHAT_STRIP_SCRIPT = `
   var items = [], prev = {}, watch = {}, timer = 0, inflight = false, drawn = '';
   var waiting = [], shown = null, hideTimer = 0;
 
-  function colorOf(c) { var x = O ? O.colorFor(c.agent, c.color) : c.color; return HEX.test(x || '') ? x : '#2563EB'; }
+  function colorOf(c) { var x = O ? O.colorFor(c.agent, c.color) : c.color; return HEX.test(x || '') ? x : 'var(--ax-accent)'; }
   function nameOf(c) { return c.agentName || c.agent || 'Agent'; }
 
   // --- The strip ---

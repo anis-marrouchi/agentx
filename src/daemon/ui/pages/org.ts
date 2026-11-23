@@ -111,7 +111,7 @@ const ORG_CSS = `
 .org code { font-family: var(--ax-mono); font-size: 11.5px; background: var(--ax-surface-2); padding: 1px 6px; border-radius: var(--ax-radius-sm); }
 .org-h2 { margin: 28px 0 10px; font-size: 14px; }
 /* The chart takes the whole window width, not the text column (#1681). */
-.org-tree { overflow-x: auto; padding: 12px 0 8px; width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); --org-fade-l: 0px; --org-fade-r: 0px; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); }
+.org-tree { overflow-x: auto; padding: 12px 0 8px; --org-content-width: calc(100vw - var(--dashboard-side-offset, 0px) - var(--dashboard-drawer-offset, 0px)); width: calc(var(--org-content-width) - 48px); margin-left: calc((100% - var(--org-content-width)) / 2 + 24px); --org-fade-l: 0px; --org-fade-r: 0px; -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 var(--org-fade-l), #000 calc(100% - var(--org-fade-r)), transparent 100%); }
 .org-tree.is-more-left { --org-fade-l: 40px; }
 .org-tree.is-more-right { --org-fade-r: 40px; }
 .org-more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
@@ -146,8 +146,7 @@ const ORG_CSS = `
 .org-acts a, .org-acts button { font: inherit; font-size: var(--ax-fs-xs); padding: 3px 9px; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-surface-2); color: var(--ax-text); text-decoration: none; cursor: pointer; }
 .org-acts button:disabled { opacity: 0.6; cursor: default; }
 .org-card { position: relative; }
-.org { --org-person-bg: color-mix(in oklch, #f08c3c 16%, var(--ax-bg)); --org-person-ink: color-mix(in oklch, #d4691f 80%, var(--ax-text)); }
-.org-card.is-person { background: var(--org-person-bg); border-color: var(--org-person-ink); border-left-width: 4px; border-radius: 22px; }
+.org-card.is-person { background: var(--ax-person-t); border-color: var(--ax-person-ink); border-left-width: 4px; border-radius: 22px; }
 .org-card.is-remote, .org-legend-remote { border-style: dashed; }
 .org-card.is-gone { opacity: .6; filter: grayscale(1); }
 .org-nodes { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -155,7 +154,7 @@ const ORG_CSS = `
 .org-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 17px; border-radius: 999px; border: var(--ax-border-w) solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text-2); white-space: nowrap; }
 .org-tag svg { fill: currentColor; }
 .org-tag .org-eye { fill: var(--ax-bg); }
-.org-tag.is-person { border-color: var(--org-person-ink); color: var(--org-person-ink); }
+.org-tag.is-person { border-color: var(--ax-person-ink); color: var(--ax-person-ink); }
 .org-card > .org-tag { position: absolute; top: -9px; right: 12px; }
 .org-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 0 0 14px; padding: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .org-legend li { display: inline-flex; align-items: center; gap: 6px; }

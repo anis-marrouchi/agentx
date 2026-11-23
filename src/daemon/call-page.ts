@@ -7,36 +7,39 @@
 // The page is intentionally framework-free and self-contained so it can be
 // served as a single response.
 
+import { AX_THEME_BOOT, AX_TOKENS_CSS } from "./ui/tokens"
+
 export const CALL_PAGE_HTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AgentX Call</title>
+  ${AX_THEME_BOOT}
   <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0e1116; color: #e6edf3; }
-    header { padding: 10px 14px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    ${AX_TOKENS_CSS}
+    body { margin: 0; font: 14px/1.4 var(--ax-font); background: var(--ax-bg); color: var(--ax-text); }
+    header { padding: 10px 14px; border-bottom: 1px solid var(--ax-border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     header h1 { font-size: 15px; margin: 0; font-weight: 600; }
     header .sp { flex: 1; }
     main { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
-    video { width: 100%; aspect-ratio: 16 / 9; background: #161b22; border-radius: 6px; object-fit: cover; }
+    video { width: 100%; aspect-ratio: 16 / 9; background: var(--ax-surface-2); border-radius: 6px; object-fit: cover; }
     .tile { position: relative; }
-    .tile .label { position: absolute; top: 6px; left: 8px; font-size: 11px; background: rgba(0,0,0,.55); padding: 2px 6px; border-radius: 3px; }
+    .tile .label { position: absolute; top: 6px; left: 8px; font-size: 11px; background: rgba(0,0,0,.65); color: white; padding: 2px 6px; border-radius: 3px; }
     form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    input, select, button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px; padding: 6px 10px; font: inherit; }
+    input, select, button { background: var(--ax-border); color: var(--ax-text); border: 1px solid var(--ax-surface-3); border-radius: 4px; padding: 6px 10px; font: inherit; }
     button { cursor: pointer; }
-    button:hover { background: #30363d; }
-    button.primary { background: #238636; border-color: #2ea043; }
-    button.primary:hover { background: #2ea043; }
-    button.danger { background: #da3633; border-color: #f85149; }
+    button:hover { background: var(--ax-surface-3); }
+    button.primary { background: var(--ax-primary); color: var(--ax-primary-fg); border-color: var(--ax-primary); }
+    button.primary:hover { background: var(--ax-blue-d); }
+    button.danger { background: var(--ax-red-t); color: var(--ax-red-ink); border-color: var(--ax-red-e); }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    #log { padding: 8px 14px; max-height: 160px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; border-top: 1px solid #21262d; color: #8b949e; }
-    #log .err { color: #f85149; }
-    #log .ok { color: #56d364; }
-    .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #30363d; }
-    .status.ok { background: #1f6f3d; color: #aff5b4; }
-    .status.err { background: #6e2b2b; color: #ffabab; }
+    #log { padding: 8px 14px; max-height: 160px; overflow: auto; font: 12px/1.5 var(--ax-mono); border-top: 1px solid var(--ax-border); color: var(--ax-muted); }
+    #log .err { color: var(--ax-red-ink); }
+    #log .ok { color: var(--ax-green-d); }
+    .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--ax-surface-3); }
+    .status.ok { background: var(--ax-green-e); color: var(--ax-green-d); }
+    .status.err { background: var(--ax-red-t); color: var(--ax-red-ink); }
   </style>
 </head>
 <body>

@@ -251,7 +251,7 @@ export const WALL_SETTINGS_DIAGNOSTICS_CSS = `
 .wsdg__errs li { padding: 6px 0; border-top: 1px solid var(--ax-border); }
 .wsdg__errs li:first-child { border-top: 0; }
 .wsdg__errs small { display: block; font-size: 11px; color: var(--ax-muted); }
-.wsdg__logs { max-height: 60vh; overflow: auto; margin: 0; padding: 8px; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--ax-surface-2, #f6f8fa); border: 1px solid var(--ax-border); border-radius: 6px; }
+.wsdg__logs { max-height: 60vh; overflow: auto; margin: 0; padding: 8px; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--ax-surface-2); border: 1px solid var(--ax-border); border-radius: 6px; }
 .wsdg__logs .is-err { color: var(--ax-err, #cf222e); }
 .wsdg__logs .is-warn { color: var(--ax-warn, #bf8700); }
 .wsdg__logs .is-dim { color: var(--ax-muted); }

@@ -13,7 +13,7 @@
 // No backticks, backslashes or dollar-brace inside the client script: it
 // sits in a TS template literal.
 
-import { AX_TOKENS_CSS } from "../tokens"
+import { AX_PRIMARY_COLOR, AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { ageText, memberBar, memberHead } from "./member"
 import { connectionNote, plainPreview } from "./member-logic"
@@ -32,8 +32,8 @@ export function renderClientManifest(): string {
     start_url: "/member",
     scope: "/member",
     display: "standalone",
-    background_color: "#2979FF",
-    theme_color: "#2979FF",
+    background_color: AX_PRIMARY_COLOR,
+    theme_color: AX_PRIMARY_COLOR,
     icons: [
       { src: "/member/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/member/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
