@@ -83,6 +83,7 @@ import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
+import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -99,6 +100,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
+  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
@@ -1287,6 +1289,37 @@ ${WALL_JOBLEDGER_SCRIPT}
     });
     return meshesHtml() + cards.join('');
   }
+  // --- The live tree at the top of the nav (#2101 PR 1c) ---
+  // machine → project → work item → agent, from the live snapshot and the
+  // posts already on the page (wall-tree.ts). Drawn only when it changed,
+  // so a fold, a hover or the keyboard focus is not lost every 2 s.
+  var treeClosed = {}, treeLast = '';
+  var treeWide = window.matchMedia ? window.matchMedia('(min-width: 1181px)') : null;
+  function treeShown() {
+    return !!$('wall-tree') && !document.hidden && !!treeWide && treeWide.matches;
+  }
+  function renderTree() {
+    var el = $('wall-tree-body');
+    if (!el) return;
+    var live = (S.live && S.live.nodes) || [];
+    var html = !live.length && S.liveError ? '<p class="lt__empty">Could not reach the machines just now; trying again.</p>'
+      : liveTreeHtml(liveTreeModel(live, (S.data && S.data.posts) || [], Date.now()), function (r, m) {
+        return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
+      }, treeClosed);
+    if (html === treeLast) return;
+    treeLast = html;
+    el.innerHTML = html;
+  }
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (!d || !d.matches || !d.matches('#wall-tree details[data-lt-key]')) return;
+    var k = d.getAttribute('data-lt-key');
+    if (d.open) delete treeClosed[k]; else treeClosed[k] = true;
+  }, true);
+  // Back on the tab or wide again: follow the stream again (or let it go).
+  document.addEventListener('visibilitychange', function () { followLive(S.post ? 'post' : S.page); });
+  if (treeWide && treeWide.addEventListener) treeWide.addEventListener('change', function () { followLive(S.post ? 'post' : S.page); });
+
   // One line per mesh (#1479): how many of its machines' Walls answered.
   function meshesHtml() {
     return ((S.data && S.data.meshes) || []).map(function (m) {
@@ -1298,6 +1331,7 @@ ${WALL_JOBLEDGER_SCRIPT}
   function render() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
     $('wall-nodes').innerHTML = happeningHtml();
+    renderTree();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
     // The editor (#1524) may keep the page: leaving with changes asks first.

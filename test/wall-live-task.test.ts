@@ -19,7 +19,7 @@ const LIVE = { nodes: [
   ] },
 ] }
 
-function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown> }) {
+function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown>; wide?: boolean }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -89,7 +89,7 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
     close() { this.s.closed = true }
   }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, ...(opts.wide === undefined ? {} : { matchMedia: () => ({ matches: opts.wide, addEventListener() {} }) }) }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, FakeEventSource, (f: () => void) => { f(); return 1 },
   )
@@ -447,5 +447,32 @@ describe("Wall Live: machines (#1439)", () => {
     const paths = [...WALL_LIVE_SCRIPT.matchAll(/\/api\/[\w/-]+/g)].map((m) => m[0])
     expect(paths.length).toBeGreaterThan(0)
     for (const p of paths) expect(p.startsWith("/api/admin/wall/"), p).toBe(true)
+  })
+})
+
+describe("The live tree in the nav (#2101 PR 1c)", () => {
+  it("on a wide screen follows the stream from the home page and paints the tree, not the feed", async () => {
+    const w = openWall({ hash: "#status=open&view=feed", wide: true })
+    await w.settle()
+    const live = w.streams.find((s) => s.url === "/api/live/stream")!
+    expect(live).toBeTruthy()
+    expect(w.el("wall-tree-body").innerHTML).toContain("node-a")
+    const feed = w.el("wall-feed").innerHTML
+    live.on.snapshot({ data: JSON.stringify(LIVE) })
+    const tree = w.el("wall-tree-body").innerHTML
+    expect(tree.match(/class="lt__spin"/g)).toHaveLength(2)
+    expect(tree).toContain("Customer Desk")
+    expect(tree).toContain('title="2 working now">2</span>')
+    expect(w.el("wall-feed").innerHTML).toBe(feed)
+    // A silent node: "not checked", its runs gone from the tree.
+    live.on.snapshot({ data: JSON.stringify({ nodes: [{ name: "node-a", url: "http://node-a", reachable: false, error: "unreachable", agents: [] }] }) })
+    expect(w.el("wall-tree-body").innerHTML).toContain("not checked")
+    expect(w.el("wall-tree-body").innerHTML).not.toContain("lt__spin")
+  })
+
+  it("on a narrow screen (tree hidden) the home page opens no stream", async () => {
+    const w = openWall({ hash: "#status=open&view=feed", wide: false })
+    await w.settle()
+    expect(w.streams.some((s) => s.url === "/api/live/stream")).toBe(false)
   })
 })
