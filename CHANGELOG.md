@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.258.0](https://github.com/anis-marrouchi/agentx/compare/v0.257.0...v0.258.0) (2026-11-23)
+
+
+### Features
+
+* **hub:** agents manager in the Hub ([#2144](https://github.com/anis-marrouchi/agentx/issues/2144)) ([#2155](https://github.com/anis-marrouchi/agentx/issues/2155)) ([d480690](https://github.com/anis-marrouchi/agentx/commit/d4806907b49cb8b38f5b83d8a11928c59c97637c))
+* **hub:** selected task streams its conversation, rendered with AI Elements ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R16) ([#2163](https://github.com/anis-marrouchi/agentx/issues/2163)) ([21b3354](https://github.com/anis-marrouchi/agentx/commit/21b3354e3040f2767d197694238cf0f25fe6afa7))
+* **quota:** read plan usage and hold cold runs by priority ([#2162](https://github.com/anis-marrouchi/agentx/issues/2162)) ([eaaa3b6](https://github.com/anis-marrouchi/agentx/commit/eaaa3b6229289daa43797853cf79b89422fa23a0))
+
 ## [0.257.0](https://github.com/anis-marrouchi/agentx/compare/v0.256.1...v0.257.0) (2026-11-23)
 
 
