@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.259.0](https://github.com/anis-marrouchi/agentx/compare/v0.258.0...v0.259.0) (2026-11-23)
+
+
+### Features
+
+* **hub:** adapt free affectUI components for conversation and decisions ([#2166](https://github.com/anis-marrouchi/agentx/issues/2166)) ([d39a599](https://github.com/anis-marrouchi/agentx/commit/d39a5999fbf56fbe32e06928bd265c15098d4f5f))
+* **hub:** collapse desktop navigation groups by default ([#2169](https://github.com/anis-marrouchi/agentx/issues/2169)) ([c1b38f9](https://github.com/anis-marrouchi/agentx/commit/c1b38f9ad6f433353f95ff17d8f007d49146ae9a))
+
+
+### Bug Fixes
+
+* **wiki:** surface Claude quota diagnostics ([#2165](https://github.com/anis-marrouchi/agentx/issues/2165)) ([2fbc301](https://github.com/anis-marrouchi/agentx/commit/2fbc3013575c81f26ef661fc7aa405d2f136a868))
+
 ## [0.258.0](https://github.com/anis-marrouchi/agentx/compare/v0.257.0...v0.258.0) (2026-11-23)
 
 
