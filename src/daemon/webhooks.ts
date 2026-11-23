@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { createHmac, timingSafeEqual } from "crypto"
 import type { AgentRegistry } from "@/agents/registry"
-import { leftBehindNoteText, LOCAL_NODE } from "@/channels/run-on"
+import { issueKeysOfHome, leftBehindNoteText, LOCAL_NODE } from "@/channels/run-on"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { DaemonConfig } from "./config"
 import type { WorkflowDispatcher } from "@/workflows"
@@ -134,6 +134,12 @@ export class WebhookHandler {
     this.webhookEntries = entries
   }
 
+  /** Posts a note on an issue chat as this node's agent (#2104 C-d). */
+  private noteOnIssue?: (provider: "github" | "gitlab", chatId: string, text: string) => Promise<void>
+  setIssueNoter(fn: (provider: "github" | "gitlab", chatId: string, text: string) => Promise<void>): void {
+    this.noteOnIssue = fn
+  }
+
   /**
    * Handle an incoming webhook request.
    * URL format: /webhook/:agentId or /webhook/:agentId/:source
@@ -250,8 +256,17 @@ export class WebhookHandler {
     // C-d: the mapped node keeps the issue's left-behind work, so the run
     // is not forwarded there.
     if (meshEntry?.node && !placed && home && this.registry.leftBehindOf?.({ context }).includes(meshEntry.node)) {
+      // Accepted (the forge does not retry it); the issue is told why.
+      const text = leftBehindNoteText(meshEntry.node)
       this.log(`Webhook [${source}] for ${home}: ${meshEntry.node} keeps left-behind work, not forwarded`)
-      this.sendJson(res, 409, { ok: false, agent: agentId, source, node: meshEntry.node, error: leftBehindNoteText(meshEntry.node) })
+      this.sendJson(res, 202, { ok: true, agent: agentId, source, node: meshEntry.node, status: "held", note: text })
+      const key = issueKeysOfHome(home).find((k) => k.channel === source)
+      if (key && this.noteOnIssue) {
+        this.noteOnIssue(key.channel as "github" | "gitlab", key.chatId, text).catch((e: any) =>
+          this.log(`Webhook [${source}] for ${home}: the left-behind note failed: ${e?.message ?? e}`))
+      } else {
+        this.log(`Webhook [${source}] for ${home}: no way to note the issue`)
+      }
       return
     }
 

@@ -96,6 +96,12 @@ export function leftBehindOn(deps: Pick<RunNodeDeps, "leftBehind">, key: IssueKe
   try { return deps.leftBehind(key.channel, key.chatId) } catch { return [] }
 }
 
+/** The nodes keeping work left behind on any issue a task names (C-d):
+ *  the one read the router and the registry share. */
+export function leftBehindOfTask(ctx: Record<string, unknown> | undefined | null, deps: Pick<RunNodeDeps, "leftBehind" | "requestHome">): string[] {
+  return [...new Set(issueKeysOfTask(ctx, deps).flatMap((k) => leftBehindOn(deps, k)))]
+}
+
 /** Whether a task came from a peer: it is never forwarded again. */
 export function fromPeer(ctx: Record<string, unknown> | undefined | null): boolean {
   return !!ctx && (ctx.placed === true || ctx.fromPeer === true)

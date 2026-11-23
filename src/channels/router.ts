@@ -41,7 +41,7 @@ import { situationKeyOf } from "@/situations/key"
 import { personLimitsOf } from "@/people/people"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "@/agents/mesh-safety"
 import type { Placement } from "@/requests/store"
-import { droppedNoteText, issueKeyOfChat, leftBehindNoteText, leftBehindOn, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
+import { droppedNoteText, leftBehindNoteText, leftBehindOfTask, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
 import { changeSourceOf } from "@/agents/task-worktrees"
 
 /** A send refused because its channel is down (#1138 step B). */
@@ -563,8 +563,14 @@ export class MessageRouter {
     }
     const placementOf = this.placement?.placement
     const placed = !workflowHome && placementOf ? resolveRunNode({ context: { channel: msg.channel, chatId } }, { placement: placementOf }) : null
-    const leftBehind = leftBehindOn({ leftBehind: this.placement?.leftBehind }, issueKeyOfChat(msg.channel, chatId))
+    const leftBehind = this.leftBehindOfChat(msg.channel, chatId)
     return pickPreferNode({ workflowHome, placement: placed?.placement ?? null, mapping: msg.preferNode, leftBehind })
+  }
+
+  /** The nodes keeping work left behind on a chat's issue (C-d), read as
+   *  the registry reads a task's. */
+  private leftBehindOfChat(channel: string, chatId: string): string[] {
+    return leftBehindOfTask({ channel, chatId }, { leftBehind: this.placement?.leftBehind })
   }
 
   setServiceMatcher(matcher: ServiceMatcher): void {
@@ -2260,17 +2266,26 @@ export class MessageRouter {
     if (!this.mesh) return false
     if (await this.refusedForPerson(adapter, msg, agentId)) return true
 
-    const directory = this.mesh.directory()
+    const chatId = msg.group?.id || msg.sender.id
+    // C-d: a node keeping work left behind on the issue is not sent its
+    // runs; another host is, else the issue is told why.
+    const held = this.leftBehindOfChat(msg.channel, chatId)
+    const hosts = this.mesh.directory().filter((p) => p.healthy && p.skills.some((s) => s.id === agentId))
+    const directory = hosts.filter((p) => !held.includes(p.peer))
+    if (!directory.length && hosts.length) {
+      const text = leftBehindNoteText(hosts[0].peer)
+      this.log(`[run-on] ${chatId}: every host of "${agentId}" keeps left-behind work (${hosts.map((p) => p.peer).join(", ")}): not sent`)
+      await this.adapterSend(adapter, { channel: msg.channel, chatId, text, replyTo: msg.id, accountId: msg.accountId, agentId }, { countsAsReply: false })
+      this.resolveIntent(msg, "completed", Date.now(), text)
+      return true
+    }
 
     for (const peer of directory) {
-      if (!peer.healthy) continue
-
       const skill = peer.skills.find(s => s.id === agentId)
       if (!skill) continue
 
       this.log(`Mesh routing by agentId [${msg.channel}/${msg.sender.name}] -> peer "${peer.peer}" agent "${agentId}"`)
 
-      const chatId = msg.group?.id || msg.sender.id
       const replyAccountId = msg.accountId
 
       this.adapterReact(adapter, chatId, msg.id, "👀", replyAccountId)

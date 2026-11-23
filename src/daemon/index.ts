@@ -795,6 +795,8 @@ export class AgentXDaemon {
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks, this.hooks)
+    // C-d: a held webhook run is told on its issue, as the Hub's moves are.
+    this.webhooks.setIssueNoter(async (provider, chatId, text) => { await this.router.sendOutbound({ channel: provider, chatId, text }) })
 
     // Move 2: open SQLite + attach bus subscribers. Best-effort — if the
     // native binding isn't available (operator hasn't run pnpm install),

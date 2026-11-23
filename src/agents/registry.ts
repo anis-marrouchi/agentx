@@ -68,7 +68,7 @@ import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { meshContextOf, meshForwardBlock, placedRefusalText } from "./mesh-safety"
-import { fromPeer, issueKeyOfChat, issueKeysOfTask, leftBehindNoteText, leftBehindOn, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
+import { fromPeer, issueKeyOfChat, leftBehindNoteText, leftBehindOfTask, LOCAL_NODE, offlineNoteText, resolveRunNode, type IssueKey, type RunNodeDeps } from "@/channels/run-on"
 import { debug } from "@/observability/debug"
 import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
@@ -1004,7 +1004,7 @@ export class AgentRegistry {
    *  C-d): a mapped webhook's node is not sent its runs. */
   leftBehindOf(task: Pick<AgentTask, "context">): string[] {
     if (!this.placements) return []
-    return [...new Set(issueKeysOfTask(task.context as Record<string, unknown> | undefined, this.placements).flatMap((k) => leftBehindOn(this.placements!, k)))]
+    return leftBehindOfTask(task.context as Record<string, unknown> | undefined, this.placements)
   }
 
   /** The node a task's issue is placed on, or null: no placed issue, a
@@ -2033,9 +2033,17 @@ export class AgentRegistry {
       // it. Look it up in the mesh directory and forward via A2A sendTask.
       // Streaming callbacks are dropped — sendTask doesn't stream today.
       if (this.meshFallback) {
-        const peerEntry = this.meshFallback.directory().find(
+        // C-d: a node keeping work left behind on the task's issue is not
+        // sent its runs; another host is, else the run fails with the note.
+        const held = this.leftBehindOf(task)
+        const hosts = this.meshFallback.directory().filter(
           (p) => p.healthy && p.skills.some((s) => s.id === task.agentId),
         )
+        const peerEntry = hosts.find((p) => !held.includes(p.peer))
+        if (!peerEntry && hosts.length) {
+          this.log(`[run-on] ${task.agentId}: every host keeps left-behind work on the issue (${hosts.map((p) => p.peer).join(", ")}): not sent`)
+          return { content: "", error: leftBehindNoteText(hosts[0].peer) }
+        }
         if (peerEntry) {
           this.log(`[${task.agentId}] not local — routing to mesh peer "${peerEntry.peer}"`)
           try {

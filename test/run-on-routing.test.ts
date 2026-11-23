@@ -172,6 +172,19 @@ describe("MessageRouter with a placement", () => {
     expect(sendTask.mock.calls.map((c: any[]) => c[0])).toEqual(["nas", "clawd"])
   })
 
+  it("C-d: with nothing set, the mesh fallback skips a host keeping left-behind work, and tells the issue when every host does", async () => {
+    const r = router as any
+    left = ["clawd"]
+    await r.processResolvedMessage(adapter, msg(), "coder", ISSUE_CHAT)
+    expect(sendTask.mock.calls.map((c: any[]) => c[0])).toEqual(["nas"])
+    left = ["clawd", "nas"]
+    await r.processResolvedMessage(adapter, msg(), "coder", ISSUE_CHAT)
+    expect(sendTask).toHaveBeenCalledTimes(1)
+    expect(router.getDeferredMeshCounts()).toEqual({})
+    expect(sent.map((s) => s.text)).toContain(leftBehindNoteText("clawd"))
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it("C-d: a message held for an offline node is not replayed there once it keeps left-behind work", async () => {
     localAgent = true
     healthy = false
@@ -362,6 +375,23 @@ describe("AgentRegistry: placement at the start of execute", () => {
     expect(opts.context.runbookPath).toBeUndefined()
   })
 
+  it("C-d: the mesh fallback skips a host keeping left-behind work, and holds with the note when it is the only one", async () => {
+    peers.push({ peer: "nas", healthy: true, skills: [{ id: "atlas" }] })
+    let left = ["box"]
+    registry.setPlacements({ placement: () => null, leftBehind: (c, id) => (c === "github" && id === "o/r:issue:1" ? left : []) })
+    const ctx = { channel: "github", chatId: "o/r:issue:1" } as any
+    expect((await registry.execute({ agentId: "atlas", message: "hi", context: ctx })).content).toBe("ran on clawd")
+    expect((sendTask.mock.calls[0] as any[])[0]).toBe("nas")
+    left = ["box", "nas"]
+    const res = await registry.execute({ agentId: "atlas", message: "hi", context: ctx })
+    expect(res.error).toBe(leftBehindNoteText("box"))
+    expect(sendTask).toHaveBeenCalledTimes(1)
+    // Nothing set: the first host, as before.
+    left = []
+    await registry.execute({ agentId: "atlas", message: "hi", context: ctx })
+    expect((sendTask.mock.calls[1] as any[])[0]).toBe("box")
+  })
+
   it("C-b: a placed task for an agent this node does not host is refused, never passed on to another peer", async () => {
     const res = await registry.execute({ agentId: "atlas", message: "hi", context: { channel: "github", chatId: "o/r:issue:1", placed: true, fromPeer: true } as any })
     expect(res.error).toContain("does not host atlas")
@@ -416,11 +446,14 @@ describe("a mapped webhook loses to the placement", () => {
     h.validateSignature = () => null
     h.fireHookSafe = async () => {}
     const res: any = { writeHead: vi.fn(), end: vi.fn(), setHeader: vi.fn() }
+    const notes: Array<[string, string, string]> = []
+    handler.setIssueNoter(async (p, c, t) => { notes.push([p, c, t]) })
     await h.handle({ headers: { "x-github-event": "issues" }, url: "/webhook/coder/github", method: "POST" }, res, "/webhook/coder/github")
     expect(sendTask).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
-    expect(res.writeHead).toHaveBeenCalledWith(409, expect.anything())
-    expect(String(res.end.mock.calls[0][0])).toContain("keeps unpushed work")
+    expect(res.writeHead).toHaveBeenCalledWith(202, expect.anything())
+    expect(JSON.parse(String(res.end.mock.calls[0][0]))).toMatchObject({ ok: true, status: "held", node: "nas" })
+    expect(notes).toEqual([["github", "acme/app:issue:7", leftBehindNoteText("nas")]])
   })
 
   it("C4: a run placed on a peer answers 202 before the registry sends it", async () => {
