@@ -17,6 +17,9 @@ export const WALL_CHAT_CSS = `
 .hc-btn .hc__dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--ax-bg); }
 
 .hc { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ax-bg); }
+.ax-wall.hc-open { grid-template-columns: 280px minmax(0, 1fr); }
+.ax-wall.hc-open .ax-wall__main { grid-row: 1; margin-top: 0; border-top: 0; }
+.ax-wall.hc-open .ax-wall__aside,
 .ax-wall.hc-open .ax-wall__main > :not(#hc) { display: none !important; }
 .hc__head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--ax-border); }
 .hc__title { flex: 1; min-width: 0; }
@@ -107,11 +110,16 @@ export const WALL_CHAT_CSS = `
 
 /* Under 1180 px there is no side column: a button in the header opens the chat. */
 @media (max-width: 1180px) {
+  .ax-wall.hc-open { grid-template-columns: 72px minmax(0, 1fr); }
   .hc-btn { display: inline-flex; }
   .hcq { display: none; }
 }
 /* Phone: the whole screen, with ← back to the page. */
 @media (max-width: 640px) {
+  body:has(.ax-wall.hc-open) { padding-bottom: 0; }
+  .ax-wall.hc-open { grid-template-columns: minmax(0, 1fr); }
+  .ax-wall.hc-open .ax-wall__nav { display: none; }
+  .ax-wall.hc-open .ax-wall__main { grid-column: 1; min-height: 0; }
   .hc { height: 100dvh; }
   .hc-btn { margin-left: auto; }
   .hc__back { display: block; }
