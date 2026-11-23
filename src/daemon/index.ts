@@ -18,6 +18,7 @@ import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./confi
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { describeJobState, jobStateFrom, needsJobState } from "@/agents/run-state"
 import { recordRunState } from "@/jobs/run-state-ledger"
+import { closeOnStatedDone } from "@/requests/stated-done"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { activeProviderHolds, setDispatchBudget } from "@/agents/claude-code-quota"
@@ -1033,7 +1034,21 @@ export class AgentXDaemon {
         // The job's state a run of agent work ends with goes on its job
         // (#1861 phase 2).
         this.registry.setJobStateListener((runIds, ev) => {
-          if (this.requests) recordRunState(this.requests.jobs, runIds, ev, Date.now())
+          const requests = this.requests
+          if (!requests) return
+          recordRunState(requests.jobs, runIds, ev, Date.now())
+          // A done also closes the run's own open request (#2081).
+          if (ev.kind !== "stated" || ev.state.state !== "done") return
+          const out = closeOnStatedDone(requests.store, runIds, ev.state.proof, Date.now(), {
+            promise: promiseSettingsOf(this.config.requests),
+            closeProof: {
+              mode: this.config.requests.closeProof?.mode ?? "off",
+              ownerCheckOn: !!this.config.requests.ownerCheck?.enabled,
+              ...this.closeProofDeps(requests),
+              log: this.log,
+            },
+          })
+          if (out) this.log(`[requests] ${out.id} ${out.closed ? "closed as done: its run said State: done" : `left open after State: done (${out.why})`}`)
         })
         // A due time an agent writes gets a record, so a wake stands
         // behind it (#1908). Does nothing while the due-time seat is off.

@@ -572,6 +572,23 @@ export class RequestStore {
     ).run(at, note.slice(0, 1000), now, id).changes > 0
   }
 
+  /** A changed due time moves its wake (#2081): the wake the old due
+   *  time armed, or any wake later than the new one, comes to `at`. An
+   *  earlier wake stands. True when the wake moved. */
+  moveDueWake(id: string, at: number, oldDue: number | null, note: string, now: number): boolean {
+    if (!this.hasJobColumns()) return false
+    return this.db.prepare(
+      `UPDATE requests SET wake_at = ?, job_note = ?, updated_at = ?
+       WHERE id = ? AND state IN ('in_progress', 'waiting_other') AND job_state = 'continue' AND wake_at IS NOT NULL AND (wake_at = ? OR wake_at > ?)`,
+    ).run(at, note.slice(0, 1000), now, id, oldDue ?? -1, at).changes > 0
+  }
+
+  /** A wake is armed on it at or before `at`. */
+  hasWakeBefore(id: string, at: number): boolean {
+    if (!this.hasJobColumns()) return false
+    return !!this.db.prepare("SELECT 1 FROM requests WHERE id = ? AND wake_at IS NOT NULL AND wake_at <= ?").get(id, at)
+  }
+
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
     if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, due_pushed_at = NULL, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
     if (loop.closeWhen !== undefined) {
