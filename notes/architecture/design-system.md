@@ -1,15 +1,15 @@
 # Design system
 
-The dashboard's visual language is ported from the **agentina** console. This
-page records what was taken, what was deliberately left, and why — so future
-changes argue with a stated position rather than drift.
+This page records where the dashboard's look comes from, what is AgentX's
+own, and why, so that future changes argue with a stated position instead of
+drifting.
 
 Tokens live in `src/daemon/ui/tokens.ts` (single source of truth, imported by
 every page). Component classes live in `src/daemon/ui/components.css.ts`.
 
 ## The three principles
 
-Carried over verbatim, because they are as much about what we remove as how it
+Carried over from the agentina console, because they are as much about what we remove as how it
 looks:
 
 1. **Contacts, not concepts** — surface the people and agents you work with.
@@ -24,61 +24,53 @@ Principle 1 is why the settings page opens on *your agents* and not on a config
 tree. Principle 3 is why an unreachable mesh peer greys out instead of
 optimistically rendering.
 
+## Where the look comes from (#2101)
+
+Since 0.252.0 (#2111, #2127) the base follows Orca's desktop app (MIT,
+credited in `tokens.ts`): a neutral shadcn-style look with 1px lines, a 10px
+radius, Geist type and no hard offset shadows. People who know Claude Code,
+Codex, Gemini CLI or Orca should feel at home. It replaced the agentina look
+(2px borders, 16px radius, un-blurred offset shadow, Outfit).
+
+What stays AgentX's own, so it is not a copy (owner, 2026-11-22: "make sure
+things stay distinct and unique"):
+
+1. **The AgentX blue** for the primary button, links, focus and the current
+   place. Orca is monochrome. Blue only, no purple.
+2. **The name, logo and icon.**
+3. **Status colours that mean something**: green done/online, amber needs you,
+   red failed/refused, grey off.
+4. **The three principles above.**
+5. **Offline fonts**: Geist is served by the daemon, no font CDN.
+
+The values, parts and layout are written down for people and design tools in
+`skills/agentx-design/SKILL.md`. `test/design-skill.test.ts` fails if that file
+quotes a value `tokens.ts` no longer has, so change both together.
+
 ## Palette
 
-Four brand colours and a neutral ramp. Anything outside this list is a bug.
+Values live only in `tokens.ts`. The skill's colour table lists each role.
+Rules that hold across changes:
 
-| Role | Light | Dark | Use |
-|---|---|---|---|
-| Blue | `#2979FF` | `#6BA5FF` | Primary action, links, live state |
-| Blue dark | `#1B5FD9` | `#1B5FD9` | Offset shadow under primary |
-| Blue tint | `#E7F0FF` | `#16233d` | Selected chips, info panels |
-| Green | `#22B573` | `#4ED89B` | Success, healthy, online |
-| Amber | `#FFB300` | `#FFC948` | Warning, needs attention |
-| Red | `#F23A3A` | `#FF6B6B` | Error, destructive, denied |
+- The primary button is `#1f66e5` in both themes, so its white label stays at
+  5.1:1 (white on `#2979FF` is only 3.98:1). `test/design-tokens.test.ts`
+  checks it.
+- Amber and red are fills. Text in those colours uses `--ax-amber-ink` /
+  `--ax-red-ink`.
+- Dark is not a tint of light. Both palettes are written out in full, because
+  a derived dark theme is how contrast bugs get shipped.
 
-Neutrals (light): text `#202124` · secondary `#5f6368` · muted `#9aa0a6` ·
-border `#e8eaed` / `#dadce0` · surface `#ffffff` · ground `#f8f9fa`.
+## Shape and type
 
-## Shape
+1px lines, 10px radius (14px large, 6px small, pill for chips), no shadow on
+flat cards, and a soft shadow (`--ax-shadow-lg`) only on things that float:
+menus, dialogs, the drawer. Geist for UI, Geist Mono for code, ids and any
+tabular number.
 
-The part that makes it recognisable:
+## Themes
 
-| Token | Value | Note |
-|---|---|---|
-| `--ax-border-w` | `2px` | Was 1px. The single biggest visual shift |
-| `--ax-radius` | `16px` | Was 6px |
-| `--ax-radius-lg` | `20px` | Cards |
-| `--ax-radius-sm` | `12px` | Inputs, small controls |
-| `--ax-radius-pill` | `999px` | Chips, badges, status labels |
-| `--ax-shadow` | `0 3px 0 <border>` | Solid, **un-blurred** |
-| `--ax-shadow-accent` | `0 4px 0 <blue-dark>` | Primary buttons |
-
-The offset shadow is the signature move: a solid drop in a darker shade of the
-element's own colour, with no blur. It reads as a physical edge rather than a
-glow, and it is what stops flat 2px-bordered boxes from looking like a
-wireframe. Buttons collapse it on `:active` (`translateY(2px)` +
-`0 1px 0`) so the control visibly sinks — which is the entire justification for
-an un-blurred shadow over a soft one.
-
-## Type
-
-`Outfit` for UI, `Roboto Mono` for code, ids, and any tabular number.
-
-Loaded from Google Fonts with real system fallbacks in the token, so an
-offline or air-gapped box loses typography but never layout.
-
-## What was deliberately not ported
-
-**Light-only.** agentina is a consumer console with one light theme. This is a
-dense operations dashboard people read at 2am, so the dark variant stays and
-carries the same shape language with the brand colours lifted toward their
-tints for contrast. The offset shadow inverts: darker than the surface in dark
-mode, where agentina's would disappear.
-
-Dark is not a tint of light. Both palettes are written out in full in
-`tokens.ts` rather than derived, because a derived dark theme is how contrast
-bugs get shipped.
+Light and dark. With no saved choice the page follows the computer's setting
+(`AX_THEME_BOOT`, key `ax-theme`).
 
 ## What was removed
 
@@ -108,5 +100,5 @@ launchctl kickstart -k gui/$(id -u)/tn.acme.agentx-dashboard   # macOS
 curl -s localhost:4202/live | grep -c -- "--ax-blue"            # tokens present
 ```
 
-Then look at `/live` and `/admin` in **both** themes. Rendering a page 200 is
+Then look at `/live`, `/wall` and `/app` in **both** themes. Rendering a page 200 is
 not evidence that it looks right.
