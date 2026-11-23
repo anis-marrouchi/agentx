@@ -28,6 +28,7 @@ appCmd
   .description("pair a phone — prints a QR code to scan and a one-time code to type in the installed app")
   .option("--name <name>", "name for this phone (shown in `agentx app devices`)", "Phone")
   .option("--url <origin>", "address the phone opens, e.g. https://my-mac.tailnet-name.ts.net (default: this machine's Tailscale name)")
+  .option("--live", "let this phone follow running tasks and Stop or send to them (scope app:live)")
   .action(async (opts) => {
     try {
       const exposed = exposedDashboardMounts(tailscaleServeStatus(), dashboardPort())
@@ -42,7 +43,7 @@ appCmd
       }
       const origin = (opts.url ? String(opts.url) : tailscaleOrigin()).replace(/\/+$/, "")
       if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error(`--url must be an origin like https://host.example.ts.net, got: ${origin}`)
-      const { token: secret, record } = new TokenStore().create({ name: String(opts.name), scopes: ["app"] })
+      const { token: secret, record } = new TokenStore().create({ name: String(opts.name), scopes: opts.live ? ["app", "app:live"] : ["app"] })
       // The code redeems this same device token, so the QR link (browser)
       // and the code (installed app) end up as one device.
       const { code } = new PairCodeStore().create({ token: secret, tokenId: record.id, name: record.name })
@@ -75,7 +76,8 @@ appCmd
     console.log()
     for (const d of devices) {
       const status = d.revokedAt ? chalk.red("revoked") : chalk.green("active")
-      console.log(`  ${chalk.cyan(d.id)}  ${status}  ${d.name}`)
+      const live = d.scopes.includes("app:live") ? chalk.green("  live control on") : ""
+      console.log(`  ${chalk.cyan(d.id)}  ${status}  ${d.name}${live}`)
       console.log(chalk.dim(`    paired: ${d.createdAt}${d.lastUsedAt ? `  last used: ${d.lastUsedAt}` : ""}`))
     }
     if (relayed.length > 0) {
@@ -116,6 +118,35 @@ appCmd
     store.revoke(id)
     console.log(chalk.green(`\n  ✓ Unpaired ${id} (${device.name})\n`))
   })
+
+appCmd
+  .command("live <id> <state>")
+  .description("let a paired phone follow running tasks and Stop or send to them (on), or take that away (off)")
+  .action((id: string, state: string) => {
+    const result = setLiveControl(new TokenStore(), id, state)
+    if (!result.ok) {
+      console.log(chalk.red(`  ${result.error}`))
+      process.exit(1)
+    }
+    console.log(chalk.green(`\n  ✓ ${result.message}\n`))
+  })
+
+/** `agentx app live <id> on|off`, kept apart from the command so it can be
+ *  tested without a process exit. */
+export function setLiveControl(store: TokenStore, id: string, state: string): { ok: true; message: string } | { ok: false; error: string } {
+  const s = String(state).toLowerCase()
+  if (s !== "on" && s !== "off") return { ok: false, error: `State must be on or off, got: ${state}` }
+  const device = store.list().find((r) => r.id === id && r.scopes.includes("app"))
+  if (!device) return { ok: false, error: `No paired phone with id ${id}. See \`agentx app devices\`.` }
+  if (device.revokedAt) return { ok: false, error: `${id} (${device.name}) is unpaired. Pair it again with \`agentx app pair --live\`.` }
+  store.setScope(id, "app:live", s === "on")
+  return {
+    ok: true,
+    message: s === "on"
+      ? `Live control on for ${id} (${device.name}): it can follow running tasks and Stop or send to them.`
+      : `Live control off for ${id} (${device.name}): it sees running tasks but cannot follow, Stop or send.`,
+  }
+}
 
 appCmd
   .command("forget-computer <name>")

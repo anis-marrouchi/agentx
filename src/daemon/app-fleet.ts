@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { handleAppTaskStream } from "./app-task-stream"
 
 // --- Phone app: fleet, activity and control (/api/app/fleet, …) ---
 //
@@ -13,6 +14,14 @@ import type { IncomingMessage, ServerResponse } from "http"
 // buttons use, so the phone gets no power the dashboard doesn't already have.
 
 export const PREVIEW_CHARS = 160
+
+/** What a phone without the `app:live` scope hears from the routes that
+ *  follow or steer a running task (#2103). */
+export const LIVE_OFF_ERROR = "Live control is off for this phone. Turn it on from the Mac: agentx app live <device> on"
+
+export type TaskStreamOpen =
+  | { ok: true; body: ReadableStream<Uint8Array> }
+  | { ok: false; status: number; error: string }
 
 export interface SnapshotNode {
   id: string
@@ -78,6 +87,9 @@ export interface AppFleetDeps {
   approvals(): Promise<NodeApprovals[]>
   /** `by` names the phone, e.g. "operator (phone: My phone)". */
   decide(nodeUrl: string, key: string, action: "yes" | "no" | "later", by: string, answer?: ChoiceAnswer): Promise<NodeReply>
+  /** Open a node daemon's task SSE through the dashboard's allowlist, with
+   *  its token (#2103). Absent: /api/app/tasks/stream answers 404. */
+  taskStream?(nodeUrl: string, agentId: string, taskId: string, signal: AbortSignal): Promise<TaskStreamOpen>
 }
 
 export function clip(text: string | undefined, max = PREVIEW_CHARS): string | undefined {
@@ -160,7 +172,9 @@ export function summarizeActivity(nodes: SnapshotNode[]) {
 const TASK_ACTION = /^\/api\/app\/tasks\/(cancel|followup)$/
 
 /** Handles /api/app/{fleet,activity,tasks,nodes,crons,approvals}. Returns
- *  false for any other path so the caller can fall through. */
+ *  false for any other path so the caller can fall through. `live` says the
+ *  phone's token carries `app:live`: without it the task stream, Stop and
+ *  send answer 403 (#2103). */
 export async function handleAppFleet(
   req: IncomingMessage,
   res: ServerResponse,
@@ -168,13 +182,21 @@ export async function handleAppFleet(
   method: string,
   device: string,
   deps: AppFleetDeps,
+  live = false,
 ): Promise<boolean> {
   const url = new URL(req.url || path, "http://localhost")
+
+  if (method === "GET" && path === "/api/app/tasks/stream") {
+    if (!live) return json(res, 403, { error: LIVE_OFF_ERROR })
+    const open = deps.taskStream
+    if (!open) return json(res, 404, { error: "not found" })
+    return handleAppTaskStream(req, res, url, { snapshot: () => deps.snapshot(), taskStream: (n, a, t, s) => open(n, a, t, s) })
+  }
 
   if (method === "GET" && (path === "/api/app/fleet" || path === "/api/app/activity")) {
     const timezone = validTimezone(url.searchParams.get("timezone"))
     const snap = await deps.snapshot({ date: dateIn(timezone), timezone })
-    if (path === "/api/app/activity") return json(res, 200, { ts: snap.ts, tasks: summarizeActivity(snap.nodes) })
+    if (path === "/api/app/activity") return json(res, 200, { ts: snap.ts, tasks: summarizeActivity(snap.nodes), live })
     return json(res, 200, { ts: snap.ts, nodes: snap.nodes.map(summarizeNode) })
   }
 
@@ -188,17 +210,26 @@ export async function handleAppFleet(
     "/api/app/nodes/restart", "/api/app/nodes/reload", "/api/app/crons/toggle", "/api/app/approvals/decide",
   ].includes(path)
   if (!known) return false
+  if (taskAction && !live) return json(res, 403, { error: LIVE_OFF_ERROR })
 
   let body: Record<string, unknown>
   try { body = await readJson(req) } catch (e: any) { return json(res, 400, { error: e.message }) }
-  const node = str(body.node)
-  if (!node) return json(res, 400, { error: "node is required" })
+  let node = str(body.node)
+  if (!node && !taskAction) return json(res, 400, { error: "node is required" })
   const by = `operator (phone: ${device})`
 
   let reply: NodeReply
   if (taskAction) {
     const taskId = str(body.taskId)
     if (!taskId) return json(res, 400, { error: "taskId is required" })
+    // The server finds the task's node in the live snapshot, as the stream
+    // does; a node the phone sends must be that one (#2103 condition 2).
+    const task = summarizeActivity((await deps.snapshot()).nodes).find((t) => t.taskId === taskId)
+    if (!task) return json(res, 404, { error: "this task has ended" })
+    if (node && node.replace(/\/+$/, "") !== task.node.replace(/\/+$/, "")) {
+      return json(res, 400, { error: "this task runs on another computer" })
+    }
+    node = task.node
     const upstream = `/api/tasks/${encodeURIComponent(taskId)}/${taskAction[1]}`
     if (taskAction[1] === "cancel") {
       reply = await deps.nodePost(node, upstream, { reason: `cancelled by ${by}` })

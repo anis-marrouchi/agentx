@@ -24,6 +24,8 @@ import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
+import { APP_LIVE_CSS, APP_LIVE_SCRIPT } from "./app-live.client"
+import { liveLabel, liveReduce, liveSseFrames } from "./app-live-logic"
 import { APP_DESK_SCRIPT } from "./app-desk.client"
 import { APP_DESK_CSS } from "./app-desk.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
@@ -107,7 +109,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_LIVE_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -127,6 +129,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ swipeMayStart, swipeAxis, swipeOffset, swipeLanding })}${APP_SWIPE_SCRIPT}</script>
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
+<script>${injectFns({ liveSseFrames, liveReduce, liveLabel })}${APP_LIVE_SCRIPT}</script>
 <script>${injectFns({ parseOpenHash })}${APP_DESK_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>

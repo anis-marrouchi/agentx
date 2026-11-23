@@ -57,7 +57,7 @@ describe("app token gate (loopback is not trusted)", () => {
     const { token, record } = store.create({ name: "Test phone", scopes: ["app"] })
     const me = await fetch(`${base}/api/app/me`, { headers: bearer(token) })
     expect(me.status).toBe(200)
-    expect(await me.json()).toEqual({ id: record.id, device: "Test phone", node: "node-a" })
+    expect(await me.json()).toEqual({ id: record.id, device: "Test phone", node: "node-a", live: false })
 
     const session = await fetch(`${base}/api/app/session`, { method: "POST", headers: bearer(token) })
     expect(session.status).toBe(200)
