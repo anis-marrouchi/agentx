@@ -333,11 +333,12 @@ const WALL_PAGE_CSS = `
 /* The live tree at the top of the nav (#2101 PR 1c, wall-tree.ts):
    machine → project → work item → agent; a spinner while an agent works,
    a green dot once it is done, a count per machine. */
-.lt { margin: 0 0 10px; padding: 0 0 10px; border-bottom: 1px solid var(--ax-border); min-width: 0; }
+.lt { flex: none; margin: 0 0 10px; padding: 0 0 10px; border-bottom: 1px solid var(--ax-border); min-width: 0; }
 .lt__h { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; font-weight: 500; color: var(--ax-muted); margin: 0; padding: 4px 10px 6px; }
 .lt__h a { color: var(--ax-muted); text-decoration: none; font-size: 11px; }
 .lt__h a:hover { color: var(--ax-accent); }
-#wall-tree-body { max-height: 52vh; overflow-y: auto; scrollbar-width: thin; }
+/* No scroll area of its own: the nav scrolls as a whole, so no row or
+   machine is ever hidden inside the tree (Hakim review of 64407073). */
 .lt__empty, .lt__idle { margin: 0; padding: 2px 10px 6px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .lt details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: var(--ax-radius-sm); }
 .lt details > summary::-webkit-details-marker { display: none; }
@@ -373,7 +374,7 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__spin { border: 2px solid color-mix(in srgb, var(--ax-accent) 25%, transparent); border-top-color: var(--ax-accent); animation: lt-spin .8s linear infinite; box-sizing: border-box; }
 .lt__dot { background: var(--ax-green); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ax-green) 22%, transparent); width: 8px; height: 8px; margin: 5px 1px 0; }
 @keyframes lt-spin { to { transform: rotate(360deg); } }
-/* Reduced motion: the ring stops turning and pulses its colour instead (no movement). */
+/* Reduced motion: the ring stops turning and stays still (no movement). */
 @media (prefers-reduced-motion: reduce) {
   .lt__spin { animation: none; border-color: var(--ax-accent); border-right-color: transparent; }
   .lt details > summary::before { transition: none; }

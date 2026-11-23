@@ -152,6 +152,11 @@ export function ltTitle(t: LtTask, post: LtPost | null): string {
   const step = /plan for the owner's request [^:]*: "([^"\n]+)/.exec(raw)
   if (step) return step[1].slice(0, 120)
   const from = String(t.sender || "").replace(/^agent:/, "")
+  // A scheduled run: its schedule id says which job it is.
+  if (t.channel === "cron" && t.chatId) {
+    const job = String(t.chatId).replace(/^cron:/, "").trim()
+    if (job) return job.slice(0, 120)
+  }
   // The job-state reminder is a preamble the daemon puts first: say who asked.
   if (/^\s*\[Job state\]/.test(raw)) return from && from !== "agent" ? "Job for " + from : "A job check"
   let s = ltPlain(raw).replace(/^\s*(\[[^\]\n]{1,40}\]\s*)+/, "").trim()

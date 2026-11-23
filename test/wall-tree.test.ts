@@ -68,6 +68,8 @@ describe("live tree helpers", () => {
     expect(ltTitle({ id: "x", messagePreview: "[Job state] Before you end", sender: "agent:pm-agent" }, null)).toBe("Job for pm-agent")
     expect(ltTitle({ id: "x", messagePreview: "[agentx:plan-step id=r step=1]\nYou own step 1 of 2 in the plan for the owner's request r: \"Open PR 1c live sidebar" }, null)).toBe("Open PR 1c live sidebar")
     expect(ltTitle({ id: "x", messagePreview: "[channel-daily] Morning channel check" }, null)).toBe("Morning channel check")
+    expect(ltTitle({ id: "x", channel: "cron", chatId: "cron:ds-2101-pr1c-check-1123", messagePreview: "[Job state] Before you end", sender: "agent" }, null)).toBe("ds-2101-pr1c-check-1123")
+    expect(ltTitle({ id: "x", channel: "cron", chatId: "", messagePreview: "[Job state] Before you end", sender: "agent" }, null)).toBe("A job check")
     expect(ltTitle({ id: "x", messagePreview: "ignored" }, { id: "p", headline: "From the post\nsecond line" })).toBe("From the post")
   })
 })
