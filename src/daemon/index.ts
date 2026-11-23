@@ -232,7 +232,8 @@ import { readHandoff } from "@/a2a/handoff-read"
 import { checkoutsOf } from "@/agents/task-worktrees"
 import { execProcess } from "@/agents/spec-tests"
 import { issueState, moveRunOn, nodeNumbersOf, runOnChoices, type IssueState, type RunOnDeps } from "@/daemon/issue-run-on"
-import { LOCAL_NODE } from "@/channels/run-on"
+import { issueOfChat, LOCAL_NODE } from "@/channels/run-on"
+import { sshIssueWorktreeState, sshReachable, sshServerOf } from "@/agents/ssh-run"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, isOwnerOnlyPost, ownerPostAllowed, collectAcceptedMeshTokens, workspaceFileAllowed, chatAllowed } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -2772,6 +2773,16 @@ export class AgentXDaemon {
         const body = await peerGet(peer, `/mesh/issue-state?chatId=${encodeURIComponent(chatId)}&channel=${encodeURIComponent(channel)}`, 5_000) as any
         if (typeof body?.runOpen !== "boolean") throw new Error(`${peer} does not know /mesh/issue-state (an older AgentX)`)
         return { runOpen: body.runOpen, worktree: body.worktree ?? null }
+      },
+      // #2104 PR 2: SSH servers. This Mac runs their issues, so a run open
+      // is read here and the worktree on the box.
+      sshServers: () => this.config.sshServers ?? [],
+      sshHealthy: (server) => sshReachable(server),
+      sshIssueState: async (node, chatId, channel) => {
+        const server = sshServerOf(node, this.config.sshServers)
+        const issue = issueOfChat(channel, chatId)
+        if (!server || !issue) throw new Error(`${node} is not in sshServers, or ${chatId} is not an issue`)
+        return { runOpen: this.registry.runOpenOnChat(chatId), worktree: await sshIssueWorktreeState(server, issue.project, issue.number) }
       },
       forge: forges.length === 1 ? forges[0] as "github" | "gitlab" : undefined,
       // Q4: the branch's pushed commit, read from the forge with this
