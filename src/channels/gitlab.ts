@@ -87,6 +87,7 @@ export interface GitLabChannelConfig {
   /** Rules Registry gates on this adapter (#2085). issueComplete.adapter:
    *  off | shadow | enforce, default shadow: the rollback is this one line. */
   gates?: { issueComplete?: { adapter?: GateMode } }
+  issueCompleteMode?: () => GateMode
 }
 
 /** Statuses that mean "this token may not write here". A per-agent token
@@ -2440,7 +2441,7 @@ export class GitLabAdapter implements ChannelAdapter {
     // G1 (#2085): the issue-complete gate runs before the peer forward and
     // before the create, so every caller of this adapter passes it.
     const gate = await checkIssueCreate({
-      mode: this.config.gates?.issueComplete?.adapter ?? "shadow",
+      mode: this.config.issueCompleteMode?.() ?? this.config.gates?.issueComplete?.adapter ?? "shadow",
       project,
       description,
       milestone: args.milestone,

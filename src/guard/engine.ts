@@ -1,5 +1,6 @@
 import type { GuardAction, GuardInput, GuardRule, ResolvedPolicy, Verdict, EffectiveAction } from "./types"
 import { buildResolveEnv, resolveTargets, normalizeProtectedSet, matchProtected } from "./resolve"
+import { missingParts, missingReason } from "@/gates/issue-complete"
 import { bashFileAccesses, toolFileAccesses } from "./file-access"
 
 // --- Guard engine ---
@@ -37,6 +38,7 @@ interface MatchCtx {
 interface RuleHit {
   rule: GuardRule
   resolvedTarget: string | null
+  message?: string
 }
 
 /** Does `rule` apply to this input? Returns the matched protected target when
@@ -90,6 +92,14 @@ function ruleMatches(
     const pool = m.command_regex ? [...ctx.candidates, ...ctx.ambientCandidates] : ctx.candidates
     resolvedTarget = matchProtected(pool, tokens)
     if (!resolvedTarget) return null
+  }
+
+  if (rule.check === "issue-complete") {
+    if (!/^mcp__[\w-]*gitlab[\w-]*__create_issue$/i.test(input.tool)) return null
+    const { description, milestone_id: milestone } = input.toolInput ?? {}
+    const hasMilestone = /^[1-9]\d*$/.test(typeof milestone === "number" || typeof milestone === "string" ? String(milestone) : "")
+    const missing = missingParts(typeof description === "string" ? description : "", hasMilestone)
+    return missing.length ? { rule, resolvedTarget, message: missingReason(missing) } : null
   }
 
   // A rule with no match clauses at all never fires (guards against an empty
@@ -201,7 +211,7 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
     mode: winner.mode,
     ruleId: winner.rule.id,
     severity: winner.rule.severity ?? null,
-    message: winner.rule.message ?? null,
+    message: winner.message ?? winner.rule.message ?? null,
     resolvedTarget: winner.resolvedTarget,
   }
 }

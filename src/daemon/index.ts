@@ -4262,6 +4262,7 @@ export class AgentXDaemon {
           noWakeLabel: this.config.channels.gitlab.noWakeLabel,
           // The CI fix loop's cap (#2102).
           ci: this.config.channels.gitlab.ci,
+          issueCompleteMode: () => this.config.gates.issueComplete.adapter,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-gitlab.json"),
           ciAgentForIssue: (project: string, n: number) => requestStoreFor({ root: process.cwd() })
             ?.newestOpenOnIssue(issueHomeLinks("gitlab", project, n, this.config.channels.gitlab.host))?.agentId,

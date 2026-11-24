@@ -60,6 +60,7 @@ export const guardRuleSchema = z.object({
   /** Stable id, surfaced in audit + agent feedback. Unique within a policy. */
   id: z.string(),
   match: ruleMatchSchema,
+  check: z.literal("issue-complete").optional(),
   action: guardActionSchema,
   severity: guardSeveritySchema.optional(),
   /** Human-readable reason handed to the agent when denied/escalated. */
@@ -140,6 +141,7 @@ export interface ResolvedPolicy {
 export interface GuardInput {
   tool: string
   command?: string
+  toolInput?: Record<string, unknown>
   filePath?: string
   /** Workspace cwd (from the PreToolUse payload) — base for `.env*` reads. */
   cwd?: string

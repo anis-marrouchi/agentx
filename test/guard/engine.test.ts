@@ -149,3 +149,22 @@ describe("engine — agent-scoped deny", () => {
     expect(v.action).toBe("deny")
   })
 })
+
+describe("issue completeness", () => {
+  const policy = resolveInMemory(guardPolicySchema.parse({
+    mode: "warn",
+    rules: [{ id: "issue-complete", check: "issue-complete", match: {}, action: "deny", mode: "enforce" }],
+  }))
+  const tool = "mcp__noqta_gitlab_server__create_issue"
+  const description = "- [ ] Check staging\n/estimate 30m"
+
+  it("requires a milestone on an otherwise complete GitLab issue", () => {
+    expect(evaluate({ tool, toolInput: { description } }, policy)).toMatchObject({
+      ruleId: "issue-complete",
+      effectiveAction: "deny",
+      message: "missing: milestone",
+    })
+    expect(evaluate({ tool, toolInput: { description, milestone_id: 7 } }, policy).effectiveAction).toBe("allow")
+    expect(evaluate({ tool: "mcp__github__create_issue", toolInput: {} }, policy).effectiveAction).toBe("allow")
+  })
+})

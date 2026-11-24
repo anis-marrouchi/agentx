@@ -180,7 +180,7 @@ export function checkPayload(
 
   try {
     const input = payloadToInput(payload, opts.agentId, opts.env)
-    if (!input.command && !input.filePath) return allow()
+    if (!input.command && !input.filePath && !/^mcp__[\w-]*gitlab[\w-]*__create_issue$/i.test(input.tool)) return allow()
 
     const policy = getPolicy(opts.root, opts.agentId)
     const verdict = evaluate(input, policy)

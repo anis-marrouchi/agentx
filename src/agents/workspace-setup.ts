@@ -251,13 +251,13 @@ export const MCP_GUARD_HOOK_TIMEOUT_S = MCP_GUARD_CURL_S + 15
  *  restarting, HTTP error, slower than [MCP_GUARD_CURL_S]) it prints a
  *  deny, so a listed server's tools never run unchecked. The daemon may
  *  hold the answer while a write tool's Approvals card waits (#1736). */
-export function mcpGuardHookCommand(agentId: string, daemonPort: string): string {
+export function mcpGuardHookCommand(agentId: string, daemonPort: string, reason?: string): string {
   const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
   const deny = JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
+      permissionDecisionReason: reason ?? "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
     },
   })
   return `out=$(curl -sf --max-time ${MCP_GUARD_CURL_S} -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null) && printf '%s' "$out" || printf '%s' '${deny}'`
@@ -280,6 +280,19 @@ function guardPreToolUseHooks(
   const mcpMatcher = allowListHookMatcher(mcp)
   if (mcpMatcher) {
     entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: MCP_GUARD_HOOK_TIMEOUT_S }] })
+  }
+  const gitlabServers = Object.entries(mcp ?? {})
+    .filter(([name, spec]) => /gitlab/i.test(name) && !spec.allowTools?.length)
+    .map(([name]) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  if (gitlabServers.length) {
+    entries.push({
+      matcher: `^mcp__(?:${gitlabServers.join("|")})__create_issue$`,
+      hooks: [{
+        type: "command",
+        command: mcpGuardHookCommand(agentId, daemonPort, "AgentX guard did not answer; GitLab issue creation through MCP is refused until it does."),
+        timeout: MCP_GUARD_HOOK_TIMEOUT_S,
+      }],
+    })
   }
   return entries
 }

@@ -346,6 +346,19 @@ describe("destructive-action guardrails wiring", () => {
     expect(readSettings().hooks.PreToolUse.some((e: any) => String(e.matcher).startsWith("mcp__"))).toBe(false)
   })
 
+  it("guards GitLab MCP creates even without an allow list", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    const mcp = { noqta_gitlab_server: {} }
+    expect(patchGuardrails(workspace, "coder-agent", "9", mcp)).toBe(true)
+    const entry = readSettings().hooks.PreToolUse.find((e: any) =>
+      new RegExp(e.matcher).test("mcp__noqta_gitlab_server__create_issue"))
+    expect(new RegExp(entry.matcher).test("mcp__noqta_gitlab_server__update_issue")).toBe(false)
+    const out = execFileSync("sh", ["-c", entry.hooks[0].command], { input: "{}" }).toString()
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe("deny")
+    expect(patchGuardrails(workspace, "coder-agent", "9", mcp)).toBe(false)
+  })
+
   it("the MCP allow-list hook denies when the daemon does not answer (#1698)", () => {
     // Port 9 (discard) has nothing listening: curl fails at once.
     const out = execFileSync("sh", ["-c", mcpGuardHookCommand("coder-agent", "9")], { input: "{}" }).toString()
