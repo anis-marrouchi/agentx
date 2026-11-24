@@ -67,9 +67,9 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 
 The top of the chat shows the agent's letter, the computer it runs on and its engine, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
 
-- Select **Plan** to see the steps of the agent's open requests and who has each step.
-- Select **Proofs** to see the steps that are done, each with its proof link.
-- Select **Chat** to go back to the conversation.
+1. Select **Plan** to see the steps of the agent's open requests and who has each step.
+2. Select **Proofs** to see the steps that are done, each with its proof link.
+3. Select **Chat** to go back to the conversation.
 
 When the agent asks you something, the question shows at the end of the chat as a card. Select **Accept** (or one of the answers it offers), **Ask for changes** to write what to change, or **Later** to put it off. The answer is the same as on the Desk: an answered question leaves the Desk too.
 
