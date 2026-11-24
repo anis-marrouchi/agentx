@@ -10,7 +10,8 @@ import { AX_INK, AX_LAYOUT, AX_PAPER, axIconSvg, axSymbolShapes, type Point } fr
 // full-bleed white square with the symbol inside the circle a maskable crop
 // keeps; scripts/gen-icons.ts uses the same renderer for the native apps.
 
-export type IconBackground = "square" | "mac"
+/** `template`: a macOS menu-bar template image, black symbol on transparent. */
+export type IconBackground = "square" | "mac" | "template"
 
 export interface IconSpec {
   size: number
@@ -72,6 +73,11 @@ export function renderIconPng(spec: IconSpec): Buffer {
       const i = y * size + x
       const a = ink[i]
       const o = y * row + 1 + x * 4
+      if (spec.background === "template") {
+        // Black ink, transparent elsewhere: macOS tints it for the menu bar.
+        raw[o + 3] = Math.round(255 * a)
+        continue
+      }
       for (let c = 0; c < 3; c++) raw[o + c] = Math.round(PAPER[c] + (INK[c] - PAPER[c]) * a)
       raw[o + 3] = Math.round(255 * (paper ? paper[i] : 1))
     }

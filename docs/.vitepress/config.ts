@@ -30,6 +30,7 @@ const groups = [
     { text: "In-page chat", link: "/dashboard/chat" },
   ] },
   { text: "Voice and desktop", collapsed: true, items: [
+    { text: "Desktop app", link: "/guides/desktop-app" },
     { text: "AgentX Voice guide", link: "/guides/agentx-voice" },
     { text: "AgentX Voice reference", link: "/dashboard/voice" },
     { text: "Calls from your agents", link: "/dashboard/calls" },
