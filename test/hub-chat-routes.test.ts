@@ -257,6 +257,7 @@ describe("the steps behind an answer (C1: read through getRunShape)", () => {
     step.run("t1", 1, "tool_result", null, "ok", null, 5, 2)
     step.run("t1", 2, "tool_use", "Bash", "in-flight", "x".repeat(900), 5, 3)
     step.run("t1", 3, "tool_result", null, "error", null, 5, 4)
+    tdb.prepare("UPDATE task_trace_steps SET output_summary = ? WHERE task_id = ? AND seq = ?").run("permission denied", "t1", 3)
     const runs = assistantRuns(tdb, [
       { role: "user", taskId: null }, { role: "assistant", taskId: "t1" }, { role: "assistant", taskId: "missing" },
     ])
@@ -264,7 +265,7 @@ describe("the steps behind an answer (C1: read through getRunShape)", () => {
     expect(runs.t1.ms).toBe(72000)
     expect(runs.t1.steps).toEqual([
       { tool: "Read", input: '{"file_path":"/a.ts"}', error: false },
-      { tool: "Bash", input: "x".repeat(300), error: true },
+      { tool: "Bash", input: "x".repeat(300), error: true, result: "permission denied" },
     ])
     expect(assistantRuns(null, [{ role: "assistant", taskId: "t1" }])).toEqual({})
   })

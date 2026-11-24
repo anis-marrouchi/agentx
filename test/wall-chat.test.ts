@@ -1,3 +1,4 @@
+import { markdownToHtml } from "../src/utils/markdown-html"
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
@@ -99,9 +100,9 @@ describe("Hub chat: what it draws (#1528)", () => {
       { role: "assistant", content: "**403**", status: "done" },
       { role: "user", content: "And now?", status: "done" },
       { role: "assistant", content: "", status: "pending" },
-    ], { agent: "Scout", md: (s) => "<p>" + s.replace(/\*\*(.+)\*\*/, "<b>$1</b>") + "</p>" })
+    ], { agent: "Scout", md: markdownToHtml })
     expect(html).toContain("Why &lt;did&gt; it fail?")
-    expect(html).toContain("<p><b>403</b></p>")
+    expect(html).toContain("<p><strong>403</strong></p>")
     expect(html).toContain("Scout is answering")
     // Chat and New post stay apart: an answer offers no Post as a task.
     expect(html).not.toMatch(/post as a task/i)
@@ -555,8 +556,9 @@ describe("Hub chat: answers like Claude Code (#2101 R14)", () => {
     expect(log).toContain("Working")
     expect(log).toContain("Read backup.log")
     expect(log).toContain("The backup ran out of disk.")
+    expect(log).toContain("<pre>line one ↵ line two</pre>")
     expect(log).toContain('<div class="hc__notice" role="alert"><b>Error</b>Daily budget reached for scout</div>')
-    for (const raw of ["→ Read", "line one", "💭", "let me look", "init model"]) expect(log).not.toContain(raw)
+    for (const raw of ["→ Read", "💭", "let me look", "init model"]) expect(log).not.toContain(raw)
   })
 
   it("says a spoken message's answer back through the speak route", async () => {
@@ -595,7 +597,7 @@ describe("Hub chat: answers like Claude Code (#2101 R14)", () => {
     w.el("hc-text").value = "Look"
     await w.fire("hc-form", "submit")
     expect(w.calls.find((c) => c.url === "/api/assistant")!.body.attachments).toEqual([{ name: "chart.png", path: "/ws/uploads/x-chart.png" }])
-    expect(w.el("hc-log").innerHTML).toContain('<div class="b">Look</div><div class="hc__files"><span class="hc__file">chart.png</span></div>')
+    expect(w.el("hc-log").innerHTML).toContain('<div class="b"><p>Look</p></div><div class="hc__files"><span class="hc__file">chart.png</span></div>')
   })
 
   it("draws the fold and the live part from the parser", () => {

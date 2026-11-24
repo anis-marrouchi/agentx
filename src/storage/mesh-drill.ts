@@ -87,7 +87,7 @@ export interface RunShape {
   tools: Array<{ tool: string; used: number; failed: number }>
   /** Ordered step skeleton: kind, tool, outcome, elapsed. No payloads,
    *  unless the caller asked for `inputs` (see getRunShape). */
-  steps: Array<{ seq: number; name: string; action: string | null; status: string | null; ms: number | null; input?: string | null }>
+  steps: Array<{ seq: number; name: string; action: string | null; status: string | null; ms: number | null; input?: string | null; output?: string | null }>
   /** True when the trace exists but its steps were pruned by retention. */
   stepsPruned: boolean
   writes: number
@@ -118,7 +118,7 @@ export function getRunShape(db: Database.Database, taskId: string, stepCap = 300
   if (!t) return { taskId, found: false, tools: [], steps: [], stepsPruned: false, writes: 0, reads: 0, sends: 0 }
 
   const rows = db.prepare(`
-    SELECT seq, name, action, status, ms${opts.inputs ? ", input_summary input" : ""} FROM task_trace_steps
+    SELECT seq, name, action, status, ms${opts.inputs ? ", input_summary input, output_summary output" : ""} FROM task_trace_steps
     WHERE task_id = ? ORDER BY seq LIMIT ?
   `).all(taskId, Math.max(1, Math.min(2000, stepCap))) as Array<Record<string, any>>
 
@@ -156,7 +156,10 @@ export function getRunShape(db: Database.Database, taskId: string, stepCap = 300
     tools: [...tally.entries()].map(([tool, v]) => ({ tool, ...v })).sort((a, b) => b.used - a.used),
     steps: rows.map((r) => ({
       seq: r.seq, name: r.name, action: r.action, status: r.status, ms: r.ms,
-      ...(opts.inputs ? { input: typeof r.input === "string" ? r.input.slice(0, STEP_INPUT_MAX) : null } : {}),
+      ...(opts.inputs ? {
+      input: typeof r.input === "string" ? r.input.slice(0, STEP_INPUT_MAX) : null,
+      output: typeof r.output === "string" ? r.output.slice(0, STEP_INPUT_MAX) : null,
+    } : {}),
     })),
     stepsPruned: rows.length === 0,
     writes, reads, sends,

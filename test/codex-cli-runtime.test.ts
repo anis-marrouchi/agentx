@@ -146,6 +146,7 @@ process.exit(0);
 const fs = require("fs");
 const args = process.argv.slice(2);
 const outIdx = args.indexOf("--output-last-message");
+console.log(JSON.stringify({ type: "item.completed", item: {type:"agent_message", text:"Checking."} }));
 console.log(JSON.stringify({ type: "agent_message_delta", delta: "hel" }));
 console.log(JSON.stringify({ type: "agent_message_delta", delta: "lo" }));
 console.log(JSON.stringify({ type: "turn_complete", model: "gpt-5.2", thread_id: "codex-thread-stream", usage: { input_tokens: 31, output_tokens: 7, cache_read_input_tokens: 3, cache_creation_input_tokens: 2 } }));
@@ -169,8 +170,8 @@ process.exit(0);
 
     expect(r.error).toBeUndefined()
     expect(r.content).toBe("hello")
-    expect(deltas.join("")).toBe("hello")
-    expect(events.map((e) => e.type)).toEqual(["codex.spawned", "agent_message_delta", "agent_message_delta", "turn_complete"])
+    expect(deltas.join("")).toBe("Checking.hello")
+    expect(events.map((e) => e.type)).toEqual(["codex.spawned", "item.completed", "agent_message_delta", "agent_message_delta", "turn_complete"])
     expect(r.billedModel).toBe("gpt-5.2")
     expect(r.codexSessionId).toBe("codex-thread-stream")
     expect(r.usage).toEqual({ inputTokens: 31, outputTokens: 7, cacheReadTokens: 3, cacheCreateTokens: 2 })

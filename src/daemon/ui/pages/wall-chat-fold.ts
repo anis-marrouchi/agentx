@@ -21,6 +21,7 @@ export interface CfStep {
   tool: string
   input: string
   error: boolean
+  result?: string
 }
 export interface CfLive {
   steps: CfStep[]
@@ -92,7 +93,15 @@ export function cfParseLive(text: string): CfLive {
       since = []
       continue
     }
-    if (/^← \[error\] /.test(line)) { if (out.steps.length) out.steps[out.steps.length - 1].error = true; continue }
+    if (line.startsWith("← ")) {
+      const step = out.steps[out.steps.length - 1]
+      if (step) {
+        step.error = line.startsWith("← [error] ")
+        const result = line.slice(step.error ? 10 : 2).replace(/\u2028/g, "\n")
+        if (result) step.result = result
+      }
+      continue
+    }
     if (/^\[error\] /.test(line)) { out.errors.push(line.slice(8).split(" ↵ ").join("\n").trim()); continue }
     // Results, thoughts, init and done lines, the finish marker: not shown.
     if (/^(← |💭|· |\. codex|< codex |\[task finished\])/.test(line)) continue
@@ -114,7 +123,8 @@ export function cfFoldHtml(o: { key: string; steps: CfStep[]; ms: number | null;
     (n ? " · " + n + (n === 1 ? " step" : " steps") : "")
   const failed = steps.filter((s) => s.error).length
   const last = o.live && n ? '<span class="hc__foldnow">' + esc(cfStepLine(steps[n - 1].tool, steps[n - 1].input)) + "</span>" : ""
-  const lines = steps.map((s) => '<li class="hc__step' + (s.error ? " is-err" : "") + '">' + esc(cfStepLine(s.tool, s.input)) + (s.error ? " <b>failed</b>" : "") + "</li>").join("")
+  const lines = steps.map((s) => '<li class="hc__step' + (s.error ? " is-err" : "") + '">' + esc(cfStepLine(s.tool, s.input)) + (s.error ? " <b>failed</b>" : "") +
+    (s.result ? "<pre>" + esc(s.result) + "</pre>" : "") + "</li>").join("")
   return '<details class="hc__fold' + (o.live ? " is-live" : "") + '" data-hc-fold="' + esc(o.key) + '"' + (o.open ? " open" : "") + ">" +
     "<summary>" + esc(head) + (failed ? ' <span class="hc__foldbad">' + failed + " failed</span>" : "") + last + "</summary>" +
     (n ? '<ol class="hc__steps">' + lines + "</ol>" : "") + "</details>"

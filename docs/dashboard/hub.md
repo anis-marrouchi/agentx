@@ -60,7 +60,7 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 
 1. Select an agent in the Hub to open their chat in the middle pane.
 2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
-3. The reply appears as it is written. Open **Worked for …** to see the agent's tool steps. Select **Open the run** during a reply to follow that run on its own page.
+3. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
 4. Switch agents and return to the first agent to see the earlier conversation.
 
 ## Read a post

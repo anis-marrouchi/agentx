@@ -565,12 +565,39 @@ export function firstMissingRequiredTool(
   return null
 }
 
+// Codex CLI and the persistent app server normalize these item types alike.
+function codexToolStep(item: any) {
+  switch (item?.type) {
+    case "command_execution":
+      return { tool: "Bash", input: { command: item.command }, result: item.aggregated_output ?? item.aggregatedOutput ?? item.output, error: Boolean(item.exit_code ?? item.exitCode) }
+    case "mcp_tool_call":
+      return { tool: [item.server, item.tool ?? item.name].filter(Boolean).join(" ") || "MCP", input: item.arguments, result: item.result ?? item.error, error: Boolean(item.error) }
+    case "file_change":
+      return { tool: "Edit", input: { path: item.changes?.[0]?.path }, result: undefined, error: false }
+    default:
+      return null
+  }
+}
+
 export function emitTraceStepsFromStreamEvent(taskId: string, agentId: string, event: any): void {
   if (!event || typeof event !== "object") return
   const t = event.type
   const at = new Date().toISOString()
   const bus = getEventBus()
 
+  if (t === "item.completed") {
+    const step = codexToolStep(event.item)
+    if (!step) return
+    bus.emit("task:step", {
+      taskId, agentId, at, name: "tool_use", action: step.tool,
+      status: step.error || event.item.status === "failed" ? "error" : "ok",
+      inputSummary: step.input ? clipForTrace(redactSourcesRead(JSON.stringify(step.input))) : null,
+      outputSummary: step.result == null ? null : clipForTrace(redactSourcesRead(
+        typeof step.result === "string" ? step.result : JSON.stringify(step.result),
+      )),
+    } as any)
+    return
+  }
   if (t === "assistant" && event.message?.content) {
     for (const block of event.message.content) {
       if (block.type === "tool_use") {
@@ -659,6 +686,7 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
   // A text block began in partial events and none of its words are out yet.
   let blockStarted = false
   let codexTextSeen = ""
+  const openCodexTools = new Set<string>()
   // A text delta ends with no newline, so a marker line that follows it
   // starts with one: readers split the buffer at "\n<marker>", and a marker
   // glued to the answer would read as answer text (#2137 review, Hakim on
@@ -698,6 +726,20 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
         const delta = text.startsWith(codexTextSeen) ? text.slice(codexTextSeen.length) : text
         codexTextSeen = text.startsWith(codexTextSeen) ? text : codexTextSeen + text
         return delta
+      }
+      const step = codexToolStep(item)
+      if (step) {
+        const input = clip(redactSourcesRead(JSON.stringify(step.input ?? {})), 800)
+        const call = `→ ${step.tool.replace(/\s+/g, "_")}(${input})\n`
+        if (t === "item.started") {
+          if (item.id) openCodexTools.add(item.id)
+          return line(call)
+        }
+        const started = openCodexTools.delete(item.id)
+        const output = typeof step.result === "string" ? step.result : (step.result == null ? "" : JSON.stringify(step.result))
+        const body = clip(redactSourcesRead(output), 800).replace(/\r?\n/g, "\u2028")
+        const error = step.error || item.status === "failed"
+        return line((started ? "" : call) + `← ${error ? "[error] " : ""}${body}\n`)
       }
       const label = item.type || "item"
       const name = item.name || item.command || item.tool_name || item.id || ""
@@ -2631,7 +2673,9 @@ export class AgentRegistry {
       const formatter = makeStreamEventFormatter(() => !output.buffer || output.buffer.endsWith("\n"))
       onEvent = (event: any) => {
         noteFirstEvent()
-        const formatted = formatter(event)
+        // Codex text reaches the buffer through wrappedOnDelta below.
+        const formatted = state.def.tier === "codex-cli" && event?.item?.type === "agent_message"
+          ? "" : formatter(event)
         if (formatted) pushToBuffer(formatted)
         // Per-step trace capture (improvement plan #2). Fire one
         // task:step event per tool_use / tool_result block. The
@@ -2656,7 +2700,9 @@ export class AgentRegistry {
       const formatter = makeStreamEventFormatter(() => !output.buffer || output.buffer.endsWith("\n"))
       onEvent = (event: any) => {
         noteFirstEvent()
-        const formatted = formatter(event)
+        // Codex text reaches the buffer through wrappedOnDelta below.
+        const formatted = state.def.tier === "codex-cli" && event?.item?.type === "agent_message"
+          ? "" : formatter(event)
         if (formatted) { output.streamed = true; pushToBuffer(formatted) }
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)

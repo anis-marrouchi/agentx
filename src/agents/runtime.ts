@@ -1616,7 +1616,10 @@ export async function executeCodexCliStreaming(
     let finalText = ""
     try { finalText = readFileSync(outputFile, "utf8").trim() } catch { /* */ }
     if (finalText && finalText !== fullText) {
-      const delta = finalText.startsWith(fullText) ? finalText.slice(fullText.length) : finalText
+      // The output file repeats the final message. Earlier commentary can
+      // make it a suffix of the text delivered by the JSON stream.
+      const delta = fullText.trimEnd().endsWith(finalText)
+        ? "" : finalText.startsWith(fullText) ? finalText.slice(fullText.length) : finalText
       fullText = finalText
       if (delta) onDelta(delta, fullText)
     }
