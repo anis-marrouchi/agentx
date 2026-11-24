@@ -1,0 +1,136 @@
+// --- The Hub's left column in the browser (#2101 P4, hub-nav.ts) ---
+//
+// Paints the agents (hub-agents.ts) from the live snapshot the page
+// already follows (S.live) and the Needs you list (decAll), each time the
+// tree is painted (every snapshot, 2 s). Drawn only when it changed.
+// ⌘K (Ctrl K) opens the switcher; ⌘1…⌘9 open the agents in its order
+// (Alt 1…9 too, as ⌘1 is the browser's own tab key); ⌃Tab goes back to the
+// last agent. Opening an agent is its chat link, #page=chat&agent=, which
+// opens its latest conversation (wall-chat.client.ts switchAgent).
+//
+// A fragment of WALL_PAGE_SCRIPT: it uses S, $, esc, decAll, decOwner,
+// isOpen and the injected hubAgentRows, haListHtml, haSwitchHits,
+// haSwitchHtml, ltAge.
+
+export const HUB_NAV_SCRIPT = String.raw`
+  var HA = { filter: 'all', idleOpen: false, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
+  try { HA.filter = localStorage.getItem('ax.hub.agentFilter') || 'all'; } catch (e) { /* private mode */ }
+  function haChatAgent() {
+    var m = /(?:^#|&)page=chat(?:&|$)/.test(location.hash) && /(?:^#|&)agent=([^&]*)/.exec(location.hash);
+    if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
+    var hc = window.AXHubChat;
+    return hc && document.querySelector('.ax-wall.hc-open') && typeof hc.agent === 'function' ? hc.agent() || '' : '';
+  }
+  function haDayStart() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  function haModel() {
+    var nodes = (S.live && S.live.nodes) || [];
+    var needs = typeof decAll === 'function' ? decAll() : [];
+    return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain);
+  }
+  function renderHubAgents() {
+    var el = $('hub-agents');
+    if (!el) return;
+    if (!S.live) { if (S.liveError) el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; return; }
+    HA.model = haModel();
+    HA.cur = haChatAgent();
+    var html = haListHtml(HA.model, HA.filter, HA.cur, HA.idleOpen, esc, ltAge);
+    if (html === HA.last) return;
+    HA.last = html;
+    el.innerHTML = html;
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target : null;
+    if (!t) return;
+    var chip = t.closest('[data-ha-filter]');
+    if (chip) {
+      HA.filter = chip.getAttribute('data-ha-filter');
+      try { localStorage.setItem('ax.hub.agentFilter', HA.filter); } catch (e) { /* private mode */ }
+      HA.last = ''; renderHubAgents(); return;
+    }
+    if (t.closest('#hub-k')) { haOpenK(); return; }
+    if (t.closest('[data-hk-close]')) { haCloseK(); return; }
+    if (t.closest('#hub-k-dlg a[href]')) haCloseK(true);
+  });
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (d && d.matches && d.matches('[data-ha-idle]')) HA.idleOpen = d.open;
+  }, true);
+  // The agent in view changes: the current row follows, and ⌃Tab knows the last one.
+  window.addEventListener('hashchange', function () {
+    var a = haChatAgent();
+    if (a && a !== HA.cur) { if (HA.cur) HA.prev = HA.cur; }
+    HA.last = ''; renderHubAgents();
+  });
+
+  // --- The switcher (V3) ---
+  function haReqs() {
+    var posts = (S.data && S.data.posts) || [];
+    return posts.filter(function (p) { return p && p.id && isOpen(p); })
+      .sort(function (a, b) { return (b.lastMoveAt || 0) - (a.lastMoveAt || 0); })
+      .map(function (p) { return { id: p.id, title: String(p.headline || p.id).split('\n')[0].slice(0, 100), owner: p.owner, sub: (p.owner ? nameOf(p.owner) : '') + (p.status ? ' · ' + String(p.status).replace(/_/g, ' ') : '') }; });
+  }
+  function haPaintK() {
+    var rows = (HA.model || haModel()).rows;
+    HA.k.hits = haSwitchHits(rows, haReqs(), HA.k.q);
+    var n = HA.k.hits.agents.length + HA.k.hits.reqs.length;
+    if (HA.k.sel >= n) HA.k.sel = Math.max(0, n - 1);
+    $('hub-k-list').innerHTML = haSwitchHtml(HA.k.hits, HA.k.sel, esc);
+    var on = $('hub-k-list').querySelector('.is-sel');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+  function haOpenK() {
+    var d = $('hub-k-dlg');
+    if (!d || !d.hidden) return;
+    HA.k.back = document.activeElement;
+    HA.k.q = ''; HA.k.sel = 0;
+    $('hub-k-q').value = '';
+    d.hidden = false;
+    haPaintK();
+    $('hub-k-q').focus();
+  }
+  function haCloseK(went) {
+    var d = $('hub-k-dlg');
+    if (!d || d.hidden) return;
+    d.hidden = true;
+    if (!went && HA.k.back && HA.k.back.focus) HA.k.back.focus();
+  }
+  function haGo(href) { if (href) location.hash = href.replace(/^#/, ''); }
+  if ($('hub-k-q')) $('hub-k-q').addEventListener('input', function () { HA.k.q = this.value; HA.k.sel = 0; haPaintK(); });
+  if ($('hub-k-dlg')) $('hub-k-dlg').addEventListener('keydown', function (ev) {
+    var n = HA.k.hits ? HA.k.hits.agents.length + HA.k.hits.reqs.length : 0;
+    if (ev.key === 'Escape') { ev.preventDefault(); haCloseK(); }
+    else if (ev.key === 'ArrowDown') { ev.preventDefault(); if (n) { HA.k.sel = (HA.k.sel + 1) % n; haPaintK(); } }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (n) { HA.k.sel = (HA.k.sel - 1 + n) % n; haPaintK(); } }
+    else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      var a = $('hub-k-list').querySelector('[data-hk-i="' + HA.k.sel + '"]');
+      if (a) { haCloseK(true); haGo(a.getAttribute('href')); }
+    } else if (ev.key === 'Tab') {
+      // Focus stays in the dialog.
+      ev.preventDefault(); $('hub-k-q').focus();
+    }
+  });
+  // ⌘K / Ctrl K anywhere; ⌘1…⌘9 or Alt 1…9; ⌃Tab for the last agent.
+  document.addEventListener('keydown', function (ev) {
+    var k = String(ev.key || '').toLowerCase();
+    if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && k === 'k') {
+      if (!$('hub-k-dlg')) return;
+      ev.preventDefault();
+      if ($('hub-k-dlg').hidden) haOpenK(); else haCloseK();
+      return;
+    }
+    var digit = /^Digit([1-9])$/.exec(ev.code || '');
+    if (digit && ((ev.metaKey && !ev.ctrlKey) || (ev.altKey && !ev.metaKey && !ev.ctrlKey)) && !ev.shiftKey) {
+      var rows = HA.k.hits && !$('hub-k-dlg').hidden ? HA.k.hits.agents : haSwitchHits((HA.model || haModel()).rows, [], '').agents;
+      var r = rows[Number(digit[1]) - 1];
+      if (!r) return;
+      ev.preventDefault(); haCloseK(true);
+      haGo('#page=chat&agent=' + encodeURIComponent(r.id));
+      return;
+    }
+    if (ev.ctrlKey && !ev.metaKey && ev.key === 'Tab' && HA.prev) {
+      ev.preventDefault();
+      haGo('#page=chat&agent=' + encodeURIComponent(HA.prev));
+    }
+  });
+`

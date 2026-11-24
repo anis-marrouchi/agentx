@@ -53,6 +53,7 @@ import { WALL_AGENTS_CSS } from "./wall-agents.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
+import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -218,16 +219,20 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
+${hubAgentsNavHtml()}
     <section class="lt lt--needs" id="wall-needs-top" aria-labelledby="wall-needs-h" hidden></section>
+    <details class="lt ax-wall__navgroup lt--fold" id="wall-tree-fold"><summary>Machines and runs</summary>
     <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
       <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
       <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
     </section>
+    </details>
 ${navItems}
 ${dashboard}
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
     <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
+${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
     <div class="ax-wall__navfoot">
       <span>The ${HUB_NAME} shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
       <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
@@ -302,6 +307,7 @@ ${shortcuts}
     <section id="wall-settings" aria-label="Settings" hidden></section>
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
     <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
+    ${hubMobilePageHtml()}
     <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
     ${wallChatPanelHtml(chat)}
   </div>
@@ -331,7 +337,7 @@ ${shortcuts}
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS + HUB_NAV_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

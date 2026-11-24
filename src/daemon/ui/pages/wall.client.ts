@@ -90,6 +90,8 @@ import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
+import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml } from "./hub-agents"
+import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
@@ -102,7 +104,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -110,6 +112,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
+  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -136,6 +139,7 @@ ${WALL_BUILD_SCRIPT}
 ${WALL_NUMBERS_SCRIPT}
 ${WALL_JOBLEDGER_SCRIPT}
 ${WALL_AGENTS_SCRIPT}
+${HUB_NAV_SCRIPT}
 
   function headers(peer) {
     var h = { 'X-Requested-With': 'agentx-board' };
@@ -1102,7 +1106,7 @@ ${WALL_AGENTS_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1326,6 +1330,7 @@ ${WALL_AGENTS_SCRIPT}
     return !!$('wall-tree') && !document.hidden && !!treeWide && treeWide.matches;
   }
   function renderTree() {
+    renderHubAgents();
     var el = $('wall-tree-body');
     if (!el) return;
     // A snapshot can name a node by its URL while its name is still on the
@@ -1398,6 +1403,7 @@ ${WALL_AGENTS_SCRIPT}
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
+    $('wall-mobile').hidden = page !== 'mobile';
     // Settings (#1428): the owner's sections, or for anyone else a line saying it is the owner's.
     $('wall-settings').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
