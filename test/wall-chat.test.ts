@@ -535,6 +535,40 @@ describe("Hub chat: each agent keeps its own conversation (#2101 R12)", () => {
     expect(JSON.parse(w.ls.get("ax-hub-chat-agents")!)).toMatchObject({ scout: { t: "s1" }, forge: { t: "f2" } })
   })
 
+  it("shows the agents as a strip of chips, like the phone, and a chip switches the conversation (#2101)", async () => {
+    const w = openChat({
+      thread: "s1",
+      route: (url) => url === "/api/assistant/thread?id=s1" ? thread("s1", "scout", "Disk space?")
+        : url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [{ id: "f1", title: "Deploy?", agentId: "forge" }] } }
+        : url === "/api/assistant/thread?id=f1" ? thread("f1", "forge", "Deploy?")
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.page).toContain('id="hc-strip"')
+    const strip = w.el("hc-strip")
+    expect(strip.hidden).toBe(false)
+    expect(strip.innerHTML).toContain('data-agent="scout" aria-pressed="true"')
+    expect(strip.innerHTML).toContain('data-agent="forge" aria-pressed="false"')
+    expect(strip.innerHTML).toContain("Forge")
+    // A chip that is not an agent (the strip's own padding) does nothing.
+    await w.fire("hc-strip", "click", { target: { closest: () => null } })
+    expect(w.el("hc-agent").value).toBe("scout")
+    // Forge's chip: same switch as the picker, and the strip follows.
+    await w.fire("hc-strip", "click", { target: { closest: () => ({ getAttribute: (k: string) => (k === "data-agent" ? "forge" : null) }) } })
+    expect(w.el("hc-agent").value).toBe("forge")
+    expect(w.el("hc-sub").textContent).toBe("Deploy?")
+    expect(strip.innerHTML).toContain('data-agent="forge" aria-pressed="true"')
+    expect(strip.innerHTML).toContain('data-agent="scout" aria-pressed="false"')
+  })
+
+  it("keeps the picker when there are no agents to put in the strip", async () => {
+    const w = openChat({ route: (url) => url === "/api/agents" ? { status: 200, body: { agents: [] } } : undefined })
+    await w.settle()
+    expect(w.el("hc-strip").hidden).toBe(true)
+    expect(w.el("hc-agent").innerHTML).toContain("No agents on this node")
+  })
+
   it("opens from its link, #page=chat&agent=<id>", async () => {
     const w = openChat({
       hash: "#page=chat&agent=forge",

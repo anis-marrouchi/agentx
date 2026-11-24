@@ -82,7 +82,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__head">${close}<div class="hc__title"><b id="hc-who">Chat</b><small id="hc-sub">New conversation</small></div>
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
-    <div class="hc__to"><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
+    <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <form class="hc__foot" id="hc-form">
       <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
@@ -215,12 +215,28 @@ export const WALL_CHAT_SCRIPT = String.raw`
   });
 
   // --- Who answers ---
-  var agentNames = {}, agentsKnown = false;
+  var agentNames = {}, agentsKnown = false, agentIds = [];
   function currentAgent() { return (thread && thread.agentId) || $('hc-agent').value || ''; }
+  // The agent strip (#2101): one chip per agent, as on the phone. The
+  // picker stays in the page as the strip's value and its fallback.
+  function paintStrip() {
+    var s = $('hc-strip');
+    if (!s || !agentIds.length) return;
+    var cur = currentAgent();
+    s.innerHTML = agentIds.map(function (id) {
+      return '<button type="button" class="hc__chip" data-agent="' + esc(id) + '" aria-pressed="' + (id === cur) + '">' + esc(agentNames[id] || id) + '</button>';
+    }).join('');
+    s.hidden = false;
+  }
+  if ($('hc-strip')) $('hc-strip').addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-agent]') : null;
+    var id = b && b.getAttribute('data-agent');
+    if (id && id !== currentAgent()) switchAgent(id);
+  });
   fetch('/api/agents', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var list = (Array.isArray(d) ? d : (d.agents || [])).filter(function (a) { return a && (a.id || a.name); });
     list.forEach(function (a) { agentNames[a.id || a.name] = a.name || a.id; });
-    $('hc-agent').innerHTML = list.length
+    agentIds = list.map(function (a) { return a.id || a.name; });    $('hc-agent').innerHTML = list.length
       ? list.map(function (a) { var id = a.id || a.name; return '<option value="' + esc(id) + '">' + esc(agentNames[id]) + ' @' + esc(id) + '</option>'; }).join('')
       : '<option value="">No agents on this node</option>';
     agentsKnown = true;
@@ -368,6 +384,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       stopFailed: !!p && p.taskId === stopFailed, runs: runs, fold: FOLD, open: openFolds, now: Date.now(),
     });
     log.scrollTop = log.scrollHeight;
+    paintStrip();
     $('hc-who').textContent = agentsKnown || thread ? agentName() : 'Chat';
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }

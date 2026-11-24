@@ -40,7 +40,7 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .cx-head { flex: none; justify-content: flex-end; gap: 8px; }
 .cx-head .fx-btn { width: 44px; padding: 10px; min-height: 44px; border-radius: 22px; }
 .cs { flex: 1; min-width: 0; }
-.cs-list { gap: 8px; touch-action: pan-x; }
+.cs-list { gap: 8px; touch-action: pan-x; padding-right: 24px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 .cs-state { font-weight: 400; color: var(--ax-text-2); }
 .cs-chip { border-color: var(--ax-border); background: var(--ax-surface); }
 .cs-chip[aria-current=true] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
