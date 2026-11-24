@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.264.0](https://github.com/anis-marrouchi/agentx/compare/v0.263.1...v0.264.0) (2026-11-24)
+
+
+### Features
+
+* **daemon:** add `agentx daemon upgrade` to switch a launchd node to a release safely ([#2201](https://github.com/anis-marrouchi/agentx/issues/2201)) ([b4b85a8](https://github.com/anis-marrouchi/agentx/commit/b4b85a83cb9324c4de595b3faf503fc606d60e4c)), closes [#2200](https://github.com/anis-marrouchi/agentx/issues/2200)
+* **hub:** Operations page inside the Hub ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P8) ([#2202](https://github.com/anis-marrouchi/agentx/issues/2202)) ([aa41021](https://github.com/anis-marrouchi/agentx/commit/aa41021af67c3162c231ac3df8ea6c02e6e9d4be))
+* **hub:** Schedules as a table with project and last result ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P10 R7) ([#2203](https://github.com/anis-marrouchi/agentx/issues/2203)) ([667e9db](https://github.com/anis-marrouchi/agentx/commit/667e9dbb75b4ae54bbc226e14044456e9526f6ab))
+* **hub:** start a new agent from a template ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P10 R6) ([#2204](https://github.com/anis-marrouchi/agentx/issues/2204)) ([2d55285](https://github.com/anis-marrouchi/agentx/commit/2d552853a2c54499ef31ffae684aa47eb83bd55f))
+
+
+### Bug Fixes
+
+* **hub:** keep scroll and open sections across refresh, reconnect chat stream ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R21) ([#2205](https://github.com/anis-marrouchi/agentx/issues/2205)) ([75e54c0](https://github.com/anis-marrouchi/agentx/commit/75e54c03b4ff779d51b20ef636951a4edb024f66))
+* **workflows:** run a node again when a loop brings it back under the same event ([#2209](https://github.com/anis-marrouchi/agentx/issues/2209)) ([858b165](https://github.com/anis-marrouchi/agentx/commit/858b165e7a3da909de630998f0a6dd71253ee4af))
+
 ## [0.263.1](https://github.com/anis-marrouchi/agentx/compare/v0.263.0...v0.263.1) (2026-11-24)
 
 
