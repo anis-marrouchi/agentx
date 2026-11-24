@@ -25,6 +25,12 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
       getAttribute: (k: string) => attrs[k] ?? null, setAttribute: (k: string, v: string) => { attrs[k] = v },
     }
     e.addEventListener = on(e)
+    if (id === "hc-log") {
+      e.insertAdjacentHTML = (_position: string, html: string) => { e.innerHTML += html }
+      e.querySelectorAll = (selector: string) => selector === ".hc__asks"
+        ? [...e.innerHTML.matchAll(/<div class="hc__asks">/g)].map((match: any) => ({ remove: () => { e.innerHTML = e.innerHTML.slice(0, match.index) } }))
+        : []
+    }
     return e
   }
   const el = (id: string) => {
@@ -877,6 +883,26 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     expect(post.headers["X-Requested-With"]).toBe("agentx-board")
     // Answered: gone from the thread.
     expect(w.el("hc-log").innerHTML).not.toContain("Accept the design note?")
+  })
+
+  it("keeps one question card after two paints and a tab switch", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route() })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const count = () => (w.el("hc-log").innerHTML.match(/class="hc__asks"/g) ?? []).length
+    expect(count()).toBe(1)
+    const card = target({ "data-hc-askkey": "card:c1" })
+    await w.fire("hc-log", "click", { target: target({ "data-hc-ask": "changes" }, card) })
+    await w.fire("hc-log", "input", { target: { value: "Keep this draft", hasAttribute: (k: string) => k === "data-hc-ask-text", closest: () => card } })
+    const view = { agent: "scout", name: "Scout", node: "studio", tier: "claude-code", pending: true }
+    w.win.AXHubChat.onPaint(view)
+    w.win.AXHubChat.onPaint(view)
+    expect(count()).toBe(1)
+    const tab = (t: string) => ({ closest: () => ({ getAttribute: () => t }) })
+    await w.fire("hc-tabs", "click", { target: tab("plan") })
+    await w.fire("hc-tabs", "click", { target: tab("chat") })
+    expect(count()).toBe(1)
+    expect(w.el("hc-log").innerHTML).toContain("Keep this draft")
   })
 
   it("asks for changes with a note, and keeps the card when the answer is refused", async () => {
