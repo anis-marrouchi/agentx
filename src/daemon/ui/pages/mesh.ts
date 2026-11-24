@@ -66,13 +66,15 @@ const RANGES: Array<{ days: number; label: string }> = [
   { days: 90, label: "90d" },
 ]
 
-export function renderMeshPage(opts: { peers?: TopbarPeer[]; localToken?: string }): string {
+export function renderMeshPage(opts: { peers?: TopbarPeer[]; localToken?: string; embed?: boolean }): string {
+  // embed (#2101 P8): the Hub's Operations page frames this page, so the Hub
+  // gives the title and navigation; no top bar, page head or assistant here.
   const chrome =
-    pageHead({
+    (opts.embed ? "" : pageHead({
       kicker: "Operations",
       title: "Mesh operations",
       lead: `What the fleet actually did, how long it lived, and which of it was worth running.`,
-    }) +
+    })) +
     healthStrip([
       { kind: "off", num: "-", label: "Nodes online" },
       { kind: "off", num: "-", label: "Tasks running" },
@@ -191,13 +193,14 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[]; localToken?: string
 
   return renderShell({
     title: "AgentX · Mesh Operations",
-    activeTab: "mesh",
+    activeTab: opts.embed ? "custom" : "mesh",
+    noAssistant: !!opts.embed,
     subtitle: "Operations",
     peers: opts.peers,
     localToken: opts.localToken,
     noMain: true,
     body,
-    css: MESH_CSS + MESH_ROUTINES_CSS,
+    css: MESH_CSS + MESH_ROUTINES_CSS + (opts.embed ? MESH_EMBED_CSS : ""),
     // Routines listens for the snapshot the Operations script fetches, so it
     // must be registered before that script's first load() fires.
     scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_ROUTINES_SCRIPT + MESH_OPS_SCRIPT + MESH_FEED_SCRIPT,
@@ -211,6 +214,9 @@ const MESH_TABS_SCRIPT = `<script>
   var tabs=Array.prototype.slice.call(document.querySelectorAll('.mx-tab'));
   var range=document.getElementById('mx-range');
   var stamp=document.getElementById('mx-analytics-updated');
+  // ?view=ops (#2101 P8): the Hub opens Operations on the tab its name says,
+  // without changing the tab /mesh remembers for its own page.
+  var asked=new URLSearchParams(location.search).get('view');
   function select(id){
     tabs.forEach(function(t){
       var on=t.dataset.view===id;
@@ -219,7 +225,7 @@ const MESH_TABS_SCRIPT = `<script>
     });
     var analytics=id!=='ops';
     range.hidden=!analytics;stamp.hidden=!analytics;
-    try{localStorage.setItem('mx-view',id)}catch(e){}
+    if(!asked)try{localStorage.setItem('mx-view',id)}catch(e){}
   }
   tabs.forEach(function(t,i){
     t.addEventListener('click',function(){select(t.dataset.view)});
@@ -231,7 +237,13 @@ const MESH_TABS_SCRIPT = `<script>
       next.focus();select(next.dataset.view);
     });
   });
-  var saved=null;try{saved=localStorage.getItem('mx-view')}catch(e){}
+  var saved=asked;if(!saved)try{saved=localStorage.getItem('mx-view')}catch(e){}
   select(tabs.some(function(t){return t.dataset.view===saved})?saved:'activity');
 })();
 </script>`
+
+// Framed in the Hub (#2101 P8): no top bar above, so less top padding.
+const MESH_EMBED_CSS = `
+body { background: var(--ax-bg); }
+.mx-content { padding-top: 12px; }
+`

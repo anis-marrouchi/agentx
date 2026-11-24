@@ -14,7 +14,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Then comes **Needs you**, in red, when something waits on you: the five oldest questions, each with the agent that asked and how long ago, then **Show all** with the full count. Select one, or **Show all**, to answer on the [Needs you](#see-what-waits-on-you) page. Nothing waiting, no box. Next comes **Machines and runs**, folded: select it to open **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Projects** and **Activity**. On a narrower screen, where the tree is hidden, **Running now** is here too; on a wide screen open it with **All** next to **At work now**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
-   - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
+   - **Fleet:** **Agents**, **People**, **Org**, **Operations** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
    At the bottom of the nav: **Desk** (what waits on you, to answer there, with its count), **Jobs**, **Workflows**, **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) and, for the owner, the gear for **Settings**.
@@ -24,7 +24,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list the classic pages that still hold something the Hub does not have yet: **Operations**, **Monitor**, **Org**, **Activity** and **Workflows**. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
+4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list the classic pages that still hold something the Hub does not have yet: **Monitor**, **Org**, **Activity** and **Workflows**. Its **Operations** link opens the Hub's [Operations](#see-fleet-operations) page. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Light / dark**, at the bottom of the nav, switches the colours. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
 6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Agents and the classic page links sit under the feed. On a tablet, the classic page links come before the feed.
 
@@ -71,6 +71,12 @@ Select **Mobile app** at the bottom of the nav. The page says what the phone app
 On a desktop screen, the thin bar at the bottom shows how many agents are running, the AgentX version, and the Claude Code plan's five-hour and seven-day use and reset times. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. When a window has reset since the last reading, the bar shows **not known (reset since last reading)** for that window instead of the old percentage, until a new reading arrives. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden.
 
 ![The Hub's bottom status bar in a neutral demo](/screenshots/wall/status-bar.png)
+
+## See fleet operations
+
+Select **Operations**, under **Fleet**. The Hub shows the fleet's Operations views in its own page, with the Hub's nav still on the left: **Today's automations**, **Routines** with their flags, the **Mesh feed**, **Activity provenance**, **Nodes**, and **Agents and skills**. The tabs at the top also open **Activity** and **Lifetime** for a history window. Select any row for its details.
+
+The page loads when you first open it, not with the Hub, because Operations checks the fleet every few seconds while it shows. **Open Operations on its own page**, under it, opens the full classic page at `/mesh`. **Light / dark** changes both.
 
 ## See the fleet at work in the sidebar
 
