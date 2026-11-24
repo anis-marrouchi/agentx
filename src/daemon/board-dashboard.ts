@@ -324,7 +324,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     node: localNodeName(ctx.config), dashboardToken: ctx.token,
     posts: (days) => buildWallFleet(new URLSearchParams({ days: String(days) }), ctx) as Promise<any>,
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
