@@ -222,7 +222,7 @@ final class Panel: NSPanel {
         }
         var color: NSColor {
             switch self {
-            // Teal carries every ACTIVE state, so the widget reads as one
+            // AgentX blue carries every ACTIVE state, so the widget reads as one
             // thing doing work rather than a traffic light. System reds
             // and greens were macOS's voice, not the product's, and they
             // shift with the user's accent-colour setting.

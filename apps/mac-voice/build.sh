@@ -32,6 +32,12 @@ swiftc -O \
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# Geist and Geist Mono, the dashboard's own files (#2107), with their OFL
+# licence. Brand.registerFonts loads them at launch; without them the app
+# keeps the system font.
+cp ../../src/web/public/fonts/Geist-Variable.woff2 ../../src/web/public/fonts/GeistMono-Variable.woff2 \
+  ../../src/web/public/fonts/OFL-Geist.txt "$APP/Contents/Resources/"
+
 # The AgentX version and commit, so the menu and `agentx desktop status`
 # can tell which build this is. `agentx desktop install` passes them; a
 # build from a checkout reads package.json and git.

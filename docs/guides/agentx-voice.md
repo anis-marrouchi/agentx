@@ -68,6 +68,8 @@ That's it. From now on, hold **Option–Space** from any app to ask again.
 
 The pill is the small bar that shows what the assistant is doing. It appears while the assistant listens, thinks or speaks, and goes away when it is done. The glowing ball at its left end is the **orb**, in the colours of the agent that is answering. Next to it, the pill names the agent and says what is happening.
 
+The pill and the History, Requests and Settings windows share the dashboard's look: AgentX blue, the Geist font, and the same light and dark colours. They follow the Mac's light or dark setting.
+
 ![The pill in four states, light mode: Writer listening, Researcher reading files for 12 seconds with a ring round its orb, Ops saying its answer, and the idle pill reading HOLD ⌥SPACE](/screenshots/voice/pill-states-light.png)
 
 ![The same four states in dark mode](/screenshots/voice/pill-states-dark.png)
@@ -518,6 +520,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 
 ## If something is wrong
 
+- **The windows show the Mac's system font, not Geist:** the app was built without its font files. **Terminal:** run `agentx desktop install` to rebuild it.
 - **`agentx desktop status` says the app is older than the CLI:** the copy that starts at login was built before your AgentX update, so recent fixes are missing. **Terminal:** run `agentx desktop install`.
 - **`agentx desktop status` says two or more copies are installed:** only the copy it names starts at login. Move the others to the Bin, so Spotlight and the permission settings show one AgentX Voice.
 - **No AgentX icon in the menu bar:** **Terminal:** run `agentx desktop status`. If it says it isn't running, run `agentx desktop start`. If it isn't installed, follow [Install and first run](#install-and-first-run).
