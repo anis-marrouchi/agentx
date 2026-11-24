@@ -28,6 +28,7 @@ export const HUB_NAV_SCRIPT = String.raw`
     return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain);
   }
   function renderHubAgents() {
+    hsPaintRunning();
     var el = $('hub-agents');
     if (!el) return;
     if (!S.live) { if (S.liveError) el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; return; }

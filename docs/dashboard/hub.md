@@ -66,6 +66,12 @@ Select **Mobile app** at the bottom of the nav. The page says what the phone app
 
 ![The Hub's Mobile app page with setup steps in a demo instance](/screenshots/wall/mobile-page.png)
 
+## Read the bottom status bar
+
+On a desktop screen, the thin bar at the bottom shows how many agents are running, the AgentX version, and the Claude Code plan's five-hour and seven-day use and reset times. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden.
+
+![The Hub's bottom status bar in a neutral demo](/screenshots/wall/status-bar.png)
+
 ## See the fleet at work in the sidebar
 
 **At work now**, under **Machines and runs** in the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.

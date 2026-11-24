@@ -40,6 +40,7 @@ export const WALL_BUILD_SCRIPT = String.raw`
     el.setAttribute('href', '#page=live');
     el.classList.remove('is-wait');
     el.removeAttribute('aria-hidden');
+    hsPaintVersion();
   }
   function loadBuild() {
     fetch('/api/node/build').then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {

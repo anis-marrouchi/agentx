@@ -92,6 +92,8 @@ import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
 import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
+import { hubUsageText } from "./hub-status"
+import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
@@ -113,6 +115,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
   ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
+  ${injectFns({ hubUsageText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -139,6 +142,7 @@ ${WALL_BUILD_SCRIPT}
 ${WALL_NUMBERS_SCRIPT}
 ${WALL_JOBLEDGER_SCRIPT}
 ${WALL_AGENTS_SCRIPT}
+${HUB_STATUS_SCRIPT}
 ${HUB_NAV_SCRIPT}
 
   function headers(peer) {
