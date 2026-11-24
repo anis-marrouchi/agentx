@@ -357,6 +357,9 @@ class ClaudeProcessHandle implements ProcessHandle {
       "--output-format", "stream-json",
       "--verbose",
       "--replay-user-messages",
+      // The answer streams a few words at a time (stream_event lines);
+      // without it each message arrives whole (#2101 R16, #2163 review B1).
+      "--include-partial-messages",
     ]
     if (opts.model) args.push("--model", opts.model)
     if (opts.permissionMode === "bypassPermissions") {

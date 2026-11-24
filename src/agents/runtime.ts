@@ -467,8 +467,20 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
 }
 
 /**
- * Build CLI args for claude command.
+ * The answer text a partial-message line adds, or "" (#2101 R16). Claude
+ * Code writes these with --include-partial-messages as
+ * `{type:"stream_event", event:{type:"content_block_delta", delta:{type:"text_delta", text}}}`.
+ * A sub-agent's text (parent_tool_use_id set), thinking and tool input are
+ * left out: they arrive whole in their own message.
  */
+export function partialTextDelta(event: any): string {
+  if (!event || event.type !== "stream_event" || event.parent_tool_use_id) return ""
+  const inner = event.event
+  if (inner?.type !== "content_block_delta" || inner.delta?.type !== "text_delta") return ""
+  return typeof inner.delta.text === "string" ? inner.delta.text : ""
+}
+
+/** Build CLI args for Claude Code. */
 function buildClaudeArgs(
   agent: AgentDef,
   prompt: string,
@@ -492,6 +504,10 @@ function buildClaudeArgs(
   // stream-json requires --verbose in recent Claude Code versions
   if (streaming) {
     args.push("--verbose")
+    // Without partial messages, claude writes each message whole, so the
+    // answer reached the caller and the Task page in one piece at the end
+    // (#2101 R16, #2163 review B1).
+    args.push("--include-partial-messages")
   }
 
   // Resume existing Claude session for conversation continuity
@@ -1105,6 +1121,7 @@ export async function executeClaudeCodeStreaming(
   // turns before it, so fullText = earlierText + turnText.
   let earlierText = ""
   let turnText = ""
+  let sawTextDelta = false
   const emitTurnText = (delta: string) => {
     const sep = earlierText && !turnText ? "\n\n" : ""
     turnText += delta
@@ -1212,7 +1229,9 @@ export async function executeClaudeCodeStreaming(
 
             // Claude stream-json emits different event types
             // "assistant" messages with content contain the text
-            if (event.type === "assistant" && event.message?.content) {
+            // Once partial text has arrived, the whole message that follows
+            // repeats it and adds nothing.
+            if (event.type === "assistant" && event.message?.content && !sawTextDelta) {
               for (const block of event.message.content) {
                 if (block.type === "text" && block.text) {
                   const delta = block.text.slice(turnText.length)
@@ -1221,9 +1240,12 @@ export async function executeClaudeCodeStreaming(
               }
             }
 
-            // "content_block_delta" for streaming text
-            if (event.type === "content_block_delta" && event.delta?.text) {
-              emitTurnText(event.delta.text)
+            // Partial messages (--include-partial-messages): the main
+            // agent's answer, a few words at a time.
+            const textDelta = partialTextDelta(event) || (event.type === "content_block_delta" && typeof event.delta?.text === "string" ? event.delta.text : "")
+            if (textDelta) {
+              sawTextDelta = true
+              emitTurnText(textDelta)
             }
 
             background.observe(event)
@@ -2178,6 +2200,8 @@ async function executeClaudeCodePersistent(
   // suffix, and a new message after tool use starts a new paragraph.
   let streamedText = ""
   let messageText = ""
+  // The text block being received in partial events, so far.
+  let partialBlock = ""
   const emitText = (text: string) => {
     if (!onDelta || !text) return
     let delta: string
@@ -2214,6 +2238,20 @@ async function executeClaudeCodePersistent(
       // formatter, etc. all keep working without changes.
       if (onEvent) {
         try { onEvent(evt.raw) } catch { /* observability best-effort */ }
+      }
+
+      if (evt.type === "stream_event") {
+        // Partial messages: a text block grows a few words at a time; the
+        // whole message that follows matches what was sent and adds nothing.
+        const inner = (evt.raw as any).event
+        if (!(evt.raw as any).parent_tool_use_id && inner?.type === "content_block_start" && inner.content_block?.type === "text") {
+          partialBlock = ""
+        }
+        const textDelta = partialTextDelta(evt.raw)
+        if (textDelta) {
+          partialBlock += textDelta
+          emitText(partialBlock)
+        }
       }
 
       if (evt.type === "assistant") {

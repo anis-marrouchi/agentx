@@ -656,6 +656,8 @@ const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"])
 
 export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: any) => string {
   let textSeen = ""
+  // A text block began in partial events and none of its words are out yet.
+  let blockStarted = false
   let codexTextSeen = ""
   // A text delta ends with no newline, so a marker line that follows it
   // starts with one: readers split the buffer at "\n<marker>", and a marker
@@ -712,6 +714,28 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
       const sid = event.session_id ? ` session=${event.session_id.slice(0, 8)}` : ""
       return line(`· init${m}${sid}\n`)
     }
+    if (t === "stream_event") {
+      // Partial messages (--include-partial-messages): the answer arrives a
+      // few words at a time, before the whole message. Only the main agent's
+      // text is written here; a sub-agent's text, thinking and tool input
+      // deltas wait for their whole message below (#2101 R16).
+      const inner = event.event
+      if (!inner || event.parent_tool_use_id) return ""
+      if (inner.type === "content_block_start" && inner.content_block?.type === "text") {
+        blockStarted = true
+        return ""
+      }
+      if (inner.type === "content_block_delta" && inner.delta?.type === "text_delta" && typeof inner.delta.text === "string" && inner.delta.text) {
+        // The first words of a new block start on their own line; the
+        // whole message that follows then adds nothing (it starts with
+        // textSeen).
+        const out = (blockStarted ? line("") : "") + inner.delta.text
+        textSeen = blockStarted ? inner.delta.text : textSeen + inner.delta.text
+        blockStarted = false
+        return out
+      }
+      return ""
+    }
     if (t === "assistant" && event.message?.content) {
       let out = ""
       for (const block of event.message.content) {
@@ -725,14 +749,18 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
             out += line("") + block.text
           }
           textSeen = block.text
-        } else if (block.type === "thinking" && typeof block.thinking === "string") {
+        } else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+          // An empty thought (only its signature came) is left out, not
+          // shown as an empty fold.
           // Every line of a thought carries the marker (#2101 R16).
           out += `\n💭 ${clip(block.thinking, 600).replace(/\n/g, "\n💭 ")}\n`
         } else if (block.type === "tool_use") {
           const name = block.name || "tool"
           // An edit keeps enough of its input for the Task page to show it
           // as a diff (#2101 R16); other calls stay short.
-          const input = block.input ? clip(JSON.stringify(block.input), EDIT_TOOLS.has(name) ? 8000 : 400) : ""
+          // Same redaction as tool results: a Write of a config file must not put
+          // its keys on the Task page (#2163 review).
+          const input = block.input ? clip(redactSecrets(redactSourcesRead(JSON.stringify(block.input))), EDIT_TOOLS.has(name) ? 8000 : 400) : ""
           out += `\n→ ${name}(${input})\n`
         }
       }
@@ -748,7 +776,7 @@ export function makeStreamEventFormatter(atLineStart?: () => boolean): (event: a
           const flag = block.is_error ? "← [error] " : "← "
           // One line per result: its own newlines become U+2028, so the
           // reply that follows is never read as part of it (#2101 R16).
-          out += (out ? "" : line("")) + `${flag}${clip(redactSourcesRead(c), 800).replace(/\r?\n/g, "\u2028")}\n`
+          out += (out ? "" : line("")) + `${flag}${clip(redactSecrets(redactSourcesRead(c)), 800).replace(/\r?\n/g, "\u2028")}\n`
         }
       }
       return out
