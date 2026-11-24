@@ -38,7 +38,7 @@ export const MESH_CSS = `
 .mx-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 22px}
 .mx-tabs{display:flex;gap:0;border:var(--ax-border-w) solid var(--ax-border-2);border-radius:var(--ax-radius-pill);padding:3px;background:var(--ax-surface)}
 .mx-tab{border:0;background:transparent;color:var(--ax-text-2);font:600 12px var(--ax-font);padding:6px 14px;border-radius:var(--ax-radius-pill);cursor:pointer}
-.mx-tab[aria-selected="true"]{background:var(--ax-accent);color:#fff}
+.mx-tab[aria-selected="true"]{background:var(--ax-accent);color:var(--ax-accent-ink)}
 .mx-tab:focus-visible{outline:2px solid var(--ax-accent);outline-offset:2px}
 .mx-range{display:flex;gap:6px;margin-left:auto}
 .mx-range button{border:var(--ax-border-w) solid var(--ax-border-2);background:var(--ax-surface);color:var(--ax-text-2);font:600 11px var(--ax-mono);padding:5px 10px;border-radius:var(--ax-radius-sm);cursor:pointer}
