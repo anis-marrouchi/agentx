@@ -229,6 +229,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     if (r) { req.setAttribute('href', '#post=' + encodeURIComponent(r.id)); req.setAttribute('title', r.summary || r.id); }
     // The questions, at the end of the thread.
     var log = $('hc-log');
+    log.querySelectorAll('.hc__asks').forEach(function (card) { card.remove(); });
     if (tab === 'chat' && mine.length) {
       var now = Date.now();
       var html = '<div class="hc__asks">' + mine.map(function (a) { return chAskHtml(a, { name: name, now: now, draft: drafts[a.key] }); }).join('') + '</div>';
