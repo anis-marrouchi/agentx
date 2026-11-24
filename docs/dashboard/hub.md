@@ -465,9 +465,10 @@ The other tabs:
 ### Add an agent
 
 1. **Browser:** in **Settings** › **Agents**, open **Add an agent**.
-2. Type an id (lowercase), a name and at least one trigger word. Pick the AI engine; the model and instructions are optional.
-3. Select **Add agent**. The line under it says **Added**, or why not.
-4. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
+2. To start from a template, select one at the top: **Support desk**, **Code reviewer**, **Daily reporter** or **Researcher**. It fills the id, name, trigger words, engine and instructions. **After you add it** then lists the first thing to ask the agent, the skills worth adding, and what to connect, with a link to each Settings section. **Blank** clears the form. A template only fills the form, so nothing is saved yet.
+3. Type or change the id (lowercase), the name and at least one trigger word. Pick the AI engine; the model and instructions are optional.
+4. Select **Add agent**. The line under it says **Added**, or why not.
+5. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
 
 #### Add an agent under someone in the org chart
 

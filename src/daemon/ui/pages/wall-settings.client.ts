@@ -377,6 +377,9 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       '<label><span>Role <small>shown on the org chart</small></span><input id="st-a-role" maxlength="80" placeholder="Engineer"></label>' : '';
     return '<details class="wsx"' + (S.st.addOpen ? ' open' : '') + ' data-st-details="add"><summary>' + (S.st.under ? 'Add an agent under ' + esc(stMemberName(S.st.under)) : 'Add an agent') + '</summary>' +
       '<form class="wsf" data-st-form="add">' + boss +
+        // Templates (#2101 P10, R6): fill the form; nothing is saved until Add agent.
+        atPickerHtml(S.st.tpl || '', esc) +
+        atNextHtml(atList().find(function (t) { return t.key === S.st.tpl; }), esc, function (sec) { return stHref(sec); }) +
         '<div class="wsf__row"><label><span>Agent id <small>lowercase letters, digits, - and _</small></span><input id="st-a-id" maxlength="40" placeholder="sales" autocomplete="off"></label>' +
         '<label>Name<input id="st-a-name" maxlength="80" placeholder="Sales Desk"></label></div>' +
         '<label><span>Trigger words <small>comma or space separated</small></span><input id="st-a-triggers" placeholder="@sales, sales"></label>' +
@@ -661,6 +664,11 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     var a = t.getAttribute('data-st-act'), id = t.getAttribute('data-id');
     if (a === 'reload') { S.st.error = ''; settingsLoad(); }
     else if (a === 'ask') { S.st.confirm = t.getAttribute('data-key'); stPaint(); }
+    else if (a === 'agent-tpl') {
+      S.st.tpl = t.getAttribute('data-tpl') || ''; S.st.addOpen = true; stPaint();
+      var fv = atFields(atList().find(function (x) { return x.key === S.st.tpl; }));
+      Object.keys(fv).forEach(function (k) { var el = $(k); if (el) el.value = fv[k]; });
+    }
     else if (a === 'cancel') { S.st.confirm = ''; stPaint(); }
     else if (a === 'confirm') stConfirmed(t.getAttribute('data-key'));
     else if (a === 'discard') stDiscard();
