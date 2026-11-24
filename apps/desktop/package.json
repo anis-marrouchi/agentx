@@ -23,6 +23,7 @@
   "build": {
     "appId": "dev.agentx.desktop",
     "productName": "AgentX",
+    "publish": null,
     "directories": {
       "output": "release",
       "buildResources": "build"
