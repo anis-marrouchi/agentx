@@ -1,0 +1,95 @@
+{
+  "name": "agentx-desktop",
+  "productName": "AgentX",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentX desktop app: the Hub in a window, with a top-bar icon, for macOS, Windows and Ubuntu.",
+  "license": "MIT",
+  "author": "AgentX",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"test/*.test.mjs\"",
+    "start": "tsc -p tsconfig.json && electron .",
+    "dist": "tsc -p tsconfig.json && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "dev.agentx.desktop",
+    "productName": "AgentX",
+    "publish": null,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      },
+      {
+        "from": "LICENSE.orca",
+        "to": "LICENSE.orca"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "AgentX uses the microphone when you talk to your agents from the Hub."
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "category": "Development",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "maintainer": "AgentX"
+    }
+  },
+  "homepage": "https://github.com/anis-marrouchi/agentx"
+}

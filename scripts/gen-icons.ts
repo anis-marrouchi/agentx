@@ -71,6 +71,14 @@ files.set("apps/mac-helper/Resources/AppIcon.png", mac)
 files.set("apps/mac-voice/Resources/AppIcon.png", mac)
 files.set("integrations/raycast/assets/icon.png", renderIconPng({ size: 512, width: AX_LAYOUT.mac, background: "mac" }))
 
+// Desktop app (Electron): electron-builder makes the .icns/.ico from
+// build/icon.png. The top-bar icon is a template on macOS and the white
+// square elsewhere, where the taskbar may be dark.
+files.set("apps/desktop/build/icon.png", mac)
+files.set("apps/desktop/resources/trayTemplate.png", renderIconPng({ size: 16, width: 0.95, background: "template" }))
+files.set("apps/desktop/resources/trayTemplate@2x.png", renderIconPng({ size: 32, width: 0.95, background: "template" }))
+files.set("apps/desktop/resources/tray.png", renderIconPng({ size: 32, width: AX_LAYOUT.full, background: "square" }))
+
 // The docs' spare SVG favicons, so no older mark lingers.
 for (const f of ["docs/public/favicon.svg", "docs-holding/favicon.svg"]) files.set(f, axIconSvg() + "\n")
 

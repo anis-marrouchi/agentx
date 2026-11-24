@@ -1,0 +1,80 @@
+name: Desktop app
+
+# Builds the AgentX desktop app (apps/desktop, Electron) for macOS, Windows
+# and Ubuntu on their own runners, and keeps the unsigned installers as
+# workflow artifacts. See docs/guides/desktop-app.md (#2101 C3).
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['apps/desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos
+            files: apps/desktop/release/*.dmg
+          - os: windows-latest
+            name: windows
+            files: apps/desktop/release/*.exe
+          - os: ubuntu-latest
+            name: linux
+            files: |
+              apps/desktop/release/*.AppImage
+              apps/desktop/release/*.deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/desktop
+    env:
+      # Unsigned preview builds: don't look for a signing certificate.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      # No daemon here, so the window shows its "not answering" page. The
+      # check is that the main process starts and keeps running for 20 s.
+      - name: Starts without crashing (Ubuntu)
+        if: matrix.name == 'linux'
+        run: |
+          set +e
+          timeout 20 xvfb-run -a npx electron . --no-sandbox
+          code=$?
+          [ "$code" = 124 ] || { echo "app exited early with $code"; exit 1; }
+
+      - name: Build the installer
+        run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentx-desktop-${{ matrix.name }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
