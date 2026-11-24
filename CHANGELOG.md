@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.263.1](https://github.com/anis-marrouchi/agentx/compare/v0.263.0...v0.263.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **hub:** usage after reset + AgentX blue follow-ups ([#2194](https://github.com/anis-marrouchi/agentx/issues/2194), [#2130](https://github.com/anis-marrouchi/agentx/issues/2130)) ([#2197](https://github.com/anis-marrouchi/agentx/issues/2197)) ([99bff87](https://github.com/anis-marrouchi/agentx/commit/99bff87bee05efeb9ba372b0437bbe5e46c39dc8))
+
 ## [0.263.0](https://github.com/anis-marrouchi/agentx/compare/v0.262.1...v0.263.0) (2026-11-24)
 
 
