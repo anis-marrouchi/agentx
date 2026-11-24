@@ -1122,6 +1122,9 @@ export async function executeClaudeCodeStreaming(
   let earlierText = ""
   let turnText = ""
   let sawTextDelta = false
+  // A new text block began (partial events): its first words start a new
+  // paragraph, like the persistent path, not glued to the last block.
+  let textBlockStarted = false
   const emitTurnText = (delta: string) => {
     const sep = earlierText && !turnText ? "\n\n" : ""
     turnText += delta
@@ -1242,10 +1245,16 @@ export async function executeClaudeCodeStreaming(
 
             // Partial messages (--include-partial-messages): the main
             // agent's answer, a few words at a time.
+            if (event.type === "stream_event" && !event.parent_tool_use_id
+              && event.event?.type === "content_block_start" && event.event.content_block?.type === "text") {
+              textBlockStarted = true
+            }
             const textDelta = partialTextDelta(event) || (event.type === "content_block_delta" && typeof event.delta?.text === "string" ? event.delta.text : "")
             if (textDelta) {
               sawTextDelta = true
-              emitTurnText(textDelta)
+              const sep = textBlockStarted && turnText && !turnText.endsWith("\n") ? "\n\n" : ""
+              textBlockStarted = false
+              emitTurnText(sep + textDelta)
             }
 
             background.observe(event)
