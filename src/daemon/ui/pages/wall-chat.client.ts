@@ -33,6 +33,7 @@ import { HUB_PATH } from "../hub-name"
 import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "./wall-chat-view"
 import { cfBase, cfDuration, cfField, cfFoldHtml, cfParseLive, cfStepLine } from "./wall-chat-fold"
 import { WALL_CHAT_INPUT_SCRIPT, wallChatInputHtml } from "./wall-chat-input.client"
+import { WALL_CHAT_HEAD_SCRIPT, wallChatHeadHtml } from "./wall-chat-head.client"
 export { WALL_CHAT_CSS } from "./wall-chat.css"
 
 const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>'
@@ -79,11 +80,12 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
   </section>`
   }
   return `<section class="hc" id="hc" aria-label="Chat" hidden>
-    <div class="hc__head">${close}<div class="hc__title"><b id="hc-who">Chat</b><small id="hc-sub">New conversation</small></div>
+    <div class="hc__head">${close}${wallChatHeadHtml()}
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
     <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
+    <div class="hc__tabview" id="hc-tabview" role="tabpanel" hidden></div>
     <form class="hc__foot" id="hc-form">
       ${wallChatInputHtml()}
       <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
@@ -249,9 +251,12 @@ export const WALL_CHAT_SCRIPT = String.raw`
     paintLog();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
+  // nodeList: the machines that answer, for the header's "computer" (#2101 P5).
+  var nodeList = [];
   fetch('/api/monitor?nodes=1', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var ns = (d.nodes || []).filter(function (n) { return n.ok; });
-    if (ns.length < 2) return;
+    nodeList = ns;
+    if (ns.length < 2) { if (loaded) paintLog(); return; }
     $('hc-node').innerHTML = ns.map(function (n) { return '<option value="' + esc(n.url) + '">' + esc(n.name) + '</option>'; }).join('');
     $('hc-node').hidden = false;
   }).catch(function () { /* one node: no picker */ });
@@ -392,6 +397,21 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (hub && typeof hub.onAgent === 'function') hub.onAgent(cur, agentNames[cur] || cur, agentInfo[cur] || null);
     $('hc-who').textContent = agentsKnown || thread ? agentName() : 'Chat';
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
+    // The header and the agent's questions (wall-chat-head.client.ts, #2101 P5/P6).
+    if (hub && typeof hub.onPaint === 'function') {
+      var last = msgs[msgs.length - 1];
+      hub.onPaint({
+        agent: cur, name: agentNames[cur] || cur, tier: (agentInfo[cur] || {}).tier || '', node: nodeName(),
+        pending: p ? String(p.taskId || '') || 'pending' : '', done: !!(last && last.role === 'assistant' && last.status === 'done'),
+      });
+    }
+  }
+  /** The computer the conversation runs on, by name. */
+  function nodeName() {
+    var key = threadId ? threadNode : ($('hc-node').hidden ? '' : $('hc-node').value);
+    for (var i = 0; i < nodeList.length; i++) if (key && (nodeList[i].url === key || nodeList[i].name === key)) return nodeList[i].name;
+    if (key) return key;
+    return nodeList.length === 1 ? nodeList[0].name : '';
   }
   function signedOut() {
     $('hc-log').innerHTML = '<div class="hc__guest"><b>Chat is for the owner</b><a class="ax-btn" href="/login?next=' + encodeURIComponent(location.pathname) + '">Sign in</a></div>';
@@ -497,21 +517,30 @@ export const WALL_CHAT_SCRIPT = String.raw`
     open(true);
     send(t);
   });
+  // Stop ends the run (POST /api/task/action kind=cancel); the thread
+  // read then shows how it ended. From the answer's Stop or the header's.
+  function stopRun(task, btn) {
+    var id = threadId;
+    if (!task) return Promise.resolve();
+    if (btn) btn.disabled = true;
+    stopFailed = '';
+    return fetch('/api/task/action?node=' + encodeURIComponent(threadNode || '') + '&task=' + encodeURIComponent(task) + '&kind=cancel', {
+      method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason: 'Stopped from the Hub chat' }),
+    }).then(function (r) {
+      if (r.status === 401) { signedOut(); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return loadThread(id);
+    }).catch(function () {
+      stopFailed = task;
+      if (btn) { btn.disabled = false; btn.textContent = 'Not stopped. Try again'; } else paintLog();
+    });
+  }
+  api.stop = function () { var p = pendingMsg(); return stopRun(p && p.taskId, null); };
+  api.repaint = paintLog;
   $('hc-log').addEventListener('click', function (e) {
     var t = e.target, stop = t.closest('[data-hc-stop]');
-    if (stop) {
-      // Stop ends the run (POST /api/task/action kind=cancel); the thread
-      // read then shows how it ended.
-      var id = threadId, task = stop.getAttribute('data-hc-stop');
-      stop.disabled = true; stopFailed = '';
-      fetch('/api/task/action?node=' + encodeURIComponent(threadNode || '') + '&task=' + encodeURIComponent(task) + '&kind=cancel', {
-        method: 'POST', headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ reason: 'Stopped from the Hub chat' }),
-      }).then(function (r) {
-        if (r.status === 401) { signedOut(); return; }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return loadThread(id);
-      }).catch(function () { stopFailed = task; stop.disabled = false; stop.textContent = 'Not stopped. Try again'; });
-    } else if (t.closest('[data-hc-retry]')) {
+    if (stop) stopRun(stop.getAttribute('data-hc-stop'), stop);
+    else if (t.closest('[data-hc-retry]')) {
       var last = msgs.filter(function (m) { return m.role === 'user'; }).pop();
       if (last) send(chatAttached(last.content).text);
     } else if (t.closest('[data-hc-other]')) $('hc-agent').focus();
@@ -602,4 +631,4 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // Opened by its link: #page=chat&agent=<id> (the agent once the list is in).
   if (defaultChat || chatRoute(location.hash)) open(true, true);
 })();
-` + WALL_CHAT_INPUT_SCRIPT
+` + WALL_CHAT_INPUT_SCRIPT + WALL_CHAT_HEAD_SCRIPT

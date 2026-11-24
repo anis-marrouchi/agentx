@@ -5,6 +5,7 @@ import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
 import { WALL_CHAT_INPUT_SCRIPT } from "../src/daemon/ui/pages/wall-chat-input.client"
 import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "../src/daemon/ui/pages/wall-chat-view"
 import { cfFoldHtml, cfParseLive } from "../src/daemon/ui/pages/wall-chat-fold"
+import { chAskHtml, chAsksFor, chEngine, chFace, chPlanHtml, chProofsHtml, chReqsFor, chState } from "../src/daemon/ui/pages/wall-chat-head.client"
 import { openWall } from "./wall-settings-harness"
 
 // #1528: the Hub chat panel, option A (notes/design/hub-chat-panel.md).
@@ -764,5 +765,152 @@ describe("Hub chat composer script (#2101 P7)", () => {
     expect(c.el("hc-model-own").hidden).toBe(false)
     expect(c.el("hc-model-own").textContent).toBe("gpt-6.2-sol")
     expect(c.api.model()).toBe("")
+  })
+})
+
+describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
+  it("gives each agent a face, an engine name and one state word", () => {
+    expect(chFace("pm", "pm")).toEqual({ letter: "P", colour: chFace("pm", "other").colour })
+    expect(chFace("pm", "pm").colour).toMatch(/^#[0-9A-F]{6}$/i)
+    expect(chEngine("claude-code")).toBe("Claude Code")
+    expect(chEngine("codex-cli")).toBe("Codex")
+    expect(chEngine("")).toBe("")
+    expect(chState({ pending: true, asks: 1, waiting: true, done: true })).toEqual({ key: "work", word: "Working" })
+    expect(chState({ pending: false, asks: 1, waiting: false, done: true })).toEqual({ key: "wait", word: "Waiting on you" })
+    expect(chState({ pending: false, asks: 0, waiting: false, done: true })).toEqual({ key: "done", word: "Done" })
+    expect(chState({ pending: false, asks: 0, waiting: false, done: false })).toBeNull()
+  })
+
+  it("keeps only the agent's own Desk cards and the requests it has a step in", () => {
+    const items = [{ key: "card:a", kind: "card", raised_by: "pm" }, { key: "card:b", kind: "card", raised_by: "cx" }, { key: "schedule:x", kind: "schedule", raised_by: "pm" }]
+    expect(chAsksFor(items, "pm").map((i) => i.key)).toEqual(["card:a"])
+    const reqs = [{ id: "r1", agentId: "pm" }, { id: "r2", agentId: "cx", plan: { steps: [{ idx: 1, name: "Build", agentId: "pm" }] } }, { id: "r3", agentId: "cx" }]
+    expect(chReqsFor(reqs, "pm").map((r) => r.id)).toEqual(["r1", "r2"])
+  })
+
+  it("draws a question as a card with Accept, Ask for changes and Later, escaped", () => {
+    const now = Date.parse("2026-11-24T12:00:00Z")
+    const html = chAskHtml({ key: "card:c1", ask: "Accept the <design> note?", created_at: "2026-11-24T11:48:00Z" }, { name: "pm", now })
+    expect(html).toContain('data-hc-askkey="card:c1"')
+    expect(html).toContain("<b>pm</b> asks you")
+    expect(html).toContain("12m ago")
+    expect(html).toContain("Accept the &lt;design&gt; note?")
+    expect(html).toMatch(/hc__ab--pri" data-hc-ask="yes">Accept</)
+    expect(html).toContain('data-hc-ask="changes">Ask for changes<')
+    expect(html).toContain('data-hc-ask="later">Later<')
+    // Choices: one button each, the suggested one in blue.
+    const ch = chAskHtml({ key: "card:c2", ask: "Which?", choices: ["Ship", "Wait"], recommend: "Wait: CI is red" }, { name: "pm", now })
+    expect(ch).toContain('class="hc__ab" data-hc-ask="yes" data-hc-choice="1">Ship<')
+    expect(ch).toContain('class="hc__ab hc__ab--pri" data-hc-ask="yes" data-hc-choice="2">Wait<')
+    expect(ch).not.toContain(">Accept<")
+    // Ask for changes opens a box for what to change.
+    const open = chAskHtml({ key: "card:c1", ask: "Q?" }, { name: "pm", now, draft: { open: true, text: "Shorter" } })
+    expect(open).toContain("What should pm change?")
+    expect(open).toContain(">Shorter</textarea>")
+    expect(open).toContain('data-hc-ask="no"')
+  })
+
+  it("lists the plan's steps, and the proofs of the steps done", () => {
+    const reqs = [{ id: "req-1", summary: "Restyle", plan: { steps: [
+      { idx: 1, name: "Design note", agentId: "dev-session", state: "done", evidence: "https://x.test/c1" },
+      { idx: 2, name: "Review", agentId: "pm", state: "active" },
+    ] } }]
+    const plan = chPlanHtml(reqs, "pm")
+    expect(plan).toContain('href="#post=req-1"')
+    expect(plan).toContain("2 steps")
+    expect(plan).toMatch(/is-done[^]*✓[^]*Design note/)
+    expect(plan).toContain("pm · now")
+    expect(chPlanHtml([], "pm")).toContain("pm has no open request with a plan.")
+    const proofs = chProofsHtml(reqs, "pm")
+    expect(proofs).toContain('href="https://x.test/c1"')
+    expect(proofs).not.toContain("Review")
+    expect(chProofsHtml([], "pm")).toContain("No proofs yet")
+  })
+})
+
+describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
+  const thread = { status: 200, body: { thread: { id: "t1", title: "Restyle", agentId: "scout" }, messages: [{ role: "user", content: "Go", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-9" }] } }
+  const desk = { status: 200, body: { items: [{ key: "card:c1", kind: "card", raised_by: "scout", ask: "Accept the design note?", created_at: new Date().toISOString() }, { key: "card:c2", kind: "card", raised_by: "forge", ask: "Not Scout's" }] } }
+  const requests = { status: 200, body: { items: [{ id: "req-1", agentId: "scout", summary: "Restyle", state: "in_progress", plan: { steps: [{ idx: 1, name: "Build", agentId: "scout", state: "done", evidence: "https://x.test/pr" }] } }] } }
+  function route(extra?: (url: string, init: any) => Reply | undefined) {
+    return (url: string, init: any): Reply | undefined => extra?.(url, init)
+      ?? (url === "/api/agents" ? { status: 200, body: { agents: [{ id: "scout", name: "Scout", tier: "claude-code" }, { id: "forge", name: "Forge", tier: "codex-cli" }] } }
+        : url.startsWith("/api/assistant/thread?id=t1") ? thread
+        : url === "/api/admin/approvals" ? desk
+        : url === "/api/admin/approvals/requests" ? requests
+        : undefined)
+  }
+  const target = (attrs: Record<string, string>, card?: any) => ({
+    getAttribute: (k: string) => attrs[k] ?? null,
+    closest: (s: string) => (s === "[data-hc-ask]" ? target(attrs, card) : s === "[data-hc-askkey]" ? card : null),
+  })
+
+  it("draws the face, computer · engine, Working pill, Stop and ↗ Request", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route() })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-face").hidden).toBe(false)
+    expect(w.el("hc-face").textContent).toBe("S")
+    expect(w.el("hc-where").textContent).toBe("studio · Claude Code")
+    expect(w.el("hc-pill").hidden).toBe(false)
+    expect(w.el("hc-pill").textContent).toBe("Working")
+    expect(w.el("hc-hstop").hidden).toBe(false)
+    expect(w.el("hc-req").hidden).toBe(false)
+    expect(w.el("hc-req").getAttribute("href")).toBe("#post=req-1")
+    // Stop in the header stops the pending run, as the answer's Stop does.
+    await w.fire("hc-hstop", "click")
+    expect(w.calls.some((c) => c.method === "POST" && c.url === "/api/task/action?node=http%3A%2F%2Fstudio&task=task-9&kind=cancel")).toBe(true)
+  })
+
+  it("shows the agent's own question in the thread and answers it through the Desk route", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route((url, init) => (url === "/api/admin/wall/decide" && init.method === "POST" ? { status: 200, body: { ok: true } } : undefined)) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const log = w.el("hc-log").innerHTML
+    expect(log).toContain("<b>Scout</b> asks you")
+    expect(log).toContain("Accept the design note?")
+    expect(log).not.toContain("Not Scout's")
+    const card = target({ "data-hc-askkey": "card:c1" })
+    await w.fire("hc-log", "click", { target: target({ "data-hc-ask": "yes" }, card) })
+    const post = w.calls.find((c) => c.url === "/api/admin/wall/decide")!
+    expect(post.body).toEqual({ key: "card:c1", action: "yes" })
+    expect(post.headers["X-Requested-With"]).toBe("agentx-board")
+    // Answered: gone from the thread.
+    expect(w.el("hc-log").innerHTML).not.toContain("Accept the design note?")
+  })
+
+  it("asks for changes with a note, and keeps the card when the answer is refused", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route((url, init) => (url === "/api/admin/wall/decide" && init.method === "POST" ? { status: 409, body: { error: "already answered" } } : undefined)) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const card = target({ "data-hc-askkey": "card:c1" })
+    await w.fire("hc-log", "click", { target: target({ "data-hc-ask": "changes" }, card) })
+    expect(w.el("hc-log").innerHTML).toContain("What should Scout change?")
+    // Send with nothing written: nothing goes.
+    await w.fire("hc-log", "click", { target: target({ "data-hc-ask": "no" }, card) })
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/decide")).toBe(false)
+    expect(w.el("hc-log").innerHTML).toContain("Write what to change first.")
+    const ta = { value: "Shorter, please", hasAttribute: (k: string) => k === "data-hc-ask-text", closest: () => card }
+    await w.fire("hc-log", "input", { target: ta })
+    await w.fire("hc-log", "click", { target: target({ "data-hc-ask": "no" }, card) })
+    expect(w.calls.find((c) => c.url === "/api/admin/wall/decide")!.body).toEqual({ key: "card:c1", action: "no", note: "Shorter, please" })
+    expect(w.el("hc-log").innerHTML).toContain("Not answered: already answered")
+    expect(w.el("hc-log").innerHTML).toContain("Accept the design note?")
+  })
+
+  it("switches to Plan and Proofs, and back to Chat", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route() })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const tab = (t: string) => ({ getAttribute: () => t, closest: () => ({ getAttribute: () => t }) })
+    await w.fire("hc-tabs", "click", { target: tab("plan") })
+    expect(w.el("hc-log").hidden).toBe(true)
+    expect(w.el("hc-tabview").hidden).toBe(false)
+    expect(w.el("hc-tabview").innerHTML).toContain("Build")
+    await w.fire("hc-tabs", "click", { target: tab("proofs") })
+    expect(w.el("hc-tabview").innerHTML).toContain('href="https://x.test/pr"')
+    await w.fire("hc-tabs", "click", { target: tab("chat") })
+    expect(w.el("hc-log").hidden).toBe(false)
+    expect(w.el("hc-tabview").hidden).toBe(true)
   })
 })
