@@ -56,6 +56,7 @@ import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
 import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
+import { WALL_KEEP_SCRIPT } from "./wall-keep.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
@@ -119,6 +120,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
+${WALL_KEEP_SCRIPT}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
@@ -1380,7 +1382,10 @@ ${HUB_NAV_SCRIPT}
   }
 
   // --- Render ---
-  function render() {
+  // A repaint keeps open sections, shown lists and the scroll (#2101 R21):
+  // wall-keep.client.ts.
+  function render() { return keepState(renderNow); }
+  function renderNow() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
     renderNeedsTop();
     renderTree();
