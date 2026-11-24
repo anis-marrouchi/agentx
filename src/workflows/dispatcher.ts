@@ -1132,10 +1132,22 @@ export class WorkflowDispatcher {
     // + joinCounters + pause transitions) runs under the per-run mutex.
     // For linear workflows (single pending) this collapses to the old
     // serial path — identical behaviour, identical history.
+    // #562: a loop can bring a node back inside one walk, under the same
+    // event. Visit 1 keeps the plain key, so a re-delivered event still
+    // dedups; visit 2 on gets its own key. A node this event resumed
+    // already holds the plain key, so its first run here is visit 2.
+    const visits = new Map<string, number>()
+    const keyFor = (nodeId: string): string => {
+      const base = idempotencyKey(runId, nodeId, triggeringEventId)
+      const seen = visits.get(nodeId)
+        ?? (run!.history.some((h) => h.idempotencyKey === base && h.status === "resumed") ? 1 : 0)
+      visits.set(nodeId, seen + 1)
+      return seen === 0 ? base : idempotencyKey(runId, nodeId, `${triggeringEventId}#${seen + 1}`)
+    }
     while (run.status === "running" && run.pending.length > 0) {
       const batch = run.pending.slice(0, MAX_PARALLEL_PER_RUN)
       await Promise.allSettled(
-        batch.map((nodeId) => this.executeNodeAndCommit(workflow, runId, nodeId, triggeringEventId)),
+        batch.map((nodeId) => this.executeNodeAndCommit(workflow, runId, nodeId, keyFor(nodeId))),
       )
       const fresh = this.runs.get(runId)
       if (!fresh) return
@@ -1152,9 +1164,8 @@ export class WorkflowDispatcher {
     workflow: Workflow,
     runId: string,
     nodeId: string,
-    triggeringEventId: string,
+    key: string,
   ): Promise<void> {
-    const key = idempotencyKey(runId, nodeId, triggeringEventId)
 
     // --- phase 1 (guarded): dedup check + resolve handler ---
     const prelude = await this.commit(runId, () => {
@@ -1617,6 +1628,7 @@ export class WorkflowDispatcher {
     if (!wf) return { ok: false, error: `workflow "${run0.workflowId}" is gone` }
     let error: string | undefined
     let walk = false
+    let doneEvent = `done:${args.runId}`
     await this.commit(args.runId, () => {
       const fresh = this.runs.get(args.runId)
       const p = fresh?.pausedAt
@@ -1641,10 +1653,12 @@ export class WorkflowDispatcher {
       this.timers.cancel({ cancelKey: `${fresh.id}:${p.nodeId}` })
       if (fresh.meta?.blocked) this.runs.setMeta(fresh.id, { blocked: undefined })
       const output = { ...(fresh.context[p.nodeId] ?? {}), ...(args.output ?? {}), result: (args.output?.result as string | undefined) ?? "done", doneAt: new Date().toISOString() }
-      walk = this.resumeOn(wf, this.runs.get(fresh.id)!, p.nodeId, output, undefined, idempotencyKey(fresh.id, p.nodeId, `done:${output.doneAt}`), "reported done")
+      doneEvent = `done:${output.doneAt}`
+      walk = this.resumeOn(wf, this.runs.get(fresh.id)!, p.nodeId, output, undefined, idempotencyKey(fresh.id, p.nodeId, doneEvent), "reported done")
     })
     if (error) return { ok: false, error }
-    if (walk) void this.walk(wf, args.runId, `done:${args.runId}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after step done failed: ${e.message}`))
+    // #562: one event id per report, so a later report in a loop is not a duplicate.
+    if (walk) void this.walk(wf, args.runId, doneEvent).catch((e: any) => this.log(`[workflow:${wf.id}] walk after step done failed: ${e.message}`))
     else await this.settle(args.runId)
     return { ok: true }
   }
