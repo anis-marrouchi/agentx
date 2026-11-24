@@ -13,8 +13,8 @@ The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent 
 ## Pick an agent
 
 1. **Phone:** open the app and tap **Chat**.
-2. **Phone:** tap **Choose an agent**. The list shows each computer with a green dot when it is online, and each agent as **idle** or **busy**. Agents on an offline computer can't be picked.
-3. **Phone:** tap an agent. The **Talking to** button above the orb shows the agent you picked.
+2. **Phone:** tap **Choose an agent** at the top of Chat, or tap the back arrow. The list shows each computer with a green dot when it is online, and each agent as **idle** or **busy**. Agents on an offline computer can't be picked.
+3. **Phone:** tap an agent. The header at the top of Chat shows its name, with **Working** or **Ready** and the computer it runs on. Tap the name to pick another agent.
 
 Close a sheet with **Done**, by pulling its handle down, by tapping outside it, or with **Escape** on a keyboard.
 
@@ -22,7 +22,7 @@ Close a sheet with **Done**, by pulling its handle down, by tapping outside it, 
 
 ## Talk to the agent
 
-1. **Phone:** press and hold the orb. The first time, the phone asks to use the microphone: tap **Allow**. The phone buzzes briefly when it starts listening, and the orb grows and glows with your voice.
+1. **Phone:** press and hold the orb. The first time, the phone asks to use the microphone: tap **Allow**. The phone buzzes briefly when it starts listening, and a sheet rises that says **Talking to** and the agent's name, with a wave that follows your voice.
 2. **Phone:** say your message while you keep holding.
 3. **Phone:** let go to send it. A ring turns around the orb while your words are written down, and your message appears in the conversation.
 4. **Phone:** wait for the answer. The ring keeps turning while the agent works, and the answer appears as the agent writes it.
@@ -178,6 +178,19 @@ The line is taken out of the answer before you see or hear it. It is the same li
 
 The phone never sees where a file is on the computer: each file gets its own random address when the answer is saved. The file stays on the computer that ran the agent. For an agent on another computer in your mesh, this computer fetches the file from it with the mesh token. An svg file only downloads, because an svg can carry code.
 
+## See the agent's changes
+
+When the agent works on a GitHub or GitLab issue, you can read its pull or merge request and comment on its lines from the phone.
+
+1. **Phone:** in Chat, tap the button at the top right of the header. **Changes** opens with the pull request's number and its added and removed lines.
+2. **Phone:** tap a file to see its lines.
+3. **Phone:** tap a line, write your comment, and tap **Add**. Add as many as you like.
+4. **Phone:** tap **Send to** and the agent's name. The agent gets every comment in one message, with the file and line of each.
+
+Tap the back arrow to return to the conversation. On GitHub, the arrow at the top right opens the pull request in the browser.
+
+The screen shows the newest open request of the agent on the computer this phone is paired to, the same diff the Hub shows under a post.
+
 ## Go back to a conversation
 
 1. **Phone:** tap **History** (the clock icon).
@@ -293,3 +306,6 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
   - **"the file is larger than 20 MB"**: ask the agent for a smaller file.
   - **"no such file"**: the conversation was removed from this phone's history, or it belongs to another phone.
   - **"… is not linked to this computer's mesh any more"** or **"answered HTTP 404"**: the computer that ran the agent left the mesh, or runs an older AgentX. Link it again, or update AgentX there.
+- **Changes says the agent has no open request on a GitHub or GitLab issue** — the agent's current work is not on an issue, or it runs on another computer in your mesh. Open the phone app paired to that computer, or read the diff on the Hub.
+- **Changes says no pull or merge request names the request yet** — the agent has not opened one. Ask it in Chat to open a pull request and link the issue.
+- **"Not sent" on Changes** — your comments stay on the screen. Check the connection and tap **Send to** again.
