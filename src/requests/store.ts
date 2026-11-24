@@ -641,7 +641,13 @@ export class RequestStore {
   }
 
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
-    if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, due_pushed_at = NULL, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
+    if (loop.dueAt !== undefined) this.db.prepare(
+      `UPDATE requests SET
+         due_pushed_at = CASE WHEN due_at IS ? THEN due_pushed_at ELSE NULL END,
+         due_pushed_for = CASE WHEN due_at IS ? THEN due_pushed_for ELSE NULL END,
+         attention_reason = CASE WHEN state = 'waiting_owner' AND due_at IS NOT ? THEN NULL ELSE attention_reason END,
+         due_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(loop.dueAt, loop.dueAt, loop.dueAt, loop.dueAt, now, id)
     if (loop.closeWhen !== undefined) {
       this.db.prepare("UPDATE requests SET close_when = ?, verify_state = NULL, verify_detail = NULL, updated_at = ? WHERE id = ?")
         .run(loop.closeWhen ? JSON.stringify(loop.closeWhen) : null, now, id)
@@ -892,6 +898,13 @@ export class RequestStore {
          AND (due_pushed_for IS NULL OR due_pushed_for != due_at OR updated_at < ?)
        ORDER BY due_at, rowid`,
     ).all(now, quietBefore).map(toRecord)
+  }
+
+  recordDueGate(id: string, dueAt: number, outcome: "fixed" | "not-fixed" | "covered-by-plan", now: number): void {
+    recordGateEvent({
+      gate: "due-wake", ruleId: "R4", outcome, ref: id,
+      reason: new Date(dueAt).toISOString(), at: now,
+    }, this.db)
   }
 
   noteOwnerDue(request: RequestRecord, line: string, now: number): boolean {
@@ -1196,6 +1209,14 @@ export class RequestStore {
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL, ${ASK_ENDS}
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
+    if (this.hasJobColumns()) {
+      this.db.prepare(
+        `UPDATE requests SET waiting_on = 'owner',
+           wake_at = CASE WHEN job_state = 'continue' THEN NULL ELSE wake_at END,
+           job_state = CASE WHEN job_state = 'continue' THEN 'working' ELSE job_state END
+         WHERE id = ? AND state = 'waiting_owner'`,
+      ).run(id)
+    }
   }
 
   /** The work failed, timed out, was cut off, or went quiet. A request

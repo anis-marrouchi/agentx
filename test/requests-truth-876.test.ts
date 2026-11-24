@@ -220,15 +220,22 @@ describe("cause 3: an overdue request wakes its agent, and a later touch does no
       state: "waiting_owner",
       attentionReason: expect.stringContaining("Can I proceed?"),
     })
-    expect(notices).toEqual([`notice:request:${ID}:due:${due}`])
+    expect(notices).toEqual([`notice:request:${ID}:due:${due}:${due + 1}`])
     expect(gateEventsSince(db, "due-wake", 0)).toMatchObject([{ ref: ID, outcome: "reported" }])
     expect(woken).toEqual([])
 
     const moved = due + HOUR
     store.setLoop(ID, { dueAt: moved }, due + 3)
     await sweep(moved + 1)
-    expect(notices).toEqual([`notice:request:${ID}:due:${due}`, `notice:request:${ID}:due:${moved}`])
-    store.progress(ID, moved + 2)
+    store.setLoop(ID, { dueAt: due }, moved + 2)
+    expect(store.get(ID)?.attentionReason).toBeNull()
+    await sweep(moved + 3)
+    expect(notices).toEqual([
+      `notice:request:${ID}:due:${due}:${due + 1}`,
+      `notice:request:${ID}:due:${moved}:${moved + 1}`,
+      `notice:request:${ID}:due:${due}:${moved + 3}`,
+    ])
+    store.progress(ID, moved + 4)
     expect(store.get(ID)).toMatchObject({ state: "in_progress", attentionReason: null })
   })
 

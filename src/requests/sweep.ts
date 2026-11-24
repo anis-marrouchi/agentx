@@ -449,7 +449,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           if (r.dueAt === null) continue
           const line = `Due ${when(r.dueAt)}, still waiting on the owner${r.question ? `: ${r.question}` : ""}`
           if (!store.noteOwnerDue(r, line, now)) continue
-          await deps.notify?.("Request due", line, r, "notice", `request:${r.id}:due:${r.dueAt}`)
+          await deps.notify?.("Request due", line, r, "notice", `request:${r.id}:due:${r.dueAt}:${now}`)
         } catch (e: any) {
           log(`[requests] owner-due notice for ${r.id} failed: ${e?.message ?? e}`)
         }
