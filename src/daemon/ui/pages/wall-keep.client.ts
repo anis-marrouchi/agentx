@@ -22,7 +22,9 @@ export const WALL_KEEP_SCRIPT = String.raw`
   // Elements the reader scrolled inside (a list with its own scroll bar),
   // by the box they sit in and their class.
   var keepScrolled = [];
-  function keepScrollKey(el) { return (el.id ? '#' + el.id : keepBox(el) + '|' + String(el.className || '')); }
+  // The class from the attribute: on an SVG element className is an object.
+  function keepCls(el) { return String((el.getAttribute && el.getAttribute('class')) || ''); }
+  function keepScrollKey(el) { return (el.id ? '#' + el.id : keepBox(el) + '|' + keepCls(el)); }
   document.addEventListener('scroll', function (ev) {
     var t = ev.target;
     if (!t || t === document || !t.closest || !t.closest('.ax-wall') || keepScrolled.indexOf(t) >= 0) return;
@@ -40,7 +42,7 @@ export const WALL_KEEP_SCRIPT = String.raw`
     document.querySelectorAll('.ax-wall [data-more-list]').forEach(function (l) {
       if (!l.hidden) k.lists[keepBox(l) + '|' + l.getAttribute('data-more-list')] = true;
     });
-    keepScrolled.forEach(function (el) { if (el.scrollTop > 0) k.inner.push({ key: keepScrollKey(el), cls: el.className, top: el.scrollTop }); });
+    keepScrolled.forEach(function (el) { if (el.scrollTop > 0) k.inner.push({ key: keepScrollKey(el), cls: keepCls(el), top: el.scrollTop }); });
     return k;
   }
   function keepApply(k, where) {
@@ -65,10 +67,19 @@ export const WALL_KEEP_SCRIPT = String.raw`
     });
     if ((window.scrollY || 0) !== k.y && window.scrollTo) window.scrollTo(0, k.y);
   }
-  /** Runs paint() and keeps what the reader opened and where they were. */
+  /** Runs paint() and keeps what the reader opened and where they were.
+   *  Keeping is a nicety: if it fails the page still draws with its
+   *  defaults, and render() never throws because of it (Hakim C2). */
   function keepState(paint) {
     var where = String(location.hash || '') + '|' + S.page + '|' + S.post + '|' + S.view;
-    var k = keepSnap(S.keepWhere);
-    try { return paint(); } finally { S.keepWhere = where; keepApply(k, where); }
+    var k = null;
+    try { k = keepSnap(S.keepWhere); } catch (e) { keepFailed('snap', e); }
+    try { return paint(); } finally {
+      S.keepWhere = where;
+      if (k) { try { keepApply(k, where); } catch (e) { keepFailed('apply', e); } }
+    }
+  }
+  function keepFailed(step, e) {
+    try { if (window.console && console.warn) console.warn('[hub] keep ' + step + ' skipped: ' + String(e && e.message || e)); } catch (_) { /* no console */ }
   }
 `

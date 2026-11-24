@@ -45,7 +45,7 @@ function hub() {
   // during(): what else the repaint does, such as dropping to the top.
   const paint = (during?: () => void) => api.keepState(() => { more = draw(); during?.() })
   paint() // the first paint: nothing to keep yet
-  return { win, loc, S, get page() { return page }, get more() { return more }, paint }
+  return { win, loc, S, doc, api, get page() { return page }, get more() { return more }, paint }
 }
 
 describe("Hub keeps its state across a repaint (#2101 R21)", () => {
@@ -79,5 +79,21 @@ describe("Hub keeps its state across a repaint (#2101 R21)", () => {
     h.win.scrollY = 300
     h.paint(() => { h.win.scrollY = 0 })
     expect(h.win.scrollY).toBe(300)
+  })
+
+  it("never makes render() throw: a failing keep step still returns what paint() drew (C2)", () => {
+    const h = hub()
+    const real = h.doc.querySelectorAll
+    h.doc.querySelectorAll = () => { throw new Error("bad selector") }
+    expect(h.api.keepState(() => "drawn")).toBe("drawn")
+    // Snap works, apply fails: still no throw.
+    let calls = 0
+    h.doc.querySelectorAll = (s: string) => { if (++calls > 2) throw new Error("bad selector"); return real(s) }
+    expect(h.api.keepState(() => "drawn again")).toBe("drawn again")
+  })
+
+  it("an error from paint() itself still reaches the caller", () => {
+    const h = hub()
+    expect(() => h.api.keepState(() => { throw new Error("paint broke") })).toThrow("paint broke")
   })
 })
