@@ -164,7 +164,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
   function jobsPageHtml() {
     var nodes = S.live && S.live.nodes;
     if (!nodes) return '<p class="ax-wall__empty">Loading…</p>';
-    var tot = { ran: 0, worked: 0, failed: 0, quiet: 0, stale: 0 }, today = new Date().toDateString();
+    var tot = { ran: 0, worked: 0, failed: 0, quiet: 0, stale: 0, lastFailed: 0 }, today = new Date().toDateString();
     var blocks = nodes.map(function (n) {
       var routines = {};
       (n.routines || []).forEach(function (r) { routines[r.id] = r; });
@@ -180,9 +180,16 @@ export const WALL_PAGES_SCRIPT = String.raw`
         if (stale.length) tot.stale++;
         var last = (n.cronRuns || []).filter(function (x) { return x.jobId === j.id; })[0];
         var summary = r && r.lastRun ? (r.lastRun.summary || (last && (last.errorSummary || last.responseSummary)) || '') : '';
-        return '<details class="wjb' + (stale.length ? ' is-stale' : '') + '"><summary>' +
-          '<span class="wjb__n"><b>' + esc(j.id) + '</b> <small>@' + esc(j.agent) + '</small><span>' + axCronValueHtml(j.value, esc) + numJob(j.value, n.name) + axCronGoalHtml(j, esc) + '</span></span>' +
-          '<span class="wjb__w"><code>' + esc(j.schedule) + '</code><small>' + (j.enabled ? (j.nextRun ? 'next ' + until(Date.parse(j.nextRun)) : '') : 'off') + '</small></span>' +
+        // The table's columns (#2101 P10, R7): project, next run, last result; a failure is said on the row.
+        var lr = wsLast(r && r.lastRun ? { status: r.lastRun.status, at: r.lastRun.at, summary: summary } : last ? { status: last.status, at: last.startedAt, summary: last.errorSummary || last.responseSummary } : null, esc, function (t) { return '<time title="' + esc(stamp(t)) + '">' + ago(t) + '</time>'; });
+        if (lr.failed) tot.lastFailed++;
+        var pj = wsProject(j);
+        return '<details class="wjb' + (stale.length ? ' is-stale' : '') + (lr.failed ? ' is-failed' : '') + '"><summary>' +
+          '<span class="wjb__n"><b>' + esc(j.id) + '</b> <small>@' + esc(j.agent) + '</small><span>' + axCronValueHtml(j.value, esc) + numJob(j.value, n.name) + axCronGoalHtml(j, esc) + '</span>' +
+            (lr.failed ? '<span class="wjb__why">' + esc(lr.why || 'The last run failed.') + '</span>' : '') + '</span>' +
+          '<span class="wjb__p">' + (pj.href ? '<a href="' + esc(pj.href) + '" target="_blank" rel="noopener">' + esc(pj.label) + '</a>' : pj.label ? esc(pj.label) : '<small>—</small>') + '</span>' +
+          '<span class="wjb__w"><b>' + (j.enabled ? (j.nextRun ? until(Date.parse(j.nextRun)) : '—') : 'off') + '</b><code>' + esc(j.schedule) + '</code></span>' +
+          '<span class="wjb__l">' + lr.html + '</span>' +
           squares(r) +
           '<span class="wjb__st">' + (stale.length ? '<span class="chip chip--warn" title="' + esc(stale.join('; ')) + '">look stale</span>' : j.enabled ? '<span class="chip chip--done">on</span>' : '<span class="chip chip--ghost">off</span>') + '</span>' +
         '</summary><div class="wjb__d">' +
@@ -199,9 +206,9 @@ export const WALL_PAGES_SCRIPT = String.raw`
       jobs = jobs.concat(sensorRows(n), hostJobRows(n));
       return '<section class="wjm"><h3>' + esc(n.name) + ' <small>' + jobs.length + (jobs.length === 1 ? ' job' : ' jobs') +
         (n.stale ? ', as of ' + esc(stamp(Date.parse(n.staleSince))) : nodeChecking(n) ? ', checking…' : down ? ', does not answer' : '') + '</small></h3>' +
-        (jobs.length ? jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';
+        (jobs.length ? wsHeadHtml() + jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';
     });
-    var totals = [['ran', tot.ran], ['worked', tot.worked], ['failed', tot.failed], ['quiet', tot.quiet], ['look stale', tot.stale]];
+    var totals = [['ran', tot.ran], ['worked', tot.worked], ['failed', tot.failed], ['quiet', tot.quiet], ['look stale', tot.stale], ['last run failed', tot.lastFailed]];
     return '<dl class="wjt">' + totals.map(function (t) { return '<div><dt>' + t[0] + '</dt><dd>' + t[1] + '</dd></div>'; }).join('') + '</dl>' +
       '<p class="ax-wall__count">Today, every machine. Look stale: off ' + STALE_OFF_DAYS + ' days or more, failed ' + STALE_FAILS + ' times in a row, or no value line.</p>' + blocks.join('');
   }
@@ -333,14 +340,29 @@ export const WALL_PAGES_CSS = `
 .wpc__ag small { color: var(--ax-muted); }
 
 /* Schedules (nav key jobs, #1355) */
-.wjt { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 8px; }
+.wjt { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 0 0 8px; }
 .wjt div { background: var(--ax-surface); border-radius: var(--ax-radius); padding: 8px 10px; }
 .wjt dt { font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wjt dd { margin: 0; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wjm { container-type: inline-size; }
 .wjm h3 { font-size: var(--ax-fs); margin: 14px 0 6px; }
 .wjm h3 small { color: var(--ax-muted); font-weight: 400; }
 .wjb { border-top: 1px solid var(--ax-border); font-size: var(--ax-fs-sm); }
-.wjb summary { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto 90px; gap: 10px; align-items: center; padding: 8px 0; cursor: pointer; list-style: none; }
+.wjb summary, .wjb__head { display: grid; grid-template-columns: minmax(0, 1fr) 120px 96px 110px auto 64px; gap: 10px; align-items: center; padding: 8px 0; cursor: pointer; list-style: none; }
+.wjb__head { cursor: default; padding: 4px 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); text-transform: uppercase; letter-spacing: .04em; }
+.wjb__p { font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
+.wjb__w b { font-weight: 600; }
+.wjb__l small { display: block; color: var(--ax-muted); }
+.wsc__last.is-err { color: var(--ax-red); font-weight: 600; }
+.wsc__last.is-ok { color: var(--ax-green); }
+.wsc__none { color: var(--ax-muted); }
+.wjb.is-failed { box-shadow: inset 3px 0 0 var(--ax-red); padding-left: 8px; }
+.wjb__n .wjb__why { color: var(--ax-red); }
+/* The Hub's main column is narrow beside the side column: the last-seven squares give way to the columns R7 asks for (#2101 P10). */
+@container (max-width: 760px) {
+  .wjb summary, .wjb__head { grid-template-columns: minmax(0, 1fr) 92px 76px 88px 78px; }
+  .wjm .wjb__sq, .wjm .wjb__head > span:nth-child(5) { display: none; }
+}
 .wjb summary::-webkit-details-marker { display: none; }
 .wjb__n span { display: block; font-size: var(--ax-fs-xs); }
 .wjb__n small, .wjb__w small { color: var(--ax-muted); }
@@ -375,6 +397,6 @@ export const WALL_PAGES_CSS = `
 @media (max-width: 640px) {
   .wjt { grid-template-columns: repeat(3, 1fr); }
   .wjb summary { grid-template-columns: minmax(0, 1fr) auto; }
-  .wjb__w, .wjb__st { display: none; }
+  .wjb__w, .wjb__st, .wjb__p, .wjb__sq, .wjb__head { display: none; }
 }
 `
