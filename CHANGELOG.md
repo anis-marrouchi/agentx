@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.262.1](https://github.com/anis-marrouchi/agentx/compare/v0.262.0...v0.262.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **hub:** avoid duplicate question cards ([#2192](https://github.com/anis-marrouchi/agentx/issues/2192)) ([75bc1f8](https://github.com/anis-marrouchi/agentx/commit/75bc1f89ccc5445b21327f1fd25b555df9dd6eee))
+
 ## [0.262.0](https://github.com/anis-marrouchi/agentx/compare/v0.261.0...v0.262.0) (2026-11-24)
 
 
