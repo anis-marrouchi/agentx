@@ -452,15 +452,18 @@ export const WALL_TASK_SCRIPT = String.raw`
       '<header class="wtask__head">' + avatar(t.agent) + '<div class="wtask__who"><div><b id="wtask-name">' + esc(who) + '</b> <span class="h">@' + esc(t.agent) + '</span></div>' +
         '<div class="wtask__meta">' + (t.ch ? '<span class="chip chip--ghost">' + esc(t.ch) + '</span>' : '') +
         '<span class="ax-badge ax-badge--mono" id="task-status">connecting…</span><span class="ax-mono" id="task-elapsed"></span>' +
-        '<span id="wtask-where"></span></div></div>' +
+        '<span id="wtask-where"></span></div>' +
+        '<div class="wtask__turn" id="wtask-turn" hidden></div></div>' +
       '</header>' +
       '<div id="wtask-ops"></div>' +
+      '<section class="wsess" id="wtask-before" aria-label="Earlier turns in this chat" hidden></section>' +
       '<section class="ax-task-page__ask" id="task-ask" hidden><div class="ax-task-page__ask-head"><span class="ax-ev__label ax-ev__label--soft">request</span>' +
         '<span class="ax-task-page__ask-who" id="task-ask-who"></span><span class="ax-task-page__ask-when" id="task-ask-when"></span></div>' +
         '<div class="ax-task-page__ask-body" id="task-ask-body"></div></section>' +
       '<div id="wtask-details"></div>' +
-      '<h2 class="wtask__h">Conversation</h2>' +
+      '<h2 class="wtask__h" id="wtask-conv-h">Conversation</h2>' +
       '<div class="ax-task-page__output wtask__out" id="task-output" aria-live="polite"></div>' +
+      '<section class="wsess" id="wtask-after" aria-label="Later turns in this chat" hidden></section>' +
       '<footer class="ax-task-page__compose wtask__steer" id="wtask-steer"' + (t.done ? ' hidden' : '') + '>' +
         '<textarea id="task-input" class="ax-task-page__input" rows="2" aria-label="Steer ' + esc(who) + '" placeholder="Message ' + esc(who) + ': it goes in as the next turn, the current one keeps running. ⌘/Ctrl+Enter sends."></textarea>' +
         '<div class="ax-task-page__actions"><span class="ax-task-page__hint" id="task-hint" role="status"></span>' +
@@ -503,6 +506,78 @@ export const WALL_TASK_SCRIPT = String.raw`
     if (taskKey(S.task) === taskKey(t)) S.taskDetail = { none: true };
   }
 
+  // --- The run's session (#2101 R4) ---
+  // A follow-up is one turn of a chat. Around the selected run's own stream
+  // the page shows the chat's other turns in order, from the server's session
+  // read (one agent, one channel, one chatId; GET /api/task/history
+  // ?session=1), with older turns paged behind "Load earlier turns".
+  function sessionUrl(t, before) {
+    return '/api/task/history?session=1&node=' + encodeURIComponent(t.node) + '&agent=' + encodeURIComponent(t.agent) +
+      '&task=' + encodeURIComponent(t.task) + (before ? '&before=' + encodeURIComponent(before) : '');
+  }
+  function sessionTurn(t, want) {
+    return tsTurnHtml(t, {
+      agent: nameOf(want.agent), md: markdownToHtml, plain: plainMarkerText,
+      when: function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.toLocaleString(); },
+      href: wallTaskHref({ id: t.id, channel: want.ch, message: t.message, startedAt: t.startedAt }, want.agent, want.node, !t.running),
+    });
+  }
+  function paintSession(want) {
+    var s = S.taskSession;
+    if (!s || s.key !== taskKey(want) || !$('wtask-before')) return;
+    var turn = function (t) { return sessionTurn(t, want); };
+    var before = tsBeforeHtml({ first: s.first, before: s.before, olderBefore: s.olderBefore, loading: s.loading, error: s.error }, turn);
+    $('wtask-before').innerHTML = before ? '<h2 class="wtask__h">Earlier in this chat</h2>' + before : '';
+    $('wtask-before').hidden = !before;
+    $('wtask-after').innerHTML = s.after.length ? '<h2 class="wtask__h">Later in this chat</h2>' + s.after.map(turn).join('') : '';
+    $('wtask-after').hidden = !s.after.length;
+    var label = tsTurnLabel(s.n, s.total);
+    $('wtask-turn').textContent = label;
+    $('wtask-turn').hidden = !label;
+    // The selected run: its request card says which turn it is, and its
+    // stream keeps its own heading.
+    var askLabel = document.querySelector('#task-ask .ax-ev__label');
+    if (askLabel) askLabel.textContent = label ? 'turn ' + s.n + ' · selected' : 'request';
+    $('task-ask').classList.toggle('is-selected', !!label);
+    $('wtask-conv-h').textContent = label ? 'Turn ' + s.n + ': its run' : 'Conversation';
+  }
+  function loadSession(want, before) {
+    var key = taskKey(want);
+    if (!before) S.taskSession = { key: key, before: [], after: [], first: null, olderBefore: null, n: 0, total: 0 };
+    var s = S.taskSession;
+    if (before) { s.loading = true; paintSession(want); }
+    fetch(sessionUrl(want, before), { headers: headers() })
+      .then(function (r) { if (!r.ok) throw new Error(r.status === 404 ? '' : 'HTTP ' + r.status); return r.json(); })
+      .then(function (p) {
+        if (S.taskSession !== s) return;
+        s.loading = false; s.error = '';
+        var turns = p.turns || [];
+        if (before) {
+          s.before = turns.concat(s.before);
+          if (s.before.length && s.before[0].n === 1) s.first = null;
+        } else {
+          var i = turns.findIndex(function (t) { return t.id === p.selected; });
+          s.before = i > 0 ? turns.slice(0, i) : [];
+          s.after = i >= 0 ? turns.slice(i + 1) : [];
+          s.n = i >= 0 ? turns[i].n : 0;
+          s.first = p.first || null;
+        }
+        s.total = p.session ? p.session.turns : 1;
+        s.olderBefore = p.olderBefore || null;
+        paintSession(want);
+      })
+      .catch(function (e) {
+        if (S.taskSession !== s) return;
+        s.loading = false; s.error = e.message ? 'Could not read this chat: ' + e.message : '';
+        paintSession(want);
+      });
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-session-older]');
+    if (!b || !S.task || !S.taskSession || S.taskSession.loading) return;
+    loadSession(S.task, b.getAttribute('data-session-older'));
+  });
+
   /** Is this run working now, by the live snapshot? */
   function runsNow(t) {
     var n = taskNode(t).n;
@@ -528,12 +603,14 @@ export const WALL_TASK_SCRIPT = String.raw`
       if (S.taskClose) { S.taskClose(); S.taskClose = null; }
       S.taskMounted = taskKey(want);
       S.taskDetail = null;
+      S.taskSession = null;
       if (!want) { $('wall-task').innerHTML = ''; return; }
       $('wall-task').innerHTML = taskSkeleton(want);
       S.taskClose = mountTaskPage($('wtask-root'), {
         href: function (id, channel) { return wallTaskHref({ id: id, channel: channel }, want.agent, want.node, false); },
         plain: plainMarkerText,
       });
+      loadSession(want);
     }
     if (!want) return;
     if (!S.taskDetail && S.live) loadTaskDetail(want);
@@ -727,5 +804,29 @@ export const WALL_TASK_CSS = `
 .wtask__pause { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .wtask__ro { margin: 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
 .ax-task-page__compose:not([hidden]) ~ .wtask__ro { display: none; }
-@media (max-width: 640px) { .wtask { padding: 10px 12px 18px; } .wtask__out { max-height: none; } }
+/* The run's session (#2101 R4): the chat's other turns, quieter than the
+   selected run, which keeps the full stream and the accent. */
+.wtask__turn[hidden], .wsess[hidden] { display: none; }
+.ax-task-page__ask.is-selected { border-color: var(--ax-accent); }
+.ax-task-page__ask.is-selected .ax-ev__label { color: var(--ax-accent); font-weight: 700; }
+.wtask__turn { margin-top: 4px; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-accent); }
+.wsess { display: flex; flex-direction: column; gap: 8px; }
+.wsess__turn {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); background: var(--ax-surface);
+}
+.wsess__ask { border-left: 3px solid var(--ax-border-2); padding-left: 10px; }
+.wsess__reply { border-left: 2px solid var(--ax-accent); padding-left: 10px; }
+.wsess__reply.is-err { border-color: var(--ax-err); }
+.wsess__reply.is-running { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+.wsess__head { display: flex; align-items: center; gap: 8px; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
+.wsess__who { font-weight: 600; }
+.wsess__when { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.wsess__body { margin-top: 4px; font-size: var(--ax-fs-sm); line-height: 1.55; color: var(--ax-text); word-break: break-word; max-height: 240px; overflow: auto; }
+.wsess__body > *:first-child { margin-top: 0; }
+.wsess__body > *:last-child { margin-bottom: 0; }
+.wsess__open { align-self: flex-end; font-size: var(--ax-fs-xs); }
+.wsess__gap { display: flex; justify-content: center; padding: 2px 0; }
+.wsess__none { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+@media (max-width: 640px) { .wtask { padding: 10px 12px 18px; } .wtask__out { max-height: none; } .wsess__turn { padding: 8px 10px; } }
 `
