@@ -1290,6 +1290,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Cross-node JSON proxy for the persisted task history (Recent Activities panel).
   // GET /api/task/history?node=<url>&agent=<id>&limit=N      → list
   // GET /api/task/history?node=<url>&agent=<id>&task=<tid>   → single record
+  // GET /api/task/history?node=<url>&agent=<id>&task=<tid>&session=1[&before=<tid>&limit=N]
+  //   → the run's session, its chat's turns in order (#2101 R4)
   if (method === "GET" && path === "/api/task/history") {
     const u = new URL(req.url || "/", "http://localhost")
     const nodeUrl = u.searchParams.get("node")
@@ -1300,7 +1302,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       sendJson(res, 400, { error: "node and agent query params required" })
       return
     }
-    await proxyTaskHistory(res, ctx, nodeUrl, agentId, taskId, limit)
+    const session = u.searchParams.get("session") === "1" && taskId
+      ? { before: u.searchParams.get("before"), limit: u.searchParams.get("limit") }
+      : null
+    await proxyTaskHistory(res, ctx, nodeUrl, agentId, taskId, limit, session)
     return
   }
 
@@ -2802,6 +2807,7 @@ async function proxyTaskHistory(
   agentId: string,
   taskId: string | null,
   limit: string,
+  session: { before: string | null; limit: string | null } | null = null,
 ): Promise<void> {
   const target = nodeUrl.replace(/\/+$/, "")
   const allowed = new Set<string>()
@@ -2818,7 +2824,12 @@ async function proxyTaskHistory(
   const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
-  const upstreamPath = taskId
+  const sq = new URLSearchParams()
+  if (session?.before) sq.set("before", session.before)
+  if (session?.limit) sq.set("limit", session.limit)
+  const upstreamPath = session && taskId
+    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/session${sq.size ? "?" + sq : ""}`
+    : taskId
     ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`
     : `/agents/${encodeURIComponent(agentId)}/tasks?limit=${encodeURIComponent(limit)}`
   try {
