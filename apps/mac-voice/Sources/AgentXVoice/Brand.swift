@@ -1,42 +1,92 @@
 import AppKit
 
-/// Acme design tokens, transcribed for AppKit.
+/// AgentX design tokens, transcribed for AppKit from the one token module
+/// the dashboard, the Hub and the phone share (src/daemon/ui/tokens.ts,
+/// #2101 / #2111): Orca's neutral look with AgentX blue, Geist type, 1px
+/// lines and a 10px radius. Each colour has its light and dark value, as
+/// `:root` and `[data-theme="dark"]` there, and follows the Mac's setting.
 ///
-/// Copied from the design system's `tokens/` rather than eyeballed, so the
-/// widget belongs to the same product as example.com instead of merely
-/// looking tidy. Two rules from that system shape most of what follows:
+/// Two rules kept from before:
 ///
 ///   - Mono is UPPERCASE with 0.06–0.08em tracking, and is reserved for
 ///     eyebrows, status and meta. Body stays sentence case.
 ///   - No emoji, ever. Texture comes from Unicode punctuation — · → ● ✓ —
 ///     and from a single accent colour, not from decoration.
 ///
-/// System colours were the obvious default and the wrong one: .systemRed
-/// and .systemGreen are macOS's voice, not Acme's, and they shift under
-/// the user's accent-colour setting.
+/// System colours stay out: .systemRed and .systemGreen are macOS's voice,
+/// not AgentX's, and they shift under the user's accent-colour setting.
 enum Brand {
 
-    // Teal accent and deep blue primary — the two colours the whole
-    // identity rests on.
-    static let accent = NSColor(srgbRed: 0.078, green: 0.722, blue: 0.651, alpha: 1)      // #14b8a6
-    static let accentDeep = NSColor(srgbRed: 0.059, green: 0.463, blue: 0.431, alpha: 1)  // #0f766e
-    static let primary = NSColor(srgbRed: 0.118, green: 0.227, blue: 0.541, alpha: 1)     // #1e3a8a
-    static let primaryBright = NSColor(srgbRed: 0.114, green: 0.306, blue: 0.847, alpha: 1) // #1d4ed8
+    /// A colour with its light and dark value, read when it is drawn.
+    static func pair(_ light: UInt32, _ dark: UInt32) -> NSColor {
+        NSColor(name: nil) { look in
+            rgb(look.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light)
+        }
+    }
 
-    static let ink = NSColor(srgbRed: 0.043, green: 0.078, blue: 0.075, alpha: 1)         // #0b1413
-    static let paper = NSColor(srgbRed: 0.980, green: 0.980, blue: 0.976, alpha: 1)       // #fafaf9
+    static func rgb(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
+                blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
+    }
 
-    /// Amber and rose for states the palette has no token for. Muted to
-    /// sit beside the teal rather than fight it.
-    static let warn = NSColor(srgbRed: 0.851, green: 0.596, blue: 0.180, alpha: 1)
-    static let alert = NSColor(srgbRed: 0.804, green: 0.400, blue: 0.376, alpha: 1)
+    // AgentX blue: links, the listening state and the default agent tint
+    // (--ax-accent / --ax-blue), and its deeper step (--ax-blue-d).
+    static let accent = pair(0x1f66e5, 0x4d94ff)
+    static let accentDeep = pair(0x1a56c4, 0x2979ff)
+    /// The primary button, the same in both themes (white on it is 5.1:1).
+    static let primary = rgb(0x1f66e5)
+    /// The focus ring and working state (--ax-ring).
+    static let primaryBright = pair(0x2979ff, 0x4d94ff)
+
+    static let ink = pair(0x0a0a0a, 0xf0f0f0)          // --ax-text
+    static let inkSoft = pair(0x525252, 0xc4c4c4)      // --ax-text-2
+    static let paper = pair(0xffffff, 0x0a0a0a)        // --ax-bg
+    static let surface = pair(0xffffff, 0x171717)      // --ax-surface
+
+    /// Amber, red and green: the token module's status colours.
+    static let warn = pair(0xf59e0b, 0xfbbf24)
+    static let alert = pair(0xe40014, 0xff6568)
+    static let alertInk = pair(0xb00010, 0xff8a8c)     // red that carries words
+    static let ok = pair(0x16a34a, 0x4ade80)
 
     enum Radius {
         static let sm: CGFloat = 6
         static let base: CGFloat = 10
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 18
+        static let md: CGFloat = 10
+        static let lg: CGFloat = 14
         static let pill: CGFloat = 999
+    }
+
+    // MARK: Geist
+
+    /// Geist and Geist Mono (SIL OFL 1.1, (c) 2023 Vercel; the licence is
+    /// next to them in the bundle's Resources). Registered for this app
+    /// only, at launch. Missing files leave the system font in place.
+    static func registerFonts(bundle: Bundle = .main) {
+        for name in ["Geist-Variable", "GeistMono-Variable"] {
+            guard let url = bundle.url(forResource: name, withExtension: "woff2")
+                ?? bundle.url(forResource: name, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
+
+    /// Geist for the answer card. The card's web view runs in its own
+    /// process, which does not see fonts registered here, and the daemon
+    /// does not serve the dashboard's /assets; so the bundled file goes in
+    /// as a data URL, read once. Empty without the file.
+    static let cardFontCSS: String = {
+        guard let url = Bundle.main.url(forResource: "Geist-Variable", withExtension: "woff2"),
+              let data = try? Data(contentsOf: url) else { return "" }
+        return "@font-face { font-family: 'Geist'; font-weight: 100 900; src: url(data:font/woff2;base64,\(data.base64EncodedString())) format('woff2'); }\n"
+    }()
+
+    /// Geist at a size and weight, or the system font when Geist is absent.
+    static func font(size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) -> NSFont {
+        let family = mono ? "Geist Mono" : "Geist"
+        let desc = NSFontDescriptor(fontAttributes: [.family: family])
+            .addingAttributes([.traits: [NSFontDescriptor.TraitKey.weight: weight]])
+        if let f = NSFont(descriptor: desc, size: size), f.familyName == family { return f }
+        return mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight) : NSFont.systemFont(ofSize: size, weight: weight)
     }
 
     /// `--nq-ease` — the single easing curve the system uses everywhere.
@@ -46,7 +96,7 @@ enum Brand {
     /// Meta type: mono, uppercase, tracked. Eyebrows and status only.
     static func meta(size: CGFloat = 10.5) -> [NSAttributedString.Key: Any] {
         [
-            .font: NSFont.monospacedSystemFont(ofSize: size, weight: .semibold),
+            .font: font(size: size, weight: .semibold, mono: true),
             .kern: size * 0.07,
         ]
     }
@@ -58,7 +108,7 @@ enum Brand {
     }
 
     static func body(size: CGFloat = 13, weight: NSFont.Weight = .medium) -> NSFont {
-        NSFont.systemFont(ofSize: size, weight: weight)
+        font(size: size, weight: weight)
     }
 
     /// The CSS the result card renders markdown into. Same tokens, so an
@@ -66,18 +116,18 @@ enum Brand {
     static let cardCSS = """
       :root {
         color-scheme: light dark;
-        --nq-accent: #14b8a6;
-        --nq-primary: #1e3a8a;
-        --nq-ink: #0b1413;
-        --nq-paper: #fafaf9;
+        --nq-accent: #1f66e5;
+        --nq-primary: #1f66e5;
+        --nq-ink: #0a0a0a;
+        --nq-paper: #ffffff;
         --nq-radius-sm: 6px;
         --nq-radius: 10px;
       }
       @media (prefers-color-scheme: dark) {
-        :root { --nq-ink: #f4f4f2; --nq-primary: #93c5fd; }
+        :root { --nq-accent: #4d94ff; --nq-ink: #f0f0f0; --nq-primary: #4d94ff; --nq-paper: #0a0a0a; }
       }
       body {
-        font: 13px/1.55 -apple-system, 'Geist', system-ui, sans-serif;
+        font: 13px/1.55 'Geist', -apple-system, system-ui, sans-serif;
         margin: 14px 14px 10px; color: canvastext; background: transparent;
         word-wrap: break-word; -webkit-font-smoothing: antialiased;
       }
@@ -92,7 +142,7 @@ enum Brand {
       li::marker { color: var(--nq-accent); }
       strong { font-weight: 640; }
       code {
-        font: 11.5px ui-monospace, 'Geist Mono', SFMono-Regular, monospace;
+        font: 11.5px 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
         background: color-mix(in srgb, var(--nq-accent) 12%, transparent);
         padding: 1.5px 5px; border-radius: var(--nq-radius-sm);
       }
@@ -117,7 +167,7 @@ enum Brand {
       table { border-collapse: collapse; margin: .5em 0; font-size: 12px; }
       th, td { padding: 4px 9px; border: 1px solid color-mix(in srgb, canvastext 14%, transparent); }
       th {
-        font: 10px ui-monospace, monospace; text-transform: uppercase;
+        font: 10px 'Geist Mono', ui-monospace, monospace; text-transform: uppercase;
         letter-spacing: .07em; text-align: left; font-weight: 600;
       }
     """

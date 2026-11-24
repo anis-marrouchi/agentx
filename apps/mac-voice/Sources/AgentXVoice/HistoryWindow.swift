@@ -159,14 +159,14 @@ struct HistoryView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Circle().fill(store.color(of: e.agentId)).frame(width: 8, height: 8)
-                Text(store.name(of: e.agentId)).font(.caption.weight(.semibold))
+                Text(store.name(of: e.agentId)).font(.axCaption.weight(.semibold))
                 Spacer()
-                Text(e.date, style: .time).font(.caption).foregroundStyle(.secondary)
-                Text(HistoryLogic.duration(e.durationMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(e.date, style: .time).font(.axCaption).foregroundStyle(.secondary)
+                Text(HistoryLogic.duration(e.durationMs)).font(.axCaption.monospacedDigit()).foregroundStyle(.secondary)
             }
             Text(e.question).fontWeight(.medium).lineLimit(2)
             Text(e.failed ? (e.error ?? "No answer") : e.answerPreview)
-                .font(.callout)
+                .font(.axCallout)
                 .foregroundStyle(e.failed ? Color(nsColor: Brand.alert) : .secondary)
                 .lineLimit(2)
         }
@@ -180,20 +180,20 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 6) {
                         Circle().fill(store.color(of: d.agentId)).frame(width: 10, height: 10)
-                        Text(store.name(of: d.agentId)).font(.headline)
+                        Text(store.name(of: d.agentId)).font(.axHeadline)
                         Spacer()
                         Text("Answered in \(HistoryLogic.duration(d.durationMs))")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.axCaption).foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("YOU SAID").font(.caption2.monospaced()).tracking(0.8).foregroundStyle(.secondary)
+                        Text("YOU SAID").font(.axMeta).tracking(0.8).foregroundStyle(.secondary)
                         Text(d.question).textSelection(.enabled)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ANSWER").font(.caption2.monospaced()).tracking(0.8).foregroundStyle(.secondary)
+                        Text("ANSWER").font(.axMeta).tracking(0.8).foregroundStyle(.secondary)
                         if let answer = d.answer, !answer.isEmpty {
                             Text(written(answer)).textSelection(.enabled)
-                            if d.truncated { Text("The answer is longer; open the task for all of it.").font(.caption).foregroundStyle(.secondary) }
+                            if d.truncated { Text("The answer is longer; open the task for all of it.").font(.axCaption).foregroundStyle(.secondary) }
                         } else {
                             Text(d.error ?? "No answer was recorded.").foregroundStyle(Color(nsColor: Brand.alert))
                         }
@@ -235,8 +235,8 @@ struct HistoryView: View {
     private var footer: some View {
         HStack {
             Text(store.error.isEmpty ? store.notice : store.error)
-                .foregroundStyle(store.error.isEmpty ? Color.secondary : Color(nsColor: .systemRed))
-                .font(.callout)
+                .foregroundStyle(store.error.isEmpty ? Color.secondary : Color(nsColor: Brand.alertInk))
+                .font(.axCallout)
             Spacer()
         }
         .padding(10)
@@ -257,7 +257,7 @@ final class HistoryWindow: NSObject {
                              backing: .buffered, defer: false)
             w.title = "AgentX Voice History"
             w.isReleasedWhenClosed = false
-            w.contentView = NSHostingView(rootView: HistoryView(store: store))
+            w.contentView = NSHostingView(rootView: HistoryView(store: store).font(.axBody).tint(Color(nsColor: Brand.accent)))
             w.center()
             window = w
         }

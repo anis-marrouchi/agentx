@@ -89,7 +89,7 @@ struct LookSection: View {
             Text("Assistant")
         } footer: {
             Text("The character is the orb grown into a small creature in the agent's colours. It hovers above the bottom edge of the screen, shows what the assistant is doing, and moves out of the pointer's way. It never takes a click.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.axCaption).foregroundStyle(.secondary)
         }
     }
 }
@@ -126,7 +126,7 @@ struct AnswerCardSection: View {
             Text("Answer in the pill")
         } footer: {
             Text("When an answer has a link, a picture or more to read than was spoken, the pill grows to show it. It closes this long after the answer has been spoken, but not while the pointer is over it. A longer answer scrolls.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.axCaption).foregroundStyle(.secondary)
         }
     }
 }

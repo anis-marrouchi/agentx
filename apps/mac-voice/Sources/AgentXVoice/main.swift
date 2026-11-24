@@ -1810,6 +1810,8 @@ final class App: NSObject, NSApplicationDelegate {
     }
 }
 
+// Geist before any window or the pill sets a font (#2107).
+Brand.registerFonts()
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { App() }
 app.delegate = delegate

@@ -153,7 +153,7 @@ final class AnswerView: NSView {
         // the daemon over loopback.
         hasFiles = !artifacts.isEmpty
         let files = Artifacts.html(artifacts, base: Config.daemonURL)
-        web.loadHTMLString(Markdown.page(Markdown.toHTML(source) + files, css: Brand.cardCSS + Artifacts.css),
+        web.loadHTMLString(Markdown.page(Markdown.toHTML(source) + files, css: Brand.cardFontCSS + Brand.cardCSS + Artifacts.css),
                            baseURL: Artifacts.pageBase(Config.daemonURL))
 
         links.arrangedSubviews.forEach { links.removeArrangedSubview($0); $0.removeFromSuperview() }
