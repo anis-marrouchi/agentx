@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.261.0](https://github.com/anis-marrouchi/agentx/compare/v0.260.0...v0.261.0) (2026-11-24)
+
+
+### Features
+
+* **desktop:** Electron desktop app with the Hub and a top-bar icon ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C3) ([#2189](https://github.com/anis-marrouchi/agentx/issues/2189)) ([91b890e](https://github.com/anis-marrouchi/agentx/commit/91b890ec6d5aeeb0b12275bba3e44b13709622fe))
+
 ## [0.260.0](https://github.com/anis-marrouchi/agentx/compare/v0.259.2...v0.260.0) (2026-11-24)
 
 
