@@ -60,8 +60,10 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 
 1. Select an agent in the Hub to open their chat in the middle pane.
 2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
-3. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
-4. Switch agents and return to the first agent to see the earlier conversation.
+   The box at the bottom says who the message goes to (**To** and the agent's name). Select **+** to attach files, the microphone to record, and the blue arrow (or Enter) to send.
+3. To run one message on another model, pick it in the box next to **+**. Agents on the claude-code engine offer Opus, Sonnet and Haiku; **(own)** is the agent's own model. Other agents run on their own model, and the box shows its name. The choice is kept for that agent in this browser. A model that differs from the conversation's starts a fresh session on it.
+4. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
+5. Switch agents and return to the first agent to see the earlier conversation.
 
 ## Read a post
 

@@ -85,8 +85,8 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <form class="hc__foot" id="hc-form">
-      <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
       ${wallChatInputHtml()}
+      <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
     </form>
   </section>`
 }
@@ -216,6 +216,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
 
   // --- Who answers ---
   var agentNames = {}, agentsKnown = false, agentIds = [];
+  // Each agent's engine and own model, for the composer's model picker (#2101 P7).
+  var agentInfo = {};
   function currentAgent() { return (thread && thread.agentId) || $('hc-agent').value || ''; }
   // The agent strip (#2101): one chip per agent, as on the phone. The
   // picker stays in the page as the strip's value and its fallback.
@@ -235,7 +237,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   });
   fetch('/api/agents', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var list = (Array.isArray(d) ? d : (d.agents || [])).filter(function (a) { return a && (a.id || a.name); });
-    list.forEach(function (a) { agentNames[a.id || a.name] = a.name || a.id; });
+    list.forEach(function (a) { agentNames[a.id || a.name] = a.name || a.id; agentInfo[a.id || a.name] = { tier: a.tier || '', model: a.model || '' }; });
     agentIds = list.map(function (a) { return a.id || a.name; });    $('hc-agent').innerHTML = list.length
       ? list.map(function (a) { var id = a.id || a.name; return '<option value="' + esc(id) + '">' + esc(agentNames[id]) + ' @' + esc(id) + '</option>'; }).join('')
       : '<option value="">No agents on this node</option>';
@@ -385,6 +387,9 @@ export const WALL_CHAT_SCRIPT = String.raw`
     });
     log.scrollTop = log.scrollHeight;
     paintStrip();
+    // The composer names who it goes to and offers that agent's models.
+    var hub = window.AXHubChat, cur = currentAgent();
+    if (hub && typeof hub.onAgent === 'function') hub.onAgent(cur, agentNames[cur] || cur, agentInfo[cur] || null);
     $('hc-who').textContent = agentsKnown || thread ? agentName() : 'Chat';
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }
@@ -455,6 +460,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       body: JSON.stringify({
         threadId: threadId || undefined, agentId: agent, node: node, message: text, context: pageContext(),
         attachments: files.length ? files : undefined, spoken: extra.spoken ? true : undefined,
+        model: (typeof api.model === 'function' && api.model()) || undefined,
       }),
     }).then(function (r) {
       if (r.status === 401) { $('hc-text').value = text; signedOut(); return; }
@@ -477,7 +483,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var api = window.AXHubChat = {
     send: send, headers: headers, agent: currentAgent,
     node: function () { return threadId ? threadNode || '' : ($('hc-node').hidden ? '' : $('hc-node').value || ''); },
-    attachments: null, onSent: null, onSpokenAnswer: null,
+    attachments: null, onSent: null, onSpokenAnswer: null, onAgent: null, model: null,
   };
   $('hc-form').addEventListener('submit', function (e) { e.preventDefault(); send($('hc-text').value); });
   $('hc-text').addEventListener('keydown', function (e) {
