@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.260.0](https://github.com/anis-marrouchi/agentx/compare/v0.259.2...v0.260.0) (2026-11-24)
+
+
+### Features
+
+* **app:** phone chat header, hold-to-talk sheet, Changes screen ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C1b) ([#2181](https://github.com/anis-marrouchi/agentx/issues/2181)) ([ee68974](https://github.com/anis-marrouchi/agentx/commit/ee68974f06b72424eabf3245fea3480bcfac67d7))
+* **hub:** composer card and chat look from the v3 mock ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P7) ([#2182](https://github.com/anis-marrouchi/agentx/issues/2182)) ([373ba58](https://github.com/anis-marrouchi/agentx/commit/373ba58865a394cf372a292d023f5c3b39f6e654))
+* **hub:** Needs you first, one live list, one post per item ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P2) ([#2183](https://github.com/anis-marrouchi/agentx/issues/2183)) ([dd28337](https://github.com/anis-marrouchi/agentx/commit/dd283378399e99e50556d696cb090a2d216c5079))
+* **task:** Task page shows the whole chat around a follow-up ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R4) ([#2180](https://github.com/anis-marrouchi/agentx/issues/2180)) ([11b946f](https://github.com/anis-marrouchi/agentx/commit/11b946f338fcef9af7e50c3a8988a2820fbf0bc2))
+* **voice:** Mac app windows and pill take the [#2111](https://github.com/anis-marrouchi/agentx/issues/2111) look and Geist ([#2107](https://github.com/anis-marrouchi/agentx/issues/2107), [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C2) ([#2184](https://github.com/anis-marrouchi/agentx/issues/2184)) ([bbdd5f6](https://github.com/anis-marrouchi/agentx/commit/bbdd5f6e6e2e5ec0b055c9096aad0e9415f895b5))
+
 ## [0.259.2](https://github.com/anis-marrouchi/agentx/compare/v0.259.1...v0.259.2) (2026-11-24)
 
 
