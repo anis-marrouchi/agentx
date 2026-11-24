@@ -47,8 +47,16 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .cx-log { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; gap: 16px; padding: 8px 0 16px; }
 #cx-empty { padding: 16px 4px; }
 .cx-msg { flex: none; padding: 12px 14px; font-size: 16px; line-height: 1.45; }
-.cx-user { max-width: 80%; background: var(--phone-bubble); border: 0; border-radius: 14px 14px 4px 14px; }
-.cx-agent { border-radius: 6px 20px 20px 20px; }
+/* The thread as on the Hub (#2101 P2, same as P7's mock V1 look in
+   wall-chat.css.ts): yours in a blue bubble on the right, the agent's
+   answer as plain text across the screen, no bubble. */
+.cx-user { max-width: 80%; background: var(--ax-blue-d); color: #fff; border: 0; border-radius: 16px 16px 4px 16px; padding: 9px 14px; }
+.cx-user a { color: #fff; text-decoration: underline; }
+.cx-agent { max-width: 100%; background: none; border: 0; border-radius: 0; padding: 0; line-height: 1.6; }
+.cx-agent .md strong, .cx-agent .md b { font-weight: 650; }
+.cx-agent .md code { background: var(--ax-surface-2); border-radius: 4px; padding: 0 4px; }
+.cx-agent .md pre { background: var(--ax-surface-2); border-radius: 10px; }
+.cx-agent .md pre code { background: none; padding: 0; }
 .cx-msg .md pre { border: 1px solid var(--ax-border); padding: 10px 12px; touch-action: pan-x; }
 .cx-msg .md table { touch-action: pan-x; }
 .cx-tools summary { min-height: 44px; }
