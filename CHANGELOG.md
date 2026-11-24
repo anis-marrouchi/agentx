@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.262.0](https://github.com/anis-marrouchi/agentx/compare/v0.261.0...v0.262.0) (2026-11-24)
+
+
+### Features
+
+* **hub:** chat header and agent questions as cards ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P5, P6) ([#2186](https://github.com/anis-marrouchi/agentx/issues/2186)) ([a266af9](https://github.com/anis-marrouchi/agentx/commit/a266af926eb2267982057eb8daf351dfc103fc19))
+* **hub:** right panel with Changes, Plan and File tabs ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R15) ([#2188](https://github.com/anis-marrouchi/agentx/issues/2188)) ([9ba7a2f](https://github.com/anis-marrouchi/agentx/commit/9ba7a2f7d72a3f81cd5976ba9b587f0603fc707d))
+
 ## [0.261.0](https://github.com/anis-marrouchi/agentx/compare/v0.260.0...v0.261.0) (2026-11-24)
 
 
