@@ -12,10 +12,11 @@ export function hubUsageText(windows: HubUsageWindow[], now: number): string {
   const label = (key: string, short: string): string => {
     const w = windows.find((item) => item.window === key && Number.isFinite(item.utilization))
     if (!w) return short + " not known"
+    // A reading taken before its window reset no longer says anything about
+    // current use, so we do not show its old percentage.
+    if (w.resetsAt && w.resetsAt <= now) return short + " not known (reset since last reading)"
     const used = Math.round(Math.max(0, Math.min(1, w.utilization)) * 100)
-    const reset = w.resetsAt && w.resetsAt > now
-      ? " · resets in " + until(w.resetsAt - now)
-      : ""
+    const reset = w.resetsAt ? " · resets in " + until(w.resetsAt - now) : ""
     return short + " " + used + "%" + reset
   }
   return label("five_hour", "5h") + " · " + label("seven_day", "7d")
