@@ -132,11 +132,12 @@ describe("the Hub page's left column", () => {
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Desk<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
     expect(renderWallPage().includes('class="hf__item hf__set"')).toBe(false)
   })
-  it("has the Mobile app page, with relative links only to this computer", () => {
+  it("has the Mobile app setup page without an unpaired app preview link", () => {
     expect(page).toContain('id="wall-mobile"')
     const m = hubMobilePageHtml()
     expect(m).toContain("agentx app pair")
-    expect(m).toContain('href="/app"')
+    expect(m).toContain('docs/dashboard/mobile-app.md')
+    expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
     const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml })

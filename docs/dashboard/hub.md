@@ -64,6 +64,8 @@ The top of the nav lists every agent of every connected machine once, by what it
 
 Select **Mobile app** at the bottom of the nav. The page says what the phone app does and how to install it in five steps: Tailscale on both devices, two `tailscale serve` commands, `agentx app pair --name "My phone"`, scan the QR code, add it to the home screen. The full guide is [Phone app](./mobile-app.md).
 
+![The Hub's Mobile app page with setup steps in a demo instance](/screenshots/wall/mobile-page.png)
+
 ## See the fleet at work in the sidebar
 
 **At work now**, under **Machines and runs** in the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
