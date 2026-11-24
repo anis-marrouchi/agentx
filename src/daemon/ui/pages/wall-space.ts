@@ -57,6 +57,8 @@ button, input, select { font-family: inherit; }
 .ax-wall__nav > .ax-wall__shortcut { display: none; }
 .ax-wall__navlbl { font-size: 11px; font-weight: 500; color: var(--ax-muted); text-transform: none; letter-spacing: 0; padding: 14px 10px 4px; margin: 0; }
 .ax-wall__item span { white-space: nowrap; }
+/* Wide nav: each row fills the column, so the open page's band is one width (#2101). */
+@media (min-width: 1181px) { .ax-wall__item { width: auto; } }
 /* New post opens the Creator (#1355); More is the phone bar's fifth button. */
 .ax-wall__morebtn { display: none; }
 .ax-wall__newpost { justify-content: center; margin: 12px 0 0; padding: 8px; font-size: 14px; width: 100%; }

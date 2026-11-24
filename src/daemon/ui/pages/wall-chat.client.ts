@@ -2,7 +2,8 @@
 //
 // Chat with an agent from the Hub. The chat is the Hub's middle pane
 // (#page=chat&agent=<id>, Orca's chat mode), in place of the page it was
-// opened from; ← or Escape goes back there. It opens from the Chat box in
+// opened from; ← or Escape goes back there. A bare Hub starts in chat.
+// Chat also opens from the Chat box in
 // the side column, the header's chat button under 1180 px, "/" and the
 // agent links (a profile's Chat, a Hub chat run in the left tree).
 //
@@ -81,7 +82,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__head">${close}<div class="hc__title"><b id="hc-who">Chat</b><small id="hc-sub">New conversation</small></div>
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
-    <div class="hc__to"><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
+    <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <form class="hc__foot" id="hc-form">
       <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
@@ -113,6 +114,12 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // the message's context names. pushed: the chat's hash is a history
   // entry of its own, so ← is the browser's Back.
   var fromHash = '', pushed = false;
+  var defaultChat = location.pathname === '${HUB_PATH}' && !location.hash && !location.search;
+  var feedHash = '#status=open&view=feed';
+  if (defaultChat && hist) {
+    fromHash = feedHash;
+    hist.replaceState(null, '', chatHash(''));
+  }
   function chatRoute(h) {
     var q = new URLSearchParams(String(h || '').replace(/^#/, ''));
     return q.get('page') === 'chat' ? { agent: q.get('agent') || '' } : null;
@@ -136,7 +143,10 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if ($('hc-btn')) $('hc-btn').setAttribute('aria-expanded', String(v));
     if (v && !guest) { paintCtx(); markSeen(); loadThread(threadId); if (!quiet) routeTo(currentAgent()); }
     // Closed: no stream; a pending answer is read every 10 s, for the dot.
-    if (!v && !guest) { closeStream(); if (!quiet) routeAway(); }
+    if (!v) {
+      if (!guest) closeStream();
+      if (!quiet) routeAway();
+    }
   }
   if ($('hc-btn')) $('hc-btn').addEventListener('click', function () { open(panel.hidden); });
   $('hc-close').addEventListener('click', function () { open(false); });
@@ -167,7 +177,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     else { open(true); $('hc-text').focus(); }
   });
   if (guest) {
-    if (chatRoute(location.hash)) open(true, true);
+    if (defaultChat || chatRoute(location.hash)) open(true, true);
     return;
   }
 
@@ -205,18 +215,35 @@ export const WALL_CHAT_SCRIPT = String.raw`
   });
 
   // --- Who answers ---
-  var agentNames = {}, agentsKnown = false;
+  var agentNames = {}, agentsKnown = false, agentIds = [];
   function currentAgent() { return (thread && thread.agentId) || $('hc-agent').value || ''; }
+  // The agent strip (#2101): one chip per agent, as on the phone. The
+  // picker stays in the page as the strip's value and its fallback.
+  function paintStrip() {
+    var s = $('hc-strip');
+    if (!s || !agentIds.length) return;
+    var cur = currentAgent();
+    s.innerHTML = agentIds.map(function (id) {
+      return '<button type="button" class="hc__chip" data-agent="' + esc(id) + '" aria-pressed="' + (id === cur) + '">' + esc(agentNames[id] || id) + '</button>';
+    }).join('');
+    s.hidden = false;
+  }
+  if ($('hc-strip')) $('hc-strip').addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-agent]') : null;
+    var id = b && b.getAttribute('data-agent');
+    if (id && id !== currentAgent()) switchAgent(id);
+  });
   fetch('/api/agents', { headers: headers() }).then(function (r) { return r.json(); }).then(function (d) {
     var list = (Array.isArray(d) ? d : (d.agents || [])).filter(function (a) { return a && (a.id || a.name); });
     list.forEach(function (a) { agentNames[a.id || a.name] = a.name || a.id; });
-    $('hc-agent').innerHTML = list.length
+    agentIds = list.map(function (a) { return a.id || a.name; });    $('hc-agent').innerHTML = list.length
       ? list.map(function (a) { var id = a.id || a.name; return '<option value="' + esc(id) + '">' + esc(agentNames[id]) + ' @' + esc(id) + '</option>'; }).join('')
       : '<option value="">No agents on this node</option>';
     agentsKnown = true;
     var r = chatRoute(location.hash);
     if (r && r.agent && r.agent !== (thread && thread.agentId)) switchAgent(r.agent);
     else if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
+    else if (defaultChat && !threadId && list.length) switchAgent(list[0].id || list[0].name);
     paintLog();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
@@ -357,6 +384,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
       stopFailed: !!p && p.taskId === stopFailed, runs: runs, fold: FOLD, open: openFolds, now: Date.now(),
     });
     log.scrollTop = log.scrollHeight;
+    paintStrip();
     $('hc-who').textContent = agentsKnown || thread ? agentName() : 'Chat';
     $('hc-sub').textContent = (thread && thread.title) || 'New conversation';
   }
@@ -566,6 +594,6 @@ export const WALL_CHAT_SCRIPT = String.raw`
   if (/(^#|&)chat=open(&|$)/.test(location.hash)) open(true);
   loadLast();
   // Opened by its link: #page=chat&agent=<id> (the agent once the list is in).
-  if (chatRoute(location.hash)) open(true, true);
+  if (defaultChat || chatRoute(location.hash)) open(true, true);
 })();
 ` + WALL_CHAT_INPUT_SCRIPT
