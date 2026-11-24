@@ -607,7 +607,8 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     const why = r.state === "waiting_owner" ? (r.attentionReason ?? r.question ?? "waiting on the owner")
       : r.state === "needs_attention" ? (r.attentionReason ?? "needs attention")
       : stall ?? "waiting on another agent"
-    blocked = { who: on.who, why: clean(why, 200), since: lastMoveAt }
+    // An owner wait keeps its due line and its question whole (#2085).
+    blocked = { who: on.who, why: clean(why, r.state === "waiting_owner" ? 600 : 200), since: lastMoveAt }
     blockedBy = blockerOf({ owner: r.askedAgent ?? r.agentId, project: project.name, handedTo, stepAgent, waitsOn: look }, deps.projects)
   }
   const last = [...runs].reverse().find((x) => x.agentId)
