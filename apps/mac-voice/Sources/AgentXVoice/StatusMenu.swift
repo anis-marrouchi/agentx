@@ -61,6 +61,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onHoldChanged: ((Bool) -> Void)?
     var onTargetChanged: ((String) -> Void)?
     var onPillChanged: ((Bool) -> Void)?
+    /// Open the Hub window (#2101 C3).
+    var onOpenHub: (() -> Void)?
     var onAnimatedOrbChanged: ((Bool) -> Void)?
     /// Hide the pill and stop speech, as its close button does.
     var onHidePill: (() -> Void)?
@@ -311,6 +313,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(action("Reset position", #selector(resetPosition), key: ""))
 
         menu.addItem(.separator())
+        menu.addItem(action("Open AgentX Hub", #selector(openHub), key: ""))
         menu.addItem(action("Settings…", #selector(openSettings), key: ","))
         menu.addItem(action("Dashboard…", #selector(openDashboardHome), key: "d"))
         menu.addItem(action("History…", #selector(openHistory), key: "y"))
@@ -395,6 +398,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func openSettings() { onSettings?() }
     @objc private func openDashboardHome() { openDashboard("/admin") }
     @objc private func openHistory() { HistoryWindow.shared.show() }
+    @objc private func openHub() { onOpenHub?() }
 
     private func openDashboard(_ path: String) {
         guard let url = URL(string: Config.dashboardURL + path) else { return }

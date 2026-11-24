@@ -64,6 +64,16 @@ Developers building from a source checkout can also run `apps/mac-voice/install.
 
 That's it. From now on, hold **Option–Space** from any app to ask again.
 
+## The Hub window
+
+AgentX Voice opens the Hub, AgentX's main dashboard page, in its own window, with a Dock icon. This window is the app: your agents, their work and the chat are all here.
+
+1. **Mac:** the Hub window opens when AgentX Voice starts. To open it again, click AgentX in the Dock, or choose **Open AgentX Hub** in the menu-bar menu.
+2. **Mac:** to talk to an agent from the window, click the mic next to **Send** in the chat. The first time, the Mac asks to use the microphone: click **Allow**.
+3. **Mac:** closing the window leaves AgentX Voice running in the menu bar. ⌥Space still talks.
+
+While the Hub window is on screen, the pill shows only while you talk with ⌥Space, while an answer is read out, for a call or an error. The Hub shows everything else.
+
 ## The floating pill
 
 The pill is the small bar that shows what the assistant is doing. It appears while the assistant listens, thinks or speaks, and goes away when it is done. The glowing ball at its left end is the **orb**, in the colours of the agent that is answering. Next to it, the pill names the agent and says what is happening.
@@ -520,6 +530,8 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 
 ## If something is wrong
 
+- **The Hub window says "The Hub did not open":** the dashboard is not running. **Terminal:** run `agentx daemon start`, then click **Try again**.
+- **No mic next to Send in the Hub window:** the app was built from an older AgentX. **Terminal:** run `agentx desktop install`.
 - **The windows show the Mac's system font, not Geist:** the app was built without its font files. **Terminal:** run `agentx desktop install` to rebuild it.
 - **`agentx desktop status` says the app is older than the CLI:** the copy that starts at login was built before your AgentX update, so recent fixes are missing. **Terminal:** run `agentx desktop install`.
 - **`agentx desktop status` says two or more copies are installed:** only the copy it names starts at login. Move the others to the Bin, so Spotlight and the permission settings show one AgentX Voice.

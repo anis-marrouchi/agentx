@@ -123,6 +123,11 @@ final class Panel: NSPanel {
     /// Stay on screen when idle. Off: the pill shows only while active.
     var alwaysVisible = false
 
+    /// The Hub window is on screen (#2101 C3): the Hub shows the agents,
+    /// notes and requests, so the pill shows only for a voice turn, a call,
+    /// an error or an answer card.
+    var hubShown = false
+
     /// Told what the orb is shown, so the character can show the same.
     var onLook: ((State, NSColor, [NSColor]?) -> Void)?
     /// Told when it comes on screen or leaves it, so a still character
@@ -260,6 +265,15 @@ final class Panel: NSPanel {
         /// Idle is an invitation and belongs in meta type; everything else
         /// is a running commentary and belongs in body type.
         var isMeta: Bool { if case .idle = self { return true }; return false }
+
+        /// A voice turn, a call or an error: what the pill still shows
+        /// next to the Hub window.
+        var isVoice: Bool {
+            switch self {
+            case .listening, .thinking, .speaking, .saying, .error, .ringing, .onCall: return true
+            case .idle, .working, .note: return false
+            }
+        }
 
         /// What the orb does: follows the voice, turns a ring, or pulses.
         /// Idle and errors hold it still.
@@ -714,7 +728,8 @@ final class Panel: NSPanel {
         // A caption shows like any words; away with none, the hint does not.
         let quiet = state.isMeta && !expanded && busyCount == 0 && newCount == 0
         let gone = reduced && !showsOrb
-        if dismissed || concealed || gone || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
+        let inHub = hubShown && !expanded && !state.isVoice
+        if dismissed || concealed || gone || inHub || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
         // After showing or hiding: a still character draws its bubble's
         // tail only while the bubble is on screen.
         onLook?(state, tint, colors)

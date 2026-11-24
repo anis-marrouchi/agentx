@@ -462,6 +462,12 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A click on the Dock icon brings the Hub window back (#2101 C3).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        HubWindow.shared.show()
+        return true
+    }
+
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
         retireOlderInstances()
@@ -587,6 +593,16 @@ final class App: NSObject, NSApplicationDelegate {
             Log.info("target agent: \(id)")
         }
         statusMenu.refresh()
+
+        // The Hub as the app window (#2101 C3): opened at launch, and the
+        // pill steps back while it is on screen.
+        HubWindow.shared.onShownChanged = { [weak self] shown in
+            guard let self else { return }
+            self.panel.hubShown = shown
+            self.panel.render(self.panel.current)
+        }
+        statusMenu.onOpenHub = { HubWindow.shared.show() }
+        if HubWindow.isApp { HubWindow.shared.show() }
 
         registerHotkeys()
         panel.onClick = { [weak self] in self?.toggleListening() }
