@@ -53,6 +53,7 @@
 // classic page wrote (#1449).
 
 import { markdownToHtml } from "@/utils/markdown-html"
+import { atList, atPickerHtml, atNextHtml, atFields } from "./wall-agent-templates"
 import { injectFns } from "../inject"
 import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
@@ -115,6 +116,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
+  ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
