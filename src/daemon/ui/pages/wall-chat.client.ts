@@ -85,6 +85,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
     <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__work" id="hc-work" aria-label="The request this agent works on" hidden></div>
+    <p class="hc__conn" id="hc-conn" role="status" hidden>Connection lost. Reconnecting…</p>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <div class="hc__tabview" id="hc-tabview" role="tabpanel" hidden></div>
     <form class="hc__foot" id="hc-form">
@@ -315,26 +316,39 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // The thread read stays as the fallback: slower while the stream is open,
   // and it settles the answer once the run is done.
   // stopFailed: the run whose Stop did not take, so a repaint keeps saying so.
-  var es = null, streamed = '', live = '', stopFailed = '';
+  // retry/retryTimer (#2101 R21): a dropped connection opens the stream
+  // again by itself, with a visible "reconnecting" line, a few times.
+  var es = null, streamed = '', live = '', stopFailed = '', retry = 0, retryTimer = 0;
+  var RETRY_MS = [1000, 2000, 4000, 8000, 15000, 15000], RETRY_MAX = RETRY_MS.length;
+  function connLine(on) { var c = $('hc-conn'); if (c) c.hidden = !on; }
   function closeStream() {
     if (es) { try { es.close(); } catch (e) { /* already closed */ } }
-    es = null; streamed = ''; live = '';
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = 0; }
+    es = null; streamed = ''; live = ''; retry = 0; connLine(false);
   }
   function stream(m) {
     var ES = window.EventSource;
     if (!ES || !threadNode || !m.taskId || !thread || streamed === m.taskId) return;
+    // A reopen after a drop keeps its count and its "reconnecting" line.
+    var tries = retry;
     closeStream();
+    retry = tries;
+    if (tries) connLine(true);
     streamed = m.taskId;
     var id = threadId;
     try {
       es = new ES('/api/task/stream?node=' + encodeURIComponent(threadNode) + '&agent=' + encodeURIComponent(thread.agentId) + '&task=' + encodeURIComponent(m.taskId));
     } catch (e) { es = null; return; }
     var mine = es;
-    function ended() { if (es === mine) { try { es.close(); } catch (e) { /* already closed */ } es = null; } loadThread(id); }
+    function ended() { if (es === mine) { try { es.close(); } catch (e) { /* already closed */ } es = null; } retry = 0; connLine(false); loadThread(id); }
+    // Something came through: the connection is back.
+    function heard() { if (es === mine) { retry = 0; connLine(false); } }
     es.addEventListener('start', function (ev) {
+      heard();
       try { var d = JSON.parse(ev.data); if (d.initial) { live = d.initial; paintLog(); } if (d.done) ended(); } catch (e) { /* not JSON: skip */ }
     });
     es.addEventListener('chunk', function (ev) {
+      heard();
       try {
         var text = JSON.parse(ev.data).text || '';
         // The run's end marker: 'end' follows, and the thread read settles it.
@@ -344,14 +358,27 @@ export const WALL_CHAT_SCRIPT = String.raw`
       } catch (e) { /* not JSON: skip */ }
     });
     es.addEventListener('end', ended);
-    // The run is unknown to its node (evicted, or the node restarted), or
-    // the connection dropped: stop here, not reconnect every few seconds.
-    // streamed keeps the id, so this run is not opened again; the thread
-    // read takes over at its quick pace.
-    es.addEventListener('error', function () {
+    // Two kinds of error (#2101 R21). The node's own 'event: error' carries
+    // data: the run is unknown to it (evicted, or the node restarted), so
+    // stop here; streamed keeps the id, so this run is not opened again.
+    // A dropped connection carries none: say so and open the stream again
+    // after a short wait, a few times. Either way the thread read takes
+    // over at its quick pace meanwhile, and settles the answer.
+    es.addEventListener('error', function (ev) {
       if (es !== mine) return;
       try { es.close(); } catch (e) { /* already closed */ }
       es = null;
+      var dropped = !(ev && ev.data), run = m.taskId;
+      if (dropped && retry < RETRY_MAX && id === threadId) {
+        connLine(true);
+        retryTimer = setTimeout(function () {
+          retryTimer = 0;
+          var p = pendingMsg();
+          // Still this conversation, still this run waiting: open it again.
+          if (id !== threadId || !p || p.taskId !== run || es) { connLine(false); return; }
+          streamed = ''; stream(p);
+        }, RETRY_MS[retry++]);
+      } else connLine(false);
       if (id === threadId) { clearTimeout(poll); poll = setTimeout(function () { loadThread(id); }, 1500); }
     });
   }
