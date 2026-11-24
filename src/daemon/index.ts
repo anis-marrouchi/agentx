@@ -1,3 +1,4 @@
+import { gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
 import { hookOutput as midTurnHookOutput } from "@/agents/mid-turn"
 import { heldLine } from "@/admission/wait-notice"
 import { handleLookup } from "@/daemon/lookup-api"
@@ -6594,10 +6595,13 @@ export class AgentXDaemon {
           }))
           return
         }
+        const agentWorkspace = agentId ? (this.config.agents[agentId] as any)?.workspace : undefined
         const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {
           root: process.cwd(),
           agentId,
           env: envScope,
+          // GitLab MCP servers whose key does not say "gitlab" (#2085 G1).
+          gitlabServers: gitlabServers({ ...(agentWorkspace ? workspaceMcpServers(agentWorkspace) : {}), ...(mcpServers ?? {}) }),
         })
         // Empty body == allow. The hook pipes our stdout straight to Claude Code.
         res.writeHead(200, { "Content-Type": "application/json" })

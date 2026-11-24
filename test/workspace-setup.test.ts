@@ -359,6 +359,17 @@ describe("destructive-action guardrails wiring", () => {
     expect(patchGuardrails(workspace, "coder-agent", "9", mcp)).toBe(false)
   })
 
+  it("guards every create alias of a GitLab server named by its package or the workspace .mcp.json (#2085)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    writeFileSync(resolve(workspace, ".mcp.json"), JSON.stringify({ mcpServers: { remote: { url: "https://gitlab.example.com/api/v4/mcp" } } }))
+    expect(patchGuardrails(workspace, "coder-agent", "9", { tracker: { command: "npx", args: ["@zereight/mcp-gitlab"] } } as any)).toBe(true)
+    const entry = readSettings().hooks.PreToolUse.find((e: any) => new RegExp(e.matcher).test("mcp__tracker__create_issue"))
+    const re = new RegExp(entry.matcher)
+    expect(re.test("mcp__remote__gitlab_create_issue")).toBe(true)
+    expect(re.test("mcp__tracker__create_issue_note")).toBe(false)
+  })
+
   it("the MCP allow-list hook denies when the daemon does not answer (#1698)", () => {
     // Port 9 (discard) has nothing listening: curl fails at once.
     const out = execFileSync("sh", ["-c", mcpGuardHookCommand("coder-agent", "9")], { input: "{}" }).toString()

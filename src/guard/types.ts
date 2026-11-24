@@ -142,6 +142,9 @@ export interface GuardInput {
   tool: string
   command?: string
   toolInput?: Record<string, unknown>
+  /** The agent's MCP servers that are GitLab servers, by key (#2085): a
+   *  create tool of one whose key does not say "gitlab" is still read. */
+  gitlabServers?: string[]
   filePath?: string
   /** Workspace cwd (from the PreToolUse payload) — base for `.env*` reads. */
   cwd?: string
@@ -170,4 +173,7 @@ export interface Verdict {
   mode?: GuardMode
   /** True when the verdict came from the fail-closed error path. */
   failClosed?: boolean
+  /** Issue creates the `issue-complete` check could not read: allowed,
+   *  and logged as `unchecked` (#2085). */
+  issueUnchecked?: string[]
 }

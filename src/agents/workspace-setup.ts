@@ -6,6 +6,7 @@ import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
+import { gitlabCreateMatcher, gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
 import { MCP_CONFIRM_WAIT_S } from "@/agent/mcp-confirm"
 import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
 
@@ -270,6 +271,7 @@ function guardPreToolUseHooks(
   agentId: string,
   daemonPort: string,
   mcp?: Record<string, McpPolicyFields>,
+  workspace?: string,
 ): unknown[] {
   const command = guardHookCommand(agentId, daemonPort)
   const entries: unknown[] = [
@@ -281,12 +283,15 @@ function guardPreToolUseHooks(
   if (mcpMatcher) {
     entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: MCP_GUARD_HOOK_TIMEOUT_S }] })
   }
-  const gitlabServers = Object.entries(mcp ?? {})
-    .filter(([name, spec]) => /gitlab/i.test(name) && !spec.allowTools?.length)
-    .map(([name]) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-  if (gitlabServers.length) {
+  // GitLab issue creates through MCP (#2085 G1): every GitLab server the
+  // agent's session loads (its own list and the workspace .mcp.json), under
+  // each name its package gives the create tool. A server with an allow
+  // list is already hooked above.
+  const servers: Record<string, McpPolicyFields> = { ...(workspace ? workspaceMcpServers(workspace) : {}), ...(mcp ?? {}) }
+  const gitlabMatcher = gitlabCreateMatcher(gitlabServers(servers).filter((name) => !servers[name]?.allowTools?.length))
+  if (gitlabMatcher) {
     entries.push({
-      matcher: `^mcp__(?:${gitlabServers.join("|")})__create_issue$`,
+      matcher: gitlabMatcher,
       hooks: [{
         type: "command",
         command: mcpGuardHookCommand(agentId, daemonPort, "AgentX guard did not answer; GitLab issue creation through MCP is refused until it does."),
@@ -384,7 +389,7 @@ function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "
   // PreToolUse — destructive-action guardrails. Runs the guard on every Bash
   // and Write/Edit call; in warn mode it audits without blocking. This is the
   // primary enforcement chokepoint (works even under bypassPermissions).
-  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort, (def as any).mcp)
+  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort, (def as any).mcp, def.workspace)
 
   // Notification hook — log when agent needs input
   hooks["Notification"] = [{
@@ -705,7 +710,7 @@ export function patchGuardrails(
     //    port or invocation style self-heals instead of duplicating.
     const hooks = (existing.hooks ??= {})
     const others = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse.filter((e: any) => !isGuardEntry(e)) : []
-    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp)]
+    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp, workspace)]
     if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
       hooks.PreToolUse = desired
       changed = true

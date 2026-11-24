@@ -30,12 +30,13 @@ const CHECKLIST_LINE = /^\s*[-*+]\s+\[ \]\s+\S/m
 
 /** What a new issue lacks, in a fixed order. Empty: complete.
  *  `hasMilestone` is the caller's own milestone argument; a `/milestone %…`
- *  quick action in the body counts too. */
-export function missingParts(description: string, hasMilestone: boolean): string[] {
+ *  quick action in the body counts too. `hasEstimate`: an estimate given
+ *  outside the body (glab's --time-estimate). */
+export function missingParts(description: string, hasMilestone: boolean, hasEstimate = false): string[] {
   const body = description ?? ""
   const missing: string[] = []
   if (!hasMilestone && !MILESTONE_ACTION.test(body)) missing.push("milestone")
-  if (!ESTIMATE_ACTION.test(body)) missing.push("/estimate")
+  if (!hasEstimate && !ESTIMATE_ACTION.test(body)) missing.push("/estimate")
   if (!CHECKLIST_LINE.test(body)) missing.push("checklist")
   return missing
 }
