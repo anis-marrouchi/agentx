@@ -5,7 +5,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { RequestStore } from "../src/requests/store"
 import { handleWallAction, isWallActionPath, isWallWrite, type WallActionDeps } from "../src/daemon/wall-actions"
-import { createWallForge, diffCommentsMessage, diffHomeOf, handleWallDiff, parseDiffComments, prLinksIn, PRS_TTL_MS, shaOf, WALL_DIFF_PATH, type WallDiffDeps, type WallForge } from "../src/daemon/wall-diff"
+import { createWallForge, diffCommentsMessage, diffHomeOf, handleWallDiff, handleWallDiffFile, parseDiffComments, prLinksIn, PRS_TTL_MS, shaOf, WALL_DIFF_PATH, type WallDiffDeps, type WallForge } from "../src/daemon/wall-diff"
 import { wallPost } from "../src/daemon/wall-api"
 
 // #2102: a post whose home is a GitHub or GitLab issue (or a PR or MR) finds
@@ -343,6 +343,57 @@ describe("POST diff-comments", () => {
       expect(p.startsWith("/api/admin/")).toBe(true)
       expect(isWallActionPath(p)).toBe(true)
     }
+  })
+})
+
+describe("GET diff-file: one file the PR changes, at its head (#2101 R15)", () => {
+  const SRC = "const a = 1\nconst b = 3\nexport { a, b }\n"
+  const withFile = (file?: WallForge["file"]): WallDiffDeps => ({ store, gitlabUrl: GITLAB, forge: { ...forge, ...(file ? { file } : {}) }, cache: new Map(), now: () => T0 })
+
+  it("reads the file at the PR's head and marks the lines it adds", async () => {
+    const reads: string[] = []
+    const r = await handleWallDiffFile({ id: "pr", path: "src/app.ts" }, withFile(async (h, path, sha) => { reads.push(`${h.key} ${path} ${sha}`); return SRC }))
+    expect(r).toEqual({ status: 200, body: { ref: "acme/shop#12", headSha: SHA_A, path: "src/app.ts", status: "modified", lines: ["const a = 1", "const b = 3", "export { a, b }"], truncated: false, changed: [2] } })
+    expect(reads).toEqual([`acme/shop#12 src/app.ts ${SHA_A}`])
+  })
+
+  it("reads only a file the PR changes, and refuses odd paths", async () => {
+    const file = vi.fn(async () => SRC)
+    expect((await handleWallDiffFile({ id: "pr", path: ".env" }, withFile(file))).status).toBe(400)
+    expect((await handleWallDiffFile({ id: "pr", path: "../src/app.ts" }, withFile(file))).status).toBe(400)
+    expect((await handleWallDiffFile({ id: "pr", path: "/etc/passwd" }, withFile(file))).status).toBe(400)
+    expect((await handleWallDiffFile({ id: "pr" }, withFile(file))).status).toBe(400)
+    expect((await handleWallDiffFile({ id: "nope", path: "src/app.ts" }, withFile(file))).status).toBe(404)
+    expect((await handleWallDiffFile({ id: "none", path: "src/app.ts" }, withFile(file))).status).toBe(400)
+    expect(file).not.toHaveBeenCalled()
+  })
+
+  it("answers a removed file with no lines, and says when the forge cannot give it", async () => {
+    forge.diff = async () => "diff --git a/old.ts b/old.ts\ndeleted file mode 100644\n--- a/old.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n"
+    const gone = await handleWallDiffFile({ id: "pr", path: "old.ts" }, withFile(async () => { throw new Error("not read") }))
+    expect(gone).toMatchObject({ status: 200, body: { status: "removed", lines: [] } })
+    forge.diff = async () => DIFF
+    const down = await handleWallDiffFile({ id: "pr", path: "src/app.ts" }, withFile(async () => { throw new Error("GitHub GET contents: 404") }))
+    expect(down).toEqual({ status: 502, body: { error: "GitHub did not give src/app.ts: GitHub GET contents: 404" } })
+    expect((await handleWallDiffFile({ id: "pr", path: "src/app.ts" }, withFile())).status).toBe(501)
+  })
+
+  it("on the network: GitHub's raw contents at the head, GitLab's raw file", async () => {
+    const calls: Array<{ url: string; headers: any }> = []
+    const f = (async (url: string, init?: any) => { calls.push({ url, headers: init?.headers }); return new Response("x\n", { status: 200 }) }) as unknown as typeof fetch
+    const forgeNet = createWallForge({ githubToken: "t", gitlabUrl: GITLAB, gitlabToken: "g" }, f)
+    await forgeNet.file!({ provider: "github", ref: { project: "acme/shop", number: 12, mr: true }, key: "acme/shop#12" }, "src/a b.ts", SHA_A)
+    await forgeNet.file!({ provider: "gitlab", ref: { project: "acme/web", number: 7, mr: true }, key: "acme/web!7" }, "src/a.ts", SHA_B)
+    expect(calls[0].url).toBe(`https://api.github.com/repos/acme/shop/contents/src/a%20b.ts?ref=${SHA_A}`)
+    expect(calls[0].headers).toMatchObject({ Authorization: "Bearer t", Accept: "application/vnd.github.raw+json" })
+    expect(calls[1].url).toBe(`${GITLAB}/api/v4/projects/acme%2Fweb/repository/files/src%2Fa.ts/raw?ref=${SHA_B}`)
+    expect(calls[1].headers).toMatchObject({ "PRIVATE-TOKEN": "g" })
+  })
+
+  it("is a Wall read under /api/admin/, GET only", async () => {
+    expect(isWallActionPath("/api/admin/wall/diff-file")).toBe(true)
+    expect(isWallWrite("GET", "/api/admin/wall/diff-file")).toBe(false)
+    expect((await handleWallAction("POST", "/api/admin/wall/diff-file", {}, deps))!.status).toBe(405)
   })
 })
 

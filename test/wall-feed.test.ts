@@ -38,8 +38,9 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown }; session?: Map<string, string> } = {}) {
-  const page = renderWallPage()
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown }; session?: Map<string, string>; chatAgent?: string } = {}) {
+  // chatAgent: the owner's page, with the Hub chat on that agent (#2101 R15).
+  const page = renderWallPage(opts.chatAgent ? { owner: true } : undefined)
   // As on the page: the value line helpers load before the Wall script.
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -136,7 +137,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   // With `timers`, the script's timeouts are kept for the test to run.
   const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXHubChat: opts.chatAgent ? { agent: () => opts.chatAgent } : undefined, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined,
       sessionStorage: opts.session ? { getItem: (k: string) => opts.session!.get(k) ?? null, setItem: (k: string, v: string) => { opts.session!.set(k, v) }, removeItem: (k: string) => { opts.session!.delete(k) } } : undefined }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, later,
@@ -3011,5 +3012,121 @@ describe("Diff view of a PR or MR post (#2102)", () => {
       ["/api/admin/wall/diff?id=r1", peer],
       ["/api/admin/wall/diff-comments", peer],
     ])
+  })
+})
+
+describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
+  const SHA = "c0ffee".padEnd(40, "0")
+  const DIFF = { prs: [{ ref: "acme/shop#12", title: "Fix", state: "open", headSha: SHA }], ref: "acme/shop#12", provider: "github", title: "Fix", state: "open", headSha: SHA, truncated: false, files: [
+    { file: "src/app.ts", status: "modified", hunks: [{ header: "@@ -1,2 +1,2 @@", lines: [
+      { kind: "ctx", oldLine: 1, newLine: 1, text: "const a = 1" },
+      { kind: "del", oldLine: 2, text: "const b = 2" },
+      { kind: "add", newLine: 2, text: "const b = 3" },
+    ] }] },
+    { file: "old.ts", status: "removed", hunks: [] },
+  ] }
+  const FILE = { ref: "acme/shop#12", headSha: SHA, path: "src/app.ts", status: "modified", lines: ["const a = 1", "const b = <3>", "export { a, b }"], truncated: false, changed: [2] }
+  const data = { ...WALL, posts: [
+    post("r1", "cx", "in_progress", { mergeRef: "acme/shop#12", updatedAt: NOW - 60e3, home: { kind: "link", link: "https://github.com/acme/shop/pull/12" } }),
+    post("r2", "cx", "waiting_owner", { updatedAt: NOW - 600e3 }),
+    post("r3", "cx", "done", { updatedAt: NOW }),
+    post("r4", "reviewer", "in_progress", { stepAgent: "cx", updatedAt: NOW - 1200e3 }),
+  ] }
+  const route = (url: string) => url.startsWith("/api/admin/wall/diff-file?") ? { status: 200, body: FILE } : { status: 200, body: DIFF }
+
+  it("is closed until something opens it, and the page keeps its full width", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: route })
+    await w.settle()
+    expect(w.el("wall-ctx").hidden).toBe(true)
+    expect(w.wall.classList.contains("cx-open")).toBe(false)
+    // The diff is no longer drawn under the post.
+    expect(w.el("wall-post").innerHTML).not.toContain('id="wdf"')
+  })
+
+  it("the post's Diff opens its Changes tab; a file's File button opens a File tab; × closes each", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: route })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    expect(w.el("wall-ctx").hidden).toBe(false)
+    expect(w.wall.classList.contains("cx-open")).toBe(true)
+    expect(w.el("wcx-tabs").innerHTML).toContain('<b>Changes</b> Post r1')
+    expect(w.el("wcx-body").innerHTML).toContain('<a href="#post=r1" title="Open the request">Post r1</a>')
+    const html = w.el("wdf").innerHTML
+    expect(html).toContain("Diff · acme/shop#12")
+    expect(html).toContain('<button type="button" class="wdf__open" data-cx="file" data-path="src/app.ts"')
+    // A removed file has no File button.
+    expect(html).not.toContain('data-path="old.ts"')
+
+    w.click({ "data-cx": "file", "data-path": "src/app.ts" })
+    await w.settle()
+    expect(w.calls.some((c) => c.url === "/api/admin/wall/diff-file?id=r1&path=src%2Fapp.ts&pr=acme%2Fshop%2312")).toBe(true)
+    const tabs = w.el("wcx-tabs").innerHTML
+    expect(tabs).toContain('<b>File</b> app.ts')
+    expect(tabs).toContain('aria-selected="true" data-cx="tab" data-i="1"')
+    const file = w.el("wcx-body").innerHTML
+    expect(file).toContain("<code>src/app.ts</code>")
+    expect(file).toContain('<tr class="is-add"><td class="wdf__n">2</td><td class="wdf__c">const b = &lt;3&gt;</td></tr>')
+    expect(file).toContain('<tr><td class="wdf__n">3</td><td class="wdf__c">export { a, b }</td></tr>')
+    expect(file).toContain("1 lines added or changed")
+
+    // Back to Changes, then close both: the width comes back.
+    w.click({ "data-cx": "tab", "data-i": "0" })
+    expect(w.el("wcx-body").innerHTML).toContain('<div id="wdf"></div>')
+    w.click({ "data-cx": "close", "data-i": "1" })
+    expect(w.el("wcx-tabs").innerHTML).not.toContain("<b>File</b>")
+    w.click({ "data-cx": "close", "data-i": "0" })
+    expect(w.el("wall-ctx").hidden).toBe(true)
+    expect(w.wall.classList.contains("cx-open")).toBe(false)
+  })
+
+  it("says why when the file cannot be read", async () => {
+    const w = openWall({ hash: "#post=r1", data, diff: (url) => url.startsWith("/api/admin/wall/diff-file?") ? { status: 502, body: { error: "GitHub did not give src/app.ts: 404" } } : { status: 200, body: DIFF } })
+    await w.settle()
+    w.click({ "data-wdf": "toggle" })
+    await w.settle()
+    w.click({ "data-cx": "file", "data-path": "src/app.ts" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toContain("File not available: GitHub did not give src/app.ts: 404")
+  })
+
+  it("the chat's work line names the open request the agent in view works on, with Changes and Plan", async () => {
+    const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [{ idx: 0, name: "Build the fix", agentId: "cx", state: "active", doneWhen: "PR open" }] } })
+    await w.settle()
+    const line = w.el("hc-work")
+    expect(line.hidden).toBe(false)
+    // Open ones it owns or holds a step of, newest first; never a closed one.
+    expect(line.innerHTML).toContain('<option value="r1" selected>Post r1</option><option value="r2">Post r2</option><option value="r4">Post r4</option>')
+    expect(line.innerHTML).not.toContain('value="r3"')
+    expect(line.innerHTML).toContain('data-cx="open" data-kind="changes" data-id="r1" aria-pressed="false" title="The changes in acme/shop#12">Changes</button>')
+
+    w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
+    await w.settle()
+    expect(w.el("wall-ctx").hidden).toBe(false)
+    expect(w.el("wcx-body").innerHTML).toContain("Build the fix")
+    expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r1" aria-pressed="true"')
+
+    // Picking a request with no forge home: Plan only.
+    w.fire("change", { target: { value: "r2", getAttribute: (k: string) => (k === "data-cx" ? "pick" : null) } })
+    expect(w.el("hc-work").innerHTML).not.toContain('data-kind="changes"')
+    expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r2"')
+
+    // A second press on the open tab closes it.
+    w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
+    expect(w.el("wall-ctx").hidden).toBe(true)
+  })
+
+  it("says so when the request has no plan steps", async () => {
+    const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [] } })
+    await w.settle()
+    w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toContain("This request has no plan steps. Its changes are under Changes.")
+  })
+
+  it("hides the work line when the agent works on nothing open", async () => {
+    const w = openWall({ data, chatAgent: "scout" })
+    await w.settle()
+    expect(w.el("hc-work").hidden).toBe(true)
   })
 })
