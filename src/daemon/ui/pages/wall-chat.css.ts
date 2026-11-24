@@ -52,13 +52,16 @@ export const WALL_CHAT_CSS = `
 .hc__chip:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
 .hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .hc__me { align-self: flex-end; max-width: 86%; }
-.hc__me .b { background: var(--phone-bubble); color: var(--ax-text); border-radius: 18px 18px 4px 18px; padding: 8px 13px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Bubbles as the phone app draws them (#2101 P2, app-redesign.css.ts
+   .cx-user / .cx-agent): yours grey with its tail bottom right, the
+   agent's on the surface with a border and its corner top left. */
+.hc__me .b { background: var(--phone-bubble); color: var(--ax-text); border-radius: 14px 14px 4px 14px; padding: 10px 14px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hc__them { max-width: 94%; min-width: 0; }
-.hc__them .b { background: var(--ax-surface-2); border-radius: 18px 18px 18px 4px; padding: 8px 13px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.hc__them .b { background: var(--ax-surface); border: var(--ax-border-w, 1px) solid var(--ax-border); border-radius: 6px 20px 20px 20px; padding: 10px 14px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .hc__them .b p { margin: 0 0 6px; } .hc__them .b p:last-child { margin: 0; }
 .hc__them .b ul, .hc__them .b ol { margin: 0 0 6px; padding-left: 18px; }
 .hc__them .b code { font-family: var(--ax-mono); font-size: 12.5px; background: var(--ax-bg); border-radius: 4px; padding: 0 4px; }
-.hc__them .b pre { overflow-x: auto; background: var(--ax-bg); border-radius: 8px; padding: 8px; }
+.hc__them .b pre { overflow-x: auto; background: var(--ax-surface-3); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 10px 12px; }
 .hc__them .b table { display: block; overflow-x: auto; border-collapse: collapse; }
 .hc__them .b th, .hc__them .b td { border: 1px solid var(--ax-border); padding: 3px 6px; }
 .hc__wait .b { color: var(--ax-muted); }
