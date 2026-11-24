@@ -109,7 +109,6 @@ button, input, select { font-family: inherit; }
   .ax-wall__aside { display: contents; }
   .ax-wall__aside > * { grid-column: 2; margin: 12px 16px 0; }
   .ax-wall__about { grid-row: 1; }
-  .ax-wall__nodes { grid-row: 2; }
   .ax-wall__main { grid-row: 3; min-height: 0; border-top: 1px solid var(--ax-border); margin-top: 12px; }
   .ax-wall__agents { grid-row: 4; margin-bottom: 16px; }
 }
@@ -129,12 +128,16 @@ button, input, select { font-family: inherit; }
   .ax-wall__more:not([hidden]) { display: block; }
   .ax-wall__newpost { position: fixed; right: 16px; bottom: 72px; width: 56px; height: 56px; margin: 0; border-radius: 50%; box-shadow: 0 2px 8px rgb(0 0 0 / 25%); }
   .ax-wall__logo { display: none; }
-  .ax-wall__item { padding: 10px; }
+  /* Each bar button says what it is under its icon (#2101 P2), as the
+     phone app's tabs do: 11 px words, the count on the icon. */
+  .ax-wall__nav > .ax-wall__item { padding: 6px 4px 4px; flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
+  .ax-wall__nav > .ax-wall__item[data-bar] span, .ax-wall__nav > .ax-wall__morebtn span { display: block; font-size: 11px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .ax-wall__nav > .ax-wall__item.is-on { box-shadow: none; background: none; color: var(--ax-accent); }
+  .ax-wall__nav > .ax-wall__item .ax-wall__n { right: calc(50% - 22px); top: 0; }
   .ax-wall__aside > *, .ax-wall__main { grid-column: 1; }
   .ax-wall__aside > * { margin: 10px 12px 0; padding: 10px 12px; }
   /* The feed first, as in the mockup; the bar's buttons reach the rest. */
   .ax-wall__main { grid-row: 1; border-left: 0; border-right: 0; border-top: 0; margin-top: 0; }
-  .ax-wall__nodes { grid-row: 2; }
   .ax-wall__agents { grid-row: 3; margin-bottom: 0; }
   .ax-wall__about { grid-row: 4; margin-bottom: 12px; }
 }

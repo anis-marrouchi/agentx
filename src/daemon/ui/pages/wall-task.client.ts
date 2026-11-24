@@ -637,10 +637,9 @@ export const WALL_TASK_SCRIPT = String.raw`
           try { S.live = JSON.parse(ev.data); } catch (e) { return; }
           liveRetry = 0;
           // Only Live and a Task page redraw on every snapshot; elsewhere the
-          // tree and Happening now do, and the feed keeps its place.
+          // tree does, and the feed keeps its place.
           var pg = S.post ? 'post' : S.page;
           if (pg === 'live' || pg === 'task') { render(); return; }
-          $('wall-nodes').innerHTML = happeningHtml();
           renderTree();
         });
         es.addEventListener('error', function (ev) {
