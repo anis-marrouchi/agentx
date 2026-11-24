@@ -411,6 +411,7 @@ describe("Running now does not wait on the feed (#1252)", () => {
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
     expect(w.el("wall-tree-body").innerHTML).toContain("Customer Desk")
+    expect(w.el("hs-running").textContent).toBe("1 agent running")
   })
 
   it("still draws Running now when the feed fails", async () => {
@@ -426,12 +427,12 @@ describe("Wall home first load (#1442)", () => {
     let answer: (v: unknown) => void = () => {}
     const w = openWall({ feed: new Promise((r) => { answer = r }) })
     await w.settle()
-    // The build line (#1444) asks its own small route as the script starts.
-    expect(w.calls.map((c) => c.url)).toEqual(["/api/node/build", "/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
+    // The build line and status bar ask their own small routes as the script starts.
+    expect(w.calls.map((c) => c.url)).toEqual(["/api/node/build", "/api/admin/hub/usage", "/api/live?quick=1", "/api/admin/wall?peer=fleet&days=7&quick=1"])
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.calls.map((c) => c.url).slice(3).sort()).toEqual(["/api/admin/approvals?all=1&answered=1", "/api/admin/numbers", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows", "/api/workflows/runs?summary=1&limit=100"])
+    expect(w.calls.map((c) => c.url).slice(4).sort()).toEqual(["/api/admin/approvals?all=1&answered=1", "/api/admin/numbers", "/api/admin/observability/budgets", "/api/admin/org", "/api/admin/people", "/api/admin/pictures", "/api/workflows", "/api/workflows/runs?summary=1&limit=100"])
   })
 
   it("shows a machine that is slow to answer as checking, not down, and asks again", async () => {
