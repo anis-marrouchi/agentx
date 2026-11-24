@@ -5,7 +5,8 @@
 //
 // A post whose home is a GitHub or GitLab issue, pull request or merge
 // request (p.mergeRef, wall-api.ts) has a Diff button in its action row. It
-// opens under the comment box: GET /api/admin/wall/diff?id=<post>, from the
+// opens in the Hub's right panel as its Changes tab (#2101 R15,
+// wall-context.client.ts): GET /api/admin/wall/diff?id=<post>, from the
 // node that keeps the post, gives the pull or merge requests found for it
 // and the diff of the first open one. With several, a small picker reads
 // another (&pr=<ref>); with none, the view says so. Each file has a header that folds it, each
@@ -57,12 +58,8 @@ export const WALL_DIFF_SCRIPT = String.raw`
     var d = diffOf(p.id);
     return '<button type="button" data-wdf="toggle" aria-expanded="' + (d.open ? 'true' : 'false') + '" title="The changes in ' + esc(p.mergeRef) + '">Diff' + (d.drafts.length ? ' (' + d.drafts.length + ')' : '') + '</button>';
   }
-  function diffHtml(p) {
-    if (!p.mergeRef) return '';
-    var d = diffOf(p.id);
-    if (!d.open) return '<div id="wdf"></div>';
-    return '<div id="wdf">' + diffInner(p, d) + '</div>';
-  }
+  /** The diff is drawn in the right panel (#2101 R15), not under the post. */
+  function diffHtml() { return ''; }
   function diffEditorHtml(d) {
     var e = d.editing;
     return '<tr class="wdf__ed"><td colspan="3"><textarea id="wdf-text" class="wdo__t" rows="3" maxlength="2000" placeholder="Your comment on this line">' + esc(e.text || '') + '</textarea>' +
@@ -107,10 +104,12 @@ export const WALL_DIFF_SCRIPT = String.raw`
       var adds = 0, dels = 0;
       (f.hunks || []).forEach(function (h) { h.lines.forEach(function (l) { if (l.kind === 'add') adds++; else if (l.kind === 'del') dels++; }); });
       var folded = !!d.folded[fi];
-      out += '<div class="wdf__f"><button type="button" class="wdf__fh" data-wdf="fold" data-f="' + fi + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
+      out += '<div class="wdf__f"><div class="wdf__fhr"><button type="button" class="wdf__fh" data-wdf="fold" data-f="' + fi + '" aria-expanded="' + (folded ? 'false' : 'true') + '">' +
         '<span class="wdf__fn">' + esc(f.oldFile ? f.oldFile + ' → ' + f.file : f.file) + '</span>' +
         (f.status !== 'modified' ? '<span class="chip">' + esc(f.status) + '</span>' : '') +
-        '<span class="wdf__ct"><b class="is-add">+' + adds + '</b> <b class="is-del">−' + dels + '</b></span></button>';
+        '<span class="wdf__ct"><b class="is-add">+' + adds + '</b> <b class="is-del">−' + dels + '</b></span></button>' +
+        // The whole file at the PR's head, in the panel's File tab.
+        (f.status === 'removed' || f.status === 'binary' ? '' : '<button type="button" class="wdf__open" data-cx="file" data-path="' + esc(f.file) + '" title="The whole file at the head commit">File</button>') + '</div>';
       if (!folded) {
         if (f.status === 'binary') out += '<p class="wdf__cut">Binary file: not shown.</p>';
         else {
@@ -140,12 +139,11 @@ export const WALL_DIFF_SCRIPT = String.raw`
     return out + '</section>';
   }
   function paintDiff() {
-    var p = findPost(S.post), el = $('wdf');
+    var t = cxActive(), p = t && t.kind === 'changes' ? findPost(t.id) : null, el = p && $('wdf');
+    paintDiffButton();
     if (!p || !el) return;
     var d = diffOf(p.id);
     el.innerHTML = d.open ? diffInner(p, d) : '';
-    var b = document.querySelector && document.querySelector('[data-wdf="toggle"]');
-    if (b) { b.outerHTML = diffButtonHtml(p); }
     if (d.editing && $('wdf-text') && $('wdf-text').focus) $('wdf-text').focus();
   }
   async function diffLoad(p, pr) {
@@ -187,13 +185,15 @@ export const WALL_DIFF_SCRIPT = String.raw`
     loadThread(p.id);
   }
   function diffAct(t) {
-    var p = findPost(S.post);
+    var what = t.getAttribute('data-wdf');
+    // The post's Diff button opens or closes its Changes tab in the panel.
+    var p = findPost(what === 'toggle' ? S.post : diffPostId());
     if (!p || !p.mergeRef) return;
-    var d = diffOf(p.id), what = t.getAttribute('data-wdf');
+    var d = diffOf(p.id);
     if (what === 'toggle') {
-      d.open = !d.open;
-      // With drafts, the PR they were written on, whatever comes first now.
-      if (d.open && !d.data && !d.loading) { diffLoad(p, d.at && d.at.ref); return; }
+      var at = cxFind('changes', p.id);
+      if (at >= 0 && at === S.cx.on) cxClose(at); else cxOpen('changes', p.id);
+      return;
     } else if (what === 'pr') {
       var ref = t.getAttribute('data-ref');
       if (d.drafts.length || !ref || (d.data && d.data.ref === ref)) return;
@@ -250,8 +250,8 @@ export const WALL_DIFF_SCRIPT = String.raw`
   });
   // What is typed in the box survives a repaint.
   document.addEventListener('input', function (ev) {
-    if (!ev.target || ev.target.id !== 'wdf-text' || !S.post) return;
-    var d = diffOf(S.post);
+    if (!ev.target || ev.target.id !== 'wdf-text' || !diffPostId()) return;
+    var d = diffOf(diffPostId());
     if (d.editing) d.editing.text = ev.target.value;
   });
 `

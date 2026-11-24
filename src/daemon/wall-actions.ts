@@ -7,7 +7,7 @@ import { readRequestSettings } from "@/requests/settings"
 import { COMMENT_MAX, DIFF_BATCH_MAX, OPEN_STATES, TEXT_MAX } from "@/requests/store"
 import { agentsOf, handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import { HUB_NAME } from "./ui/hub-name"
-import { diffCommentsMessage, diffTarget, handleWallDiff, parseDiffComments, shaOf, WALL_DIFF_PATH, type WallDiffDeps } from "./wall-diff"
+import { diffCommentsMessage, diffTarget, handleWallDiff, handleWallDiffFile, parseDiffComments, shaOf, WALL_DIFF_FILE_PATH, WALL_DIFF_PATH, type WallDiffDeps } from "./wall-diff"
 
 // --- What the owner does from a Wall post (#1316) ---
 //
@@ -25,6 +25,9 @@ import { diffCommentsMessage, diffTarget, handleWallDiff, parseDiffComments, sha
 //        the agent picks it up the same way.
 //   GET  /api/admin/wall/diff?id=<post>[&pr=<ref>]  the post's PRs or MRs
 //        and one's diff (#2102, wall-diff.ts). A read, beside the Space read.
+//   GET  /api/admin/wall/diff-file?id=<post>&path=<file>[&pr=<ref>]  one
+//        file the PR changes, whole, at its head: the Hub's File tab
+//        (#2101 R15, wall-diff.ts). A read.
 //   POST /api/admin/wall/diff-comments  {id, pr?, headSha?, comments: [{file, side, line, text, code?}]}
 //        line comments from the post's Diff view (#2102, wall-diff.ts): one
 //        message naming the pull or merge request and the commit read, each
@@ -220,7 +223,7 @@ export function isWallWrite(method: string, path: string): boolean {
 
 /** Is this one of the Wall's write routes, or the Space or diff read? */
 export function isWallActionPath(path: string): boolean {
-  return path === WALL_COMMENT_PATH || path === WALL_DIFF_PATH || path === WALL_DIFF_COMMENTS_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`) ||
+  return path === WALL_COMMENT_PATH || path === WALL_DIFF_PATH || path === WALL_DIFF_FILE_PATH || path === WALL_DIFF_COMMENTS_PATH || path === WALL_POST_PATH || path === WALL_CALL_PATH || path === WALL_SPACE_PATH || path.startsWith(`${WALL_SPACE_PATH}/`) ||
     path === WALL_RUN_ON_PATH
 }
 
@@ -300,6 +303,11 @@ export async function handleWallAction(method: string, path: string, body: Recor
   if (path === WALL_DIFF_PATH) {
     if (method !== "GET") return { status: 405, body: { error: "GET" } }
     return handleWallDiff(body, deps.diff)
+  }
+
+  if (path === WALL_DIFF_FILE_PATH) {
+    if (method !== "GET") return { status: 405, body: { error: "GET" } }
+    return handleWallDiffFile(body, deps.diff)
   }
 
   if (path === WALL_POST_PATH) {

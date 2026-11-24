@@ -61,6 +61,7 @@ import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
 import { WALL_CLOSE_SCRIPT } from "./wall-close.client"
 import { WALL_DIFF_SCRIPT } from "./wall-diff.client"
+import { WALL_CONTEXT_SCRIPT } from "./wall-context.client"
 import { WALL_RUN_ON_SCRIPT } from "./wall-run-on.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
@@ -117,6 +118,7 @@ ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
 ${WALL_CLOSE_SCRIPT}
 ${WALL_DIFF_SCRIPT}
+${WALL_CONTEXT_SCRIPT}
 ${WALL_RUN_ON_SCRIPT}
 ${WALL_COST_SCRIPT}
 ${WALL_PEOPLE_SCRIPT}
@@ -1435,6 +1437,9 @@ ${WALL_AGENTS_SCRIPT}
     renderNumbers(page);
     // The Jobs page (#1861): wall-jobledger.client.ts. It needs no feed.
     renderJobLedger(page);
+    // The right panel and the chat's work line (#2101 R15): wall-context.client.ts.
+    cxPaint();
+    cxPaintWork();
     document.querySelector('.ax-wall').classList.toggle('is-wide', S.view === 'list' || page === 'org');
     if (!onWall) ['wall-feed', 'wall-list', 'wall-failures', 'wall-projects', 'wall-jobs', 'wall-reviews', 'wall-events', 'wall-decide', 'wall-cost', 'wall-profile', 'wall-goal', 'wall-count'].forEach(function (id) { $(id).hidden = true; });
     // Needs you does not wait on the feed (#1440): its list is the inbox.

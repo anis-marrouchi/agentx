@@ -84,6 +84,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
     <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
+    <div class="hc__work" id="hc-work" aria-label="The request this agent works on" hidden></div>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <div class="hc__tabview" id="hc-tabview" role="tabpanel" hidden></div>
     <form class="hc__foot" id="hc-form">
@@ -249,6 +250,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     else if (thread && thread.agentId) $('hc-agent').value = thread.agentId;
     else if (defaultChat && !threadId && list.length) switchAgent(list[0].id || list[0].name);
     paintLog();
+    if (window.AXCtx) window.AXCtx.paintWork();
   }).catch(function () { $('hc-agent').innerHTML = '<option value="">Agents unavailable</option>'; });
   // The node picker shows only when there is more than one node to pick.
   // nodeList: the machines that answer, for the header's "computer" (#2101 P5).
@@ -290,6 +292,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
     else if (!threadId) remember($('hc-agent').value, null, null);
     $('hc-agent').value = agent;
     notSent = '';
+    // The work line follows the agent in view (wall-context.client.ts, #2101 R15).
+    if (window.AXCtx) window.AXCtx.paintWork();
     var m = mem()[agent];
     routeTo(agent);
     if (m && m.t) { setThread(m.t, m.n); thread = null; msgs = []; loaded = false; loadThread(threadId); return; }

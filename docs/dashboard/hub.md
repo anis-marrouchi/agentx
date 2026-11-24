@@ -59,11 +59,26 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 ## Chat with an agent
 
 1. Select an agent in the Hub to open their chat in the middle pane.
-2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
-   The box at the bottom says who the message goes to (**To** and the agent's name). Select **+** to attach files, the microphone to record, and the blue arrow (or Enter) to send.
+2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud. The box at the bottom says who the message goes to (**To** and the agent's name). Select **+** to attach files, the microphone to record, and the blue arrow (or Enter) to send.
 3. To run one message on another model, pick it in the box next to **+**. Agents on the claude-code engine offer Opus, Sonnet and Haiku; **(own)** is the agent's own model. Other agents run on their own model, and the box shows its name. The choice is kept for that agent in this browser. A model that differs from the conversation's starts a fresh session on it.
 4. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
 5. Switch agents and return to the first agent to see the earlier conversation.
+6. When the agent works on an open request, the line under the agents names it: **Working on** and its headline. Select **Changes** to see its pull or merge request, or **Plan** to see its steps, in the [panel on the right](#see-changes-plans-and-files-beside-the-page). When the agent works on more than one, pick one from the list. The line is not shown when the agent works on nothing open.
+
+## See changes, plans and files beside the page
+
+The Hub has no fixed column on the right. A panel opens there only when you ask for something to see beside the page, and the page takes the whole width again when you close it.
+
+1. **Browser:** open it in one of these ways:
+   - In a chat, select **Changes** or **Plan** on the **Working on** line.
+   - On an open post, select **Diff**.
+   - In **Changes**, select **File** next to a file's name. The whole file opens as it is on the pull or merge request's last commit, with the lines it adds or changes in green. A removed or binary file has no **File** button.
+2. Each thing you open is a tab at the top of the panel. Select a tab to see it again, or its **×** to close it. Select the request's name at the top of a tab to open the request.
+3. Close the last tab to give the width back to the page.
+
+On a narrow window the panel slides over the page from the right. On a phone it covers the page, above the bottom bar.
+
+The panel reads the same pull or merge requests, with the same tokens, as the **Diff** view, and line comments in **Changes** work as described in [Comment on the lines of a pull or merge request](#comment-on-the-lines-of-a-pull-or-merge-request). A file longer than 3,000 lines shows its first 3,000.
 
 The top of the chat shows the agent's letter, the computer it runs on and its engine, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
 
@@ -252,7 +267,7 @@ When a post's home is a GitHub or GitLab issue, pull request or merge request, i
 
 For a post on an issue, the Hub finds the pull or merge requests of its work: the ones of the same repository or project linked in the request itself (its home, proof, words, notes and the agent's last answer; a link to another repository is left out), the GitHub pull requests of the same repository that mention the issue, and the GitLab merge requests related to the issue. Open ones come first, and the list is kept for about a minute. If none is found, the view says **No pull or merge request names this issue yet**.
 
-1. **Browser:** open the post on its own and select **Diff**. The changes of the first open pull or merge request open under the comment box, one file at a time, with the head commit they were read at. When there are several, select one at the top to see its changes; send or remove your drafts first. Select a file's name to fold or unfold it. Each line shows its old and new line numbers, with added lines in green and removed lines in red. A binary file is listed but not shown.
+1. **Browser:** open the post on its own and select **Diff**. The changes of the first open pull or merge request open in the [panel on the right](#see-changes-plans-and-files-beside-the-page) as its **Changes** tab, one file at a time, with the head commit they were read at. When there are several, select one at the top to see its changes; send or remove your drafts first. Select a file's name to fold or unfold it. Each line shows its old and new line numbers, with added lines in green and removed lines in red. A binary file is listed but not shown.
 2. **Browser:** select a line. A box opens under it. Type your comment and select **Add**. The comment stays under its line as a draft, and the footer counts your drafts. Select **Edit** or **Remove** on a draft to change it.
 3. **Browser:** add as many comments as you need, on as many lines and files, then select **Send N comments to agent**.
 4. The agent that has the post gets them all in one message: the pull or merge request it is about and the commit you read, then each comment in the order you added it, with its file, line, side (**old** or **new**) and the code on that line. It is asked to address them on the branch, push, and reply when done. The message goes the same way as a **Comment**, so it shows in the post's **Thread**, and on a closed post it opens the post again.
@@ -1065,6 +1080,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Needs you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 47. Events: give an agent a subscription such as `{ "kinds": ["test:ping"], "delivery": "wake", "prompt": "Reply with agentx events emit test:pong" }`. **Terminal:** run `agentx events emit test:ping --summary "hello"`. **Browser:** select **Events**, then **Refresh** after a minute. The `test:ping` card says **1 wake: 1 ran**, and `test:pong` is under it, marked **in reply to test:ping**.
+48. Right panel: open the chat of an agent that works on an open request on a GitHub or GitLab issue. The **Working on** line names it. Select **Changes**: the panel opens on the right with its diff, and the chat narrows. Select **File** next to a file: a second tab shows the whole file with its new lines in green. Close both tabs: the chat takes the whole width again.
 
 ## If something is wrong
 

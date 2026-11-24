@@ -25,6 +25,13 @@ import { forgeHomeOf, type ForgeHome } from "./wall-forge-state"
 //        (one of them) or else the first open one, parsed into files, hunks
 //        and numbered lines (diff-parse.ts), at most DIFF_LINES_MAX lines.
 //        No PR found: prs is empty and ref null.
+//   GET  /api/admin/wall/diff-file?id=<request id>&path=<file>[&pr=<ref>]
+//        {ref, headSha, path, lines, truncated, changed, status}: one file
+//        the PR changes, whole, at the PR's head commit, for the Hub's File
+//        tab (#2101 R15). Only a file in the PR's own diff is read, so the
+//        route never reads anything else in the repository. changed: the
+//        new-side line numbers the PR adds or changes. A removed or binary
+//        file answers with no lines and its status.
 //   POST /api/admin/wall/diff-comments  {id, pr?, headSha?, comments: [{file, side, line, text, code?}]}
 //        the comments as one message to the agent that has the request,
 //        exactly as a comment on the post goes (wall-actions.ts). The
@@ -36,6 +43,11 @@ import { forgeHomeOf, type ForgeHome } from "./wall-forge-state"
 // comment is.
 
 export const WALL_DIFF_PATH = "/api/admin/wall/diff"
+export const WALL_DIFF_FILE_PATH = "/api/admin/wall/diff-file"
+/** The most lines of one file the File tab shows. */
+export const FILE_LINES_MAX = 3000
+/** The most characters of one file read. */
+const FILE_CHARS_MAX = 400_000
 /** The most diff lines one answer carries. */
 export const DIFF_LINES_MAX = 3000
 export const DIFF_COMMENTS_MAX = 50
@@ -82,6 +94,8 @@ export interface WallForge {
   linked: (issue: ForgeHome) => Promise<Array<PrInfo & { home: ForgeHome }>>
   /** The unified diff: the review gate's getDiff for its forge. */
   diff: (home: ForgeHome) => Promise<string>
+  /** One file's text at a commit of the PR's repository (#2101 R15). */
+  file?: (home: ForgeHome, path: string, sha: string) => Promise<string>
 }
 
 export interface WallDiffDeps {
@@ -192,6 +206,41 @@ export async function handleWallDiff(q: { id?: unknown; pr?: unknown }, deps: Wa
   return { status: 200, body: { prs: prs.map(publicPr), ref: pick.ref, provider: pick.home.provider, title: pick.title, state: pick.state, headSha: head?.headSha ?? pick.headSha, files, truncated } }
 }
 
+/** One file the PR changes, whole, at its head (WALL_DIFF_FILE_PATH). */
+export async function handleWallDiffFile(q: { id?: unknown; pr?: unknown; path?: unknown }, deps: WallDiffDeps | null | undefined): Promise<Reply> {
+  const id = str(q.id)
+  const path = str(q.path)
+  if (!id || !path) return { status: 400, body: { error: "send ?id=<post id>&path=<file>" } }
+  if (path.length > 500 || path.startsWith("/") || dotPath(path)) return { status: 400, body: { error: "not a file path" } }
+  const t = await diffTarget(id, str(q.pr), deps)
+  if ("status" in t) return t
+  const { home, pick } = t
+  if (!pick) return { status: 404, body: { error: "no pull or merge request names this post" } }
+  if (!deps!.forge.file) return { status: 501, body: { error: "this node cannot read files from the forge" } }
+  let text: string
+  let head: PrInfo | null
+  try {
+    ;[text, head] = await Promise.all([deps!.forge.diff(pick.home), deps!.forge.pull(pick.home).catch(() => null)])
+  } catch (e: any) {
+    return { status: 502, body: { error: `${forgeName(home)} did not give the diff: ${e?.message ?? e}` } }
+  }
+  const f = parseUnifiedDiff(text).find((x) => x.file === path)
+  if (!f) return { status: 400, body: { error: `${path} is not a file ${pick.ref} changes` } }
+  const sha = shaOf(head?.headSha ?? pick.headSha)
+  const base = { ref: pick.ref, headSha: sha, path, status: f.status, lines: [] as string[], truncated: false, changed: [] as number[] }
+  if (f.status === "removed" || f.status === "binary") return { status: 200, body: base }
+  if (!sha) return { status: 502, body: { error: `${forgeName(home)} did not give the head commit of ${pick.ref}` } }
+  let body: string
+  try {
+    body = await deps!.forge.file(pick.home, path, sha)
+  } catch (e: any) {
+    return { status: 502, body: { error: `${forgeName(home)} did not give ${path}: ${e?.message ?? e}` } }
+  }
+  const lines = body.slice(0, FILE_CHARS_MAX).replace(/\r?\n$/, "").split(/\r?\n/)
+  const changed = f.hunks.flatMap((h) => h.lines.filter((l) => l.kind === "add" && typeof l.newLine === "number").map((l) => l.newLine as number))
+  return { status: 200, body: { ...base, lines: lines.slice(0, FILE_LINES_MAX), truncated: body.length > FILE_CHARS_MAX || lines.length > FILE_LINES_MAX, changed } }
+}
+
 /** The forge reads, with this node's forge tokens (forgeConnectorsOf). */
 export function createWallForge(c: { githubToken?: string; gitlabUrl?: string | null; gitlabToken?: string }, fetchImpl: typeof fetch = fetch): WallForge {
   const gh = createReviewGateGitHub(async () => c.githubToken, fetchImpl)
@@ -242,6 +291,18 @@ export function createWallForge(c: { githubToken?: string; gitlabUrl?: string | 
       })
     },
     diff: (home) => (home.provider === "github" ? gh : gl).getDiff(home.ref.project, home.ref.number),
+    async file(home, path, sha) {
+      const enc = path.split("/").map(encodeURIComponent).join("/")
+      const [url, headers, what] = home.provider === "github"
+        ? [`https://api.github.com/repos/${home.ref.project}/contents/${enc}?ref=${sha}`,
+          { ...(c.githubToken ? { Authorization: `Bearer ${c.githubToken}` } : {}), Accept: "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28" }, "GitHub GET contents"]
+        : [`${glBase}/api/v4/projects/${encodeURIComponent(home.ref.project)}/repository/files/${encodeURIComponent(path)}/raw?ref=${sha}`,
+          { ...(c.gitlabToken ? { "PRIVATE-TOKEN": c.gitlabToken } : {}) }, "GitLab GET file"]
+      if (home.provider === "gitlab" && !glBase) throw new Error("no GitLab address")
+      const res = await fetchImpl(url, { headers: { "User-Agent": "AgentX", ...headers }, signal: AbortSignal.timeout(30_000) })
+      if (!res.ok) throw new Error(`${what}: ${res.status}`)
+      return res.text()
+    },
   }
 }
 
