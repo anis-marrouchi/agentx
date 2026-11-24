@@ -50,15 +50,22 @@ export const WALL_CHAT_CSS = `
 .hc__chip:hover { border-color: var(--ax-border-2); }
 .hc__chip[aria-pressed="true"] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
 .hc__chip:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
-.hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-.hc__me { align-self: flex-end; max-width: 86%; }
-.hc__me .b { background: var(--phone-bubble); color: var(--ax-text); border-radius: 18px 18px 4px 18px; padding: 8px 13px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
-.hc__them { max-width: 94%; min-width: 0; }
-.hc__them .b { background: var(--ax-surface-2); border-radius: 18px 18px 18px 4px; padding: 8px 13px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(16px, calc((100% - 720px) / 2)); display: flex; flex-direction: column; gap: 14px; }
+/* The thread (#2101 P7, mock V1): my messages in blue bubbles on the right,
+   the agent's answer as plain text across the column, no bubble. */
+.hc__me { align-self: flex-end; max-width: 76%; }
+.hc__me .b { background: var(--ax-blue-d); color: #fff; border-radius: 16px 16px 4px 16px; padding: 9px 14px; font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hc__me .b a { color: #fff; text-decoration: underline; }
+.hc__me .b code { background: rgba(255,255,255,.18); color: #fff; }
+.hc__me .hc__meta { text-align: right; }
+.hc__them { max-width: 100%; min-width: 0; }
+.hc__them .b { background: none; padding: 0; font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.hc__them .b strong, .hc__them .b b { font-weight: 650; }
 .hc__them .b p { margin: 0 0 6px; } .hc__them .b p:last-child { margin: 0; }
 .hc__them .b ul, .hc__them .b ol { margin: 0 0 6px; padding-left: 18px; }
-.hc__them .b code { font-family: var(--ax-mono); font-size: 12.5px; background: var(--ax-bg); border-radius: 4px; padding: 0 4px; }
-.hc__them .b pre { overflow-x: auto; background: var(--ax-bg); border-radius: 8px; padding: 8px; }
+.hc__them .b code { font-family: var(--ax-mono); font-size: 12.5px; background: var(--ax-surface-2); border-radius: 4px; padding: 0 4px; }
+.hc__them .b pre { overflow-x: auto; background: var(--ax-surface-2); border: 1px solid var(--ax-border); border-radius: 10px; padding: 10px 12px; }
+.hc__them .b pre code { background: none; padding: 0; }
 .hc__them .b table { display: block; overflow-x: auto; border-collapse: collapse; }
 .hc__them .b th, .hc__them .b td { border: 1px solid var(--ax-border); padding: 3px 6px; }
 .hc__wait .b { color: var(--ax-muted); }
@@ -70,7 +77,7 @@ export const WALL_CHAT_CSS = `
 .hc__live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-green); }
 .hc__stop, .hc__run { font: inherit; font-weight: 700; color: var(--ax-accent); background: none; border: 0; padding: 0; margin-left: 10px; cursor: pointer; text-decoration: none; }
 .hc__stop[disabled] { opacity: .45; cursor: default; }
-.hc__err .b { background: var(--ax-red-t); color: var(--ax-red-ink); }
+.hc__err .b { background: var(--ax-red-t); color: var(--ax-red-ink); border-radius: 12px; padding: 8px 13px; }
 .hc__err .b b { display: block; margin-bottom: 2px; }
 .hc__btnrow { display: flex; gap: 8px; }
 .hc__btnrow .ax-btn { font-size: 12.5px; padding: 3px 12px; }
@@ -82,22 +89,45 @@ export const WALL_CHAT_CSS = `
 .hc__guest { margin: auto 8px; text-align: center; color: var(--ax-muted); font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .hc__guest svg { width: 30px; height: 30px; }
 .hc__guest b { color: var(--ax-text); font-size: 17px; }
-.hc__foot { border-top: 1px solid var(--ax-border); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 7px; }
-.hc__sends { font-size: 12px; color: var(--ax-muted); }
+.hc__foot { padding: 4px max(16px, calc((100% - 720px) / 2)) 12px; display: flex; flex-direction: column; gap: 6px; }
+.hc__sends { font-size: 11.5px; color: var(--ax-muted); padding: 0 4px; }
 .hc__sends summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc__sends code { display: block; max-height: 30vh; overflow: auto; margin-top: 6px; padding: 8px 10px; background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: 10px; font-family: var(--ax-mono); font-size: 11.5px; color: var(--ax-text); white-space: pre-wrap; }
-.hc__row { display: flex; gap: 8px; align-items: flex-end; }
-.hc__row textarea { flex: 1; min-width: 0; resize: none; font: inherit; font-size: 14.5px; padding: 9px 14px; border-radius: 20px; border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); min-height: 40px; max-height: 140px; }
-.hc__row .ax-btn { height: 36px; }
-.hc__row .ax-btn[disabled] { opacity: .45; }
+/* The composer (#2101 P7, mock V1): one rounded card, "To <agent>" on top,
+   the message, then attach · model · mic · send. Blue glow while recording. */
+.hc__comp { border: 1px solid var(--ax-border-2); border-radius: 16px; background: var(--ax-surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 1px 0 var(--ax-border), 0 8px 24px rgba(10,20,40,.06); transition: border-color .15s, box-shadow .15s; }
+.hc__comp:focus-within { border-color: var(--ax-blue-e); }
+.hc__comp.is-live { border-color: var(--ax-blue-d); box-shadow: 0 0 0 4px var(--ax-blue-t); }
+.hc__compto { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ax-muted); min-height: 0; }
+.hc__compto:not(:has(:not([hidden]))) { display: none; }
+.hc__totag { display: inline-flex; align-items: center; gap: 6px; background: var(--ax-blue-t); color: var(--ax-text); border-radius: 999px; padding: 2px 9px 2px 3px; font-weight: 600; }
+.hc__totag[hidden] { display: none; }
+.hc__av { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: var(--ax-blue-d); color: #fff; font: 700 10.5px var(--ax-font, inherit); }
+.hc__comp textarea { width: 100%; resize: none; font: inherit; font-size: 14.5px; line-height: 1.45; padding: 4px 2px 6px; border: 0; outline: 0; background: none; color: var(--ax-text); min-height: 30px; max-height: 160px; }
+.hc__comp textarea::placeholder { color: var(--ax-muted); }
+.hc__row { display: flex; gap: 8px; align-items: center; }
+.hc__model { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ax-muted); background: none; border: 0; border-radius: 8px; padding: 4px 6px; cursor: pointer; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc__model:hover { background: var(--ax-surface-2); color: var(--ax-text); }
+.hc__model--own { cursor: default; font-family: var(--ax-mono); font-weight: 500; font-size: 11.5px; }
+.hc__model--own:hover { background: none; color: var(--ax-muted); }
+.hc__model[hidden] { display: none; }
+.hc__send { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; border: 0; background: var(--ax-blue-d); color: #fff; cursor: pointer; }
+.hc__send svg { width: 17px; height: 17px; }
+.hc__send:hover { background: var(--ax-blue); }
+.hc__send[disabled] { opacity: .45; cursor: default; }
 
 /* The transcript (#2101 R14): work folded under "Worked for …", one line a step. */
 .hc__them > [data-hc-live] { display: flex; flex-direction: column; gap: 8px; }
 .hc__fold { font-size: 13px; color: var(--ax-muted); margin: 0 0 6px; }
 .hc__fold summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-weight: 600; }
 .hc__fold summary::-webkit-details-marker { display: none; }
-.hc__fold summary::before { content: "›"; display: inline-block; transition: transform .15s; }
-.hc__fold[open] summary::before { transform: rotate(90deg); }
+.hc__fold summary { font-weight: 500; }
+/* "⚡ Worked for 38s ›", as in the mock: a bolt before, the chevron after. */
+.hc__fold summary::before { content: ""; flex: none; align-self: center; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--hc-bolt) center / contain no-repeat; mask: var(--hc-bolt) center / contain no-repeat; }
+.hc__fold summary::after { content: "›"; display: inline-block; transition: transform .15s; order: 1; }
+.hc__fold summary .hc__foldbad, .hc__fold summary .hc__foldnow { order: 2; }
+.hc__fold[open] summary::after { transform: rotate(90deg); }
+.hc { --hc-bolt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M13 2 4 14h7l-1 8 9-12h-7z'/%3E%3C/svg%3E"); }
 .hc__fold.is-live summary { color: var(--ax-green-d); }
 .hc__foldnow { font-weight: 400; color: var(--ax-muted); font-family: var(--ax-mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .hc__foldbad { color: var(--ax-red-ink); }
@@ -113,8 +143,10 @@ export const WALL_CHAT_CSS = `
 .hc__files--draft { justify-content: flex-start; margin: 0; }
 .hc__file button { font: inherit; background: none; border: 0; color: var(--ax-muted); padding: 0 0 0 6px; cursor: pointer; }
 .hc__file.is-wait { opacity: .6; }
-.hc__tool { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--ax-border-2); background: none; color: var(--ax-text); cursor: pointer; }
-.hc__tool svg { width: 18px; height: 18px; }
+.hc__tool { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--ax-border); background: none; color: var(--ax-muted); cursor: pointer; }
+.hc__tool svg { width: 17px; height: 17px; }
+.hc__tool--mic { margin-left: auto; }
+.hc__tool--mic[hidden] + .hc__send { margin-left: auto; }
 .hc__tool:hover { background: var(--ax-surface); }
 .hc__tool.is-on { background: var(--ax-red-t); color: var(--ax-red-ink); border-color: transparent; }
 .hc__voice { margin: 0; font-size: 12.5px; color: var(--ax-muted); }
@@ -136,6 +168,8 @@ export const WALL_CHAT_CSS = `
   .hc-btn { margin-left: auto; }
   .hc__back { display: block; }
   .hc__x { display: none; }
-  .hc__foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .hc__foot { padding: 4px 10px calc(10px + env(safe-area-inset-bottom)); }
+  .hc__log { padding: 14px 12px; }
+  .hc__me { max-width: 86%; }
 }
 `

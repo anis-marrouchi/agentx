@@ -14,21 +14,37 @@
 // It talks to the chat (wall-chat.client.ts) through window.AXHubChat:
 // send(text, {spoken}), node(), agent(), headers(); it sets attachments(),
 // onSent() and onSpokenAnswer(answer) there.
+//
+// The look (#2101 P7, mock V1 in docs/design/2101/v3): one rounded card,
+// "To <agent>" on top, the message, then a row of round buttons: attach,
+// the model picker, the mic and the send arrow. It glows blue while the
+// mic records. The chat calls onAgent(id, name, {tier, model}) whenever
+// the agent in view changes; model() is the model picked for it, empty
+// for the agent's own (daemon/assistant-model.ts checks it again).
+
+import { MODEL_CHOICES } from "../../assistant-model"
 
 /** Files one message may carry (assistant-upload.ts ATTACH_MAX). */
 const ATTACH_MAX = 5
 
 const ICON_CLIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"/></svg>'
+const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'
+const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'
 
-/** The composer row: files, the message, the mic and Send. */
+/** The composer card: who it goes to, files, the message, then attach,
+ *  the model, the mic and the send arrow. */
 export function wallChatInputHtml(): string {
-  return `<div class="hc__files hc__files--draft" id="hc-files" hidden></div>
-      <p class="hc__voice" id="hc-voice" role="status" hidden></p>
-      <div class="hc__row"><button type="button" class="hc__tool" id="hc-attach" aria-label="Attach files" title="Attach files">${ICON_CLIP}</button><input type="file" id="hc-file" multiple hidden>` +
+  return `<div class="hc__comp" id="hc-comp">
+      <div class="hc__compto"><span class="hc__totag" id="hc-to-tag" hidden><span class="hc__av" id="hc-to-av" aria-hidden="true"></span><span id="hc-to">To</span></span></div>
+      <div class="hc__files hc__files--draft" id="hc-files" hidden></div>` +
     `<textarea id="hc-text" rows="1" maxlength="4000" placeholder="Message…" aria-label="Message"></textarea>` +
-    `<button type="button" class="hc__tool" id="hc-mic" aria-label="Record a voice message" aria-pressed="false" title="Record a voice message" hidden>${ICON_MIC}</button>` +
-    `<button class="ax-btn" id="hc-send" type="submit">Send</button></div>`
+    `<div class="hc__row"><button type="button" class="hc__tool" id="hc-attach" aria-label="Attach files" title="Attach files">${ICON_PLUS}</button><input type="file" id="hc-file" multiple hidden>` +
+    `<select class="hc__model" id="hc-model" aria-label="Model" title="Model for this message" hidden></select><span class="hc__model hc__model--own" id="hc-model-own" hidden></span>` +
+    `<button type="button" class="hc__tool hc__tool--mic" id="hc-mic" aria-label="Record a voice message" aria-pressed="false" title="Record a voice message" hidden>${ICON_MIC}</button>` +
+    `<button class="hc__send" id="hc-send" type="submit" aria-label="Send" title="Send (Enter)">${ICON_SEND}</button></div>
+    </div>
+    <p class="hc__voice" id="hc-voice" role="status" hidden></p>`
 }
 
 export const WALL_CHAT_INPUT_SCRIPT = String.raw`
@@ -38,6 +54,8 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-attach')) return;
   var ATTACH_MAX = ${ATTACH_MAX};
+  var MODEL_CHOICES = ${JSON.stringify(MODEL_CHOICES)};
+  var MODEL_KEY = 'ax-hub-chat-model';
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
   }
@@ -47,6 +65,47 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
     p.hidden = !text;
     p.className = 'hc__voice' + (err ? ' is-err' : '');
   }
+
+  // --- Who it goes to, and on which model (#2101 P7) ---
+  function readModels() { try { return JSON.parse(localStorage.getItem(MODEL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function label(n) { n = String(n || ''); return n ? n.charAt(0).toUpperCase() + n.slice(1) : ''; }
+  var shownAgent = null;
+  api.onAgent = function (id, name, info) {
+    var tag = $('hc-to-tag');
+    tag.hidden = !id;
+    $('hc-to').textContent = 'To ' + (name || id || '');
+    $('hc-to-av').textContent = String(name || id || '?').charAt(0).toUpperCase();
+    $('hc-text').setAttribute('placeholder', id ? 'Message ' + (name || id) + '…' : 'Message…');
+    var key = id + '|' + (info ? info.tier + '|' + info.model : '');
+    if (key === shownAgent) return;
+    shownAgent = key;
+    var choices = (info && MODEL_CHOICES[info.tier]) || [];
+    var own = (info && info.model) || '';
+    var sel = $('hc-model'), mine = $('hc-model-own');
+    if (!choices.length) {
+      sel.hidden = true; sel.innerHTML = '';
+      mine.textContent = own; mine.hidden = !own;
+      if (own) mine.setAttribute('title', 'This agent runs on its own model');
+      return;
+    }
+    mine.hidden = true;
+    // "claude-opus-4-6" reads as "Opus": the choice its name contains, else the name.
+    var short = choices.filter(function (c) { return own.toLowerCase().indexOf(c) >= 0; })[0];
+    sel.innerHTML = '<option value="">' + esc(own ? (short ? label(short) : own) + ' (own)' : 'Own model') + '</option>' +
+      choices.map(function (c) { return '<option value="' + esc(c) + '">' + esc(label(c)) + '</option>'; }).join('');
+    var kept = readModels()[id] || '';
+    sel.value = choices.indexOf(kept) >= 0 ? kept : '';
+    sel.hidden = false;
+  };
+  $('hc-model').addEventListener('change', function () {
+    var id = api.agent();
+    if (!id) return;
+    var m = readModels();
+    if ($('hc-model').value) m[id] = $('hc-model').value; else delete m[id];
+    try { localStorage.setItem(MODEL_KEY, JSON.stringify(m)); } catch (e) { /* private mode: kept for this page only */ }
+  });
+  api.model = function () { return $('hc-model').hidden ? '' : $('hc-model').value || ''; };
+  api.onAgent(api.agent(), api.agent(), null);
 
   // --- Files: each goes up when picked, then waits as a chip ---
   var files = [], uploading = 0;
@@ -135,6 +194,7 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
   function micOn(v) {
     $('hc-mic').setAttribute('aria-pressed', String(v));
     $('hc-mic').classList.toggle('is-on', v);
+    $('hc-comp').classList.toggle('is-live', v);
   }
   function release() {
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
