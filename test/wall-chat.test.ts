@@ -418,6 +418,60 @@ describe("Hub chat: on the page (#1528)", () => {
     expect(w.delays.at(-1)).toBe(1500)
   })
 
+  it("reconnects a dropped stream by itself and says so meanwhile (#2101 R21)", async () => {
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url) => url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: {
+        node: "http://studio", thread: { id: "t1", title: "Why?", agentId: "scout" },
+        messages: [{ role: "user", content: "Why?", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-7" }],
+      } } : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.streams).toHaveLength(1)
+    expect(w.el("hc-conn").hidden).toBe(true)
+    // The connection drops (the daemon restarts): an error with no data.
+    w.streams[0].on.error({})
+    expect(w.streams[0].closed).toBe(true)
+    expect(w.el("hc-conn").hidden).toBe(false)
+    // The reopen waits 1 s; the thread read keeps its quick pace too.
+    expect(w.delays.slice(-2)).toEqual([1000, 1500])
+    w.timers.at(-2)!()
+    expect(w.streams).toHaveLength(2)
+    expect(w.streams[1].url).toBe(w.streams[0].url)
+    expect(w.el("hc-conn").hidden).toBe(false)
+    // The run's text so far comes back with start: the line goes.
+    w.streams[1].emit("start", { initial: "Reading the log" })
+    expect(w.el("hc-conn").hidden).toBe(true)
+    expect(w.el("hc-log").innerHTML).toContain("Reading the log")
+  })
+
+  it("stops reconnecting after a few drops and leaves it to the thread read (#2101 R21)", async () => {
+    const w = openChat({
+      thread: "t1", node: "http://studio",
+      route: (url) => url.startsWith("/api/assistant/thread?id=t1") ? { status: 200, body: {
+        node: "http://studio", thread: { id: "t1", title: "Why?", agentId: "scout" },
+        messages: [{ role: "user", content: "Why?", status: "done" }, { role: "assistant", content: "", status: "pending", taskId: "task-7" }],
+      } } : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const waits: number[] = []
+    for (let i = 0; i < 6; i++) {
+      w.streams.at(-1)!.on.error({})
+      waits.push(w.delays.at(-2)!)
+      w.timers.at(-2)!()
+    }
+    expect(waits).toEqual([1000, 2000, 4000, 8000, 15000, 15000])
+    expect(w.streams).toHaveLength(7)
+    w.streams.at(-1)!.on.error({})
+    expect(w.el("hc-conn").hidden).toBe(true)
+    expect(w.delays.at(-1)).toBe(1500)
+    w.timers.at(-1)!()
+    await w.settle()
+    expect(w.streams).toHaveLength(7)
+  })
+
   it("repaints only the streamed text on a chunk, so Stop keeps its label (#1637)", async () => {
     let fail = true
     const w = openChat({

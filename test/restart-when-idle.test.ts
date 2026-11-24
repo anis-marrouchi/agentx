@@ -116,8 +116,8 @@ describe("cliRestartPlan", () => {
   it("launchd with a settings change: bootout, wait until unloaded, then bootstrap", () => {
     const plist = "/Users/demo/Library/LaunchAgents/com.example.agentx.plist"
     const p = cliRestartPlan(LAUNCHD, { ...base, reloadService: true, plistPath: plist })
-    expect(p.ok && p.steps.map((s) => s.kind)).toEqual(["exec", "wait-exit", "wait-unloaded", "exec"])
-    if (p.ok) expect(p.steps[3]).toEqual({ kind: "exec", argv: ["launchctl", "bootstrap", "gui/501", plist] })
+    expect(p.ok && p.steps.map((s) => s.kind)).toEqual(["exec", "wait-exit", "wait-unloaded", "bootstrap"])
+    if (p.ok) expect(p.steps[3]).toEqual({ kind: "bootstrap", domain: "gui/501", plist })
     expect(cliRestartPlan(LAUNCHD, { ...base, reloadService: true, plistPath: null }).ok).toBe(false)
   })
 

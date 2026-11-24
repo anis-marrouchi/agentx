@@ -41,6 +41,7 @@ Options:
 | `--abort-on-timeout` | When the wait runs out, don't restart. The command exits with an error and AgentX keeps running. Use this in deploy scripts that can try again later. |
 | `--interval <seconds>` | How often to check. The default is 5. |
 | `--reload-service` | Also re-read the service's settings file. Use it after you edit the `.plist` or the systemd unit. |
+| `--boot-timeout <minutes>` | How long the new daemon may take to answer before the command reports a failure. The default is 5. A large setup can take over a minute to start. |
 | `--dry-run` | Show what it would run, without restarting. |
 
 Without `--when-idle`, the restart starts right away. Running tasks still get the usual time to finish.
@@ -55,6 +56,39 @@ Without `--when-idle`, the restart starts right away. Running tasks still get th
 | Started by hand | Stops the daemon, waits until it has exited, then runs `agentx daemon start --detach` in the same folder. |
 
 If a step fails before AgentX was stopped, it stays running and the command prints how to restart it by hand. `agentx daemon deploy <host> --restart` runs this same command on the other machine.
+
+## Move to a new release (Mac)
+
+A release folder is a built copy of AgentX: a folder that holds `dist/cli.js`. When the launchd settings file runs AgentX from such a folder, use `agentx daemon upgrade` to move to a new one. Don't edit the `.plist` and run `launchctl` by hand: `launchctl bootstrap` fails while the old daemon is still finishing its tasks, which leaves AgentX down.
+
+1. **Terminal:** build the new release into its own folder, for example `/opt/agentx/releases/2.4.0`.
+2. **Terminal:** go to the folder that holds `agentx.json`.
+3. **Terminal:** run:
+   ```sh
+   agentx daemon upgrade /opt/agentx/releases/2.4.0 --expect-version 2.4.0
+   ```
+4. Read what it prints. It starts a one-time background job, then shows that job's log:
+   - `waiting: 2 task(s) running` while agents are still busy.
+   - `… 1 path(s) → /opt/agentx/releases/2.4.0` for the daemon and for every other running job that uses the same release folder, such as the dashboard.
+   - `daemon answers: 2.4.0 PID … after 95s` once the new daemon answers.
+   - `RESULT ok` at the end.
+
+The work runs in its own launchd job (`<daemon label>.upgrade`), so it carries on even when the command was typed by an agent that stops along with the daemon. That job runs once. It is never started again, and it doesn't run at login.
+
+If the new release doesn't answer within `--boot-timeout`, the command puts the old settings files back, starts the old release, and ends with `RESULT rolled-back`. The outcome is also written to `.agentx/upgrade/last.json`, and a copy of each settings file to `.agentx/upgrade/backup-<time>/`.
+
+Options:
+
+| Option | What it does |
+|---|---|
+| `--expect-version <version>` | Refuse to start unless the release folder reports this version. |
+| `--timeout <minutes>` | How long to wait for running tasks to finish. The default is 60. When the wait runs out, nothing is changed. |
+| `--force` | When `--timeout` runs out, upgrade anyway. Running tasks still get the usual time to finish. |
+| `--boot-timeout <minutes>` | How long the new daemon may take to answer before rolling back. The default is 5. |
+| `--no-follow` | Start the upgrade and return straight away. Read the log or `.agentx/upgrade/last.json` later. |
+| `--dry-run` | Show what would change, without changing anything. |
+
+This command works with launchd only. On Linux, point the systemd unit at the new release, then run `agentx daemon restart --reload-service`.
 
 ## Restart from the dashboard
 
@@ -320,13 +354,24 @@ To check that work past its time limit is picked up:
 4. **Browser:** the Jobs page shows the job as `continue`, then a new run on it within a minute.
 5. **Terminal:** set `maxExecutionMinutes` back.
 
+To check an upgrade on a Mac:
+
+1. **Terminal:** run `agentx daemon upgrade <release-folder> --dry-run`. It names the release folder in use now and the new one.
+2. **Terminal:** run it again without `--dry-run`. It ends with `RESULT ok`.
+3. **Terminal:** `curl -s http://127.0.0.1:18800/health` shows the new `version`.
+4. **Terminal:** `launchctl list | grep upgrade` lists no running upgrade job, and `ls ~/Library/LaunchAgents | grep upgrade` lists nothing.
+
 A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in the first line, instead of `requested by`.
 
 ## If something is wrong
 
 - **`restart` says `The daemon is not answering`:** AgentX isn't running, or listens on another address. Check `node.bind` in `agentx.json`, then start it with `agentx daemon start --detach` or through its service.
 - **`restart` stops and prints a `sudo systemctl restart …` command:** `sudo` needed a password and no terminal was attached. AgentX is still running. Run the printed command yourself, or allow that one command in `sudoers`.
-- **`restart` says `The daemon did not come back within 2 min`:** the new daemon didn't start. Run the `Start it with:` command it printed, then read `agentx daemon logs`.
+- **`restart` says `The daemon did not come back within 5 min`:** the new daemon didn't start, or starts slowly. Check `curl -s http://127.0.0.1:18800/health` once more. If it still doesn't answer, run the `Start it with:` command it printed, then read `agentx daemon logs`.
+- **`upgrade` says `Another upgrade is running`:** wait for it to end. Its log is the newest `.agentx/logs/upgrade-*.log`.
+- **`upgrade` ends with `RESULT refused`:** nothing was changed. The reason follows: tasks still running (raise `--timeout` or add `--force`), the wrong version, or a settings file that doesn't run a release folder.
+- **`upgrade` ends with `RESULT rolled-back`:** the new release didn't answer in time and the old one is running again. Read `agentx daemon logs` for why the new one failed to start.
+- **`upgrade` ends with `RESULT down`:** neither release answers. Run the `launchctl bootstrap …` command it printed. The old settings files are in `.agentx/upgrade/backup-<time>/`.
 - **`restart --abort-on-timeout` exited with `Not restarting`:** tasks were still running when the wait ran out. Try again later, or raise `--timeout`.
 - **The dashboard says `would not start AgentX again`:** set `KeepAlive` to `true` in the `.plist`, or `Restart=always` on the unit, as the message says. Or use `agentx daemon restart --when-idle` in a terminal.
 - **The dashboard has no Restart when idle button:** the node runs an older AgentX. Update it first.

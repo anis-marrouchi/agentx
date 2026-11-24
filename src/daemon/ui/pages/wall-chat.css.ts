@@ -113,6 +113,9 @@ export const WALL_CHAT_CSS = `
 .hc__chip:hover { border-color: var(--ax-border-2); }
 .hc__chip[aria-pressed="true"] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
 .hc__chip:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
+/* A dropped live stream (#2101 R21): said while it reconnects. */
+.hc__conn { margin: 0; padding: 6px 16px; font-size: var(--ax-fs-sm); color: var(--ax-warn, var(--ax-muted)); background: var(--ax-surface); border-bottom: 1px solid var(--ax-border); }
+.hc__conn[hidden] { display: none; }
 .hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(16px, calc((100% - 720px) / 2)); display: flex; flex-direction: column; gap: 14px; }
 /* The thread (#2101 P7, mock V1): my messages in blue bubbles on the right,
    the agent's answer as plain text across the column, no bubble. */

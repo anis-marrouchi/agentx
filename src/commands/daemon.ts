@@ -5,6 +5,7 @@ import { installLogTimestamps } from "@/daemon/log-timestamps"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
+import { upgradeCommand } from "./daemon-upgrade"
 import { checkoutMoved, pinnedBuildEnv, soakCommand, soakGate } from "./daemon-soak"
 import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
 import { computerUseSupport, supportLine } from "@/computer-use/support"
@@ -238,6 +239,7 @@ daemon
 
 // agentx daemon restart [--when-idle] (daemon-restart.ts)
 daemon.addCommand(restartCommand)
+daemon.addCommand(upgradeCommand)
 daemon.addCommand(soakCommand)
 
 // agentx daemon status

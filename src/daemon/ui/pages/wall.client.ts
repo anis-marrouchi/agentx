@@ -53,9 +53,11 @@
 // classic page wrote (#1449).
 
 import { markdownToHtml } from "@/utils/markdown-html"
+import { atList, atPickerHtml, atNextHtml, atFields } from "./wall-agent-templates"
 import { injectFns } from "../inject"
 import { plainMarkerText } from "../marker-text"
 import { WALL_CAPACITY_SCRIPT } from "./wall-capacity.client"
+import { WALL_KEEP_SCRIPT } from "./wall-keep.client"
 import { WALL_REVIEWS_SCRIPT } from "./wall-reviews.client"
 import { WALL_EVENTS_SCRIPT } from "./wall-events.client"
 import { WALL_DECIDE_SCRIPT } from "./wall-decide.client"
@@ -90,6 +92,7 @@ import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
+import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
 import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { hubUsageText } from "./hub-status"
@@ -114,12 +117,15 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
+  ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
+  ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
   ${injectFns({ hubUsageText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
+${WALL_KEEP_SCRIPT}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
 ${WALL_DECIDE_SCRIPT}
@@ -1382,7 +1388,10 @@ ${HUB_NAV_SCRIPT}
   }
 
   // --- Render ---
-  function render() {
+  // A repaint keeps open sections, shown lists and the scroll (#2101 R21):
+  // wall-keep.client.ts.
+  function render() { return keepState(renderNow); }
+  function renderNow() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
     renderNeedsTop();
     renderTree();

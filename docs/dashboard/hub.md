@@ -471,9 +471,10 @@ The other tabs:
 ### Add an agent
 
 1. **Browser:** in **Settings** › **Agents**, open **Add an agent**.
-2. Type an id (lowercase), a name and at least one trigger word. Pick the AI engine; the model and instructions are optional.
-3. Select **Add agent**. The line under it says **Added**, or why not.
-4. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
+2. To start from a template, select one at the top: **Support desk**, **Code reviewer**, **Daily reporter** or **Researcher**. It fills the id, name, trigger words, engine and instructions. **After you add it** then lists the first thing to ask the agent, the skills worth adding, and what to connect, with a link to each Settings section. **Blank** clears the form. A template only fills the form, so nothing is saved yet.
+3. Type or change the id (lowercase), the name and at least one trigger word. Pick the AI engine; the model and instructions are optional.
+4. Select **Add agent**. The line under it says **Added**, or why not.
+5. **Terminal:** run `agentx daemon restart --when-idle`. The new agent starts working after the restart.
 
 #### Add an agent under someone in the org chart
 
@@ -877,8 +878,9 @@ The Hub reads with this machine's own GitHub or GitLab connection, the same one 
 
 ## See recurring jobs and their value line
 
-1. Select **Schedules** in the nav. At the top are today's totals across every machine: runs that **ran**, **worked**, **failed**, were **quiet** (a report-only job with nothing to report), and the jobs that **look stale**.
-2. Jobs are grouped by machine. Each row has the job's name and agent, its value line, its schedule and next run, its last seven runs as squares (green worked, red failed, an empty square for no run; the newest is on the right), and its state: **on**, **off** or **look stale**.
+1. Select **Schedules** in the nav. At the top are today's totals across every machine: runs that **ran**, **worked**, **failed**, were **quiet** (a report-only job with nothing to report), the jobs that **look stale**, and the jobs whose **last run failed**.
+2. Jobs are grouped by machine, in a table with these columns: **Schedule** (the job's name, agent and value line), **Project** (the issue its runs are about, from [`crons.<id>.home`](/reference/config-automation#crons), else its goal), **Next run** (with the cron expression under it), **Last result** (**Worked**, **Failed** or **Timed out**, and when), **Last 7** (its last seven runs as squares: green worked, red failed, an empty square for no run; the newest is on the right), and its state: **on**, **off** or **look stale**.
+   A job whose last run failed or timed out has a red edge, and the first line of the error shows under its name, so you see it without opening the row. On a phone, the row keeps the name and the last result.
 3. The value line says why the job runs and the number that proves it, from [`crons.<id>.value`](/reference/config-automation#crons). A job without one says **no value line** in amber, so the gap shows.
 4. A job **looks stale** when it has been off for 14 days or more, failed 3 times in a row, or has no value line. Point at the label to see which.
 5. Select a row to open the last run's short summary and a **Full log** link. The full output stays on the log page.
