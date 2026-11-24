@@ -1,6 +1,7 @@
 import type { GuardAction, GuardInput, GuardRule, ResolvedPolicy, Verdict, EffectiveAction } from "./types"
 import { buildResolveEnv, resolveTargets, normalizeProtectedSet, matchProtected } from "./resolve"
 import { missingParts, missingReason } from "@/gates/issue-complete"
+import { readIssueCreates } from "@/gates/issue-args"
 import { bashFileAccesses, toolFileAccesses } from "./file-access"
 
 // --- Guard engine ---
@@ -95,11 +96,14 @@ function ruleMatches(
   }
 
   if (rule.check === "issue-complete") {
-    if (!/^mcp__[\w-]*gitlab[\w-]*__create_issue$/i.test(input.tool)) return null
-    const { description, milestone_id: milestone } = input.toolInput ?? {}
-    const hasMilestone = /^[1-9]\d*$/.test(typeof milestone === "number" || typeof milestone === "string" ? String(milestone) : "")
-    const missing = missingParts(typeof description === "string" ? description : "", hasMilestone)
-    return missing.length ? { rule, resolvedTarget, message: missingReason(missing) } : null
+    const issues = input.tool === "Bash" && input.command
+      ? readIssueCreates(input.command)
+      : gitlabMcpIssue(input)
+    for (const issue of issues) {
+      const missing = missingParts(issue.description, issue.hasMilestone)
+      if (missing.length) return { rule, resolvedTarget, message: missingReason(missing) }
+    }
+    return null
   }
 
   // A rule with no match clauses at all never fires (guards against an empty
@@ -107,6 +111,15 @@ function ruleMatches(
   if (!m.tool && !m.command_regex && !m.path_regex && !m.file_access_regex && !m.target_in) return null
 
   return { rule, resolvedTarget }
+}
+
+function gitlabMcpIssue(input: GuardInput): Array<{ description: string; hasMilestone: boolean }> {
+  if (!/^mcp__[\w-]*gitlab[\w-]*__create_issue$/i.test(input.tool)) return []
+  const { description, milestone_id: milestone } = input.toolInput ?? {}
+  return [{
+    description: typeof description === "string" ? description : "",
+    hasMilestone: /^[1-9]\d*$/.test(typeof milestone === "number" || typeof milestone === "string" ? String(milestone) : ""),
+  }]
 }
 
 function applyMode(action: GuardAction, mode: ResolvedPolicy["mode"]): EffectiveAction {

@@ -158,6 +158,16 @@ describe("issue completeness", () => {
   const tool = "mcp__noqta_gitlab_server__create_issue"
   const description = "- [ ] Check staging\n/estimate 30m"
 
+  it("reads a literal glab description and leaves shell expansions unchecked", () => {
+    const check = (command: string) => evaluate({ tool: "Bash", command }, policy)
+    expect(check("glab issue create -t Test -m 7 -d '- [ ] Check staging'")).toMatchObject({
+      effectiveAction: "deny",
+      message: "missing: /estimate",
+    })
+    expect(check(`glab issue create --title=Test --milestone=7 --description='${description}'`).effectiveAction).toBe("allow")
+    expect(check('glab issue create -t Test -d "$DESCRIPTION"').effectiveAction).toBe("allow")
+  })
+
   it("requires a milestone on an otherwise complete GitLab issue", () => {
     expect(evaluate({ tool, toolInput: { description } }, policy)).toMatchObject({
       ruleId: "issue-complete",
