@@ -49,6 +49,7 @@ import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { renderOrgPage } from "./ui/pages/org"
+import { changeCliAccounts, cliAccountsView } from "@/agents/cli-accounts"
 import { renderMeshPage } from "./ui/pages/mesh"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderWorkflowsPage } from "./ui/pages/workflows"
@@ -1112,6 +1113,19 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/api/admin/hub/usage") {
     const now = Date.now()
     sendJson(res, 200, { windows: planWindowUse(now), readAt: planUsageReader.getState().reading?.readAt ?? null })
+    return
+  }
+  // CLI account profiles (#2101 P9b, agents/cli-accounts.ts): which Claude
+  // Code / Codex config directory new runs use. Owner only. Directories and
+  // names leave here, never a credential: sign-in stays with each CLI.
+  //   GET  /api/admin/hub/accounts
+  //   POST /api/admin/hub/accounts {provider, action: use|add|remove, name, dir?}
+  if (path === "/api/admin/hub/accounts" && (method === "GET" || method === "POST")) {
+    if (!wallOwnerOk(req, ctx)) { sendJson(res, 403, { error: "Accounts are for the owner." }); return }
+    try {
+      if (method === "POST") changeCliAccounts(await readJson(req))
+      sendJson(res, 200, { providers: cliAccountsView() })
+    } catch (e: any) { sendJson(res, e.status || 500, { error: e.message }) }
     return
   }
   if (path.startsWith("/api/admin/approvals") || answerRoute) {

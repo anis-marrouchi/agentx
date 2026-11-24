@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "fs"
+import { withCliAccountEnv } from "@/agents/cli-accounts"
 import { resolve } from "path"
 
 // Loads per-agent secrets from the agent's workspace and tells the runtime
@@ -104,7 +105,8 @@ export function buildAgentEnv(
   for (const [k, v] of Object.entries(workspaceEnv)) {
     child[k] = v
   }
-  return child
+  // The active CLI account profile (#2101 P9b), unless this workspace sets its own.
+  return withCliAccountEnv(child, Object.keys(workspaceEnv))
 }
 
 // Force the `claude` CLI to use OAuth/subscription billing. When
