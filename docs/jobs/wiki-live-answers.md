@@ -298,6 +298,8 @@ From a checkout of AgentX, you can check how often the wiki's keyword search fin
 
 ## If something is wrong
 
+- **A selector or synthesis error mentions a Claude usage limit.** The wiki uses the Claude CLI for its model calls, including when the asking agent runs on Codex. Retry after the reset time in the error.
+
 - **The trace has no `method: summaries` line:** fewer than 80% of the agent's own pages have a summary, for example after a run with `--agent` for another agent or with `--limit`. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.

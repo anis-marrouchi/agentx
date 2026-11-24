@@ -10,9 +10,7 @@ import {
   toRanking,
   type RerankCandidate,
 } from "@/decisions/seats/wiki-rerank"
-import { claudeCliEnv } from "@/utils/workspace-env"
 import { resolve } from "path"
-import { execSync } from "child_process"
 import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
 import { claudeModelCall, type ModelCall } from "./model-call"
@@ -76,7 +74,7 @@ export interface AgenticQueryOptions {
    *  summaries method (#862). A note is private to the agent that wrote
    *  it: notes of any other agent are ignored. */
   notes?: NoteSource
-  /** Model call and HTTP GET of the summaries method; tests pass their own. */
+  /** Model call and HTTP GET overrides; tests pass their own. */
   call?: ModelCall
   fetch?: FetchLike
 }
@@ -163,6 +161,7 @@ export async function agenticQuery(
   const view = scopeView(store, requesterId, opts.shared)
 
   const method = opts.method ?? "catalog"
+  const call = opts.call ?? claudeModelCall
   if (method !== "catalog") {
     const summaries = collectSummaries(store, opts.shared)
     if (method === "summaries" || summaryCoverage(store, requesterId, view, summaries) >= AUTO_SUMMARY_COVERAGE) {
@@ -172,7 +171,7 @@ export async function agenticQuery(
         ...base,
         navigatorModel: opts.selectorModel ?? base.navigatorModel,
         answerModel: opts.synthModel ?? base.answerModel,
-      }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
+      }, { call, fetch: opts.fetch, timeoutMs, log })
       const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: isNotePath(a.path) ? "note" : a.meta.type, hop: a.hop }))
       return {
         answer: out.answer,
@@ -206,7 +205,7 @@ export async function agenticQuery(
       candidates = viaSeat
       selectorOutput = `[wiki-rerank seat] ${viaSeat.map((c) => c.title).join(" | ")}`
     } else {
-      selectorOutput = await runClaude(
+      selectorOutput = await call(
         buildSelectorPrompt(question, catalog, maxCandidates, messagePath),
         selectorModel,
         timeoutMs,
@@ -234,11 +233,12 @@ export async function agenticQuery(
   const synthStart = Date.now()
   let answer = ""
   try {
-    answer = await runClaude(
+    answer = await call(
       buildSynthesisPrompt(question, walked),
       synthModel,
       timeoutMs * 2,
     )
+    if (!answer.trim()) throw new Error("Wiki model returned an empty answer")
   } catch (e: any) {
     log("synthesis failed:", e?.message)
     return { ...emptyResult("error", question, `Synthesis: ${e?.message || "unknown"}`), candidates, walked: walked.map(w => ({ title: w.meta.title, path: w.path, type: w.meta.type, hop: (w as any).hop ?? 0 })), trace: { selectorMs, synthesisMs: Date.now() - synthStart, selectorOutput } }
@@ -717,29 +717,6 @@ function parseCandidates(raw: string): Array<{ title: string; path: string }> {
       .map((x: any) => ({ title: x.title, path: x.path }))
   } catch {
     return []
-  }
-}
-
-async function runClaude(prompt: string, model: string, timeoutMs: number): Promise<string> {
-  // Use stdin via a temp-file pipe to avoid shell-escaping a huge prompt.
-  // Prompts can exceed the `-E` arg buffer on macOS, so we always pipe.
-  const { writeFileSync, mkdirSync, rmSync } = await import("fs")
-  const { tmpdir } = await import("os")
-  const dir = resolve(tmpdir(), `agentx-wiki-query-${process.pid}`)
-  mkdirSync(dir, { recursive: true })
-  const promptPath = resolve(dir, `prompt-${Date.now()}.txt`)
-  writeFileSync(promptPath, prompt)
-  try {
-    const cmd = `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model ${model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`
-    const raw = execSync(cmd, { env: claudeCliEnv(), encoding: "utf-8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 })
-    try {
-      const envelope = JSON.parse(raw)
-      return String(envelope.result || envelope.content || "")
-    } catch {
-      return raw
-    }
-  } finally {
-    try { rmSync(promptPath, { force: true }) } catch {}
   }
 }
 

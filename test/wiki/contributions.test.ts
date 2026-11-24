@@ -294,17 +294,15 @@ describe("shared search", () => {
     page("agent-b", "secret.md", "Private Plan", "Hidden.", { access: "private" })
     hub.getAgentWiki("agent-a").rebuildIndex()
     const prompts: string[] = []
-    mocks.execSync.mockImplementation((cmd: string) => {
-      const file = cmd.match(/cat '([^']+)'/)![1]
-      const prompt = readFileSync(file, "utf-8")
+    const call = async (prompt: string) => {
       prompts.push(prompt)
       if (prompt.includes("You are picking candidate articles")) {
-        return JSON.stringify({ result: JSON.stringify([{ title: "One Issue In Doing", path: "@agent-b/rules/doing.md" }]) })
+        return JSON.stringify([{ title: "One Issue In Doing", path: "@agent-b/rules/doing.md" }])
       }
-      return JSON.stringify({ result: "One issue in Doing per person [One Issue In Doing]." })
-    })
+      return "One issue in Doing per person [One Issue In Doing]."
+    }
 
-    const r = await agenticQuery("how many issues in doing per person?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a") })
+    const r = await agenticQuery("how many issues in doing per person?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), call })
 
     expect(r.status).toBe("ok")
     expect(r.citations.map((c) => c.path)).toEqual(["@agent-b/rules/doing.md"])
@@ -474,12 +472,8 @@ describe("#824 review fixes", () => {
     expect(call.prompts[0]).toContain("Do not record facts about the wiki, AgentX")
   })
 
-  function selectorReturns(paths: Array<{ title: string; path: string }>): void {
-    mocks.execSync.mockImplementation((cmd: string) => {
-      const prompt = readFileSync(cmd.match(/cat '([^']+)'/)![1], "utf-8")
-      if (prompt.includes("You are picking candidate articles")) return JSON.stringify({ result: JSON.stringify(paths) })
-      return JSON.stringify({ result: "answer" })
-    })
+  function selectorReturns(paths: Array<{ title: string; path: string }>) {
+    return async (prompt: string) => prompt.includes("You are picking candidate articles") ? JSON.stringify(paths) : "answer"
   }
 
   it("keeps at least half the walk for the agent's own pages", async () => {
@@ -488,11 +482,11 @@ describe("#824 review fixes", () => {
     page("agent-a", "own/three.md", "Own Three", "Mine.")
     for (let i = 0; i < 6; i++) page("agent-b", `s/${i}.md`, `Shared ${i}`, "Theirs.")
     hub.getAgentWiki("agent-a").rebuildIndex()
-    selectorReturns([
+    const call = selectorReturns([
       ...Array.from({ length: 6 }, (_, i) => ({ title: `Shared ${i}`, path: `@agent-b/s/${i}.md` })),
       { title: "Own One", path: "own/one.md" },
     ])
-    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4 })
+    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4, call })
     expect(r.walked[0].path).toBe("own/one.md")
     expect(r.walked.filter((w) => w.path.startsWith("@")).length).toBe(2)
     expect(r.walked).toHaveLength(4)
@@ -502,11 +496,11 @@ describe("#824 review fixes", () => {
     page("agent-a", "own/one.md", "Own One", "Mine.")
     for (let i = 0; i < 6; i++) page("agent-b", `s/${i}.md`, `Shared ${i}`, "Theirs.")
     hub.getAgentWiki("agent-a").rebuildIndex()
-    selectorReturns([
+    const call = selectorReturns([
       ...Array.from({ length: 6 }, (_, i) => ({ title: `Shared ${i}`, path: `@agent-b/s/${i}.md` })),
       { title: "Own One", path: "own/one.md" },
     ])
-    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4 })
+    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4, call })
     expect(r.walked.map((w) => w.path)).toEqual(["own/one.md", "@agent-b/s/0.md", "@agent-b/s/1.md", "@agent-b/s/2.md"])
   })
 
@@ -514,8 +508,8 @@ describe("#824 review fixes", () => {
     page("agent-a", "people/sam.md", "Sam Doe", "A person.", { aliases: ["Sam D."] })
     page("agent-b", "decisions/write.md", "Write to Sam by email", "Decided: email only.", { related: ["Sam D."] })
     hub.getAgentWiki("agent-a").rebuildIndex()
-    selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
-    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a") })
+    const call = selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
+    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), call })
     expect(r.walked.map((w) => w.path)).toEqual(["people/sam.md", "@agent-b/decisions/write.md"])
   })
 
@@ -523,11 +517,11 @@ describe("#824 review fixes", () => {
     page("agent-a", "people/sam.md", "Sam Doe", "A person.")
     page("agent-b", "decisions/write.md", "Write to Sam by email", "Decided: email only.", { related: ["Sam Doe"], lastUpdated: "2026-10-01" })
     hub.getAgentWiki("agent-a").rebuildIndex()
-    selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
-    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a") })
+    const call = selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
+    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), call })
     expect(r.walked.map((w) => w.path)).toEqual(["people/sam.md", "@agent-b/decisions/write.md"])
 
-    const own = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a")
+    const own = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { call })
     expect(own.walked.map((w) => w.path)).toEqual(["people/sam.md"])
   })
 })

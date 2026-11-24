@@ -508,7 +508,9 @@ describe("wiki query by summaries", () => {
     const model = queryModel({ open: ["Widgets"] })
     const result = await agenticQuery("Is the widget cutover done?", store, "a", { method: "auto", summaries: settings(), call: model.call, timeoutMs: 1, log: () => {}, shared: hub.sharedScope("a") })
     expect(result.method).toBeUndefined()
-    expect(model.prompts).toEqual([])
+    expect(model.prompts.map(({ prompt }) => prompt.split("\n")[0])).toEqual([
+      expect.stringContaining("You are picking candidate articles"),
+    ])
   })
 
   it("opens no linked page by default", async () => {
@@ -552,12 +554,15 @@ describe("wiki query by summaries", () => {
   })
 
   it("auto keeps the catalog method until a summary exists; the default is the catalog method", async () => {
-    rmSync(summariesPath(hub.getAgentWiki("a")))
+    const store = hub.getAgentWiki("a")
+    rmSync(summariesPath(store))
+    store.rebuildIndex()
     const model = queryModel({ open: ["Widgets"] })
-    // The catalog method needs the claude CLI; a selector that fails proves it was taken.
-    const result = await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", { method: "auto", summaries: settings(), call: model.call, timeoutMs: 1, log: () => {} })
+    const result = await agenticQuery("Is the widget cutover done?", store, "a", { method: "auto", summaries: settings(), call: model.call, timeoutMs: 1, log: () => {} })
     expect(result.method).toBeUndefined()
-    expect(model.prompts).toEqual([])
+    expect(model.prompts.map(({ prompt }) => prompt.split("\n")[0])).toEqual([
+      expect.stringContaining("You are picking candidate articles"),
+    ])
   })
 })
 
