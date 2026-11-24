@@ -233,6 +233,10 @@ const channelCreateIssueInput = z.object({
   /** Usernames to assign on creation. */
   assignees: z.array(z.string()).default([]),
   agentId: z.string().optional(),
+  /** "current" (the month's milestone), "none", or a milestone id. Left
+   *  optional on purpose: when it is missing the adapter's issue-complete
+   *  gate fills "current" and logs it as fixed (#2085 v7, condition C1). */
+  milestone: z.string().optional(),
   /** Optional: when set, the new issue is /relate'd to this iid via a
    *  follow-up POST to /issues/:src/links — same project. Caller-friendly
    *  shortcut so the test-case-create flow is one call, not two. */
@@ -261,6 +265,7 @@ export const channelCreateIssue: BuiltinAction<ChannelCreateIssueInput, ChannelC
           createIssue?: (args: {
             project: string; title: string; description?: string;
             labels?: string[]; assignees?: string[]; agentId?: string;
+            milestone?: string;
           }) => Promise<{ iid: number; url: string } | null>
           relateIssue?: (args: { project: string; sourceIid: string; targetIid: string; agentId?: string }) => Promise<boolean>
         }
@@ -275,6 +280,7 @@ export const channelCreateIssue: BuiltinAction<ChannelCreateIssueInput, ChannelC
       labels: input.labels,
       assignees: input.assignees,
       agentId: input.agentId,
+      milestone: input.milestone,
     })
     if (!created) {
       throw new Error("createIssue returned null — see daemon log for details")

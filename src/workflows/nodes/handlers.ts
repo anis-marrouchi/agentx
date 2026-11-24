@@ -203,6 +203,9 @@ const createIssueHandler: NodeHandler = async (ctx) => {
   const description = String(rendered.description ?? "")
   const labels = Array.isArray(rendered.labels) ? (rendered.labels as string[]).map(String) : []
   const assignees = Array.isArray(rendered.assignees) ? (rendered.assignees as string[]).map(String) : []
+  // New in #2085: "current", "none" or an id. Left out, the adapter's
+  // issue-complete gate fills the month's milestone and logs it as fixed.
+  const milestone = rendered.milestone == null || rendered.milestone === "" ? undefined : String(rendered.milestone)
   if (!project || !title) return { error: `action.createIssue "${ctx.node.id}" needs project + title` }
 
   // Resolve the originating agent id (if any) from the most recent upstream
@@ -212,14 +215,14 @@ const createIssueHandler: NodeHandler = async (ctx) => {
   const adapter = ctx.channels[channel] as {
     createIssue?: (args: {
       project: string; title: string; description?: string;
-      labels?: string[]; assignees?: string[]; agentId?: string
+      labels?: string[]; assignees?: string[]; agentId?: string; milestone?: string
     }) => Promise<{ iid: number; url: string } | null>
   } | undefined
   if (!adapter?.createIssue) {
     return { error: `channel "${channel}" does not support createIssue` }
   }
   try {
-    const result = await adapter.createIssue({ project, title, description, labels, assignees, agentId })
+    const result = await adapter.createIssue({ project, title, description, labels, assignees, agentId, milestone })
     if (!result) return { error: "createIssue returned null (see adapter log)" }
     return {
       output: {
