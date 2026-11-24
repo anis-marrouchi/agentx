@@ -339,7 +339,7 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
     const order = [...nav.matchAll(/data-nav="([\w]+)"|(?:<summary>|ax-wall__navlbl" aria-hidden="true">)(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual(["wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
-      "Fleet", "agents", "people", "org", "cost", "Owner", "settings", "dashboard", "running", "projects", "creator",
+      "Fleet", "agents", "people", "org", "operations", "cost", "Owner", "settings", "dashboard", "running", "projects", "creator",
       // The V1 foot row (#2101 P4, hub-nav.ts): Desk · Jobs · Workflows · Mobile app · Settings.
       "needs", "jobledger", "workflows", "mobile", "settings"])
     expect([...nav.matchAll(/<details class="ax-wall__navgroup"><summary>(\w+)<\/summary>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
@@ -360,7 +360,7 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     expect(page).toContain(".ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn)")
     const sheet = page.slice(page.indexOf('id="wall-more"'), page.indexOf('<div class="ax-wall__main">'))
     expect([...sheet.matchAll(/<h2 class="ax-wall__navlbl">(\w+)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
-    expect([...sheet.matchAll(/class="ax-wall__moreitem" data-nav="(\w+)"/g)].map((m) => m[1])).toEqual(["jobledger", "live", "activity", "numbers", "jobs", "workflows", "reviews", "events", "failures", "agents", "people", "org", "cost"])
+    expect([...sheet.matchAll(/class="ax-wall__moreitem" data-nav="(\w+)"/g)].map((m) => m[1])).toEqual(["jobledger", "live", "activity", "numbers", "jobs", "workflows", "reviews", "events", "failures", "agents", "people", "org", "operations", "cost"])
     expect(sheet).toContain('data-n-for="nav-n-live"')
     expect(sheet).toContain('data-nav="settings" href="#page=settings">Settings</a>')
     expect(renderWallPage()).not.toContain('data-nav="settings"')

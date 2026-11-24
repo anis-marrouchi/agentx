@@ -54,6 +54,7 @@ import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
 import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
+import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
 
 export interface WallPageOpts {
@@ -73,7 +74,7 @@ export interface WallPageOpts {
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
 export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
-  ["Operations", "/mesh"], ["Monitor", "/monitor"],
+  ["Operations", "#page=operations"], ["Monitor", "/monitor"],
   ["Org", "/org"], ["Activity", "/activity"], ["Workflows", "/workflows"],
 ]
 
@@ -150,6 +151,8 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "agents", label: "Agents", href: "#page=agents", icon: "agents", count: "nav-n-agents" },
     { key: "people", label: "People", href: "#page=people", icon: "people", count: "nav-n-people" },
     { key: "org", label: "Org", href: "#page=org", icon: "org", count: "nav-n-org" },
+    // Operations in the Hub (#2101 P8, R8): /mesh framed, not a jump away.
+    { key: "operations", label: "Operations", href: "#page=operations", icon: "dashboard", title: "Operations: schedules, routines, nodes and agents across the fleet" },
     { key: "cost", label: "Cost", href: "#status=open&amp;view=cost", icon: "cost", count: "wall-cost-n" },
   ] },
   { label: "Owner", items: [
@@ -309,6 +312,7 @@ ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
     <section id="wall-activity" aria-label="Activity: the agents' runs, newest first" hidden></section>
     <section id="wall-numbers" class="ax-wall__numbers" aria-label="Numbers: tracked measures and their readings" hidden></section>
     ${hubMobilePageHtml()}
+    ${hubOperationsPageHtml()}
     <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
     ${wallChatPanelHtml(chat)}
   </div>
@@ -339,7 +343,7 @@ ${HUB_STATUS_HTML}`
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_STATUS_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

@@ -576,7 +576,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/mesh") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
-    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token) }))
+    res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config), localToken: pageToken(req, ctx.token), embed: url.searchParams.get("embed") === "1" }))
     return
   }
   // Guest meshes (#380): the grants are in the Hub's Settings › Guests

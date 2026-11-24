@@ -94,6 +94,7 @@ import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSw
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { hubUsageText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
+import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
@@ -106,7 +107,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile'];
+  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile', 'operations'];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -133,6 +134,7 @@ ${WALL_WORKFLOWS_SCRIPT}
 ${WALL_EDITOR_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
+${HUB_OPERATIONS_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_PICTURES_SCRIPT}
 ${WALL_TASK_SCRIPT}
@@ -1110,7 +1112,7 @@ ${HUB_NAV_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'operations' ? 'Operations' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1408,6 +1410,8 @@ ${HUB_NAV_SCRIPT}
     $('wall-live').hidden = page !== 'live';
     $('wall-task').hidden = page !== 'task';
     $('wall-mobile').hidden = page !== 'mobile';
+    $('wall-operations').hidden = page !== 'operations';
+    opsShow(page === 'operations');
     // Settings (#1428): the owner's sections, or for anyone else a line saying it is the owner's.
     $('wall-settings').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
