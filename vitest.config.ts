@@ -1,8 +1,11 @@
 import tsconfigPaths from "vite-tsconfig-paths"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    // The desktop app runs its Node tests after compiling its own dist/.
+    // The root Vitest run must not collect those unbuilt tests.
+    exclude: [...configDefaults.exclude, "apps/desktop/test/**"],
     // Worker threads segfault this suite (exit 139, no failing test, no
     // summary printed) once it passes roughly 130 files. Reproduced with
     // four test files whose only assertion is `1 + 1 === 2`, so it is the
