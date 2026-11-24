@@ -7681,6 +7681,19 @@ export class AgentXDaemon {
         this.json(res, 200, this.registry.listTaskHistory(taskHistoryListMatch[1], limit))
         return
       }
+      // One run's session (#2101 R4): the agent's runs in the same channel
+      // and chat, in order, paged. GET /agents/:agentId/tasks/:taskId/session?before=&limit=
+      // Mesh-gated (mesh-auth.ts): the turns carry what was asked and said.
+      const taskSessionMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)\/session$/)
+      if (taskSessionMatch) {
+        const agentId = decodeURIComponent(taskSessionMatch[1])
+        if (!this.config.agents[agentId]) { this.json(res, 404, { error: "agent not found" }); return }
+        const limit = parseInt(url.searchParams.get("limit") || "", 10) || undefined
+        const page = this.registry.getTaskSession(agentId, decodeURIComponent(taskSessionMatch[2]), { before: url.searchParams.get("before"), limit })
+        if (!page) { this.json(res, 404, { error: "not found" }); return }
+        this.json(res, 200, page)
+        return
+      }
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)
       if (taskRecordMatch) {
         const rec = this.registry.getTaskRecord(taskRecordMatch[1], taskRecordMatch[2])
