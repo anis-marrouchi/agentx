@@ -39,6 +39,8 @@ import { APP_CHAT_SHEETS_SCRIPT } from "./app-chat-sheets.client"
 import { APP_CHAT_LOG_SCRIPT } from "./app-chat-log.client"
 import { APP_CHAT_STRIP_SCRIPT } from "./app-chat-strip.client"
 import { APP_CHAT_STRIP_CSS } from "./app-chat-strip.css"
+import { APP_CHAT_HEAD_CSS, APP_CHAT_HEAD_SCRIPT } from "./app-chat-head.client"
+import { APP_CHANGES_CSS, APP_CHANGES_SCRIPT } from "./app-changes.client"
 import { nextSpeech, queueSpeech } from "./app-speech-queue"
 import { APP_CHAT_CSS } from "./app-chat.css"
 import { APP_ORB_SCRIPT } from "./app-orb.client"
@@ -109,7 +111,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_LIVE_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_LIVE_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}${APP_CHAT_HEAD_CSS}${APP_CHANGES_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -139,6 +141,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 <script>${injectFns({ dictateLabel })}${APP_DICTATE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
+<script>${APP_CHANGES_SCRIPT}${APP_CHAT_HEAD_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>
 <script>${CALLS_SCRIPT}</script>

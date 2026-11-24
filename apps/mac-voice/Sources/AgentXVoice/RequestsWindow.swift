@@ -406,32 +406,32 @@ struct RequestsView: View {
             HStack(spacing: 8) {
                 if let agent = model.opened {
                     Button(action: { model.onBack?() }) {
-                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
+                        Image(systemName: "chevron.left").font(.ax(size:11, weight: .bold))
                     }
                     .buttonStyle(.borderless)
                     .help("Every agent (←)")
                     .accessibilityLabel("Back to every agent")
                     Text(model.openedName)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.ax(size:13, weight: .bold))
                         .lineLimit(1)
                     Button("History") { model.onHistory?(agent) }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 12))
+                        .font(.ax(size:12))
                         .accessibilityHint("Opens \(model.openedName)’s earlier conversations")
                 } else {
                     Text("Open requests")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.ax(size:13, weight: .bold))
                 }
                 if model.opened == nil && model.total > 0 {
                     Text("\(model.total)")
-                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .font(.ax(size:11, weight: .bold).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 7)
                         .background(Capsule().fill(Color.primary.opacity(0.08)))
                 }
                 Spacer(minLength: 0)
                 Text("⌘⌥O")
-                    .font(.system(size: 11))
+                    .font(.ax(size:11))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Shortcut: Command Option O")
             }
@@ -455,9 +455,9 @@ struct RequestsView: View {
             } else if model.rows.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Nothing open")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.ax(size:13, weight: .semibold))
                     Text("Hold ⌥Space and ask any agent. Each request shows here until you close it.")
-                        .font(.system(size: 12))
+                        .font(.ax(size:12))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -508,19 +508,19 @@ struct RequestsView: View {
             if !model.rows.isEmpty {
                 Button("Close heard") { model.onCloseHeard?() }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 12))
+                    .font(.ax(size:12))
                     .disabled(!model.hasHeard)
                     .accessibilityHint("Closes every heard answer and every failure")
             }
             Spacer(minLength: 0)
             if let undo = model.undo {
                 Text(undo)
-                    .font(.system(size: 12))
+                    .font(.ax(size:12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button("Undo") { model.onUndo?() }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.ax(size:12, weight: .semibold))
             }
         }
         .padding(.horizontal, 14)
@@ -538,13 +538,13 @@ struct FailedReason: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(reason)
-                .font(.system(size: 12))
+                .font(.ax(size:12))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Button(OpenRequests.askAgain, action: askAgain)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .font(.system(size: 11.5))
+                .font(.ax(size:11.5))
         }
         .padding(.leading, 40)
         .padding(.trailing, 8)
@@ -562,9 +562,9 @@ struct Unreachable: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(OpenRequests.unreachableTitle)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.ax(size:13, weight: .semibold))
             Text(OpenRequests.unreachableBody)
-                .font(.system(size: 12))
+                .font(.ax(size:12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
@@ -573,7 +573,7 @@ struct Unreachable: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .font(.system(size: 11.5))
+            .font(.ax(size:11.5))
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92, alignment: .topLeading)
@@ -607,7 +607,7 @@ struct CloseConfirm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(OpenRequests.stillThinking(name: row.name))
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.ax(size:12.5, weight: .semibold))
                 .lineLimit(1)
             HStack(spacing: 6) {
                 Button(OpenRequests.letItFinish) { choose(.letItFinish) }
@@ -620,7 +620,7 @@ struct CloseConfirm: View {
                     .buttonStyle(.bordered)
             }
             .controlSize(.small)
-            .font(.system(size: 11.5))
+            .font(.ax(size:11.5))
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .leading)
@@ -642,18 +642,10 @@ struct RequestRow: View {
     let close: () -> Void
     @State private var hovering = false
 
-    /// The "not heard" blue, lighter in dark so it reads on the dark pill.
-    static let blue = Color(nsColor: NSColor(name: nil) { look in
-        look.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.478, green: 0.635, blue: 1, alpha: 1)      // #7aa2ff
-            : NSColor(srgbRed: 0.114, green: 0.306, blue: 0.847, alpha: 1)  // #1d4ed8
-    })
-    /// "Couldn’t answer", readable on both themes.
-    static let red = Color(nsColor: NSColor(name: nil) { look in
-        look.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 1, green: 0.561, blue: 0.529, alpha: 1)      // #ff8f87
-            : NSColor(srgbRed: 0.706, green: 0.137, blue: 0.094, alpha: 1)  // #b42318
-    })
+    /// The "not heard" blue: AgentX blue, lighter in dark (Brand.accent).
+    static let blue = Color(nsColor: Brand.accent)
+    /// "Couldn’t answer": the red that carries words, on both themes.
+    static let red = Color(nsColor: Brand.alertInk)
 
     var body: some View {
         HStack(spacing: 10) {
@@ -667,15 +659,15 @@ struct RequestRow: View {
                         Circle().fill(Self.blue).frame(width: 8, height: 8)
                     }
                     Text(row.name)
-                        .font(.system(size: 13, weight: row.isNew ? .bold : .semibold))
+                        .font(.ax(size:13, weight: row.isNew ? .bold : .semibold))
                         .lineLimit(1)
                     Text("· " + row.state)
-                        .font(.system(size: 11.5, weight: row.cue == .ready || row.cue == .failed ? .semibold : .regular))
+                        .font(.ax(size:11.5, weight: row.cue == .ready || row.cue == .failed ? .semibold : .regular))
                         .foregroundStyle(stateColor)
                         .lineLimit(1)
                 }
                 Text(row.words)
-                    .font(.system(size: 12))
+                    .font(.ax(size:12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -684,7 +676,7 @@ struct RequestRow: View {
             if (hovering || selected) && row.agent == nil {
                 Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.ax(size:10, weight: .bold))
                         .frame(width: 20, height: 20)
                         .background(Circle().fill(Color.primary.opacity(0.08)))
                 }
@@ -693,7 +685,7 @@ struct RequestRow: View {
                 .accessibilityLabel("Close")
             } else {
                 Text(row.ago)
-                    .font(.system(size: 11))
+                    .font(.ax(size:11))
                     .foregroundStyle(.secondary)
             }
         }

@@ -32,6 +32,12 @@ swiftc -O \
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# Geist and Geist Mono (#2107), copies of the dashboard's src/web/public/fonts
+# kept here because `agentx desktop install` builds from apps/mac-voice
+# alone, with their OFL licence. Brand.registerFonts loads them at launch;
+# without them the app keeps the system font.
+cp Resources/Fonts/* "$APP/Contents/Resources/"
+
 # The AgentX version and commit, so the menu and `agentx desktop status`
 # can tell which build this is. `agentx desktop install` passes them; a
 # build from a checkout reads package.json and git.

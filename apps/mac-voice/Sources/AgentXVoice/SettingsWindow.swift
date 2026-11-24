@@ -171,14 +171,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if !model.error.isEmpty {
                     Text(model.error)
-                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .foregroundStyle(Color(nsColor: Brand.alertInk))
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 } else if !model.notice.isEmpty {
                     Text(model.notice).foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
+            .font(.axCallout)
             .frame(maxWidth: .infinity, alignment: .leading)
             Button("Revert") { model.revert() }
                 .disabled(!model.hasChanges || model.saving)
@@ -244,7 +244,7 @@ private struct AgentForm: View {
             Text("Voice")
         } footer: {
             Text("Voice changes apply to the next line this agent speaks. ElevenLabs speaks at most 1.2× and at least 0.7×.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.axCaption).foregroundStyle(.secondary)
         }
     }
 
@@ -291,7 +291,7 @@ private struct AgentForm: View {
     private var previewRow: some View {
         let now: String = agent.speaks.provider == "elevenlabs" ? "ElevenLabs" : (agent.speaks.systemVoice ?? "the Mac's default voice")
         return HStack {
-            Text("Saved voice: \(now)").font(.caption).foregroundStyle(.secondary)
+            Text("Saved voice: \(now)").font(.axCaption).foregroundStyle(.secondary)
             Spacer()
             Button("Preview") { model.preview(agent.id) }
         }
@@ -349,7 +349,7 @@ private struct AgentForm: View {
         } header: {
             Text("Shortcut and look")
         } footer: {
-            Text(footer).font(.caption).foregroundStyle(.secondary)
+            Text(footer).font(.axCaption).foregroundStyle(.secondary)
         }
     }
 }
@@ -372,7 +372,7 @@ private struct GeneralTab: View {
                     Text("Shortcuts")
                 } footer: {
                     Text("Shortcuts change as soon as you save. If one does nothing, another app already uses it.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.axCaption).foregroundStyle(.secondary)
                 }
                 if draft.general.look != nil {
                     LookSection(look: Binding(get: { model.draft?.general.look ?? "orb" },
@@ -411,7 +411,7 @@ private struct GeneralTab: View {
                         Text("Answers")
                     } footer: {
                         Text("Waiting: a soft sound and a blue dot, and the answer plays when you pick it in the open-requests list (⌘⌥O). Off for hover: only a click or ⌘⌥O opens the list.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.axCaption).foregroundStyle(.secondary)
                     }
                 }
                 if draft.general.card != nil {
@@ -425,7 +425,7 @@ private struct GeneralTab: View {
                     Text(LoginItem.managedByInstaller
                          ? "Started at login by `agentx desktop install`. To stop that, run `agentx desktop stop` in Terminal."
                          : "Saved by macOS as a login item, not in agentx.json. Changes right away.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.axCaption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -466,7 +466,7 @@ private struct SpeechTab: View {
                     Text("Speech")
                 } footer: {
                     Text("Automatic uses ElevenLabs when a key is set, and the engine on this Mac otherwise. Parakeet has no Arabic; until its model has downloaded, Whisper answers instead. Voice detection ends a turn when you stop talking, not when the room goes quiet. The default provider is for agents that don't choose their own. All apply to the next question.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.axCaption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -496,7 +496,7 @@ private struct HotkeyField: View {
     var body: some View {
         LabeledContent(title) {
             HStack(spacing: 6) {
-                if !hint.isEmpty { Text(hint).font(.caption).foregroundStyle(.secondary) }
+                if !hint.isEmpty { Text(hint).font(.axCaption).foregroundStyle(.secondary) }
                 Button(recording ? "Type the shortcut…" : value.map(HotkeySpec.display) ?? "None") {
                     recording ? stop() : start()
                 }
@@ -558,7 +558,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
                              backing: .buffered, defer: false)
             w.title = "AgentX Voice Settings"
             w.isReleasedWhenClosed = false
-            w.contentView = NSHostingView(rootView: SettingsView(model: model))
+            w.contentView = NSHostingView(rootView: SettingsView(model: model).font(.axBody).tint(Color(nsColor: Brand.accent)))
             w.delegate = self
             w.center()
             window = w

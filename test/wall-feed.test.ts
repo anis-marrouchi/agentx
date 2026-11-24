@@ -390,21 +390,22 @@ describe("Running now does not wait on the feed (#1252)", () => {
     const w = openWall({ feed })
     await w.settle()
     expect(w.calls.map((c) => c.url)).toContain("/api/live?quick=1")
-    const nodes = w.el("wall-nodes").innerHTML
-    expect(nodes).toContain("<b>node-a</b>")
-    expect(nodes).toContain("Customer Desk: x")
+    // The live tree in the left column (#2101 R1: it replaced Happening now).
+    const nodes = w.el("wall-tree-body").innerHTML
+    expect(nodes).toContain('<span class="lt__mach">node-a</span>')
+    expect(nodes).toContain("Customer Desk")
     expect(w.el("wall-feed").innerHTML).toBe("")
     answer({ ok: true, status: 200, json: async () => WALL })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
-    expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
+    expect(w.el("wall-tree-body").innerHTML).toContain("Customer Desk")
   })
 
   it("still draws Running now when the feed fails", async () => {
     const w = openWall({ feed: Promise.resolve({ ok: false, status: 504, json: async () => ({}) }) })
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain("Could not load the Hub")
-    expect(w.el("wall-nodes").innerHTML).toContain("Customer Desk: x")
+    expect(w.el("wall-tree-body").innerHTML).toContain("Customer Desk")
   })
 })
 
@@ -426,9 +427,9 @@ describe("Wall home first load (#1442)", () => {
     const slow = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "timed out", checking: true, agents: [] }] }
     const w = openWall({ live: slow, timers })
     await w.settle()
-    const side = w.el("wall-nodes").innerHTML
-    expect(side).toContain('<div class="wh"><b>node-b</b><span title="">checking…</span></div>')
-    expect(side).not.toContain("does not answer")
+    const side = w.el("wall-tree-body").innerHTML
+    expect(side).toContain('<span class="lt__mach">node-b</span><span class="lt__badge">checking…</span>')
+    expect(side).not.toContain("not checked")
     const lives = () => w.calls.filter((c) => c.url === "/api/live?quick=1").length
     expect(lives()).toBe(1)
     timers.splice(0).forEach((f) => f())
@@ -440,7 +441,7 @@ describe("Wall home first load (#1442)", () => {
     const down = { nodes: [LIVE.nodes[0], { name: "node-b", reachable: false, error: "unreachable", agents: [] }] }
     const w = openWall({ live: down, timers: [] })
     await w.settle()
-    expect(w.el("wall-nodes").innerHTML).toContain('<div class="wh is-down"><b>node-b</b><span title="">does not answer</span></div>')
+    expect(w.el("wall-tree-body").innerHTML).toContain('<span class="lt__mach">node-b</span><span class="lt__badge is-silent" title="unreachable">not checked</span>')
   })
 
   it("asks for the feed again while the reply says more is on its way, a few times at most", async () => {
@@ -459,7 +460,7 @@ describe("Wall home first load (#1442)", () => {
     const timers: Array<() => void> = []
     const w = openWall({ liveFails: true, timers })
     await w.settle()
-    expect(w.el("wall-nodes").innerHTML).toContain("Could not reach the machines just now; trying again.")
+    expect(w.el("wall-tree-body").innerHTML).toContain("Could not reach the machines just now; trying again.")
     expect(timers.length).toBe(1)
   })
 })
@@ -894,13 +895,19 @@ describe("Wall v2 feed (#1355)", () => {
     expect(w.el("wall-jobs").hidden).toBe(false)
   })
 
-  it("shows one line per machine under Happening now", async () => {
+  it("has one live list: the tree, with no Happening now box (#2101 R1)", async () => {
     const w = openWall({ data: V2, live: LIVE2 })
     await w.settle()
-    const side = w.el("wall-nodes").innerHTML
-    expect(side).toContain('<div class="wh"><b>node-a</b><span title="Customer Desk: x">Customer Desk: x</span></div>')
-    expect(side).toContain("<b>node-b</b><span title=\"\">nothing running</span>")
-    expect(side).toContain('href="#page=running"')
+    const page = renderWallPage()
+    expect(page).not.toContain("Happening now")
+    expect(page).not.toContain('id="wall-nodes"')
+    // Running now stays as the tree's "All" page.
+    expect(page).toContain('<a href="#page=running" title="Running now, with ops details">All</a>')
+    // The phone's bar button has a word that fits under its icon (#2101 P2).
+    expect(page).toMatch(/ax-wall__shortcut" data-nav="running"[^>]*title="Running now">[\s\S]*?<span>Running<\/span>/)
+    const tree = w.el("wall-tree-body").innerHTML
+    expect(tree).toContain('<span class="lt__mach">node-a</span>')
+    expect(tree).toContain('<span class="lt__mach">node-b</span>')
   })
 
   it("posts from the composer to the agent its @name picks, on that agent's node", async () => {
@@ -3128,5 +3135,55 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     const w = openWall({ data, chatAgent: "scout" })
     await w.settle()
     expect(w.el("hc-work").hidden).toBe(true)
+  })
+})
+
+// #2101 P2: the layout gaps R2, R3 and R10, through the page's real script.
+describe("Hub layout gaps (#2101 P2)", () => {
+  it("opens the left column with what needs you, from the Needs you list (R3)", async () => {
+    const w = openWall({})
+    await w.settle()
+    const top = w.el("wall-needs-top")
+    expect(top.hidden).toBe(false)
+    expect(top.innerHTML).toContain("Needs you")
+    expect(top.innerHTML).toContain("Send the newsletter?")
+    expect(top.innerHTML).toContain('href="#status=open&amp;view=decide"')
+    // Same count as the nav's Needs you.
+    expect(top.innerHTML).toContain('>1</b>')
+    expect(w.el("nav-n-needs").textContent).toBe("1")
+  })
+
+  it("draws no Needs you box when nothing waits", async () => {
+    const w = openWall({ approvals: { items: [], snoozed: 0, errors: [], desk: { count: 0, later: 0, items: [] }, settings: {} } })
+    await w.settle()
+    expect(w.el("wall-needs-top").hidden).toBe(true)
+  })
+
+  it("shows one post per item: open copies fold into the newest (R10)", async () => {
+    const data = { ...WALL, posts: [
+      post("c1", "pm", "in_progress", { headline: "Check #2101 PR 1c", lastMoveAt: NOW - 900e3 }),
+      post("c2", "pm", "in_progress", { headline: "Check #2101 PR 1c", lastMoveAt: NOW - 300e3 }),
+      post("c3", "pm", "in_progress", { headline: "Check #2101 PR 1c", lastMoveAt: NOW - 600e3 }),
+      post("r1", "cx", "in_progress"),
+    ] }
+    const w = openWall({ data })
+    await w.settle()
+    const feed = w.el("wall-feed").innerHTML
+    expect(feed.match(/id="post-c\d"/g)).toEqual(['id="post-c2"'])
+    expect(feed).toContain("2 more posts like this")
+    expect(feed).toContain('data-open="c3"')
+    expect(feed).toContain('id="post-r1"')
+  })
+
+  it("titles a run on Running now, not with its raw prompt (R2)", async () => {
+    const live = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agents: [
+      { id: "cx", name: "Customer Desk", model: "claude-opus-5-5", runningTasks: [{ id: "t9", startedAt: new Date(NOW).toISOString(), sender: "agent:pm-agent", messagePreview: "[Job state] Before you end this run, state the job's state" }] },
+    ] }] }
+    const w = openWall({ live, hash: "#page=running" })
+    await w.settle()
+    const html = w.el("wall-running").innerHTML
+    expect(html).toContain("<b>Job for pm-agent</b>")
+    expect(html).not.toContain("Before you end this run")
+    expect(html).toContain("Customer Desk")
   })
 })

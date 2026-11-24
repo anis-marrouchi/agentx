@@ -116,7 +116,8 @@ type NavIcon = keyof typeof NAV_ICON
 /** One nav destination: data-nav key, label, link, icon, count id, tooltip. */
 /** hidden: drawn hidden; the page script shows it once it has something
  *  to show (Numbers, #1826: only once a machine has a number). */
-interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string; hidden?: boolean }
+/** short: the word under its icon in the phone's bar, when the label is too long there (#2101 P2). */
+interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string; hidden?: boolean; short?: string }
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
@@ -131,7 +132,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "Work", items: [
     { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },
     { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
-    { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
+    { key: "running", label: "Running now", short: "Running", href: "#page=running", icon: "live", count: "nav-n-running" },
     { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
     { key: "activity", label: "Activity", href: "#page=activity", icon: "activity", title: "Activity: every run, newest first" },
     { key: "numbers", label: "Numbers", href: "#page=numbers", icon: "numbers", count: "nav-n-numbers", title: "Numbers: tracked measures, their newest reading and trend", hidden: true },
@@ -168,7 +169,7 @@ export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
 function navItemHtml(i: NavItem, mobileShortcut = false): string {
   const bar = WALL_BAR_KEYS.includes(i.key) ? " data-bar" : ""
   const n = i.count ? (mobileShortcut ? `<b class="ax-wall__n" data-n-for="${i.count}" hidden></b>` : `<b class="ax-wall__n" id="${i.count}"></b>`) : ""
-  return `<a class="ax-wall__item${mobileShortcut ? " ax-wall__shortcut" : ""}${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
+  return `<a class="ax-wall__item${mobileShortcut ? " ax-wall__shortcut" : ""}${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${mobileShortcut && i.short ? i.short : i.label}</span>${n}</a>`
 }
 
 /** The phone's More sheet: every page not in the bar, in the same groups. */
@@ -217,6 +218,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
+    <section class="lt lt--needs" id="wall-needs-top" aria-labelledby="wall-needs-h" hidden></section>
     <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
       <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
       <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
@@ -312,10 +314,6 @@ ${shortcuts}
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
     <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
     <div class="wwf__side" id="wall-wf-side" aria-label="Workflows: follow-ups and settings"></div>
-    <section class="ax-wall__box ax-wall__nodes" aria-labelledby="wall-nodes-h">
-      <h2 id="wall-nodes-h">Happening now</h2>
-      <div id="wall-nodes"><p class="ax-wall__empty">Loading…</p></div>
-    </section>
     <section class="ax-wall__box ax-wall__agents" aria-labelledby="wall-agents-h">
       <h2 id="wall-agents-h">Agents</h2>
       <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
@@ -382,6 +380,17 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__row.is-done .lt__title { color: var(--ax-text-2); }
 .lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
 .lt__more:hover { color: var(--ax-accent); }
+/* Needs you first (#2101 R3, wall-sidebar.ts): the oldest five, in red. */
+.lt__h--need { color: var(--ax-red-ink, var(--ax-red)); font-weight: 600; justify-content: flex-start; gap: 6px; }
+.lt__badge.is-need { background: var(--ax-red-t); color: var(--ax-red-ink, var(--ax-red)); }
+.lt__dot.lt__dot--need { background: var(--ax-red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ax-red) 22%, transparent); }
+.lt--needs .lt__more { margin-left: 0; padding-left: 25px; }
+/* R1: the tree is the one live list on a wide screen; Running now stays
+   its "All" page (ops details) and the phone's bar button. */
+@media (min-width: 1181px) { .ax-wall__navgroup > .ax-wall__item[data-nav="running"] { display: none; } }
+/* R10: a post that folds its copies says so, under its text. */
+.wp__copies { font-size: var(--ax-fs-xs); color: var(--ax-muted); margin: 4px 0 0; }
+.wp__copies a { color: var(--ax-muted); }
 /* The workers a run started (#2145), indented under its row: a small
    ring while working, a green dot done, red failed, amber waiting. */
 .lt__ws { margin: 0 0 2px 19px; padding-left: 6px; border-left: 1px dashed var(--ax-border); }
@@ -631,13 +640,6 @@ a.lt__wk:hover { background: var(--ax-surface-3); }
 .wpf__links a { color: var(--ax-accent); text-decoration: none; }
 
 /* Side column boxes (the dashboard links are styled in wall-space.ts) */
-.ax-wall__nodes > div { display: flex; flex-direction: column; }
-/* Happening now (#1355): one line per machine; Running now has the rest. */
-.wh { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); min-width: 0; }
-.wh:first-child { border-top: 0; }
-.wh b { flex: none; }
-.wh span { color: var(--ax-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wh.is-down b, .wh.is-down span { color: var(--ax-red-ink, var(--ax-err)); }
 .ax-wall__classicd { margin-top: 8px; font-size: var(--ax-fs-xs); }
 .ax-wall__classicd summary { cursor: pointer; color: var(--ax-accent); margin-bottom: 6px; }
 .wa-mesh { margin: 0 0 6px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }

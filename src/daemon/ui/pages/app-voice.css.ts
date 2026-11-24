@@ -39,4 +39,20 @@ export const APP_VOICE_CSS = `
 .cx-typing-on .vx-orb { width: 88px; height: 88px; }
 .cx-typing-on .vx-row { gap: 16px; }
 @media (prefers-reduced-motion: reduce) { .vx-orb { transition: none; } }
+.vx-talk {
+  position: fixed; left: 0; right: 0; z-index: 30; pointer-events: none;
+  display: grid; justify-items: center; gap: 14px; padding: 18px 16px 16px;
+  border: 1px solid var(--ax-border); border-bottom: 0; border-radius: 28px 28px 0 0;
+  background: var(--ax-surface); box-shadow: 0 -12px 32px rgb(0 0 0 / .18);
+}
+.vx-talk-who { display: inline-flex; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border-radius: 999px; background: var(--ax-accent-t); color: var(--ax-accent); font-weight: 600; }
+.vx-talk-face { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--ax-accent); color: #fff; font-size: 14px; font-weight: 700; }
+.vx-wave { display: flex; align-items: center; gap: 5px; height: 40px; }
+.vx-wave i { display: block; width: 4px; border-radius: 2px; background: var(--ax-accent); height: calc(6px + 34px * var(--k) * var(--l, .15)); transition: height .08s linear; }
+.vx-talk-mic { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; background: var(--ax-accent); box-shadow: 0 0 0 14px var(--ax-accent-t), 0 0 0 30px color-mix(in oklch, var(--ax-accent) 10%, transparent); margin: 14px 0; }
+.vx-talk-mic svg { width: 40px; height: 40px; fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round; }
+.vx-talk-hint { font-size: 15px; color: var(--ax-text-2); }
+.vx-talk[data-state=cancel] .vx-talk-mic { background: var(--ax-red); }
+.vx-talk[data-state=cancel] .vx-talk-hint { color: var(--ax-red-ink); }
+@media (prefers-reduced-motion: reduce) { .vx-wave i { transition: none; } }
 `

@@ -67,6 +67,7 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
+import { tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml } from "./wall-task-session"
 import { WALL_SETTINGS_SCRIPT } from "./wall-settings.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
 import { WALL_BUILD_SCRIPT } from "./wall-build.client"
@@ -88,6 +89,7 @@ import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
+import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
@@ -106,6 +108,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
+  ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
+  ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -551,7 +555,7 @@ ${WALL_AGENTS_SCRIPT}
       if (p.goal) acts.push('<button type="button" data-goal="' + esc(p.goal.id) + '" title="Show every post for this goal">Goal: ' + esc(p.goal.title) + '</button>');
       return '<article class="' + cls + '" id="post-' + esc(p.id) + '" data-post="' + esc(p.id) + '" tabindex="0">' + avatar(p.owner) + '<div class="wp__b">' +
         '<div class="wp__by">' + by + '</div>' +
-        leadHtml(p, via, false) +
+        leadHtml(p, via, false) + wsCopiesHtml(p, esc) +
         (waitLine(p) ? '<div class="wp__block">' + waitLine(p) + '</div>' : '') +
         '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
         '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
@@ -1254,18 +1258,6 @@ ${WALL_AGENTS_SCRIPT}
   function nodeChecking(n) { return !!n.checking; }
   function nodeDown(n) { return (!n.reachable || !!n.error) && !n.checking; }
 
-  // --- Happening now (#1355): one line per machine, who runs what ---
-  function happeningHtml() {
-    var live = (S.live && S.live.nodes) || [];
-    if (!live.length) return '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading…') + '</p>';
-    return live.map(function (n) {
-      var down = nodeDown(n), running = [];
-      (n.agents || []).forEach(function (a) { (a.runningTasks || []).forEach(function (t) { running.push((a.name || a.id) + ': ' + plainMarkerText(t.messagePreview).slice(0, 60)); }); });
-      var what = nodeChecking(n) ? 'checking…' : down ? 'does not answer' : running.length ? running[0] + (running.length > 1 ? ' · +' + (running.length - 1) + ' more' : '') : 'nothing running';
-      return '<div class="wh' + (down ? ' is-down' : '') + '"><b>' + esc(n.name) + '</b><span title="' + esc(running.join('\n')) + '">' + esc(what) + '</span></div>';
-    }).join('') + '<a class="wa-more" href="#page=running">See all running</a>';
-  }
-
   // --- Running now, per node, with ops details ---
   function nodesHtml() {
     var wallNodes = (S.data && S.data.nodes) || [];
@@ -1293,7 +1285,7 @@ ${WALL_AGENTS_SCRIPT}
         (running.length ? '<ul>' + running.map(function (x) {
           var rid = x.t.traceId || x.t.id;
           var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
-          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(x.a.name || x.a.id) + '</b> ' + esc(plainMarkerText(x.t.messagePreview).slice(0, 90)) + '</a> <small>since ' + esc(stamp(Date.parse(x.t.startedAt))) + '</small>' +
+          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(runTitle(x.t)) + '</b></a> <small>' + esc([x.a.name || x.a.id, ltModel(x.a.model), 'since ' + stamp(Date.parse(x.t.startedAt))].filter(Boolean).join(' · ')) + '</small>' +
             conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
         }).join('') + '</ul>' : '<div class="idle">' + (checking ? 'Slow to answer; asking again.' : down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
         (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
@@ -1303,6 +1295,26 @@ ${WALL_AGENTS_SCRIPT}
         : '<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
     });
     return meshesHtml() + cards.join('');
+  }
+  /** A run's title (#2101 R2): its request's headline, else the step or
+   *  job it is for, never the raw prompt (wall-tree.ts ltTitle). */
+  function runTitle(t) {
+    var rid = ltRequestId(t);
+    return ltTitle(t, (rid && findPost(rid)) || null);
+  }
+  // --- Needs you first, short (#2101 R3, wall-sidebar.ts) ---
+  // The oldest five that wait on the owner, from the Needs you page's own
+  // list and count, at the top of the left column; "Show all N" opens it.
+  var needsLast = '';
+  function renderNeedsTop() {
+    var el = $('wall-needs-top');
+    if (!el) return;
+    var n = decideCount();
+    var html = n == null ? '' : wsNeedsHtml(decAll(), n, decOwner() ? 'you' : 'the owner', '#status=open&view=decide', Date.now(), esc, ltAge, nameOf);
+    el.hidden = !html;
+    if (html === needsLast) return;
+    needsLast = html;
+    el.innerHTML = html;
   }
   // --- The live tree at the top of the nav (#2101 PR 1c) ---
   // machine → project → work item → agent, from the live snapshot and the
@@ -1361,7 +1373,7 @@ ${WALL_AGENTS_SCRIPT}
   // --- Render ---
   function render() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
-    $('wall-nodes').innerHTML = happeningHtml();
+    renderNeedsTop();
     renderTree();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
@@ -1382,8 +1394,6 @@ ${WALL_AGENTS_SCRIPT}
     });
     $('wall-post').hidden = page !== 'post';
     $('wall-running').hidden = page !== 'running';
-    // On its own page, Running now leaves the side column.
-    $('wall-nodes').parentNode.hidden = page === 'running';
     $('wall-agents-page').hidden = page !== 'agents';
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
@@ -1435,7 +1445,8 @@ ${WALL_AGENTS_SCRIPT}
     // Needs you does not wait on the feed (#1440): its list is the inbox.
     if (onWall && S.view === 'decide') renderDecide('decide');
     if (!S.data) return;
-    var posts = (S.data.posts || []).filter(function (p) { return match(p, f); });
+    // One post per item (#2101 R10): open copies fold into the newest.
+    var posts = wsFold((S.data.posts || []).filter(function (p) { return match(p, f); }), isOpen);
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     // Opened from a person on the People page (#1441): say whose requests these are.
     if (f.asker) $('wall-count').innerHTML += '<span class="ax-wall__asker"> asked by ' + esc(personName(f.asker)) + ' · <button type="button" data-asker-clear>everyone</button></span>';

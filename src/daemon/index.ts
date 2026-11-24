@@ -214,6 +214,7 @@ import {
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
 import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
 import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload } from "./assistant-upload"
+import { assistantModel } from "./assistant-model"
 import { assistantRuns } from "./assistant-runs"
 import { ProcessRegistry } from "@/agents/process-registry"
 import { ClaudeProcessFactory, readClaudeMdHashSafe } from "@/agents/claude-process-factory"
@@ -7128,12 +7129,16 @@ export class AgentXDaemon {
           let thread = typeof body?.threadId === "string" ? store.thread(body.threadId) : undefined
           const agentId = String(body?.agentId || thread?.agentId || "").trim()
           if (!agentId) { this.json(res, 400, { error: "agentId required" }); return }
-          if (!this.registry.list().some(a => a.id === agentId)) {
+          const agentDef = this.registry.list().find(a => a.id === agentId)
+          if (!agentDef) {
             this.json(res, 404, { error: `no agent "${agentId}" on this node` }); return
           }
+          // The composer's model picker (#2101 P7): checked against the engine.
+          const picked = assistantModel(agentDef.tier, body?.model)
+          if (picked.error) { this.json(res, 400, { error: picked.error }); return }
           // Files uploaded for this agent (POST /api/assistant/upload); the
           // thread shows their names, the prompt their paths (#2101 PR 2).
-          const files = acceptAttachments(this.registry.list().find(a => a.id === agentId)?.workspace || null, body?.attachments)
+          const files = acceptAttachments(agentDef.workspace || null, body?.attachments)
           // The title is the question, never the attachment list.
           if (!thread) thread = store.createThread(agentId, body?.node ?? null, message)
           const seq = store.appendTurn(thread.id, files.length ? `${message}\n\n${attachedLine(files)}` : message)
@@ -7158,6 +7163,7 @@ export class AgentXDaemon {
             try {
               const resp = await this.registry.execute({
                 agentId, message: prompt,
+                ...(picked.model ? { model: picked.model } : {}),
                 // The requests record keeps the sentence, not the wrapper (#401).
                 requestText: message,
                 // The owner typed in this node's dashboard: the turn is theirs (#393).
@@ -7679,6 +7685,19 @@ export class AgentXDaemon {
       if (taskHistoryListMatch) {
         const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") || "50", 10) || 50))
         this.json(res, 200, this.registry.listTaskHistory(taskHistoryListMatch[1], limit))
+        return
+      }
+      // One run's session (#2101 R4): the agent's runs in the same channel
+      // and chat, in order, paged. GET /agents/:agentId/tasks/:taskId/session?before=&limit=
+      // Mesh-gated (mesh-auth.ts): the turns carry what was asked and said.
+      const taskSessionMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)\/session$/)
+      if (taskSessionMatch) {
+        const agentId = decodeURIComponent(taskSessionMatch[1])
+        if (!this.config.agents[agentId]) { this.json(res, 404, { error: "agent not found" }); return }
+        const limit = parseInt(url.searchParams.get("limit") || "", 10) || undefined
+        const page = this.registry.getTaskSession(agentId, decodeURIComponent(taskSessionMatch[2]), { before: url.searchParams.get("before"), limit })
+        if (!page) { this.json(res, 404, { error: "not found" }); return }
+        this.json(res, 200, page)
         return
       }
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)

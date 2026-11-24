@@ -2,6 +2,7 @@ import { markdownToHtml } from "../src/utils/markdown-html"
 import { describe, expect, it } from "vitest"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
+import { WALL_CHAT_INPUT_SCRIPT } from "../src/daemon/ui/pages/wall-chat-input.client"
 import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "../src/daemon/ui/pages/wall-chat-view"
 import { cfFoldHtml, cfParseLive } from "../src/daemon/ui/pages/wall-chat-fold"
 import { openWall } from "./wall-settings-harness"
@@ -672,5 +673,96 @@ describe("Hub chat: answers like Claude Code (#2101 R14)", () => {
     expect(chatLiveHtml("", { key: "k", fold: FOLD })).toBeNull()
     expect(chatAttached("Hi\n\nAttached: a.png, b.pdf")).toEqual({ text: "Hi", files: ["a.png", "b.pdf"] })
     expect(chatAttached("Plain")).toEqual({ text: "Plain", files: [] })
+  })
+})
+
+describe("Hub chat composer (#2101 P7)", () => {
+  const agents = { status: 200, body: { agents: [{ id: "scout", name: "Scout", tier: "claude-code", model: "claude-opus-4-6" }, { id: "forge", name: "Forge", tier: "codex-cli", model: "gpt-6.2-sol" }] } }
+
+  it("tells the composer who is in view, with the agent's engine and model", async () => {
+    const seen: unknown[] = []
+    const w = openChat({ hash: "", route: (url) => (url === "/api/agents" ? agents : undefined) })
+    w.win.AXHubChat.onAgent = (...a: unknown[]) => { seen.push(a) }
+    await w.settle()
+    w.el("hc-agent").value = "forge"
+    await w.fire("hc-agent", "change")
+    expect(seen).toContainEqual(["scout", "Scout", { tier: "claude-code", model: "claude-opus-4-6" }])
+    expect(seen.at(-1)).toEqual(["forge", "Forge", { tier: "codex-cli", model: "gpt-6.2-sol" }])
+  })
+
+  it("sends the picked model with the message, and none when the agent's own is kept", async () => {
+    const w = openChat({ route: (url, init) => (url === "/api/agents" ? agents : url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "t9", pending: true } } : undefined) })
+    await w.settle()
+    w.el("hc-agent").value = "scout"
+    w.win.AXHubChat.model = () => "sonnet"
+    w.el("hc-text").value = "Quick one"
+    await w.fire("hc-form", "submit")
+    const post = w.calls.filter((c) => c.url === "/api/assistant" && c.method === "POST")
+    expect(post.at(-1)?.body.model).toBe("sonnet")
+    w.win.AXHubChat.model = () => ""
+    w.el("hc-text").value = "Another"
+    await w.fire("hc-form", "submit")
+    expect(w.calls.filter((c) => c.url === "/api/assistant" && c.method === "POST").at(-1)?.body.model).toBeUndefined()
+  })
+
+  it("draws one rounded card: To chip, message, attach, model, mic, send arrow", () => {
+    const page = renderWallPage({ owner: true })
+    const card = /<div class="hc__comp" id="hc-comp">[\s\S]*?<p class="hc__voice"/.exec(page)?.[0] ?? ""
+    for (const id of ["hc-to-tag", "hc-text", "hc-attach", "hc-model", "hc-mic", "hc-send"]) expect(card).toContain(`id="${id}"`)
+    expect(card.indexOf('id="hc-attach"')).toBeLessThan(card.indexOf('id="hc-model"'))
+    expect(card.indexOf('id="hc-model"')).toBeLessThan(card.indexOf('id="hc-send"'))
+    expect(card).toContain('aria-label="Send"')
+    expect(card).not.toContain(">Send</button>")
+  })
+})
+
+describe("Hub chat composer script (#2101 P7)", () => {
+  function composer() {
+    const els = new Map<string, any>()
+    const el = (id: string) => {
+      if (!els.has(id)) {
+        const attrs: Record<string, string> = {}
+        const cls = new Set<string>()
+        const e: any = { id, on: {}, hidden: ["hc-model", "hc-model-own", "hc-to-tag", "hc-mic"].includes(id), value: "", textContent: "", innerHTML: "",
+          getAttribute: (k: string) => attrs[k] ?? null, setAttribute: (k: string, v: string) => { attrs[k] = v },
+          classList: { toggle: (c: string, v: boolean) => { v ? cls.add(c) : cls.delete(c) }, has: (c: string) => cls.has(c) },
+          addEventListener: (t: string, f: any) => { (e.on[t] ??= []).push(f) } }
+        els.set(id, e)
+      }
+      return els.get(id)
+    }
+    el("hc-form")
+    const ls = new Map<string, string>()
+    const storage = { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => { ls.set(k, v) } }
+    let agent = "scout"
+    const api: any = { agent: () => agent, node: () => "", headers: (h: any) => h, send: () => Promise.resolve(true) }
+    new Function("document", "window", "fetch", "localStorage", WALL_CHAT_INPUT_SCRIPT)({ getElementById: el }, { AXHubChat: api, navigator: {} }, () => Promise.reject(new Error("no")), storage)
+    return { el, api, ls, setAgent: (a: string) => { agent = a } }
+  }
+
+  it("offers Claude's models to a claude-code agent and keeps the pick per agent", () => {
+    const c = composer()
+    c.api.onAgent("scout", "Scout", { tier: "claude-code", model: "claude-opus-4-6" })
+    expect(c.el("hc-to-tag").hidden).toBe(false)
+    expect(c.el("hc-to").textContent).toBe("To Scout")
+    expect(c.el("hc-text").getAttribute("placeholder")).toBe("Message Scout…")
+    expect(c.el("hc-model").hidden).toBe(false)
+    expect(c.el("hc-model").innerHTML).toContain('<option value="sonnet">Sonnet</option>')
+    expect(c.el("hc-model").innerHTML).toContain('<option value="">Opus (own)</option>')
+    expect(c.api.model()).toBe("")
+    c.el("hc-model").value = "haiku"
+    c.el("hc-model").on.change[0]()
+    expect(c.api.model()).toBe("haiku")
+    expect(JSON.parse(c.ls.get("ax-hub-chat-model")!)).toEqual({ scout: "haiku" })
+  })
+
+  it("shows a codex agent's own model, with nothing to pick", () => {
+    const c = composer()
+    c.setAgent("forge")
+    c.api.onAgent("forge", "Forge", { tier: "codex-cli", model: "gpt-6.2-sol" })
+    expect(c.el("hc-model").hidden).toBe(true)
+    expect(c.el("hc-model-own").hidden).toBe(false)
+    expect(c.el("hc-model-own").textContent).toBe("gpt-6.2-sol")
+    expect(c.api.model()).toBe("")
   })
 })

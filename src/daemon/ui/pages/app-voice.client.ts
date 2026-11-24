@@ -47,6 +47,33 @@ export const APP_VOICE_SCRIPT = `
   row.insertBefore(spkBtn, row.firstChild);
   row.appendChild(keysBtn);
   var orb = O.create(orbBtn.querySelector('canvas'));
+  // The hold-to-talk sheet (#2101 C1b, mock P2): shown over the dock while
+  // the orb is held. It takes no touches, so the held orb under it still
+  // gets the slide that cancels.
+  var talk = document.createElement('div');
+  talk.className = 'vx-talk'; talk.hidden = true; talk.setAttribute('aria-hidden', 'true');
+  var bars = '';
+  for (var i = 0; i < 17; i++) bars += '<i style="--k:' + (0.35 + 0.65 * Math.abs(Math.sin(i * 1.7))).toFixed(2) + '"></i>';
+  talk.innerHTML = '<span class="vx-talk-who"><span id="vx-talk-face" class="vx-talk-face"></span><span id="vx-talk-name"></span></span>' +
+    '<span class="vx-wave">' + bars + '</span><span class="vx-talk-mic"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></span>' +
+    '<span id="vx-talk-hint" class="vx-talk-hint"></span>';
+  document.body.appendChild(talk);
+  var wave = talk.querySelector('.vx-wave'), waveRaf = 0;
+  function showTalk(state, meter) {
+    var on = state === 'arming' || state === 'listening' || state === 'cancel';
+    cancelAnimationFrame(waveRaf);
+    talk.hidden = !on;
+    if (!on) return;
+    var t = C.target() || {}, name = t.agentName || t.agent || 'your agent';
+    var tabs = document.querySelector('.tabs');
+    talk.style.bottom = (tabs ? tabs.offsetHeight : 0) + 'px';
+    document.getElementById('vx-talk-face').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('vx-talk-name').textContent = 'Talking to ' + name;
+    document.getElementById('vx-talk-hint').textContent = state === 'cancel' ? 'Let go to cancel' : state === 'arming' ? 'Opening the microphone…' : 'Release to send · slide away to cancel';
+    talk.dataset.state = state;
+    if (!meter) { wave.style.setProperty('--l', '0.15'); return; }
+    (function frame() { wave.style.setProperty('--l', String(0.15 + 0.85 * O.levelFromRms(meter()))); waveRaf = requestAnimationFrame(frame); })();
+  }
   empty.textContent = 'Pick an agent, then hold the orb and speak. Let go to send. Its answer appears here, and is read out when it is done.';
 
   function recall(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v === '1'; } catch (e) { return d; } }
@@ -68,6 +95,7 @@ export const APP_VOICE_SCRIPT = `
     status.textContent = msg || (state === 'idle' && !C.target() ? 'Choose an agent, then hold to talk' : TEXT[state] || '');
     status.classList.toggle('vx-bad', !!bad);
     orbBtn.querySelector('.cx-sr').textContent = state === 'speaking' ? 'Stop speaking' : 'Hold to talk';
+    showTalk(state, meter);
   }
   function idle(msg, bad) { show(C.busy() ? 'thinking' : 'idle', msg, bad); setTimeout(pump, 0); }
   function tint() { orb.tint('#2979FF'); }

@@ -131,6 +131,7 @@ import { waitRefusalText } from "@/admission/wait-notice"
 import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { parentRunOf } from "./run-workers"
+import { TaskSessionIndex, type SessionPage } from "./task-session"
 
 /** Channels that never have an outbound adapter: a queued reply on them
  *  stays on its task, so skipping the post is expected and not logged. */
@@ -277,6 +278,9 @@ export interface TaskRecord {
   chatId?: string
   sender?: string
   message: string
+  /** What the person typed, when the caller kept it apart from the prompt
+   *  around it (runPreview); the session view shows it (#2101 R4). */
+  requestText?: string
   startedAt: string
   endedAt: string
   durationMs: number
@@ -2855,6 +2859,7 @@ export class AgentRegistry {
           chatId: runningTask.chatId,
           sender: runningTask.sender,
           message: task.message || "",
+          ...(task.requestText?.trim() ? { requestText: task.requestText.trim() } : {}),
           startedAt: runningTask.startedAt.toISOString(),
           endedAt: endedAt.toISOString(),
           durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
@@ -4848,6 +4853,27 @@ export class AgentRegistry {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     const file = resolve(dir, `${this.safe(record.id)}.json`)
     writeFileSync(file, JSON.stringify(record, null, 2), "utf-8")
+    this.sessionIndex?.note(record)
+  }
+
+  /** The runs that share a chat with one run (#2101 R4), read from the
+   *  saved records; built per agent on first use. */
+  private sessionIndex: TaskSessionIndex | null = null
+  private sessionIndexRoot = ""
+
+  /**
+   * One run's session: the agent's runs in the same channel and chat, in
+   * order, paged (task-session.ts). Null when the run is neither saved nor
+   * running.
+   */
+  getTaskSession(agentId: string, taskId: string, opts: { before?: string | null; limit?: number } = {}): SessionPage | null {
+    const root = resolve(process.cwd(), TASK_HISTORY_DIR)
+    if (!this.sessionIndex || this.sessionIndexRoot !== root) {
+      this.sessionIndex = new TaskSessionIndex(root)
+      this.sessionIndexRoot = root
+    }
+    const live = this.agents.get(agentId)?.runningTasks ?? []
+    return this.sessionIndex.page(agentId, taskId, live, opts)
   }
 
   /**
@@ -4945,6 +4971,7 @@ export class AgentRegistry {
         try { rmSync(resolve(agentPath, day), { recursive: true, force: true }); removed++ } catch { /* */ }
       }
     }
+    if (removed) this.sessionIndex?.reset()
     return removed
   }
 
