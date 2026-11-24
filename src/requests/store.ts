@@ -1,3 +1,4 @@
+import { recordGateEvent } from "@/gates/events"
 import { recordSignal, type SignalKind } from "@/improve/signals"
 import { extractUiDirective } from "@/channels/ui-directive"
 import type Database from "better-sqlite3"
@@ -884,13 +885,29 @@ export class RequestStore {
    *  raised: it gets the usual quiet time). A touch after the due time no
    *  longer hides it (noqta#876 cause 3): the mark is per due time
    *  (`markDuePushed`), and a new due time is raised again. A loop
-   *  waiting on the owner is left alone: its question reminds them. */
+   *  waiting on the owner stays in that state and gets one notice per due time (#2085). */
   overdue(now: number, quietBefore: number): RequestRecord[] {
     return this.db.prepare(
-      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other') AND due_at IS NOT NULL AND due_at < ?
+      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other', 'waiting_owner') AND due_at IS NOT NULL AND due_at < ?
          AND (due_pushed_for IS NULL OR due_pushed_for != due_at OR updated_at < ?)
        ORDER BY due_at, rowid`,
     ).all(now, quietBefore).map(toRecord)
+  }
+
+  noteOwnerDue(request: RequestRecord, line: string, now: number): boolean {
+    const { id, dueAt, agentId } = request
+    if (dueAt === null) return false
+    const { changes } = this.db.prepare(
+      `UPDATE requests SET attention_reason = ?, due_pushed_at = ?, due_pushed_for = due_at
+       WHERE id = ? AND state = 'waiting_owner' AND due_at = ?
+         AND (due_pushed_for IS NULL OR due_pushed_for != due_at)`,
+    ).run(line.slice(0, TEXT_MAX), now, id, dueAt)
+    if (!changes) return false
+    recordGateEvent({
+      gate: "due-wake", ruleId: "R4", outcome: "reported", agent: agentId,
+      ref: id, reason: new Date(dueAt).toISOString(), at: now,
+    }, this.db)
+    return true
   }
 
   /** A row that is only a job (state 'job', #1861) is not a request: the

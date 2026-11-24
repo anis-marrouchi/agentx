@@ -604,7 +604,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     const handedTo = r.state !== "waiting_other" ? null : reads ? reads.handedTo : openHandoffTo(deps.db, r.id)
     const look = waitsOn(r, { isAgent: deps.isAgent, activeStepAgent: () => stepAgent })
     const on = handedTo ? { who: handedTo } : look
-    const why = r.state === "waiting_owner" ? (r.question ?? "waiting on the owner")
+    const why = r.state === "waiting_owner" ? (r.attentionReason ?? r.question ?? "waiting on the owner")
       : r.state === "needs_attention" ? (r.attentionReason ?? "needs attention")
       : stall ?? "waiting on another agent"
     blocked = { who: on.who, why: clean(why, 200), since: lastMoveAt }

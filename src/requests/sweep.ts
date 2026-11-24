@@ -61,7 +61,7 @@ export interface RequestSweepDeps {
   settings: RequestSettings
   /** Tell the owner, through the daemon's notify path. `kind` "notice"
    *  when a loop's own words say it must not wait for the digest. */
-  notify?: (title: string, message: string, request: RequestRecord, kind?: "notice") => Promise<void>
+  notify?: (title: string, message: string, request: RequestRecord, kind?: "notice", key?: string) => Promise<void>
   /** A loop's own words for its notice, when it has them: a tracked plan
    *  with a blocked step (planNotice). `told` runs once it went out. */
   noticeFor?: (r: RequestRecord) => { title: string; text: string; kind?: "notice"; told?: (now: number) => void } | null
@@ -444,6 +444,17 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     }
     const settling = settings.settleHandedBack !== false
     for (const r of store.overdue(now, now - hours * HOUR)) {
+      if (r.state === "waiting_owner") {
+        try {
+          if (r.dueAt === null) continue
+          const line = `Due ${when(r.dueAt)}, still waiting on the owner${r.question ? `: ${r.question}` : ""}`
+          if (!store.noteOwnerDue(r, line, now)) continue
+          await deps.notify?.("Request due", line, r, "notice", `request:${r.id}:due:${r.dueAt}`)
+        } catch (e: any) {
+          log(`[requests] owner-due notice for ${r.id} failed: ${e?.message ?? e}`)
+        }
+        continue
+      }
       // Back done, and settled once quiet: no "Not finished" before that (#1214).
       // One whose last reply asks the owner is not settled, so it is raised.
       if (settling && r.state === "in_progress" && !deps.inPlan?.(r.id) && store.cameBack(r.id) && !asksOwner(r.id)) continue

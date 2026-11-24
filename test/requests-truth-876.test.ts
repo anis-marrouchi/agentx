@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
+import { gateEventsSince } from "../src/gates/events"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
@@ -197,6 +198,38 @@ describe("cause 3: an overdue request wakes its agent, and a later touch does no
     store.progress(ID, due + 2 * HOUR)
     await sweepAt(due + 3 * HOUR, told)
     expect(told).toHaveLength(1)
+  })
+
+  it("reports an overdue owner wait once per due time and keeps it open for the answer", async () => {
+    const due = 10 * HOUR
+    store.setLoop(ID, { dueAt: due }, 6_000)
+    store.waitOnOwner(ID, "Can I proceed?", 7_000)
+    const notices: string[] = []
+    const woken: string[] = []
+    const sweep = (now: number) => runRequestsSweep({
+      store, settings, log: () => {}, now, hasAgent: () => true,
+      tellAgent: async (agent) => { woken.push(agent) },
+      notify: async (_title, _line, _request, kind, key) => {
+        notices.push(`${kind}:${key}`)
+        throw new Error("Push unavailable")
+      },
+    })
+    await sweep(due + 1)
+    await sweep(due + 2)
+    expect(store.get(ID)).toMatchObject({
+      state: "waiting_owner",
+      attentionReason: expect.stringContaining("Can I proceed?"),
+    })
+    expect(notices).toEqual([`notice:request:${ID}:due:${due}`])
+    expect(gateEventsSince(db, "due-wake", 0)).toMatchObject([{ ref: ID, outcome: "reported" }])
+    expect(woken).toEqual([])
+
+    const moved = due + HOUR
+    store.setLoop(ID, { dueAt: moved }, due + 3)
+    await sweep(moved + 1)
+    expect(notices).toEqual([`notice:request:${ID}:due:${due}`, `notice:request:${ID}:due:${moved}`])
+    store.progress(ID, moved + 2)
+    expect(store.get(ID)).toMatchObject({ state: "in_progress", attentionReason: null })
   })
 
   it("a new due time wakes it again", async () => {

@@ -3307,8 +3307,8 @@ export class AgentXDaemon {
   /** Tell the owner about a request: a push, and the Mac banner. `kind`
    *  nag (a request that stopped) waits for the daily digest; its card is
    *  on the Desk meanwhile (#1126). */
-  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice"): Promise<void> {
-    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: kind === "nag" ? `request:${r.id}:attention` : undefined })
+  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice", key?: string): Promise<void> {
+    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: key ?? (kind === "nag" ? `request:${r.id}:attention` : undefined) })
   }
 
   private plansSweeping = false
@@ -3772,7 +3772,7 @@ export class AgentXDaemon {
       // line about it waits for the daily digest (#1126).
       // A blocked plan step is told in its own words, as a notice (#1138 D:
       // the one escalation of every loop).
-      notify: (title, message, r, kind) => this.notifyRequestOwner(title, message, r, kind ?? "nag"),
+      notify: (title, message, r, kind, key) => this.notifyRequestOwner(title, message, r, kind ?? "nag", key),
       noticeFor: (r) => planNotice(requests.plans, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
