@@ -2178,6 +2178,8 @@ interface NodeLive {
     value?: CronValue
     /** The goal check's Wall lines (#863). */
     goalLines?: string[]
+    /** The issue its runs are about (#2104), shown as its project (#2101 P10). */
+    home?: string
     lastVerdict?: { text: string; at: string }
     until?: string
   }>
@@ -2369,6 +2371,8 @@ export async function fetchDaemonAgents(
         value: cronValueOf(job.value),
         // The goal it serves, and whether it is closed (#1568).
         ...(typeof job.goal === "string" ? { goal: job.goal } : {}),
+        // The issue its runs are about (#2104): the Schedules table's Project (#2101 P10).
+        ...(typeof job.home === "string" && job.home.trim() ? { home: job.home.trim().slice(0, 300) } : {}),
         ...(job.goalClosed && typeof job.goalClosed.state === "string" ? { goalClosed: { state: job.goalClosed.state } } : {}),
         // The goal check's lines (#863): held, change owed, refused card.
         ...(Array.isArray(job.goalLines) ? { goalLines: job.goalLines.filter((l: unknown) => typeof l === "string").slice(0, 10).map((l: string) => l.slice(0, 300)) } : {}),

@@ -1024,7 +1024,15 @@ describe("Wall v2 pages (#1355)", () => {
     expect(sync.split('class="wjb__sq"')[1].match(/class="is-(ok|err)"/g)).toHaveLength(7)
     expect(sync).toContain("token expired")
     expect(sync).toContain('disabled title="Phase 2, not built">Pause</button>')
+    // The table (#2101 P10, R7): head row, project, next run, last result, a failure said on the row.
+    expect(html).toContain('<div class="wjb__head" aria-hidden="true"><span>Schedule</span><span>Project</span><span>Next run</span><span>Last result</span>')
+    expect(html).toContain("<dt>last run failed</dt><dd>1</dd>")
+    expect(html).toContain('<details class="wjb is-stale is-failed">')
+    expect(sync).toContain('<span class="wjb__why">token expired</span>')
+    expect(sync).toContain('<span class="wsc__last is-err">Failed <small>')
     const digest = html.split("<b>digest</b>")[1].split("<b>sync</b>")[0]
+    expect(digest).toContain('<span class="wsc__last is-ok">Worked <small>')
+    expect(digest).toContain('<span class="wjb__p"><small>—</small></span>')
     expect(digest).toContain('<span class="chip chip--done">on</span>')
     expect(digest.match(/class="is-none"/g)).toHaveLength(5)
     expect(digest).toContain("t-digest")
