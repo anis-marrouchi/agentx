@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.263.0](https://github.com/anis-marrouchi/agentx/compare/v0.262.1...v0.263.0) (2026-11-24)
+
+
+### Features
+
+* **hub:** agent sidebar and Mobile app page ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P4) ([#2193](https://github.com/anis-marrouchi/agentx/issues/2193)) ([754e585](https://github.com/anis-marrouchi/agentx/commit/754e585e2314cb0fd1b104dc237d54f0c2d90193))
+* **hub:** show plan usage in bottom status bar ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2194](https://github.com/anis-marrouchi/agentx/issues/2194)) ([e1e7aa5](https://github.com/anis-marrouchi/agentx/commit/e1e7aa571d5fa514df45f46cbbc46ce7394689f2))
+
 ## [0.262.1](https://github.com/anis-marrouchi/agentx/compare/v0.262.0...v0.262.1) (2026-11-24)
 
 
