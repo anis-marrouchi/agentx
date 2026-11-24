@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.259.2](https://github.com/anis-marrouchi/agentx/compare/v0.259.1...v0.259.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **hub:** start each streamed Claude text block on a new paragraph ([#2178](https://github.com/anis-marrouchi/agentx/issues/2178)) ([2933d62](https://github.com/anis-marrouchi/agentx/commit/2933d6284e62d39d638b66b40b43b3188a89f8ab))
+
 ## [0.259.1](https://github.com/anis-marrouchi/agentx/compare/v0.259.0...v0.259.1) (2026-11-24)
 
 
