@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.259.1](https://github.com/anis-marrouchi/agentx/compare/v0.259.0...v0.259.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **hub:** render conversation Markdown and tool results ([#2176](https://github.com/anis-marrouchi/agentx/issues/2176)) ([c5acd88](https://github.com/anis-marrouchi/agentx/commit/c5acd885c6e646dab2a0c2d6a09c47275656d633))
+* **hub:** stream Claude Code partial reply text ([#2170](https://github.com/anis-marrouchi/agentx/issues/2170)) ([e3b59ee](https://github.com/anis-marrouchi/agentx/commit/e3b59eeee270059acea3702416876e7c1600fb46))
+* **wiki:** share model runner with catalog synthesis ([#2173](https://github.com/anis-marrouchi/agentx/issues/2173)) ([ea24981](https://github.com/anis-marrouchi/agentx/commit/ea24981966b395f1fbd4803961bcdddb438444a9)), closes [#2172](https://github.com/anis-marrouchi/agentx/issues/2172)
+
 ## [0.259.0](https://github.com/anis-marrouchi/agentx/compare/v0.258.0...v0.259.0) (2026-11-23)
 
 
