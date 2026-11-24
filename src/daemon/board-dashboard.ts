@@ -30,6 +30,8 @@ import { handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
+import { hubAgentsFor } from "./hub-agents-api"
+import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
@@ -1086,6 +1088,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   const answerRoute = wallAnswerRoute(method, path) ?? settingsTarget
   if (answerRoute?.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, answerRoute)
+    return
+  }
+  // The Hub's agent rows (#2101 P4a, ui/pages/hub-agents.ts): every agent
+  // grouped Working / Needs you / Done today / idle, the same rows the Hub's
+  // left column draws, for the phone's Agents tab (C1a).
+  //   GET /api/admin/hub/agents?dayStart=<ms, the viewer's local midnight>
+  if (method === "GET" && path === "/api/admin/hub/agents") {
+    try {
+      const now = Date.now()
+      const ds = Number(url.searchParams.get("dayStart"))
+      const dayStart = Number.isFinite(ds) && ds > now - 2 * 86_400_000 && ds <= now ? ds : new Date(new Date(now).toISOString().slice(0, 10)).getTime()
+      const snap = await buildLiveSnapshot(ctx.config, undefined, true) as { nodes?: LtNode[] }
+      const node = { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" }
+      sendJson(res, 200, hubAgentsFor(snap.nodes || [], node, now, dayStart))
+    } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
   }
   if (path.startsWith("/api/admin/approvals") || answerRoute) {

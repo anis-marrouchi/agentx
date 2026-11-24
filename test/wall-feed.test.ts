@@ -381,6 +381,18 @@ describe("Wall v2 pages (#1316)", () => {
   })
 })
 
+describe("The agents in the left column (#2101 P4, V1)", () => {
+  it("draws every agent by state from the live snapshot, with chips that filter", async () => {
+    const w = openWall({})
+    await w.settle()
+    const list = w.el("hub-agents").innerHTML
+    expect(list).toContain('data-ha-filter="working"')
+    expect(list).toContain("Working <span>")
+    expect(list).toContain('href="#page=chat&amp;agent=')
+    expect(list).not.toContain("Loading the agents")
+  })
+})
+
 // #1188: the QA verdict line and the "Awaiting QA only" filter, run through
 // the page's real match() rather than read from the source.
 describe("Running now does not wait on the feed (#1252)", () => {

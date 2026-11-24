@@ -1,6 +1,6 @@
 # Hub — every task as a post
 
-The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, **Needs you** lists the first things that wait on you, and **At work now** shows what every machine runs at this moment. Beside the feed, **Agents** lists who has posts this week. At the top of the side column, **Chat** asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
+The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed by what it is doing: **Working**, **Needs you** and **Done today**, and **⌘K** jumps to any agent or request. Under them, **Needs you** lists the first things that wait on you, and **Machines and runs** shows what every machine runs at this moment. Beside the feed, **Agents** lists who has posts this week. At the top of the side column, **Chat** asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
 
 The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
 
@@ -11,13 +11,15 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in the row of agent names at the top of the chat to open its conversation, as in the phone app. Slide the row sideways when there are more agents than fit. Close Chat to see the feed. On a phone, use **Back to the page**. A link to a post or another Hub page opens that page directly.
-2. The nav on the left opens with **Needs you**, in red, when something waits on you: the five oldest questions, each with the agent that asked and how long ago, then **Show all** with the full count. Select one, or **Show all**, to answer on the [Needs you](#see-what-waits-on-you) page. Nothing waiting, no box. Next comes **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
+2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Then comes **Needs you**, in red, when something waits on you: the five oldest questions, each with the agent that asked and how long ago, then **Show all** with the full count. Select one, or **Show all**, to answer on the [Needs you](#see-what-waits-on-you) page. Nothing waiting, no box. Next comes **Machines and runs**, folded: select it to open **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
    - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Projects** and **Activity**. On a narrower screen, where the tree is hidden, **Running now** is here too; on a wide screen open it with **All** next to **At work now**.
    - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
    - **Fleet:** **Agents**, **People**, **Org** and **Cost**.
    - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
 
-   Under them, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, events since the machines last started, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
+   At the bottom of the nav: **Desk** (what waits on you, to answer there, with its count), **Jobs**, **Workflows**, **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) and, for the owner, the gear for **Settings**.
+
+   Under the groups, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, events since the machines last started, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
@@ -33,9 +35,40 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ![Mockup take B (left, post text blurred) next to the Hub as built](/screenshots/wall/compare-desktop.png)
 
+## See every agent at a glance
+
+The top of the nav lists every agent of every connected machine once, by what it is doing, and opens its chat in one click. It changes by itself every 2 seconds.
+
+1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
+2. The chips at the top filter the list: **All**, **Working**, **Needs you** and **Done**, each with its count. The Hub remembers your choice.
+3. The agents are grouped:
+   - **Working**: a run is going. The row shows the run's title and a moving blue bar.
+   - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
+   - **Done today**: its last run ended today. The row shows the first line of its last answer.
+   - **Not working today**, folded at the end: every other agent.
+4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and a blue number when it has questions for you. The agent whose chat is open has a blue bar on its left.
+5. Select a row to open that agent's chat, with its latest conversation.
+
+### Jump to an agent or request
+
+1. Press **⌘K** (**Ctrl K** on Windows and Linux), or select **Jump to an agent or request** at the top of the nav.
+2. Type part of a name, or words of a request. Agents come first: those whose name starts with the words, then those whose name or line has them. Up to five open requests follow. With nothing typed, the agents that need you are first.
+3. Use **↑** and **↓**, then **Enter**, or select a row. An agent opens its chat, with its history; a request opens its post. **Esc** closes it.
+4. **⌘1** to **⌘9** (or **Alt 1** to **Alt 9**) open the agents in the switcher's order, also with it closed. **Ctrl Tab** goes back to the last agent you had open; in a browser tab, the browser keeps that key, so use it in the AgentX app window.
+
+**Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a moving bar, and **Working**'s count goes up by one. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
+
+**If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Running now**, which says which machine fails. An agent on a machine that does not answer is left out until it answers. On a narrow window the list is hidden: widen it.
+
+## Put the app on your phone
+
+Select **Mobile app** at the bottom of the nav. The page says what the phone app does and how to install it in five steps: Tailscale on both devices, two `tailscale serve` commands, `agentx app pair --name "My phone"`, scan the QR code, add it to the home screen. The full guide is [Phone app](./mobile-app.md).
+
+![The Hub's Mobile app page with setup steps in a demo instance](/screenshots/wall/mobile-page.png)
+
 ## See the fleet at work in the sidebar
 
-**At work now**, at the top of the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
+**At work now**, under **Machines and runs** in the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
 2. The tree reads from the top down:
