@@ -62,6 +62,22 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 2. Type a message, attach a file, or record a voice message with the microphone. The chat shows the transcription. When you send a voice message, AgentX reads the answer aloud.
 3. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
 4. Switch agents and return to the first agent to see the earlier conversation.
+5. When the agent works on an open request, the line under the agents names it: **Working on** and its headline. Select **Changes** to see its pull or merge request, or **Plan** to see its steps, in the [panel on the right](#see-changes-plans-and-files-beside-the-page). When the agent works on more than one, pick one from the list. The line is not shown when the agent works on nothing open.
+
+## See changes, plans and files beside the page
+
+The Hub has no fixed column on the right. A panel opens there only when you ask for something to see beside the page, and the page takes the whole width again when you close it.
+
+1. **Browser:** open it in one of these ways:
+   - In a chat, select **Changes** or **Plan** on the **Working on** line.
+   - On an open post, select **Diff**.
+   - In **Changes**, select **File** next to a file's name. The whole file opens as it is on the pull or merge request's last commit, with the lines it adds or changes in green. A removed or binary file has no **File** button.
+2. Each thing you open is a tab at the top of the panel. Select a tab to see it again, or its **×** to close it. Select the request's name at the top of a tab to open the request.
+3. Close the last tab to give the width back to the page.
+
+On a narrow window the panel slides over the page from the right. On a phone it covers the page, above the bottom bar.
+
+The panel reads the same pull or merge requests, with the same tokens, as the **Diff** view, and line comments in **Changes** work as described in [Comment on the lines of a pull or merge request](#comment-on-the-lines-of-a-pull-or-merge-request). A file longer than 3,000 lines shows its first 3,000.
 
 ## Read a post
 
@@ -240,7 +256,7 @@ When a post's home is a GitHub or GitLab issue, pull request or merge request, i
 
 For a post on an issue, the Hub finds the pull or merge requests of its work: the ones of the same repository or project linked in the request itself (its home, proof, words, notes and the agent's last answer; a link to another repository is left out), the GitHub pull requests of the same repository that mention the issue, and the GitLab merge requests related to the issue. Open ones come first, and the list is kept for about a minute. If none is found, the view says **No pull or merge request names this issue yet**.
 
-1. **Browser:** open the post on its own and select **Diff**. The changes of the first open pull or merge request open under the comment box, one file at a time, with the head commit they were read at. When there are several, select one at the top to see its changes; send or remove your drafts first. Select a file's name to fold or unfold it. Each line shows its old and new line numbers, with added lines in green and removed lines in red. A binary file is listed but not shown.
+1. **Browser:** open the post on its own and select **Diff**. The changes of the first open pull or merge request open in the [panel on the right](#see-changes-plans-and-files-beside-the-page) as its **Changes** tab, one file at a time, with the head commit they were read at. When there are several, select one at the top to see its changes; send or remove your drafts first. Select a file's name to fold or unfold it. Each line shows its old and new line numbers, with added lines in green and removed lines in red. A binary file is listed but not shown.
 2. **Browser:** select a line. A box opens under it. Type your comment and select **Add**. The comment stays under its line as a draft, and the footer counts your drafts. Select **Edit** or **Remove** on a draft to change it.
 3. **Browser:** add as many comments as you need, on as many lines and files, then select **Send N comments to agent**.
 4. The agent that has the post gets them all in one message: the pull or merge request it is about and the commit you read, then each comment in the order you added it, with its file, line, side (**old** or **new**) and the code on that line. It is asked to address them on the branch, push, and reply when done. The message goes the same way as a **Comment**, so it shows in the post's **Thread**, and on a closed post it opens the post again.
