@@ -68,10 +68,21 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     close() { this.s.closed = true }
   }
   const win: any = { AX_LOCAL_TOKEN: "tok", EventSource: FakeES, addEventListener: () => {}, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
+  const loc = { pathname: "/hub", hash: opts.hash ?? "#status=failed" }
+  const setHash = (_state: unknown, _title: string, href: string) => { loc.hash = href.startsWith("#") ? href : "" }
+  const hashes: string[] = []
+  win.history = {
+    replaceState: setHash,
+    pushState(state: unknown, title: string, href: string) {
+      hashes.push(loc.hash)
+      setHash(state, title, href)
+    },
+    back() { loc.hash = hashes.pop() ?? "" },
+  }
   const timers: Array<() => void> = []
   const delays: number[] = []
   new Function("document", "window", "fetch", "location", "localStorage", "setTimeout", "clearTimeout", WALL_CHAT_SCRIPT)(
-    doc, win, fetchStub, { pathname: "/hub", hash: opts.hash ?? "#status=failed" }, storage, (f: () => void, ms: number) => { timers.push(f); delays.push(ms); return timers.length }, () => {},
+    doc, win, fetchStub, loc, storage, (f: () => void, ms: number) => { timers.push(f); delays.push(ms); return timers.length }, () => {},
   )
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const fire = async (id: string, type: string, ev: any = {}) => {
@@ -82,8 +93,28 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     for (const f of docOn.on.keydown ?? []) f({ preventDefault() {}, defaultPrevented: false, target: {}, ...ev })
     await settle()
   }
-  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key, win }
+  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key, win, loc }
 }
+
+describe("Hub entry routes", () => {
+  it("opens chat on the bare Hub and backs out to the feed", async () => {
+    const h = openChat({ hash: "" })
+    expect(h.wallCls.has("hc-open")).toBe(true)
+    expect(h.el("hc").hidden).toBe(false)
+    expect(h.loc.hash).toBe("#page=chat")
+    await h.settle()
+    expect(h.loc.hash).toBe("#page=chat&agent=scout")
+    await h.fire("hc-back", "click")
+    expect(h.el("hc").hidden).toBe(true)
+    expect(h.loc.hash).toBe("#status=open&view=feed")
+  })
+
+  it("keeps explicit feed links in the feed", () => {
+    const h = openChat({ hash: "#status=open&view=feed" })
+    expect(h.wallCls.has("hc-open")).toBe(false)
+    expect(h.el("hc").hidden).toBe(true)
+  })
+})
 
 describe("Hub chat: what it draws (#1528)", () => {
   it("sums up the page context in one line", () => {
@@ -503,6 +534,40 @@ describe("Hub chat: each agent keeps its own conversation (#2101 R12)", () => {
     expect(post.body).toMatchObject({ agentId: "forge", message: "Hello forge" })
     expect(post.body.threadId).toBeUndefined()
     expect(JSON.parse(w.ls.get("ax-hub-chat-agents")!)).toMatchObject({ scout: { t: "s1" }, forge: { t: "f2" } })
+  })
+
+  it("shows the agents as a strip of chips, like the phone, and a chip switches the conversation (#2101)", async () => {
+    const w = openChat({
+      thread: "s1",
+      route: (url) => url === "/api/assistant/thread?id=s1" ? thread("s1", "scout", "Disk space?")
+        : url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [{ id: "f1", title: "Deploy?", agentId: "forge" }] } }
+        : url === "/api/assistant/thread?id=f1" ? thread("f1", "forge", "Deploy?")
+        : undefined,
+    })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.page).toContain('id="hc-strip"')
+    const strip = w.el("hc-strip")
+    expect(strip.hidden).toBe(false)
+    expect(strip.innerHTML).toContain('data-agent="scout" aria-pressed="true"')
+    expect(strip.innerHTML).toContain('data-agent="forge" aria-pressed="false"')
+    expect(strip.innerHTML).toContain("Forge")
+    // A chip that is not an agent (the strip's own padding) does nothing.
+    await w.fire("hc-strip", "click", { target: { closest: () => null } })
+    expect(w.el("hc-agent").value).toBe("scout")
+    // Forge's chip: same switch as the picker, and the strip follows.
+    await w.fire("hc-strip", "click", { target: { closest: () => ({ getAttribute: (k: string) => (k === "data-agent" ? "forge" : null) }) } })
+    expect(w.el("hc-agent").value).toBe("forge")
+    expect(w.el("hc-sub").textContent).toBe("Deploy?")
+    expect(strip.innerHTML).toContain('data-agent="forge" aria-pressed="true"')
+    expect(strip.innerHTML).toContain('data-agent="scout" aria-pressed="false"')
+  })
+
+  it("keeps the picker when there are no agents to put in the strip", async () => {
+    const w = openChat({ route: (url) => url === "/api/agents" ? { status: 200, body: { agents: [] } } : undefined })
+    await w.settle()
+    expect(w.el("hc-strip").hidden).toBe(true)
+    expect(w.el("hc-agent").innerHTML).toContain("No agents on this node")
   })
 
   it("opens from its link, #page=chat&agent=<id>", async () => {

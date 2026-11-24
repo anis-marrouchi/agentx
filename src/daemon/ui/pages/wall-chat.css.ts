@@ -41,9 +41,18 @@ export const WALL_CHAT_CSS = `
 .hc__to { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--ax-border); font-size: 13px; color: var(--ax-muted); }
 .hc__to select { min-width: 0; font: inherit; font-size: 13.5px; font-weight: 700; color: var(--ax-text); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 3px 10px; }
 .hc__to select:first-of-type { flex: 1; }
+/* The agent strip (#2101): chips like the phone's; the picker hides behind it. */
+.hc__strip { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px 24px 1px 1px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+.hc__strip::-webkit-scrollbar { display: none; }
+.hc__strip[hidden] { display: none; }
+.hc__to:has(.hc__strip:not([hidden])) label, .hc__to:has(.hc__strip:not([hidden])) #hc-agent { display: none; }
+.hc__chip { flex: none; min-height: 32px; padding: 0 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ax-text); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); cursor: pointer; white-space: nowrap; }
+.hc__chip:hover { border-color: var(--ax-border-2); }
+.hc__chip[aria-pressed="true"] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
+.hc__chip:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
 .hc__log { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .hc__me { align-self: flex-end; max-width: 86%; }
-.hc__me .b { background: var(--ax-accent); color: #fff; border-radius: 18px 18px 4px 18px; padding: 8px 13px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hc__me .b { background: var(--phone-bubble); color: var(--ax-text); border-radius: 18px 18px 4px 18px; padding: 8px 13px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hc__them { max-width: 94%; min-width: 0; }
 .hc__them .b { background: var(--ax-surface-2); border-radius: 18px 18px 18px 4px; padding: 8px 13px; font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .hc__them .b p { margin: 0 0 6px; } .hc__them .b p:last-child { margin: 0; }
