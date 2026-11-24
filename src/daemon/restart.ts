@@ -409,6 +409,8 @@ export type RestartStep =
   | { kind: "wait-exit" }
   /** Wait until launchd no longer lists the job. */
   | { kind: "wait-unloaded" }
+  /** `launchctl bootstrap`, retried until the job is loaded. */
+  | { kind: "bootstrap"; domain: string; plist: string }
   /** `agentx daemon start --detach` in the daemon's own directory. */
   | { kind: "start-detached" }
 
@@ -443,7 +445,7 @@ export function cliRestartPlan(service: ServiceInfo, o: CliRestartOptions): CliR
           { kind: "exec", argv: ["launchctl", "bootout", target] },
           { kind: "wait-exit" },
           { kind: "wait-unloaded" },
-          { kind: "exec", argv: ["launchctl", "bootstrap", service.domain, o.plistPath] },
+          { kind: "bootstrap", domain: service.domain, plist: o.plistPath },
         ],
       }
     }

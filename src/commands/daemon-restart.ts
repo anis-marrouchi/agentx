@@ -3,12 +3,13 @@ import chalk from "chalk"
 import { spawn } from "child_process"
 import { existsSync, readFileSync, unlinkSync } from "fs"
 import { resolve } from "path"
-import { loadDaemonConfig } from "@/daemon/config"
 import {
   cliRestartPlan, describeService, waitForIdle,
   type RestartStep, type ServiceInfo,
 } from "@/daemon/restart"
 import { detectService, launchdLoaded, launchdPlistPath, pidListeningOn } from "@/daemon/restart-host"
+import { bootstrapJob } from "@/native/macos/launchd"
+import { daemonBase, drainLimitMs as drainLimit, getJson, readInflight } from "./daemon-http"
 import { SHUTDOWN_REQUEST_FILE, writeShutdownRequest } from "@/daemon/shutdown"
 
 // --- agentx daemon restart [--when-idle] ---
@@ -22,26 +23,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function isAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch { return false }
-}
-
-async function getJson(url: string): Promise<any | null> {
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(3000) })
-    return r.ok ? await r.json() : null
-  } catch {
-    return null
-  }
-}
-
-/** In-flight count: the restart endpoint, else /health (older daemons only
- *  report per-agent active counts there). Null when the daemon is silent. */
-async function readInflight(base: string): Promise<number | null> {
-  const info = await getJson(`${base}/daemon/restart`)
-  if (typeof info?.inflight?.total === "number") return info.inflight.total
-  const h = await getJson(`${base}/health`)
-  if (!h) return null
-  if (typeof h.inflight?.total === "number") return h.inflight.total
-  return Array.isArray(h.agents) ? h.agents.reduce((n: number, a: any) => n + (Number(a.active) || 0), 0) : null
 }
 
 function pidFromFiles(cwd: string): number | null {
@@ -70,12 +51,11 @@ export const restartCommand = new Command("restart")
   .option("--abort-on-timeout", "with --when-idle: give up instead of restarting when the wait runs out")
   .option("--interval <seconds>", "how often --when-idle checks", "5")
   .option("--reload-service", "also re-read the service's settings file (launchd plist / systemd unit)")
+  .option("--boot-timeout <minutes>", "how long the new daemon may take to answer", "5")
   .option("--dry-run", "show what would run, without restarting")
   .action(async (opts) => {
-    const config = loadDaemonConfig(opts.config)
-    const [host, portStr] = config.node.bind.split(":")
-    const port = parseInt(portStr || "18800", 10)
-    const base = `http://${!host || host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`
+    const base = daemonBase(opts.config)
+    const port = parseInt(new URL(base).port || "18800", 10)
 
     const health = await getJson(`${base}/health`)
     if (!health) {
@@ -160,7 +140,7 @@ export const restartCommand = new Command("restart")
     try { writeShutdownRequest(agentxDir, { by: "agentx daemon restart", pid: process.pid, at: new Date().toISOString() }) } catch { /* best effort */ }
 
     const issuedAt = Date.now()
-    const drainLimitMs = parseInt(process.env.AGENTX_DRAIN_TIMEOUT_MS || "300000", 10) + 60_000
+    const drainLimitMs = drainLimit()
     console.log(chalk.dim("  Restarting..."))
     for (const step of plan.steps) {
       const ok = await runStep(step, { pid, daemonCwd, configPath, drainLimitMs, service })
@@ -177,7 +157,7 @@ export const restartCommand = new Command("restart")
     }
 
     // Never report success until the new daemon answers.
-    const backMs = 120_000
+    const backMs = Math.max(1, Number(opts.bootTimeout) || 5) * 60_000
     const t0 = Date.now()
     while (Date.now() - t0 < backMs) {
       const h = await getJson(`${base}/health`)
@@ -189,7 +169,7 @@ export const restartCommand = new Command("restart")
       }
       await sleep(1000)
     }
-    console.log(chalk.red(`  The daemon did not come back within ${backMs / 60_000} min.`))
+    console.log(chalk.red(`  The daemon did not come back within ${Math.round(backMs / 60_000)} min.`))
     console.log(chalk.dim(`  Start it with: ${plan.manual}`))
     console.log(chalk.dim("  Then check the log: agentx daemon logs"))
     process.exit(1)
@@ -201,6 +181,7 @@ function describeStep(s: RestartStep, pid: number | null): string {
     case "sigterm": return `kill -TERM ${pid ?? "<pid>"}  (the daemon finishes running tasks, then exits)`
     case "wait-exit": return "wait for the old daemon to exit"
     case "wait-unloaded": return "wait until launchd has unloaded the job"
+    case "bootstrap": return `launchctl bootstrap ${s.domain} ${s.plist}  (retried while launchd is busy)`
     case "start-detached": return "agentx daemon start --detach"
   }
 }
@@ -238,6 +219,9 @@ async function runStep(
       while (launchdLoaded(ctx.service) && Date.now() - t0 < 30_000) await sleep(500)
       return !launchdLoaded(ctx.service)
     }
+    case "bootstrap":
+      if (ctx.service.kind !== "launchd") return false
+      return bootstrapJob({ label: ctx.service.label, domain: s.domain }, s.plist, (m) => console.log(chalk.dim(`  ${m}`)))
     case "start-detached": {
       const cli = process.argv[1]
       if (!cli || !existsSync(cli)) return false

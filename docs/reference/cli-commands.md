@@ -240,7 +240,22 @@ Restart the daemon through launchd, systemd or a plain stop + start; --when-idle
 | `--abort-on-timeout` | — | With --when-idle: give up instead of restarting when the wait runs out. |
 | `--interval <seconds>` | `5` | How often --when-idle checks. |
 | `--reload-service` | — | Also re-read the service's settings file (launchd plist / systemd unit). |
+| `--boot-timeout <minutes>` | `5` | How long the new daemon may take to answer. |
 | `--dry-run` | — | Show what would run, without restarting. |
+
+### `agentx daemon upgrade <release-dir>`
+
+Move this node (launchd) to a built release folder: waits for idle, switches the daemon and dashboard, rolls back on failure. See [move to a new release](../jobs/restart-safely.md#move-to-a-new-release-mac).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Path to agentx.json. |
+| `--expect-version <version>` | — | Refuse unless the release reports this version. |
+| `--timeout <minutes>` | `60` | How long to wait for running tasks to finish. |
+| `--force` | — | Restart even if tasks are still running when --timeout runs out. |
+| `--boot-timeout <minutes>` | `5` | How long the new daemon may take to answer. |
+| `--no-follow` | — | Start the upgrade and return without showing its log. |
+| `--dry-run` | — | Show what would change, without changing anything. |
 
 ### `agentx daemon status`
 
