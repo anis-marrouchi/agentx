@@ -96,11 +96,11 @@ What stays as it was:
 
 The list is kept in `~/.agentx/cli-accounts.json` (names and folders only, readable by your user alone).
 
-### Check it worked
+### Check the account switch worked
 
 Pick a profile, then start a new task for a Claude Code agent and ask it to run `echo $CLAUDE_CONFIG_DIR`. It prints the profile's folder.
 
-### If something is wrong
+### If the account switch goes wrong
 
 - **The new run asks to sign in, or uses the wrong plan:** that folder has no sign-in yet. Run step 1 for it.
 - **No Accounts button:** you are not signed in as the owner, or you are on a phone (the bar is hidden there).
