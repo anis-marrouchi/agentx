@@ -10,7 +10,8 @@
 //
 // One model, two readers: the Hub draws it in the browser from what the
 // page already polls (/api/live and the Needs you list), and
-// GET /api/admin/hub/agents sends the same rows to the phone app (C1a).
+// GET /api/admin/hub/agents sends the same rows, and GET /api/app/hub/agents
+// to the paired phone app (C1a, app-agents.client.ts).
 //
 // Shipped to the browser through injectFns (see ../inject.ts): each
 // function is self-contained and calls only other functions of this file;

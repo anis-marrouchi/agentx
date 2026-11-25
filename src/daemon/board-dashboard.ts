@@ -30,7 +30,7 @@ import { handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
-import { hubAgentsFor } from "./hub-agents-api"
+import { hubAgentsFor, hubDayStart } from "./hub-agents-api"
 import { planWindowUse } from "@/agents/claude-code-quota"
 import { planUsageReader } from "@/agents/claude-plan-usage"
 import type { LtNode } from "./ui/pages/wall-tree"
@@ -328,7 +328,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     node: localNodeName(ctx.config), dashboardToken: ctx.token,
     posts: (days) => buildWallFleet(new URLSearchParams({ days: String(days) }), ctx) as Promise<any>,
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, agents: { rows: (dayStart, now) => hubAgentsNow(ctx.config, dayStart, now) }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -1099,11 +1099,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/api/admin/hub/agents") {
     try {
       const now = Date.now()
-      const ds = Number(url.searchParams.get("dayStart"))
-      const dayStart = Number.isFinite(ds) && ds > now - 2 * 86_400_000 && ds <= now ? ds : new Date(new Date(now).toISOString().slice(0, 10)).getTime()
-      const snap = await buildLiveSnapshot(ctx.config, undefined, true) as { nodes?: LtNode[] }
-      const node = { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" }
-      sendJson(res, 200, hubAgentsFor(snap.nodes || [], node, now, dayStart))
+      sendJson(res, 200, await hubAgentsNow(ctx.config, hubDayStart(url.searchParams.get("dayStart"), now), now))
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
   }
@@ -3406,6 +3402,13 @@ function extractJson(text: string): any {
 function resolveFromHere(rel: string): string {
   const here = dirname(fileURLToPath(import.meta.url))
   return resolve(here, rel)
+}
+
+/** The Hub's agent rows (#2101 P4a), for the Hub and the phone's Agents tab (C1a). */
+async function hubAgentsNow(config: DaemonConfig, dayStart: number, now: number) {
+  const snap = await buildLiveSnapshot(config, undefined, true) as { nodes?: LtNode[] }
+  const node = { url: config.dashboard.daemonUrl.replace(/\/+$/, ""), name: config.node?.name || "this computer" }
+  return hubAgentsFor(snap.nodes || [], node, now, dayStart)
 }
 
 async function readAsset(path: string): Promise<Buffer> {

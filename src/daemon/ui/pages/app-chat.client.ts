@@ -393,7 +393,10 @@ export const APP_CHAT_SCRIPT = `
   window.addEventListener('online', function () { if (state.conv && !state.busy) openConversation(state.conv.id); });
   window.AXChat = { send: send, sendTo: sendTo, pin: pin, busy: function () { return state.busy; }, target: function () { return state.target; },
     pick: function () { toggle(picker, true); sheets.loadPicker(); },
-    open: openConversation, current: function () { return state.conv && state.conv.id; },
+    open: openConversation,
+    // The Agents tab (#2101 C1a): a new conversation with the tapped agent.
+    with: function (t) { toggle(picker, false); state.target = t; remember('ax-chat-target', t); startNew(); },
+    current: function () { return state.conv && state.conv.id; },
     held: function (id) { return (held[id] || []).length; }, flushHeld: flushHeld, sentHere: function (id) { return !!sentHere[id]; },
     // An answered call (#1605): a new conversation with the caller, opened
     // by the call's opener so the agent speaks first.
