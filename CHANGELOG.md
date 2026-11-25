@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.270.2](https://github.com/anis-marrouchi/agentx/compare/v0.270.1...v0.270.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **crons:** retry a held run when its hold ends, report a missed run ([#2247](https://github.com/anis-marrouchi/agentx/issues/2247)) ([#2249](https://github.com/anis-marrouchi/agentx/issues/2249)) ([f1d3ad2](https://github.com/anis-marrouchi/agentx/commit/f1d3ad2a3eae0edc048e2e3ea0827a66a02de205))
+
 ## [0.270.1](https://github.com/anis-marrouchi/agentx/compare/v0.270.0...v0.270.1) (2026-11-25)
 
 
