@@ -333,7 +333,7 @@ describe("Wall Settings: Agents (#1428)", () => {
     await w.type("st-e-triggerWords", "@help, help"); await w.type("st-e-systemPrompt", "Be brief.")
     await w.type("st-e-maxConcurrent", "3"); await w.type("st-e-maxExecutionMinutes", "30"); await w.type("st-e-permissionMode", "plan")
     await w.type("st-e-access", true); await w.type("st-e-wikiAbsorb", false)
-    expect(w.el("st-bar").innerHTML).toContain("10 changes not saved. The new engine, model and permission mode needs a daemon restart.")
+    expect(w.el("st-bar").innerHTML).toContain("10 changes not saved. The new model and permission mode needs a daemon restart.")
     const before = w.calls.filter((c) => c.url === "/api/admin/state").length
     await w.click({ "data-st-act": "review" })
     expect(w.el("st-dlg").innerHTML).toContain("<s>21 characters</s> → <b>9 characters</b>")
@@ -344,7 +344,20 @@ describe("Wall Settings: Agents (#1428)", () => {
     } } }])
     expect(w.calls.filter((c) => c.url === "/api/admin/state").length).toBe(before + 1)
     expect(w.el("st-dlg").innerHTML).toBe("")
-    expect(settingsHtml(w)).toContain("Saved. Restart the daemon for the new engine, model and permission mode to apply: agentx daemon restart --when-idle.")
+    expect(settingsHtml(w)).toContain("Saved. Restart the daemon for the new model and permission mode to apply: agentx daemon restart --when-idle.")
+  })
+
+  it("says an engine-only change needs no restart (#2101 CLI switch)", async () => {
+    const w = openWall({ hash: "#page=settings&section=agents&agent=cx" })
+    await w.settle()
+    await w.type("st-e-tier", "codex-cli")
+    expect(w.el("st-bar").innerHTML).toContain("1 change not saved. It applies without a restart.")
+    await w.click({ "data-st-act": "review" })
+    const dlg = w.el("st-dlg").innerHTML as string
+    expect(dlg).toContain("No restart needed.")
+    expect(dlg).not.toContain("daemon restart")
+    await w.click({ "data-st-act": "save" })
+    expect(settingsHtml(w)).not.toContain("Restart the daemon")
   })
 
   it("says a save of hot-applied fields needs no restart", async () => {

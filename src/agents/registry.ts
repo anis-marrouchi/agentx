@@ -1322,8 +1322,13 @@ export class AgentRegistry {
       const state = this.agents.get(id)
       if (!state) continue
       if (state.def.tier === def.tier) { this.pendingTiers.delete(id); continue }
-      if (state.activeTasks > 0) this.pendingTiers.set(id, def.tier)
-      else { state.def = { ...state.def, tier: def.tier }; this.pendingTiers.delete(id) }
+      if (state.activeTasks > 0) {
+        if (this.pendingTiers.get(id) !== def.tier) this.log(`[front] ${id}: engine switch to ${def.tier} waits for ${state.activeTasks} run(s)`)
+        this.pendingTiers.set(id, def.tier)
+      } else {
+        state.def = { ...state.def, tier: def.tier }; this.pendingTiers.delete(id)
+        this.log(`[front] ${id}: engine switched to ${def.tier}`)
+      }
     }
   }
 
@@ -1333,6 +1338,7 @@ export class AgentRegistry {
     if (state.activeTasks > 0 || !this.pendingTiers.has(state.id)) return
     state.def = { ...state.def, tier: this.pendingTiers.get(state.id)! }
     this.pendingTiers.delete(state.id)
+    this.log(`[front] ${state.id}: engine switched to ${state.def.tier} (its runs ended)`)
   }
 
   /** The engine an agent's next run uses (tests and the reload log). */

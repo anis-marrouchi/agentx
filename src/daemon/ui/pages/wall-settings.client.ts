@@ -85,8 +85,9 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     'hubspot', 'salesforce', 'pipedrive', 'odoo', 'trello', 'linear', 'asana', 'jira', 'notion', 'stripe', 'sentry', 'vercel', 'twilio', 'custom'];
   /** The biggest file the editor or a new skill takes, as in classic Settings. */
   var ST_FILE_MAX = 200 * 1024;
-  /** Agent fields the daemon applies only after a restart (detectAgentRestartFields in daemon/index.ts). */
-  var ST_RESTART_FIELDS = [['tier', 'engine'], ['model', 'model'], ['permissionMode', 'permission mode']];
+  /** Agent fields the daemon applies only after a restart (detectAgentRestartFields in daemon/index.ts).
+   *  The engine (tier) is not one: the registry takes it on reload (#2101 CLI switch). */
+  var ST_RESTART_FIELDS = [['model', 'model'], ['permissionMode', 'permission mode']];
   var ST_RESTART = 'agentx daemon restart --when-idle';
   // Listed for everyone, so a viewer who is not the owner is told so.
   PAGES.push('settings');
