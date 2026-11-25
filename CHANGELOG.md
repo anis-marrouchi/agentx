@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.266.3](https://github.com/anis-marrouchi/agentx/compare/v0.266.2...v0.266.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **notices:** keep agent notices across a daemon restart ([#2221](https://github.com/anis-marrouchi/agentx/issues/2221)) ([798c71b](https://github.com/anis-marrouchi/agentx/commit/798c71b6d6a2402248f962a909b1c021d5162e00)), closes [#2121](https://github.com/anis-marrouchi/agentx/issues/2121)
+
 ## [0.266.2](https://github.com/anis-marrouchi/agentx/compare/v0.266.1...v0.266.2) (2026-11-25)
 
 
