@@ -209,7 +209,8 @@ export const WALL_CHAT_CSS = `
 .hc__tool { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--ax-border); background: none; color: var(--ax-muted); cursor: pointer; }
 .hc__tool svg { width: 17px; height: 17px; }
 .hc__tool--mic { margin-left: auto; }
-.hc__tool--mic[hidden] + .hc__send { margin-left: auto; }
+.hc__tool--mic[hidden] ~ .hc__send { margin-left: auto; }
+.hc__tool--check[aria-pressed="true"] { background: var(--ax-blue-t); color: var(--ax-blue-d); border-color: transparent; }
 .hc__tool:hover { background: var(--ax-surface); }
 .hc__tool.is-on { background: var(--ax-red-t); color: var(--ax-red-ink); border-color: transparent; }
 .hc__voice { margin: 0; font-size: 12.5px; color: var(--ax-muted); }

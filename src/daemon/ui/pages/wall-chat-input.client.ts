@@ -11,6 +11,11 @@
 // (POST /api/assistant/voice/speak → app-voice.ts speakVia). The
 // push-to-talk key and voice commands are #2108, not here.
 //
+// Like the orb (#2266): stopping the mic sends the message. The pencil
+// switch next to it ("Check before sending", kept per browser) puts the
+// words in the box instead, for the person to send. The play button
+// plays the last recording back ("Hear my message").
+//
 // It talks to the chat (wall-chat.client.ts) through window.AXHubChat:
 // send(text, {spoken}), node(), agent(), headers(); it sets attachments(),
 // onSent() and onSpokenAnswer(answer) there.
@@ -31,6 +36,9 @@ const ICON_CLIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'
 const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'
 const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'
+// Check before sending: the words wait in the box (a pencil on a line).
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M14.5 5.5l3 3L9 17H6v-3z"/></svg>'
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'
 
 /** The composer card: who it goes to, files, the message, then attach,
  *  the model, the mic and the send arrow. */
@@ -42,6 +50,8 @@ export function wallChatInputHtml(): string {
     `<div class="hc__row"><button type="button" class="hc__tool" id="hc-attach" aria-label="Attach files" title="Attach files">${ICON_PLUS}</button><input type="file" id="hc-file" multiple hidden>` +
     `<select class="hc__model" id="hc-model" aria-label="Model" title="Model for this message" hidden></select><span class="hc__model hc__model--own" id="hc-model-own" hidden></span>` +
     `<button type="button" class="hc__tool hc__tool--mic" id="hc-mic" aria-label="Record a voice message" aria-pressed="false" title="Record a voice message" hidden>${ICON_MIC}</button>` +
+    `<button type="button" class="hc__tool hc__tool--check" id="hc-mic-check" aria-label="Check before sending" aria-pressed="false" title="Check before sending: off. A recording sends when you stop." hidden>${ICON_CHECK}</button>` +
+    `<button type="button" class="hc__tool" id="hc-mic-play" aria-label="Hear my message" title="Hear my message" hidden>${ICON_PLAY}</button>` +
     `<button class="hc__send" id="hc-send" type="submit" aria-label="Send" title="Send (Enter)">${ICON_SEND}</button></div>
     </div>
     <p class="hc__voice" id="hc-voice" role="status" hidden></p>`
@@ -190,7 +200,42 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
   var canRecord = !!(nav.mediaDevices && nav.mediaDevices.getUserMedia && window.MediaRecorder);
   if (!canRecord) return;
   $('hc-mic').hidden = false;
+  $('hc-mic-check').hidden = false;
   var rec = null, chunks = [], started = 0, stream = null, MAX_MS = 120000, stopTimer = null;
+  // Check before sending (#2266): off by default, so a recording sends when it stops.
+  var CHECK_KEY = 'ax-hub-chat-mic-check';
+  var checkFirst = false;
+  try { checkFirst = localStorage.getItem(CHECK_KEY) === '1'; } catch (e) { /* private mode: off */ }
+  function paintCheck() {
+    var b = $('hc-mic-check');
+    b.setAttribute('aria-pressed', String(checkFirst));
+    b.setAttribute('title', checkFirst
+      ? 'Check before sending: on. Your words go in the box; you send them.'
+      : 'Check before sending: off. A recording sends when you stop.');
+  }
+  paintCheck();
+  $('hc-mic-check').addEventListener('click', function () {
+    checkFirst = !checkFirst;
+    try { localStorage.setItem(CHECK_KEY, checkFirst ? '1' : '0'); } catch (e) { /* kept for this page only */ }
+    paintCheck();
+    say(checkFirst ? 'Recordings now wait in the box for you to send.' : 'Recordings now send when you stop.');
+  });
+  // Hear my message: the last recording, kept in this page only.
+  var lastUrl = '', mine = null;
+  function keepRecording(blob) {
+    if (!window.URL || typeof window.URL.createObjectURL !== 'function') return;
+    if (lastUrl && typeof window.URL.revokeObjectURL === 'function') window.URL.revokeObjectURL(lastUrl);
+    lastUrl = window.URL.createObjectURL(blob);
+    $('hc-mic-play').hidden = false;
+  }
+  $('hc-mic-play').addEventListener('click', function () {
+    if (!lastUrl || typeof window.Audio !== 'function') return;
+    if (player) player.pause();
+    if (mine) mine.pause();
+    mine = new window.Audio(lastUrl);
+    var p = mine.play();
+    if (p && p.catch) p.catch(function () { say('Could not play the recording.', true); });
+  });
   function micOn(v) {
     $('hc-mic').setAttribute('aria-pressed', String(v));
     $('hc-mic').classList.toggle('is-on', v);
@@ -210,7 +255,7 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
       rec.start();
       started = Date.now();
       micOn(true);
-      say('Recording… press the mic again to send.');
+      say(checkFirst ? 'Recording… press the mic again to stop.' : 'Recording… press the mic again to send.');
       stopTimer = setTimeout(stop, MAX_MS);
     }).catch(function () { say('The browser did not give the microphone.', true); });
   }
@@ -223,12 +268,22 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
     rec = null; micOn(false); release();
     var blob = new Blob(chunks, { type: type });
     if (!blob.size) { say('Nothing was recorded.', true); return; }
+    keepRecording(blob);
     say('Writing it down…');
     fetch('/api/assistant/voice/transcribe', {
       method: 'POST', headers: api.headers({ 'Content-Type': type.split(';')[0], 'X-Audio-Duration-Ms': String(ms) }), body: blob,
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (d) {
         if (!r.ok || !d.text) throw new Error(d.hint || d.error || ('HTTP ' + r.status));
+        if (checkFirst) {
+          // The person sends it: the words join what is already in the box.
+          var box = $('hc-text'), was = String(box.value || '').trim();
+          box.value = was ? was + ' ' + d.text : d.text;
+          if (typeof box.dispatchEvent === 'function' && typeof window.Event === 'function') box.dispatchEvent(new window.Event('input'));
+          if (typeof box.focus === 'function') box.focus();
+          say('Check it, then send.');
+          return;
+        }
         say('');
         return api.send(d.text, { spoken: true }).then(function (ok) {
           // Written down but not sent: say why here too, not only in the log (#2238).

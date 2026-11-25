@@ -1156,3 +1156,85 @@ describe("Hub chat mic: a written-down message that is not sent (#2238)", () => 
     expect(voice.hidden).toBe(true)
   })
 })
+
+describe("Hub chat mic: sends on stop, check-first switch, hear it back (#2266)", () => {
+  function mount(api: any, opts: { stored?: string } = {}) {
+    const els = new Map<string, any>()
+    const el = (id: string) => {
+      if (!els.has(id)) {
+        const attrs: Record<string, string> = {}
+        const e: any = { id, on: {}, hidden: ["hc-voice", "hc-mic", "hc-mic-check", "hc-mic-play"].includes(id), value: "", textContent: "", innerHTML: "", className: "",
+          getAttribute: (k: string) => attrs[k] ?? null, setAttribute: (k: string, v: string) => { attrs[k] = v },
+          classList: { toggle: () => {} }, addEventListener: (t: string, f: any) => { (e.on[t] ??= []).push(f) },
+          dispatchEvent: () => true, focus: () => { e.focused = true } }
+        els.set(id, e)
+      }
+      return els.get(id)
+    }
+    class Rec {
+      on: Record<string, (e: any) => void> = {}
+      state = "inactive"
+      mimeType = "audio/webm"
+      addEventListener(t: string, f: (e: any) => void) { this.on[t] = f }
+      start() { this.state = "recording" }
+      stop() { this.state = "inactive"; this.on.dataavailable?.({ data: new Blob(["abc"]) }); this.on.stop?.({}) }
+    }
+    const played: string[] = []
+    class Audio { constructor(public src: string) {} play() { played.push(this.src); return Promise.resolve() } pause() {} }
+    const nav = { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } }
+    const fetchStub = async (url: string) => url === "/api/assistant/voice/transcribe"
+      ? { ok: true, status: 200, json: async () => ({ text: "Is it up?" }) }
+      : { ok: false, status: 404, json: async () => ({}) }
+    const kept: Record<string, string> = opts.stored ? { "ax-hub-chat-mic-check": opts.stored } : {}
+    const storage = { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } }
+    const URLStub = { createObjectURL: () => "blob:rec-1", revokeObjectURL: () => {} }
+    new Function("document", "window", "fetch", "localStorage", WALL_CHAT_INPUT_SCRIPT)(
+      { getElementById: el }, { AXHubChat: api, navigator: nav, MediaRecorder: Rec, URL: URLStub, Audio, Event: class { constructor(public type: string) {} } }, fetchStub, storage)
+    const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
+    const record = async () => {
+      el("hc-mic").on.click[0]({}); await settle()
+      el("hc-mic").on.click[0]({}); await settle()
+    }
+    return { el, record, kept, played, settle }
+  }
+  const base = { agent: () => "scout", node: () => "", headers: (h: any) => h, sendError: () => "" }
+
+  it("sends the words when the recording stops, by default", async () => {
+    const sent: string[] = []
+    const w = mount({ ...base, send: (t: string) => { sent.push(t); return Promise.resolve(true) } })
+    expect(w.el("hc-mic-check").hidden).toBe(false)
+    expect(w.el("hc-mic-check").getAttribute("aria-pressed")).toBe("false")
+    await w.record()
+    expect(sent).toEqual(["Is it up?"])
+    expect(w.el("hc-text").value).toBe("")
+  })
+
+  it("with Check before sending on, puts the words in the box and sends nothing", async () => {
+    const sent: string[] = []
+    const w = mount({ ...base, send: (t: string) => { sent.push(t); return Promise.resolve(true) } })
+    w.el("hc-text").value = "Hello."
+    w.el("hc-mic-check").on.click[0]({})
+    expect(w.el("hc-mic-check").getAttribute("aria-pressed")).toBe("true")
+    expect(w.kept["ax-hub-chat-mic-check"]).toBe("1")
+    await w.record()
+    expect(sent).toEqual([])
+    expect(w.el("hc-text").value).toBe("Hello. Is it up?")
+    expect(w.el("hc-text").focused).toBe(true)
+    expect(w.el("hc-voice").textContent).toBe("Check it, then send.")
+  })
+
+  it("remembers the switch on the next page load", () => {
+    const w = mount({ ...base, send: () => Promise.resolve(true) }, { stored: "1" })
+    expect(w.el("hc-mic-check").getAttribute("aria-pressed")).toBe("true")
+  })
+
+  it("shows Hear my message after a recording and plays it back", async () => {
+    const w = mount({ ...base, send: () => Promise.resolve(true) })
+    expect(w.el("hc-mic-play").hidden).toBe(true)
+    await w.record()
+    expect(w.el("hc-mic-play").hidden).toBe(false)
+    w.el("hc-mic-play").on.click[0]({})
+    await w.settle()
+    expect(w.played).toEqual(["blob:rec-1"])
+  })
+})
