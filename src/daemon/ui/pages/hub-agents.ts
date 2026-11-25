@@ -17,7 +17,7 @@
 // a run's title and plain text come in as arguments (wall-tree.ts ltTitle
 // and ltPlain), never through an import.
 
-import type { LtNode, LtTask } from "./wall-tree"
+import type { LtNode, LtTask, LtWorkCount } from "./wall-tree"
 
 /** One thing that waits on the owner, as the Needs you list has it. */
 export interface HaNeed {
@@ -67,7 +67,10 @@ export function haFace(name: unknown): string {
 
 /**
  * Every agent of every node that answers, one row each (the first node
- * that has it wins, as the agent list does). Working: a run is going.
+ * that has it wins, as the agent list does). Which nodes answer and where
+ * an agent counts come from `work` (wall-tree.ts liveWorkCount, #2260), the
+ * same count the "At work now" tree shows, so the two numbers agree.
+ * Working: a run is going.
  * Needs you: nothing running, a question for the owner open. Done: its
  * last run ended since `dayStart`. Idle: the rest. Order inside a group:
  * most recent first; Needs you oldest question first, as the Needs you
@@ -75,7 +78,7 @@ export function haFace(name: unknown): string {
  * strips the daemon's markers (ltPlain).
  */
 export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayStart: number,
-  title: (t: LtTask) => string, plain: (s: unknown) => string): HaModel {
+  title: (t: LtTask) => string, plain: (s: unknown) => string, work: LtWorkCount): HaModel {
   const asked: Record<string, { n: number; title: string; at: number }> = {}
   for (const q of needs || []) {
     if (!q || q.snoozed || !q.agent) continue
@@ -87,9 +90,12 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
   const seen: Record<string, boolean> = {}
   const rows: HaRow[] = []
   for (const n of nodes || []) {
-    if (!n || n.reachable === false) continue
+    if (!n) continue
+    // wall-tree.ts ltNodeKey: written out, an injected function cannot import.
+    const key = String(n.url || n.id || n.name)
+    if (!work.byNode[key]) continue
     for (const a of n.agents || []) {
-      if (!a || !a.id || seen[a.id]) continue
+      if (!a || !a.id || seen[a.id] || work.home[a.id] !== key) continue
       seen[a.id] = true
       const runs = (a.runningTasks || []).filter(Boolean) as LtTask[]
       const t = runs.slice().sort((x, y) => (Date.parse(y.lastActivity || y.startedAt || "") || 0) - (Date.parse(x.lastActivity || x.startedAt || "") || 0))[0]

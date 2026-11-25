@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { haFace, haHitCount, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
 import { hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
-import { ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
+import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { injectFns } from "../src/daemon/ui/inject"
 import * as ha from "../src/daemon/ui/pages/hub-agents"
@@ -32,7 +32,7 @@ const needs: HaNeed[] = [
 ]
 
 describe("hubAgentRows", () => {
-  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain)
+  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   const by = (id: string) => m.rows.find((r) => r.id === id)!
 
   it("groups every agent once: working, needs you, done today, idle", () => {
@@ -58,7 +58,7 @@ describe("hubAgentRows", () => {
 })
 
 describe("haListHtml", () => {
-  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain)
+  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   it("draws the chips, the groups and the current agent", () => {
     const h = haListHtml(m, "all", "pm", false, ltEsc, ltAge)
     expect(h).toContain('data-ha-filter="all" aria-pressed="true">All <b>4</b>')
@@ -77,7 +77,8 @@ describe("haListHtml", () => {
     expect(h).not.toContain("Not working today")
   })
   it("escapes fleet text and drops a colour that is not a hex colour", () => {
-    const bad = hubAgentRows([{ name: "<b>n</b>", reachable: true, agents: [{ id: "x\"y", name: "<img>", color: "red;background:url(x)", runningTasks: [{ id: "t", messagePreview: "<script>alert(1)</script>" }] }] }], [], NOW, DAY, title, ltPlain)
+    const badNodes: LtNode[] = [{ name: "<b>n</b>", reachable: true, agents: [{ id: "x\"y", name: "<img>", color: "red;background:url(x)", runningTasks: [{ id: "t", messagePreview: "<script>alert(1)</script>" }] }] }]
+    const bad = hubAgentRows(badNodes, [], NOW, DAY, title, ltPlain, liveWorkCount(badNodes))
     const h = haListHtml(bad, "all", "", false, ltEsc, ltAge)
     expect(h).not.toContain("<script>")
     expect(h).not.toContain("<img>")
@@ -85,12 +86,12 @@ describe("haListHtml", () => {
     expect(h).toContain("&lt;b&gt;n&lt;/b&gt;")
   })
   it("says so when there are no agents", () => {
-    expect(haListHtml(hubAgentRows([], [], NOW, DAY, title, ltPlain), "all", "", false, ltEsc, ltAge)).toContain("No agents yet.")
+    expect(haListHtml(hubAgentRows([], [], NOW, DAY, title, ltPlain, liveWorkCount([])), "all", "", false, ltEsc, ltAge)).toContain("No agents yet.")
   })
 })
 
 describe("the switcher", () => {
-  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain)
+  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   const reqs = [{ id: "r1", title: "Restyle the phone app", sub: "coder" }, { id: "r2", title: "Client site" }]
   it("puts the agents that need you first when nothing is typed", () => {
     const h = haSwitchHits(m.rows, reqs, "")
@@ -159,7 +160,7 @@ describe("the Hub page's left column", () => {
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
     const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml })
-    const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain), 'all', '', false, ltEsc, ltAge)")
-    expect(fn(ltTitle, ltPlain, ltEsc, ltAge, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
+    const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
+    expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
   })
 })

@@ -82,7 +82,9 @@ describe("liveTreeModel", () => {
 
   it("counts the runs per machine", () => {
     expect(mac.state).toBe("up")
-    expect(mac.working).toBe(4)
+    // Three agents at work, pm-agent with two runs: the badge counts agents, as Working does (#2260).
+    expect(mac.working).toBe(3)
+    expect(mac.runs).toBe(4)
   })
   it("groups runs by project and work item, from the posts", () => {
     const agentx = mac.projects.find((p) => p.label === "agentx")!
@@ -128,7 +130,7 @@ describe("liveTreeHtml", () => {
     expect(html).toContain('aria-label="idle"')
   })
   it("shows the count badge, the model and the age", () => {
-    expect(html).toContain('<span class="lt__badge is-live" title="4 working now">4</span>')
+    expect(html).toContain('<span class="lt__badge is-live" title="3 agents working now, 4 runs">3</span>')
     expect(html).toContain("opus-5.5 · <time>1m</time>")
     expect(html).toContain('href="#page=task&amp;task=t1"')
   })
