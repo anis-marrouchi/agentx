@@ -65,7 +65,7 @@ async function promise(extra: Record<string, unknown> = {}): Promise<string> {
   expect(res.status).toBe(200)
   return (res.body as any).request.id
 }
-const done = (id: string, extra: Record<string, unknown>) => post({ action: "done", agentId: "coder", id, ...extra })
+const done = (id: string, extra: Record<string, unknown>) => post({ action: "done", work: "ops", agentId: "coder", id, ...extra })
 const facts = () => new FactLedger(wikiDir).list()
 
 describe("proof types", () => {

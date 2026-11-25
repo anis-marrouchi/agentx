@@ -82,7 +82,7 @@ const deps = (over: Partial<RequestsApiDeps & { check: () => Promise<CheckResult
 })
 
 const done = (mode: BeforeCloseCtx["mode"], over: Partial<RequestsApiDeps & { check: () => Promise<CheckResult> }> = {}) =>
-  handleRequestsCall("POST", "/requests", { agentId: "coder", action: "done", id: ID, evidence: "https://example.com/mr/7 merged" },
+  handleRequestsCall("POST", "/requests", { agentId: "coder", action: "done", work: "ops", id: ID, evidence: "https://example.com/mr/7 merged" },
     deps({ ownerBeforeClose: ctx(mode), ...over }), { taskId: "t1" })
 
 describe("an agent's done", () => {
@@ -234,7 +234,7 @@ describe("the tool", () => {
       return new Response(JSON.stringify(reply.body), { status: reply.status })
     }) as unknown as typeof fetch
     const text = await runRequestTool(
-      { action: "done", id: ID, evidence: "https://example.com/mr/7 merged" },
+      { action: "done", work: "ops", id: ID, evidence: "https://example.com/mr/7 merged" },
       { daemonUrl: "http://127.0.0.1:1", fetch: fake, env: { AGENTX_AGENT_ID: "coder", AGENTX_TASK_ID: "t1" } as any },
     )
     expect(text).toMatch(/Closed, but the proof does not show: deployed to CX; all open MRs closed\. The owner-words check will reopen it/)

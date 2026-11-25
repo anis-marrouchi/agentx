@@ -1212,7 +1212,7 @@ const TOOLS = [
             required: ["name"],
           },
         },
-        work: { type: "string", description: "accept: what kind of work it is, one short word: code, research, writing, ops… Needed on an accept without steps. Code work needs steps." },
+        work: { type: "string", description: "accept and done: what kind of work it is, one short word: code, ops, review, research, writing, reply (a short answer)… Every request needs one: an accept always says it, and a done says it when the request has none yet. Code work needs steps." },
         estimateMinutes: { type: "number", description: "accept, promise: how many minutes you expect the work to take. Over the configured limit an accept needs steps. Where the node gives due times, the daemon places it in your queue and answers with the due time." },
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },

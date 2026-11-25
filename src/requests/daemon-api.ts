@@ -1,3 +1,4 @@
+import { WORK_KINDS_HINT } from "./work-hint.js"
 import { CLOSED_STATES, CLOSE_KINDS, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, OWNER_ASKED, type CloseKind, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
@@ -50,6 +51,13 @@ import { CHECK_BY, type OwnerVerdict } from "./owner-check"
 // it between two passes of the synchronous handler.
 // Dropping a request is the owner's alone: `agentx requests drop`, or the
 // dashboard.
+
+/** The refusal when an accept or done leaves a request without its kind of
+ *  work (Anis 2026-11-25: every request has one). */
+export function workRequired(action: string): string {
+  return `${action} needs \`work\`: one short word for the kind of work this request was, such as ` +
+    `${WORK_KINDS_HINT} (a short answer is a reply). Send the same call again with work added.`
+}
 
 export const LIST_LIMIT = 100
 
@@ -685,6 +693,15 @@ export function handleRequestsApi(
       return { status: 409, body: { error: `request "${request.id}" is already closed (${request.state})` } }
     }
 
+    // Every request carries the kind of work it was (Anis 2026-11-25): an
+    // accept says it, and a done on a request that never said it does too.
+    // Checked before anything is written, so a refused call changes nothing.
+    if (action === "accept" || action === "done") {
+      const said = parseWork(input)
+      if (typeof said === "string") return { status: 400, body: { error: said } }
+      if (!said.work && !request.work) return { status: 400, body: { error: workRequired(action), workRequired: true } }
+    }
+
     // Proof links per deliverable (close-proof.ts, #692), in every mode.
     const proofs = action === "step" || action === "done" ? parseProofs(input.proofs, request, deps.plans?.get(request.id)?.state === "active") : []
     if (typeof proofs === "string") return { status: 400, body: { error: proofs } }
@@ -748,6 +765,10 @@ export function handleRequestsApi(
     // Kept before the check runs: the gate reads them. The same link
     // twice is not added again, so the second pass adds nothing.
     if (action === "done" && proofs.length) store.addProofs(request.id, proofs, now)
+    if (action === "done" && !request.work) {
+      const said = parseWork(input)
+      if (typeof said !== "string" && said.work) store.setWork(request.id, { work: said.work })
+    }
 
     // The headline is written before the action runs, so an accept the
     // plan gate refuses still leaves the request described. The need only

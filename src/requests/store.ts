@@ -801,6 +801,13 @@ export class RequestStore {
       .run(now, state, detail.slice(0, REASON_MAX) || null, id)
   }
 
+  /** A request closed done without anyone saying what kind of work it was
+   *  (the owner, a check or a hand-back closed it before the agent did) is
+   *  recorded as a reply, so every request has a kind (Anis 2026-11-25). */
+  private typeIfMissing(id: string): void {
+    this.db.prepare("UPDATE requests SET work = 'reply' WHERE id = ? AND (work IS NULL OR work = '')").run(id)
+  }
+
   /** The checker found the evidence: closed as done, with its words. Its
    *  proof is the check that ran (#1138 D). */
   closeVerified(id: string, evidence: string, now: number): boolean {
@@ -812,7 +819,10 @@ export class RequestStore {
          closed_by = 'check', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)}) AND ${NOT_STANDING}`,
     ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
-    if (closed) this.done(id)
+    if (closed) {
+      this.typeIfMissing(id)
+      this.done(id)
+    }
     return closed
   }
 
@@ -1146,11 +1156,13 @@ export class RequestStore {
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
     const evidence = (proof ?? "").trim().slice(0, REASON_MAX)
     if (!evidence) return false
-    return this.db.prepare(
+    const settled = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")})) AND ${NOT_STANDING}`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
+    if (settled) this.typeIfMissing(id)
+    return settled
   }
 
   /** Marks that the agent is asked for the proof of the newest hand-back
@@ -1318,7 +1330,10 @@ export class RequestStore {
     ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept, kind,
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0
-    if (closed && state === "done") this.done(id)
+    if (closed && state === "done") {
+      this.typeIfMissing(id)
+      this.done(id)
+    }
     return closed
   }
 

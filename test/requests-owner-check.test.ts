@@ -190,14 +190,14 @@ describe("the owner-words check judges the latest close's proofs only", () => {
   })
 
   async function closeAMismatch() {
-    expect(api({ action: "done", id: ID, evidence: `done ${LINK_A}`, proofs: [{ deliverable: 1, link: LINK_A }] }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: `done ${LINK_A}`, proofs: [{ deliverable: 1, link: LINK_A }] }).status).toBe(200)
     expect((await checker(MISMATCH).c.run()).reopened).toEqual([ID])
   }
 
   it("close with link A, mismatch reopen, close with link B: the prompt has B and not A", async () => {
     await closeAMismatch()
     expect(store.get(ID)!.deliverableProofs).toEqual([])
-    expect(api({ action: "done", id: ID, evidence: `done ${LINK_B}`, proofs: [{ deliverable: 1, link: LINK_B }] }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: `done ${LINK_B}`, proofs: [{ deliverable: 1, link: LINK_B }] }).status).toBe(200)
     const { c, prompts } = checker('{"verdict":"match","why":"ok"}')
     await c.run()
     expect(prompts).toHaveLength(1)
@@ -209,7 +209,7 @@ describe("the owner-words check judges the latest close's proofs only", () => {
   it("keeps a link given by step after the reopen when the done carries none", async () => {
     await closeAMismatch()
     expect(api({ action: "step", id: ID, proofs: [{ deliverable: 1, link: LINK_B }] }).status).toBe(200)
-    expect(api({ action: "done", id: ID, evidence: "both done, see the step link" }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: "both done, see the step link" }).status).toBe(200)
     const p = ownerCheckPrompt(store.get(ID)!)
     expect(p).toContain(LINK_B)
     expect(p).not.toContain(LINK_A)

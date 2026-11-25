@@ -72,7 +72,7 @@ describe("cause 1: an owner-words mismatch wakes the agent that closed it", () =
       { deliverable: "1", link: "https://git.example/g/p/-/issues/9#note_1" },
       { deliverable: "2", link: "https://git.example/g/p/-/issues/9#note_2" },
     ], 5_800)
-    expect(api({ action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
     const { c, woken } = check()
     expect(await c.run()).toMatchObject({ reopened: [ID], woken: [ID] })
     expect(store.get(ID)!.deliverableProofs ?? []).toEqual([])
@@ -85,7 +85,7 @@ describe("cause 1: an owner-words mismatch wakes the agent that closed it", () =
   it("wakes the closing agent once, asking a link for every deliverable, and the owner reads that it is the agent's", async () => {
     store.setDeliverables(ID, ["release note", "staging link", "test report"])
     store.addProofs(ID, [{ deliverable: "1", link: "https://git.example/g/p/-/issues/9#note_1" }], 5_800)
-    expect(api({ action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1" }).status).toBe(200)
     const { c, woken } = check()
     expect(await c.run()).toMatchObject({ reopened: [ID], woken: [ID] })
     expect(woken).toHaveLength(1)
@@ -147,12 +147,12 @@ describe("cause 2: an agent's done is held to each deliverable", () => {
 
   it("refuses one link for three things, with the missing list, and closes once each has its proof", () => {
     store.setDeliverables(ID, ["release note", "staging link", "test report"])
-    const res = api({ action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1", proofs: [{ deliverable: 1, link: "https://git.example/g/p/-/issues/9#note_1" }] }, block)
+    const res = api({ action: "done", work: "ops", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_1", proofs: [{ deliverable: 1, link: "https://git.example/g/p/-/issues/9#note_1" }] }, block)
     expect(res.status).toBe(409)
     expect((res.body as any).missing).toEqual(["2. staging link", "3. test report"])
     expect(store.get(ID)).toMatchObject({ state: "in_progress", verifyState: "proof_missing" })
     const ok = api({
-      action: "done", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_3",
+      action: "done", work: "ops", id: ID, evidence: "https://git.example/g/p/-/issues/9#note_3",
       proofs: [{ deliverable: 2, link: "https://staging.example/" }, { deliverable: 3, link: "https://git.example/g/p/-/issues/9#note_3" }],
     }, block)
     expect(ok.status).toBe(200)
@@ -161,17 +161,17 @@ describe("cause 2: an agent's done is held to each deliverable", () => {
 
   it("reads unread words first in block mode, and closes as before when off or with one deliverable", () => {
     const read: string[] = []
-    const reading = api({ action: "done", id: ID, evidence: "https://example.com/x" }, { ...block, read: async (r) => { read.push(r.id) } })
+    const reading = api({ action: "done", work: "ops", id: ID, evidence: "https://example.com/x" }, { ...block, read: async (r) => { read.push(r.id) } })
     expect(reading.status).toBe(202)
     expect(read).toEqual([ID])
     expect(store.get(ID)?.state).toBe("in_progress")
     store.setDeliverables(ID, ["release note"])
-    expect(api({ action: "done", id: ID, evidence: "https://example.com/x" }, block).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: "https://example.com/x" }, block).status).toBe(200)
   })
 
   it("mode off closes on one link, as before", () => {
     store.setDeliverables(ID, ["release note", "staging link"])
-    expect(api({ action: "done", id: ID, evidence: "https://example.com/x" }, { mode: "off", ownerCheckOn: false }).status).toBe(200)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: "https://example.com/x" }, { mode: "off", ownerCheckOn: false }).status).toBe(200)
   })
 })
 

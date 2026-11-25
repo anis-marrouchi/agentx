@@ -173,7 +173,7 @@ describe("the agentx_request actions", () => {
 
   it("accept, wait and promise take them alongside", () => {
     turn("t1")
-    expect(api({ action: "accept", headline: "Check the invoices batch", need: NOTHING_NEEDED }).status).toBe(200)
+    expect(api({ action: "accept", work: "ops", headline: "Check the invoices batch", need: NOTHING_NEEDED }).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ state: "in_progress", headline: "Check the invoices batch" })
     expect(api({ action: "wait", question: "Today or Monday?", need: "Pick a day." }).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ state: "waiting_owner", need: "Pick a day." })
@@ -244,7 +244,7 @@ describe("after review", () => {
     turn("t1")
     expect(api({ action: "wait", need: "Pick a date." }).status).toBe(400)
     expect(store.get("req-t1")?.need).toBeNull()
-    expect(api({ action: "accept", need: "Nothing, just so you know.", headline: "Book the venue" }).status).toBe(200)
+    expect(api({ action: "accept", work: "ops", need: "Nothing, just so you know.", headline: "Book the venue" }).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ need: "Nothing, just so you know.", headline: "Book the venue" })
   })
 

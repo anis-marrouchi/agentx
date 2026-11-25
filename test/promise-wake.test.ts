@@ -281,7 +281,7 @@ describe("a due time an agent accepts on a request", () => {
       at: "", humanRoot: true, sender: { id: "4242" },
     } as any)
     const due = new Date(clock + 3 * HOUR).toISOString()
-    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", id: "req-t1", due }, {
+    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", work: "ops", id: "req-t1", due }, {
       store, tracker, enabled: true, hasAgent: (id) => id === "sales", now: clock,
       runningTurn: (agentId) => (agentId === "sales" ? { channel: "telegram", chatId: "chat-1" } : null),
     }, { taskId: "t1" })
@@ -298,7 +298,7 @@ describe("a due time an agent accepts on a request", () => {
       at: "", humanRoot: true, sender: { id: "4242" },
     } as any)
     const due = new Date(clock + 3 * HOUR).toISOString()
-    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", id: "req-t1", due }, {
+    const res = handleRequestsApi("POST", "/requests", { agentId: "sales", action: "accept", work: "ops", id: "req-t1", due }, {
       store, tracker, enabled: true, hasAgent: (id) => id === "sales", now: clock,
       runningTurn: (agentId) => (agentId === "sales" ? { channel: "telegram", chatId: "chat-1" } : null),
       promiseSettings: { ...DEFAULT_PROMISE_SETTINGS, acceptWake: false },

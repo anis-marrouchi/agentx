@@ -94,7 +94,7 @@ describe("a request accepted with a goal", () => {
     store.link("req-t1", "run", "t1b", now)
     traces([["t1", 0.5], ["t1b", 0.25], ["t2", null], ["t3", 1]])
     now = 7_000
-    expect(api("POST", "/requests", { action: "done", agentId: "coder", evidence: "https://example.com/pull/1" }, "t1").status).toBe(200)
+    expect(api("POST", "/requests", { action: "done", work: "ops", agentId: "coder", evidence: "https://example.com/pull/1" }, "t1").status).toBe(200)
 
     const [hire, launch] = [goals().find((g) => g.id === "hire-a-designer"), goals().find((g) => g.id === "launch")]
     expect(launch).toMatchObject({ title: "Launch the new site", open: 1, done: 1, dropped: 0, progress: 0.5, costUsd: 0.75, runs: 3, unpriced: 1 })

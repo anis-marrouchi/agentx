@@ -56,7 +56,7 @@ const endTurn = (taskId: string, chatId = "chat-1") =>
 
 /** coder speaking from its running turn in chat-1. */
 const say = (action: string, extra: Record<string, unknown> = {}) =>
-  api("POST", "/requests", { action, agentId: "coder", ...extra })
+  api("POST", "/requests", { action, agentId: "coder", ...(action === "accept" || action === "done" ? { work: "ops" } : {}), ...extra })
 
 describe("an agent's statement about its request", () => {
   it("accept keeps the request of the running turn open after a clean end", () => {
@@ -111,19 +111,19 @@ describe("an agent's statement about its request", () => {
     const forged = api("POST", "/requests", { action: "decline", agentId: "coder", id: "req-t1", reason: "tidy" }, { taskId: "run-devops" })
     expect(forged.status).toBe(403)
     // No proof at all, and a proof for a run that is over.
-    expect(api("POST", "/requests", { action: "done", agentId: "coder", id: "req-t1", evidence: "x" }, {}).status).toBe(403)
-    expect(api("POST", "/requests", { action: "done", agentId: "coder", id: "req-t1", evidence: "x" }, { taskId: "gone" }).status).toBe(403)
+    expect(api("POST", "/requests", { action: "done", work: "ops", agentId: "coder", id: "req-t1", evidence: "x" }, {}).status).toBe(403)
+    expect(api("POST", "/requests", { action: "done", work: "ops", agentId: "coder", id: "req-t1", evidence: "x" }, { taskId: "gone" }).status).toBe(403)
     expect(store.get("req-t1")?.state).toBe("in_progress")
     // The channel and chat of the running turn are accepted as proof too.
-    expect(api("POST", "/requests", { action: "done", agentId: "coder", id: "req-t1", evidence: "https://example.test/p" }, { channel: "telegram", chatId: "chat-1" }).status).toBe(200)
+    expect(api("POST", "/requests", { action: "done", work: "ops", agentId: "coder", id: "req-t1", evidence: "https://example.test/p" }, { channel: "telegram", chatId: "chat-1" }).status).toBe(200)
   })
 
   it("refuses another agent's request, an unknown agent and a chat with nothing recorded", () => {
     turn("t1")
     running.set("run-devops", { agentId: "devops", channel: "a2a", chatId: "x" })
-    expect(api("POST", "/requests", { action: "done", agentId: "devops", id: "req-t1", evidence: "x" }, { taskId: "run-devops" }).status).toBe(403)
-    expect(api("POST", "/requests", { action: "accept", agentId: "ghost", id: "req-t1" }).status).toBe(400)
-    expect(api("POST", "/requests", { action: "accept", agentId: "devops" }, { taskId: "run-devops" }).status).toBe(404)
+    expect(api("POST", "/requests", { action: "done", work: "ops", agentId: "devops", id: "req-t1", evidence: "x" }, { taskId: "run-devops" }).status).toBe(403)
+    expect(api("POST", "/requests", { action: "accept", work: "ops", agentId: "ghost", id: "req-t1" }).status).toBe(400)
+    expect(api("POST", "/requests", { action: "accept", work: "ops", agentId: "devops" }, { taskId: "run-devops" }).status).toBe(404)
     expect(store.get("req-t1")?.state).toBe("candidate")
   })
 
@@ -171,23 +171,23 @@ describe("the agentx_request tool", () => {
 
   it("accepts, then answers what is still open, then closes with evidence", async () => {
     turn("t1")
-    expect(await tool({ action: "accept" })).toContain("Request req-t1 is open and in progress")
+    expect(await tool({ action: "accept", work: "ops" })).toContain("Request req-t1 is open and in progress")
     endTurn("t1")
     const open = await tool({})
     expect(open).toContain("1 open request, oldest first.")
     expect(open).toContain("req-t1 [in progress]")
     expect(open).toContain("ship the fix")
-    expect(await tool({ action: "done", id: "req-t1", evidence: "https://example.test/pull/9" })).toBe("Request req-t1 is closed as done. Evidence: https://example.test/pull/9")
+    expect(await tool({ action: "done", work: "ops", id: "req-t1", evidence: "https://example.test/pull/9" })).toBe("Request req-t1 is closed as done. Evidence: https://example.test/pull/9")
     expect(await tool({ action: "list" })).toContain("No open requests.")
   })
 
   it("returns refusals as text", async () => {
-    expect(await tool({ action: "done" })).toMatch(/^Error: This turn has no recorded request/)
+    expect(await tool({ action: "done", work: "ops" })).toMatch(/^Error: This turn has no recorded request/)
     // The run's task id, when the runtime sets it, is the proof the tool sends.
-    expect(await runRequestTool({ action: "done", id: "req-none" }, { daemonUrl: "http://127.0.0.1:1", fetch: viaApi, env: { AGENTX_AGENT_ID: "coder", AGENTX_TASK_ID: "gone" } as NodeJS.ProcessEnv }))
+    expect(await runRequestTool({ action: "done", work: "ops", id: "req-none" }, { daemonUrl: "http://127.0.0.1:1", fetch: viaApi, env: { AGENTX_AGENT_ID: "coder", AGENTX_TASK_ID: "gone" } as NodeJS.ProcessEnv }))
       .toMatch(/^Error: no running turn of "coder" matches this call/)
     turn("t1")
-    expect(await tool({ action: "done" })).toBe("Error: a finished request needs a link to the evidence")
+    expect(await tool({ action: "done", work: "ops" })).toBe("Error: a finished request needs a link to the evidence")
     expect(await tool({ action: "drop" })).toBe(`Error: ${OWNER_ONLY}`)
     enabled = false
     expect(await tool({ action: "list" })).toContain("turned off")
@@ -262,7 +262,7 @@ describe("home and the since list (#394)", () => {
     endTurn("t1")
     running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
     turn("t2")
-    expect(api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" }).status).toBe(200)
+    expect(api("POST", "/requests", { action: "accept", work: "ops", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" }).status).toBe(200)
     expect(store.get("req-t1")?.home?.link).toBe("https://example.com/i/394")
     expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
   })
@@ -327,7 +327,7 @@ describe("home and the since list (#394)", () => {
     endTurn("t1")
     running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
     turn("t2")
-    api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" })
+    api("POST", "/requests", { action: "accept", work: "ops", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" })
     expect(store.byLink("issue", "https://example.com/i/394")?.id).toBe("req-t1")
     expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
   })
@@ -338,7 +338,7 @@ describe("home and the since list (#394)", () => {
       sent = JSON.parse(init.body)
       return new Response(JSON.stringify({ request: { id: "req-x" } }), { status: 200 })
     }) as typeof fetch
-    await runRequestTool({ action: "accept", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
+    await runRequestTool({ action: "accept", work: "ops", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
     expect(sent.home).toEqual({ kind: "idea", link: "ideas/a.md" })
   })
 
@@ -406,5 +406,33 @@ describe("GET /requests filters (#394)", () => {
     for (const q of [{ state: "lost" }, { state: "," }, { limit: "0" }, { limit: "501" }, { limit: "2.5" }, { offset: "-1" }, { closedSince: "x" }]) {
       expect(get(q).status).toBe(400)
     }
+  })
+})
+
+describe("every request has a kind of work (Anis 2026-11-25)", () => {
+  it("refuses an accept or a done without one, and changes nothing", () => {
+    turn("t1")
+    const a = say("accept", { work: undefined })
+    expect(a.status).toBe(400)
+    expect(a.body).toMatchObject({ workRequired: true })
+    const d = say("done", { work: undefined, evidence: "https://example.com/pr/1" })
+    expect(d.status).toBe(400)
+    expect(store.get("req-t1")?.state).not.toBe("done")
+  })
+
+  it("keeps the kind a done declares, and needs none once the request has one", () => {
+    turn("t1")
+    expect(say("done", { work: "review", evidence: "https://example.com/pr/1" }).status).toBe(200)
+    expect(store.get("req-t1")?.work).toBe("review")
+    turn("t2")
+    expect(say("accept", { work: "code" }).status).toBe(200)
+    expect(say("done", { work: undefined, id: "req-t2", evidence: "https://example.com/pr/2" }).status).toBe(200)
+    expect(store.get("req-t2")?.work).toBe("code")
+  })
+
+  it("records a close nobody typed as a reply", () => {
+    turn("t1")
+    expect(store.close("req-t1", "done", "answered in chat", Date.now(), null, "owner")).toBe(true)
+    expect(store.get("req-t1")?.work).toBe("reply")
   })
 })

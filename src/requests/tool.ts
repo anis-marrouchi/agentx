@@ -1,4 +1,5 @@
 import { resolveScheduleCaller } from "@/crons/schedule-tool"
+import { workHint } from "./work-hint.js"
 import { callerHeaders } from "@/calls/service"
 import { awaitingQa, describeQa } from "./qa"
 import type { GoalSummary } from "./goals"
@@ -260,7 +261,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
     if (action === "promise") {
       return `Promise ${r.id} is open, owed to ${r.owedTo}${r.dueAt ? `, due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
-        (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}", evidence:"<link>"} when it is kept.`) + due
+        (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"} when it is kept.`) + due
     }
     if (action === "done" && data.verify === "reading") {
       return `Request ${r.id} stays open: ${data.detail}. Say done again in a minute.`

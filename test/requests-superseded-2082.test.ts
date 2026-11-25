@@ -79,7 +79,7 @@ describe("a decline as superseded carries its link", () => {
     expect(api({ action: "decline", id: ID, reasonKind: "superseded", link: "not a link", reason: "replaced" }).status).toBe(400)
     expect(api({ action: "decline", id: ID, link: NEWER, reason: "replaced" }).status).toBe(400)
     expect(api({ action: "decline", id: ID, reasonKind: "obsolete", link: NEWER, reason: "replaced" }).status).toBe(400)
-    expect(api({ action: "done", id: ID, evidence: NEWER, reasonKind: "superseded", link: NEWER }).status).toBe(400)
+    expect(api({ action: "done", work: "ops", id: ID, evidence: NEWER, reasonKind: "superseded", link: NEWER }).status).toBe(400)
     expect(store.get(ID)?.state).toBe("in_progress")
   })
 
