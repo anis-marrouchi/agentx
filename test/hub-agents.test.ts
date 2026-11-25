@@ -88,6 +88,23 @@ describe("haListHtml", () => {
   it("says so when there are no agents", () => {
     expect(haListHtml(hubAgentRows([], [], NOW, DAY, title, ltPlain, liveWorkCount([])), "all", "", false, ltEsc, ltAge)).toContain("No agents yet.")
   })
+  // #2270: the chat only streams runs started from it, so a working row opens its run.
+  it("opens a working agent's live run; other rows and a gone run open the chat", () => {
+    const seen: string[] = []
+    const runHref = (r: { id: string; taskId: string; nodeUrl: string }) => {
+      seen.push(r.id)
+      return r.taskId === "t1" ? "#page=task&task=t1&agent=" + r.id + "&node=" + encodeURIComponent(r.nodeUrl) : ""
+    }
+    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, runHref)
+    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder&amp;node=http%3A%2F%2Fmac" data-ha-agent="coder" data-ha-run')
+    expect(h).toContain("Opens its live run")
+    expect(h).toContain('href="#page=chat&amp;agent=main" data-ha-agent="main"')
+    expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm"')
+    expect(seen.sort()).toEqual(["coder", "main"])
+  })
+  it("draws no sliding stripe under a working row (#2270)", () => {
+    expect(haListHtml(m, "all", "", false, ltEsc, ltAge)).not.toContain("ha__bar")
+  })
 })
 
 describe("the switcher", () => {

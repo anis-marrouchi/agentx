@@ -5,7 +5,8 @@
 // Needs you and Done today. Each row is a face (letter in the agent's
 // colour, state dot on the corner), the agent, its computer, its last line,
 // how long ago it moved and how many questions it has for you. One click
-// opens its chat (#page=chat&agent=, which opens its latest conversation).
+// opens its chat (#page=chat&agent=, which opens its latest conversation);
+// a working agent's row opens its live run instead (#2270).
 // ⌘K opens a switcher over the same rows (V3).
 //
 // One model, two readers: the Hub draws it in the browser from what the
@@ -134,23 +135,29 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
   return { rows, counts: c }
 }
 
-/** One agent row (a link to its chat). `cur` is the agent in view. */
-export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, age: (ms: number) => string): string {
+/** One agent row. `cur` is the agent in view. A working row opens its run's
+ *  Task page, `runHref(row)` (#2270): the chat only streams runs started from
+ *  it, so a run from another channel left it blank. Every other row, and a
+ *  working row whose run has no link, opens the agent's chat. */
+export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, age: (ms: number) => string, runHref?: (r: HaRow) => string): string {
   const word = ({ working: "working", needs: "waiting on you", done: "done today", idle: "idle" } as Record<string, string>)[r.state]
   const bg = r.color && /^#[0-9a-f]{3,8}$/i.test(r.color) ? ' style="--ha-c:' + r.color + '"' : ""
   const when = r.ageMs >= 0 ? "<time>" + esc(age(r.ageMs)) + "</time>" : ""
   const unread = r.unread ? '<b class="ha__n" title="' + r.unread + (r.unread === 1 ? " question" : " questions") + ' for you">' + r.unread + "</b>" : ""
-  const busy = r.state === "working" ? '<span class="ha__bar" aria-hidden="true"></span>' : ""
-  return '<a class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" href="#page=chat&amp;agent=' + encodeURIComponent(r.id) + '" data-ha-agent="' + esc(r.id) + '"' +
-    (r.id === cur ? ' aria-current="true"' : "") + ' title="' + esc(r.name + " on " + r.node + ", " + word + (r.line ? ": " + r.line : "")) + '">' +
+  const run = r.state === "working" && r.taskId && runHref ? runHref(r) : ""
+  const href = run ? esc(run) : "#page=chat&amp;agent=" + encodeURIComponent(r.id)
+  const opens = run ? ". Opens its live run" : ""
+  return '<a class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" href="' + href + '" data-ha-agent="' + esc(r.id) + '"' + (run ? " data-ha-run" : "") +
+    (r.id === cur ? ' aria-current="true"' : "") + ' title="' + esc(r.name + " on " + r.node + ", " + word + (r.line ? ": " + r.line : "") + opens) + '">' +
     '<span class="ha__face"' + bg + ' aria-hidden="true">' + esc(r.face) + '<i class="ha__dot"></i></span>' +
     '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + (r.node ? '<span class="ha__node">' + esc(r.node) + "</span>" : "") + when + "</span>" +
-    '<span class="ha__line">' + esc(r.line || (r.state === "idle" ? "Nothing going" : "")) + "</span>" + busy + "</span>" + unread +
+    '<span class="ha__line">' + esc(r.line || (r.state === "idle" ? "Nothing going" : "")) + "</span></span>" + unread +
     '<span class="ax-sr"> (' + word + ")</span></a>"
 }
 
-/** The chips and the grouped list. `filter` is all | working | needs | done. */
-export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: boolean, esc: (s: unknown) => string, age: (ms: number) => string): string {
+/** The chips and the grouped list. `filter` is all | working | needs | done.
+ *  `runHref` links a working row to its run (haRowHtml). */
+export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: boolean, esc: (s: unknown) => string, age: (ms: number) => string, runHref?: (r: HaRow) => string): string {
   const c = m.counts
   const chip = (k: string, label: string, n: number) => '<button type="button" class="ha__chip is-' + k + '" data-ha-filter="' + k + '" aria-pressed="' + (filter === k) + '">' +
     (k === "all" ? "" : '<i class="ha__cdot" aria-hidden="true"></i>') + label + " <b>" + n + "</b></button>"
@@ -162,7 +169,7 @@ export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: bo
     if (filter !== "all" && filter !== k) continue
     const rows = m.rows.filter((r) => r.state === k)
     if (!rows.length) continue
-    body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>" + rows.map((r) => haRowHtml(r, cur, esc, age)).join("")
+    body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>" + rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
   }
   const idle = m.rows.filter((r) => r.state === "idle")
   if (filter === "all" && idle.length) {
