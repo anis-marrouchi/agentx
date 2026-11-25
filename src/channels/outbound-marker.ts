@@ -23,16 +23,24 @@
 // channels whose only signal IS the message body.
 
 const MARKER_RE = /<!--\s*agentx:([^\s-][^\s>]*?)\s*-->/
+/** A whole string that is one marker and nothing else. */
+const MARKER_LINE_RE = /^<!--\s*agentx:[^\s-][^\s>]*?\s*-->$/
 
 /**
  * The parts of a body that are the author's own words: fenced code blocks,
  * inline code and quoted (`>`) lines removed. A marker only counts there.
  * Someone quote-replying an agent's comment, or showing the marker in a
  * code sample, has not signed their comment as that agent (#282).
+ * One exception (#2130): a line that is nothing but a marker in backticks
+ * counts as that marker. The agent is told its marker in backticks and may
+ * copy them; a marker in backticks inside a sentence or a fence still
+ * does not count.
  */
 export function ownText(body: string): string {
   return body
     .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm, "")
+    .replace(/^([ \t]*)`(<!--[^`\n]*?-->)`([ \t]*)$/gm, (line, lead: string, marker: string, trail: string) =>
+      MARKER_LINE_RE.test(marker) ? `${lead}${marker}${trail}` : line)
     .replace(/`[^`\n]*`/g, "")
     .split("\n")
     .filter((line) => !/^[ \t]*>/.test(line))

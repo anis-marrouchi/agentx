@@ -44,6 +44,20 @@ describe("outbound-marker", () => {
     expect(detectAgentxMarker("body <!--   agentx:x   -->")).toBe("x")
   })
 
+  it("counts a marker copied with its backticks on a line of its own (#2130)", () => {
+    expect(detectAgentxMarker("Fixes the login.\n\n`<!-- agentx:coder -->`")).toBe("coder")
+    expect(detectAgentxMarker("Fixes the login.\n  `<!-- agentx:coder -->`  \nmore")).toBe("coder")
+  })
+
+  it("still ignores a marker in backticks inside a sentence, a quote or a fence (#2130)", () => {
+    expect(detectAgentxMarker("Sign with `<!-- agentx:coder -->` at the end.")).toBeNull()
+    expect(detectAgentxMarker("> `<!-- agentx:coder -->`")).toBeNull()
+    expect(detectAgentxMarker("```\n`<!-- agentx:coder -->`\n```")).toBeNull()
+    expect(detectAgentxMarker("`<!-- agentx:coder --> and more`")).toBeNull()
+    // Stripping still leaves nothing detectable.
+    expect(detectAgentxMarker(stripAgentxMarkers("body\n`<!-- agentx:coder -->`"))).toBeNull()
+  })
+
   it("agentId can include hyphens, dots, slashes — anything non-whitespace", () => {
     expect(detectAgentxMarker("body <!-- agentx:pm-initech -->")).toBe("pm-initech")
     expect(detectAgentxMarker("body <!-- agentx:devops.acme -->")).toBe("devops.acme")

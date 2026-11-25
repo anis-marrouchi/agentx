@@ -1297,14 +1297,14 @@ To change how an agent's pointer looks:
 2. In the agent's block, add a `presence` block:
    ```json
    "helper": {
-     "presence": { "color": "#7C3AED", "initial": "H", "label": "Helper", "allowActions": false }
+     "presence": { "color": "#1A56C4", "initial": "H", "label": "Helper", "allowActions": false }
    }
    ```
 3. Save the file.
 
 | Field | Meaning |
 |---|---|
-| `color` | The pointer's colour, also used for the [orb](#the-pill-and-its-orb). Default: a colour picked from the agent's id |
+| `color` | The pointer's colour, also used for the [orb](#the-pill-and-its-orb). Default: a colour picked from the agent's id, out of eight (two AgentX blues, pink, orange, teal, blue, green and cyan; no purple) |
 | `initial` | The letter on the pointer. Default: the first letter of the label |
 | `label` | The name shown. Default: the agent's `name`, else its id |
 | `allowActions` | `true` lets the agent click and type for you in `act` mode. Default `false` |

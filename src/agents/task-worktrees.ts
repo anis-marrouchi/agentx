@@ -152,9 +152,9 @@ export interface TaskWorktree {
   reused: boolean
   /** Set for a pull or merge request: the worktree is on its source branch. */
   change?: "pull request" | "merge request"
-  /** True when a change task took over a worktree made for something else
-   *  (most often the issue's), so a session kept for its chat was started
-   *  in another folder. */
+  /** True when a task took over a worktree made for something else (a
+   *  change task the issue's, or an issue task its pull request's), so a
+   *  session kept for its chat was started in another folder. */
   adopted?: boolean
   /** True when a change task runs in the checkout itself, which already
    *  has the source branch checked out. */
@@ -182,29 +182,52 @@ function changeWorktreeDir(target: WorktreeTarget, checkout: string, settings: P
  *  its `pr-<n>` / `mr-<n>` worktree or any folder of the checkout
  *  (the checkout included) that has `branch` checked out. Makes nothing. */
 export async function hasTargetWorktree(target: WorktreeTarget, branch: string | undefined, checkout: string, settings: Pick<TaskWorktreeSettings, "root">, exec: ExecFn): Promise<boolean> {
-  if (target.kind !== "change") return existsSync(join(issueWorktreeDir(target, checkout, settings), ".git"))
+  if (target.kind !== "change") {
+    if (existsSync(join(issueWorktreeDir(target, checkout, settings), ".git"))) return true
+    // The issue's branch in another worktree (a `pr-<n>` one), which
+    // prepareTaskWorktree takes over (#2130). Not the checkout itself.
+    const list = await exec("git", ["worktree", "list", "--porcelain"], { cwd: checkout, timeoutMs: 60_000 })
+    const holder = list.code === 0 ? worktreeHolding(list.stdout, worktreeBranch(target)) : undefined
+    return !!holder && !samePath(holder, checkout)
+  }
   if (existsSync(join(changeWorktreeDir(target, checkout, settings), ".git"))) return true
   if (!branch) return false
   const list = await exec("git", ["worktree", "list", "--porcelain"], { cwd: checkout, timeoutMs: 60_000 })
   return list.code === 0 && !!worktreeHolding(list.stdout, branch)
 }
 
+/** Null when git takes `branch` as a branch name as it is; else why not.
+ *  A change's branch comes from a webhook, and a name that starts with
+ *  "-" would be read as an option (#2130). `git check-ref-format --branch`
+ *  also expands `@{-1}` and the like, so its answer must be the name. */
+export async function badBranchName(branch: string, cwd: string, exec: ExecFn): Promise<string | null> {
+  if (!branch || branch.startsWith("-")) return `refused the branch name "${branch}": it is empty or starts with "-"`
+  const r = await exec("git", ["check-ref-format", "--branch", branch], { cwd, timeoutMs: 60_000 })
+  if (r.code !== 0) return `refused the branch name "${branch}": ${short(r.stderr) || "git check-ref-format rejects it"}`
+  if (r.stdout.trim() !== branch) return `refused the branch name "${branch}": git reads it as "${short(r.stdout)}"`
+  return null
+}
+
 /** Makes (or finds) the worktree for one issue. Never switches, resets or
  *  deletes anything in the checkout: the branch is created only when it
  *  does not exist yet, from the remote branch of the same name when there
- *  is one (an earlier task pushed it), else from the default branch. */
+ *  is one (an earlier task pushed it), else from the default branch. When
+ *  another worktree already has the branch checked out (a `pr-<n>` one),
+ *  the task works there, brought up to origin like a reused one (#2130). */
 export async function prepareTaskWorktree(target: WorktreeTarget, checkout: string, settings: TaskWorktreeSettings, deps: WorktreeDeps): Promise<TaskWorktree | { error: string; refuse?: boolean }> {
   const git = (args: string[], cwd: string) => deps.exec("git", args, { cwd, timeoutMs: 120_000 })
   const branch = worktreeBranch(target)
   const root = worktreeRoot(checkout, settings)
   const dir = issueWorktreeDir(target, checkout, settings)
+  const bad = await badBranchName(branch, checkout, deps.exec)
+  if (bad) return { error: bad }
 
   if (existsSync(join(dir, ".git"))) {
     const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], dir)
     if (head.code === 0 && head.stdout.trim() === branch) {
       // Reused: brought up to the issue's pushed branch first (#2104 B3),
       // which another node may have moved on since.
-      const fetched = await git(["fetch", "origin", branch], checkout)
+      const fetched = await git(["fetch", "origin", "--", branch], checkout)
       if (fetched.code !== 0) deps.log?.(`[worktrees] fetch of ${branch} in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
       const synced = await syncIssueBranch(dir, branch, deps.exec)
       if (synced) return synced
@@ -218,19 +241,33 @@ export async function prepareTaskWorktree(target: WorktreeTarget, checkout: stri
   if (fetched.code !== 0) deps.log?.(`[worktrees] fetch in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
   // A worktree removed by hand leaves a stale entry that blocks `add`.
   await git(["worktree", "prune"], checkout)
+  // The branch already checked out in another worktree (most often a
+  // `pr-<n>` one made for the issue's pull request): work there, as
+  // prepareChangeWorktree does, never check the branch out twice (#2130).
+  const list = await git(["worktree", "list", "--porcelain"], checkout)
+  if (list.code !== 0) return { error: `git worktree list failed in ${checkout}: ${short(list.stderr)}` }
+  const holder = worktreeHolding(list.stdout, branch)
+  if (holder) {
+    // The shared checkout is never an issue's folder.
+    if (samePath(holder, checkout)) return { error: `${branch} is checked out in ${checkout} itself; check out another branch there to give the issue its own worktree` }
+    const synced = await syncIssueBranch(holder, branch, deps.exec)
+    if (synced) return synced
+    touch(holder, deps.now)
+    return { dir: holder, branch, checkout, reused: true, adopted: true }
+  }
   const local = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], checkout)
   const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], checkout)
   let args: string[]
   if (local.code === 0) {
-    args = ["worktree", "add", dir, branch]
+    args = ["worktree", "add", "--", dir, branch]
   } else if (remote.code === 0) {
     // From the issue's pushed branch: an earlier task, or the node it ran
     // on before a move (#2104 B3).
-    args = ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]
+    args = ["worktree", "add", "--track", "-b", branch, "--", dir, `origin/${branch}`]
   } else {
     const head = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], checkout)
     const base = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : "origin/main"
-    args = ["worktree", "add", "-b", branch, dir, base]
+    args = ["worktree", "add", "-b", branch, "--", dir, base]
   }
   mkdirSync(root, { recursive: true })
   const added = await git(args, checkout)
@@ -282,8 +319,10 @@ export async function prepareChangeWorktree(target: WorktreeTarget, branch: stri
   const change = target.source === "gitlab" ? "merge request" : "pull request"
   const root = worktreeRoot(checkout, settings)
   const dir = changeWorktreeDir(target, checkout, settings)
+  const bad = await badBranchName(branch, checkout, deps.exec)
+  if (bad) return { error: bad }
 
-  const fetched = await git(["fetch", "origin", branch], checkout)
+  const fetched = await git(["fetch", "origin", "--", branch], checkout)
   if (fetched.code !== 0) deps.log?.(`[worktrees] fetch of ${branch} in ${checkout} failed, using what is there: ${short(fetched.stderr)}`)
   // A worktree removed by hand leaves a stale entry that would be reused.
   await git(["worktree", "prune"], checkout)
@@ -309,11 +348,11 @@ export async function prepareChangeWorktree(target: WorktreeTarget, branch: stri
   const local = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], checkout)
   let args: string[]
   if (local.code === 0) {
-    args = ["worktree", "add", dir, branch]
+    args = ["worktree", "add", "--", dir, branch]
   } else {
     const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`], checkout)
     if (remote.code !== 0) return { error: `origin has no branch ${branch}` }
-    args = ["worktree", "add", "--track", "-b", branch, dir, `origin/${branch}`]
+    args = ["worktree", "add", "--track", "-b", branch, "--", dir, `origin/${branch}`]
   }
   mkdirSync(root, { recursive: true })
   const added = await git(args, checkout)
@@ -347,7 +386,9 @@ function touch(dir: string, now: (() => number) | undefined): void {
 }
 
 /** Removes worktrees under the root no task used for `maxAgeDays` that hold
- *  no uncommitted change. Returns the folders removed. Branches stay. */
+ *  no uncommitted change. Returns the folders removed. Issue branches stay;
+ *  the local branch of a removed `pr-<n>` / `mr-<n>` worktree is deleted
+ *  too (#2130) when origin has every commit of it, else kept and logged. */
 export async function pruneTaskWorktrees(checkout: string, settings: TaskWorktreeSettings, deps: WorktreeDeps & { keep?: string }): Promise<string[]> {
   const root = worktreeRoot(checkout, settings)
   if (!existsSync(root)) return []
@@ -364,11 +405,38 @@ export async function pruneTaskWorktrees(checkout: string, settings: TaskWorktre
       deps.log?.(`[worktrees] kept ${dir}: ${status.code !== 0 ? "git status failed" : "it has uncommitted changes"}`)
       continue
     }
-    const r = await deps.exec("git", ["worktree", "remove", dir], { cwd: checkout, timeoutMs: 60_000 })
-    if (r.code === 0) removed.push(dir)
-    else deps.log?.(`[worktrees] could not remove ${dir}: ${short(r.stderr)}`)
+    // A change worktree's branch, read before the folder goes.
+    const head = /^(?:pr|mr)-\d+$/.test(name) ? await deps.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: dir, timeoutMs: 60_000 }) : undefined
+    const r = await deps.exec("git", ["worktree", "remove", "--", dir], { cwd: checkout, timeoutMs: 60_000 })
+    if (r.code !== 0) {
+      deps.log?.(`[worktrees] could not remove ${dir}: ${short(r.stderr)}`)
+      continue
+    }
+    removed.push(dir)
+    if (head?.code === 0 && head.stdout.trim()) await dropChangeBranch(head.stdout.trim(), dir, checkout, deps)
   }
   return removed
+}
+
+/** Deletes the local branch a removed change worktree was on, when origin
+ *  has all of it: a `pr-<n>` / `mr-<n>` branch is the change's source
+ *  branch, pushed, and a new task makes it again from origin. A failure is
+ *  logged and the branch kept. */
+async function dropChangeBranch(branch: string, dir: string, checkout: string, deps: WorktreeDeps): Promise<void> {
+  const git = (args: string[]) => deps.exec("git", args, { cwd: checkout, timeoutMs: 60_000 })
+  const bad = await badBranchName(branch, checkout, deps.exec)
+  if (bad) {
+    deps.log?.(`[worktrees] kept the branch of ${dir}: ${bad}`)
+    return
+  }
+  const remote = await git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`])
+  const unpushed = remote.code === 0 ? await git(["rev-list", "--count", `refs/remotes/origin/${branch}..refs/heads/${branch}`]) : undefined
+  if (!unpushed || unpushed.code !== 0 || unpushed.stdout.trim() !== "0") {
+    deps.log?.(`[worktrees] kept the branch ${branch} of ${dir}: ${!unpushed ? `origin has no ${branch}` : unpushed.code !== 0 ? `could not count its unpushed commits: ${short(unpushed.stderr)}` : `${unpushed.stdout.trim()} commit(s) not on origin`}`)
+    return
+  }
+  const d = await git(["branch", "-D", "--", branch])
+  if (d.code !== 0) deps.log?.(`[worktrees] could not delete the branch ${branch} of ${dir}: ${short(d.stderr)}`)
 }
 
 /** In every agent's system prompt, worktree or not: the marker it ends its

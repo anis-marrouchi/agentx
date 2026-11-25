@@ -1215,7 +1215,10 @@ export class GitHubAdapter implements ChannelAdapter {
     const branch = pr?.headRef ?? runBranch
     // A fork PR's body and branch are the fork author's to write: no agent
     // owns it. GitHub repository names compare case-insensitively.
-    const headRepo = pr ? pr.headRepo : event.workflow_run.head_repository?.full_name
+    // PR unreadable: the run's head_repository, where null (a deleted fork)
+    // is still a fork, as in pullRequestInfo (#2130).
+    const runHead = event.workflow_run.head_repository
+    const headRepo = pr ? pr.headRepo : runHead === null ? null : runHead?.full_name
     const fromFork = headRepo === null || (typeof headRepo === "string" && headRepo.toLowerCase() !== repo.toLowerCase())
     const owner = fromFork ? undefined : ciOwner({
       body: pr?.body,

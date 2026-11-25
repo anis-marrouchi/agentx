@@ -10,8 +10,8 @@ func check(_ ok: Bool, _ what: String) {
 // --- Colour: the same as the daemon's presenceLook ---
 //
 // Expected values come from src/voice/presence.ts for the same ids.
-let expected = ["writer": "#0D9488", "researcher-agent": "#7C3AED", "ops-agent": "#EA580C",
-                "a": "#DB2777", "helper-agent": "#C026D3", "é-agent": "#DB2777"]
+let expected = ["writer": "#0D9488", "researcher-agent": "#1A56C4", "ops-agent": "#EA580C",
+                "a": "#DB2777", "helper-agent": "#4D94FF", "é-agent": "#DB2777"]
 for (id, hex) in expected.sorted(by: { $0.key < $1.key }) {
     check(OrbMath.colorHex(agentID: id, configured: nil) == hex, "\(id) derives \(hex), as the daemon does")
 }
