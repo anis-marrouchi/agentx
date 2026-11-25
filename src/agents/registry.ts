@@ -3,7 +3,7 @@ import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { modelAfterSwitch } from "./engine-model"
 import { cheapModelForEngine, triageModelFor, type RouteResult } from "./routing"
-import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelFitsRuntime, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
+import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelFitsRuntime, modelToStore, namedModelRotates, ownerWarmReturn, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
@@ -3742,7 +3742,8 @@ export class AgentRegistry {
     // session, a turn that needs another model rotates (reason "model").
     // Rules in session-model.ts: a model named on the task that differs
     // rotates; a warm resume keeps its model (an edge upgrade is held,
-    // unless the session sits on a cheap or triage model); a cold resume
+    // unless the session sits on a cheap or triage model, which an owner's
+    // turn also leaves for the agent's model, #2034); a cold resume
     // asks the seats and rotates only on an answer, never on a failure.
     const storedModel = resumeSessionId
       ? this.sessions.getSessionModel(task.agentId, channel, chatId)
@@ -3777,7 +3778,9 @@ export class AgentRegistry {
           })
           if (choice.rotate) target = choice.model
         } else {
-          target = warmEdgeRotates(storedModel, state.def.model, edgeModelForEngine(state.def.tier, this.config.decisions.routing), edge)
+          const edgeModel = edgeModelForEngine(state.def.tier, this.config.decisions.routing)
+          target = warmEdgeRotates(storedModel, state.def.model, edgeModel, edge)
+            ?? ownerWarmReturn(storedModel, state.def.model, edgeModel, this.isOwnerTurn(task.context))
         }
       }
       if (target || wrongRuntime) {

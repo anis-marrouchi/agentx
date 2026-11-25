@@ -9,7 +9,7 @@ const hoisted = vi.hoisted(() => ({ askSeat: vi.fn(), getSeatMode: vi.fn() }))
 vi.mock("../src/decisions/seat", () => ({ askSeat: hoisted.askSeat, getSeatMode: hoisted.getSeatMode }))
 
 import {
-  canHoldUpgrade, coldResumeChoice, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates, modelFitsRuntime } from "../src/agents/session-model"
+  canHoldUpgrade, coldResumeChoice, isWarm, modelToStore, namedModelRotates, ownerWarmReturn, resumeModel, sameModel, warmEdgeRotates, modelFitsRuntime } from "../src/agents/session-model"
 import { CACHE_TTL_MS, routeTaskModel } from "../src/agents/routing"
 import { routeTaskEdge, type EdgeRouteResult } from "../src/agents/edge-routing"
 import { SessionStore } from "../src/agents/sessions"
@@ -125,6 +125,13 @@ describe("condition 3: which warm sessions may hold an upgrade", () => {
     expect(warmEdgeRotates(AGENT, AGENT, EDGE, confident)).toBeUndefined()
     expect(warmEdgeRotates(CHEAP, AGENT, EDGE, edge({ seat: "answered", needsEdge: 0.1 }))).toBeUndefined()
     expect(warmEdgeRotates(CHEAP, AGENT, EDGE, edge({ seat: "failed" }))).toBeUndefined()
+  })
+  it("#2034: an owner's turn on a warm cheap session goes back to the agent's model", () => {
+    expect(ownerWarmReturn(CHEAP, AGENT, EDGE, true)).toBe(AGENT)
+    expect(ownerWarmReturn(AGENT, AGENT, EDGE, true)).toBeUndefined()
+    expect(ownerWarmReturn(EDGE, AGENT, EDGE, true)).toBeUndefined()
+    expect(ownerWarmReturn(CHEAP, AGENT, EDGE, false)).toBeUndefined()
+    expect(ownerWarmReturn(CHEAP, undefined, EDGE, true)).toBeUndefined()
   })
 })
 
