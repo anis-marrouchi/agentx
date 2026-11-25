@@ -610,7 +610,7 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `homeLease.enabled` | boolean | `true` | One run at a time per agent and issue, pull request or merge request: another run of the same agent on that home waits for it. An awaited caller past its wait budget is refused (`home_busy`) and never runs. See [one run per agent and issue](/jobs/ask-another-agent#one-run-per-agent-and-issue-home-lease). Off: runs on one home go side by side, with only the `[agentx:same-home]` line. |
+| `homeLease.enabled` | boolean | `true` | One run at a time per agent and issue, pull request or merge request: another run of the same agent on that home waits for it. An awaited caller past its wait budget is refused (`home_busy`) and never runs. See [one run per agent and issue](/jobs/ask-another-agent#one-run-per-agent-and-issue-home-lease). Off: as before the lease. A hand-off to the same agent on the same home still waits for the run ahead, then continues its session; every other run on that home goes side by side, with only the `[agentx:same-home]` line. |
 
 ## `quality`
 

@@ -210,6 +210,10 @@ export interface DelegationDeps {
       signal?: AbortSignal
     },
   ): Promise<CalleeRun>
+  /** True when a local run of `callee` on this named home will hold the
+   *  registry's home lease (#2084), which then waits for the run ahead.
+   *  Absent or false: the hand-off waits for it here, as before. */
+  leasesHome?(callee: string, home: string): boolean
   /** Run the callee on a mesh peer and return its answer text. */
   runPeer(
     peer: string,
@@ -934,8 +938,12 @@ export class DelegationManager {
       }
       return from
     }
+    // The registry's home lease waits for a run ahead on this home (#2084)
+    // only for a local run on a home that names its project, with the lease
+    // on. Any other hand-off on a home waits for it here, as before.
+    const leased = !!home && !record.peer && !opts.run && !!this.deps.leasesHome?.(record.callee, home)
     if (prior && !implicit) {
-      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it on the home's lane, then " : ""}continues its session`)
+      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? `waits for it${leased ? " on the home's lane" : ""}, then ` : ""}continues its session`)
     }
 
     const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
@@ -963,7 +971,7 @@ export class DelegationManager {
       // A named home's session is read once the run holds its lease
       // (#2084): the run ahead of it there has ended by then. Topic and
       // caller-chat sessions are read now, as before.
-      const later = !!home && !(this.deps.topicSessions && homeKey)
+      const later = leased && !(this.deps.topicSessions && homeKey)
       const resumeFrom = later ? undefined : resumable()
       const mine = chatKeyOf(calleeChat)
       // With topic sessions on (#2010), two keys can name one source chat
@@ -995,9 +1003,14 @@ export class DelegationManager {
       }
       return started.finally(release)
     }
-    // A run ahead on the same home is waited for in the registry's home
-    // lane (#2084), the one place that grants a home: not here as well.
-    const run = launch()
+    // A leased run waits for the run ahead in the registry's home lane
+    // (#2084), not here as well. Without a lease the wait is here, bounded
+    // by this delegation's own time limit: a run ahead that never settles
+    // (stuck before it started) does not hold it forever.
+    const waitFor = prior?.running && !implicit && !leased
+      ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
+      : null
+    const run = waitFor ? waitFor.then(launch) : launch()
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
       this.homes.set(homeKey, { chats: [calleeChat, ...(keyPrior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit, ...(senderKey ? { sender: true as const } : {}) })

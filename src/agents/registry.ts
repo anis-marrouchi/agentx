@@ -1950,6 +1950,15 @@ export class AgentRegistry {
    *  text. Person chats never wait (the same-home note still tells them),
    *  a question to a finished run is part of that run, and an agent that
    *  does not run on this node holds nothing here. */
+  /** The lease a run of `agentId` on this named home will hold, or null:
+   *  the lease is on, the agent runs here, and the home names its project.
+   *  A hand-off with no lease keeps its own wait for the run ahead
+   *  (delegation.ts). */
+  namedLeaseHome(agentId: string, home: unknown): string | null {
+    if (this.config.homeLease?.enabled === false || !this.agents.has(agentId)) return null
+    return leaseHomeOf(normalizeHome(home))
+  }
+
   private leaseHomeOfTask(task: AgentTask): string | null {
     if (this.config.homeLease?.enabled === false) return null
     if (task.jobStateAsk || task.leaseHome) return null
@@ -1957,7 +1966,7 @@ export class AgentRegistry {
     const channel = typeof ctx.channel === "string" ? ctx.channel : undefined
     if (isPersonChannel(channel)) return null
     if (!this.agents.has(task.agentId)) return null
-    const named = leaseHomeOf(normalizeHome(ctx.home))
+    const named = this.namedLeaseHome(task.agentId, ctx.home)
     if (named) return named
     if ((channel === "gitlab" || channel === "github") && ctx.chatId) return leaseHomeOf(homeOfForgeChat(String(ctx.chatId)))
     return null

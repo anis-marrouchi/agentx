@@ -6,6 +6,8 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { DelegationManager, buildCallbackMessage, fallbackReply, resultOfRun, repeatsWritten, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 import { HandoffStore, importDelegationLog } from "../src/a2a/handoff-store"
+import { leaseHomeOf } from "../src/agents/work-lane"
+import { normalizeHome } from "../src/a2a/home"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -1075,10 +1077,41 @@ describe("one session per piece of work (#1100)", () => {
         runs.push(d)
         return d.promise
       },
+      // As the registry with the lease on: a home that names its project.
+      leasesHome: (_callee, home) => !!leaseHomeOf(normalizeHome(home)),
       ...over,
     })
     return { h, runs, calls }
   }
+
+  // #2084 review: the registry's lease covers only a home that names its
+  // project, with the lease on. Any other hand-off on a home keeps the
+  // old wait for the run ahead, then continues its session.
+  it("waits here for the run ahead on a home that takes no lease (req- id)", async () => {
+    const { h, runs, calls } = twoRuns()
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", home: "req-01JABCDEF", kind: "send" })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", home: "req-01JABCDEF", kind: "send" })
+    await flush()
+    expect(calls).toHaveLength(1)
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    expect(calls).toHaveLength(2)
+    expect(calls[1].opts.resumeLater).toBeUndefined()
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+    expect(h.logs.some((l) => l.includes("waits for it, then"))).toBe(true)
+  })
+
+  it("waits here for the run ahead when the lease is off (homeLease.enabled: false)", async () => {
+    const { h, runs, calls } = twoRuns({ leasesHome: () => false })
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", home: "team/site#7", kind: "send" })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", home: "team/site#7", kind: "send" })
+    await flush()
+    expect(calls).toHaveLength(1)
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    expect(calls).toHaveLength(2)
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+  })
 
   // #2084: the registry's home lane is the one place that makes a run on
   // a home wait. The delegation hands the run over at once, and the

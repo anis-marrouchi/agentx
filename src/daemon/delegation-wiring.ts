@@ -669,6 +669,8 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       const waiting = w.registry.notices.add(rec.caller, rec.callee, noneNotice(rec, result))
       w.log(`[delegation ${rec.id}] ${rec.caller} told with a notice (${result.status}; ${waiting} waiting)`)
     },
+    // A hand-off whose run holds the home lease leaves the wait to it (#2084).
+    leasesHome: (callee, home) => !!w.registry.namedLeaseHome(callee, home),
     runLocal: (callee, message, context, opts) => {
       // A follow-up on the same home continues that run's session (#1100),
       // read once this run holds the home's lease (#2084).

@@ -325,6 +325,15 @@ describe("one run per agent and home, in the registry", () => {
     await onHome.run
   }, 15_000)
 
+  it("names the lease a hand-off's run will hold, so the hand-off waits only when it holds none", () => {
+    const { r } = registry()
+    expect(r.namedLeaseHome("coder", "Team/Site#7")).toBe("team/site#7")
+    expect(r.namedLeaseHome("coder", "req-01JABCDEF")).toBeNull()
+    expect(r.namedLeaseHome("nobody", "team/site#7")).toBeNull()
+    const off = registry(3, { homeLease: { enabled: false } }).r
+    expect(off.namedLeaseHome("coder", "team/site#7")).toBeNull()
+  })
+
   it("setting off: runs on one home go side by side, as before", async () => {
     const { r } = registry(3, { homeLease: { enabled: false } })
     const a = start(r, a2a("a2a:pm:coder:1", H))
