@@ -569,6 +569,8 @@ export class CronScheduler {
       job.holdRetries = used + 1
       job.retryPending = true
       job.holdRetryPending = true
+      // On disk now, not only at a clean stop: a crash must not lose it.
+      this.saveLastRuns()
       this.log(`Job "${job.id}" held (${hold.cause}): hold retry ${used + 1}/${MAX_HOLD_RETRIES} at ${new Date(at).toISOString()}`)
       this.armTimer(job.id, at, () => { void this.executeJob(job.id, attempt) })
       return

@@ -261,7 +261,7 @@ describe("a hold retry that does not happen", () => {
     const once = job({ runAt: "2026-11-24T08:30:00Z" })
     const { s } = setup(once, [{ error: NO_ROOM, errorKind: "no_room" }])
     await s.executeJob("wake")
-    await s.stop()
+    // Saved at once (a crash has no stop()).
     const saved = JSON.parse(readFileSync(s.lastRunFile, "utf-8"))
     expect(Date.parse(saved.wake)).toBeLessThan(Date.parse("2026-11-24T08:30:00Z"))
   })
