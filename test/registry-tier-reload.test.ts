@@ -19,10 +19,10 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-const config = (tier: string) => daemonConfigSchema.parse({
+const config = (tier: string, maxConcurrent = 1) => daemonConfigSchema.parse({
   node: { id: "test", name: "test" },
   agents: {
-    front: { name: "Front", tier, workspace: dir },
+    front: { name: "Front", tier, workspace: dir, maxConcurrent },
     other: { name: "Other", tier: "claude-code", workspace: dir },
   },
 })
@@ -66,5 +66,47 @@ describe("an engine switch without a restart", () => {
     const before = def(r, "front")
     r.setConfig(config("opencode"))
     expect({ ...def(r, "front"), tier: before.tier }).toEqual(before)
+  })
+
+  it("holds runs queued after the switch until the old runs end, so each starts on the new engine", () => {
+    const r = new AgentRegistry(config("claude-code", 2), () => {})
+    const state = (r as any).agents.get("front")
+    state.activeTasks = 1
+    expect((r as any).slotFull(state)).toBe(false)
+    r.setConfig(config("codex-cli", 2))
+    // A free slot, but no new run may start on the old engine.
+    expect((r as any).slotFull(state)).toBe(true)
+    expect(r.slotHolders("front")?.full).toBe(true)
+    expect(state.def.tier).toBe("claude-code")
+    // The last old run ends: the switch lands, the queue may start again.
+    state.activeTasks = 0
+    ;(r as any).applyPendingTier(state)
+    expect((r as any).slotFull(state)).toBe(false)
+    expect(state.def.tier).toBe("codex-cli")
+    // Another agent is never held by this agent's switch.
+    const other = (r as any).agents.get("other")
+    expect((r as any).slotFull(other)).toBe(false)
+  })
+
+  it("the next run after a switch never resumes the old engine's session", () => {
+    const r = new AgentRegistry(config("claude-code"), () => {})
+    const sessions = (r as any).sessions
+    sessions.setClaudeSessionId("front", "telegram", "42", "claude-sess-1")
+    expect(r.resumeIdFor("front", r.tierOf("front")!, "telegram", "42")).toBe("claude-sess-1")
+    r.setConfig(config("codex-cli"))
+    // Fresh session on the new engine.
+    expect(r.resumeIdFor("front", r.tierOf("front")!, "telegram", "42")).toBeUndefined()
+    sessions.setCodexSessionId("front", "telegram", "42", "codex-sess-1")
+    expect(r.resumeIdFor("front", r.tierOf("front")!, "telegram", "42")).toBe("codex-sess-1")
+  })
+
+  it("a reload that changes another field leaves the running definition untouched", () => {
+    const r = new AgentRegistry(config("claude-code"), () => {})
+    const before = def(r, "front")
+    const next = config("claude-code")
+    ;(next.agents.front as any).systemPrompt = "changed"
+    ;(next.agents.front as any).model = "some-other-model"
+    r.setConfig(next)
+    expect(def(r, "front")).toBe(before)
   })
 })

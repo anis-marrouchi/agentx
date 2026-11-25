@@ -1340,6 +1340,27 @@ export class AgentRegistry {
     return this.pendingTiers.get(id) ?? this.agents.get(id)?.def.tier
   }
 
+  /** No new run may start: every slot is taken, or an engine switch waits
+   *  for the runs still going (#2101), so every run that starts after the
+   *  switch, queued ones too, starts on the new engine. */
+  private slotFull(state: AgentState): boolean {
+    return state.activeTasks >= state.def.maxConcurrent
+      || (state.activeTasks > 0 && this.pendingTiers.has(state.id))
+  }
+
+  /** The native session a run on `tier` resumes for this chat. Each engine
+   *  keeps its own id, so after a switch the new engine never gets the old
+   *  engine's id: it starts fresh (or resumes its own earlier session). */
+  resumeIdFor(agentId: string, tier: AgentDef["tier"], channel: string, chatId: string): string | undefined {
+    return tier === "claude-code"
+      ? this.sessions.getClaudeSessionId(agentId, channel, chatId)
+      : tier === "codex-cli"
+        ? this.sessions.getCodexSessionId(agentId, channel, chatId)
+        : tier === "opencode"
+          ? this.sessions.getOpenCodeSessionId(agentId, channel, chatId)
+          : undefined
+  }
+
   /** Swap the workflows block on a config reload (#858): matching,
    *  follow-up and required settings are read per turn. */
   setWorkflows(workflows: DaemonConfig["workflows"]): void {
@@ -2535,7 +2556,7 @@ export class AgentRegistry {
     }
     const dropVoiceClaim = () => { if (voiceClaim) this.voiceClaims.delete(voiceClaim) }
 
-    if (state.activeTasks >= state.def.maxConcurrent) {
+    if (this.slotFull(state)) {
       // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
       // a queued result — the queue's flush callback re-routes via channels,
       // not back to the awaiting HTTP caller. Returning `error: __queued__`
@@ -2572,10 +2593,10 @@ export class AgentRegistry {
         const pollIntervalMs = 500
         // A wake with a deadline can wait well under a minute (#1596).
         const waitLabel = maxWaitMs < 60_000 ? `${Math.max(1, Math.ceil(maxWaitMs / 1000))}s` : `${Math.round(maxWaitMs / 60000)}m`
-        if (state.activeTasks >= state.def.maxConcurrent) {
+        if (this.slotFull(state)) {
           this.log(`[${task.agentId}] busy, waiting for a slot (up to ${waitLabel}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
         }
-        while (state.activeTasks >= state.def.maxConcurrent) {
+        while (this.slotFull(state)) {
           if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "slot wait") }
           if (Date.now() - start > maxWaitMs) {
             dropVoiceClaim()
@@ -2706,7 +2727,7 @@ export class AgentRegistry {
         // One question at a time per voice chat: the claim is taken at
         // admission, before any other entry of the same pass is checked,
         // and held until this run marks the chat running.
-        canStart: () => state.activeTasks < state.def.maxConcurrent
+        canStart: () => !this.slotFull(state)
           && !(voiceKey && voiceKey !== voiceClaim && (this.voiceClaims.has(voiceKey) || this.messageQueue.isBusy(task.agentId, qChannel, qChatId))),
         onStart: () => {
           state.activeTasks++
@@ -3435,13 +3456,7 @@ export class AgentRegistry {
     }
 
     // Decide whether to resume or start fresh
-    let resumeSessionId = state.def.tier === "claude-code"
-      ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
-      : state.def.tier === "codex-cli"
-        ? this.sessions.getCodexSessionId(task.agentId, channel, chatId)
-        : state.def.tier === "opencode"
-          ? this.sessions.getOpenCodeSessionId(task.agentId, channel, chatId)
-          : undefined
+    let resumeSessionId = this.resumeIdFor(task.agentId, state.def.tier, channel, chatId)
 
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId, priorIdleMs)) {
@@ -5375,7 +5390,7 @@ export class AgentRegistry {
   slotHolders(agentId: string): { full: boolean; runIds: string[] } | null {
     const state = this.agents.get(agentId)
     if (!state) return null
-    return { full: state.activeTasks >= state.def.maxConcurrent, runIds: state.runningTasks.map((r) => r.id) }
+    return { full: this.slotFull(state), runIds: state.runningTasks.map((r) => r.id) }
   }
 
   /** True while `agentId` has a turn running on this chat. */
