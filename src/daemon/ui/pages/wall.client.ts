@@ -93,9 +93,9 @@ import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
-import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml } from "./hub-agents"
+import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
-import { hubUsageText, hubAccountsText, hubAccountsHtml } from "./hub-status"
+import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
@@ -120,8 +120,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
-  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
-  ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml })}
+  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
+  ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -761,15 +761,6 @@ ${HUB_NAV_SCRIPT}
     });
     return Object.keys(by).map(function (k) { return by[k]; })
       .sort(function (x, y) { return y.open - x.open || y.last - x.last; });
-  }
-  function agentsHtml() {
-    var list = agentStats(), sel = $('f-owner').value;
-    if (!list.length) return '<p class="ax-wall__empty">No agent has a post on the ${HUB_NAME}.</p>';
-    var shown = S.allAgents ? list : list.slice(0, 6);
-    return shown.map(function (a) {
-      return '<button type="button" class="wa' + (a.id === sel ? ' is-on' : '') + '" data-agent="' + esc(a.id) + '">' + avatar(a.id, 'side') +
-        '<span class="wa__n"><b>' + esc(nameOf(a.id)) + '</b><small>@' + esc(a.id) + ' · ' + a.open + ' open · ' + a.posts + (a.posts === 1 ? ' post' : ' posts') + '</small></span></button>';
-    }).join('') + (list.length > 6 ? '<button type="button" class="wa-more" data-agents-more>' + (S.allAgents ? 'Show fewer' : 'Show all ' + list.length) + '</button>' : '');
   }
   /** An agent's Activity tab (#1429): its runs, newest first. */
   function activityHref(id) { return '#page=activity&a-agent=' + encodeURIComponent(id); }
@@ -1474,7 +1465,6 @@ ${HUB_NAV_SCRIPT}
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     // Opened from a person on the People page (#1441): say whose requests these are.
     if (f.asker) $('wall-count').innerHTML += '<span class="ax-wall__asker"> asked by ' + esc(personName(f.asker)) + ' · <button type="button" data-asker-clear>everyone</button></span>';
-    $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
     $('wall-fail-n').textContent = n ? String(n) : '';
     $('wall-fail-n').classList.toggle('is-zero', !n);
@@ -1592,7 +1582,7 @@ ${HUB_NAV_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-goal],[data-goal-clear],[data-back],[data-post]');
+    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-profile-clear],[data-goal],[data-goal-clear],[data-back],[data-post]');
     if (!t) return;
     if (t.hasAttribute('data-act')) { doAct(t.getAttribute('data-act')); return; }
     if (t.hasAttribute('data-tab')) { $('f-status').value = t.getAttribute('data-tab'); writeHash(); render(); return; }
@@ -1606,7 +1596,6 @@ ${HUB_NAV_SCRIPT}
     }
     else if (t.hasAttribute('data-back')) closePost();
     else if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
-    else if (t.hasAttribute('data-agents-more')) { S.allAgents = !S.allAgents; render(); }
     else if (t.hasAttribute('data-profile-clear')) { $('f-owner').value = ''; writeHash(); render(); }
     else if (t.hasAttribute('data-goal')) { ev.preventDefault(); showGoal(t.getAttribute('data-goal')); }
     else if (t.hasAttribute('data-goal-clear')) { $('f-goal').value = ''; writeHash(); render(); }

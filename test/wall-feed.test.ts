@@ -195,15 +195,6 @@ describe("Wall as a social feed (#1207)", () => {
     expect(page).toContain('class="wtk__facts"')
   })
 
-  it("lists the agents with their open posts, most open first", async () => {
-    const w = openWall()
-    await w.settle()
-    const box = w.el("wall-agents").innerHTML
-    expect(box.indexOf("@cx")).toBeLessThan(box.indexOf("@reviewer"))
-    expect(box).toContain("@cx · 2 open · 2 posts")
-    expect(box).toContain("@reviewer · 0 open · 1 post<")
-  })
-
   it("opens an agent's profile over its own posts, and back to all", async () => {
     const w = openWall()
     await w.settle()
@@ -1529,7 +1520,7 @@ describe("The org on the Wall (#1398)", () => {
 
   it("links to /org from the Wall's classic pages", () => {
     expect(WALL_CLASSIC_LINKS).toContainEqual(["Org", "/org"])
-    expect(renderWallPage()).toContain('<a href="/org">Org</a>')
+    expect(renderWallPage()).toContain('<a data-nav="dash-org" href="/org">Dashboard · Org</a>')
   })
 
   it("shows an agent's role and who it reports to on its profile", async () => {
@@ -1650,7 +1641,7 @@ describe("People and relation types on the Wall (#1421)", () => {
   })
 
   it("opens the Wall's Org page from the profile's Org link and writes nothing", async () => {
-    expect(renderWallPage()).toContain('<a href="/org">Org</a>')
+    expect(renderWallPage()).toContain('<a data-nav="dash-org" href="/org">Dashboard · Org</a>')
     const w = await profile(ORG, "cx")
     expect(w.el("wall-profile").innerHTML).toContain('<a href="#page=org">Org chart</a>')
     const org = w.calls.filter((c) => c.url.startsWith("/api/admin/org"))
@@ -2004,8 +1995,8 @@ describe("The Org page on the Wall (#1419)", () => {
   it("is a page in the Wall's nav, with the chart's member count", async () => {
     const page = renderWallPage()
     expect(page).toContain('data-nav="org" href="#page=org"')
-    // The classic page stays one tap away under Dashboard pages.
-    expect(page).toContain('<a href="/org">Org</a>')
+    // The classic page stays one ⌘K away, among the Pages (#2101 R22).
+    expect(page).toContain('<a data-nav="dash-org" href="/org">Dashboard · Org</a>')
     const w = openWall({ org: ORG })
     await w.settle()
     expect(w.el("nav-n-org").textContent).toBe("4")

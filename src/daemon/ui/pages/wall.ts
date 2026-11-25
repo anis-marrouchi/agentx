@@ -53,7 +53,7 @@ import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { WALL_AGENTS_CSS } from "./wall-agents.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
-import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml, wallChatQuickHtml } from "./wall-chat.client"
+import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml } from "./wall-chat.client"
 import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
@@ -190,7 +190,7 @@ function moreSheetHtml(navGroups: typeof WALL_NAV_GROUPS, owner: boolean): strin
     <section class="ax-wall__moresheet" role="dialog" aria-modal="true" aria-label="More pages">
       <span class="ax-wall__grab" aria-hidden="true"></span>
       ${groups}
-      <div class="ax-wall__morefoot">${owner ? `<a class="ax-btn ax-btn--ghost" data-nav="settings" href="${WALL_SETTINGS_HREF}">Settings</a>` : ""}<a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
+      <div class="ax-wall__morefoot">${owner ? `<a class="ax-btn ax-btn--ghost" data-nav="settings" href="${WALL_SETTINGS_HREF}">Settings</a>` : ""}<a class="ax-btn ax-btn--ghost" data-nav="creator" href="#page=creator">New post</a><a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
     </section>
   </div>`
 }
@@ -215,12 +215,19 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     if (group.label === "Owner") return `<span class="ax-wall__navlbl" aria-hidden="true">Owner</span>\n${items}`
     return `<details class="ax-wall__navgroup"><summary>${group.label}</summary>\n${items}\n</details>`
   }).join("\n")
-  const shortcuts = groups.filter((group) => group.label).flatMap((group) => group.items)
+  // The phone bar's four (#1355), drawn on their own now that the page
+  // menu is hidden (#2101 R22): Hub and Needs you included.
+  const shortcuts = groups.flatMap((group) => group.items)
     .filter((item) => WALL_BAR_KEYS.includes(item.key)).map((item) => navItemHtml(item, true)).join("\n")
   const dashboard = `<a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
-  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")
-  // Take B's three columns (#1242): a nav on the left, the feed in the
-  // middle, Running now, Agents and the dashboard links on the right.
+  // The old page menu (#2101 R22): no longer shown in the side menu, which
+  // keeps the agents and Desk · Jobs · Workflows · Mobile app · Settings.
+  // Its links stay in the page, hidden, as the ⌘K switcher's Pages and as
+  // the counts the phone's bar and the Desk badge copy (data-n-for).
+  const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a data-nav="dash-${label.toLowerCase()}" href="${href}">Dashboard · ${label}</a>`).join("")
+  // The nav on the left and the page in the middle (#1242). The right
+  // column holds only a page's own side summary (Activity, Desk, Workflows,
+  // Org); the Chat and Agents boxes are gone from it (#2101 R24).
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
@@ -232,15 +239,14 @@ ${hubAgentsNavHtml()}
       <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
     </section>
     </details>
-${navItems}
-${dashboard}
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
-    <a class="ax-btn ax-wall__newpost" data-nav="creator" href="#page=creator">New post</a>
 ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
-    <div class="ax-wall__navfoot">
-      <span>The ${HUB_NAME} shows the work. It sends something only when you post, comment, call, start a Space or answer.</span>
-      <button id="wall-theme" class="ax-btn ax-btn--ghost" type="button" data-wall-theme>Light / dark</button>
+    <div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>
+${navItems}
+${dashboard}
+      <a data-nav="creator" href="#page=creator">New post</a>
+      ${classic}
     </div>
   </nav>
   ${moreSheetHtml(groups, owner)}
@@ -318,7 +324,6 @@ ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
     ${wallChatPanelHtml(chat)}
   </div>
   <aside class="ax-wall__aside" id="wall-aside">
-    ${wallChatQuickHtml(chat)}
     <section id="wall-org-rail" class="ax-wall__box ax-wall__orgrail" aria-labelledby="wall-org-rail-h" hidden>
       <h2 id="wall-org-rail-h">In the org</h2>
       <div id="wall-org-rail-body"></div>
@@ -326,15 +331,6 @@ ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
     <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
     <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
     <div class="wwf__side" id="wall-wf-side" aria-label="Workflows: follow-ups and settings"></div>
-    <section class="ax-wall__box ax-wall__agents" aria-labelledby="wall-agents-h">
-      <h2 id="wall-agents-h">Agents</h2>
-      <div id="wall-agents"><p class="ax-wall__empty">Loading…</p></div>
-    </section>
-    <section class="ax-wall__box ax-wall__about" aria-labelledby="wall-about-h">
-      <h2 id="wall-about-h">Quiet by design</h2>
-      <p>The ${HUB_NAME} is something you open, not something that pings you. It never pings you on its own.</p>
-      <details class="ax-wall__classicd"><summary>Dashboard pages</summary><nav class="ax-wall__classic" aria-label="Classic pages">${classic}</nav></details>
-    </section>
   </aside>
   ${wallContextHtml()}
   <div id="wall-wf-dialog" hidden></div>

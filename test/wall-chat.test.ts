@@ -183,10 +183,12 @@ describe("Hub chat: what it draws (#1528)", () => {
 })
 
 describe("Hub chat: on the page (#1528)", () => {
-  it("puts the Chat box first in the side column and the chat in the middle pane, for the owner", () => {
+  it("has no Chat box in a right column; the chat is the middle pane, opened from the header (#2101 R24)", () => {
     const page = renderWallPage({ owner: true })
-    expect(page).toMatch(/<aside class="ax-wall__aside" id="wall-aside">\s*<section class="ax-wall__box hcq" id="hc-quick"/)
-    expect(page).toContain('id="hc-quick-form"')
+    expect(page).not.toContain('id="hc-quick"')
+    expect(page).not.toContain('id="wall-agents"')
+    expect(page).not.toContain("Quiet by design")
+    expect(page).toMatch(/<aside class="ax-wall__aside" id="wall-aside">\s*<section id="wall-org-rail"/)
     // The middle pane (#2101 PR 2): last in the main column, no column of its own.
     expect(page).toMatch(/hidden><\/section>\s*<section class="hc" id="hc" aria-label="Chat" hidden>[\s\S]*<\/section>\s*<\/div>\s*<aside class="ax-wall__aside"/)
     expect(page).toContain('id="hc-form"')
@@ -196,10 +198,8 @@ describe("Hub chat: on the page (#1528)", () => {
 
   it("tells anyone else that chat is the owner's, with sign-in only when there is one", () => {
     const signed = renderWallPage({ owner: false, signIn: true })
-    expect(signed).toContain('Chat is for the owner · <a href="/login?next=%2Fhub">Sign in</a>')
     expect(signed).toContain('<a class="ax-btn" href="/login?next=%2Fhub">Sign in</a>')
     expect(signed).not.toContain('id="hc-form"')
-    expect(signed).not.toContain('id="hc-quick-form"')
     const open = renderWallPage({ owner: false })
     expect(open).toContain("This Hub has no sign-in")
     expect(open).not.toContain(`href="/login?next=%2Fhub"`)
@@ -214,7 +214,7 @@ describe("Hub chat: on the page (#1528)", () => {
     expect(w.calls).toEqual([])
   })
 
-  it("asks from the Chat box: opens the panel and sends the message with the page context", async () => {
+  it("asks from the chat opened by the header button and sends the message with the page context", async () => {
     const w = openChat({
       route: (url, init) => url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { threadId: "t1" } }
         : url === "/api/assistant/thread?id=t1" ? { status: 200, body: { thread: { id: "t1", title: "Why did it fail?", agentId: "scout" }, messages: [{ role: "user", content: "Why did it fail?", status: "done" }, { role: "assistant", content: "", status: "pending" }] } }
@@ -225,8 +225,9 @@ describe("Hub chat: on the page (#1528)", () => {
     // One node: no node picker.
     expect(w.el("hc-node").hidden).toBe(true)
     w.el("hc-agent").value = "scout"
-    w.el("hc-quick-text").value = "Why did it fail?"
-    await w.fire("hc-quick-form", "submit")
+    await w.fire("hc-btn", "click")
+    w.el("hc-text").value = "Why did it fail?"
+    await w.fire("hc-form", "submit")
     expect(w.el("hc").hidden).toBe(false)
     expect(w.wallCls.has("hc-open")).toBe(true)
     const post = w.calls.find((c) => c.method === "POST")!
@@ -285,15 +286,12 @@ describe("Hub chat: on the page (#1528)", () => {
     expect(w.el("hc-text").value).toBe("Hello")
   })
 
-  it("marks an answer not yet opened under the Chat box and in the header button", async () => {
+  it("marks an answer not yet opened on the header button", async () => {
     const w = openChat({ route: (url) => (url === "/api/assistant/threads" ? { status: 200, body: { threads: [{ id: "t9", title: "Backup?", agentId: "scout", updatedAt: Date.now() }] } } : undefined) })
     await w.settle()
-    expect(w.el("hc-last").hidden).toBe(false)
-    expect(w.el("hc-last").innerHTML).toContain("<b>Scout answered</b> “Backup?”")
     expect(w.el("hc-dot").hidden).toBe(false)
     await w.fire("hc-btn", "click")
     expect(w.el("hc-dot").hidden).toBe(true)
-    expect(w.el("hc-last").innerHTML).toContain("Last: Scout, “Backup?”")
   })
 
   it("ignores a slow failed read of a conversation no longer open", async () => {

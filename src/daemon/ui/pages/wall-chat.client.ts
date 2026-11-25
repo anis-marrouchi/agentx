@@ -47,24 +47,7 @@ export interface WallChatOpts {
 
 const SIGN_IN_HREF = `/login?next=${encodeURIComponent(HUB_PATH)}`
 
-/** Who may chat, in one line, for anyone who is not the owner. */
-function guestLine(o: WallChatOpts): string {
-  return o.signIn
-    ? `Chat is for the owner · <a href="${SIGN_IN_HREF}">Sign in</a>`
-    : "Chat is for the owner. This Hub has no sign-in: open it on the machine that serves it."
-}
-
-/** The Chat box, first in the side column. */
-export function wallChatQuickHtml(o: WallChatOpts): string {
-  const head = `<h2 id="hc-quick-h">${ICON_CHAT}Chat${o.owner ? '<kbd title="Press / to ask">/</kbd>' : ""}</h2>`
-  if (!o.owner) return `<section class="ax-wall__box hcq" id="hc-quick" aria-labelledby="hc-quick-h">${head}<p>${guestLine(o)}</p></section>`
-  return `<section class="ax-wall__box hcq" id="hc-quick" aria-labelledby="hc-quick-h">${head}
-      <form id="hc-quick-form"><input id="hc-quick-text" autocomplete="off" placeholder="Ask about this page…" aria-label="Ask an agent about this page"><button class="ax-btn" type="submit">Ask</button></form>
-      <p id="hc-last" hidden></p>
-    </section>`
-}
-
-/** The header's chat button, shown under 1180 px where there is no side column. */
+/** The header's chat button: the way into the chat at every width (#2101 R24 took the side column's Chat box away). */
 export function wallChatButtonHtml(): string {
   return `<button type="button" class="hc-btn" id="hc-btn" aria-label="Chat" aria-controls="hc" aria-expanded="false">${ICON_CHAT}<span class="hc__dot" id="hc-dot" hidden></span></button>`
 }
@@ -176,9 +159,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var t = e.target || {}, tag = String(t.tagName || '').toLowerCase();
     if (e.key !== '/' || guest || e.metaKey || e.ctrlKey || e.altKey || tag === 'input' || tag === 'textarea' || tag === 'select' || t.isContentEditable) return;
     e.preventDefault();
-    var q = $('hc-quick-text');
-    if (panel.hidden && q && q.offsetParent) q.focus();
-    else { open(true); $('hc-text').focus(); }
+    open(true); $('hc-text').focus();
   });
   if (guest) {
     if (defaultChat || chatRoute(location.hash)) open(true, true);
@@ -541,13 +522,6 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send($('hc-text').value); }
   });
   $('hc-text').addEventListener('focus', paintCtx);
-  $('hc-quick-form').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var t = $('hc-quick-text').value;
-    $('hc-quick-text').value = '';
-    open(true);
-    send(t);
-  });
   // Stop ends the run (POST /api/task/action kind=cancel); the thread
   // read then shows how it ended. From the answer's Stop or the header's.
   function stopRun(task, btn) {
@@ -593,15 +567,16 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var lastThread = null;
   function paintLast(t) {
     var p = $('hc-last');
-    if (!t) { p.hidden = true; return; }
-    var unread = panel.hidden && t.updatedAt > Number(read(SEEN_KEY) || 0);
+    var unread = !!t && panel.hidden && t.updatedAt > Number(read(SEEN_KEY) || 0);
     $('hc-dot').hidden = !unread;
+    if (!p) return;
+    if (!t) { p.hidden = true; return; }
     p.innerHTML = (unread ? '<span class="hc__dot"></span><b>' + esc(agentNames[t.agentId] || t.agentId) + ' answered</b> “' : 'Last: ' + esc(agentNames[t.agentId] || t.agentId) + ', “') +
       esc(t.title) + '” · <button type="button" data-hc-open="' + esc(t.id) + '">Open</button>';
     p.hidden = false;
   }
   function loadLast() { return threads().then(function (list) { lastThread = list[0] || null; paintLast(lastThread); return list; }); }
-  $('hc-last').addEventListener('click', function (e) {
+  if ($('hc-last')) $('hc-last').addEventListener('click', function (e) {
     var b = e.target.closest('[data-hc-open]');
     if (!b) return;
     setThread(b.getAttribute('data-hc-open'));

@@ -3,8 +3,8 @@
 // Top: "Jump to an agent or request ⌘K" (the switcher, V3). Then every
 // agent grouped by state with filter chips (hub-agents.ts). At the bottom,
 // as on the mock: Desk · Jobs · Workflows, plus the new Mobile app page
-// (Anis, 2026-11-24, c7127515359) and Settings for the owner. The page
-// menu (#2169 groups) stays under the agents, folded, so no page is lost.
+// (Anis, 2026-11-24, c7127515359) and Settings for the owner. The old page
+// menu is gone from view (#2101 R22); every page is in the ⌘K switcher.
 //
 // Every link is a hash route on the same page, so it works inside the
 // Electron window (C3) as in a browser tab.
@@ -150,10 +150,20 @@ export const HUB_NAV_CSS = `
 .hm pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; border-radius: var(--ax-radius-sm); background: var(--ax-surface); border: 1px solid var(--ax-border); font-size: 12.5px; }
 .hm__note { font-size: 13px; color: var(--ax-muted); }
 .hm__links { display: flex; flex-wrap: wrap; gap: 8px; }
-/* Under 1180 px the nav is icons only: the agents, the switcher button and
-   the foot row are left out there (the phone's own Agents tab is C1a). */
+/* Under 1180 px the nav is icons only: the switcher is its magnifier and
+   the foot row a column of icons (#2101 R22: they are the side menu now). */
 @media (max-width: 1180px) {
-  .ax-wall__nav > .ha__k, .ax-wall__nav > .hf { display: none; }
+  .ax-wall__nav > .ha__k { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .ax-wall__nav > .ha__k span, .ax-wall__nav > .ha__k kbd, .hf__item span { display: none; }
+  .ax-wall__nav > .hf { flex-direction: column; flex-wrap: nowrap; gap: 4px; padding: 10px 0 2px; }
+  .hf__item { position: relative; padding: 8px; }
+  .hf__item svg { width: 18px; height: 18px; }
+  .hf__set { margin-left: 0; }
+  .hf__n { position: absolute; top: 0; right: -4px; }
   .hm { padding: 8px 16px 32px; }
+}
+/* Phone: the bottom bar and More sheet take over. */
+@media (max-width: 640px) {
+  .ax-wall__nav > .ha__k, .ax-wall__nav > .hf { display: none; }
 }
 `

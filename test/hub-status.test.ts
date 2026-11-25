@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hubUsageText, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { hubCliHtml, hubCliText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 describe("Hub bottom status", () => {
@@ -40,6 +40,44 @@ describe("Hub bottom status", () => {
 
   it("says not known for a missing window", () => {
     expect(hubUsageText([{ window: "seven_day", utilization: 0.3 }], now)).toBe("5h not known · 7d 30%")
+  })
+
+  it("names the connection from the last live read (#2101 R25)", () => {
+    expect(hubConnState({ live: true, error: false, online: true })).toEqual({ state: "ok", text: "Connected" })
+    expect(hubConnState({ live: true, error: true, online: true })).toEqual({ state: "err", text: "Reconnecting…" })
+    expect(hubConnState({ live: false, error: false, online: true })).toEqual({ state: "wait", text: "Connecting…" })
+    expect(hubConnState({ live: true, error: false, online: false }).text).toBe("Offline")
+  })
+
+  it("the CLI drop-down: the agent in view, one choice per engine, and the restart it needs (#2101 R25)", () => {
+    const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
+    const list = [{ id: "coder", name: "Coder", tier: "claude-code", node: "Mac" }, { id: "ops", name: "Ops", tier: "codex-cli", node: "clawd" }]
+    expect(hubCliText(list[1])).toBe("Codex CLI · Ops")
+    expect(hubCliText(null)).toBe("CLI · pick an agent")
+    expect(hubEngineName("")).toBe("Claude Code")
+    expect(hubEngineName("future-cli")).toBe("future-cli")
+    const none = hubCliHtml(list, "", { kind: "", text: "" }, esc)
+    expect(none).toContain('<option value="">Pick an agent</option>')
+    expect(none).not.toContain("data-hsc-save")
+    const html = hubCliHtml(list, "ops", { kind: "ok", text: "Saved." }, esc)
+    expect(html).toContain('<option value="ops" selected>Ops · clawd</option>')
+    expect(html).toContain('value="codex-cli" checked')
+    expect(html).toContain('value="claude-code">')
+    expect(html).toContain("data-hsc-save")
+    expect(html).toContain("agentx daemon restart --when-idle")
+    expect(html).toContain('class="hsa__note is-ok" role="status">Saved.')
+  })
+
+  it("has icons, the light/dark switch and the CLI drop-down; the side menu has no theme button (#2101 R23, R25)", () => {
+    const html = renderWallPage({ owner: true })
+    const bar = html.slice(html.indexOf('id="hub-status"'), html.indexOf("</footer>"))
+    expect(bar).toContain("data-wall-theme")
+    expect(bar).toContain('id="hs-cli"')
+    expect(bar).toContain('id="hs-conn"')
+    expect((bar.match(/<svg /g) || []).length).toBeGreaterThanOrEqual(6)
+    const nav = html.slice(html.indexOf('class="ax-wall__nav"'), html.indexOf("</nav>"))
+    expect(nav).not.toContain("data-wall-theme")
+    expect(html).toContain('id="hs-cli-pop"')
   })
 
   it("adds the status strip without replacing the phone navigation", () => {

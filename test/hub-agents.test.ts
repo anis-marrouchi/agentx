@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { haFace, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
+import { haFace, haHitCount, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
 import { hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
 import { ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
@@ -109,7 +109,17 @@ describe("the switcher", () => {
     expect(html).toContain("⌘1")
     expect(html).toContain('aria-selected="true" href="#page=chat&amp;agent=coder"')
     expect(html).toContain('href="#status=open&amp;post=r1"')
-    expect(haSwitchHtml({ agents: [], reqs: [] }, 0, ltEsc)).toContain("No agent or request")
+    expect(haSwitchHtml({ agents: [], reqs: [] }, 0, ltEsc)).toContain("No agent, request or page")
+  })
+  it("lists the pages the side menu no longer shows, and finds them by name (#2101 R22)", () => {
+    const pages = [{ key: "cost", label: "Cost", href: "#status=open&view=cost" }, { key: "dash-mesh", label: "Dashboard · Operations", href: "/mesh" }]
+    expect(haSwitchHits(m.rows, reqs, "", pages).pages).toHaveLength(2)
+    const h = haSwitchHits(m.rows, reqs, "cost", pages)
+    expect(h.pages!.map((p) => p.key)).toEqual(["cost"])
+    const html = haSwitchHtml(h, haHitCount(h) - 1, ltEsc)
+    expect(html).toContain(">Pages<")
+    expect(html).toContain('aria-selected="true" href="#status=open&amp;view=cost"')
+    expect(haHitCount(h)).toBe(h.agents.length + h.reqs.length + 1)
   })
   it("face letters", () => {
     expect(haFace("secretary")).toBe("S")
@@ -120,15 +130,20 @@ describe("the switcher", () => {
 
 describe("the Hub page's left column", () => {
   const page = renderWallPage({ owner: true })
-  it("opens with the switcher and the agents, then the machines, then the pages", () => {
-    const k = page.indexOf('id="hub-k"'), agents = page.indexOf('id="hub-agents"'), tree = page.indexOf('id="wall-tree"'), nav = page.indexOf('data-nav="wall"')
+  it("opens with the switcher and the agents, then the machines; the old page menu is not shown (#2101 R22)", () => {
+    const k = page.indexOf('id="hub-k"'), agents = page.indexOf('id="hub-agents"'), tree = page.indexOf('id="wall-tree"')
     expect(k).toBeGreaterThan(0)
     expect(k).toBeLessThan(agents)
     expect(agents).toBeLessThan(tree)
-    expect(tree).toBeLessThan(nav)
+    const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
+    const shown = nav.slice(0, nav.indexOf('id="wall-pagelinks"'))
+    for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "Light / dark", "ax-wall__navfoot"]) {
+      expect(shown.replace(/<a class="ax-wall__item ax-wall__shortcut[^>]*>/g, "")).not.toContain(gone)
+    }
+    expect(nav).toMatch(/<div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>/)
   })
   it("ends with Desk, Jobs, Workflows, Mobile app and Settings", () => {
-    const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('class="ax-wall__navfoot"'))
+    const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Desk<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
     expect(renderWallPage().includes('class="hf__item hf__set"')).toBe(false)
   })
