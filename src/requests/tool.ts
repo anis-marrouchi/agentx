@@ -6,6 +6,7 @@ import { describeGoalCheck, type GoalRecord } from "./goal-store"
 import { describeFlow } from "./flow"
 import { waitsText } from "./plan-store"
 import { describeDue } from "./due-times"
+import { warnText } from "./before-close"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -274,7 +275,10 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     }
     if (action === "done") {
       const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""
-      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}`
+      // The owner-words check before the close, warn mode (#2047).
+      const ow = data.ownerWords
+      const warn = ow ? `\n${warnText({ why: ow.why ?? "", uncovered: ow.uncovered ?? [], reopens: ow.reopens !== false })}` : ""
+      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}${warn}`
     }
     if (r.closeKind === "superseded" && r.proof?.value) {
       return `Request ${r.id} is closed as declined, superseded by ${r.proof.value}. Reason: ${r.closeReason}`

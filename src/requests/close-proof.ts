@@ -236,6 +236,18 @@ export function missingText(missing: string[]): string {
 /** The gate, then the close: one transaction (#692 S1). `detail` is the
  *  checker's own words; `evidence` what the close keeps (with any suffix
  *  the caller adds). */
+/** Whether closeByCheckNow would refuse this close (held, blocked or
+ *  reading), without writing anything. The owner-words judge runs only
+ *  when nothing here refuses (#2047 review N1). */
+export function checkCloseRefused(store: RequestStore, id: string, detail: string, ctx: CloseProofCtx): boolean {
+  const r = store.get(id)
+  if (!r || ["done", "declined", "dropped"].includes(r.state)) return true
+  const d = deliverablesOf(r, ctx.plan?.(r.id) ?? null)
+  if (holdReason(r, detail, d, ctx.ownerCheckOn)) return true
+  if (ctx.mode !== "block") return false
+  return d ? missingProofs(r, d).length > 0 : !!ctx.read
+}
+
 export function closeByCheckNow(store: RequestStore, id: string, detail: string, evidence: string, now: number, ctx: CloseProofCtx): CloseOutcome {
   return store.tx((): CloseOutcome => {
     const r = store.get(id)

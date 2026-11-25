@@ -27,6 +27,7 @@
 // the same close was reopened again and again, and the agent's only way
 // out was to send something, even older work.
 
+import { createHash } from "crypto"
 import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
 import { deliverablesOf, missingProofs, oneLine, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
 
@@ -50,9 +51,36 @@ export interface OwnerCheckSettings {
   /** Reopens per request (#2056). Past it, a close judged a mismatch
    *  stands and the owner is told once with the reason. */
   maxReopens: number
+  /** retro:01M7VXKHCDJMX90PCDN6JT04WN (#2047): the same judge runs inside
+   *  an agent's or a plan's done, before the close is written. warn: it
+   *  closes and the caller is told what the proof does not show. block:
+   *  a mismatch is refused. A model error or no time left never blocks.
+   *  Acts only while `enabled`. */
+  beforeClose?: BeforeCloseMode
+  /** Most seconds the judge may take inside a done. An agent's done also
+   *  stays inside its call's own time (BEFORE_CLOSE_CALL_MS). */
+  beforeCloseSeconds?: number
 }
 
-export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2 }
+export type BeforeCloseMode = "off" | "warn" | "block"
+
+export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = {
+  enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2,
+  beforeClose: "warn", beforeCloseSeconds: 20,
+}
+
+/** The judge's answer: `uncovered` lists the parts of the owner's ask the
+ *  evidence does not show (#2047); the after-close sweep ignores it. */
+export interface OwnerVerdict {
+  verdict: "match" | "mismatch" | "unclear"
+  why: string
+  uncovered: string[]
+}
+
+const UNCOVERED_MAX = 6
+const UNCOVERED_CLIP = 120
+/** Most verdicts kept from judges before a close (memo, prejudged). */
+const MEMO_MAX = 500
 
 /** The link a close as superseded points to, or null (#2082). */
 export function supersededLink(r: Pick<RequestRecord, "state" | "closeKind" | "proof">): string | null {
@@ -231,11 +259,12 @@ export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deli
       : []),
     "Answer \"unclear\" when you cannot tell from this text.",
     "",
-    "Reply as {\"verdict\":\"match\"|\"mismatch\"|\"unclear\",\"why\":\"one plain sentence, addressed to the owner\"}.",
+    "Reply as {\"verdict\":\"match\"|\"mismatch\"|\"unclear\",\"why\":\"one plain sentence, addressed to the owner\",\"uncovered\":[\"each part of the owner's ask the evidence and proof links do not show, a few words each\"]}. " +
+      "Give uncovered as [] when nothing is missing.",
   ].join("\n")
 }
 
-export function readVerdict(text: string): { verdict: "match" | "mismatch" | "unclear"; why: string } | null {
+export function readVerdict(text: string): OwnerVerdict | null {
   const m = text.match(/\{[\s\S]*\}/)
   if (!m) return null
   try {
@@ -243,7 +272,11 @@ export function readVerdict(text: string): { verdict: "match" | "mismatch" | "un
     const v = typeof o.verdict === "string" ? o.verdict.trim().toLowerCase() : ""
     if (v !== "match" && v !== "mismatch" && v !== "unclear") return null
     const why = typeof o.why === "string" ? o.why.replace(/\s+/g, " ").trim() : ""
-    return { verdict: v, why }
+    const uncovered = Array.isArray(o.uncovered)
+      ? o.uncovered.filter((u: unknown): u is string => typeof u === "string" && !!u.trim())
+        .slice(0, UNCOVERED_MAX).map((u: string) => u.replace(/\s+/g, " ").trim().slice(0, UNCOVERED_CLIP))
+      : []
+    return { verdict: v, why, uncovered }
   } catch {
     return null
   }
@@ -274,6 +307,15 @@ export interface OwnerCheckDeps {
 export class OwnerWordsCheck {
   private running = false
   private tries = new Map<string, number>()
+  /** A mismatch judged before a close that went through (warn), by
+   *  request id and its closedAt: the sweep acts on it without judging the
+   *  same close again (#2047). Lost on restart: the sweep then judges once. */
+  private prejudged = new Map<string, { closedAt: number; v: OwnerVerdict }>()
+  /** Verdicts judged before a close, keyed by the whole prompt (#2047
+   *  review B1): new proofs, a new owner note or new evidence judge again. */
+  private memo = new Map<string, OwnerVerdict>()
+  private inFlight = new Map<string, Promise<void>>()
+  private noAnswer = new Map<string, true>()
 
   constructor(private readonly deps: OwnerCheckDeps) {}
 
@@ -294,7 +336,9 @@ export class OwnerWordsCheck {
           await this.askOwner(r, link, out)
           continue
         }
-        const v = await this.judge(r, s)
+        const pre = this.prejudged.get(r.id)
+        if (pre) this.prejudged.delete(r.id)
+        const v = pre && pre.closedAt === r.closedAt ? pre.v : await this.judge(r, s.timeoutSeconds * 1000)
         const at = this.deps.now?.() ?? Date.now()
         if (!v) {
           const n = (this.tries.get(r.id) ?? 0) + 1
@@ -387,18 +431,92 @@ export class OwnerWordsCheck {
     return has(target) ? target : null
   }
 
-  private async judge(r: RequestRecord, s: OwnerCheckSettings): Promise<ReturnType<typeof readVerdict>> {
+  /** Judge a close before it is written (#2047): `r` is the request as it
+   *  would read once closed. Null: no answer in `timeoutMs` (never a
+   *  reason to block). The same request and evidence are judged once. */
+  async judgeBeforeClose(r: RequestRecord, timeoutMs: number): Promise<OwnerVerdict | null> {
+    const prompt = this.promptOf(r)
+    const key = memoKey(r.id, prompt)
+    const kept = this.memo.get(key)
+    if (kept) return kept
+    const v = await this.judgePrompt(r.id, prompt, timeoutMs)
+    if (v) capSet(this.memo, key, v)
+    return v
+  }
+
+  /** The same judge without waiting for it (#2047 review B2): a plan's
+   *  close must not hold the every-minute sweep. The first call starts the
+   *  judge and is not ready; a later call gets its verdict (null: no
+   *  answer, the close goes through as before). */
+  judgeLater(r: RequestRecord, timeoutMs: number): { ready: true; v: OwnerVerdict | null } | { ready: false } {
+    const prompt = this.promptOf(r)
+    const key = memoKey(r.id, prompt)
+    const kept = this.memo.get(key)
+    if (kept) return { ready: true, v: kept }
+    if (this.noAnswer.delete(key)) return { ready: true, v: null }
+    if (this.inFlight.has(key)) return { ready: false }
+    const p = this.judgePrompt(r.id, prompt, timeoutMs)
+      .then((v) => { if (v) capSet(this.memo, key, v); else capSet(this.noAnswer, key, true) })
+      .finally(() => this.inFlight.delete(key))
+    this.inFlight.set(key, p)
+    return { ready: false }
+  }
+
+  /** Resolves once every judge started by judgeLater has answered. */
+  async settled(): Promise<void> {
+    await Promise.all([...this.inFlight.values()])
+  }
+
+  /** Whether the after-close sweep would reopen a mismatch on this
+   *  request, or keep it past the reopen limit (#2047 review N2). */
+  willReopen(id: string): boolean {
+    const r = this.deps.store.get(id)
+    const max = this.deps.settings().maxReopens ?? DEFAULT_OWNER_CHECK.maxReopens
+    return !!r && (r.ownerReopens ?? 0) < max
+  }
+
+  /** Keep a verdict judged before a close that went through: match and
+   *  unclear are recorded, so the sweep skips the close; a mismatch is
+   *  handed to the sweep, which reopens and wakes as for any close. */
+  keepBeforeClose(id: string, v: OwnerVerdict, now: number): void {
+    const r = this.deps.store.get(id)
+    if (!r || r.ownerCheck !== "pending" || r.closedAt == null) return
+    if (v.verdict === "mismatch") capSet(this.prejudged, id, { closedAt: r.closedAt, v })
+    else {
+      this.prejudged.delete(id)
+      this.deps.store.setOwnerCheck(id, v.verdict, v.why || null, now)
+    }
+  }
+
+  private promptOf(r: RequestRecord): string {
+    return ownerCheckPrompt(r, deliverablesOf(r, this.deps.plan?.(r) ?? null))
+  }
+
+  private judge(r: RequestRecord, timeoutMs: number): Promise<OwnerVerdict | null> {
+    return this.judgePrompt(r.id, this.promptOf(r), timeoutMs)
+  }
+
+  private async judgePrompt(id: string, prompt: string, timeoutMs: number): Promise<OwnerVerdict | null> {
     const ac = new AbortController()
-    const timer = setTimeout(() => ac.abort(), s.timeoutSeconds * 1000)
+    const timer = setTimeout(() => ac.abort(), timeoutMs)
     try {
-      return readVerdict(await this.deps.generate(ownerCheckPrompt(r, deliverablesOf(r, this.deps.plan?.(r) ?? null)), ac.signal))
+      return readVerdict(await this.deps.generate(prompt, ac.signal))
     } catch (e: any) {
-      this.deps.log?.(`[requests] ${r.id}: owner-words check call failed: ${e?.message ?? e}`)
+      this.deps.log?.(`[requests] ${id}: owner-words check call failed: ${e?.message ?? e}`)
       return null
     } finally {
       clearTimeout(timer)
     }
   }
+}
+
+const memoKey = (id: string, prompt: string): string => `${id}:${createHash("sha256").update(prompt).digest("hex")}`
+
+/** Set, dropping the oldest entry past MEMO_MAX (#2047 review N3). */
+function capSet<V>(m: Map<string, V>, key: string, v: V): void {
+  m.delete(key)
+  if (m.size >= MEMO_MAX) m.delete(m.keys().next().value!)
+  m.set(key, v)
 }
 
 function clip(t: string): string {

@@ -151,6 +151,7 @@ import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
+import type { BeforeCloseCtx } from "@/requests/before-close"
 import { DueTimeGate, madeSchedule, postedNotes } from "@/requests/due-gate"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
@@ -3493,6 +3494,7 @@ export class AgentXDaemon {
           )
         },
         notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
+        beforeClose: this.beforeCloseCtx(requests),
         raiseCard: (r, step, input) => {
           const res = createCard(process.cwd(), { ...input, if_silent: "discard", raised_by: step.agentId }, {
             settings: this.config.approvals,
@@ -3675,6 +3677,22 @@ export class AgentXDaemon {
       },
       log: this.log,
     })
+  }
+
+  /** The owner-words check inside done, before the close (#2047): the
+   *  same judge as the after-close check, off while that check is off. */
+  private beforeCloseCtx(requests: AttachedRequests): BeforeCloseCtx {
+    const s = { ...DEFAULT_OWNER_CHECK, ...this.config.requests.ownerCheck }
+    const check = this.ownerWordsCheck(requests)
+    return {
+      mode: s.enabled ? s.beforeClose ?? "warn" : "off",
+      seconds: s.beforeCloseSeconds ?? 20,
+      judge: (r, ms) => check.judgeBeforeClose(r, ms),
+      judgeLater: (r, ms) => check.judgeLater(r, ms),
+      willReopen: (id) => check.willReopen(id),
+      keep: (id, v, now) => check.keepBeforeClose(id, v, now),
+      log: this.log,
+    }
   }
 
   /** Writes the headline of a request its agent did not describe (#1126):
@@ -6395,6 +6413,7 @@ export class AgentXDaemon {
           },
           dueTimes: this.dueTimes(requests),
           numbers: requests.numbers,
+          ownerBeforeClose: this.beforeCloseCtx(requests),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return
