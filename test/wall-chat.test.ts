@@ -1021,7 +1021,8 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     await w.fire("hc-btn", "click")
     expect(w.el("hc-face").hidden).toBe(false)
     expect(w.el("hc-face").textContent).toBe("S")
-    expect(w.el("hc-where").textContent).toBe("studio · Claude Code")
+    // The engine with its own logo (#2272).
+    expect(w.el("hc-where").innerHTML).toMatch(/^studio · <svg class="ax-eng" data-engine="claude-code"[^>]*>.*<\/svg> Claude Code$/)
     expect(w.el("hc-pill").hidden).toBe(false)
     expect(w.el("hc-pill").textContent).toBe("Working")
     expect(w.el("hc-hstop").hidden).toBe(false)

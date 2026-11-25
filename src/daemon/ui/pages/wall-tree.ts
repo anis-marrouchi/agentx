@@ -318,21 +318,21 @@ export function ltFold(key: string, cls: string, head: string, body: string, clo
   return '<details class="' + cls + '" data-lt-key="' + ltEsc(key) + '"' + (folded ? "" : " open") + "><summary>" + head + "</summary>" + body + "</details>"
 }
 
-export function ltProviderIcon(provider: string): string {
-  if (provider === "anthropic") return ltSvg('<path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>')
-  if (provider === "openai") return ltSvg('<path d="M8 1.8 13.4 4.9v6.2L8 14.2 2.6 11.1V4.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')
-  if (provider === "google") return ltSvg('<path d="M8 1.5c.6 3.5 3 5.9 6.5 6.5-3.5.6-5.9 3-6.5 6.5-.6-3.5-3-5.9-6.5-6.5 3.5-.6 5.9-3 6.5-6.5z" fill="currentColor"/>')
+/** The plain mark used when no `icon` is passed: no brand. The page passes
+ *  the vendors' own logos from engine-icons.ts (#2272). */
+export function ltProviderIcon(_provider: string): string {
   return ltSvg('<circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/>')
 }
 
-/** One agent row. `href(row)` gives its link (the run's Task page). */
-export function ltRowHtml(r: LtRow, href: string): string {
+/** One agent row. `href(row)` gives its link (the run's Task page);
+ *  `icon(provider)`, when given, draws the model family's logo. */
+export function ltRowHtml(r: LtRow, href: string, icon?: (provider: string) => string): string {
   const live = r.state === "working"
   const word = live ? "working" : r.state === "idle" ? "idle" : "done"
   const mark = live ? '<span class="lt__spin" role="img" aria-label="working"></span>' : '<span class="lt__dot" role="img" aria-label="' + word + '"></span>'
   const tint = r.color && /^#[0-9a-fA-F]{6}$/.test(r.color) ? ' style="color:' + r.color + '"' : ""
   const sub = '<span class="lt__who"' + tint + ">" + ltEsc(r.agentName) + "</span>" + (r.model ? " · " + ltEsc(r.model) : "") + (r.ageMs >= 0 ? ' · <time>' + ltAge(r.ageMs) + "</time>" : "")
-  const inner = mark + '<span class="lt__ico">' + ltProviderIcon(r.provider) + "</span>" +
+  const inner = mark + '<span class="lt__ico">' + (icon ? icon(r.provider) : ltProviderIcon(r.provider)) + "</span>" +
     '<span class="lt__txt"><span class="lt__title">' + ltEsc(r.title) + '</span><span class="lt__sub">' + sub + "</span></span>"
   const label = ltEsc(r.agentName + ", " + word + (r.state === "idle" ? "" : ": " + r.title))
   return href ? '<a class="lt__row' + (live ? " is-live" : " is-done") + '" href="' + ltEsc(href) + '" title="' + label + '">' + inner + "</a>"
@@ -341,8 +341,9 @@ export function ltRowHtml(r: LtRow, href: string): string {
 
 /** The whole tree. `hrefOf(row, machine)` links a row; `closed` holds the
  *  keys of folded groups, so a fold survives the next snapshot; `under(row,
- *  machine)`, when given, draws what goes under a row (its workers, #2145). */
-export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMachine) => string, closed: Record<string, boolean>, under?: (r: LtRow, m: LtMachine) => string): string {
+ *  machine)`, when given, draws what goes under a row (its workers, #2145);
+ *  `icon(provider)` draws each row's logo (engine-icons.ts, #2272). */
+export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMachine) => string, closed: Record<string, boolean>, under?: (r: LtRow, m: LtMachine) => string, icon?: (provider: string) => string): string {
   if (!machines.length) return '<p class="lt__empty">Loading the machines…</p>'
   return machines.map((m) => {
     const badge = m.state === "silent" ? '<span class="lt__badge is-silent" title="' + ltEsc(m.error || "does not answer") + '">not checked</span>'
@@ -354,14 +355,14 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
       return ltFold("m:" + m.key, "lt__m", head, '<p class="lt__idle">' + (m.state === "silent" ? "Does not answer, so its agents are not shown." : "Slow to answer; asking again.") + "</p>", closed)
     }
     const projects = m.projects.map((p) => ltFold("p:" + m.key + "|" + p.key, "lt__p", '<span class="lt__proj">' + ltEsc(p.label) + "</span>",
-      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m)) + (under ? under(r, m) : "")).join("") + "</div>").join(""), closed)).join("")
+      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m), icon) +(under ? under(r, m) : "")).join("") + "</div>").join(""), closed)).join("")
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
-      m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m))).join("") +
+      m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m), icon)).join("") +
       (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed, true) : ""
     // Idle agents: one green-dot row each, folded under "N idle" so the
     // tree stays short and the working rows of every machine show first.
     const idle = m.idle.length ? ltFold("i:" + m.key, "lt__p lt__done", '<span class="lt__proj">' + m.idle.length + " idle</span>",
-      m.idle.map((r) => ltRowHtml(r, hrefOf(r, m))).join(""), closed, true) : ""
+      m.idle.map((r) => ltRowHtml(r, hrefOf(r, m), icon)).join(""), closed, true) : ""
     const none = m.projects.length || m.done.length ? "" : '<p class="lt__idle">' + (m.idle.length ? "Nothing running." : "No agents.") + "</p>"
     return ltFold("m:" + m.key, "lt__m", head, none + projects + done + idle, closed)
   }).join("")

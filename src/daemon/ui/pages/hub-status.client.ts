@@ -1,6 +1,7 @@
 // Spliced into WALL_PAGE_SCRIPT's closure. Uses $, esc, headers, act, S,
 // buildLast and haChatAgent from the existing Hub script, and the injected
-// hubUsageText, hubConnState, hubEngineName, hubCliText and hubCliHtml (hub-status.ts).
+// hubUsageText, hubConnState, hubEngineName, hubCliText and hubCliHtml (hub-status.ts),
+// and engineIcon (engine-icons.ts) for each engine's own logo (#2272).
 // Usage is read every minute; the rest is painted with the agent list.
 export const HUB_STATUS_SCRIPT = String.raw`
   // Connection and machine (R25): from the last live read.
@@ -21,7 +22,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
   window.addEventListener('offline', hsPaintConn);
 
   // The CLI drop-down (R25): the agent in view, or the one picked in it.
-  var HSC = { open: false, agent: '', note: { kind: '', text: '' }, last: '' };
+  // mark: the button's plain prompt icon, kept for when no agent is in view;
+  // ico: the engine whose logo the button shows now ('' for the plain mark).
+  var HSC = { open: false, agent: '', note: { kind: '', text: '' }, last: '', mark: null, ico: '' };
   function hsCliAgents() {
     var seen = {}, out = [];
     ((S.live && S.live.nodes) || []).forEach(function (n) {
@@ -43,9 +46,18 @@ export const HUB_STATUS_SCRIPT = String.raw`
     b.hidden = !list.length;
     if (!list.length) return;
     var cur = hsCliCur();
-    $('hs-cli-t').textContent = hubCliText(list.find(function (x) { return x.id === cur; }));
+    var inView = list.find(function (x) { return x.id === cur; });
+    $('hs-cli-t').textContent = hubCliText(inView);
+    // The engine's own logo on the button (engine-icons.ts, #2272); the plain prompt mark while no agent is in view.
+    var icoEl = $('hs-cli-i');
+    var icoKey = inView ? inView.tier || 'claude-code' : '';
+    if (icoEl && HSC.ico !== icoKey) {
+      if (HSC.mark === null) HSC.mark = icoEl.innerHTML;
+      HSC.ico = icoKey;
+      icoEl.innerHTML = icoKey ? engineIcon(icoKey, 'ax-eng') : HSC.mark;
+    }
     if (!HSC.open) return;
-    var html = hubCliHtml(list, cur, HSC.note, esc);
+    var html = hubCliHtml(list, cur, HSC.note, esc, function (k) { return engineIcon(k, 'ax-eng'); });
     if (html === HSC.last) return;
     // Keep the engine the owner just picked across a repaint.
     var picked = document.querySelector('#hs-cli-pop input[name="hsc-eng"]:checked');

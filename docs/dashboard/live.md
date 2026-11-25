@@ -71,7 +71,7 @@ More: [Restart without losing work](../jobs/restart-safely.md#restart-from-the-d
 
 ## See which Claude Code session answers for an agent
 
-When you run `agentx attach as <agent>` in a Claude Code session, messages for that agent go to your session instead of starting a new run. The machine's card lists these sessions under **Claude Code sessions**:
+When you run `agentx attach as <agent>` in a Claude Code session, messages for that agent go to your session instead of starting a new run. The machine's card lists these sessions under **Claude Code sessions**, marked with the Claude Code logo:
 
 - the agent the session answers for (or **answers for no agent**),
 - the project folder it runs in,

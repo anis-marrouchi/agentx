@@ -26,6 +26,7 @@
 // script draws the header and appends the cards. Stop calls stop().
 
 import { injectFns } from "../inject"
+import { engineIconKey, engineIcon } from "./engine-icons"
 
 /** One open Desk card, as GET /api/admin/approvals lists it (InboxItem). */
 export interface HeadAsk {
@@ -229,6 +230,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-face')) return;
+  ${injectFns({ engineIconKey, engineIcon })}
   ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chDate, chReqMetaHtml, chPlanHtml, chProofsHtml, chEsc })}
   var asks = [], reqs = [], drafts = {}, view = null, tab = 'chat', loadedAt = 0, timer = null;
 
@@ -267,8 +269,9 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
       face.setAttribute('style', 'background:' + f.colour);
       face.hidden = false;
     } else face.hidden = true;
-    var where = [view.node || '', chEngine(view.tier || '')].filter(Boolean).join(' · ');
-    $('hc-where').textContent = where;
+    // The engine with its own logo (engine-icons.ts, #2272).
+    var eng = chEngine(view.tier || '');
+    $('hc-where').innerHTML = [view.node ? chEsc(view.node) : '', eng ? engineIcon(view.tier, 'ax-eng') + ' ' + chEsc(eng) : ''].filter(Boolean).join(' · ');
     var st = id ? chState({ pending: !!view.pending, asks: mine.length, waiting: rq.some(function (r) { return r.agentId === id && r.state === 'waiting_owner'; }), done: !!view.done }) : null;
     var pill = $('hc-pill');
     pill.hidden = !st;
