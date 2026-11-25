@@ -89,7 +89,10 @@ function printRequest(r: RequestRecord): void {
   if (r.headline) console.log(`    ${chalk.bold(r.headline)}${r.headlineBy === "model" ? chalk.dim(" (written by AgentX)") : ""}`)
   console.log(`    ${r.headline ? chalk.dim("You said: ") : ""}${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
   if (r.need) console.log(chalk.dim(`    Needed from you: ${r.need}`))
-  if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
+  if (r.state === "waiting_owner") {
+    const detail = r.attentionReason ?? (r.question ? `Question: ${r.question}` : null)
+    if (detail) console.log(chalk.yellow(`    ${detail}`))
+  }
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
   if (r.work || r.estimateMinutes !== null) {
     const first = workLabel(r.firstWork, r.firstEstimateMinutes)

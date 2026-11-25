@@ -283,10 +283,17 @@ function shortLine(r: RuleRow): string {
   return `- ${r.id}: ${r.title}`
 }
 
+/** A rule whose gate is live for this run (#2085 §3): AgentX checks it in
+ *  code, so the run gets its id and title only. */
+function checkedLine(r: RuleRow): string {
+  return `- ${r.id}: ${r.title} (checked by AgentX)`
+}
+
 /** The block for a run, fitted under `maxTokens` by the builder itself:
  *  full lines while they fit, then id + title for the rest, so every rule
- *  id is always in the block. Empty when no rule fits. */
-export function buildRulesBlock(rows: RuleRow[], opts: { maxTokens?: number; page?: string } = {}): string {
+ *  id is always in the block. Empty when no rule fits. A rule in `checked`
+ *  (its gate is live for this agent on this node) is always one short line. */
+export function buildRulesBlock(rows: RuleRow[], opts: { maxTokens?: number; page?: string; checked?: Set<string> } = {}): string {
   if (rows.length === 0) return ""
   const max = (opts.maxTokens ?? RULES_MAX_TOKENS) * CHARS_PER_TOKEN
   const head = [
@@ -295,10 +302,12 @@ export function buildRulesBlock(rows: RuleRow[], opts: { maxTokens?: number; pag
   ]
   const tail = [RULES_BLOCK_END]
   const fixed = head.join("\n").length + tail.join("\n").length + 2
-  const shorts = rows.map(shortLine)
+  const checked = opts.checked ?? new Set<string>()
+  const shorts = rows.map((r) => (checked.has(r.id) ? checkedLine(r) : shortLine(r)))
   let used = fixed + shorts.reduce((n, s) => n + s.length + 1, 0)
   const lines = [...shorts]
   for (let i = 0; i < rows.length; i++) {
+    if (checked.has(rows[i].id)) continue
     const full = fullLine(rows[i])
     const extra = full.length - shorts[i].length
     if (used + extra > max) break

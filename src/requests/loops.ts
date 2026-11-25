@@ -65,6 +65,7 @@ export function waitsOn(r: RequestRecord, look: LoopLookups): { group: StallGrou
 export function stalledWhy(r: RequestRecord, staleAfterHours: number, now: number): string | null {
   if (!isOpen(r)) return null
   if (r.state === "needs_attention") return r.attentionReason ?? "needs attention"
+  if (r.state === "waiting_owner" && r.attentionReason) return r.attentionReason
   if (r.dueAt !== null) return now > r.dueAt ? `past its due time (${when(r.dueAt)})` : null
   return now - r.updatedAt > staleAfterHours * HOUR ? `no activity for ${staleAfterHours} h or more` : null
 }

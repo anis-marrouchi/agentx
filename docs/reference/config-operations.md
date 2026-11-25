@@ -441,6 +441,26 @@ Each entry in `decisions.seats.<seat>`:
 }
 ```
 
+### Status claims (`status-claim`)
+
+The `status-claim` seat is a switch, not a model call. It checks an answer to the owner (the operator's own surfaces, or a chat whose sender is a person with role `owner`) that says merged, live, deployed, released or closed about a PR, MR, issue, version or commit. The run must have read that thing in the same run, for example with `gh pr view 12`, `glab mr view 12`, `git log` after a fetch or `npm view`.
+
+- `shadow`: a claim with no read writes a `gate_events` row (`would-ask`) and the answer goes out as written.
+- `active`: the run is asked once, in the same session, to check and correct its answer. The corrected answer goes out instead. With no answer, the claim is marked "Not checked in this run". A streamed answer (Telegram, the phone app) stops showing at the first claim word and shows the checked text when the run ends.
+- A claim with no PR, MR, issue, version or commit in it is logged as `untied` and not asked. A claim already sent mid-run with `agentx_channel_reply` is logged as `not-fixed`.
+
+### Rules checked in code
+
+Some Rules Registry rules are checked by AgentX itself. While a rule's check is on for an agent, that agent's rules block sends it as one line, `- <id>: <title> (checked by AgentX)`, instead of its full text. When the check is off, in `shadow` or `warn`, or the node runs an older version, the full text stays.
+
+| Rule | Checked when |
+|---|---|
+| `every-new-issue-is-complete-when-it-is-created` | `gates.issueComplete.adapter` is `enforce`, the guard's `issue-complete` rule refuses (its own `mode: enforce` or the policy's), and the agent runs Claude Code. |
+| `R4` | `requests.promises.acceptWake` is on and the `due-time` seat is `active`. |
+| `check-before-you-repeat-a-status` | The `status-claim` seat is `active`. |
+
+A check whose rule id has no Registry row never shortens anything; the daemon logs it once.
+
 ## demo
 
 How long `agentx demo` waits while it starts. The demo reads this from the `agentx.json` in the folder you run it from. It needs no config file, so this is only for machines where it starts slowly.

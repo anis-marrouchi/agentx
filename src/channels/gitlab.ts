@@ -10,6 +10,8 @@ import { WAKE_SELF_MARK, type WorkActivity } from "@/workflows/wake"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
 import { computeIssueTargets, describeIssueChange } from "./gitlab-issue-targets"
+import { checkIssueCreate } from "@/gates/issue-gate"
+import type { GateMode } from "@/gates/issue-complete"
 import { CI_FIX_ATTEMPTS_DEFAULT, CI_HOLD_SECONDS_DEFAULT, CiFixLoop, ciFixKey, ciNoOwnerNote, ciOwner, ciStillRedNote } from "./ci-fix"
 
 // --- GitLab webhook channel adapter ---
@@ -82,6 +84,10 @@ export interface GitLabChannelConfig {
   /** The agent of the open request homed on issue `n` of `project`, for an
    *  MR from branch `agentx/issue-<n>` (#2102). */
   ciAgentForIssue?: (project: string, n: number) => string | undefined
+  /** Rules Registry gates on this adapter (#2085). issueComplete.adapter:
+   *  off | shadow | enforce, default shadow: the rollback is this one line. */
+  gates?: { issueComplete?: { adapter?: GateMode } }
+  issueCompleteMode?: () => GateMode
 }
 
 /** Statuses that mean "this token may not write here". A per-agent token
@@ -323,7 +329,7 @@ export class GitLabAdapter implements ChannelAdapter {
   private sendNoteForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, text: string) => Promise<string>
   private editCommentForwarder?: (node: string, chatId: string, noteId: string, agentId: string, text: string) => Promise<boolean>
   private logTimeForwarder?: (node: string, project: string, noteableType: string, noteableIid: string, agentId: string, durationMs: number) => Promise<void>
-  private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>
+  private createIssueForwarder?: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string, milestone?: string) => Promise<{ iid: number; url: string } | null>
   private setLabelsForwarder?: (node: string, project: string, kind: "issue" | "merge_request", iid: string, add: string[], remove: string[], agentId: string) => Promise<string[] | null>
   /** Optional mesh reference — when set, mention resolution falls back to
    *  remote peers' agent-card skills/tags so @-mentions for agents that live
@@ -364,7 +370,7 @@ export class GitLabAdapter implements ChannelAdapter {
     this.logTimeForwarder = fn
   }
 
-  setCreateIssueForwarder(fn: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string) => Promise<{ iid: number; url: string } | null>): void {
+  setCreateIssueForwarder(fn: (node: string, project: string, title: string, description: string, labels: string[], assignees: string[], agentId: string, milestone?: string) => Promise<{ iid: number; url: string } | null>): void {
     this.createIssueForwarder = fn
   }
 
@@ -2423,15 +2429,35 @@ export class GitLabAdapter implements ChannelAdapter {
     labels?: string[]
     assignees?: string[]
     agentId?: string
+    /** "current" (the month's milestone), "none", or a GitLab milestone id.
+     *  Left out: the issue-complete gate fills "current" (#2085). */
+    milestone?: string
   }): Promise<{ iid: number; url: string } | null> {
     const { project, title, description = "", labels = [], assignees = [], agentId } = args
     const target = this.resolvePostTarget(agentId)
     const agentToken = target.token
+    const forwarding = !agentToken && !!target.node && !!this.createIssueForwarder
+
+    // G1 (#2085): the issue-complete gate runs before the peer forward and
+    // before the create, so every caller of this adapter passes it.
+    const gate = await checkIssueCreate({
+      mode: this.config.issueCompleteMode?.() ?? this.config.gates?.issueComplete?.adapter ?? "shadow",
+      project,
+      description,
+      milestone: args.milestone,
+      agentId,
+      host: this.config.host,
+      token: forwarding ? undefined : (agentToken || this.config.token || undefined),
+    })
+    if (gate.refuse) {
+      this.log(`Issue-create refused on ${project} for "${agentId || "global"}": ${gate.refuse}`)
+      throw new Error(gate.refuse)
+    }
 
     // Remote-hosted agent with no local token — forward to peer.
-    if (!agentToken && target.node && this.createIssueForwarder) {
+    if (forwarding && this.createIssueForwarder && target.node) {
       try {
-        const result = await this.createIssueForwarder(target.node, project, title, description, labels, assignees, agentId || "")
+        const result = await this.createIssueForwarder(target.node, project, title, description, labels, assignees, agentId || "", gate.milestone)
         if (result) this.log(`Issue created (via peer "${target.node}") #${result.iid} on ${project}`)
         return result
       } catch (e: any) {
@@ -2485,6 +2511,7 @@ export class GitLabAdapter implements ChannelAdapter {
     body.set("title", title)
     if (stampedDescription) body.set("description", stampedDescription)
     if (labels.length > 0) body.set("labels", labels.join(","))
+    if (gate.milestone && /^\d+$/.test(gate.milestone)) body.set("milestone_id", gate.milestone)
     // GitLab takes `assignee_ids[]`; users pass usernames for ergonomics,
     // so resolve them to numeric ids first. Failure to resolve any one
     // assignee is logged but doesn't block the create.

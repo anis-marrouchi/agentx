@@ -1,3 +1,5 @@
+import { gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
+import { ClaimHold } from "@/gates/claim-hold"
 import { hookOutput as midTurnHookOutput } from "@/agents/mid-turn"
 import { heldLine } from "@/admission/wait-notice"
 import { handleLookup } from "@/daemon/lookup-api"
@@ -3307,8 +3309,8 @@ export class AgentXDaemon {
   /** Tell the owner about a request: a push, and the Mac banner. `kind`
    *  nag (a request that stopped) waits for the daily digest; its card is
    *  on the Desk meanwhile (#1126). */
-  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice"): Promise<void> {
-    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: kind === "nag" ? `request:${r.id}:attention` : undefined })
+  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice", key?: string): Promise<void> {
+    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: key ?? (kind === "nag" ? `request:${r.id}:attention` : undefined) })
   }
 
   private plansSweeping = false
@@ -3772,7 +3774,7 @@ export class AgentXDaemon {
       // line about it waits for the daily digest (#1126).
       // A blocked plan step is told in its own words, as a notice (#1138 D:
       // the one escalation of every loop).
-      notify: (title, message, r, kind) => this.notifyRequestOwner(title, message, r, kind ?? "nag"),
+      notify: (title, message, r, kind, key) => this.notifyRequestOwner(title, message, r, kind ?? "nag", key),
       noticeFor: (r) => planNotice(requests.plans, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
@@ -4262,6 +4264,7 @@ export class AgentXDaemon {
           noWakeLabel: this.config.channels.gitlab.noWakeLabel,
           // The CI fix loop's cap (#2102).
           ci: this.config.channels.gitlab.ci,
+          issueCompleteMode: () => this.config.gates.issueComplete.adapter,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-gitlab.json"),
           ciAgentForIssue: (project: string, n: number) => requestStoreFor({ root: process.cwd() })
             ?.newestOpenOnIssue(issueHomeLinks("gitlab", project, n, this.config.channels.gitlab.host))?.agentId,
@@ -6559,10 +6562,13 @@ export class AgentXDaemon {
           }))
           return
         }
+        const agentWorkspace = agentId ? (this.config.agents[agentId] as any)?.workspace : undefined
         const { stdout } = await checkPayloadWithConfirmation(payload as PreToolUsePayload, {
           root: process.cwd(),
           agentId,
           env: envScope,
+          // GitLab MCP servers whose key does not say "gitlab" (#2085 G1).
+          gitlabServers: gitlabServers({ ...(agentWorkspace ? workspaceMcpServers(agentWorkspace) : {}), ...(mcpServers ?? {}) }),
         })
         // Empty body == allow. The hook pipes our stdout straight to Claude Code.
         res.writeHead(200, { "Content-Type": "application/json" })
@@ -9405,7 +9411,14 @@ export class AgentXDaemon {
                 this.registry.cancelChatTasks(agentId, ctx.channel, ctx.chatId, "client-interrupt")
               }
             })
-            const onDelta = (text: string) => { if (text) writeSse("text", { text }) }
+            // G3 (#2085 v5 T″): an owner turn (operator key or vouched
+            // forward, marked above) holds its text events from the first
+            // claim word; the rest goes out from the checked final text.
+            const claimHold = this.registry.holdsClaims(body.context as any) ? new ClaimHold() : undefined
+            const onDelta = (text: string) => {
+              const out = claimHold ? claimHold.push(text) : text
+              if (out) writeSse("text", { text: out })
+            }
             const onThinking = (text: string) => { if (text) writeSse("thinking", { text }) }
             // Map orchestrator stream events → public SSE shape. The
             // orchestrator (`src/agent/index.ts`) emits flat
@@ -9473,6 +9486,10 @@ export class AgentXDaemon {
               if (resp.error) {
                 writeSse("error", { error: resp.error, errorKind: resp.errorKind })
               } else {
+                if (claimHold?.held) {
+                  const rest = claimHold.rest(resp.content ?? "")
+                  if (rest) writeSse("text", { text: rest })
+                }
                 writeSse("done", {
                   content: resp.content,
                   duration: resp.duration,

@@ -831,6 +831,10 @@ export function handleRequestsApi(
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
+      const plannedDue = store.get(request.id)?.dueAt
+      if (plannedDue != null && deps.promiseSettings?.acceptWake !== false) {
+        store.recordDueGate(request.id, plannedDue, "covered-by-plan", now)
+      }
       if (needsQa !== undefined) store.setNeedsQa(request.id, needsQa, now)
       deps.onPlanChange?.()
       const due = slotDone()

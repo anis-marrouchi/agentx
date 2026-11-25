@@ -6,7 +6,9 @@ import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, 
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
-import { askSeat } from "@/decisions/seat"
+import { askSeat, getSeatMode } from "@/decisions/seat"
+import { getPolicy } from "@/guard/service"
+import { gatesWithoutRow, liveGateRules } from "@/gates"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   SESSION_CONTINUITY_SEAT,
@@ -101,6 +103,11 @@ import { wokenJobId } from "@/jobs/wake"
 import { homeOfForgeChat } from "@/jobs/doors"
 import { awaitsSlot } from "@/agents/await-slot"
 import { isOperatorTurn } from "@/requests/operator"
+import { recordGateEvent } from "@/gates/events"
+import {
+  STATUS_CLAIM_GATE, STATUS_CLAIM_RULE, STATUS_CLAIM_SEAT, claimAsk, judgeClaim, midRunClaims, notCheckedLine, statusClaimMode,
+} from "@/gates/status-claim"
+import type { SeatMode } from "@/decisions/store"
 import { dueAtOf, taskTypeOf } from "@/agents/task-context"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
@@ -894,6 +901,10 @@ export class AgentRegistry {
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number; context?: Record<string, unknown> }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
+  /** See setStatusClaimMode. */
+  private statusClaimModeOf?: () => SeatMode
+  /** Gates without a Registry row are logged once per process (#2085 §3). */
+  private gateRowsChecked = false
   /** See setTraceToolCalls. */
   private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** See setTimeLimitHandoff. */
@@ -1141,6 +1152,24 @@ export class AgentRegistry {
     const told = id ? this.jobStates.get(id) : undefined
     if (id) this.jobStates.delete(id)
     return told ?? jobStateInText(response.content)
+  }
+
+  /** The `status-claim` gate's switch (#2085 G3). Unset: the seat's mode. */
+  setStatusClaimMode(fn: (() => SeatMode) | undefined): void {
+    this.statusClaimModeOf = fn
+  }
+
+  /** Is this turn the owner's: the daemon marked it as the operator's, or
+   *  the channel's sender resolves to a person with role owner (#2085 G3). */
+  private isOwnerTurn(ctx: AgentTask["context"]): boolean {
+    return isOperatorTurn(ctx) || personOfTurn(this.config.people, ctx as any)?.role === "owner"
+  }
+
+  /** A streamed answer to this turn holds from its first claim word: the
+   *  `status-claim` seat is active and the turn is the owner's (#2085 v3 T,
+   *  v4 T′, v5 T″). The router and /task stream through `ClaimHold` then. */
+  holdsClaims(ctx: AgentTask["context"]): boolean {
+    return (this.statusClaimModeOf ?? statusClaimMode)() === "active" && this.isOwnerTurn(ctx)
   }
 
   /** Wire the trace lookup a time-limit continuation lists the stopped
@@ -1410,8 +1439,20 @@ export class AgentRegistry {
         ...(cronSpec ? { cronSpec } : {}),
       }
       const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name }))
-      const rows = rulesForRun(parseRegistry(readable.content), facts, agents)
-      const block = buildRulesBlock(rows, { maxTokens: cfg.maxTokens })
+      const allRows = parseRegistry(readable.content)
+      if (!this.gateRowsChecked) {
+        this.gateRowsChecked = true
+        for (const g of gatesWithoutRow(allRows.map((r) => r.id))) {
+          this.log(`[rules] gate ${g.gate} names rule ${g.ruleId}, which has no Rules Registry row: it never shortens a rule`)
+        }
+      }
+      const rows = rulesForRun(allRows, facts, agents)
+      const checked = liveGateRules({
+        config: this.config,
+        seatMode: (seat) => (seat === STATUS_CLAIM_SEAT && this.statusClaimModeOf ? this.statusClaimModeOf() : getSeatMode(seat)),
+        policy: (id) => getPolicy(process.cwd(), id),
+      }, task.agentId)
+      const block = buildRulesBlock(rows, { maxTokens: cfg.maxTokens, checked })
       if (!block) return { ids: [] }
       const hash = rulesHash(block)
       const session = this.sessions.getSession(task.agentId, channel, chatId)
@@ -2228,6 +2269,7 @@ export class AgentRegistry {
       response = { ...response, error: reportedTimeLimitError(response.error!, limit.reason) }
     }
     if (!task.jobStateAsk) response = await this.checkJobState(task, response)
+    if (!task.jobStateAsk) response = await this.checkStatusClaim(task, response)
     if (!task.jobStateAsk) this.checkDueTime(task, response, startedAt)
     if (task.intentRef) {
       try {
@@ -2327,6 +2369,59 @@ export class AgentRegistry {
     if (!onAnswer) return { ...response, jobState: { state: "stalled" } }
     const line = stalledLine(task.agentId)
     return { ...response, content: response.content ? `${response.content}\n\n${line}` : line, jobState: { state: "stalled" } }
+  }
+
+  /**
+   * G3 (#2085): a reply to the owner that says merged, live, deployed,
+   * released or closed about a PR, MR, issue, version or commit must rest
+   * on a read of it in this run. Runs before `execute()` returns, so the
+   * caller that posts the answer posts the checked one. Shadow: a row
+   * only. Active: one question in the same session; its answer replaces
+   * the run's, or, with no answer, the claim is marked "not checked".
+   */
+  private async checkStatusClaim(task: AgentTask, response: AgentResponse): Promise<AgentResponse> {
+    const reply = response.content?.trim()
+    if (!reply || response.error || response.viaMesh) return response
+    if (!this.isOwnerTurn(task.context)) return response
+    const mode = (this.statusClaimModeOf ?? statusClaimMode)()
+    if (mode === "off") return response
+    const runIds = [task.taskId, task.runningTaskId].filter((id): id is string => !!id)
+    let calls: Array<{ action: string | null; inputSummary: string | null }> = []
+    try { calls = runIds.flatMap((id) => this.traceToolCalls?.(id) ?? []) } catch { /* no calls read: every ref is unread */ }
+    const where = `${task.agentId} ${task.context?.channel ?? "-"} ${task.taskId ?? "-"}`
+    const base = { gate: STATUS_CLAIM_GATE, ruleId: STATUS_CLAIM_RULE, agent: task.agentId, ref: task.taskId ?? undefined }
+    // Claims already sent mid-run are gone: logged, not corrected here.
+    for (const ref of midRunClaims(calls)) recordGateEvent({ ...base, outcome: "not-fixed", reason: `sent mid-run about ${ref.label} without a read` })
+    const verdict = judgeClaim(reply, calls)
+    if (verdict.kind === "none" || verdict.kind === "read") return response
+    if (verdict.kind === "untied") {
+      recordGateEvent({ ...base, outcome: "untied", reason: "claim word with no ref" })
+      return response
+    }
+    const labels = verdict.refs.map((r) => r.label).join(", ")
+    if (mode !== "active") {
+      recordGateEvent({ ...base, outcome: "would-ask", reason: `not read: ${labels}` })
+      this.log(`[status-claim] ${where}: claim about ${labels} not read this run (shadow)`)
+      return response
+    }
+    recordGateEvent({ ...base, outcome: "asked", reason: `not read: ${labels}` })
+    this.log(`[status-claim] ${where}: claim about ${labels} not read this run; asking once`)
+    const { intentRef: _intent, ...rest } = task
+    const ask: AgentTask = { ...rest, message: claimAsk(verdict.refs), jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+    let asked: AgentResponse
+    try {
+      asked = await this.runWithRecovery(ask)
+    } catch (e: any) {
+      asked = { content: "", error: e?.message ?? String(e) }
+    }
+    const answer = asked.error ? "" : withoutStateLines(asked.content ?? "").trim()
+    if (answer) {
+      recordGateEvent({ ...base, outcome: "corrected", reason: labels })
+      this.log(`[status-claim] ${where}: answer replaced after the check`)
+      return { ...response, content: answer }
+    }
+    recordGateEvent({ ...base, outcome: "not-fixed", reason: `no answer to the check${asked.error ? `: ${asked.error.slice(0, 120)}` : ""}` })
+    return { ...response, content: `${response.content}\n\n${notCheckedLine(verdict.refs)}` }
   }
 
   /**

@@ -35,6 +35,7 @@ function harness(channel: string) {
   const registry = {
     getAgent: () => ({ name: "Helper", mentions: [] }),
     getSessionStore: () => ({ addAgentMessage: () => {} }),
+    holdsClaims: () => false,
     execute: async (_req: unknown, onDelta?: (d: string, full: string) => void) => {
       let full = ""
       for (const b of BLOCKS) {

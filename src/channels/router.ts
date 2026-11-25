@@ -44,6 +44,7 @@ import type { Placement } from "@/requests/store"
 import { droppedNoteText, leftBehindNoteText, leftBehindOfTask, offlineNoteText, pickPreferNode, resolveRunNode, workflowEntityRefs, type PreferNodePick } from "./run-on"
 import { isSshNode } from "@/agents/ssh-run"
 import { changeSourceOf } from "@/agents/task-worktrees"
+import { ClaimHold } from "@/gates/claim-hold"
 
 /** A send refused because its channel is down (#1138 step B). */
 export class ChannelDownError extends Error {
@@ -1310,6 +1311,27 @@ export class MessageRouter {
     // so a streamed reply (first block sent, the rest as edits) looks gone.
     // Each WhatsApp reply goes out as one final message instead.
     const canStream = typeof adapter.editMessage === "function" && msg.channel !== "whatsapp"
+    const taskContext = {
+      channel: msg.channel,
+      sender: msg.sender.name,
+      senderId: msg.sender.id,
+      senderUsername: msg.sender.username,
+      group: msg.group?.name,
+      chatId,  // stable ID for session keying (issue path for GitLab, group ID for Telegram)
+      // The [Situation] layer reads the chat's record by this (#1892).
+      ...(this.situationGate ? { situationKey: situationKeyOf(msg) } : {}),
+      mediaPath: msg.media?.path,
+      mediaType: msg.media?.type,
+      replyToText: msg.replyToText,
+      channelMeta: msg.channelMeta,
+      runbookPath: msg.runbookPath,
+      runbookFiles: msg.runbookFiles,
+      ...changeSourceOf(msg.raw),
+    }
+    // G3 (#2085 v3 T): on the owner's chat, with the status-claim seat
+    // active, the preview stops at the first block with a claim word. The
+    // final edit below carries the checked answer.
+    const claimHold = canStream && this.registry.holdsClaims(taskContext) ? new ClaimHold() : undefined
     let fullStreamText = ""
     let anchorSends = 0
     const streaming = canStream
@@ -1343,6 +1365,7 @@ export class MessageRouter {
     const blockStream = streaming
       ? new BlockStream(
           async (block: string) => {
+            if (claimHold && !claimHold.push(block)) return
             fullStreamText += block
             await streaming.update(previewText(fullStreamText))
           },
@@ -1396,23 +1419,7 @@ export class MessageRouter {
         // registry can record a resolution on completion. Set by
         // gitlab/router shadow-mode wiring; absent under mode=off.
         intentRef: msg.intentRef,
-        context: {
-          channel: msg.channel,
-          sender: msg.sender.name,
-          senderId: msg.sender.id,
-          senderUsername: msg.sender.username,
-          group: msg.group?.name,
-          chatId,  // stable ID for session keying (issue path for GitLab, group ID for Telegram)
-          // The [Situation] layer reads the chat's record by this (#1892).
-          ...(this.situationGate ? { situationKey: situationKeyOf(msg) } : {}),
-          mediaPath: msg.media?.path,
-          mediaType: msg.media?.type,
-          replyToText: msg.replyToText,
-          channelMeta: msg.channelMeta,
-          runbookPath: msg.runbookPath,
-          runbookFiles: msg.runbookFiles,
-          ...changeSourceOf(msg.raw),
-        },
+        context: taskContext,
       },
       onDelta,
     )

@@ -125,7 +125,7 @@ export function requestCard(
     summary: words.headline,
     needed: words.need,
     textHtml: markdownToHtml(r.text),
-    why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
+    why: r.state === "waiting_owner" ? (r.attentionReason ?? r.question) : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,
     lastAnswer: answer ? { agentId: answer.agentId, at: answer.at, html: markdownToHtml(cutAnswer!) } : null,
     loop: loopOf(r),

@@ -314,16 +314,22 @@ export function raiseLoop(
 
 /** Work handed on ended its run to wait for something (#1100): the request
  *  waits on it, and is due when the wait should end, so a wait that runs
- *  out comes back through the one escalation (the requests check's
- *  overdue loop) and not a path of its own. A due time the request
- *  already has is kept. Null when there is no open request. */
-export function waitOnLoop(store: RequestStore, requestId: string | null, wait: { dueAt?: number | null }, now: number): RequestRecord | null {
+ *  out wakes its agent at the due time or is picked up by the overdue
+ *  sweep. A due time the request already has is kept. Null when there
+ *  is no open request. */
+export function waitOnLoop(store: RequestStore, requestId: string | null, wait: { dueAt?: number | null; wake?: boolean }, now: number): RequestRecord | null {
   if (!requestId) return null
   const r = store.get(requestId)
   if (!r || !(OPEN_STATES as readonly string[]).includes(r.state)) return null
   if (r.state === "waiting_owner") return r
   store.progress(r.id, now, "waiting_other")
-  if (wait.dueAt && r.dueAt === null) store.setLoop(r.id, { dueAt: wait.dueAt }, now)
+  if (wait.dueAt != null && r.dueAt === null) {
+    store.setLoop(r.id, { dueAt: wait.dueAt }, now)
+    if (wait.wake !== false) {
+      const armed = armPromiseWake(store, r.id, wait.dueAt, now)
+      store.recordDueGate(r.id, wait.dueAt, armed ? "fixed" : "not-fixed", now)
+    }
+  }
   return store.get(r.id)
 }
 

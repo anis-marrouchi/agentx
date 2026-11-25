@@ -3,13 +3,17 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
+import { gateEventsSince } from "../src/gates/events"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
 import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, wokenAgent } from "../src/requests/owner-check"
 import { attentionText, runRequestsSweep } from "../src/requests/sweep"
-import { cardWords } from "../src/requests/card-view"
-import { waitsOn } from "../src/requests/loops"
+import { cardWords, requestCard } from "../src/requests/card-view"
+import { stalledWhy, waitsOn } from "../src/requests/loops"
+import { wallPost } from "../src/daemon/wall-api"
+import { JobStore } from "../src/jobs/store"
+import { WORK_SCRIPT } from "../src/daemon/ui/pages/member-work.client"
 import { issueCloseWhen, openPromise } from "../src/requests/promise"
 import type { CloseProofCtx } from "../src/requests/close-proof"
 import { checkIssue, type ForgeItem } from "../src/requests/checkers/issue"
@@ -199,6 +203,45 @@ describe("cause 3: an overdue request wakes its agent, and a later touch does no
     expect(told).toHaveLength(1)
   })
 
+  it("reports an overdue owner wait once per due time and keeps it open for the answer", async () => {
+    const due = 10 * HOUR
+    store.setLoop(ID, { dueAt: due }, 6_000)
+    store.waitOnOwner(ID, "Can I proceed?", 7_000)
+    const notices: string[] = []
+    const woken: string[] = []
+    const sweep = (now: number) => runRequestsSweep({
+      store, settings, log: () => {}, now, hasAgent: () => true,
+      tellAgent: async (agent) => { woken.push(agent) },
+      notify: async (_title, _line, _request, kind, key) => {
+        notices.push(`${kind}:${key}`)
+        throw new Error("Push unavailable")
+      },
+    })
+    await sweep(due + 1)
+    await sweep(due + 2)
+    expect(store.get(ID)).toMatchObject({
+      state: "waiting_owner",
+      attentionReason: expect.stringContaining("Can I proceed?"),
+    })
+    expect(notices).toEqual([`notice:request:${ID}:due:${due}:${due + 1}`])
+    expect(gateEventsSince(db, "due-wake", 0)).toMatchObject([{ ref: ID, outcome: "reported" }])
+    expect(woken).toEqual([])
+
+    const moved = due + HOUR
+    store.setLoop(ID, { dueAt: moved }, due + 3)
+    await sweep(moved + 1)
+    store.setLoop(ID, { dueAt: due }, moved + 2)
+    expect(store.get(ID)?.attentionReason).toBeNull()
+    await sweep(moved + 3)
+    expect(notices).toEqual([
+      `notice:request:${ID}:due:${due}:${due + 1}`,
+      `notice:request:${ID}:due:${moved}:${moved + 1}`,
+      `notice:request:${ID}:due:${due}:${moved + 3}`,
+    ])
+    store.progress(ID, moved + 4)
+    expect(store.get(ID)).toMatchObject({ state: "in_progress", attentionReason: null })
+  })
+
   it("a new due time wakes it again", async () => {
     const told: string[] = []
     store.setLoop(ID, { dueAt: 10 * HOUR }, 6_000)
@@ -238,5 +281,74 @@ describe("cause 4: a promise that links an issue closes when the work is done", 
       home: { kind: "issue", link: "https://github.com/acme/app/issues/7" }, now: 6_000,
     })
     expect(store.homesDue(7_000).map((h) => h.request.id)).toContain(p.id)
+  })
+})
+
+// #2085 G2 (design v5 S″, v6 S‴): an owner wait past its due time is
+// reported to the owner once per due time, stays waiting_owner, and every
+// owner surface shows the due line.
+describe("#2085: the due time of a request waiting on the owner", () => {
+  const due = 10 * HOUR
+  const sweep = (now: number, notices: string[], fail?: (id: string) => boolean, woken: string[] = []) => runRequestsSweep({
+    store, settings, log: () => {}, now, hasAgent: () => true,
+    tellAgent: async (agent) => { woken.push(agent) },
+    notify: async (_title, _line, request, kind, key) => {
+      notices.push(`${request.id}:${kind}:${key}`)
+      if (fail?.(request.id)) throw new Error("Push unavailable")
+    },
+  })
+
+  it("S9: card, Wall, stall line and CLI detail show the due line on the wait, and the question without it", () => {
+    store.setLoop(ID, { dueAt: due }, 6_000)
+    store.waitOnOwner(ID, "Can I proceed with the long migration plan?".repeat(6), 7_000)
+    const before = store.get(ID)!
+    expect(requestCard(before, store).why).toBe(before.question)
+    const line = `Due 10:00Z, still waiting on the owner: ${before.question}`
+    expect(store.noteOwnerDue(before, line, due + 1)).toBe(true)
+    const after = store.get(ID)!
+    expect(requestCard(after, store).why).toBe(line)
+    expect(stalledWhy(after, 24, due + 2)).toBe(line)
+    const post = wallPost(after, { store, db: null, now: due + 2, staleAfterHours: 24, isAgent: () => true })
+    // The whole question is kept on the Wall, not cut at 200 characters.
+    expect(post.blocked?.why).toContain(before.question!.slice(-40))
+    expect(WORK_SCRIPT).toContain("r.state === 'waiting_owner' ? (r.attentionReason || r.question)")
+  })
+
+  it("S10: a push that throws for one row does not stop the next", async () => {
+    const second = "req-t2"
+    store.addWallPost({ id: second, agentId: "coder", text: "second", now: 5_500 })
+    for (const id of [ID, second]) {
+      store.progress(id, 5_600)
+      store.setLoop(id, { dueAt: due }, 6_000)
+      store.waitOnOwner(id, "Which one?", 7_000)
+    }
+    const notices: string[] = []
+    await sweep(due + 1, notices, (id) => id === ID)
+    expect(notices).toHaveLength(2)
+    expect(gateEventsSince(db, "due-wake", 0).filter((e) => e.outcome === "reported").map((e) => e.ref).sort()).toEqual([ID, second].sort())
+  })
+
+  it("S6/S12: after the report the owner's answer releases it, the line goes, and the same due time wakes nobody", async () => {
+    store.setLoop(ID, { dueAt: due }, 6_000)
+    store.waitOnOwner(ID, "Can I proceed?", 7_000)
+    const notices: string[] = []
+    const woken: string[] = []
+    await sweep(due + 1, notices, undefined, woken)
+    expect(notices).toHaveLength(1)
+    expect(store.releaseOwnerWaits("coder", "telegram", "chat-1", due + 2)).toEqual([ID])
+    expect(store.get(ID)).toMatchObject({ state: "in_progress", attentionReason: null })
+    await sweep(due + 3, notices, undefined, woken)
+    expect(woken).toEqual([])
+    expect(notices).toHaveLength(1)
+  })
+
+  it("S3: a wait on the owner names the owner, so it is never stalled as waiting on nobody", () => {
+    const jobs = new JobStore(db)
+    const withJobs = new RequestStore(db)
+    db.prepare("UPDATE requests SET job_state = 'continue', wake_at = ? WHERE id = ?").run(due, ID)
+    withJobs.waitOnOwner(ID, "Can I proceed?", 7_000)
+    expect(db.prepare("SELECT waiting_on, job_state, wake_at FROM requests WHERE id = ?").get(ID))
+      .toEqual({ waiting_on: "owner", job_state: "working", wake_at: null })
+    expect(jobs.unheldCandidates().map((j) => j.id)).not.toContain(ID)
   })
 })

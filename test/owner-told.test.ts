@@ -285,3 +285,16 @@ describe("something already speaking", () => {
     expect(calls.some((c) => c.includes("afplay"))).toBe(false)
   })
 })
+
+describe("#2085 S11: the owner-due notice of a request", () => {
+  it("is sent now, never kept for the digest, and its key makes a second send for that due time a repeat", () => {
+    settings = { ...settings, digestNags: true }
+    const key = "request:req-1:due:36000000:36000001"
+    const first = gate.decide(push("Request due", "Due 10:00Z, still waiting on the owner: Can I proceed?"), { kind: "notice", key, requestId: "req-1" })
+    expect(first.verdict).toBe("send")
+    clock += HOUR
+    expect(gate.decide(push("Request due", "again"), { kind: "notice", key, requestId: "req-1" }).verdict).toBe("repeat")
+    // A new due time, or the same due time told again later (A → B → A), is a new key.
+    expect(gate.decide(push("Request due", "again"), { kind: "notice", key: "request:req-1:due:36000000:43200001", requestId: "req-1" }).verdict).toBe("send")
+  })
+})

@@ -6,6 +6,7 @@ import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
+import { gitlabCreateMatcher, gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
 import { MCP_CONFIRM_WAIT_S } from "@/agent/mcp-confirm"
 import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
 
@@ -251,13 +252,13 @@ export const MCP_GUARD_HOOK_TIMEOUT_S = MCP_GUARD_CURL_S + 15
  *  restarting, HTTP error, slower than [MCP_GUARD_CURL_S]) it prints a
  *  deny, so a listed server's tools never run unchecked. The daemon may
  *  hold the answer while a write tool's Approvals card waits (#1736). */
-export function mcpGuardHookCommand(agentId: string, daemonPort: string): string {
+export function mcpGuardHookCommand(agentId: string, daemonPort: string, reason?: string): string {
   const url = `http://127.0.0.1:${daemonPort}/guard/check?agent=${encodeURIComponent(agentId)}`
   const deny = JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
+      permissionDecisionReason: reason ?? "AgentX guard did not answer; tools of an MCP server with an allow list are refused until it does.",
     },
   })
   return `out=$(curl -sf --max-time ${MCP_GUARD_CURL_S} -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null) && printf '%s' "$out" || printf '%s' '${deny}'`
@@ -270,6 +271,7 @@ function guardPreToolUseHooks(
   agentId: string,
   daemonPort: string,
   mcp?: Record<string, McpPolicyFields>,
+  workspace?: string,
 ): unknown[] {
   const command = guardHookCommand(agentId, daemonPort)
   const entries: unknown[] = [
@@ -281,6 +283,21 @@ function guardPreToolUseHooks(
   if (mcpMatcher) {
     entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: MCP_GUARD_HOOK_TIMEOUT_S }] })
   }
+  // GitLab issue creates through MCP (#2085 G1): any server whose key names
+  // GitLab, wherever it is set up (user settings included), plus the GitLab
+  // servers the agent's own list and the workspace .mcp.json name by
+  // package or URL, under each name its package gives the create tool. A
+  // server with an allow list is already hooked above.
+  const servers: Record<string, McpPolicyFields> = { ...(workspace ? workspaceMcpServers(workspace) : {}), ...(mcp ?? {}) }
+  const listed = Object.keys(servers).filter((name) => servers[name]?.allowTools?.length)
+  entries.push({
+    matcher: gitlabCreateMatcher(gitlabServers(servers), listed),
+    hooks: [{
+      type: "command",
+      command: mcpGuardHookCommand(agentId, daemonPort, "AgentX guard did not answer; GitLab issue creation through MCP is refused until it does."),
+      timeout: MCP_GUARD_HOOK_TIMEOUT_S,
+    }],
+  })
   return entries
 }
 
@@ -371,7 +388,7 @@ function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "
   // PreToolUse — destructive-action guardrails. Runs the guard on every Bash
   // and Write/Edit call; in warn mode it audits without blocking. This is the
   // primary enforcement chokepoint (works even under bypassPermissions).
-  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort, (def as any).mcp)
+  hooks["PreToolUse"] = guardPreToolUseHooks(agentId, daemonPort, (def as any).mcp, def.workspace)
 
   // Notification hook — log when agent needs input
   hooks["Notification"] = [{
@@ -692,7 +709,7 @@ export function patchGuardrails(
     //    port or invocation style self-heals instead of duplicating.
     const hooks = (existing.hooks ??= {})
     const others = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse.filter((e: any) => !isGuardEntry(e)) : []
-    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp)]
+    const desired = [...others, ...guardPreToolUseHooks(agentId, daemonPort, mcp, workspace)]
     if (JSON.stringify(hooks.PreToolUse ?? null) !== JSON.stringify(desired)) {
       hooks.PreToolUse = desired
       changed = true

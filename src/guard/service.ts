@@ -6,7 +6,10 @@ import { recordDecision } from "./audit"
 import { decisionOutput, payloadToInput, type PreToolUsePayload } from "./check"
 import { assessRisk } from "./risk"
 import { confirmDestructive } from "./confirm"
-import type { GuardMode, ResolvedPolicy, Verdict } from "./types"
+import type { GuardInput, GuardMode, ResolvedPolicy, Verdict } from "./types"
+import { isGitlabCreateTool } from "@/gates/gitlab-mcp"
+import { recordGateEvent } from "@/gates/events"
+import { ISSUE_COMPLETE_GATE, ISSUE_COMPLETE_RULE } from "@/gates/issue-complete"
 
 // --- In-daemon guard service ---
 //
@@ -109,7 +112,7 @@ export interface GuardServiceResult {
  */
 export async function checkPayloadWithConfirmation(
   payload: PreToolUsePayload,
-  opts: { root: string; agentId?: string; env?: string },
+  opts: GuardCheckOpts,
 ): Promise<GuardServiceResult> {
   const base = checkPayload(payload, opts)
   if (base.mode !== "enforce" || base.verdict.effectiveAction === "deny") return base
@@ -158,9 +161,23 @@ export async function checkPayloadWithConfirmation(
  * agent command (the engine's own fail-closed logic still applies to
  * protected-target commands).
  */
+/** `gitlabServers`: the agent's GitLab MCP servers, by key (#2085). */
+export interface GuardCheckOpts { root: string; agentId?: string; env?: string; gitlabServers?: string[] }
+
+/** The gate log for the guard's `issue-complete` rule (#2085 §4): a refusal,
+ *  a would-refuse under warn, and every create it could not read. Reason
+ *  and tool name only, never the command. */
+function logIssueGate(input: GuardInput, verdict: Verdict, policy: ResolvedPolicy): void {
+  const base = { gate: ISSUE_COMPLETE_GATE, ruleId: ISSUE_COMPLETE_RULE, agent: input.agentId, ref: `guard:${input.tool}` }
+  for (const reason of verdict.issueUnchecked ?? []) recordGateEvent({ ...base, outcome: "unchecked", reason })
+  const rule = verdict.ruleId ? policy.rules.find((r) => r.id === verdict.ruleId) : undefined
+  if (rule?.check !== "issue-complete") return
+  recordGateEvent({ ...base, outcome: verdict.effectiveAction === "deny" ? "refused" : "would-refuse", reason: verdict.message ?? undefined })
+}
+
 export function checkPayload(
   payload: PreToolUsePayload,
-  opts: { root: string; agentId?: string; env?: string },
+  opts: GuardCheckOpts,
 ): GuardServiceResult {
   const start = Date.now()
   const allow = (): GuardServiceResult => ({
@@ -180,11 +197,13 @@ export function checkPayload(
 
   try {
     const input = payloadToInput(payload, opts.agentId, opts.env)
-    if (!input.command && !input.filePath) return allow()
+    if (opts.gitlabServers?.length) input.gitlabServers = opts.gitlabServers
+    if (!input.command && !input.filePath && !isGitlabCreateTool(input.tool, opts.gitlabServers)) return allow()
 
     const policy = getPolicy(opts.root, opts.agentId)
     const verdict = evaluate(input, policy)
     const ms = Date.now() - start
+    logIssueGate(input, verdict, policy)
 
     recordDecision({ root: opts.root, input, verdict, mode: policy.mode, ms })
 

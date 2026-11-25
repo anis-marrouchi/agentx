@@ -2232,6 +2232,11 @@ export const wallConfigSchema = z.object({
 }).default({})
 
 export const daemonConfigSchema = z.object({
+  gates: z.object({
+    issueComplete: z.object({
+      adapter: z.enum(["off", "shadow", "enforce"]).default("shadow"),
+    }).default({}),
+  }).default({}),
   node: z.object({
     id: z.string(),
     name: z.string(),

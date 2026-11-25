@@ -249,7 +249,11 @@ describe("destructive-action guardrails wiring", () => {
     expect(matchers).toContain("Write|Edit")
     expect(matchers).toContain("Read|Grep")
 
-    const cmds: string[] = pre.flatMap((e: any) => e.hooks.map((h: any) => h.command))
+    // The GitLab MCP create hook is there even with no MCP list (#2085 C1);
+    // its own wiring is checked in the MCP tests below.
+    expect(pre.some((e: any) => new RegExp(e.matcher).test("mcp__noqta_gitlab_server__create_issue"))).toBe(true)
+    const cmds: string[] = pre.filter((e: any) => !String(e.matcher).startsWith("^mcp__"))
+      .flatMap((e: any) => e.hooks.map((h: any) => h.command))
     for (const c of cmds) {
       // Loopback POST to the running daemon on the configured port — no node
       // spawn per tool call.
@@ -319,7 +323,7 @@ describe("destructive-action guardrails wiring", () => {
 
     expect(cmds.some((c) => c.includes("echo user-hook"))).toBe(true) // user hook preserved
     expect(cmds.some((c) => c.includes("dist/cli.js"))).toBe(false) // stale form gone
-    expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(3) // Bash + Write|Edit + Read|Grep, no dupes
+    expect(cmds.filter((c) => c.includes("/guard/check")).length).toBe(4) // Bash + Write|Edit + Read|Grep + GitLab MCP create (#2085 C1), no dupes
     expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
   })
 
@@ -344,6 +348,54 @@ describe("destructive-action guardrails wiring", () => {
     // List removed: the MCP entry goes away on the next start.
     expect(patchGuardrails(workspace, "coder-agent", "18800", { social: {} })).toBe(true)
     expect(readSettings().hooks.PreToolUse.some((e: any) => String(e.matcher).startsWith("mcp__"))).toBe(false)
+  })
+
+  it("guards GitLab MCP creates even without an allow list", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    const mcp = { noqta_gitlab_server: {} }
+    expect(patchGuardrails(workspace, "coder-agent", "9", mcp)).toBe(true)
+    const entry = readSettings().hooks.PreToolUse.find((e: any) =>
+      new RegExp(e.matcher).test("mcp__noqta_gitlab_server__create_issue"))
+    expect(new RegExp(entry.matcher).test("mcp__noqta_gitlab_server__update_issue")).toBe(false)
+    const out = execFileSync("sh", ["-c", entry.hooks[0].command], { input: "{}" }).toString()
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe("deny")
+    expect(patchGuardrails(workspace, "coder-agent", "9", mcp)).toBe(false)
+  })
+
+  it("guards every create alias of a GitLab server named by its package or the workspace .mcp.json (#2085)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    writeFileSync(resolve(workspace, ".mcp.json"), JSON.stringify({ mcpServers: { remote: { url: "https://gitlab.example.com/api/v4/mcp" } } }))
+    expect(patchGuardrails(workspace, "coder-agent", "9", { tracker: { command: "npx", args: ["@zereight/mcp-gitlab"] } } as any)).toBe(true)
+    const entry = readSettings().hooks.PreToolUse.find((e: any) => new RegExp(e.matcher).test("mcp__tracker__create_issue"))
+    const re = new RegExp(entry.matcher)
+    expect(re.test("mcp__remote__gitlab_create_issue")).toBe(true)
+    expect(re.test("mcp__tracker__create_issue_note")).toBe(false)
+  })
+
+  it("guards a GitLab server set up only in user settings (#2085 C1)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    // No agent list, no .mcp.json: the server lives in ~/.claude/settings.json only.
+    patchGuardrails(workspace, "coder-agent", "9", undefined)
+    const entry = readSettings().hooks.PreToolUse.find((e: any) =>
+      new RegExp(e.matcher).test("mcp__noqta_gitlab_server__create_issue"))
+    expect(entry).toBeDefined()
+    const re = new RegExp(entry.matcher)
+    expect(re.test("mcp__plugin_gitlab_GitLab__create_gitlab_issue")).toBe(true)
+    expect(re.test("mcp__noqta_gitlab_server__create_issue_note")).toBe(false)
+    expect(re.test("mcp__github__create_issue")).toBe(false)
+    const out = execFileSync("sh", ["-c", entry.hooks[0].command], { input: "{}" }).toString()
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe("deny")
+  })
+
+  it("leaves an allow-listed GitLab server to its own hook (#2085 C1)", () => {
+    mkdirSync(resolve(workspace, ".claude"), { recursive: true })
+    writeFileSync(resolve(workspace, ".claude/settings.json"), JSON.stringify({ permissions: { deny: [] }, hooks: {} }))
+    patchGuardrails(workspace, "coder-agent", "9", { gitlab_ro: { allowTools: ["get_issue"] } } as any)
+    const hits = readSettings().hooks.PreToolUse.filter((e: any) => new RegExp(e.matcher).test("mcp__gitlab_ro__create_issue"))
+    expect(hits).toHaveLength(1)
   })
 
   it("the MCP allow-list hook denies when the daemon does not answer (#1698)", () => {

@@ -1,3 +1,4 @@
+import { recordGateEvent } from "@/gates/events"
 import { recordSignal, type SignalKind } from "@/improve/signals"
 import { extractUiDirective } from "@/channels/ui-directive"
 import type Database from "better-sqlite3"
@@ -640,7 +641,13 @@ export class RequestStore {
   }
 
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
-    if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, due_pushed_at = NULL, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
+    if (loop.dueAt !== undefined) this.db.prepare(
+      `UPDATE requests SET
+         due_pushed_at = CASE WHEN due_at IS ? THEN due_pushed_at ELSE NULL END,
+         due_pushed_for = CASE WHEN due_at IS ? THEN due_pushed_for ELSE NULL END,
+         attention_reason = CASE WHEN state = 'waiting_owner' AND due_at IS NOT ? THEN NULL ELSE attention_reason END,
+         due_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(loop.dueAt, loop.dueAt, loop.dueAt, loop.dueAt, now, id)
     if (loop.closeWhen !== undefined) {
       this.db.prepare("UPDATE requests SET close_when = ?, verify_state = NULL, verify_detail = NULL, updated_at = ? WHERE id = ?")
         .run(loop.closeWhen ? JSON.stringify(loop.closeWhen) : null, now, id)
@@ -884,13 +891,36 @@ export class RequestStore {
    *  raised: it gets the usual quiet time). A touch after the due time no
    *  longer hides it (noqta#876 cause 3): the mark is per due time
    *  (`markDuePushed`), and a new due time is raised again. A loop
-   *  waiting on the owner is left alone: its question reminds them. */
+   *  waiting on the owner stays in that state and gets one notice per due time (#2085). */
   overdue(now: number, quietBefore: number): RequestRecord[] {
     return this.db.prepare(
-      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other') AND due_at IS NOT NULL AND due_at < ?
+      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other', 'waiting_owner') AND due_at IS NOT NULL AND due_at < ?
          AND (due_pushed_for IS NULL OR due_pushed_for != due_at OR updated_at < ?)
        ORDER BY due_at, rowid`,
     ).all(now, quietBefore).map(toRecord)
+  }
+
+  recordDueGate(id: string, dueAt: number, outcome: "fixed" | "not-fixed" | "covered-by-plan", now: number): void {
+    recordGateEvent({
+      gate: "due-wake", ruleId: "R4", outcome, ref: id,
+      reason: new Date(dueAt).toISOString(), at: now,
+    }, this.db)
+  }
+
+  noteOwnerDue(request: RequestRecord, line: string, now: number): boolean {
+    const { id, dueAt, agentId } = request
+    if (dueAt === null) return false
+    const { changes } = this.db.prepare(
+      `UPDATE requests SET attention_reason = ?, due_pushed_at = ?, due_pushed_for = due_at
+       WHERE id = ? AND state = 'waiting_owner' AND due_at = ?
+         AND (due_pushed_for IS NULL OR due_pushed_for != due_at)`,
+    ).run(line.slice(0, TEXT_MAX), now, id, dueAt)
+    if (!changes) return false
+    recordGateEvent({
+      gate: "due-wake", ruleId: "R4", outcome: "reported", agent: agentId,
+      ref: id, reason: new Date(dueAt).toISOString(), at: now,
+    }, this.db)
+    return true
   }
 
   /** A row that is only a job (state 'job', #1861) is not a request: the
@@ -1179,6 +1209,14 @@ export class RequestStore {
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL, ${ASK_ENDS}
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
+    if (this.hasJobColumns()) {
+      this.db.prepare(
+        `UPDATE requests SET waiting_on = 'owner',
+           wake_at = CASE WHEN job_state = 'continue' THEN NULL ELSE wake_at END,
+           job_state = CASE WHEN job_state = 'continue' THEN 'working' ELSE job_state END
+         WHERE id = ? AND state = 'waiting_owner'`,
+      ).run(id)
+    }
   }
 
   /** The work failed, timed out, was cut off, or went quiet. A request

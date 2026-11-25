@@ -139,6 +139,7 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
+| `gates.issueComplete.adapter` | string | `"shadow"` | Checks GitLab issue creation through AgentX for an estimate, a checklist, and a milestone. `shadow` logs incomplete issues and lets them through. `enforce` refuses them. `off` skips the check. |
 | `channels.gitlab.enabled` | boolean | `false` | Turns the GitLab channel on. |
 | `channels.gitlab.webhookPort` | number | `18810` | Separate port that receives GitLab webhooks. |
 | `channels.gitlab.webhookSecret` | string | — | Secret GitLab sends in its `X-Gitlab-Token` header; requests without it are refused. |

@@ -330,7 +330,7 @@ export class RequestTracker {
       if (status === "waiting") {
         // The callee's run ended to wait for something (#1100): the work
         // still waits on it, due when the callee said the wait ends.
-        waitOnLoop(this.store, req.id, { dueAt }, now)
+        waitOnLoop(this.store, req.id, { dueAt, wake: promiseSettingsOf(this.settings()).acceptWake }, now)
         return
       }
       const what = { error: "failed", timeout: "did not answer in time", lost: "was lost in a restart" }[status]

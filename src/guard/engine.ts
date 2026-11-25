@@ -1,5 +1,8 @@
 import type { GuardAction, GuardInput, GuardRule, ResolvedPolicy, Verdict, EffectiveAction } from "./types"
 import { buildResolveEnv, resolveTargets, normalizeProtectedSet, matchProtected } from "./resolve"
+import { missingParts, missingReason } from "@/gates/issue-complete"
+import { readIssueCreates, type IssueCreateArgs } from "@/gates/issue-args"
+import { isGitlabCreateTool } from "@/gates/gitlab-mcp"
 import { bashFileAccesses, toolFileAccesses } from "./file-access"
 
 // --- Guard engine ---
@@ -32,11 +35,14 @@ interface MatchCtx {
   env: Record<string, string>
   /** The files the call reads or writes, worked out on first use. */
   accesses: () => string[]
+  /** Issue creates the `issue-complete` check could not read (#2085). */
+  unchecked: string[]
 }
 
 interface RuleHit {
   rule: GuardRule
   resolvedTarget: string | null
+  message?: string
 }
 
 /** Does `rule` apply to this input? Returns the matched protected target when
@@ -92,11 +98,34 @@ function ruleMatches(
     if (!resolvedTarget) return null
   }
 
+  if (rule.check === "issue-complete") {
+    // Unreadable creates are allowed and named, never refused (#2085 R).
+    const reading = input.tool === "Bash" && input.command
+      ? readIssueCreates(input.command)
+      : { creates: gitlabMcpIssue(input), unchecked: [] }
+    ctx.unchecked.push(...reading.unchecked)
+    for (const issue of reading.creates) {
+      const missing = missingParts(issue.description, issue.hasMilestone, issue.hasEstimate)
+      if (missing.length) return { rule, resolvedTarget, message: missingReason(missing) }
+    }
+    return null
+  }
+
   // A rule with no match clauses at all never fires (guards against an empty
   // rule silently denying everything).
   if (!m.tool && !m.command_regex && !m.path_regex && !m.file_access_regex && !m.target_in) return null
 
   return { rule, resolvedTarget }
+}
+
+function gitlabMcpIssue(input: GuardInput): IssueCreateArgs[] {
+  if (!isGitlabCreateTool(input.tool, input.gitlabServers)) return []
+  const { description, milestone_id: milestone } = input.toolInput ?? {}
+  return [{
+    via: input.tool,
+    description: typeof description === "string" ? description : "",
+    hasMilestone: /^[1-9]\d*$/.test(typeof milestone === "number" || typeof milestone === "string" ? String(milestone) : ""),
+  }]
 }
 
 function applyMode(action: GuardAction, mode: ResolvedPolicy["mode"]): EffectiveAction {
@@ -143,7 +172,7 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
 
   let accesses: string[] | null = null
   const ctx: MatchCtx = {
-    candidates, ambientCandidates, expandedCommand, env,
+    candidates, ambientCandidates, expandedCommand, env, unchecked: [],
     accesses: () => {
       if (accesses) return accesses
       try {
@@ -170,9 +199,11 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
     }
   }
 
+  const unchecked = ctx.unchecked.length ? { issueUnchecked: ctx.unchecked } : {}
   if (hits.length === 0) {
     const action: GuardAction = policy.defaults.unmatched === "deny" ? "deny" : "allow"
     return {
+      ...unchecked,
       matched: false,
       action,
       effectiveAction: applyMode(action, policy.mode),
@@ -195,13 +226,14 @@ export function evaluate(input: GuardInput, policy: ResolvedPolicy): Verdict {
   judged.sort((a, b) => EFFECTIVE_RANK[b.effective] - EFFECTIVE_RANK[a.effective] || ACTION_RANK[b.rule.action] - ACTION_RANK[a.rule.action])
   const winner = judged[0]
   return {
+    ...unchecked,
     matched: true,
     action: winner.rule.action,
     effectiveAction: winner.effective,
     mode: winner.mode,
     ruleId: winner.rule.id,
     severity: winner.rule.severity ?? null,
-    message: winner.rule.message ?? null,
+    message: winner.message ?? winner.rule.message ?? null,
     resolvedTarget: winner.resolvedTarget,
   }
 }

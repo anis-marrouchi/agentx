@@ -159,7 +159,7 @@ export const WORK_SCRIPT = `
     return html + '</li>';
   }
   function needRow(r, now) {
-    var ask = r.state === 'waiting_owner' ? r.question : r.attentionReason;
+    var ask = r.state === 'waiting_owner' ? (r.attentionReason || r.question) : r.attentionReason;
     return '<li><span class="state ' + (r.state === 'waiting_owner' ? 'wait' : 'stuck') + '">' + esc(workState(r.state).label) + '</span>' +
       (ask ? '<p class="q">' + esc(ask) + '</p>' : '') +
       '<p class="for">For <b>' + esc(plainPreview(r.text)) + '</b></p>' +

@@ -60,6 +60,7 @@ export const guardRuleSchema = z.object({
   /** Stable id, surfaced in audit + agent feedback. Unique within a policy. */
   id: z.string(),
   match: ruleMatchSchema,
+  check: z.literal("issue-complete").optional(),
   action: guardActionSchema,
   severity: guardSeveritySchema.optional(),
   /** Human-readable reason handed to the agent when denied/escalated. */
@@ -140,6 +141,10 @@ export interface ResolvedPolicy {
 export interface GuardInput {
   tool: string
   command?: string
+  toolInput?: Record<string, unknown>
+  /** The agent's MCP servers that are GitLab servers, by key (#2085): a
+   *  create tool of one whose key does not say "gitlab" is still read. */
+  gitlabServers?: string[]
   filePath?: string
   /** Workspace cwd (from the PreToolUse payload) — base for `.env*` reads. */
   cwd?: string
@@ -168,4 +173,7 @@ export interface Verdict {
   mode?: GuardMode
   /** True when the verdict came from the fail-closed error path. */
   failClosed?: boolean
+  /** Issue creates the `issue-complete` check could not read: allowed,
+   *  and logged as `unchecked` (#2085). */
+  issueUnchecked?: string[]
 }

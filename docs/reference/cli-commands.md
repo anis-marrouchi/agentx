@@ -967,6 +967,20 @@ The built-in rule `operator-key-read` uses both: it keeps agents from reading or
 
 To check it worked: **Terminal:** `agentx guard test "cat .agentx/operator.key"` shows `deny` with the rule `operator-key-read`.
 
+An issue-create rule can require an estimate, a checklist, and a milestone for GitLab MCP and literal `glab issue create` commands. Add this rule to `.agentx/guardrails/policy.yaml` under `rules`:
+
+```yaml
+- id: issue-complete
+  check: issue-complete
+  match: {}
+  action: deny
+  mode: enforce
+```
+
+**Check it worked.** Start a new agent session and try creating an issue through GitLab MCP with one required field missing. The guard names the missing field before GitLab receives the create request.
+
+**If something is wrong.** Run `agentx guard policy` to check that AgentX loaded the rule. If the tool reports that the guard did not answer, check that the daemon is running before retrying.
+
 ### `agentx guard check`
 
 PreToolUse hook entrypoint: read a tool-call payload on stdin, emit a Claude Code decision.
