@@ -39,7 +39,22 @@ export interface Call {
   /** "owner": the owner placed it, asking the agent to talk (from a Wall
    *  post, #1316). Unset or null: the agent placed it. */
   placedBy?: "owner" | null
+  /** "callback": the daemon placed it for the agent because a request the
+   *  owner asked for changed state (#2265). Still kind "voice", so the
+   *  widget and the phone ring it as any voice call. */
+  origin?: "callback" | null
+  /** For a call-back: the requests it is about, and the state each one
+   *  reached. Several close together share one call. */
+  about?: CallbackRef[] | null
 }
+
+/** One request a call-back is about. */
+export interface CallbackRef {
+  id: string
+  state: CallbackState
+}
+
+export type CallbackState = "done" | "waiting_owner" | "needs_attention"
 
 /** A call waiting for a busy owner: since when, and when the owner was
  *  last told. Ms since the epoch. */
@@ -60,7 +75,20 @@ export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
 const COLUMNS = `id, agent_id AS agentId, kind, reason, urgency, status, created_at AS createdAt,
   ringing_since AS ringingSince, answered_at AS answeredAt, ended_at AS endedAt,
-  ring_again_at AS ringAgainAt, note, summary, channel, chat_id AS chatId, placed_by AS placedBy`
+  ring_again_at AS ringAgainAt, note, summary, channel, chat_id AS chatId, placed_by AS placedBy,
+  origin, about`
+
+/** A row as read: `about` is kept as JSON. */
+function fromRow(row: any): Call | undefined {
+  if (!row) return undefined
+  let about: CallbackRef[] | null = null
+  if (row.about) { try { about = JSON.parse(row.about) } catch { about = null } }
+  return { ...row, about }
+}
+
+/** The text a call-back's `about` holds for one request and state, so a
+ *  LIKE finds it whatever else the call is about. */
+const refKey = (r: CallbackRef) => JSON.stringify({ id: r.id, state: r.state })
 
 export class CallStore {
   constructor(private db: Database.Database) {
@@ -83,6 +111,9 @@ export class CallStore {
     // Who placed it (#1316): "owner" for a call the owner asked for from
     // the Wall; null for the agent's own call, as every older row is.
     if (!have.has("placed_by")) db.exec("ALTER TABLE calls ADD COLUMN placed_by TEXT")
+    // A call-back (#2265): its origin, and the requests it is about (JSON).
+    if (!have.has("origin")) db.exec("ALTER TABLE calls ADD COLUMN origin TEXT")
+    if (!have.has("about")) db.exec("ALTER TABLE calls ADD COLUMN about TEXT")
   }
 
   /** Ringing calls marked as waiting for a busy owner, by id. */
@@ -99,13 +130,14 @@ export class CallStore {
 
   insert(call: Call): void {
     this.db.prepare(`INSERT INTO calls (id, agent_id, kind, reason, urgency, status, created_at, ringing_since,
-      answered_at, ended_at, ring_again_at, note, summary, channel, chat_id, placed_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      answered_at, ended_at, ring_again_at, note, summary, channel, chat_id, placed_by, origin, about) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       call.id, call.agentId, call.kind, call.reason, call.urgency, call.status, call.createdAt,
-      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId, call.placedBy ?? null)
+      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId, call.placedBy ?? null,
+      call.origin ?? null, call.about?.length ? JSON.stringify(call.about.map((r) => ({ id: r.id, state: r.state }))) : null)
   }
 
   get(id: string): Call | undefined {
-    return this.db.prepare(`SELECT ${COLUMNS} FROM calls WHERE id=?`).get(id) as Call | undefined
+    return fromRow(this.db.prepare(`SELECT ${COLUMNS} FROM calls WHERE id=?`).get(id))
   }
 
   /** Write the changed fields of one call. */
@@ -151,7 +183,27 @@ export class CallStore {
     if (opts.kind) { where.push("kind=?"); args.push(opts.kind) }
     const filter = where.length ? `WHERE ${where.join(" AND ")}` : ""
     return this.db.prepare(`SELECT ${COLUMNS} FROM calls ${filter} ORDER BY created_at DESC, rowid DESC LIMIT ?`)
-      .all(...args, limit) as Call[]
+      .all(...args, limit).map((r) => fromRow(r)!)
+  }
+
+  /** A call-back about this request in this state was already placed
+   *  (rung, merged or kept as missed): each fires once (#2265). */
+  hasCallback(ref: CallbackRef): boolean {
+    // Escape LIKE's wildcards instead of dropping them: `waiting_owner`
+    // and `needs_attention` must match as written.
+    return !!this.db.prepare("SELECT 1 FROM calls WHERE origin='callback' AND about LIKE ? ESCAPE '\\' LIMIT 1")
+      .get(`%${refKey(ref).replace(/[\\%_]/g, (c) => `\\${c}`)}%`)
+  }
+
+  /** Add requests to a call-back still waiting to be answered, with its
+   *  new reason. Undefined when it is no longer ringing or "later". */
+  addAbout(id: string, refs: CallbackRef[], reason: string): Call | undefined {
+    const call = this.get(id)
+    if (!call || call.origin !== "callback" || !["ringing", "later"].includes(call.status)) return undefined
+    const about = [...(call.about ?? []), ...refs].map((r) => ({ id: r.id, state: r.state }))
+    const changed = this.db.prepare("UPDATE calls SET about=?, reason=? WHERE id=? AND status IN ('ringing','later')")
+      .run(JSON.stringify(about), reason, id).changes
+    return changed ? this.get(id) : undefined
   }
 
   /** Calls this agent placed after `since` (ms), for the hourly limit. */

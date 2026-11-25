@@ -381,6 +381,9 @@ Agents ringing you for a live voice call on AgentX Voice and your phone. See [Ca
 | `calls.busy.title` | string | `"Call waiting: {agent}"` | Title of the call-waiting notice. `{agent}` becomes the caller's name. |
 | `calls.busy.notice` | string | `"AgentX Voice is busy. The call rings when it is free."` | Second line of that notice, under the caller's reason. |
 | `calls.phone.ring` | `"always"` or `"away"` | `"always"` | When an agent's voice call also rings your phone. `always`: together with AgentX Voice; the first to answer takes the call. `away`: only when AgentX Voice is not running. See [Answer on your phone](/dashboard/calls#answer-on-your-phone). |
+| `calls.callback.enabled` | boolean | `true` | The agent calls you back when a request you asked for yourself is done, waits on you or needs your attention, and took longer than `calls.callback.afterMinutes`. Not limited by `calls.allow`. See [When an agent calls you back](/dashboard/calls#when-an-agent-calls-you-back). |
+| `calls.callback.afterMinutes` | number (0–1440) | `3` | Requests shorter than this don't call back, unless the request says "call me when it's done". |
+| `calls.callback.quietWhenFocus` | boolean | `true` | In Focus a call-back doesn't ring: it is kept as a missed call, and its notice waits until Focus ends. |
 | `calls.phone.appUrl` | string (an origin) | unset | The address your phone opens the app at, such as `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. Also used for what a tap on an ntfy notification opens when `notifications.publicUrl` is unset. Not needed for Web Push. |
 
 ## `approvals`

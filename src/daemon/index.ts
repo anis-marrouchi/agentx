@@ -303,6 +303,7 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { callAppPath, type CallRing, type OutgoingMessage } from "@/channels/types"
 import { phonePublicUrl } from "@/notify/phone-link"
 import { CallStore } from "@/calls/store"
+import { attachCallbacks, callbackBrief } from "@/calls/callback"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { VoiceRequestStore, handleVoiceRequests, isVoiceRequestsPath } from "@/daemon/voice-requests-api"
 import { beginPhoneThread, finishPhoneThread, VOICE_SENDER, type PhoneThread } from "@/daemon/voice-phone-thread"
@@ -925,6 +926,13 @@ export class AgentXDaemon {
           attachPromiseFacts(this.requests.store, {
             settings: () => promiseSettingsOf(this.config.requests),
             ledger: () => ledger ??= new FactLedger(resolve(process.cwd(), ".agentx/wiki")),
+            log: this.log,
+          })
+          // A long request the owner asked for calls him back when it is
+          // done, waits on him or needs him (#2265).
+          attachCallbacks(this.requests.store, {
+            calls: () => this.calls ?? null,
+            config: () => this.config.calls,
             log: this.log,
           })
           // "I'll do X" in an owner-facing reply becomes a promise (#1138 E).
@@ -5721,6 +5729,17 @@ export class AgentXDaemon {
         const thread = store.createThread(call.agentId, null, `Call: ${call.reason}`)
         const seq = store.appendTurn(thread.id, `Call: ${call.reason}`)
         store.resolve(thread.id, seq, summary, "done")
+      },
+      // A call-back (#2265): what each request it is about came to, and
+      // once answered, the owner was told.
+      callbackBrief: (ref) => {
+        const r = this.requests?.store.get(ref.id)
+        return r ? callbackBrief(r, ref.state) : null
+      },
+      callbackAnswered: (call) => {
+        const store = this.requests?.store
+        if (!store) return
+        for (const ref of call.about ?? []) store.markNotified(ref.id, Date.now())
       },
       log: (m) => this.log(m),
     })

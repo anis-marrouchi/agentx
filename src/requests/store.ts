@@ -841,6 +841,22 @@ export class RequestStore {
     if (r) for (const fn of this.doneHooks) fn(r)
   }
 
+  private settledHooks = new Set<(r: RequestRecord) => void>()
+
+  /** Called after the settle pass closes a request (unverified, #2265).
+   *  Kept apart from `onDone`, whose hooks (a promise's fact) want a
+   *  verified close. Returns the function that removes it. */
+  onSettled(fn: (r: RequestRecord) => void): () => void {
+    this.settledHooks.add(fn)
+    return () => { this.settledHooks.delete(fn) }
+  }
+
+  private settledDone(id: string): void {
+    if (!this.settledHooks.size) return
+    const r = this.get(id)
+    if (r) for (const fn of this.settledHooks) fn(r)
+  }
+
   /** The wiki fact a promise's close wrote. */
   setFact(id: string, factId: string): void {
     this.db.prepare("UPDATE requests SET fact_id = ? WHERE id = ?").run(factId, id)
@@ -1161,7 +1177,10 @@ export class RequestStore {
          verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")})) AND ${NOT_STANDING}`,
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
-    if (settled) this.typeIfMissing(id)
+    if (settled) {
+      this.typeIfMissing(id)
+      this.settledDone(id)
+    }
     return settled
   }
 
@@ -1217,6 +1236,7 @@ export class RequestStore {
    *  now that answer: a need written for the work before is dropped
    *  unless the agent gives a new one (#1126). */
   waitOnOwner(id: string, question: string, now: number, need: string | null = null): void {
+    const before = this.needsOwnerHooks.size ? this.get(id)?.state : undefined
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL, ${ASK_ENDS}
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
@@ -1229,6 +1249,23 @@ export class RequestStore {
          WHERE id = ? AND state = 'waiting_owner'`,
       ).run(id)
     }
+    if (before !== undefined && before !== "waiting_owner") this.needsOwner(id, "waiting_owner")
+  }
+
+  private needsOwnerHooks = new Set<(r: RequestRecord, state: "waiting_owner" | "needs_attention") => void>()
+
+  /** Called when a request starts waiting on the owner or needing his
+   *  attention (#2265), with the request after the change. Returns the
+   *  function that removes it. */
+  onNeedsOwner(fn: (r: RequestRecord, state: "waiting_owner" | "needs_attention") => void): () => void {
+    this.needsOwnerHooks.add(fn)
+    return () => { this.needsOwnerHooks.delete(fn) }
+  }
+
+  private needsOwner(id: string, state: "waiting_owner" | "needs_attention"): void {
+    if (!this.needsOwnerHooks.size) return
+    const r = this.get(id)
+    if (r?.state === state) for (const fn of this.needsOwnerHooks) fn(r, state)
   }
 
   /** The work failed, timed out, was cut off, or went quiet. A request
@@ -1239,7 +1276,10 @@ export class RequestStore {
       `UPDATE requests SET state = 'needs_attention', updated_at = ?, state_changed_at = ?, attention_reason = ?, notified_at = NULL
        WHERE id = ? AND state NOT IN ('needs_attention', 'job', ${placeholders(CLOSED_STATES.length)})`,
     ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
-    if (res.changes > 0) this.signal("request_stalled", id, reason, now)
+    if (res.changes > 0) {
+      this.signal("request_stalled", id, reason, now)
+      this.needsOwner(id, "needs_attention")
+    }
     return res.changes > 0
   }
 
@@ -1385,11 +1425,13 @@ export class RequestStore {
    *  asked, so the owner is told once. */
   askOwnerOnClose(id: string, question: string, need: string, now: number): boolean {
     const q = question.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
-    return this.db.prepare(
+    const asked = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', closed_at = NULL, updated_at = ?, question = ?, need = ?,
          attention_reason = NULL, notified_at = NULL, owner_check = '${OWNER_ASKED}', owner_check_at = ?, owner_check_note = ?
        WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, q, need.slice(0, REASON_MAX), now, q, id, ...CLOSED_STATES).changes > 0
+    if (asked) this.needsOwner(id, "waiting_owner")
+    return asked
   }
 
   /** The check found a mismatch again after the reopen limit (#2056): the

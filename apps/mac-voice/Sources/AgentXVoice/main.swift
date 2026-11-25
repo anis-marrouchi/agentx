@@ -646,7 +646,7 @@ final class App: NSObject, NSApplicationDelegate {
         callWatcher.onPoll = { [weak self] state in self?.polled(state) }
         callWatcher.query = { [weak self] in
             guard let self else { return "" }
-            return CallModel.pollQuery(ringing: self.ringingCall?.id ?? self.answeringCall, canRing: self.canRing)
+            return CallModel.pollQuery(ringing: self.ringingCall?.id ?? self.answeringCall, canRing: self.canRing, locked: screenIsLocked())
         }
         callWatcher.start()
         // The answering agent sends the character to something (#482).

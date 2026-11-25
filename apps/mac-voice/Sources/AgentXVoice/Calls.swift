@@ -173,3 +173,10 @@ final class CallBar: NSView {
 
     @objc private func laterChosen(_ item: NSMenuItem) { onLater?(item.tag) }
 }
+
+/// True while the Mac's screen is locked (#2265): the session dictionary
+/// says so. The daemon then treats the owner as away and rings the phone.
+func screenIsLocked() -> Bool {
+    guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+    return (session["CGSSessionScreenIsLocked"] as? Bool) ?? false
+}

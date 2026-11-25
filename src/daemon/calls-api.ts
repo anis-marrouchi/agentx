@@ -21,13 +21,15 @@
 //                               its voice call that waits or rings
 //                               200 {call}; 404 it has none
 //   GET  /calls?status=&kind=&limit=  newest first; status is a comma list
-//   GET  /calls/ringing?busy=1&showing=<id>
+//   GET  /calls/ringing?busy=1&showing=<id>&locked=1
 //                               the widget's poll: voice calls {calls,
 //                               ringSound, ringSeconds}. Polling marks the
 //                               widget alive. busy: it cannot ring a new
 //                               call now; showing: the call ringing on it.
 //                               A call it is not showing waits while busy.
-//   GET  /calls/asking          the phone app's poll: camera asks waiting
+//                               locked: the screen is locked, so the phone
+//                               rings even with calls.phone.ring "away".
+//   GET  /calls/asking         the phone app's poll: camera asks waiting
 //                               for the owner {calls, ringSeconds}
 //   GET  /calls/:id
 //   POST /calls/:id/answer      200 {call, opener}: the widget sends the
@@ -93,7 +95,7 @@ export async function handleCalls(
   if (path === "/calls/ringing") {
     if (method !== "GET") return { status: 405, body: { error: "GET" } }
     const cfg = config()
-    return { status: 200, body: { calls: await calls.ringing({ busy: query.get("busy") === "1", showing: query.get("showing") || undefined }), ringSound: cfg.ringSound, ringSeconds: cfg.ringSeconds } }
+    return { status: 200, body: { calls: await calls.ringing({ busy: query.get("busy") === "1", showing: query.get("showing") || undefined, locked: query.get("locked") === "1" }), ringSound: cfg.ringSound, ringSeconds: cfg.ringSeconds } }
   }
 
   if (path === "/calls/asking") {

@@ -1446,6 +1446,18 @@ export const callsSchema = z.object({
      *  needs it so a tap opens the call; Web Push does not. */
     appUrl: z.string().regex(/^https?:\/\/[^/\s]+$/, "use an origin like https://my-mac.example.ts.net").optional(),
   }).default({}),
+  /** Call-back (#2265): the agent calls the owner when a request he asked
+   *  for himself is done, waits on him, or needs his attention, and it ran
+   *  longer than `afterMinutes` (or he said "call me when it's done"). Not
+   *  bound by `allow`: he asked for the work. */
+  callback: z.object({
+    enabled: z.boolean().default(true),
+    /** Shorter requests do not call back. */
+    afterMinutes: z.number().int().min(0).max(1440).default(3),
+    /** In Focus a call-back does not ring: it is kept as a missed call,
+     *  and its notice waits until Focus ends. */
+    quietWhenFocus: z.boolean().default(true),
+  }).default({}),
 }).default({})
 
 export type CallsConfig = z.infer<typeof callsSchema>
