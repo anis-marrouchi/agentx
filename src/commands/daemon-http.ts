@@ -15,10 +15,10 @@ export async function getJson(url: string, timeoutMs = 3000): Promise<any | null
 
 /** In-flight count: the restart endpoint, else /health (older daemons only
  *  report per-agent active counts there). Null when the daemon is silent. */
-export async function readInflight(base: string): Promise<number | null> {
-  const info = await getJson(`${base}/daemon/restart`)
+export async function readInflight(base: string, timeoutMs = 3000): Promise<number | null> {
+  const info = await getJson(`${base}/daemon/restart`, timeoutMs)
   if (typeof info?.inflight?.total === "number") return info.inflight.total
-  const h = await getJson(`${base}/health`)
+  const h = await getJson(`${base}/health`, timeoutMs)
   if (!h) return null
   if (typeof h.inflight?.total === "number") return h.inflight.total
   return Array.isArray(h.agents) ? h.agents.reduce((n: number, a: any) => n + (Number(a.active) || 0), 0) : null
@@ -26,17 +26,17 @@ export async function readInflight(base: string): Promise<number | null> {
 
 /** The runs in flight, from the restart endpoint. Null when the daemon is
  *  silent or too old to list them (the caller then counts every task). */
-export async function readRunning(base: string): Promise<RunningRun[] | null> {
-  const info = await getJson(`${base}/daemon/restart`)
+export async function readRunning(base: string, timeoutMs = 3000): Promise<RunningRun[] | null> {
+  const info = await getJson(`${base}/daemon/restart`, timeoutMs)
   return Array.isArray(info?.running) ? info.running : null
 }
 
 /** How many runs hold a `--people-only` upgrade back: the ones a person is
  *  waiting on. Falls back to the whole in-flight count when the daemon does
  *  not list its runs, so an older daemon is never cut blind. */
-export async function readHolding(base: string): Promise<number | null> {
-  const running = await readRunning(base)
-  return running ? countHolding(running) : readInflight(base)
+export async function readHolding(base: string, timeoutMs = 3000): Promise<number | null> {
+  const running = await readRunning(base, timeoutMs)
+  return running ? countHolding(running) : readInflight(base, timeoutMs)
 }
 
 /** The daemon's local URL from agentx.json's node.bind. */

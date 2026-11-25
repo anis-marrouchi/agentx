@@ -42,6 +42,22 @@ export function sameModel(a: string | null | undefined, b: string | null | undef
   return ALIASES.has(short) && new RegExp(`^claude-${esc}(-\\d+)*(\\[[^\\]]*\\])?$`).test(long)
 }
 
+/**
+ * Whether a stored model can run on the agent's current runtime. A session
+ * that started while the agent ran on another CLI (Codex, then Claude Code)
+ * keeps that model's name; resuming it would ask Claude Code for an OpenAI
+ * model, and every turn fails at once ("issue with the selected model").
+ * Only the two CLIs whose model families are known are checked.
+ */
+export function modelFitsRuntime(tier: string | undefined, model: string | undefined): boolean {
+  if (!model) return true
+  const m = model.toLowerCase()
+  const claude = m.startsWith("claude") || ALIASES.has(m)
+  if (tier === "claude-code") return claude
+  if (tier === "codex-cli") return !claude
+  return true
+}
+
 /** Whether the session's cache is still warm after `idleMs`. */
 export function isWarm(idleMs: number | null | undefined, ttlMs: number = CACHE_TTL_MS): boolean {
   return (idleMs ?? 0) < ttlMs

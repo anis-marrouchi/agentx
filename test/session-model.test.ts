@@ -9,8 +9,7 @@ const hoisted = vi.hoisted(() => ({ askSeat: vi.fn(), getSeatMode: vi.fn() }))
 vi.mock("../src/decisions/seat", () => ({ askSeat: hoisted.askSeat, getSeatMode: hoisted.getSeatMode }))
 
 import {
-  canHoldUpgrade, coldResumeChoice, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates,
-} from "../src/agents/session-model"
+  canHoldUpgrade, coldResumeChoice, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates, modelFitsRuntime } from "../src/agents/session-model"
 import { CACHE_TTL_MS, routeTaskModel } from "../src/agents/routing"
 import { routeTaskEdge, type EdgeRouteResult } from "../src/agents/edge-routing"
 import { SessionStore } from "../src/agents/sessions"
@@ -243,3 +242,22 @@ describe("SessionStore sessionModel", () => {
     expect(s.sessionModel).toBe(EDGE)
   })
 })
+
+describe("modelFitsRuntime", () => {
+  it("Claude Code runs Claude models and aliases only", () => {
+    expect(modelFitsRuntime("claude-code", "claude-opus-5-5")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "opus")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "gpt-6.2-sol")).toBe(false)
+  })
+
+  it("Codex runs non-Claude models only", () => {
+    expect(modelFitsRuntime("codex-cli", "gpt-6.2-sol")).toBe(true)
+    expect(modelFitsRuntime("codex-cli", "claude-opus-5-5")).toBe(false)
+  })
+
+  it("leaves other runtimes and an unknown model alone", () => {
+    expect(modelFitsRuntime("opencode", "anything/at-all")).toBe(true)
+    expect(modelFitsRuntime("claude-code", undefined)).toBe(true)
+  })
+})
+

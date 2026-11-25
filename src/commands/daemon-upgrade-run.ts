@@ -33,6 +33,12 @@ export function releaseVersion(dir: string): string | null {
   return v || null
 }
 
+/** Per-check wait and checks missed in a row before the daemon counts as
+ *  gone while waiting for idle. A loaded daemon answers slowly; an upgrade
+ *  was refused after six 3 s misses (about a minute) on a busy node. */
+export const IDLE_READ_TIMEOUT_MS = 15_000
+export const IDLE_MAX_MISSES = 24
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const log = (s: string) => console.log(`${new Date().toISOString()} ${s}`)
 
@@ -97,10 +103,13 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   // 1. Idle. With --people-only, only runs a person is waiting on count.
   const what = o.peopleOnly ? "run(s) with a person waiting" : "task(s) running"
   const idle = await waitForIdle({
-    read: () => (o.peopleOnly ? readHolding(base) : readInflight(base)), intervalMs: 10_000, timeoutMs: o.timeoutMin * 60_000, maxUnreachable: 6,
+    // A busy daemon can take well over 3 s to answer, or miss a few checks in
+    // a row; only ~10 minutes of silence means it is really gone.
+    read: () => (o.peopleOnly ? readHolding(base, IDLE_READ_TIMEOUT_MS) : readInflight(base, IDLE_READ_TIMEOUT_MS)),
+    intervalMs: 10_000, timeoutMs: o.timeoutMin * 60_000, maxUnreachable: IDLE_MAX_MISSES,
     onCheck: (n) => { if (n) log(`waiting: ${n} ${what}`) },
   })
-  if (idle.outcome === "unreachable") return finish("refused", "daemon stopped answering while waiting for idle; nothing changed")
+  if (idle.outcome === "unreachable") return finish("refused", `daemon did not answer ${IDLE_MAX_MISSES} checks in a row (about ${Math.round(IDLE_MAX_MISSES * (10_000 + IDLE_READ_TIMEOUT_MS) / 60_000)} min) while waiting for idle; nothing changed`)
   if (idle.outcome === "timeout") {
     if (!o.force) return finish("refused", `still ${idle.inflight ?? "some"} ${what} after ${o.timeoutMin} min; nothing changed (use --force)`)
     log(`still ${idle.inflight ?? "some"} ${what}; restarting anyway (--force), they get the usual drain time`)
