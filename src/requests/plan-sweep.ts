@@ -4,6 +4,8 @@ import { checkUrl } from "./checkers/url"
 import type { ForgeCounter } from "./checkers/count"
 import { refreshCount } from "./plan-continue"
 import { cardWords } from "./card-view"
+import { closingRecord, uncoveredText, type BeforeCloseCtx } from "./before-close"
+import { PLAN_BY, type OwnerVerdict } from "./owner-check"
 import { FINISHED_STEP_STATES, type PlanRecord, type PlanStep, type PlanStore } from "./plan-store"
 import {
   approvalCardInput, blockedText, dispatchText, MESSAGE_KIND, nudgeText, planEvidence, summaryText, type PlanSettings,
@@ -50,6 +52,9 @@ export interface PlanSweepDeps {
   /** Read open counts, for steps with a count check (#1568). */
   counter?: ForgeCounter
   hasAgent?: (agentId: string) => boolean
+  /** The owner-words check before the plan closes its request (#2047).
+   *  Unset or mode off: closes as before. */
+  beforeClose?: BeforeCloseCtx
   log: (msg: string) => void
   now?: number
 }
@@ -421,9 +426,22 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
     const steps = plans.steps(r.id)
     const current = steps.find((s) => !isFinished(s))
     if (!current) {
+      const evidence = planEvidence(steps)
+      const v = await judgePlanClose(deps, r, evidence, now)
+      if (v?.verdict === "mismatch" && deps.beforeClose?.mode === "block") {
+        holdPlan(deps, r, v, now)
+        return
+      }
       if (plans.finish(r.id, "done", now)) {
         plans.event(r.id, null, "finished", `${steps.length} steps`, now)
-        requests.close(r.id, "done", planEvidence(steps), now, null, "plan")
+        const closed = requests.close(r.id, "done", evidence, now, null, PLAN_BY)
+        if (closed && v) {
+          deps.beforeClose?.keep?.(r.id, v, now)
+          if (v.verdict === "mismatch") {
+            plans.event(r.id, null, "owner-words-warn", uncoveredText(v), now)
+            deps.log(`[plans] ${r.id}: owner-words before close (warn): ${v.why}`)
+          }
+        }
         result.finished++
         deps.log(`[plans] ${r.id}: every step finished`)
       }
@@ -431,6 +449,51 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
     }
     if (!(await advance(deps, r, steps, current, now, result))) return
   }
+}
+
+/** The owner-words judge on a plan's close, before it is written (#2047).
+ *  Null: off, or no answer (the close goes through as before). The judge
+ *  keeps its verdict per evidence, so a held plan costs one call. */
+async function judgePlanClose(deps: PlanSweepDeps, r: RequestRecord, evidence: string, now: number): Promise<OwnerVerdict | null> {
+  const ctx = deps.beforeClose
+  if (!ctx || ctx.mode === "off" || !ctx.judge) return null
+  const record = closingRecord(deps.requests, r.id, PLAN_BY, evidence, now)
+  if (!record) return null
+  try {
+    return await ctx.judge(record, ctx.seconds * 1000)
+  } catch (e: any) {
+    deps.log(`[plans] ${r.id}: owner-words before close failed, closing: ${e?.message ?? e}`)
+    return null
+  }
+}
+
+export const PLAN_HELD = "Every step finished, but the close is held"
+
+/** Block mode: a plan whose close does not do what the owner asked is not
+ *  finished. The request needs attention, so the requests check tells the
+ *  owner once and it shows on their cards (Hakim's review of #2047: a held
+ *  plan never sits unseen), and its agent is woken once. Held again on the
+ *  same evidence: nothing new. */
+function holdPlan(deps: PlanSweepDeps, r: RequestRecord, v: OwnerVerdict, now: number): void {
+  const { plans, requests } = deps
+  const reason = `${PLAN_HELD}: the proof does not show ${uncoveredText(v)}`
+  if (plans.events(r.id, 50).some((e) => e.kind === "owner-words-held" && e.detail === reason)) return
+  plans.event(r.id, null, "owner-words-held", reason, now)
+  if (!requests.needsAttention(r.id, reason, now) && requests.get(r.id)?.state === "needs_attention") requests.markNotified(r.id, null)
+  deps.log(`[plans] ${r.id}: owner-words before close (block) held the close: ${v.why}`)
+  if (!deps.tellAgent) return
+  const last = plans.steps(r.id).at(-1)
+  if (!last) return
+  const text = [
+    `[agentx:request-held id=${r.id}] Every step of your tracked plan finished, but the close is held: the owner-words check finds it does not do what the owner asked.`,
+    "",
+    `Why: ${v.why || "the close does not match the owner's words"}`,
+    ...(v.uncovered.length ? [`Not shown by the proof: ${v.uncovered.join("; ")}`] : []),
+    "",
+    "Do what is still missing now. Do not repeat an outside action you already took: check first.",
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>", proofs:[{deliverable:<number>, link:"<url>"}]}. The owner sees it as needing attention until then.`,
+  ].join("\n")
+  deps.tellAgent(r.agentId, text, r, last).catch((e: any) => plans.event(r.id, null, "owner-words-wake-failed", `${r.agentId}: ${e?.message ?? e}`, now))
 }
 
 /** Step 5: one summary per finished plan. */

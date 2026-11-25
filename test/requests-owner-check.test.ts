@@ -166,7 +166,7 @@ describe("OwnerWordsCheck", () => {
 
 describe("readVerdict / prompt", () => {
   it("reads a verdict wrapped in prose and refuses others", () => {
-    expect(readVerdict('Sure: {"verdict":"Mismatch","why":"  narrowed  "}')).toEqual({ verdict: "mismatch", why: "narrowed" })
+    expect(readVerdict('Sure: {"verdict":"Mismatch","why":"  narrowed  "}')).toEqual({ verdict: "mismatch", why: "narrowed", uncovered: [] })
     expect(readVerdict('{"verdict":"maybe"}')).toBeNull()
     expect(readVerdict("no json")).toBeNull()
   })

@@ -1780,6 +1780,14 @@ export const requestsConfigSchema = z.object({
     /** Reopens per request (#2056). Past it, a close judged a mismatch
      *  stays closed and the owner is told once with the reason. */
     maxReopens: z.number().int().min(0).max(20).default(2),
+    /** retro:01M7VXKHCDJMX90PCDN6JT04WN (#2047): the same check runs
+     *  inside an agent's or a plan's done, before the close is written.
+     *  "warn" closes and tells the caller what the proof does not show;
+     *  "block" refuses a mismatch. A model error never blocks. */
+    beforeClose: z.enum(["off", "warn", "block"]).default("warn"),
+    /** Most seconds the check takes inside a done (an agent's done also
+     *  stays inside its 45 s call). */
+    beforeCloseSeconds: z.number().int().min(5).max(40).default(20),
   }).default({}),
   /** Proof per deliverable before a close by check (src/requests/close-proof.ts),
    *  retro:01M70Z38BBZYRBBCZW2T1S3T3K. When the mode is not "off", the

@@ -274,7 +274,10 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     }
     if (action === "done") {
       const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""
-      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}`
+      // The owner-words check before the close, warn mode (#2047).
+      const ow = data.ownerWords
+      const warn = ow ? `\nClosed, but the proof does not show: ${ow.uncovered?.length ? ow.uncovered.join("; ") : ow.why}. The owner-words check will reopen it; do what is missing.` : ""
+      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}${warn}`
     }
     if (r.closeKind === "superseded" && r.proof?.value) {
       return `Request ${r.id} is closed as declined, superseded by ${r.proof.value}. Reason: ${r.closeReason}`

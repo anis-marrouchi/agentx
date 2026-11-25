@@ -15,6 +15,8 @@ import { DEFAULT_FLOW, FLOW_DAYS_MAX, flowReport, type FlowSettings } from "./fl
 import { ESTIMATE_TOO_LONG, planDue, readDueFields, type DueGiven, type DuePlan, type DueTimesCtx } from "./due-times"
 import { MAX_ESTIMATE_MINUTES } from "./slots"
 import { parseStanding, standingRefusal, type StandingNumbers } from "./standing"
+import { blockedBody, closingRecord, judgeBudget, warnNote, type BeforeCloseCtx, type OwnerWordsNote } from "./before-close"
+import { CHECK_BY, type OwnerVerdict } from "./owner-check"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -109,6 +111,12 @@ export interface RequestsApiDeps {
   /** The tracked numbers (src/numbers), for a standing order's number
    *  (noqta#807). Unset: the rhythm must be given and is not checked. */
   numbers?: StandingNumbers
+  /** The owner-words check before the close (before-close.ts, #2047).
+   *  Unset or mode off: as before. */
+  ownerBeforeClose?: BeforeCloseCtx
+  /** The judge's answer on this request's close: the last pass of a done
+   *  (handleRequestsCall). Null verdict: no answer, close as before. */
+  ownerVerdict?: { requestId: string; verdict: OwnerVerdict | null }
   now?: number
 }
 
@@ -166,6 +174,10 @@ export interface ApiReply {
   /** Set on the first pass of a done on a loop with a checker: run it,
    *  then call again with the verdict. */
   verify?: { requestId: string; spec: CloseWhen }
+  /** Set on a done that passed every other gate while the owner-words
+   *  check runs before the close (#2047): judge `record`, then call again
+   *  with the verdict. Nothing is closed yet. */
+  judgeOwner?: { requestId: string; record: RequestRecord }
 }
 
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
@@ -316,6 +328,38 @@ export async function handleRequestsCall(
   deps: RequestsApiDeps & { check?: LoopChecker },
   caller: CallerProof = {},
 ): Promise<ApiReply> {
+  // The judge's time is counted from here: the agent's call has 45 s in
+  // all, and a closeWhen check may run first (#2047 review).
+  const startedAt = (deps.ownerBeforeClose?.clock ?? Date.now)()
+  let passDeps: RequestsApiDeps = deps
+  const reply = await checkPass(method, path, body, deps, caller)
+  if (reply.verdictGiven) passDeps = { ...deps, verdict: reply.verdictGiven }
+  if (!reply.judgeOwner) return { status: reply.status, body: reply.body }
+  const ctx = deps.ownerBeforeClose!
+  const { requestId, record } = reply.judgeOwner
+  const budget = judgeBudget(ctx, startedAt)
+  let verdict: OwnerVerdict | null = null
+  if (!budget) ctx.log?.(`[requests] ${requestId}: owner-words before close skipped, too little time left in the call; the sweep judges it`)
+  else {
+    verdict = await (ctx.judge?.(record, budget) ?? Promise.resolve(null)).catch((e: any) => {
+      ctx.log?.(`[requests] ${requestId}: owner-words before close failed: ${e?.message ?? e}`)
+      return null
+    })
+    if (!verdict) ctx.log?.(`[requests] ${requestId}: owner-words before close gave no answer; closing, the sweep judges it`)
+  }
+  const last = handleRequestsApi(method, path, body, { ...passDeps, ownerVerdict: { requestId, verdict } }, caller)
+  return { status: last.status, body: last.body }
+}
+
+/** The first passes of a call: the handler, then its closeWhen check
+ *  when a done asks for one. */
+async function checkPass(
+  method: string,
+  path: string,
+  body: Record<string, unknown> | undefined,
+  deps: RequestsApiDeps & { check?: LoopChecker },
+  caller: CallerProof,
+): Promise<ApiReply & { verdictGiven?: { requestId: string; result: CheckResult } }> {
   const first = handleRequestsApi(method, path, body, deps, caller)
   if (!first.verify) return first
   const request = deps.store.get(first.verify.requestId)!
@@ -327,8 +371,43 @@ export async function handleRequestsCall(
   if (result.verdict === "met" && proof?.read && proof.mode !== "off" && request.deliverables == null && !proof.plan?.(request.id)) {
     await proof.read(request).catch((e: any) => proof.log?.(`[requests] ${request.id}: reading its deliverables failed: ${e?.message ?? e}`))
   }
-  const second = handleRequestsApi(method, path, body, { ...deps, verdict: { requestId: request.id, result } }, caller)
-  return { status: second.status, body: second.body }
+  const verdictGiven = { requestId: request.id, result }
+  const second = handleRequestsApi(method, path, body, { ...deps, verdict: verdictGiven }, caller)
+  return { ...second, verdictGiven }
+}
+
+/** The owner-words check before an agent's done closes (#2047): ask for
+ *  the judge, refuse a mismatch in block mode, or let it close (with the
+ *  verdict to keep). Runs after every other gate, right before the write. */
+function ownerGate(
+  deps: RequestsApiDeps, id: string, by: string, evidence: string, now: number,
+): { reply: ApiReply } | { verdict: OwnerVerdict | null } {
+  const ctx = deps.ownerBeforeClose
+  if (!ctx || ctx.mode === "off" || !evidence) return { verdict: null }
+  const given = deps.ownerVerdict?.requestId === id ? deps.ownerVerdict : null
+  if (!given) {
+    const record = closingRecord(deps.store, id, by, evidence, now)
+    if (!record) return { verdict: null }
+    return { reply: { status: 202, body: { checking: "owner-words" }, judgeOwner: { requestId: id, record } } }
+  }
+  const v = given.verdict
+  if (v?.verdict === "mismatch" && ctx.mode === "block") {
+    ctx.log?.(`[requests] ${id}: owner-words before close (block) refused ${by}'s done: ${v.why}`)
+    return { reply: { status: 409, body: blockedBody(v) } }
+  }
+  return { verdict: v }
+}
+
+/** After the close went through: keep the verdict, log a warn, and say
+ *  what the caller is told. */
+function keepOwnerVerdict(deps: RequestsApiDeps, id: string, v: OwnerVerdict | null, now: number): { ownerWords?: OwnerWordsNote } {
+  const ctx = deps.ownerBeforeClose
+  if (!ctx || !v) return {}
+  ctx.keep?.(id, v, now)
+  const note = warnNote(v, ctx.mode)
+  if (!note) return {}
+  ctx.log?.(`[requests] ${id}: owner-words before close (warn): ${note.why}${note.uncovered.length ? ` (not shown: ${note.uncovered.join("; ")})` : ""}`)
+  return { ownerWords: note }
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
@@ -728,7 +807,10 @@ export function handleRequestsApi(
           ? oneLine(proof.kind === "check" ? `the assistant says it checked: ${proof.value}` : describeProof(proof))
           : ""
         const said = [ev, extra].filter(Boolean).join("; ")
-        const out = closeByCheckNow(store, request.id, v.detail, checkEvidence(v.detail, said), now, deps.closeProof ?? PROOF_OFF)
+        const closing = checkEvidence(v.detail, said)
+        const owner = ownerGate(deps, request.id, CHECK_BY, closing, now)
+        if ("reply" in owner) return owner.reply
+        const out = closeByCheckNow(store, request.id, v.detail, closing, now, deps.closeProof ?? PROOF_OFF)
         if (out.outcome === "held") return { status: 409, body: { error: `Not closed: its check gives the same result the owner already found does not match their words (${out.detail}).`, held: true } }
         if (out.outcome === "blocked") {
           // The refusal is the telling (#692 S5): the sweep does not ask again.
@@ -740,7 +822,8 @@ export function handleRequestsApi(
         }
         if (out.outcome === "reading") return { status: 202, body: { request: store.get(request.id), verify: "reading", detail: out.detail } }
         if (home) store.setHome(request.id, home, now)
-        return { status: 200, body: { request: store.get(request.id), verified: true } }
+        const said2 = keepOwnerVerdict(deps, request.id, owner.verdict, now)
+        return { status: 200, body: { request: store.get(request.id), verified: true, ...said2 } }
       }
       if (v.verdict === "not_met") {
         store.markChecked(request.id, "failed", v.detail, now)
@@ -841,6 +924,11 @@ export function handleRequestsApi(
       return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id), ...(due ? { due } : {}) } }
     }
 
+    // The owner-words check before the close (#2047), after every gate.
+    const doneEvidence = action === "done" ? str(input.evidence) || (proof ? describeProof(proof) : "") : ""
+    const owner = action === "done" ? ownerGate(deps, request.id, agentId, doneEvidence, now) : { verdict: null }
+    if ("reply" in owner) return owner.reply
+    let said: { ownerWords?: OwnerWordsNote } = {}
     try {
       if (action === "accept") {
         store.progress(request.id, now)
@@ -849,7 +937,9 @@ export function handleRequestsApi(
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
-      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof, agentId)
+      } else if (action === "done") {
+        if (store.close(request.id, "done", doneEvidence, now, proof, agentId)) said = keepOwnerVerdict(deps, request.id, owner.verdict, now)
+      }
       else if (closeKind) {
         store.close(request.id, "declined", str(input.reason) || `superseded by ${closeKind.link}`, now, { kind: "link", value: closeKind.link, ranAt: now }, agentId, closeKind.kind)
       } else store.close(request.id, "declined", str(input.reason), now, null, agentId)
@@ -863,7 +953,7 @@ export function handleRequestsApi(
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }
     const due = slotDone()
-    return { status: 200, body: { request: store.get(request.id), ...(due ? { due } : {}) } }
+    return { status: 200, body: { request: store.get(request.id), ...(due ? { due } : {}), ...said } }
   }
 
   if (m !== "GET" && m !== "HEAD") return { status: 405, body: { error: "Method not allowed" } }
