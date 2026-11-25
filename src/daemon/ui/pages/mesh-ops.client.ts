@@ -11,8 +11,8 @@ export const MESH_OPS_SCRIPT = `<script>
   function initials(v){return String(v||'?').split(/[-_ ]+/).slice(0,2).map(function(x){return x.charAt(0)}).join('').toUpperCase()}
   function badge(status){
     var kind=(status==='success'||status==='active'||status==='online'||status==='running')?'ax-badge--live'
-      :(status==='failed'||status==='timeout'||status==='offline')?'ax-badge--err'
-      :status==='retrying'?'ax-badge--warn':'ax-badge--ghost';
+      :(status==='failed'||status==='timeout'||status==='offline'||status==='missed')?'ax-badge--err'
+      :(status==='retrying'||status==='held')?'ax-badge--warn':'ax-badge--ghost';
     return '<span class="ax-badge '+kind+'">'+esc(status)+'</span>';
   }
   function avatar(text,variant){return '<span class="ax-avatar '+(variant?'ax-avatar--'+variant:'')+'">'+esc(initials(text))+'</span>'}

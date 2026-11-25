@@ -20,6 +20,7 @@ import { cronGoalGate, withGoalFirst, type CronGoalSource } from "./goal-gate"
 import { goalCheckAtFire, goalCheckTick, type FireGate, type GoalCheckDeps } from "./goal-check"
 import { goalWallLines, readCronGoalState } from "./goal-state"
 import { endByUntil, lateLine, pastUntil, withLateFirst, type UntilDeps } from "./job-end"
+import { holdRetryAt, MAX_HOLD_RETRIES, missedRunText, runHold, type RunHold } from "./hold-retry"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -261,6 +262,8 @@ export class CronScheduler {
         report: def.report,
         requireSources: def.requireSources,
         expectExitZero: def.expectExitZero,
+        createdBy: def.createdBy,
+        retryWindowMinutes: def.retryWindowMinutes,
         runAt: def.runAt,
         until: def.until,
         endedAt: def.endedAt,
@@ -472,6 +475,13 @@ export class CronScheduler {
   private scheduleNext(jobId: string): void {
     const job = this.jobs.get(jobId)
     if (!job || !job.enabled || !this.running) return
+    // The next regular run is a new scheduled run, not a hold retry: a
+    // hold retry stopped by a hook, its goal or a pause must not hand its
+    // window to that run (#2247). The saved slot marker goes with it.
+    if (job.holdRetryPending) {
+      job.holdRetryPending = false
+      this.saveLastRuns()
+    }
 
     // Clear any existing timer
     const existing = this.timers.get(jobId)
@@ -525,6 +535,11 @@ export class CronScheduler {
     if (attempt >= MAX_RETRIES) {
       this.log(`Job "${jobId}" exhausted all ${MAX_RETRIES} retries, scheduling next regular run`)
       this.scheduleNext(jobId)
+      // The day's run is lost: its owner hears it now, not from a log (#2247).
+      // The failure alert already reached the notify chat when notifyFailure
+      // sent one: no second chat message for the same run.
+      const alerted = job.onError.includes("notify") || job.consecutiveErrors >= 2
+      void this.reportMissed(job, `it failed ${MAX_RETRIES + 1} times (${(job.lastError ?? "unknown error").slice(0, 200)})`, undefined, !alerted)
       return
     }
 
@@ -535,6 +550,78 @@ export class CronScheduler {
 
     const timer = setTimeout(() => this.executeJob(jobId, attempt + 1), delay)
     this.timers.set(jobId, timer)
+  }
+
+  /**
+   * A scheduled run held by a plan or usage limit, or a full machine
+   * (#2247). Recorded as held, not as a failure: it does not count toward
+   * auto-disable. Retried once the hold ends while that is inside the
+   * job's window; otherwise the run is missed and its owner is told.
+   */
+  private async onHeld(job: CronJobState, result: CronRunResult, hold: RunHold, attempt: number): Promise<void> {
+    result.held = true
+    if (hold.until) result.heldUntil = new Date(hold.until).toISOString()
+    job.lastError = result.error
+    const used = job.holdRetries ?? 0
+    const at = used < MAX_HOLD_RETRIES ? holdRetryAt(hold, Date.now(), this.holdWindowEnd(job)) : null
+    if (at !== null) {
+      this.logRun(result)
+      job.holdRetries = used + 1
+      job.retryPending = true
+      job.holdRetryPending = true
+      // On disk now, not only at a clean stop: a crash must not lose it.
+      this.saveLastRuns()
+      this.log(`Job "${job.id}" held (${hold.cause}): hold retry ${used + 1}/${MAX_HOLD_RETRIES} at ${new Date(at).toISOString()}`)
+      this.armTimer(job.id, at, () => { void this.executeJob(job.id, attempt) })
+      return
+    }
+    result.missed = true
+    this.logRun(result)
+    this.scheduleNext(job.id)
+    await this.reportMissed(job, `held by ${hold.cause}`, hold.until)
+  }
+
+  /** The last time a held run may be retried: up to the next regular run,
+   *  or `retryWindowMinutes` after its scheduled time when sooner, and
+   *  never past the job's `until` (#2247). */
+  private holdWindowEnd(job: CronJobState): number {
+    const start = (job.windowStart ?? new Date()).getTime()
+    let end = start + 12 * 60 * 60_000 // a one-time job: half a day
+    if (!job.runAt) {
+      try { end = getNextCronDate(job.schedule, new Date(start), job.timezone).getTime() - 60_000 } catch { /* invalid schedule: keep the default */ }
+    }
+    if (job.retryWindowMinutes) end = Math.min(end, start + job.retryWindowMinutes * 60_000)
+    if (job.until) end = Math.min(end, Date.parse(job.until))
+    return end
+  }
+
+  /**
+   * Tell the job's owner, and the agent that created it when that is
+   * another, that a scheduled run was missed (#2247): a notice at the head
+   * of its next run (it gets a run of its own within the hour), and the
+   * job's `notify` chat whatever `onError` says.
+   */
+  private async reportMissed(job: CronJobState, cause: string, heldUntil?: number, toChat = true): Promise<void> {
+    job.missedAt = job.windowStart ?? job.lastRun ?? new Date()
+    let nextRun: Date | undefined
+    if (!job.runAt) {
+      try { nextRun = getNextCronDate(job.schedule, new Date(), job.timezone) } catch { /* none */ }
+    }
+    const text = missedRunText(job.id, cause, { heldUntil, nextRun, scheduledAt: job.windowStart })
+    this.log(`Job "${job.id}" missed: ${cause}`)
+    for (const agentId of new Set([job.agent, job.createdBy].filter((a): a is string => Boolean(a)))) {
+      try {
+        if (this.registry.getAgent?.(agentId)) this.registry.notices?.add(agentId, "scheduler", text)
+      } catch (e: any) {
+        this.log(`Job "${job.id}" missed-run notice to ${agentId} failed: ${e?.message ?? e}`)
+      }
+    }
+    if (!toChat || !this.notifyCallback) return
+    try {
+      await this.notifyCallback(job.id, job.agent, text, job.consecutiveErrors)
+    } catch {
+      // Don't fail on notification errors
+    }
   }
 
   /** The ledger row for a run skipped because its goal is closed (#1568)
@@ -645,6 +732,7 @@ export class CronScheduler {
     job.lastSuccess = new Date()
     job.lastError = undefined
     job.retryPending = false
+    job.missedAt = undefined
     this.log(`Command job "${job.id}" completed in ${result.duration}ms`)
     this.logRun(result)
     await this.deliverResult(job, output, startedAt)
@@ -708,6 +796,11 @@ export class CronScheduler {
     const startedAt = firedAt
     job.lastRun = startedAt
     job.totalRuns++
+    // The scheduled run being tried: a hold retry keeps its window (#2247).
+    if (!fire) {
+      if (job.holdRetryPending) job.holdRetryPending = false
+      else if (!isRetry) { job.windowStart = startedAt; job.holdRetries = 0 }
+    }
     // A one-time job records its run before it starts, so a crash mid-run
     // cannot make it run a second time on the next start (#2004).
     if (job.runAt) this.saveLastRuns()
@@ -778,6 +871,13 @@ export class CronScheduler {
       }
 
       if (error) {
+        // Held by a plan or usage limit or a full machine: retried when the
+        // hold ends, not on the ladder below (#2247).
+        const hold = fire ? null : runHold(response)
+        if (hold) {
+          await this.onHeld(job, result, hold, retryAttempt)
+          return
+        }
         await this.recordFailure(job, error)
 
         // Retry — scheduled runs only; the caller of a fired run decides.
@@ -793,6 +893,7 @@ export class CronScheduler {
         job.lastSuccess = new Date()
         job.lastError = undefined
         job.retryPending = false
+        job.missedAt = undefined
         this.log(`Job "${jobId}" completed in ${result.duration}ms`)
       }
 
@@ -854,7 +955,8 @@ export class CronScheduler {
 
     for (const [jobId, job] of this.jobs) {
       // A one-time job's missed run is handled by scheduleNext (#2004).
-      if (!job.enabled || job.runAt) continue
+      // A held run waiting for its hold retry in this process is not missed.
+      if (!job.enabled || job.runAt || job.holdRetryPending) continue
 
       const lastRunStr = lastRuns[jobId]
       if (!lastRunStr) continue // Never ran before
@@ -930,6 +1032,21 @@ export class CronScheduler {
           ...(!error && isQuietJobAnswer(job, response.content) ? { quiet: true } : {}),
         }
 
+        // A catch-up run held by a limit (a restart while the hold is still
+        // on) is not a failure: like a scheduled run, it is retried when the
+        // hold ends inside the slot's window, else reported missed (#2247).
+        const hold = error ? runHold(response) : null
+        if (hold) {
+          job.lastRun = new Date()
+          job.totalRuns++
+          job.windowStart = missedAt
+          job.holdRetries = 0
+          // The hold retry takes the place of the regular timer armed at start.
+          const armed = this.timers.get(jobId)
+          if (armed) clearTimeout(armed)
+          await this.onHeld(job, result, hold, 0)
+          continue
+        }
         this.logRun(result)
         job.lastRun = new Date()
         job.totalRuns++
@@ -1099,7 +1216,15 @@ export class CronScheduler {
       const saved = this.loadLastRuns() ?? {}
       const data: Record<string, string> = {}
       for (const [id, job] of this.jobs) {
-        if (job.lastRun) data[id] = job.lastRun.toISOString()
+        // A held run waiting for its hold retry lives only in a timer. Save
+        // the moment just before its slot, so the next start sees the slot
+        // as missed and catches it up instead of losing it (#2247).
+        // A one-time job saves the moment before its runAt, so it is run
+        // once more rather than retired.
+        if (job.holdRetryPending && job.windowStart) {
+          const slot = job.runAt ? Date.parse(job.runAt) : Math.floor(job.windowStart.getTime() / 60_000) * 60_000
+          data[id] = new Date(slot - 1).toISOString()
+        } else if (job.lastRun) data[id] = job.lastRun.toISOString()
         else if (typeof saved[id] === "string") data[id] = saved[id]
       }
       const dir = resolve(process.cwd(), ".agentx/cron")
@@ -1208,7 +1333,7 @@ export class CronScheduler {
       missed: missed.length,
       jobs: jobs.map(j => ({
         id: j.id,
-        status: !j.enabled ? "disabled" : j.retryPending ? "retrying" : j.consecutiveErrors > 0 ? "failing" : "healthy",
+        status: !j.enabled ? "disabled" : j.retryPending ? "retrying" : j.consecutiveErrors > 0 ? "failing" : j.missedAt ? "missed" : "healthy",
         consecutiveErrors: j.consecutiveErrors,
         lastError: j.lastError,
       })),

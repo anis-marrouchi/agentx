@@ -21,7 +21,7 @@ import { workflowHealth, type RunSummary } from "./workflow-health"
 
 export type RoutineKind = "schedule" | "event"
 export type RoutineSource = "cron" | "workflow"
-export type RoutineOutcome = "success" | "failed" | "timeout" | "canceled" | "running" | "paused" | "unknown"
+export type RoutineOutcome = "success" | "failed" | "timeout" | "held" | "missed" | "canceled" | "running" | "paused" | "unknown"
 export type RoutineFlagReason = "failing" | "overdue" | "dormant" | "never-ran" | "disabled-long"
 export type RoutineAttention = "critical" | "warning" | "info"
 
@@ -213,8 +213,9 @@ export function buildRoutines(input: BuildRoutinesInput): Routine[] {
 export function failStreak(outcomes: Array<{ status: RoutineOutcome }>): number {
   let n = 0
   for (const o of outcomes) {
-    if (o.status === "running" || o.status === "paused" || o.status === "unknown") continue
-    if (o.status === "failed" || o.status === "timeout") n++
+    // A held run waits for its retry (#2247); a missed one lost its day.
+    if (o.status === "running" || o.status === "paused" || o.status === "unknown" || o.status === "held") continue
+    if (o.status === "failed" || o.status === "timeout" || o.status === "missed") n++
     else break
   }
   return n
