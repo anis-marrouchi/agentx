@@ -14,8 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  # The suite split in four parts that run at the same time (#2227). One
+  # runner took about 4.5 minutes for `pnpm test`; four take a bit over one.
+  unit:
+    name: unit (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     # A real IMAP/SMTP server for test/email-roundtrip.test.ts (#1287).
     services:
       greenmail:
@@ -44,9 +52,47 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
+
+  # Everything that is not the test suite, at the same time as it.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Rewrite git+ssh deps to https
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+      - run: pnpm install --frozen-lockfile
+
       - run: pnpm typecheck
       - run: node scripts/hub-name-check.mjs
-      - run: pnpm test
 
       - run: pnpm build
       - run: node scripts/check-package.mjs
+
+  # The one check the main branch requires. It passes only when every part
+  # above passed, so the branch rule keeps its name and its meaning.
+  test:
+    needs: [unit, build]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every part passed
+        env:
+          UNIT: ${{ needs.unit.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "unit: $UNIT, build: $BUILD"
+          [ "$UNIT" = "success" ] && [ "$BUILD" = "success" ]

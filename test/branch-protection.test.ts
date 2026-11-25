@@ -14,6 +14,11 @@ describe("workflowChecks", () => {
     expect(workflowChecks("jobs:\n  unit:\n    name: Unit tests\n  build: {}\n")).toEqual(["Unit tests", "build"])
   })
 
+  it("leaves out a job another job needs, matrix or not", () => {
+    const source = "jobs:\n  unit:\n    strategy:\n      matrix:\n        shard: [1, 2]\n  build: {}\n  test:\n    needs: [unit, build]\n  docs:\n    needs: build\n"
+    expect(workflowChecks(source)).toEqual(["test", "docs"])
+  })
+
   it("refuses matrix jobs, whose check names vary", () => {
     expect(() => workflowChecks("jobs:\n  install:\n    strategy:\n      matrix:\n        os: [a, b]\n")).toThrow(/matrix/)
   })

@@ -10,9 +10,10 @@ on:
         required: false
         type: string
 
-concurrency:
-  group: release
-  cancel-in-progress: false
+# One release at a time, per job and not for the whole run (#2227). With one
+# group for the run, the next merge waited for the previous release's install
+# check (8 to 11 minutes, most of it waiting for npm) before its release PR
+# was even updated.
 
 permissions:
   contents: read
@@ -21,6 +22,9 @@ jobs:
   version:
     if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-version
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -63,9 +67,14 @@ jobs:
     needs: version
     if: ${{ always() && (needs.version.outputs.released == 'true' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')) && !cancelled() }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,8 +98,31 @@ jobs:
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
+      # The release commit is the release PR squashed. When its files are
+      # the same as the PR's last commit and CI passed there, the type check
+      # and the tests have already run on exactly these files (#2227).
+      - name: Were these files already tested?
+        id: tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tested=false
+          sha=$(git rev-parse HEAD)
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" -q '.[0].number' || true)
+          if [ -n "$pr" ]; then
+            head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" -q '.head.sha' || true)
+            if [ -n "$head" ] && git fetch -q origin "pull/$pr/head" \
+              && [ "$(git rev-parse "$head^{tree}")" = "$(git rev-parse "HEAD^{tree}")" ]; then
+              passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head&status=success" -q '.total_count' || echo 0)
+              [ "${passed:-0}" -gt 0 ] && tested=true
+            fi
+          fi
+          echo "PR #${pr:-none}, head ${head:-none}, tested=$tested"
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
+      - if: ${{ steps.tested.outputs.tested != 'true' }}
+        run: pnpm typecheck
+      - if: ${{ steps.tested.outputs.tested != 'true' }}
+        run: pnpm test
       - run: pnpm docs:check
       - run: pnpm build
       - name: Check packed files

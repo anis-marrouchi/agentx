@@ -42,11 +42,15 @@ export function parseArgs(argv) {
 }
 
 /** Check names a workflow posts: a job's `name:` when set, else its key.
- *  Matrix jobs post one check per combination, so they cannot be required by
- *  one fixed name and are refused rather than silently skipped. */
+ *  A job that another job `needs` is left out: the job that needs it fails
+ *  when it fails, so that one check stands for both (ci.yml's `test` job
+ *  stands for the test shards and the build). Any other matrix job posts one
+ *  check per combination, so it cannot be required by one fixed name and is
+ *  refused rather than silently skipped. */
 export function workflowChecks(source) {
   const jobs = parse(source)?.jobs ?? {}
-  return Object.entries(jobs).map(([key, job]) => {
+  const needed = new Set(Object.values(jobs).flatMap((job) => [job?.needs ?? []].flat()))
+  return Object.entries(jobs).filter(([key]) => !needed.has(key)).map(([key, job]) => {
     if (job?.strategy?.matrix) throw new Error(`job "${key}" uses a matrix; list its check names by hand`)
     return job?.name ?? key
   })
