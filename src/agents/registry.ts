@@ -4304,6 +4304,7 @@ export class AgentRegistry {
       sender: senderName,
       senderId: task.context?.senderId,
       senderUsername: task.context?.senderUsername,
+      ...(task.context?.senderVerified === false ? { senderVerified: false } : {}),
       // Context Surgery — Fix 2: skip landscape for coding-tier agents in
       // github/gitlab contexts. The mesh-peer summary (~1-2K tokens of cross-
       // team agents) is irrelevant for focused code work on one issue/PR and

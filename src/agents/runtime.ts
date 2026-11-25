@@ -253,6 +253,9 @@ export interface AgentTask {
   context?: {
     channel?: string
     sender?: string
+    /** false: `sender` is a name a caller gave, not an agent of this
+     *  machine (#2052). The prompt says so. */
+    senderVerified?: boolean
     /** Platform user ID (e.g. Telegram user ID) */
     senderId?: string
     /** Platform username (e.g. @username) */
@@ -414,7 +417,7 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
 
     if (ctx.channel) envLines.push(`Channel: ${ctx.channel}`)
     if (ctx.group) envLines.push(`Group: ${ctx.group}`)
-    if (ctx.sender) envLines.push(`Message from: ${ctx.sender}`)
+    if (ctx.sender) envLines.push(`Message from: ${ctx.sender}${ctx.senderVerified === false ? " (not an agent of this machine; its name is not checked)" : ""}`)
     if (ctx.myHandle) envLines.push(`Your handle on this channel: ${ctx.myHandle}`)
 
     if (isGitLab) {
