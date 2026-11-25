@@ -113,12 +113,59 @@ export async function bootstrapWithRetry(d: BootstrapDeps, attempts = 10, delayM
   return d.loaded()
 }
 
+/** Channels that carry the fleet's own work: agents asking agents, schedules,
+ *  workflow steps, code-host events. Nobody is waiting on a reply there, so
+ *  with `--people-only` such a run does not hold an upgrade back. It gets the
+ *  usual drain time and, if still going, is cut. Every other channel, known
+ *  or not, counts as a person waiting. */
+export const OWN_WORK_CHANNELS: ReadonlySet<string> = new Set([
+  "a2a", "cron", "workflow", "reminder", "github", "gitlab", "subagent",
+  "events", "sensor", "selftest", "mcp", "none", "signals",
+])
+
+/** A run as GET /daemon/restart lists it. */
+export interface RunningRun {
+  agentId?: string
+  taskId?: string
+  channel?: string | null
+  chatId?: string
+}
+
+/** Whether a run holds a `--people-only` upgrade back: a person is waiting
+ *  on it. A run with no channel, or one we don't know, holds it. */
+export function holdsUpgrade(run: { channel?: string | null }): boolean {
+  const ch = (run.channel ?? "").toLowerCase().split("@")[0].trim()
+  return !ch || !OWN_WORK_CHANNELS.has(ch)
+}
+
+/** How many of these runs hold a `--people-only` upgrade back. */
+export function countHolding(running: ReadonlyArray<{ channel?: string | null }>): number {
+  return running.filter(holdsUpgrade).length
+}
+
+/** A run the upgrade did not wait for, as written to last.json. */
+export interface CutRun {
+  agentId: string
+  channel: string
+  taskId: string
+}
+
+/** The runs a `--people-only` upgrade goes ahead over. */
+export function runsToCut(running: ReadonlyArray<RunningRun>): CutRun[] {
+  return running.filter((r) => !holdsUpgrade(r)).map((r) => ({
+    agentId: r.agentId ?? "?", channel: r.channel ?? "?", taskId: r.taskId ?? "?",
+  }))
+}
+
 /** What `agentx daemon upgrade` writes to .agentx/upgrade/last.json. */
 export interface UpgradeOutcome {
   result: "ok" | "rolled-back" | "down" | "refused"
   from: { dir: string; version: string | null }
   to: { dir: string; version: string }
   jobs: string[]
+  /** With `--people-only`: the fleet's own runs still going at the switch.
+   *  They got the drain time; any that outlasted it were cut. */
+  cut?: CutRun[]
   reason?: string
   startedAt: string
   endedAt: string

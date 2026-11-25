@@ -1,4 +1,5 @@
 import { loadDaemonConfig } from "@/daemon/config"
+import { countHolding, type RunningRun } from "@/daemon/upgrade"
 
 // Small helpers shared by `agentx daemon restart` and `agentx daemon upgrade`
 // to talk to the local daemon.
@@ -21,6 +22,21 @@ export async function readInflight(base: string): Promise<number | null> {
   if (!h) return null
   if (typeof h.inflight?.total === "number") return h.inflight.total
   return Array.isArray(h.agents) ? h.agents.reduce((n: number, a: any) => n + (Number(a.active) || 0), 0) : null
+}
+
+/** The runs in flight, from the restart endpoint. Null when the daemon is
+ *  silent or too old to list them (the caller then counts every task). */
+export async function readRunning(base: string): Promise<RunningRun[] | null> {
+  const info = await getJson(`${base}/daemon/restart`)
+  return Array.isArray(info?.running) ? info.running : null
+}
+
+/** How many runs hold a `--people-only` upgrade back: the ones a person is
+ *  waiting on. Falls back to the whole in-flight count when the daemon does
+ *  not list its runs, so an older daemon is never cut blind. */
+export async function readHolding(base: string): Promise<number | null> {
+  const running = await readRunning(base)
+  return running ? countHolding(running) : readInflight(base)
 }
 
 /** The daemon's local URL from agentx.json's node.bind. */

@@ -5,8 +5,8 @@ import { waitForIdle } from "@/daemon/restart"
 import { launchdDomain, launchdPlistPath } from "@/daemon/restart-host"
 import { jobPid, loadedJobsNaming, plistValid, readPlistJson, reloadJob, type LaunchdJob } from "@/native/macos/launchd"
 import { writeShutdownRequest } from "@/daemon/shutdown"
-import { healthIsUpgraded, releaseDirFromArgs, retargetPlist, upgradeJobLabel, type UpgradeOutcome } from "@/daemon/upgrade"
-import { daemonBase, drainLimitMs, getJson, readInflight } from "./daemon-http"
+import { healthIsUpgraded, releaseDirFromArgs, retargetPlist, runsToCut, upgradeJobLabel, type UpgradeOutcome } from "@/daemon/upgrade"
+import { daemonBase, drainLimitMs, getJson, readHolding, readInflight, readRunning } from "./daemon-http"
 
 // The upgrade itself, run inside the one-shot launchd job that
 // `agentx daemon upgrade` starts. Everything goes to stdout, which launchd
@@ -19,6 +19,8 @@ export interface UpgradeRunOptions {
   timeoutMin: number
   force: boolean
   bootTimeoutMin: number
+  /** Wait only for runs a person is waiting on (see holdsUpgrade). */
+  peopleOnly?: boolean
 }
 
 /** The version a release folder's CLI reports, or null when it does not run. */
@@ -82,16 +84,22 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   if (oldDir === o.dir) return finish("refused", `already on ${o.dir}`)
   log(`daemon ${daemon.label} PID ${oldPid ?? "?"} runs ${oldDir} (${outcome.from.version ?? "?"})`)
 
-  // 1. Idle.
+  // 1. Idle. With --people-only, only runs a person is waiting on count.
+  const what = o.peopleOnly ? "run(s) with a person waiting" : "task(s) running"
   const idle = await waitForIdle({
-    read: () => readInflight(base), intervalMs: 10_000, timeoutMs: o.timeoutMin * 60_000, maxUnreachable: 6,
-    onCheck: (n) => { if (n) log(`waiting: ${n} task(s) running`) },
+    read: () => (o.peopleOnly ? readHolding(base) : readInflight(base)), intervalMs: 10_000, timeoutMs: o.timeoutMin * 60_000, maxUnreachable: 6,
+    onCheck: (n) => { if (n) log(`waiting: ${n} ${what}`) },
   })
   if (idle.outcome === "unreachable") return finish("refused", "daemon stopped answering while waiting for idle; nothing changed")
   if (idle.outcome === "timeout") {
-    if (!o.force) return finish("refused", `still ${idle.inflight ?? "some"} task(s) running after ${o.timeoutMin} min; nothing changed (use --force)`)
-    log(`still ${idle.inflight ?? "some"} task(s) running; restarting anyway (--force), they get the usual drain time`)
-  } else log("no tasks running")
+    if (!o.force) return finish("refused", `still ${idle.inflight ?? "some"} ${what} after ${o.timeoutMin} min; nothing changed (use --force)`)
+    log(`still ${idle.inflight ?? "some"} ${what}; restarting anyway (--force), they get the usual drain time`)
+  } else log(o.peopleOnly ? "no person is waiting on a run" : "no tasks running")
+  if (o.peopleOnly) {
+    const cut = runsToCut((await readRunning(base)) ?? [])
+    outcome.cut = cut
+    for (const r of cut) log(`not waited for: ${r.agentId} on ${r.channel} (task ${r.taskId}); it gets the usual drain time, then is cut`)
+  }
 
   // 2. Switch settings files, with backups.
   const self = upgradeJobLabel(daemon.label)

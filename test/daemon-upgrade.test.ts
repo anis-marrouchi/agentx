@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
-  bootstrapWithRetry, healthIsUpgraded, oneShotPlist, plistNamesDir, releaseDirFromArgs, retargetPlist, upgradeJobLabel,
+  bootstrapWithRetry, countHolding, healthIsUpgraded, holdsUpgrade, oneShotPlist, plistNamesDir, releaseDirFromArgs, retargetPlist,
+  runsToCut, upgradeJobLabel,
 } from "../src/daemon/upgrade"
 
 // Pure parts of `agentx daemon upgrade`. Nothing here runs launchctl.
@@ -97,5 +98,38 @@ describe("bootstrap retry", () => {
     const bootstrap = vi.fn(() => 5)
     expect(await bootstrapWithRetry({ bootstrap, loaded: () => false, sleep }, 4, 1)).toBe(false)
     expect(bootstrap).toHaveBeenCalledTimes(4)
+  })
+})
+
+describe("runs that hold a --people-only upgrade", () => {
+  it("does not wait for the fleet's own work", () => {
+    for (const channel of ["a2a", "cron", "workflow", "reminder", "github", "gitlab", "subagent", "signals"]) {
+      expect(holdsUpgrade({ channel })).toBe(false)
+    }
+    expect(holdsUpgrade({ channel: "A2A" })).toBe(false)
+    expect(holdsUpgrade({ channel: "gitlab@second" })).toBe(false)
+  })
+
+  it("waits for a run a person is waiting on, and for a channel it does not know", () => {
+    for (const channel of ["whatsapp", "email", "telegram", "voice", "web-chat", "app", "dashboard", "something-new"]) {
+      expect(holdsUpgrade({ channel })).toBe(true)
+    }
+    expect(holdsUpgrade({ channel: "" })).toBe(true)
+    expect(holdsUpgrade({ channel: null })).toBe(true)
+    expect(holdsUpgrade({})).toBe(true)
+  })
+
+  it("counts the holding runs and lists the ones to cut", () => {
+    const running = [
+      { agentId: "ops", taskId: "t1", channel: "a2a", chatId: "x" },
+      { agentId: "desk", taskId: "t2", channel: "whatsapp" },
+      { agentId: "ops", taskId: "t3", channel: "cron" },
+    ]
+    expect(countHolding(running)).toBe(1)
+    expect(countHolding([])).toBe(0)
+    expect(runsToCut(running)).toEqual([
+      { agentId: "ops", channel: "a2a", taskId: "t1" },
+      { agentId: "ops", channel: "cron", taskId: "t3" },
+    ])
   })
 })
