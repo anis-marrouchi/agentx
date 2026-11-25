@@ -1193,6 +1193,13 @@ export class AgentRegistry {
     this.dueTimeGate = fn
   }
 
+  /** Wire the check a queued message goes through when its turn comes
+   *  (message-queue.ts): one that went out of date while it waited, like
+   *  a plan step done meanwhile (#2280), is dropped, not run. */
+  setQueuedOutdated(fn: MessageQueue["outdated"]): void {
+    this.messageQueue.outdated = fn
+  }
+
   /** Wire the open-request lookup by issue home (requests/store.ts): an
    *  issue with an open request when worktrees are turned on stays in the
    *  checkout (#2102). Unset: no issue counts as in progress by request. */

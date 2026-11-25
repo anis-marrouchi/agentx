@@ -155,7 +155,7 @@ import type { BeforeCloseCtx } from "@/requests/before-close"
 import { DueTimeGate, madeSchedule, postedNotes } from "@/requests/due-gate"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
-import { blockStep, cutByRestart, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
+import { blockStep, cutByRestart, outdatedStepTurn, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
 import { continueOnTurnEnd } from "@/requests/plan-continue"
 import { checkCount, forgeCounter } from "@/requests/checkers/count"
 import { checkGoals, goalBrief } from "@/requests/goal-store"
@@ -940,6 +940,7 @@ export class AgentXDaemon {
           // A sprint lane's turn that ended after a restart (#1241).
           this.attachSprintEnds(this.requests)
           this.attachPlanContinue(this.requests)
+          this.attachStepTurnCheck(this.requests)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
@@ -3399,6 +3400,18 @@ export class AgentXDaemon {
         fail(res.error)
       })
       .catch((e: any) => fail(e?.message ?? String(e)))
+  }
+
+  /** A plan step's hand-off that waited in the queue is checked again when
+   *  its turn comes (#2280): a step done meanwhile, or taken up by a
+   *  running session of its agent, starts no second run. */
+  private attachStepTurnCheck(requests: AttachedRequests): void {
+    this.registry.setQueuedOutdated((agentId, m) => {
+      if (m.channel !== PICKUP_CHANNEL) return false
+      const dropped = outdatedStepTurn(requests.plans, agentId, m.text, m.queuedAt ?? m.timestamp, Date.now())
+      if (dropped) this.log(`[plans] ${m.chatId}: ${dropped}`)
+      return dropped !== null
+    })
   }
 
   /** Requests whose last plan turn the daemon started on its own (#1568). */

@@ -114,6 +114,37 @@ export function planNotice(plans: PlanStore, r: RequestRecord): { title: string;
   }
 }
 
+const STEP_MARK = /^\[agentx:plan-step id=(\S+) step=(\d+)\]/
+
+/** A queued hand-off of a plan step (dispatchText), asked again when its
+ *  turn comes (#2280): while it waited, the step may have been done, or a
+ *  running session of the same agent may have taken it up. Then it is not
+ *  run, and the drop is written in the request's log with the reason.
+ *  Returns what was logged; null for any other message, and for a step
+ *  still open. */
+export function outdatedStepTurn(plans: PlanStore, agentId: string, text: string, queuedAt: number, now: number): string | null {
+  const m = STEP_MARK.exec(text)
+  if (!m) return null
+  const [requestId, idx] = [m[1], Number(m[2])]
+  const plan = plans.get(requestId)
+  if (!plan) return null
+  const step = plans.step(requestId, idx)
+  let reason: string | null = null
+  if (plan.state !== "active") reason = `the plan is already ${plan.state}`
+  else if (!step) reason = `the plan has no step ${idx}`
+  else if (isFinished(step)) reason = `step ${idx} is already ${step.state}`
+  else if (step.state !== "active") reason = `step ${idx} is ${step.state}`
+  else {
+    const taken = plans.stepEvents(requestId, idx, "progress", 20)
+      .find((e) => e.at >= queuedAt && e.detail.startsWith(`${agentId}:`))
+    if (taken) reason = `${agentId} already took step ${idx} up in a running session`
+  }
+  if (!reason) return null
+  const detail = `queued hand-off to ${agentId} not run: ${reason}`
+  plans.event(requestId, step ? idx : null, "dropped", detail, now)
+  return detail
+}
+
 /** A step whose turn a daemon restart cut off: not blocked (nothing went
  *  wrong with the work), active again and handed to its agent by the next
  *  sweep, as `requests step --retry` would. Plans used to block here, and
