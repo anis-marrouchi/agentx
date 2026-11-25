@@ -435,7 +435,7 @@ describe("routes", () => {
     expect(html).toContain(`href="${WALL_DASHBOARD_HREF}"`)
     expect(html).toContain("ax-wall-theme")
     // The ids the Wall's script paints into are all still there.
-    for (const id of ["wall-feed", "wall-tree-body", "wall-needs-top", "wall-synced", "wall-refresh", "wall-count", "wall-search", "wall-compose", "f-q"]) {
+    for (const id of ["wall-feed", "wall-tree-body", "wall-synced", "wall-refresh", "wall-count", "wall-search", "wall-compose", "f-q"]) {
       expect(html).toContain(`id="${id}"`)
     }
   })

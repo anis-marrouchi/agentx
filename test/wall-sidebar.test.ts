@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { wsFold, wsKey, wsCopiesHtml, wsNeedsHtml } from "../src/daemon/ui/pages/wall-sidebar"
+import { wsFold, wsKey, wsCopiesHtml } from "../src/daemon/ui/pages/wall-sidebar"
 
 const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-const age = (ms: number) => Math.round(ms / 60000) + "m"
 const OPEN = ["open", "in_progress", "needs_attention"]
 const open = (p: { state?: string }) => OPEN.includes(String(p.state))
 
@@ -42,36 +41,5 @@ describe("one post per item (#2101 R10)", () => {
     expect(html).toContain("2 more posts like this")
     expect(html).toContain('data-open="p&lt;1"')
     expect(wsCopiesHtml({ id: "p" }, esc)).toBe("")
-  })
-})
-
-describe("Needs you first, short (#2101 R3)", () => {
-  const name = (id: string) => id.toUpperCase()
-  const NOW = 10 * 3600_000
-  const items = Array.from({ length: 7 }, (_, i) => ({ key: "k" + i, title: "Ask " + i, agent: "pm", at: NOW - (i + 1) * 60_000 }))
-
-  it("shows the oldest five, then Show all with the page's count", () => {
-    const html = wsNeedsHtml(items, 135, "you", "#status=open&view=decide", NOW, esc, age, name)
-    expect(html).toContain("Needs you")
-    expect(html).toContain(">135</b>")
-    expect((html.match(/lt__need"/g) || []).length).toBe(5)
-    expect(html.indexOf("Ask 6")).toBeLessThan(html.indexOf("Ask 2"))
-    expect(html).not.toContain("Ask 1<")
-    expect(html).toContain("Show all 135")
-    expect(html).toContain("PM · <time>7m</time>")
-  })
-
-  it("leaves out what was put off, and draws nothing when nothing waits", () => {
-    const html = wsNeedsHtml([{ key: "a", title: "Later one", snoozed: 1 }, { key: "b", title: "Now one" }], 1, "you", "#n", NOW, esc, age, name)
-    expect(html).toContain("Now one")
-    expect(html).not.toContain("Later one")
-    expect(html).not.toContain("Show all")
-    expect(wsNeedsHtml([], 0, "you", "#n", NOW, esc, age, name)).toBe("")
-  })
-
-  it("says the owner to anyone else, and escapes the titles", () => {
-    const html = wsNeedsHtml([{ key: "a", title: "<b>x</b>" }], 1, "the owner", "#n", NOW, esc, age, name)
-    expect(html).toContain("Needs the owner")
-    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;")
   })
 })

@@ -232,7 +232,6 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
 ${hubAgentsNavHtml()}
-    <section class="lt lt--needs" id="wall-needs-top" aria-labelledby="wall-needs-h" hidden></section>
     <details class="lt ax-wall__navgroup lt--fold" id="wall-tree-fold"><summary>Machines and runs</summary>
     <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
       <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
@@ -389,11 +388,6 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__row.is-done .lt__title { color: var(--ax-text-2); }
 .lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
 .lt__more:hover { color: var(--ax-accent); }
-/* Needs you first (#2101 R3, wall-sidebar.ts): the oldest five, in red. */
-.lt__h--need { color: var(--ax-red-ink, var(--ax-red)); font-weight: 600; justify-content: flex-start; gap: 6px; }
-.lt__badge.is-need { background: var(--ax-red-t); color: var(--ax-red-ink, var(--ax-red)); }
-.lt__dot.lt__dot--need { background: var(--ax-red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ax-red) 22%, transparent); }
-.lt--needs .lt__more { margin-left: 0; padding-left: 25px; }
 /* R1: the tree is the one live list on a wide screen; Running now stays
    its "All" page (ops details) and the phone's bar button. */
 @media (min-width: 1181px) { .ax-wall__navgroup > .ax-wall__item[data-nav="running"] { display: none; } }

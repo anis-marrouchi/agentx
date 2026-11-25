@@ -3159,23 +3159,11 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
 
 // #2101 P2: the layout gaps R2, R3 and R10, through the page's real script.
 describe("Hub layout gaps (#2101 P2)", () => {
-  it("opens the left column with what needs you, from the Needs you list (R3)", async () => {
+  it("says Needs you once: no box of its own in the side menu (R27)", async () => {
     const w = openWall({})
     await w.settle()
-    const top = w.el("wall-needs-top")
-    expect(top.hidden).toBe(false)
-    expect(top.innerHTML).toContain("Needs you")
-    expect(top.innerHTML).toContain("Send the newsletter?")
-    expect(top.innerHTML).toContain('href="#status=open&amp;view=decide"')
-    // Same count as the nav's Needs you.
-    expect(top.innerHTML).toContain('>1</b>')
+    expect(renderWallPage()).not.toContain("wall-needs-top")
     expect(w.el("nav-n-needs").textContent).toBe("1")
-  })
-
-  it("draws no Needs you box when nothing waits", async () => {
-    const w = openWall({ approvals: { items: [], snoozed: 0, errors: [], desk: { count: 0, later: 0, items: [] }, settings: {} } })
-    await w.settle()
-    expect(w.el("wall-needs-top").hidden).toBe(true)
   })
 
   it("shows one post per item: open copies fold into the newest (R10)", async () => {

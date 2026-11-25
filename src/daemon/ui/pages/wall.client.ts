@@ -91,7 +91,7 @@ import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
-import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
+import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
 import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
@@ -118,7 +118,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
-  ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
+  ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
   ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml })}
@@ -1310,20 +1310,8 @@ ${HUB_NAV_SCRIPT}
     var rid = ltRequestId(t);
     return ltTitle(t, (rid && findPost(rid)) || null);
   }
-  // --- Needs you first, short (#2101 R3, wall-sidebar.ts) ---
-  // The oldest five that wait on the owner, from the Needs you page's own
-  // list and count, at the top of the left column; "Show all N" opens it.
-  var needsLast = '';
-  function renderNeedsTop() {
-    var el = $('wall-needs-top');
-    if (!el) return;
-    var n = decideCount();
-    var html = n == null ? '' : wsNeedsHtml(decAll(), n, decOwner() ? 'you' : 'the owner', '#status=open&view=decide', Date.now(), esc, ltAge, nameOf);
-    el.hidden = !html;
-    if (html === needsLast) return;
-    needsLast = html;
-    el.innerHTML = html;
-  }
+  // Needs you (#2101 R3) is no longer a box of its own in the side menu:
+  // it is the agent list's group and Desk's count (R27, one place each).
   // --- The live tree at the top of the nav (#2101 PR 1c) ---
   // machine → project → work item → agent, from the live snapshot and the
   // posts already on the page (wall-tree.ts). Drawn only when it changed,
@@ -1385,7 +1373,6 @@ ${HUB_NAV_SCRIPT}
   function render() { return keepState(renderNow); }
   function renderNow() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
-    renderNeedsTop();
     renderTree();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
