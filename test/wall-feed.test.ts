@@ -3126,6 +3126,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     // Open ones it owns or holds a step of, newest first; never a closed one.
     // #2101: each choice also says its project and its last move.
     expect(line.innerHTML).toMatch(/<option value="r1" selected>Post r1( · [^<·]+)? · [^<]*ago<\/option><option value="r2">Post r2[^<]*<\/option><option value="r4">Post r4[^<]*<\/option>/)
+    expect(line.innerHTML).not.toMatch(/ · <\/option>/)
     expect(line.innerHTML).not.toContain('value="r3"')
     expect(line.innerHTML).toContain('data-cx="open" data-kind="changes" data-id="r1" aria-pressed="false" title="The changes in acme/shop#12">Changes</button>')
 

@@ -61,7 +61,11 @@ export interface ReqMeta {
   createdAt?: number | null
   /** Its last move: the post's lastMoveAt, else updatedAt. */
   movedAt?: number | null
+  /** Its project. Null: known to have none (shows its repo, else "no
+   *  project"). Undefined: not known here (shows nothing). */
   project?: string | null
+  /** Its home repo ("group/project"), shown when it has no project. */
+  repo?: string | null
   home?: { kind: string; link: string } | null
 }
 
@@ -80,8 +84,11 @@ export function chReqMetaHtml(m: ReqMeta, now: number): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   const bits: string[] = []
   if (m.createdAt && m.createdAt > 0) bits.push(`Started ${chDate(m.createdAt)}`)
-  if (m.movedAt && m.movedAt > 0) bits.push(`moved ${esc(chAgo(m.movedAt, now))}`)
-  if (m.project) bits.push(`<b>${esc(m.project)}</b>`)
+  const moved = m.movedAt && m.movedAt > 0 ? chAgo(m.movedAt, now) : ""
+  if (moved) bits.push(`moved ${esc(moved)}`)
+  const where = m.project || m.repo || ""
+  if (where) bits.push(`<b>${esc(where)}</b>`)
+  else if (m.project === null) bits.push(`no project`)
   if (m.home && /^https?:\/\//.test(m.home.link)) {
     const ref = m.home.link.replace(/^https?:\/\/[^/]+\//, "").replace(/\/-\//, "/").replace(/\/(issues|pull|merge_requests)\//, (_s, k) => (k === "merge_requests" ? "!" : "#"))
     bits.push(`<a href="${esc(m.home.link)}" target="_blank" rel="noopener" title="Its ${esc(m.home.kind)} home">${esc(ref)}</a>`)
@@ -172,19 +179,20 @@ export function chAskHtml(a: HeadAsk, o: { name: string; now: number; draft?: As
 }
 
 /** The Plan tab: each request's steps, who has each, and where it is. */
-export function chPlanHtml(reqs: HeadReq[], name: string, o: { now?: number; post?: (id: string) => { project?: string | null; home?: { kind: string; link: string } | null; createdAt?: number; lastMoveAt?: number } | null } = {}): string {
+export function chPlanHtml(reqs: HeadReq[], name: string, o: { now?: number; post?: (id: string) => { project?: string | null; repo?: string | null; home?: { kind: string; link: string } | null; createdAt?: number; lastMoveAt?: number } | null } = {}): string {
   const words: Record<string, string> = { done: "done", active: "now", pending: "next", blocked: "blocked", skipped: "skipped", failed: "failed" }
   const now = o.now || Date.now()
   if (!reqs.length) return `<p class="hc__tabe">${chEsc(name)} has no open request with a plan.</p>`
   return reqs.map((r) => {
     const steps = (r.plan && r.plan.steps) || []
     const p = (o.post && o.post(r.id)) || null
-    const meta = chReqMetaHtml({ id: r.id, createdAt: (p && p.createdAt) || r.createdAt, movedAt: (p && p.lastMoveAt) || r.updatedAt, project: p ? p.project : null, home: (p && p.home) || r.home || null }, now)
+    const meta = chReqMetaHtml({ id: r.id, createdAt: (p && p.createdAt) || r.createdAt, movedAt: (p && p.lastMoveAt) || r.updatedAt, project: p ? p.project || null : undefined, repo: p ? p.repo : null, home: (p && p.home) || r.home || null }, now)
     const head = `<div class="hc__planh"><a href="#post=${encodeURIComponent(r.id)}">${chEsc(r.summary || r.id)}</a><span class="hc__pill">${steps.length ? `${steps.length} steps` : "no plan"}</span></div>` + meta
     if (!steps.length) return `<section class="hc__plan">${head}</section>`
     return `<section class="hc__plan">${head}<ol>` + steps.map((s) => {
       const st = String(s.state || "pending")
-      const at = s.updatedAt && st !== "pending" ? ` · ${chEsc(chAgo(s.updatedAt, now))}` : ""
+      const ago = s.updatedAt && st !== "pending" ? chAgo(s.updatedAt, now) : ""
+      const at = ago ? ` · ${chEsc(ago)}` : ""
       return `<li class="is-${chEsc(st)}"><span class="hc__planno" aria-hidden="true">${st === "done" ? "✓" : chEsc(s.idx)}</span><span><b>${chEsc(s.name)}</b><small>${chEsc(s.agentId || "")}${words[st] ? ` · ${words[st]}` : ""}${at}</small></span></li>`
     }).join("") + `</ol></section>`
   }).join("")

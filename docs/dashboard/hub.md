@@ -136,7 +136,7 @@ If your system asks for less motion, the ring does not turn; it stays as a still
 3. To run one message on another model, pick it in the box next to **+**. Agents on the claude-code engine offer Opus, Sonnet and Haiku; **(own)** is the agent's own model. Other agents run on their own model, and the box shows its name. The choice is kept for that agent in this browser. A model that differs from the conversation's starts a fresh session on it.
 4. The reply appears as it is written. Messages and replies show formatting such as bold text and code blocks. Open **Worked for …** to see tool steps and available results. Select **Open the run** during a reply to follow that run on its own page.
 5. Switch agents and return to the first agent to see the earlier conversation.
-6. When the agent works on an open request, the line under the agents names it: **Working on** and its headline. Select **Changes** to see its pull or merge request, or **Plan** to see its steps, in the [panel on the right](#see-changes-plans-and-files-beside-the-page). When the agent works on more than one, pick one from the list. The line is not shown when the agent works on nothing open.
+6. When the agent works on an open request, the line under the agents names it: **Working on** and its headline. Select **Changes** to see its pull or merge request, or **Plan** to see its steps, in the [panel on the right](#see-changes-plans-and-files-beside-the-page). When the agent works on more than one, pick one from the list; each entry shows the request's project (its repository when it has no project) and how long ago it last moved. The line is not shown when the agent works on nothing open.
 
 ## See changes, plans and files beside the page
 
@@ -155,7 +155,7 @@ The panel reads the same pull or merge requests, with the same tokens, as the **
 
 The top of the chat shows the agent's letter, the computer it runs on and its engine, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
 
-1. Select **Plan** to see the steps of the agent's open requests and who has each step.
+1. Select **Plan** to see the steps of the agent's open requests and who has each step. Above the steps, a line shows when the request started, when it last moved, its project (its repository when it has no project, or **no project** when it has neither) and links to its home and **History**. Each step shows how long ago it last moved; a step with no known time shows none.
 2. Select **Proofs** to see the steps that are done, each with its proof link.
 3. Select **Chat** to go back to the conversation.
 
