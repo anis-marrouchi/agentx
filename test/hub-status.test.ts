@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hubCliHtml, hubCliText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { hubCliHtml, hubCliText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 describe("Hub bottom status", () => {
@@ -78,6 +78,13 @@ describe("Hub bottom status", () => {
     const nav = html.slice(html.indexOf('class="ax-wall__nav"'), html.indexOf("</nav>"))
     expect(nav).not.toContain("data-wall-theme")
     expect(html).toContain('id="hs-cli-pop"')
+  })
+
+  it("keeps the bar on one line down to the 900 px icon nav (#2101)", () => {
+    const narrow = HUB_STATUS_CSS.slice(HUB_STATUS_CSS.indexOf("@media (max-width: 1180px)"))
+    expect(narrow).toContain(".hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }")
+    expect(narrow).toContain(".hs__acct { max-width: 130px;")
+    expect(HUB_STATUS_CSS).toContain(".hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px;")
   })
 
   it("adds the status strip without replacing the phone navigation", () => {

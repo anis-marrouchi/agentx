@@ -118,7 +118,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var b = $('hs-acct'), pop = $('hs-acct-pop');
     if (!b || !hsAcct) return;
     b.hidden = false;
-    b.textContent = 'Accounts · ' + hubAccountsText(hsAcct);
+    b.textContent = b.title = 'Accounts · ' + hubAccountsText(hsAcct);
     if (!pop.hidden) pop.innerHTML = hubAccountsHtml(hsAcct, esc);
   }
   function hsAccounts(body) {

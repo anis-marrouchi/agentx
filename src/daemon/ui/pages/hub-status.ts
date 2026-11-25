@@ -150,5 +150,19 @@ export const HUB_STATUS_CSS = `
 .hsa__rm { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-muted); cursor: pointer; text-decoration: underline; }
 .hsa__add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; margin: 6px 0; }
 .hsa__add input { font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
+/* Up to 1180 px (the icon nav), everything still fits on one line: the
+   Claude reading, Accounts and the CLI button shorten with an ellipsis
+   (Accounts keeps its full words in its title, the CLI drop-down names
+   the agent), Codex and Gemini are left out (both "not known" today) and
+   Theme is its icon (#2101 "fits 900 px"). */
+.hs > * { flex: none; }
+.hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px; overflow: hidden; }
+#hs-claude, #hs-cli-t { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1180px) {
+  .hs { gap: 12px; padding: 0 10px; overflow-x: hidden; }
+  .hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }
+  .hs__acct { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  #hs-cli-t { max-width: 120px; }
+}
 @media (max-width: 640px) { .hs, .hsa { display: none; } }
 `
