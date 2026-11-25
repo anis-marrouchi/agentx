@@ -180,8 +180,8 @@ describe("createDelegations wiring", () => {
     const sent: Array<{ msg: any; opts: any }> = []
     const peerCalls: any[] = []
     const registry = {
-      execute: async (task: any) => {
-        executed.push(task)
+      execute: async (task: any, onDelta?: unknown) => {
+        executed.push({ ...task, onDelta })
         task.onStart?.("run-x")
         return task.agentId === "front" ? { content: "Here is what came back." } : { content: "worker answer" }
       },
@@ -212,6 +212,9 @@ describe("createDelegations wiring", () => {
       await new Promise((r) => setTimeout(r, 10))
       expect(w.executed[0]).toMatchObject({ agentId: "worker", freshSession: true, timeoutMinutes: 30, intentRef: { eventId: "e1" } })
       expect(w.executed[1]).toMatchObject({ agentId: "front", context: { channel: "telegram", chatId: "chat-1", delegation: { taskId } } })
+      // Both runs stream to their Task page in the Hub (#2256).
+      expect(typeof w.executed[0].onDelta).toBe("function")
+      expect(typeof w.executed[1].onDelta).toBe("function")
       expect(w.sent).toEqual([{
         msg: { channel: "telegram", chatId: "chat-1", text: "Here is what came back.", agentId: "front", accountId: undefined },
         // The caller's answer is its reply in the chat (#1892).
