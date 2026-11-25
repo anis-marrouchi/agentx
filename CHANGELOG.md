@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.266.1](https://github.com/anis-marrouchi/agentx/compare/v0.266.0...v0.266.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** plan line shows repo or "no project", no empty separators ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2219](https://github.com/anis-marrouchi/agentx/issues/2219)) ([b879d0a](https://github.com/anis-marrouchi/agentx/commit/b879d0a19d1d6f0259857d9df9a40804d9047cbc))
+
 ## [0.266.0](https://github.com/anis-marrouchi/agentx/compare/v0.265.0...v0.266.0) (2026-11-25)
 
 
