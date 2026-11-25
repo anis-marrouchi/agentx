@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.266.2](https://github.com/anis-marrouchi/agentx/compare/v0.266.1...v0.266.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** Mobile app guide button opens the docs website page ([#2217](https://github.com/anis-marrouchi/agentx/issues/2217)) ([62d43ca](https://github.com/anis-marrouchi/agentx/commit/62d43ca902ce8a5b3a64e9642d9dcf844a6f79d4))
+
 ## [0.266.1](https://github.com/anis-marrouchi/agentx/compare/v0.266.0...v0.266.1) (2026-11-25)
 
 
