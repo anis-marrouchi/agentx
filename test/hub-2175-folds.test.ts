@@ -135,6 +135,16 @@ describe("Task view: code blocks (#2175)", () => {
     expect(html).toContain("*not bold*")
     expect(html).not.toContain("<em>")
   })
+
+  it("styles bold the way Streamdown draws it, so **bold** is bold on the Task page", () => {
+    // Found in the real Claude run for #2175: Streamdown draws bold as a
+    // <span data-streamdown="strong"> with a Tailwind class, and the Hub has
+    // no Tailwind, so the stylesheet must name that span.
+    const html = renderToString(createElement(Response, { md: "A **bold** word", streaming: false }))
+    expect(html).toMatch(/<span[^>]*data-streamdown="strong"[^>]*>bold<\/span>/)
+    const css = readFileSync(new URL("../src/web/task-conversation/styles.css", import.meta.url), "utf8")
+    expect(css).toMatch(/\.axc-md \[data-streamdown="strong"\][^{]*\{[^}]*font-weight:\s*600/)
+  })
 })
 
 // --- The phone chat (app-chat-log.client.ts) ---
