@@ -278,7 +278,7 @@ describe("Wall Activity, design #1451 frame 3", () => {
     expect(html).toContain('data-act-result="" aria-selected="true" class="is-on">All</button>')
     expect(html).toContain('data-act-result="failed" aria-selected="false">Failed <b class="wac__n">1</b></button>')
     expect(html).toContain('id="act-source"')
-    expect(html).toContain("4 runs, 1 failed in the last 24 h, newest first")
+    expect(html).toMatch(/4 runs, 1 failed in the last 24 h · [^<]+ of agent time · [^<]+, newest first · <a href="\/activity">Map on the classic page<\/a>/)
     // Feed or Timeline beside the title; Timeline is the classic lane view.
     expect(w.el("wall-act-switch").hidden).toBe(false)
     expect(renderWallPage()).toContain('<a href="/activity" title="The classic lane view, and the Map">Timeline</a>')
@@ -308,23 +308,17 @@ describe("Wall Activity, design #1451 frame 3", () => {
     expect(w.html()).not.toContain("wac__open")
   })
 
-  it("sums up the period in the side column, with unpriced runs counted apart", async () => {
+  it("sums up the period in the line under the header, no side column (#2101 R24)", async () => {
     const w = openWall({ hash: "#page=activity" })
     await w.settle()
-    const side = w.el("wall-act-side").innerHTML as string
-    expect(side).toContain("<h2>Last 24 h</h2>")
-    expect(side).toContain("<b>4</b><span>runs</span>")
-    expect(side).toContain("<span>cost, 2 unpriced</span>")
-    expect(side).toContain('<h2>By agent</h2>')
-    expect(side).toContain('data-act-agent="cx"')
-    expect(w.el("wall-aside").classList.contains("is-act")).toBe(true)
+    expect(w.html()).toContain(" (2 unpriced), newest first")
+    expect(renderWallPage()).not.toContain('id="wall-act-side"')
   })
 
   it("shows rows of placeholders while it loads, then an error with Try again when the machines cannot be read", async () => {
     const slow = openWall({ hash: "#page=activity", monitorHangs: true })
     await slow.settle()
     expect(slow.html()).toContain('<div class="wac__list" aria-busy="true">')
-    expect(slow.el("wall-act-side").innerHTML).toContain("Loading…")
     const w = openWall({ hash: "#page=activity", monitorFails: true })
     await w.settle()
     expect(w.html()).toContain('<p class="wac__banner is-err" role="alert">Could not read the runs:')

@@ -188,9 +188,10 @@ describe("Hub chat: on the page (#1528)", () => {
     expect(page).not.toContain('id="hc-quick"')
     expect(page).not.toContain('id="wall-agents"')
     expect(page).not.toContain("Quiet by design")
-    expect(page).toMatch(/<aside class="ax-wall__aside" id="wall-aside">\s*<section id="wall-org-rail"/)
+    // No page has a side summary column any more (#2101 R24).
+    expect(page).not.toContain('id="wall-aside"')
     // The middle pane (#2101 PR 2): last in the main column, no column of its own.
-    expect(page).toMatch(/hidden><\/section>\s*<section class="hc" id="hc" aria-label="Chat" hidden>[\s\S]*<\/section>\s*<\/div>\s*<aside class="ax-wall__aside"/)
+    expect(page).toMatch(/hidden><\/section>\s*<section class="hc" id="hc" aria-label="Chat" hidden>[\s\S]*<\/section>\s*<\/div>\s*<aside class="wcx" id="wall-ctx"/)
     expect(page).toContain('id="hc-form"')
     expect(page).toContain('id="hc-btn"')
     expect(page).not.toMatch(/post as a task/i)

@@ -1862,11 +1862,8 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     w.click({ "data-dtab": "answered" })
     await w.settle()
     expect(w.el("wall-decide").innerHTML).toContain("<b>Kept</b> · Customer Desk · <span dir=\"auto\">Invoices go out on the 1st</span>")
-    // The side column: what waits, answered today, how it reaches you.
-    const side = w.el("wall-dec-side").innerHTML
-    expect(side).toContain("What waits on you")
-    expect(side).toContain("<b>Kept</b> · Customer Desk · Invoices go out on the 1st")
-    expect(side).toContain("Reaching you</h2><p>Phone: off. Computer: off. No daily digest.")
+    // No side column (#2101 R24): answered ones live on this tab, reaching you in Settings.
+    expect(renderWallPage()).not.toContain('id="wall-dec-side"')
   })
 
   it("names what an answer unblocks: the post the card is on and the runs paused on it", async () => {
@@ -1879,7 +1876,8 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(html).toContain("<h3>Answering unblocks</h3><p>The post <a href=")
     expect(html).toContain('data-open="r9">October newsletter</a> (waiting 10m) and 1 run on mini, paused until you answer.')
     expect(html).toContain('data-open="r9">Reply instead</a>')
-    expect(w.el("wall-dec-side").innerHTML).toContain("<b>1 run</b> held on mini")
+    // The line under the count says it, since no side column does (#2101 R24).
+    expect(html).toContain('<p class="ax-wall__count wdc__line"><b>1 run</b> held on mini')
   })
 
   it("decides a classifier review from the Reviews chip, outside the count", async () => {
@@ -1927,11 +1925,9 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     w.click({ "data-dtab": "answered" })
     await w.settle()
     expect(w.el("wall-decide").innerHTML).toContain('<b>Closed</b> · Customer Desk · <span dir="auto">Book the room?</span> · <span dir="auto" class="k">Owner said yes in chat</span>')
-    // Answered today uses the same word, not "No".
-    expect(w.el("wall-dec-side").innerHTML).toContain("<b>Closed</b> · Customer Desk · Book the room?")
   })
 
-  it("words each answer the same on the Answered tab and in Answered today", async () => {
+  it("words each answer on the Answered tab", async () => {
     const at = new Date(NOW - 60e3).toISOString()
     const line = (key: string, kind: string, title: string, answer: string) => ({ key, kind, title, raised_by: "cx", answer, by: "operator", at })
     const answered = [
@@ -1943,10 +1939,9 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     await w.settle()
     w.click({ "data-dtab": "answered" })
     await w.settle()
-    const tab = w.el("wall-decide").innerHTML, side = w.el("wall-dec-side").innerHTML
+    const tab = w.el("wall-decide").innerHTML
     for (const [verb, title] of [["Yes", "Send it?"], ["No", "Pay it?"], ["Kept", "Keep this fact"], ["Dropped", "Drop this fact"], ["Closed", "Book it?"]]) {
       expect(tab).toContain(`<b>${verb}</b> · Customer Desk · <span dir="auto">${title}</span>`)
-      expect(side).toContain(`<b>${verb}</b> · Customer Desk · ${title}`)
     }
   })
 
@@ -2209,11 +2204,12 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(w.el("wall-org").innerHTML).toContain('data-org-key="agent:intern"')
   })
 
-  it("lists counts and the agents outside the chart in the side rail", async () => {
+  it("lists counts and the agents outside the chart under the chart, no side column (#2101 R24)", async () => {
     const w = openWall({ org: ORG, hash: "#page=org" })
     await w.settle()
-    expect(w.el("wall-org-rail").hidden).toBe(false)
-    const rail = w.el("wall-org-rail-body").innerHTML
+    expect(renderWallPage()).not.toContain('id="wall-org-rail"')
+    const page = w.el("wall-org").innerHTML as string
+    const rail = page.slice(page.indexOf('class="wog__inrail"'))
     expect(rail).toContain("<dt>People</dt><dd>1</dd>")
     expect(rail).toContain("<dt>Agents</dt><dd>3</dd>")
     expect(rail).toContain("<dt>Levels</dt><dd>4</dd>")
@@ -2458,11 +2454,10 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(html).toContain('data-wf-run="help-page"')
     expect(html).not.toContain('data-wf-run="old-onboarding"')
     expect(html).toContain("Only the owner can start, turn on or turn off a workflow.")
-    // The side column: follow-ups and the "every task" setting.
-    const side = w.el("wall-wf-side").innerHTML
-    expect(side).toContain("<b>2</b> runs started for your requests")
-    expect(side).toContain("Off. When on, each new task runs through a workflow.")
-    expect(w.el("wall-aside").classList.contains("is-wf")).toBe(true)
+    // What the side column said, as one line under the summary (#2101 R24).
+    const line = w.el("wall-workflows").innerHTML as string
+    expect(line).toContain('<a href="/workflows">2 follow-up runs</a> for your requests')
+    expect(line).toContain("Every task in a workflow: off")
   })
 
   it("reads runs in pages of 100, older ones after the first paint, until a short page", async () => {

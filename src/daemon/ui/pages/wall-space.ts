@@ -38,12 +38,11 @@ button, input, select { font-family: inherit; }
 .ax-badge--err { background: var(--ax-red-t); color: var(--ax-red-ink); }
 
 /* Two columns, like Orca (#2101 R24): the side menu and the page, which
-   takes the full width. A third column only while the page has its own
-   side summary (Activity, Desk, Workflows, the Org rail); the contextual
-   panel with tabs (wall-context.client.ts) brings its own. :where() keeps
-   this at one class, so .cx-open and .hc-open still win. */
+   takes the full width. No page has a side summary column any more: what
+   one said that the page did not is a line under its header. Only the
+   contextual panel with tabs (wall-context.client.ts) adds a column, when
+   something is selected. */
 .ax-wall { display: grid; grid-template-columns: 280px minmax(0, 1fr); align-items: start; min-height: 100vh; }
-.ax-wall:where(:has(> .ax-wall__aside:is(.is-act, .is-dec, .is-wf), #wall-org-rail:not([hidden]))) { grid-template-columns: 280px minmax(0, 1fr) 300px; }
 .ax-wall__nav { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
 .ax-wall__logo { font-weight: 600; font-size: 16px; letter-spacing: -.01em; padding: 8px 10px 14px; color: var(--ax-text); text-decoration: none; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }
@@ -69,8 +68,6 @@ button, input, select { font-family: inherit; }
 .ax-wall__n:empty { display: none; }
 .ax-wall__item.is-on .ax-wall__n { background: var(--ax-accent); color: var(--ax-accent-ink, #fff); }
 .ax-wall__main { grid-column: 2; grid-row: 1 / span 4; min-width: 0; min-height: 100vh; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); }
-.ax-wall__aside { display: none; grid-column: 3; grid-row: 1 / span 4; padding: 12px 16px; min-width: 0; }
-.ax-wall__aside:is(.is-act, .is-dec, .is-wf), .ax-wall__aside:has(> #wall-org-rail:not([hidden])) { display: block; }
 /* The page's own reading width inside the full-width middle (#2101 R24). */
 .ax-wall__main > :is(.ax-wall__compose, .ax-wall__feed, .ax-wall__post, .ax-wall__profile, .ax-wall__goal) { max-width: 760px; margin-left: auto; margin-right: auto; }
 .ax-wall__box { background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
@@ -93,8 +90,7 @@ button, input, select { font-family: inherit; }
 /* Under 1180 px: an icon nav (the switcher and Desk · Jobs · Workflows ·
    Mobile app · Settings as icons, hub-nav.ts) and the page; no side column. */
 @media (max-width: 1180px) {
-  .ax-wall, .ax-wall:where(:has(> .ax-wall__aside:is(.is-act, .is-dec, .is-wf), #wall-org-rail:not([hidden]))) { grid-template-columns: 72px minmax(0, 1fr); }
-  .ax-wall__aside, .ax-wall__aside:is(.is-act, .is-dec, .is-wf), .ax-wall__aside:has(> #wall-org-rail:not([hidden])) { display: none; }
+  .ax-wall { grid-template-columns: 72px minmax(0, 1fr); }
   .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall__logo small, .ax-wall__nav > .ax-wall__item span, .ax-wall__nav > .lt { display: none; }
   .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }

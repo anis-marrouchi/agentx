@@ -322,15 +322,6 @@ ${dashboard}
     <section id="wall-jobledger" class="ax-wall__jobledger" aria-label="Jobs: assigned work and its status" hidden></section>
     ${wallChatPanelHtml(chat)}
   </div>
-  <aside class="ax-wall__aside" id="wall-aside">
-    <section id="wall-org-rail" class="ax-wall__box ax-wall__orgrail" aria-labelledby="wall-org-rail-h" hidden>
-      <h2 id="wall-org-rail-h">In the org</h2>
-      <div id="wall-org-rail-body"></div>
-    </section>
-    <div class="wac__side" id="wall-act-side" aria-label="Activity in numbers"></div>
-    <div class="wdc__side" id="wall-dec-side" aria-label="What waits on you, in short"></div>
-    <div class="wwf__side" id="wall-wf-side" aria-label="Workflows: follow-ups and settings"></div>
-  </aside>
   ${wallContextHtml()}
   <div id="wall-wf-dialog" hidden></div>
 </div>

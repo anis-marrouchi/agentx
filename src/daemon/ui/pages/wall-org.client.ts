@@ -35,7 +35,7 @@ import { ORG_AGENT_ICON, ORG_PERSON_ICON } from "./org-icons"
 import { ORG_PROJECTS_CSS, ORG_PROJECTS_JS } from "./org-projects"
 
 export const WALL_ORG_SCRIPT = String.raw`
-  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', rail: '', view: null, who: 'everyone', fitted: false, startShown: false };
+  var ORG = { dotted: false, folded: {}, zoom: 1, html: '', view: null, who: 'everyone', fitted: false, startShown: false };
   var ORG_FIT_FLOOR = 0.6;
 ${ORG_PROJECTS_JS}
   /** Departments (when there are any), Chart and Projects (#1681, #1687). */
@@ -374,7 +374,6 @@ ${ORG_PROJECTS_JS}
     n.setAttribute('title', c == null ? '' : c + ' in the org chart');
     var on = page === 'org';
     $('wall-org').hidden = !on;
-    $('wall-org-rail').hidden = !on || !orgDiagram();
     if (!on) return;
     // Repaint only on a change, so a refresh keeps the chart's scroll and focus.
     var html = orgPageHtml();
@@ -385,8 +384,6 @@ ${ORG_PROJECTS_JS}
       if (orgEl('wog-scroll')) orgEl('wog-scroll').scrollLeft = x;
       if (focus) { var f = $('wall-org').querySelector('[data-org-fold="' + CSS.escape(focus) + '"]'); if (f) f.focus(); }
     }
-    var d = orgDiagram(), rail = d ? orgRailHtml(d) : '';
-    if (rail !== ORG.rail) $('wall-org-rail-body').innerHTML = ORG.rail = rail;
     orgRedraw();
   }
   function orgZoom(step) {
@@ -534,12 +531,10 @@ button.wog__head:hover b { text-decoration: underline; }
 .wog__counts dd { margin: 0; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .wog__h3 { font-size: var(--ax-fs); margin: 10px 0 4px; }
 .wog__outside { display: flex; flex-direction: column; }
-/* The rail sits in the side column on a wide screen, under the chart otherwise. */
-.wog__inrail { display: none; margin: 8px 16px 0; padding: 12px 16px; background: var(--ax-surface); border-radius: var(--ax-radius-lg); }
+/* The counts and who is not in the chart, under the chart (no side column, #2101 R24). */
+.wog__inrail { margin: 8px 16px 0; padding: 12px 16px; background: var(--ax-surface); border-radius: var(--ax-radius-lg); }
 /* The profile's org rows (#1419). */
 @media (max-width: 1180px) {
-  .ax-wall__orgrail { display: none; }
-  .wog__inrail { display: block; }
 }
 /* Phone: an indented list, each card on a thread line from its boss. */
 @media (max-width: 640px) {

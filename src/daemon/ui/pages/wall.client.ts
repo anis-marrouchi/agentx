@@ -1407,10 +1407,8 @@ ${HUB_NAV_SCRIPT}
     $('wall-activity').hidden = page !== 'activity';
     $('wall-act-switch').hidden = page !== 'activity';
     // Activity has a side column of its own (#1451 frame 3).
-    $('wall-aside').classList.toggle('is-act', page === 'activity');
     // Needs you has one too (#1440, round-2 frame 01).
-    $('wall-aside').classList.toggle('is-dec', onWall && S.view === 'decide');
-    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
+    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); }
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.

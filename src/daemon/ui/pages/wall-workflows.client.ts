@@ -301,22 +301,19 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
       return rank[wfState(a, wfRunsOf(a.id))] - rank[wfState(b, wfRunsOf(b.id))] || String(a.title || a.id).localeCompare(String(b.title || b.id));
     });
     var list = shown.length ? shown.map(wfRowHtml).join('') : '<div class="ax-wall__empty wwf__empty"><p>No workflow matches.</p><button type="button" class="ax-btn ax-btn--ghost" data-wf-clear>Clear the filters</button></div>';
-    return tabs + bar + '<p class="ax-wall__count wac__note">' + esc(wfDefsSummary()) + '</p>' + owner + note + list + '<p class="wwf__phone">The editor opens on a computer; it is not made for a phone.</p>';
+    return tabs + bar + '<p class="ax-wall__count wac__note">' + esc(wfDefsSummary()) + '</p>' + workflowsLineHtml() + owner + note + list + '<p class="wwf__phone">The editor opens on a computer; it is not made for a phone.</p>';
   }
-  function workflowsSideHtml() {
-    var fu = WFP.fu, req = WFP.req, n = 0;
+  /** What the side column said that the page does not (#2101 R24): the
+   *  follow-ups and the "every task in a workflow" setting, in one line. */
+  function workflowsLineHtml() {
+    var fu = WFP.fu, req = WFP.req, n = 0, bits = [];
     if (fu && fu.groups) { var ids = {}; fu.groups.forEach(function (g) { (g.rows || []).forEach(function (r) { ids[r.runId] = 1; }); }); n = Object.keys(ids).length; }
-    var follow = '<section class="ax-wall__box"><h2>Follow-ups</h2>' + (!fu ? '<p class="ax-wall__empty">Loading…</p>'
-      : fu.error ? '<p class="ax-wall__empty">Could not read them: ' + esc(fu.error) + '.</p>'
-      : n ? '<p><b>' + n + '</b> ' + (n === 1 ? 'run' : 'runs') + ' started for your requests</p><a href="/workflows">Show them</a>' : '<p class="ax-wall__empty">Nothing is being followed right now.</p>') +
-      (fu && fu.unreachable && fu.unreachable.length ? '<p class="ax-wall__count">' + fu.unreachable.length + (fu.unreachable.length === 1 ? ' machine does' : ' machines do') + ' not answer.</p>' : '') + '</section>';
+    if (fu && fu.error) bits.push('Follow-ups not read: ' + esc(fu.error));
+    else if (n) bits.push('<a href="/workflows">' + n + ' follow-up ' + (n === 1 ? 'run' : 'runs') + '</a> for your requests');
+    if (fu && fu.unreachable && fu.unreachable.length) bits.push(fu.unreachable.length + (fu.unreachable.length === 1 ? ' machine does' : ' machines do') + ' not answer');
     var st = req && req.settings;
-    var every = '<section class="ax-wall__box"><h2>Every task in a workflow</h2>' + (!req ? '<p class="ax-wall__empty">Loading…</p>'
-      : req.error ? '<p class="ax-wall__empty">Could not read the setting: ' + esc(req.error) + '.</p>'
-      : '<p class="ax-wall__count">' + (st && st.enabled ? 'On. Each new task runs through a workflow.' : 'Off. When on, each new task runs through a workflow.') + ' <a href="/workflows">Change</a></p>') + '</section>';
-    var week = wfWeek();
-    var nums = WFP.defs ? '<section class="ax-wall__box"><h2>This week</h2><div class="wac__kpis"><div><b>' + week.n + '</b><span>runs</span></div><div><b' + (week.failed ? ' class="is-err"' : '') + '>' + week.failed + '</b><span>failed</span></div></div></section>' : '';
-    return follow + every + nums;
+    if (req && !req.error) bits.push('Every task in a workflow: ' + (st && st.enabled ? 'on' : 'off') + ' (<a href="/workflows">change</a>)');
+    return bits.length ? '<p class="ax-wall__count wac__note wwf__line">' + bits.join(' · ') + '</p>' : '';
   }
   function wfDefsSummary() {
     var defs = WFP.defs || [], on = defs.filter(function (wf) { return wf.state === 'active'; }).length, week = wfWeek();
@@ -328,10 +325,9 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     n.textContent = defs ? String(defs.length) : '';
     n.classList.toggle('is-zero', !(defs && defs.length));
     n.setAttribute('title', defs ? defs.length + ' workflows' : '');
-    var el = $('wall-workflows'), side = $('wall-wf-side');
+    var el = $('wall-workflows');
     el.hidden = page !== 'workflows';
     $('wall-wf-new').hidden = page !== 'workflows';
-    $('wall-aside').classList.toggle('is-wf', page === 'workflows');
     if (page !== 'workflows') return;
     if (!WFP.runs && !WFP.loading && !WFP.error) loadWorkflows();
     if (!WFP.side) loadWorkflowSide();
@@ -341,7 +337,6 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
       else ['data-wf-open', 'data-wf-toggle', 'data-wf-run', 'data-wf-again', 'data-wf-tab'].forEach(function (k) { if (!key && a.getAttribute(k) != null) key = '[' + k + '="' + CSS.escape(a.getAttribute(k)) + '"]'; });
     }
     el.innerHTML = workflowsPageHtml();
-    side.innerHTML = workflowsSideHtml();
     if (key) {
       var again = el.querySelector(key);
       if (again && again.focus) { again.focus(); if (key === '#wf-q' && again.setSelectionRange) again.setSelectionRange(again.value.length, again.value.length); }
@@ -553,10 +548,6 @@ export const WALL_WORKFLOWS_CSS = `
 .ax-wall__titlebar .wwf__new { font-size: var(--ax-fs-xs); padding: 3px 12px; margin-left: 8px; white-space: nowrap; }
 /* On a computer the switch says Off; the chip says it on a phone. */
 .wwf__offchip { display: none; }
-/* The side column: Follow-ups, the "every task" setting, the week. */
-.wwf__side { display: none; }
-.ax-wall__aside.is-wf > :not(.wwf__side) { display: none; }
-.ax-wall__aside.is-wf > .wwf__side { display: block; }
 /* Run…: a dialog over the page. */
 #wall-wf-dialog { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; }
 .wwf__scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--ax-text) 35%, transparent); }
@@ -570,9 +561,6 @@ export const WALL_WORKFLOWS_CSS = `
 .wwf__json textarea { width: 100%; box-sizing: border-box; margin-top: 6px; font-family: var(--ax-mono); font-size: 12px; }
 .wwf__what { margin: 0; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
 .wwf__acts { display: flex; justify-content: flex-end; gap: 8px; }
-@media (max-width: 1180px) {
-  .ax-wall__aside.is-wf > .wwf__side { display: none; }
-}
 @media (max-width: 640px) {
   .wwf { padding: 12px; }
   .wwf__own, .wwf__ed, .ax-wall__titlebar .wwf__new { display: none !important; }
