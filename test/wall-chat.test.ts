@@ -899,6 +899,20 @@ describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
     expect(withPost).toContain("<b>Noqta site</b>")
     expect(withPost).toContain("moved 1m ago")
     expect(withPost).toContain('href="https://gitlab.example/noqta/site/-/issues/12"')
+    // PM's PASS points for #2214: no project shows the repo, else "no project",
+    // never an empty separator; a step with no time shows nothing, not "NaN ago".
+    const bare = [{ id: "req-3", agentId: "pm", summary: "Bare", plan: { steps: [{ idx: 1, name: "Go", agentId: "pm", state: "active", updatedAt: NaN }, { idx: 2, name: "Then", agentId: "pm", state: "done", updatedAt: null }] } }] as any
+    const repoOnly = chPlanHtml(bare, "pm", { now, post: () => ({ project: null, repo: "noqta/site", home: null }) })
+    expect(repoOnly).toContain("<b>noqta/site</b>")
+    const none = chPlanHtml(bare, "pm", { now, post: () => ({ project: null, repo: null, home: null }) })
+    expect(none).toContain('<div class="hc__planm">no project · <a href="#post=req-3"')
+    const unknown = chPlanHtml(bare, "pm", { now })
+    expect(unknown).toContain('<div class="hc__planm"><a href="#post=req-3"')
+    for (const h of [repoOnly, none, unknown]) {
+      expect(h).not.toMatch(/·\s*·|·\s*<\/|NaN|undefined|null/)
+      expect(h).toContain("pm · now</small>")
+      expect(h).toContain("pm · done</small>")
+    }
     const proofs = chProofsHtml(reqs, "pm")
     expect(proofs).toContain('href="https://x.test/c1"')
     expect(proofs).not.toContain("Review")

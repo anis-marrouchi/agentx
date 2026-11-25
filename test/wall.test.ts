@@ -383,6 +383,12 @@ describe("helpers", () => {
     expect(plan[0].evidence).toBe("https://gitlab.example.com/acme/web/-/merge_requests/9")
     expect(plan[1].evidence.length).toBe(500)
   })
+  it("keeps each step's last move through wallPlan (#2101)", () => {
+    plans.updateStep("r1", 1, { note: "moved", updatedAt: T0 + 7000 } as any)
+    const plan = (handleWallApi("/api/admin/wall/thread", new URLSearchParams({ id: "r1" }), deps(), "n").body as any).plan
+    expect(plan[0].updatedAt).toBe(T0 + 7000)
+    expect(typeof plan[1].updatedAt).toBe("number")
+  })
   it("redacts a token that crosses the proof clamp (#1380)", () => {
     plans.updateStep("r1", 1, { evidence: `${"x ".repeat(245)}glpat-abcdefghijklmnopqrstuv end`, updatedAt: T0 + 9000 } as any)
     plans.updateStep("r1", 2, { note: `${"y ".repeat(95)}glpat-abcdefghijklmnopqrstuv end`, updatedAt: T0 + 9000 } as any)

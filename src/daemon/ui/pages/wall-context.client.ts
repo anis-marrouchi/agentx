@@ -102,7 +102,12 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   /** When it started, its last move, its project, its home and History (#2101). */
   function cxMetaHtml(p) {
-    return chReqMetaHtml({ id: p.id, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project, home: p.home }, Date.now());
+    return chReqMetaHtml({ id: p.id, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project || null, repo: p.repo, home: p.home }, Date.now());
+  }
+  /** " · 12m ago", or nothing when the time is not known (no empty separator). */
+  function cxAgoBit(t) {
+    var a = chAgo(t, Date.now());
+    return a ? ' · ' + esc(a) : '';
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
@@ -178,7 +183,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     if (!list.length) { w.hidden = true; w.innerHTML = ''; return; }
     var id = S.cx.pick[agent], p = list.filter(function (x) { return x.id === id; })[0] || list[0];
     var what = list.length > 1
-      ? '<select data-cx="pick" aria-label="The request in view">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.id ? ' selected' : '') + '>' + esc(x.headline) + (x.project ? ' · ' + esc(x.project) : '') + ' · ' + esc(chAgo(x.lastMoveAt || x.updatedAt, Date.now())) + '</option>'; }).join('') + '</select>'
+      ? '<select data-cx="pick" aria-label="The request in view">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.id ? ' selected' : '') + '>' + esc(x.headline) + (x.project || x.repo ? ' · ' + esc(x.project || x.repo) : '') + cxAgoBit(x.lastMoveAt || x.updatedAt) + '</option>'; }).join('') + '</select>'
       : '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
     w.innerHTML = '<span class="hc__worklbl">Working on</span>' + what +
@@ -189,7 +194,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   /** A request's place and times, for the chat's Plan tab (wall-chat-head.client.ts). */
   function cxPost(id) {
     var p = findPost(id);
-    return p ? { project: p.project, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
+    return p ? { project: p.project, repo: p.repo, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
   }
   window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost };
 
