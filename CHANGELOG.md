@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.274.0](https://github.com/anis-marrouchi/agentx/compare/v0.273.2...v0.274.0) (2026-11-25)
+
+
+### Features
+
+* **ci:** show "CI still red after N tries" on Hub Needs you ([#2293](https://github.com/anis-marrouchi/agentx/issues/2293)) ([7754e78](https://github.com/anis-marrouchi/agentx/commit/7754e7813a04c4c7ae771ccc5624f532681ee907)), closes [#2212](https://github.com/anis-marrouchi/agentx/issues/2212)
+
+
+### Bug Fixes
+
+* **hub:** keep a checking machine's agents in the tree ([#2292](https://github.com/anis-marrouchi/agentx/issues/2292)) ([#2297](https://github.com/anis-marrouchi/agentx/issues/2297)) ([dc337c8](https://github.com/anis-marrouchi/agentx/commit/dc337c89e92ae50b6068292c3952d0dd2178aacc))
+
 ## [0.273.2](https://github.com/anis-marrouchi/agentx/compare/v0.273.1...v0.273.2) (2026-11-25)
 
 
