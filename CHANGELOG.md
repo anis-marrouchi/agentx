@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.274.1](https://github.com/anis-marrouchi/agentx/compare/v0.274.0...v0.274.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** count work with liveWorkCount on every page, group Working by machine ([#2294](https://github.com/anis-marrouchi/agentx/issues/2294)) ([371c284](https://github.com/anis-marrouchi/agentx/commit/371c28420b1c7eb3439cd8370265f1c126faf309))
+
 ## [0.274.0](https://github.com/anis-marrouchi/agentx/compare/v0.273.2...v0.274.0) (2026-11-25)
 
 
