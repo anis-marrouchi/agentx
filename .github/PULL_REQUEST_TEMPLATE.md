@@ -1,6 +1,13 @@
 ## Why
 
-Linked issue or concrete problem:
+<!-- Close the issue with the PR. If this PR finishes the issue, write
+`Closes #N`: GitHub closes the issue when the PR merges. If it does only
+part of the issue, write `Refs #N` and say in one line what is left; the
+PR that does the last part says `Closes #N`. No issue? Say the problem. -->
+
+Closes #
+
+Concrete problem:
 
 ## What changed
 
