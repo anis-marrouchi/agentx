@@ -38,7 +38,7 @@ The top of the nav lists every agent of every connected machine once, by what it
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
 2. The chips at the top filter the list: **All**, **Working**, **Needs you** and **Done**, each with its count. The Hub remembers your choice.
 3. The agents are grouped:
-   - **Working**: a run is going. The row shows the run's title and a moving blue bar.
+   - **Working**: a run is going. The row shows the run's title and a moving blue bar. Only agents of machines that answer are listed, each once, so **Working**'s count is the sum of the machine numbers under **At work now**.
    - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
    - **Done today**: its last run ended today. The row shows the first line of its last answer.
    - **Not working today**, folded at the end: every other agent.
@@ -120,7 +120,7 @@ Pick a profile, then start a new task for a Claude Code agent and ask it to run 
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
 2. The tree reads from the top down:
-   - **Machine**, with a number: how many runs are working on it now. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
+   - **Machine**, with a number: how many agents are working on it now, counted as the **Working** list counts them, so the machine numbers add up to **Working**'s count. An agent with two runs counts once and has two rows; point at the number to see the runs. An agent that two machines list counts on the first one. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
    - **Project**: the project or repository of the work. Runs with no project are under **No project**, at the end.
    - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
    - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
@@ -132,7 +132,7 @@ Pick a profile, then start a new task for a Claude Code agent and ask it to run 
 
 If your system asks for less motion, the ring does not turn; it stays as a still blue ring.
 
-**Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one. When the run ends, the row moves to **Done in the last hour** with a green dot. To see workers, ask an agent to hand part of a task to another agent: within a few seconds the hand-off is listed under the first agent's row with a turning ring, and selecting it opens the other agent's run.
+**Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one, as **Working**'s count does. Give the same agent a second task: a second row appears, and both numbers stay the same. When the run ends, the row moves to **Done in the last hour** with a green dot. To see workers, ask an agent to hand part of a task to another agent: within a few seconds the hand-off is listed under the first agent's row with a turning ring, and selecting it opens the other agent's run.
 
 **If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back; if it stays stale longer than that, reload the page. If the tree is missing, widen the window: it is hidden under 1181 pixels. If a hand-off does not show under its agent, the hand-off was started outside an agent's run (from the command line or a schedule), so it has no run to sit under; it still shows as its own row. A machine on an older version does not send its workers.
 
