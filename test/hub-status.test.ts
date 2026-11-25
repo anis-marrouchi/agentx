@@ -64,7 +64,9 @@ describe("Hub bottom status", () => {
     expect(html).toContain('value="codex-cli" checked')
     expect(html).toContain('value="claude-code">')
     expect(html).toContain("data-hsc-save")
-    expect(html).toContain("agentx daemon restart --when-idle")
+    // No restart: the next run takes the new engine (#2101 B1).
+    expect(html).not.toContain("restart")
+    expect(html).toContain("next run uses")
     expect(html).toContain('class="hsa__note is-ok" role="status">Saved.')
   })
 
@@ -83,7 +85,8 @@ describe("Hub bottom status", () => {
   it("keeps the bar on one line down to the 900 px icon nav (#2101)", () => {
     const narrow = HUB_STATUS_CSS.slice(HUB_STATUS_CSS.indexOf("@media (max-width: 1180px)"))
     expect(narrow).toContain(".hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }")
-    expect(narrow).toContain(".hs__acct { max-width: 130px;")
+    // Accounts is its one word there, never cut mid-word (#2101 C2).
+    expect(narrow).toContain(".hs__acct-s { display: none; }")
     expect(HUB_STATUS_CSS).toContain(".hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px;")
   })
 

@@ -66,7 +66,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     if (pick.value === a.tier) { HSC.note = { kind: '', text: a.name + ' already runs on ' + hubEngineName(a.tier) + '.' }; HSC.last = ''; hsPaintCli(); return; }
     HSC.note = { kind: '', text: 'Switching…' }; HSC.last = ''; hsPaintCli();
     var r = await act('PATCH', '/api/admin/wall/settings/agents', { id: a.id, patch: { tier: pick.value } });
-    HSC.note = r.ok ? { kind: 'ok', text: 'Saved. ' + a.name + ' runs on ' + hubEngineName(pick.value) + ' after a daemon restart.' }
+    HSC.note = r.ok ? { kind: 'ok', text: 'Saved. ' + a.name + '\'s next run uses ' + hubEngineName(pick.value) + '.' }
       : { kind: 'err', text: 'Not switched: ' + String(r.error).replace(/\.$/, '') + '.' };
     HSC.last = '';
     hsPaintCli();
@@ -100,7 +100,10 @@ export const HUB_STATUS_SCRIPT = String.raw`
   }
   function hsPaintVersion() {
     var el = $('hs-version');
-    if (el && buildLast && buildLast.version) el.textContent = 'v' + buildLast.version;
+    if (!el || !buildLast || !buildLast.version) return;
+    // The one place the version shows on a computer (R27); hover tells the rest.
+    el.textContent = 'v' + buildLast.version;
+    el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + '. ' + buildTitle(buildLast);
   }
   function hsLoadUsage() {
     fetch('/api/admin/hub/usage', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); }).then(function (data) {
@@ -118,7 +121,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var b = $('hs-acct'), pop = $('hs-acct-pop');
     if (!b || !hsAcct) return;
     b.hidden = false;
-    b.textContent = b.title = 'Accounts · ' + hubAccountsText(hsAcct);
+    var said = hubAccountsText(hsAcct);
+    b.title = 'Accounts · ' + said;
+    b.innerHTML = 'Accounts<span class="hs__acct-s"> · ' + esc(said) + '</span>';
     if (!pop.hidden) pop.innerHTML = hubAccountsHtml(hsAcct, esc);
   }
   function hsAccounts(body) {

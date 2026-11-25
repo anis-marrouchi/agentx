@@ -73,11 +73,10 @@ export function hubCliHtml(list: HubCliAgent[], cur: string, note: { kind: strin
   const a = list.find((x) => x.id === cur) || null
   const opts = '<option value="">Pick an agent</option>' + list.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === cur ? " selected" : "") + ">" + esc(x.name) + (x.node ? " · " + esc(x.node) : "") + "</option>").join("")
   const engines = a ? hubEngines().map(([k, label]) => '<label class="hsc__eng"><input type="radio" name="hsc-eng" value="' + esc(k) + '"' + (k === (a.tier || "claude-code") ? " checked" : "") + "><span>" + esc(label) + "</span></label>").join("") : ""
-  return '<p class="hsa__lead">The engine the agent runs its next runs on. A run already going keeps its engine.</p>' +
+  return '<p class="hsa__lead">The engine this agent\'s next run uses. A run already going keeps its engine.</p>' +
     '<label class="hsc__who">Agent <select data-hsc-agent aria-label="Agent">' + opts + "</select></label>" +
     (a ? '<fieldset class="hsa__p"><legend>Engine</legend>' + engines + "</fieldset>" +
-      '<div class="hsc__acts"><button type="button" class="ax-btn" data-hsc-save>Switch</button></div>' +
-      '<p class="hsa__hint">Applies after a daemon restart: <code>agentx daemon restart --when-idle</code>.</p>' : "") +
+      '<div class="hsc__acts"><button type="button" class="ax-btn" data-hsc-save>Switch</button></div>' : "") +
     '<p class="hsa__note' + (note.kind ? " is-" + esc(note.kind) : "") + '" role="status">' + esc(note.text) + "</p>"
 }
 
@@ -151,9 +150,9 @@ export const HUB_STATUS_CSS = `
 .hsa__add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; margin: 6px 0; }
 .hsa__add input { font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
 /* Up to 1180 px (the icon nav), everything still fits on one line: the
-   Claude reading, Accounts and the CLI button shorten with an ellipsis
-   (Accounts keeps its full words in its title, the CLI drop-down names
-   the agent), Codex and Gemini are left out (both "not known" today) and
+   Claude reading and the CLI button shorten with an ellipsis (the CLI
+   drop-down names the agent), Accounts is its one word (the full words
+   stay in its title), Codex and Gemini are left out (both "not known" today) and
    Theme is its icon (#2101 "fits 900 px"). */
 .hs > * { flex: none; }
 .hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px; overflow: hidden; }
@@ -161,8 +160,12 @@ export const HUB_STATUS_CSS = `
 @media (max-width: 1180px) {
   .hs { gap: 12px; padding: 0 10px; overflow-x: hidden; }
   .hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }
-  .hs__acct { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .hs__acct-s { display: none; }
   #hs-cli-t { max-width: 120px; }
 }
 @media (max-width: 640px) { .hs, .hsa { display: none; } }
+/* Each thing once (R27): on a computer the version is the bar's; the title
+   row keeps only "Restart pending" and "as of". A phone has no bar, so its
+   title row keeps the version. */
+@media (min-width: 641px) { .wbl .wbl__v, .wbl .wbl__since { display: none; } }
 `

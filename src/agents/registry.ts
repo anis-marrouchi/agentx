@@ -1315,6 +1315,29 @@ export class AgentRegistry {
    *  match setProviders. */
   setConfig(next: DaemonConfig): void {
     this.config = next
+    // An engine switch (the Hub's CLI drop-down, #2101) needs no restart: an
+    // idle agent's next run reads the new tier; a busy one takes it when its
+    // last run ends, so a run never changes engine under it.
+    for (const [id, def] of Object.entries(next.agents || {})) {
+      const state = this.agents.get(id)
+      if (!state) continue
+      if (state.def.tier === def.tier) { this.pendingTiers.delete(id); continue }
+      if (state.activeTasks > 0) this.pendingTiers.set(id, def.tier)
+      else { state.def = { ...state.def, tier: def.tier }; this.pendingTiers.delete(id) }
+    }
+  }
+
+  /** A tier saved while the agent was busy, applied when its last run ends. */
+  private pendingTiers = new Map<string, AgentDef["tier"]>()
+  private applyPendingTier(state: AgentState): void {
+    if (state.activeTasks > 0 || !this.pendingTiers.has(state.id)) return
+    state.def = { ...state.def, tier: this.pendingTiers.get(state.id)! }
+    this.pendingTiers.delete(state.id)
+  }
+
+  /** The engine an agent's next run uses (tests and the reload log). */
+  tierOf(id: string): AgentDef["tier"] | undefined {
+    return this.pendingTiers.get(id) ?? this.agents.get(id)?.def.tier
   }
 
   /** Swap the workflows block on a config reload (#858): matching,
@@ -3008,6 +3031,7 @@ export class AgentRegistry {
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
       state.activeTasks--
+      this.applyPendingTier(state)
       this.admissionTickets.get(task)?.release()
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
