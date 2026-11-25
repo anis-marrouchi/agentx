@@ -142,6 +142,8 @@ export interface WallDocumentOpts {
   body: string
   css: string
   scripts: string
+  /** More tags for <head>, after the page's styles (the React Hub, #2218). */
+  head?: string
 }
 
 /** A whole HTML document for the Wall space, outside the dashboard shell. */
@@ -154,6 +156,7 @@ export function renderWallDocument(opts: WallDocumentOpts): string {
 <title>${opts.title.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] as string))}</title>
 ${WALL_SPACE_HEAD}
 <style>${AX_TOKENS_CSS}\n${WALL_SPACE_CSS}\n${opts.css}</style>
+${opts.head ?? ""}
 </head>
 <body>
 ${opts.body}

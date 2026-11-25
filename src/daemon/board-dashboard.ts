@@ -48,6 +48,7 @@ import { handleSituationsPanel } from "./situations-panel"
 import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
+import { hubReactOn } from "./ui/hub-react"
 import { renderOrgPage } from "./ui/pages/org"
 import { changeCliAccounts, cliAccountsView } from "@/agents/cli-accounts"
 import { renderMeshPage } from "./ui/pages/mesh"
@@ -1190,8 +1191,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const rel = path.slice("/assets/".length)
     // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
     // whitelist narrow to script/map/style files, plus the self-hosted
-    // Geist fonts and their licence (#2101).
-    if (!/^[a-zA-Z0-9._-]+\.(js|map|css|woff2|txt)$/.test(rel)) {
+    // Geist fonts and their licence (#2101). The React Hub's files sit one
+    // folder down, in hub/ (#2218, vite.hub.config.ts).
+    if (!/^(hub\/)?[a-zA-Z0-9_-][a-zA-Z0-9._-]*\.(js|map|css|woff2|txt)$/.test(rel)) {
       sendJson(res, 400, { error: "invalid asset name" }); return
     }
     const assetPath = resolveFromHere("web/" + rel)
@@ -1204,7 +1206,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         : "application/javascript; charset=utf-8"
       // A hashed URL names exactly one build, so it can be cached hard; a bare
       // one must keep revalidating because its bytes change under it.
-      const immutable = url.searchParams.has("v")
+      // The React Hub's file names carry their hash, lazy pages included.
+      const immutable = url.searchParams.has("v") || rel.startsWith("hub/")
       res.writeHead(200, {
         "Content-Type": ct,
         "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "public, max-age=60",
@@ -3633,12 +3636,15 @@ function wallOwner(req: IncomingMessage, ctx: Ctx): boolean {
 }
 
 function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
+  const hub = ctx.config.dashboard?.hub
   return {
     peers: buildTopbarPeers(ctx.config),
     localToken: pageToken(req, ctx.token),
     owner: wallOwner(req, ctx),
     business: !!getTopbarFeatures().business,
     signIn: !!ctx.token,
+    // The React Hub (#2218): dashboard.hub.react, or ?react=1 / ?legacy=1.
+    hub: { react: hubReactOn(hub, new URL(req.url || "/", "http://x").searchParams), legacyPages: hub?.legacyPages ?? [] },
   }
 }
 

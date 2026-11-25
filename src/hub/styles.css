@@ -1,0 +1,109 @@
+/* --- The React Hub's styles (#2218) ---------------------------------------
+   Tailwind v4, with the AgentX tokens as its theme: every colour, radius and
+   font below reads an --ax-* variable from src/daemon/ui/tokens.ts, which the
+   /hub document already carries. One token set for old and new pages.
+
+   Condition C1: nothing here may change an old Hub page. So
+   - only the classes written in src/hub are generated (source(none) + @source);
+   - the reset (Tailwind's preflight, MIT) and every utility sit under
+     `.ax-hub`, the React root and the portal host (ui/portal.ts);
+   - none of it is in a cascade layer: the old Hub's CSS is unlayered, and a
+     layered rule always loses to an unlayered one. */
+
+@import "tailwindcss/theme.css" source(none);
+@source "./";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--ax-bg);
+  --color-foreground: var(--ax-text);
+  --color-card: var(--ax-surface);
+  --color-card-foreground: var(--ax-text);
+  --color-popover: var(--ax-surface);
+  --color-popover-foreground: var(--ax-text);
+  --color-primary: var(--ax-primary);
+  --color-primary-foreground: var(--ax-primary-fg);
+  --color-secondary: var(--ax-surface-3);
+  --color-secondary-foreground: var(--ax-text);
+  --color-muted: var(--ax-surface-2);
+  --color-muted-foreground: var(--ax-muted);
+  --color-accent: var(--ax-surface-3);
+  --color-accent-foreground: var(--ax-text);
+  --color-destructive: var(--ax-err);
+  --color-border: var(--ax-border);
+  --color-input: var(--ax-border-2);
+  --color-ring: var(--ax-ring);
+  --color-link: var(--ax-accent);
+  --color-ok: var(--ax-ok);
+  --color-ok-ink: var(--ax-green-d);
+  --color-warn: var(--ax-warn);
+  --color-warn-ink: var(--ax-amber-ink);
+  --color-err-ink: var(--ax-red-ink);
+
+  --radius-sm: var(--ax-radius-sm);
+  --radius-md: calc(var(--ax-radius) - 2px);
+  --radius-lg: var(--ax-radius);
+  --radius-xl: var(--ax-radius-lg);
+
+  --font-sans: var(--ax-font);
+  --font-mono: var(--ax-mono);
+  --default-font-family: var(--ax-font);
+  --default-mono-font-family: var(--ax-mono);
+
+  --shadow-float: var(--ax-shadow-lg);
+}
+
+/* The roots. */
+.ax-hub {
+  font-family: var(--ax-font);
+  font-size: var(--ax-fs);
+  line-height: 1.5;
+  color: var(--ax-text);
+  -webkit-text-size-adjust: 100%;
+  tab-size: 4;
+  -webkit-tap-highlight-color: transparent;
+}
+#ax-hub-root { display: none; }
+.ax-wall.is-hub #ax-hub-root { display: block; }
+
+/* Tailwind's preflight (MIT, Copyright (c) Tailwind Labs, Inc.), each rule
+   limited to the Hub's roots. */
+.ax-hub *, .ax-hub ::after, .ax-hub ::before, .ax-hub ::backdrop, .ax-hub ::file-selector-button {
+  box-sizing: border-box; margin: 0; padding: 0; border: 0 solid;
+}
+.ax-hub hr { height: 0; color: inherit; border-top-width: 1px; }
+.ax-hub abbr:where([title]) { text-decoration: underline dotted; }
+.ax-hub :is(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; }
+.ax-hub a { color: inherit; text-decoration: inherit; }
+.ax-hub :is(b, strong) { font-weight: bolder; }
+.ax-hub :is(code, kbd, samp, pre) { font-family: var(--ax-mono); font-size: 1em; }
+.ax-hub small { font-size: 80%; }
+.ax-hub :is(sub, sup) { font-size: 75%; line-height: 0; position: relative; vertical-align: baseline; }
+.ax-hub sub { bottom: -0.25em; }
+.ax-hub sup { top: -0.5em; }
+.ax-hub table { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+.ax-hub progress { vertical-align: baseline; }
+.ax-hub summary { display: list-item; }
+.ax-hub :is(ol, ul, menu) { list-style: none; }
+.ax-hub :is(img, svg, video, canvas, audio, iframe, embed, object) { display: block; vertical-align: middle; }
+.ax-hub :is(img, video) { max-width: 100%; height: auto; }
+.ax-hub :is(button, input, select, optgroup, textarea), .ax-hub ::file-selector-button {
+  font: inherit; font-feature-settings: inherit; font-variation-settings: inherit; letter-spacing: inherit;
+  color: inherit; border-radius: 0; background-color: transparent; opacity: 1;
+  box-shadow: none; min-height: 0; width: auto; text-transform: none;
+}
+.ax-hub ::placeholder { opacity: 1; color: color-mix(in oklab, currentcolor 50%, transparent); }
+.ax-hub textarea { resize: vertical; }
+.ax-hub :is(button, input:where([type="button"], [type="reset"], [type="submit"])), .ax-hub ::file-selector-button { appearance: button; }
+.ax-hub [hidden]:where(:not([hidden="until-found"])) { display: none !important; }
+
+/* The utilities, only inside the roots. */
+.ax-hub {
+  @tailwind utilities;
+}
+
+/* Stage 1 of the move (#2218 part 3): on a React page the old script sets
+   `.is-hub` and every other part of the main area steps aside, as the chat
+   does with `.hc-open` (wall-chat.css.ts). */
+.ax-wall.is-hub .ax-wall__main > :not(#ax-hub-root) { display: none !important; }

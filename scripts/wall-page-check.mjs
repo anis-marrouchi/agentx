@@ -104,7 +104,8 @@ let ws
 const report = []
 try {
   const portFile = join(profile, "DevToolsActivePort")
-  for (let i = 0; !existsSync(portFile) && i < 150; i++) { if (launchError) throw launchError; await sleep(100) }
+  // Up to 30 s: a busy CI runner has taken more than 15 s to start Chrome (#2218).
+  for (let i = 0; !existsSync(portFile) && i < 300; i++) { if (launchError) throw launchError; await sleep(100) }
   if (!existsSync(portFile)) throw new Error(`Chrome did not start${chromeErr ? `:\n${chromeErr}` : ""}`)
   const port = readFileSync(portFile, "utf8").split("\n")[0]
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()

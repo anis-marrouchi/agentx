@@ -79,6 +79,8 @@ jobs:
       - run: node scripts/hub-name-check.mjs
 
       - run: pnpm build
+      # The React Hub's first load stays at or under 250 kB gzip (#2218 C4).
+      - run: pnpm hub:budget
       - run: node scripts/check-package.mjs
 
   # The one check the main branch requires. It passes only when every part
