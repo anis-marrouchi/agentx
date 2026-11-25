@@ -8,7 +8,7 @@ import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
-import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, issueCloseWhen, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
+import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, issueCloseWhen, openPromise, parseProof, proofRefusal, setDueTime, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
 import { DONE_WHEN_MAX, GOAL_EVIDENCE_MAX, parseGoalCheck, type GoalStore } from "./goal-store"
@@ -190,10 +190,6 @@ export interface ApiReply {
 
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
-/** How far back a promise call looks for the same open promise (#2078):
- *  a retry after the tool's 10 s timeout comes within seconds; the 17
- *  pairs found on 2026-11-22 were 2 to 51 s apart. */
-export const PROMISE_RETRY_WINDOW_MS = 10 * 60_000
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
 const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "standing"]
 
@@ -292,6 +288,58 @@ function finishSlot(plan: DuePlan, requestId: string, now: number): DueGiven | n
     if (plan.kind === "pass") plan.finish(requestId, now)
   } catch { /* the call went through; its slot row is not worth failing it */ }
   return null
+}
+
+/** The open request or promise of this agent that the calling turn
+ *  follows (#2079): the turn's chat is its id (a wake of the promise, the
+ *  [Due time] ask on it), or the tracker says the turn is its run. */
+function followedLoop(deps: RequestsApiDeps, agentId: string, turn: { channel: string; chatId: string }): RequestRecord | null {
+  const open = (id: string | null) => {
+    const r = id ? deps.store.get(id) : null
+    return r && r.agentId === agentId && (OPEN_STATES as readonly string[]).includes(r.state) ? r : null
+  }
+  return open(turn.chatId) ?? open(deps.tracker.liveRequestId(agentId, turn.channel, turn.chatId))
+}
+
+/** A promise call from a run that follows open loop `r` (#2079): the loop
+ *  takes the new due time, closeWhen, words and headline, under the same
+ *  due-time rules as a new promise, and keeps its id. The owner's words of
+ *  a request they asked stay as they were: the promise's words become its
+ *  headline when none is given. */
+function updateLoop(
+  deps: RequestsApiDeps,
+  r: RequestRecord,
+  p: {
+    input: Record<string, unknown>; text: string; loop: { dueAt?: number; closeWhen?: CloseWhen }; home: RequestHome | null
+    described: { headline?: string; need?: string }; needsQa: boolean | undefined
+  },
+  now: number,
+): ApiReply {
+  const { store } = deps
+  const { loop } = p
+  const fromOwner = ownerSourced(r)
+  const slot = dueSlot(deps, p.input, {
+    agentId: r.agentId, requestId: r.id, due: loop.dueAt ?? null, requester: r.owedTo ?? r.sender ?? "owner",
+    words: p.described.headline ?? p.text,
+    kept: { work: r.work, estimateMinutes: r.estimateMinutes }, ownerSourced: fromOwner,
+  }, now)
+  if ("refuse" in slot) return slot.refuse
+  if (slot.plan.kind === "set") loop.dueAt = slot.plan.dueAt
+  if (r.promise) store.setText(r.id, p.text, now)
+  store.setHeadline(r.id, fromOwner && !p.described.headline ? { ...p.described, headline: p.text } : p.described, "agent")
+  if (loop.closeWhen) store.setLoop(r.id, { closeWhen: loop.closeWhen }, now)
+  else if (!r.closeWhen) {
+    const cw = issueCloseWhen(p.text, r.id, now, { channel: r.channel, chatId: r.chatId, forge: deps.defaultForge ?? null })
+    if (cw) store.setLoop(r.id, { closeWhen: cw }, now)
+  }
+  // The new due time moves the wake behind it, or stands one up.
+  if (typeof loop.dueAt === "number" && loop.dueAt > now) setDueTime(store, r.id, loop.dueAt, now)
+  else if (loop.dueAt !== undefined) store.setLoop(r.id, { dueAt: loop.dueAt }, now)
+  if (p.home) store.setHome(r.id, p.home, now)
+  if (slot.work) store.setWork(r.id, slot.work)
+  if (p.needsQa !== undefined) store.setNeedsQa(r.id, p.needsQa, now)
+  const due = finishSlot(slot.plan, r.id, now)
+  return { status: 200, body: { request: store.get(r.id), reused: true, ...(due ? { due } : {}) } }
 }
 
 /** An agent's done on a request with no checker, read against what the
@@ -636,9 +684,15 @@ export function handleRequestsApi(
       if (typeof home === "string") return { status: 400, body: { error: home } }
       const loop = parseLoop(input, deps, now)
       if (typeof loop === "string") return { status: 400, body: { error: loop } }
-      // A retry of a call that timed out on the agent's side (#2078): the
-      // first call still opened it, so give that one back.
-      const again = store.findOpenPromise(agentId, owedTo, text, now - PROMISE_RETRY_WINDOW_MS)
+      // A run that follows an open loop of this agent (a wake of its
+      // promise, the [Due time] ask, the turn of its request) moves that
+      // loop on instead of opening a second one (#2079).
+      const own = followedLoop(deps, agentId, turn)
+      if (own) return updateLoop(deps, own, { input, text, loop, home: home ?? null, described, needsQa }, now)
+      // The same promise again (#2078, #2079): a retry of a call that timed
+      // out on the agent's side, or the same words while the first is still
+      // open. Give that one back, unchanged.
+      const again = store.findOpenPromise(agentId, owedTo, text)
       if (again) return { status: 200, body: { request: store.get(again), repeated: true } }
       if (store.openPromises(agentId) >= MAX_OPEN_PROMISES) {
         return { status: 409, body: { error: `${agentId} already has ${MAX_OPEN_PROMISES} open promises: close some with done or decline first` } }

@@ -259,12 +259,11 @@ describe("a retried promise call (#2078)", () => {
     expect(store.openPromises("coder")).toBe(1)
   })
 
-  it("opens a new one for other words, another requester, or after the window", async () => {
+  it("opens a new one for other words or another requester", async () => {
     await post(body)
     await post({ ...body, text: "Deploy the signup fix to production" })
     await post({ ...body, owedTo: "client-b" })
-    await post(body, { now: clock + 11 * MIN })
-    expect(store.openPromises("coder")).toBe(4)
+    expect(store.openPromises("coder")).toBe(3)
   })
 
   it("opens a new one when the earlier promise is closed", async () => {
@@ -273,5 +272,54 @@ describe("a retried promise call (#2078)", () => {
     const again = await post(body, { now: clock + 30_000 })
     expect((again.body as any).repeated).toBeUndefined()
     expect(store.openPromises("coder")).toBe(1)
+  })
+})
+
+describe("a follow-up run updates the open promise instead of opening another (#2079)", () => {
+  const body = { action: "promise", agentId: "coder", owedTo: "client-a", text: "Deploy the login fix to production" }
+  /** The run a promise's wake starts: its chat is the promise's id. */
+  const inRunOf = (id: string): Partial<RequestsApiDeps> => ({ runningTurn: (agentId) => (AGENTS.has(agentId) ? { channel: "job", chatId: id } : null) })
+
+  it("a promise call from a wake run of open promise P moves P's due time and returns P's id, with no new row", async () => {
+    const p = (await post({ ...body, due: new Date(clock + HOUR).toISOString() })).body as any
+    const res = await post(
+      { ...body, text: "Deploy the login fix once CI is green", headline: "Login fix deploy", due: new Date(clock + 3 * HOUR).toISOString() },
+      { ...inRunOf(p.request.id), now: clock + HOUR },
+    )
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ reused: true, request: { id: p.request.id, dueAt: clock + 3 * HOUR, text: "Deploy the login fix once CI is green", headline: "Login fix deploy" } })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("a promise call in the turn of an owner's request updates that request, keeping the owner's words", async () => {
+    tracker.taskStarted({
+      agentId: "coder", channel: "telegram", chatId: "chat-1", taskId: "t9", messagePreview: "ship the fix", fullMessage: "ship the fix",
+      at: "", humanRoot: true, sender: { id: "4242" },
+    } as any)
+    expect((await post({ action: "accept", agentId: "coder", work: "ops" })).status).toBe(200)
+    const res = await post({ ...body, due: new Date(clock + 2 * HOUR).toISOString() })
+    expect(res.body).toMatchObject({ reused: true, request: { id: "req-t9", dueAt: clock + 2 * HOUR, text: "ship the fix", headline: "Deploy the login fix to production" } })
+    expect(store.openPromises("coder")).toBe(0)
+  })
+
+  it("two identical promise calls give one row, and the second returns the first one's id, at any distance and in any case", async () => {
+    const first = (await post(body)).body as any
+    const again = await post({ ...body, text: "  deploy the LOGIN fix to production " }, { now: clock + 3 * HOUR })
+    expect(again.status).toBe(200)
+    expect(again.body).toMatchObject({ repeated: true, request: { id: first.request.id, text: body.text } })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("the same words owed to someone else, or a promise made after P is closed, open a new row", async () => {
+    const p = (await post(body)).body as any
+    const other = (await post({ ...body, owedTo: "client-b" })).body as any
+    expect(other.request.id).not.toBe(p.request.id)
+    store.close(p.request.id, "done", "kept", clock)
+    // Even from P's own wake run: a closed P is not reused.
+    const after = await post(body, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect((after.body as any).reused).toBeUndefined()
+    expect((after.body as any).repeated).toBeUndefined()
+    expect((after.body as any).request.id).not.toBe(p.request.id)
+    expect(store.openPromises("coder")).toBe(2)
   })
 })

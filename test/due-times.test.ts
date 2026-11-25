@@ -244,6 +244,36 @@ describe("a due time the agent wrote with no source", () => {
   })
 })
 
+describe("a follow-up run's promise updates its open promise under the same rules (#2079)", () => {
+  /** A promise call from the run P's wake starts: its chat is P's id. */
+  function inRunOf(id: string, mode: DueTimeMode, body: Record<string, unknown>, now = T0) {
+    const d = { ...deps(mode, now), runningTurn: () => ({ channel: "job", chatId: id }) }
+    return handleRequestsApi("POST", "/requests", { agentId: "writer", action: "promise", owedTo: "owner", text: "Write the summary, second pass", ...body }, d)
+  }
+
+  it("a due with no source is refused when the mode is on, and P is left as it was", () => {
+    const p = (promise("on", { estimateMinutes: 20 }).body as any).request
+    const res = inRunOf(p.id, "on", { due: new Date(T0 + 4 * HOUR).toISOString() }, T0 + 10 * MIN)
+    expect(res.status).toBe(400)
+    expect((res.body as any).error).toBe(NO_SOURCE_REFUSAL)
+    expect(store.get(p.id)).toMatchObject({ dueAt: T0 + 20 * MIN, text: p.text })
+  })
+
+  it("without a due, the daemon gives P its new time from the queue, and the wake moves with it", () => {
+    const p = (promise("on", { estimateMinutes: 20 }).body as any).request
+    expect(jobs.get(p.id)!.wakeAt).toBe(T0 + 20 * MIN)
+    const res = inRunOf(p.id, "on", { estimateMinutes: 45 }, T0 + 20 * MIN)
+    expect(res.status).toBe(200)
+    const body = res.body as any
+    expect(body).toMatchObject({ reused: true, request: { id: p.id, text: "Write the summary, second pass", estimateMinutes: 45 } })
+    expect(body.due).toMatchObject({ source: "daemon", dueAt: body.request.dueAt })
+    expect(body.request.dueAt).toBeGreaterThan(T0 + 20 * MIN)
+    expect(slots.get(p.id)).toMatchObject({ source: "daemon", givenDue: body.request.dueAt })
+    expect(jobs.get(p.id)!.wakeAt).toBe(body.request.dueAt)
+    expect(store.openPromises("writer")).toBe(1)
+  })
+})
+
 describe("a critical job entering the queue", () => {
   it("moves the later due times, and each requester gets one message with the old time, the new time and the reason", () => {
     // Two pieces of work for two different requesters, due times from the daemon.
