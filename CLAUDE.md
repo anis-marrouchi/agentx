@@ -25,6 +25,24 @@ Build a mesh-level operations dashboard that makes automation and agent activity
 - Mesh forwarding lacks a canonical root activity ID.
 - Full cron responses can contain sensitive content; list APIs must return bounded summaries.
 
+## Impact Sweep Rule (Rule A, Anis 2026-11-25)
+
+AgentX changes fast, so every PR finds and repairs what its change touched, in the same PR.
+
+- The PR description has an **Impacted** list: every surface the change touches, from Hub pages, CLI commands, the phone and Mac apps, docs, settings, and other agents' flows (handoffs, schedules, workflows, Coder runs). Write "none" for a surface only after checking it.
+- Check each listed surface in the same PR and say how (test, screenshot, command run). Do not leave a touched surface for a later PR.
+- Styling must match on every Hub page: same tokens, spacing, controls and layout as the current style. A page you touch that still has the old style goes on the old-style page checklist in issue #2218, linked from the PR.
+- A review fails when the Impacted list is missing or a listed surface was not checked.
+
+## Progressive Disclosure Rule (Rule B, Anis 2026-11-25)
+
+Simple by default; more on demand.
+
+- Each screen, command and message shows only what most people need for the common case.
+- Extra controls and details stay hidden until asked for: a chip pop-up, a hover drop-down, a "more" menu, an expandable row, or a setting switch. CLI: a short default output, detail behind a flag.
+- A new control or field does not go on the default view unless the PR says why it must be always visible.
+- A review fails when a change adds always-visible controls without that reason.
+
 ## Documentation Rule
 
 Applies to every change under `docs/` and to any code change that adds or renames a feature, setting or command. Full text and screenshot tooling: [CONTRIBUTING.md › Docs conventions](CONTRIBUTING.md#docs-conventions).
