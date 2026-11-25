@@ -78,7 +78,7 @@ On a phone, the page lists the same workflows and tabs, and opens a workflow the
 
 ## See what is being followed
 
-Workflows that agents started for your requests are listed under **Follow-ups**, at the top of the left column of the classic page, one group per tag (such as `client:example-co`). On the Hub's **Workflows** page, the **Follow-ups** box on the right counts them; select **Show them** to open the classic page.
+Workflows that agents started for your requests are listed under **Follow-ups**, at the top of the left column of the classic page, one group per tag (such as `client:example-co`). On the Hub's **Workflows** page, the line under the summary counts them; select the count to open the classic page. The same line says whether **Every task in a workflow** is on.
 
 1. **Browser:** on the classic page (`/workflows`), look at **Follow-ups**. Groups with a blocked run are open.
 2. **Browser:** click a group's name to open it. Each run shows the step it is on, what it waits on and since when.

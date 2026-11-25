@@ -207,7 +207,9 @@ export const WALL_ACTIVITY_SCRIPT = String.raw`
     var count = f.agent
       ? '<p class="ax-wall__count wac__note">' + shown.length + (shown.length === 1 ? ' run' : ' runs') + (failed ? ' · ' + failed + ' failed' : '') + ' · ' + esc(dur(time)) + ' of agent time' + (priced.length ? ' · ' + esc(money(cost)) : '') + '</p>'
       : '<p class="ax-wall__count wac__note">' + shown.length + (shown.length === 1 ? ' run' : ' runs') + (failed ? ', ' + failed + ' failed' : '') +
-        ' in the last ' + esc(per) + (shown.length !== rows.length ? ' (of ' + rows.length + ')' : '') + ', newest first</p>';
+        ' in the last ' + esc(per) + (shown.length !== rows.length ? ' (of ' + rows.length + ')' : '') + ' · ' + esc(dur(time)) + ' of agent time' +
+        (priced.length ? ' · ' + esc(money(cost)) + (priced.length < shown.length ? ' (' + (shown.length - priced.length) + ' unpriced)' : '') : '') +
+        ', newest first · <a href="/activity">Map on the classic page</a></p>';
     var clear = '<button type="button" class="ax-btn ax-btn--ghost" data-act-clear>Clear filters</button>';
     var empty = !rows.length
       ? '<h3>Nothing ran in this window</h3><p>Nothing ran in the last ' + esc(per) + '.' + (f.period !== '30d' ? ' Try ' + (f.period === '24h' ? '7 days' : '30 days') + (actFiltered() ? ', or clear the filters.' : '.') : '') + '</p>' + (actFiltered() ? clear : '')
@@ -216,29 +218,6 @@ export const WALL_ACTIVITY_SCRIPT = String.raw`
       (shown.length ? '<div class="wac__list">' + shown.map(function (x) { return actRowHtml(x, multi); }).join('') + '</div>' : '<div class="ax-wall__empty wac__empty">' + empty + '</div>');
   }
   /** The side column: the period in numbers, then runs per agent. */
-  function activitySideHtml() {
-    var f = S.act, rows = actRows(), per = actPeriod(f.period)[1];
-    var map = '<section class="ax-wall__box"><p class="ax-wall__count">The Map and the lane view stay on the classic Activity page for now. <a href="/activity">Open the classic page</a></p></section>';
-    if (!rows) return '<section class="ax-wall__box"><h2>Last ' + esc(per) + '</h2><p class="ax-wall__empty">Loading…</p></section>' + map;
-    var shown = rows.filter(function (x) { return actMatch(x, f); });
-    var failed = shown.filter(function (x) { return x.result === 'failed'; }).length;
-    var time = shown.reduce(function (a, x) { return a + (x.run.durationMs || 0); }, 0);
-    var priced = shown.filter(function (x) { return typeof x.run.costUsd === 'number'; });
-    var cost = priced.reduce(function (a, x) { return a + x.run.costUsd; }, 0), unpriced = shown.length - priced.length;
-    var by = {};
-    shown.forEach(function (x) { var a = by[x.run.agentId] || (by[x.run.agentId] = { n: 0, failed: 0 }); a.n++; if (x.result === 'failed') a.failed++; });
-    var agents = Object.keys(by).sort(function (a, b) { return by[b].n - by[a].n; }).slice(0, 6);
-    return '<section class="ax-wall__box"><h2>Last ' + esc(per) + '</h2><div class="wac__kpis">' +
-        '<div><b>' + shown.length + '</b><span>runs</span></div>' +
-        '<div><b' + (failed ? ' class="is-err"' : '') + '>' + failed + '</b><span>failed</span></div>' +
-        '<div><b>' + esc(dur(time)) + '</b><span>agent time</span></div>' +
-        '<div><b>' + (priced.length ? esc(money(cost)) : '–') + '</b><span>cost' + (unpriced ? ', ' + unpriced + ' unpriced' : '') + '</span></div>' +
-      '</div></section>' +
-      (agents.length && !f.agent ? '<section class="ax-wall__box"><h2>By agent</h2><div class="wac__byagent">' + agents.map(function (id) {
-        return '<button type="button" data-act-agent="' + esc(id) + '"><span>' + esc(nameOf(id)) + '</span><span class="wac__muted">' + by[id].n + (by[id].n === 1 ? ' run' : ' runs') +
-          (by[id].failed ? ' · <span class="is-err">' + by[id].failed + ' failed</span>' : '') + '</span></button>';
-      }).join('') + '</div></section>' : '') + map;
-  }
   /** Read the period's runs from every machine; again when force is set. */
   async function loadActivity(force) {
     var k = S.act.period, had = S.acts[k];
@@ -334,7 +313,7 @@ export const WALL_ACTIVITY_CSS = `
 .wac__kv dt { color: var(--ax-muted); }
 .wac__kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .wac__ask { white-space: pre-line; max-height: 9.5em; overflow: auto; }
-.wac__err, .wac__kpis .is-err, .wac__byagent .is-err { color: var(--ax-red-ink); }
+.wac__err { color: var(--ax-red-ink); }
 .wac__marks { margin: 0; padding-left: 18px; }
 .wac__muted { color: var(--ax-muted); }
 .wac__links { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -344,16 +323,6 @@ export const WALL_ACTIVITY_CSS = `
 .wac__skl { flex: 1; display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
 .wac__skl i { display: block; height: 12px; border-radius: 6px; background: var(--ax-surface-2); }
 .wac__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.wac__side { display: none; }
-.ax-wall__aside.is-act > :not(.wac__side) { display: none; }
-.ax-wall__aside.is-act > .wac__side { display: block; }
-.wac__kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.wac__kpis div { display: flex; flex-direction: column; gap: 2px; }
-.wac__kpis b { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ax-text); }
-.wac__kpis span { font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wac__byagent { display: flex; flex-direction: column; gap: 2px; }
-.wac__byagent button { display: flex; gap: 8px; justify-content: space-between; font: inherit; font-size: var(--ax-fs-sm); background: none; border: 0; color: var(--ax-text); padding: 6px 0; cursor: pointer; text-align: left; }
-.wac__byagent button:hover > span:first-child { text-decoration: underline; }
 .wpf__tabs { display: flex; border-top: 1px solid var(--ax-border); margin-top: 12px; }
 .wpf__tabs a, .wpf__tabs button { flex: 1; text-align: center; font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 12px 8px 9px; cursor: pointer; text-decoration: none; }
 .wpf__tabs .is-on { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
@@ -361,11 +330,6 @@ export const WALL_ACTIVITY_CSS = `
 /* Feed or Timeline beside the title; Timeline is the classic lane view. */
 .ax-wall__switch a { font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-muted); padding: 4px 12px; text-decoration: none; }
 .ax-wall__switch a:hover { color: var(--ax-text); }
-/* Under 1180 px the side column stacks over the page: the period sums stay
-   in the count line instead. */
-@media (max-width: 1180px) {
-  .ax-wall__aside.is-act > .wac__side { display: none; }
-}
 @media (max-width: 640px) {
   .wac__bar { padding: 8px 12px; }
   .wac__sel { flex: 1 1 40%; max-width: none; }

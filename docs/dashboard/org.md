@@ -173,7 +173,7 @@ Next to the views, **Show** picks who is on the **Chart** and **Departments** vi
 
 1. **Browser:** on the Hub, select **Org**, then **People** next to **Show**. Only the people's cards stay. A person whose boss is an agent now sits under the nearest person above that agent, or at the top when there is none, so the chart keeps its shape with no gaps.
 2. **Browser:** select **Departments**. Each box shows how many of its members are on screen, for example **1 of 4**. A head the switch hides is a line of text, **Head: COO (agent)**, in place of a card. A box with nobody left on screen says **No people here** (or **No agents here**).
-3. **Browser:** the counts in **In the org** beside the chart still count the whole org, whatever **Show** is set to.
+3. **Browser:** the counts under the chart still count the whole org, whatever **Show** is set to.
 4. **Browser:** the address keeps the choice, so you can bookmark it: `who=people` or `who=agents` in the Hub's address, `?who=people` or `?who=agents` on `/org`. **Everyone** leaves it out.
 
 ## See who runs each project

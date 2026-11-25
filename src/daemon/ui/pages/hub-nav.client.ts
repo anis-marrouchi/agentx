@@ -10,7 +10,7 @@
 //
 // A fragment of WALL_PAGE_SCRIPT: it uses S, $, esc, decAll, decOwner,
 // isOpen and the injected hubAgentRows, haListHtml, haSwitchHits,
-// haSwitchHtml, ltAge.
+// haSwitchHtml, haHitCount, ltAge.
 
 export const HUB_NAV_SCRIPT = String.raw`
   var HA = { filter: 'all', idleOpen: false, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
@@ -70,10 +70,23 @@ export const HUB_NAV_SCRIPT = String.raw`
       .sort(function (a, b) { return (b.lastMoveAt || 0) - (a.lastMoveAt || 0); })
       .map(function (p) { return { id: p.id, title: String(p.headline || p.id).split('\n')[0].slice(0, 100), owner: p.owner, sub: (p.owner ? nameOf(p.owner) : '') + (p.status ? ' · ' + String(p.status).replace(/_/g, ' ') : '') }; });
   }
+  // The pages the side menu no longer shows (#2101 R22), from the hidden
+  // page links (wall.ts #wall-pagelinks), each once, in menu order.
+  function haPages() {
+    var seen = {}, out = [];
+    document.querySelectorAll('#wall-pagelinks a[data-nav]').forEach(function (a) {
+      var key = a.getAttribute('data-nav');
+      if (!key || seen[key] || a.hidden) return;
+      seen[key] = true;
+      var span = a.querySelector('span');
+      out.push({ key: key, label: (span ? span.textContent : a.textContent || '').trim(), href: a.getAttribute('href') || '' });
+    });
+    return out;
+  }
   function haPaintK() {
     var rows = (HA.model || haModel()).rows;
-    HA.k.hits = haSwitchHits(rows, haReqs(), HA.k.q);
-    var n = HA.k.hits.agents.length + HA.k.hits.reqs.length;
+    HA.k.hits = haSwitchHits(rows, haReqs(), HA.k.q, haPages());
+    var n = haHitCount(HA.k.hits);
     if (HA.k.sel >= n) HA.k.sel = Math.max(0, n - 1);
     $('hub-k-list').innerHTML = haSwitchHtml(HA.k.hits, HA.k.sel, esc);
     var on = $('hub-k-list').querySelector('.is-sel');
@@ -95,10 +108,15 @@ export const HUB_NAV_SCRIPT = String.raw`
     d.hidden = true;
     if (!went && HA.k.back && HA.k.back.focus) HA.k.back.focus();
   }
-  function haGo(href) { if (href) location.hash = href.replace(/^#/, ''); }
+  // A page of the Hub is a hash; a classic dashboard page is its own address.
+  function haGo(href) {
+    if (!href) return;
+    if (href.charAt(0) === '#') location.hash = href.slice(1);
+    else location.href = href;
+  }
   if ($('hub-k-q')) $('hub-k-q').addEventListener('input', function () { HA.k.q = this.value; HA.k.sel = 0; haPaintK(); });
   if ($('hub-k-dlg')) $('hub-k-dlg').addEventListener('keydown', function (ev) {
-    var n = HA.k.hits ? HA.k.hits.agents.length + HA.k.hits.reqs.length : 0;
+    var n = haHitCount(HA.k.hits);
     if (ev.key === 'Escape') { ev.preventDefault(); haCloseK(); }
     else if (ev.key === 'ArrowDown') { ev.preventDefault(); if (n) { HA.k.sel = (HA.k.sel + 1) % n; haPaintK(); } }
     else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (n) { HA.k.sel = (HA.k.sel - 1 + n) % n; haPaintK(); } }

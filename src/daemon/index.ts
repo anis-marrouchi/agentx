@@ -11013,19 +11013,23 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
  * (systemPrompt, mentions, maxConcurrent, access, avatar, queueMode,
  * heartbeat, tags) are read fresh per-task so the registry.setConfig swap
  * is enough. Restart-required fields are those captured at Claude Code
- * subprocess spawn time: model, workspace, tier, permissionMode, mcpServers.
+ * subprocess spawn time: model, workspace, permissionMode, mcpServers. The
+ * tier is not: the registry takes it on reload (#2101 CLI switch).
  */
 function detectAgentRestartFields(
   prev: Record<string, any>,
   next: Record<string, any>,
 ): string[] {
-  const restartFields = ["model", "workspace", "tier", "permissionMode", "mcpServers"]
+  const restartFields = ["model", "workspace", "permissionMode", "mcpServers"]
   const changed = new Set<string>()
   const ids = new Set([...Object.keys(prev), ...Object.keys(next)])
   for (const id of ids) {
     const p = prev[id], n = next[id]
     if (!p || !n) { changed.add("add/remove"); continue }
     for (const f of restartFields) {
+      // A model change that comes with an engine switch goes over with the
+      // tier in registry.setConfig (#2101 B1), so it needs no restart.
+      if (f === "model" && p.tier !== n.tier) continue
       if (JSON.stringify(p[f]) !== JSON.stringify(n[f])) {
         changed.add(`${id}.${f}`)
       }

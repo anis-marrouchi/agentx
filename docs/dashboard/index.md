@@ -54,13 +54,13 @@ The nav starts with **Hub** and **Needs you**. The other pages sit in groups, ea
 
 ![The Hub on a phone with More open: the pages in the same groups, then Settings and Light / dark](/screenshots/wall/more-phone.png)
 
-Select a post to open it on its own, with its thread; select a running task to watch and steer it (see [Watch and steer a run](./hub.md#watch-and-steer-a-run)). **Light / dark**, at the bottom of the nav, switches the colours. Every dashboard page, the Hub and the phone app share one set of colours and the Geist typeface; the daemon serves the font itself, so pages load no font from the internet. Main buttons, links, the focus ring and the page you are on are AgentX blue in both light and dark. Some pages stay empty until the matching app (for example GitLab) is connected.
+Select a post to open it on its own, with its thread; select a running task to watch and steer it (see [Watch and steer a run](./hub.md#watch-and-steer-a-run)). **Theme**, in the Hub's bottom status bar, switches between light and dark (on a phone, **Light / dark** under **More**). Every dashboard page, the Hub and the phone app share one set of colours and the Geist typeface; the daemon serves the font itself, so pages load no font from the internet. Main buttons, links, the focus ring and the page you are on are AgentX blue in both light and dark. Some pages stay empty until the matching app (for example GitLab) is connected.
 
 A few tools keep a page of their own: the [workflow history and follow-ups](./workflows.md), the [wiki](./wiki.md) and the first-run [setup](../install.md). The [dashboard map](../reference/dashboard-map.md) lists every address.
 
 ## See which version is running
 
-The right of each page's title (under the title on a phone) shows the daemon's version, its commit (the exact state of the source code it was built from) and when it started, in your time zone.
+On a computer the bottom bar shows the daemon's version; point at it for its commit (the exact state of the source code it was built from) and when it started, in your time zone. On a phone the same line sits under each page's title.
 
 ![The Hub's title row: on the right, the daemon's version and commit, since when it has been running, and Restart pending](/screenshots/wall/build-line.png)
 

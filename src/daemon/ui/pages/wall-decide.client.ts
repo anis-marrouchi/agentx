@@ -282,31 +282,19 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var backlog = D.tab === 'waiting' && (D.kind === 'wiki' || !D.kind) ? (v.backlog || []).map(function (b) {
       return '<p class="wdc__ro">' + esc(b.title) + '. Not counted above. See them in the terminal: <code>' + esc(b.more) + '</code></p>';
     }).join('') : '';
-    return note + head + decTabs() + (decOwner() ? decChips(tabList, D.tab === 'waiting' ? reviews : []) : '') + ro + err + reviewNote +
+    return note + head + (D.tab === 'later' ? '' : decLineHtml()) + decTabs() + (decOwner() ? decChips(tabList, D.tab === 'waiting' ? reviews : []) : '') + ro + err + reviewNote +
       (shown.length ? shown.map(decCardHtml).join('') : decEmpty()) + backlog;
   }
-  /** The side column: what waits, what was answered today, how the inbox reaches you. */
-  function decSideHtml() {
-    var v = D.data;
-    if (!v || v.error) return '';
-    var posts = ((S.data && S.data.posts) || []).filter(function (p) { return isOpen(p) && waitsOnOwner(p); }).length;
+  /** One line under the count (#2101 R24): only what the page does not show
+   *  itself, the runs held on an answer and the oldest wait. The answered
+   *  ones have their tab; how the inbox reaches you is in Settings. */
+  function decLineHtml() {
     var held = ((S.wf && S.wf.runs) || []).filter(function (r) { return r.status === 'paused' && r.pausedAt && r.pausedAt.kind === 'ownerDecision'; });
-    var waiting = decAll().filter(function (o) { return !o.snoozed && o.at; }).sort(function (a, b) { return a.at - b.at; });
-    var old = waiting[0];
-    var waits = '<section class="ax-wall__box"><h2>What waits on ' + (decOwner() ? 'you' : 'the owner') + '</h2>' +
-      '<p><b>' + posts + ' post' + (posts === 1 ? '' : 's') + '</b> paused on an answer</p>' +
-      '<p><b>' + held.length + ' run' + (held.length === 1 ? '' : 's') + '</b> held' + (held.length ? ' on ' + esc(decNodes(held)) : '') + '</p>' +
-      (old ? '<p><b>Oldest:</b> <span class="wdc__age">' + esc(ago(old.at).replace(/ ago$/, '')) + '</span> (' + esc(nameOf(old.agent || '')) + ', ' + esc(old.title) + ')</p>' : '') + '</section>';
-    var today = new Date().toDateString();
-    var done = (v.answered || []).filter(function (a) { return new Date(Date.parse(a.at)).toDateString() === today; });
-    var answered = '<section class="ax-wall__box"><h2>Answered today</h2>' + (done.length ? done.slice(0, 5).map(function (a) {
-      var t = new Date(Date.parse(a.at));
-      return '<p><b>' + decVerb(a) + '</b> · ' + esc(nameOf(a.raised_by)) + ' · ' + esc(a.title) + ' · ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + '</p>';
-    }).join('') : '<p class="k">Nothing yet today.</p>') + '<p><button type="button" class="wa-more" data-dtab="answered">All answered →</button></p></section>';
-    var s = v.settings || {}, d = s.desk || {}, dg = s.digest || {};
-    var reach = '<section class="ax-wall__box"><h2>Reaching ' + (decOwner() ? 'you' : 'the owner') + '</h2><p>Phone: ' + esc(DEC_REACH[d.phone] || 'off') + '. Computer: ' + esc(DEC_REACH[d.computer] || 'off') + '. ' +
-      (dg.enabled ? 'Digest at ' + esc(dg.time || '—') + '.' : 'No daily digest.') + (decOwner() ? ' <a href="#page=settings&amp;section=inbox">Change in Settings</a>' : '') + '</p></section>';
-    return waits + answered + reach;
+    var old = decAll().filter(function (o) { return !o.snoozed && o.at; }).sort(function (a, b) { return a.at - b.at; })[0];
+    var bits = [];
+    if (held.length) bits.push('<b>' + held.length + ' run' + (held.length === 1 ? '' : 's') + '</b> held on ' + esc(decNodes(held)));
+    if (old) bits.push('oldest waits <span class="wdc__age">' + esc(ago(old.at).replace(/ ago$/, '')) + '</span> (' + esc(nameOf(old.agent || '')) + ', ' + esc(old.title) + ')');
+    return bits.length ? '<p class="ax-wall__count wdc__line">' + bits.join(' · ') + '</p>' : '';
   }
   async function loadDecide() {
     D.loading = true;
@@ -327,7 +315,6 @@ export const WALL_DECIDE_SCRIPT = String.raw`
   function renderDecide(view) {
     var on = view === 'decide';
     $('wall-decide').hidden = !on;
-    $('wall-aside').classList.toggle('is-dec', on);
     if (!on) return;
     $('wall-count').hidden = true;
     $('wall-profile').hidden = true;
@@ -338,7 +325,6 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var a = document.activeElement;
     var busy = a && a.matches && a.matches('textarea,select') && $('wall-decide').contains(a);
     if (!busy) $('wall-decide').innerHTML = decideHtml();
-    $('wall-dec-side').innerHTML = decSideHtml();
   }
   function decNote(text, err) {
     D.note = text; D.noteErr = !!err;
@@ -533,15 +519,7 @@ export const WALL_DECIDE_CSS = `
 .wdc__done li { padding: 10px 16px; border-bottom: 1px solid var(--ax-border); overflow-wrap: anywhere; }
 .wdc__done .k { color: var(--ax-muted); }
 .wdc__age { color: var(--ax-amber-ink, var(--ax-warn)); }
-.wdc__side .ax-wall__box p { margin: 6px 0 0; }
-.wdc__side .ax-wall__box .k { color: var(--ax-muted); }
-.wdc__side a { color: var(--ax-accent); }
-.wdc__side { display: none; }
-.ax-wall__aside.is-dec > :not(.wdc__side) { display: none; }
-.ax-wall__aside.is-dec > .wdc__side { display: block; }
-/* Under 1180 px the side column would stack over the list: the count line
-   under the title says what waits instead, as on the phone frame. */
-@media (max-width: 1180px) { .ax-wall__aside.is-dec > .wdc__side { display: none; } }
+.wdc__line { margin-top: -4px; }
 /* A card on its post answers in place (#1440). */
 .wc .wdc__acts { margin-top: 8px; }
 @media (max-width: 560px) {

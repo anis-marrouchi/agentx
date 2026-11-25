@@ -1,17 +1,10 @@
 // --- Hub chat: its styles (#1528; middle pane and transcript, #2101 PR 2) ---
 
 export const WALL_CHAT_CSS = `
-/* Hub chat (#1528): the Chat box in the side column; the chat itself is the
-   middle pane (#2101 PR 2), in place of the page it was opened from. */
-.hcq h2 { display: flex; align-items: center; gap: 8px; }
-.hcq h2 svg { width: 20px; height: 20px; }
-.hcq h2 kbd { margin-left: auto; font: 600 11px var(--ax-mono); color: var(--ax-muted); border: 1px solid var(--ax-border-2); border-radius: 5px; padding: 1px 6px; }
-.hcq form { display: flex; gap: 8px; }
-.hcq input { flex: 1; min-width: 0; font: inherit; font-size: 14.5px; padding: 8px 14px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
-.hcq p { margin: 8px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); overflow-wrap: anywhere; }
-.hcq p a, .hcq p button { font: inherit; font-weight: 600; color: var(--ax-accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; }
+/* Hub chat (#1528): the middle pane (#2101 PR 2), in place of the page it
+   was opened from; the header's chat button opens it (#2101 R24). */
 .hc__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ax-accent); margin-right: 4px; }
-.hc-btn { display: none; margin-left: 8px; position: relative; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; border: 0; background: none; color: var(--ax-text); cursor: pointer; }
+.hc-btn { display: inline-flex; margin-left: 8px; position: relative; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; border: 0; background: none; color: var(--ax-text); cursor: pointer; }
 .hc-btn:hover { background: var(--ax-surface); }
 .hc-btn svg { width: 22px; height: 22px; }
 .hc-btn .hc__dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--ax-bg); }
@@ -222,11 +215,9 @@ export const WALL_CHAT_CSS = `
 .hc__voice { margin: 0; font-size: 12.5px; color: var(--ax-muted); }
 .hc__voice.is-err { color: var(--ax-red-ink); }
 
-/* Under 1180 px there is no side column: a button in the header opens the chat. */
+/* Under 1180 px the nav is icons only. */
 @media (max-width: 1180px) {
   .ax-wall.hc-open { grid-template-columns: 72px minmax(0, 1fr); }
-  .hc-btn { display: inline-flex; }
-  .hcq { display: none; }
 }
 /* Phone: the whole screen, with ← back to the page. */
 @media (max-width: 640px) {

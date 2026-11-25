@@ -91,11 +91,11 @@ import { WALL_PEOPLE_SCRIPT } from "./wall-people.client"
 import { WALL_WORKFLOWS_SCRIPT } from "./wall-workflows.client"
 import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
-import { wsKey, wsFold, wsCopiesHtml, wsNeedsHtml } from "./wall-sidebar"
+import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
-import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml } from "./hub-agents"
+import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
-import { hubUsageText, hubAccountsText, hubAccountsHtml } from "./hub-status"
+import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
@@ -118,10 +118,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
-  ${injectFns({ wsKey, wsFold, wsCopiesHtml, wsNeedsHtml })}
+  ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
-  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml })}
-  ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml })}
+  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
+  ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -762,15 +762,6 @@ ${HUB_NAV_SCRIPT}
     return Object.keys(by).map(function (k) { return by[k]; })
       .sort(function (x, y) { return y.open - x.open || y.last - x.last; });
   }
-  function agentsHtml() {
-    var list = agentStats(), sel = $('f-owner').value;
-    if (!list.length) return '<p class="ax-wall__empty">No agent has a post on the ${HUB_NAME}.</p>';
-    var shown = S.allAgents ? list : list.slice(0, 6);
-    return shown.map(function (a) {
-      return '<button type="button" class="wa' + (a.id === sel ? ' is-on' : '') + '" data-agent="' + esc(a.id) + '">' + avatar(a.id, 'side') +
-        '<span class="wa__n"><b>' + esc(nameOf(a.id)) + '</b><small>@' + esc(a.id) + ' · ' + a.open + ' open · ' + a.posts + (a.posts === 1 ? ' post' : ' posts') + '</small></span></button>';
-    }).join('') + (list.length > 6 ? '<button type="button" class="wa-more" data-agents-more>' + (S.allAgents ? 'Show fewer' : 'Show all ' + list.length) + '</button>' : '');
-  }
   /** An agent's Activity tab (#1429): its runs, newest first. */
   function activityHref(id) { return '#page=activity&a-agent=' + encodeURIComponent(id); }
   /** The profile's tabs: its posts on the Wall, or its runs (#1429). */
@@ -1319,20 +1310,8 @@ ${HUB_NAV_SCRIPT}
     var rid = ltRequestId(t);
     return ltTitle(t, (rid && findPost(rid)) || null);
   }
-  // --- Needs you first, short (#2101 R3, wall-sidebar.ts) ---
-  // The oldest five that wait on the owner, from the Needs you page's own
-  // list and count, at the top of the left column; "Show all N" opens it.
-  var needsLast = '';
-  function renderNeedsTop() {
-    var el = $('wall-needs-top');
-    if (!el) return;
-    var n = decideCount();
-    var html = n == null ? '' : wsNeedsHtml(decAll(), n, decOwner() ? 'you' : 'the owner', '#status=open&view=decide', Date.now(), esc, ltAge, nameOf);
-    el.hidden = !html;
-    if (html === needsLast) return;
-    needsLast = html;
-    el.innerHTML = html;
-  }
+  // Needs you (#2101 R3) is no longer a box of its own in the side menu:
+  // it is the agent list's group and Desk's count (R27, one place each).
   // --- The live tree at the top of the nav (#2101 PR 1c) ---
   // machine → project → work item → agent, from the live snapshot and the
   // posts already on the page (wall-tree.ts). Drawn only when it changed,
@@ -1394,7 +1373,6 @@ ${HUB_NAV_SCRIPT}
   function render() { return keepState(renderNow); }
   function renderNow() {
     // Running now draws from /api/live alone: it does not wait on the feed (#1252).
-    renderNeedsTop();
     renderTree();
     var f = current();
     var page = S.post ? 'post' : S.page, onWall = page === 'wall';
@@ -1429,10 +1407,8 @@ ${HUB_NAV_SCRIPT}
     $('wall-activity').hidden = page !== 'activity';
     $('wall-act-switch').hidden = page !== 'activity';
     // Activity has a side column of its own (#1451 frame 3).
-    $('wall-aside').classList.toggle('is-act', page === 'activity');
     // Needs you has one too (#1440, round-2 frame 01).
-    $('wall-aside').classList.toggle('is-dec', onWall && S.view === 'decide');
-    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); $('wall-act-side').innerHTML = activitySideHtml(); }
+    if (page === 'activity') { $('wall-activity').innerHTML = activityPageHtml(); }
     paintTask(page);
     followLive(page);
     // Live repaints with the snapshot, but not over a field in use.
@@ -1474,7 +1450,6 @@ ${HUB_NAV_SCRIPT}
     $('wall-count').textContent = posts.length + ' of ' + (S.data.posts || []).length + ' posts';
     // Opened from a person on the People page (#1441): say whose requests these are.
     if (f.asker) $('wall-count').innerHTML += '<span class="ax-wall__asker"> asked by ' + esc(personName(f.asker)) + ' · <button type="button" data-asker-clear>everyone</button></span>';
-    $('wall-agents').innerHTML = agentsHtml();
     var n = failCount();
     $('wall-fail-n').textContent = n ? String(n) : '';
     $('wall-fail-n').classList.toggle('is-zero', !n);
@@ -1592,7 +1567,7 @@ ${HUB_NAV_SCRIPT}
   }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-agents-more],[data-profile-clear],[data-goal],[data-goal-clear],[data-back],[data-post]');
+    var t = ev.target.closest('[data-act],[data-tab],[data-view],[data-thread],[data-more],[data-sort],[data-open],[data-agent],[data-profile-clear],[data-goal],[data-goal-clear],[data-back],[data-post]');
     if (!t) return;
     if (t.hasAttribute('data-act')) { doAct(t.getAttribute('data-act')); return; }
     if (t.hasAttribute('data-tab')) { $('f-status').value = t.getAttribute('data-tab'); writeHash(); render(); return; }
@@ -1606,7 +1581,6 @@ ${HUB_NAV_SCRIPT}
     }
     else if (t.hasAttribute('data-back')) closePost();
     else if (t.hasAttribute('data-agent')) showAgent(t.getAttribute('data-agent'));
-    else if (t.hasAttribute('data-agents-more')) { S.allAgents = !S.allAgents; render(); }
     else if (t.hasAttribute('data-profile-clear')) { $('f-owner').value = ''; writeHash(); render(); }
     else if (t.hasAttribute('data-goal')) { ev.preventDefault(); showGoal(t.getAttribute('data-goal')); }
     else if (t.hasAttribute('data-goal-clear')) { $('f-goal').value = ''; writeHash(); render(); }

@@ -162,6 +162,12 @@ export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: bo
   return chips + body
 }
 
+/** One page the switcher can open (#2101 R22): its nav key, name and link. */
+export interface HaPage { key: string; label: string; href: string }
+
+/** What the switcher lists: agents, then requests, then pages. */
+export interface HaHits { agents: HaRow[]; reqs: HaReq[]; pages?: HaPage[] }
+
 /** One request the switcher can open, from the Hub posts. */
 export interface HaReq { id: string; title: string; owner?: string; sub?: string }
 
@@ -175,7 +181,7 @@ export function haFold(s: unknown): string {
  * words first, then contains them; the agents that need you on top when
  * there are no words), then up to five requests whose title has them.
  */
-export function haSwitchHits(rows: HaRow[], reqs: HaReq[], q: string): { agents: HaRow[]; reqs: HaReq[] } {
+export function haSwitchHits(rows: HaRow[], reqs: HaReq[], q: string, pages: HaPage[] = []): HaHits {
   const w = haFold(q)
   const score = (r: HaRow) => {
     if (!w) return r.state === "needs" ? 0 : r.state === "working" ? 1 : r.state === "done" ? 2 : 3
@@ -188,11 +194,14 @@ export function haSwitchHits(rows: HaRow[], reqs: HaReq[], q: string): { agents:
   const agents = (rows || []).map((r) => ({ r, s: score(r) })).filter((x) => x.s >= 0)
     .sort((a, b) => a.s - b.s || b.r.unread - a.r.unread).map((x) => x.r).slice(0, 9)
   const hits = w ? (reqs || []).filter((r) => haFold(r.title).indexOf(w) >= 0 || haFold(r.id) === w).slice(0, 5) : (reqs || []).slice(0, 3)
-  return { agents, reqs: hits }
+  // Pages (#2101 R22): the side menu keeps only Desk, Jobs, Workflows,
+  // Mobile and Settings; every other page is here, by its name.
+  const pageHits = w ? (pages || []).filter((p) => haFold(p.label).indexOf(w) >= 0 || haFold(p.key).indexOf(w) === 0) : (pages || [])
+  return { agents, reqs: hits, pages: pageHits }
 }
 
 /** The switcher's list. `sel` is the index of the chosen hit (agents, then requests). */
-export function haSwitchHtml(hits: { agents: HaRow[]; reqs: HaReq[] }, sel: number, esc: (s: unknown) => string): string {
+export function haSwitchHtml(hits: HaHits, sel: number, esc: (s: unknown) => string): string {
   let i = 0
   let html = ""
   if (hits.agents.length) {
@@ -214,5 +223,18 @@ export function haSwitchHtml(hits: { agents: HaRow[]; reqs: HaReq[] }, sel: numb
         '<span class="ha__line">' + esc(r.sub || r.owner || "") + "</span></span></a>"
     }).join("")
   }
-  return html || '<p class="ha__empty">No agent or request has these words.</p>'
+  const pages = hits.pages || []
+  if (pages.length) {
+    html += '<h3 class="hk__h">Pages</h3>' + pages.map((p) => {
+      const on = i++ === sel
+      return '<a class="hk__hit hk__page' + (on ? " is-sel" : "") + '" role="option" aria-selected="' + on + '" href="' + esc(p.href) + '" data-hk-i="' + (i - 1) + '">' +
+        '<span class="hk__ico" aria-hidden="true">↗</span><span class="ha__txt"><b class="ha__name">' + esc(p.label) + "</b></span></a>"
+    }).join("")
+  }
+  return html || '<p class="ha__empty">No agent, request or page has these words.</p>'
+}
+
+/** How many hits the switcher shows, for the arrow keys. */
+export function haHitCount(hits: HaHits | null): number {
+  return hits ? hits.agents.length + hits.reqs.length + (hits.pages || []).length : 0
 }

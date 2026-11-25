@@ -278,7 +278,7 @@ describe("Wall Activity, design #1451 frame 3", () => {
     expect(html).toContain('data-act-result="" aria-selected="true" class="is-on">All</button>')
     expect(html).toContain('data-act-result="failed" aria-selected="false">Failed <b class="wac__n">1</b></button>')
     expect(html).toContain('id="act-source"')
-    expect(html).toContain("4 runs, 1 failed in the last 24 h, newest first")
+    expect(html).toMatch(/4 runs, 1 failed in the last 24 h · [^<]+ of agent time · [^<]+, newest first · <a href="\/activity">Map on the classic page<\/a>/)
     // Feed or Timeline beside the title; Timeline is the classic lane view.
     expect(w.el("wall-act-switch").hidden).toBe(false)
     expect(renderWallPage()).toContain('<a href="/activity" title="The classic lane view, and the Map">Timeline</a>')
@@ -308,23 +308,17 @@ describe("Wall Activity, design #1451 frame 3", () => {
     expect(w.html()).not.toContain("wac__open")
   })
 
-  it("sums up the period in the side column, with unpriced runs counted apart", async () => {
+  it("sums up the period in the line under the header, no side column (#2101 R24)", async () => {
     const w = openWall({ hash: "#page=activity" })
     await w.settle()
-    const side = w.el("wall-act-side").innerHTML as string
-    expect(side).toContain("<h2>Last 24 h</h2>")
-    expect(side).toContain("<b>4</b><span>runs</span>")
-    expect(side).toContain("<span>cost, 2 unpriced</span>")
-    expect(side).toContain('<h2>By agent</h2>')
-    expect(side).toContain('data-act-agent="cx"')
-    expect(w.el("wall-aside").classList.contains("is-act")).toBe(true)
+    expect(w.html()).toContain(" (2 unpriced), newest first")
+    expect(renderWallPage()).not.toContain('id="wall-act-side"')
   })
 
   it("shows rows of placeholders while it loads, then an error with Try again when the machines cannot be read", async () => {
     const slow = openWall({ hash: "#page=activity", monitorHangs: true })
     await slow.settle()
     expect(slow.html()).toContain('<div class="wac__list" aria-busy="true">')
-    expect(slow.el("wall-act-side").innerHTML).toContain("Loading…")
     const w = openWall({ hash: "#page=activity", monitorFails: true })
     await w.settle()
     expect(w.html()).toContain('<p class="wac__banner is-err" role="alert">Could not read the runs:')
@@ -333,15 +327,17 @@ describe("Wall Activity, design #1451 frame 3", () => {
 })
 
 describe("Wall nav and phone bar, design #1451 frame 0", () => {
-  it("groups the nav under Work, Automation, Fleet and Owner, with the new pages", () => {
+  it("keeps the page menu in its groups as the ⌘K Pages, after the phone bar and the foot row (#2101 R22)", () => {
     // Settings and its Owner group are the owner's only (#1428).
     const page = renderWallPage({ owner: true })
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
     const order = [...nav.matchAll(/data-nav="([\w]+)"|(?:<summary>|ax-wall__navlbl" aria-hidden="true">)(\w+)</g)].map((m) => m[1] || m[2])
-    expect(order).toEqual(["wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
-      "Fleet", "agents", "people", "org", "operations", "cost", "Owner", "settings", "dashboard", "running", "projects", "creator",
-      // The V1 foot row (#2101 P4, hub-nav.ts): Desk · Jobs · Workflows · Mobile app · Settings.
-      "needs", "jobledger", "workflows", "mobile", "settings"])
+    expect(order).toEqual([
+      // The phone bar's four, then the V1 foot row (#2101 P4, hub-nav.ts): Desk · Jobs · Workflows · Mobile app · Settings.
+      "wall", "needs", "running", "projects", "needs", "jobledger", "workflows", "mobile", "settings",
+      // The hidden page links: the ⌘K switcher's Pages and the counts' source.
+      "wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
+      "Fleet", "agents", "people", "org", "operations", "cost", "Owner", "settings", "dashboard", "creator"])
     expect([...nav.matchAll(/<details class="ax-wall__navgroup"><summary>(\w+)<\/summary>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
     // People (#1441), Org (#1419) and Workflows (#1445) are on the Wall.
     expect(nav).toContain('data-nav="workflows" href="#page=workflows"')

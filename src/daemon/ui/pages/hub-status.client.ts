@@ -1,7 +1,93 @@
-// Spliced into WALL_PAGE_SCRIPT's closure. Uses $, esc, headers, S and
-// buildLast from the existing Hub script. Read-only every minute.
+// Spliced into WALL_PAGE_SCRIPT's closure. Uses $, esc, headers, act, S,
+// buildLast and haChatAgent from the existing Hub script, and the injected
+// hubUsageText, hubConnState, hubEngineName, hubCliText and hubCliHtml (hub-status.ts).
+// Usage is read every minute; the rest is painted with the agent list.
 export const HUB_STATUS_SCRIPT = String.raw`
+  // Connection and machine (R25): from the last live read.
+  function hsPaintConn() {
+    var el = $('hs-conn');
+    if (!el) return;
+    var c = hubConnState({ live: !!S.live, error: !!S.liveError, online: navigator.onLine !== false });
+    el.setAttribute('data-state', c.state);
+    $('hs-conn-t').textContent = c.text;
+    var nodes = (S.live && S.live.nodes) || [];
+    var t = $('hs-node-t');
+    if (!t || !nodes.length) return;
+    var up = nodes.filter(function (n) { return n.reachable !== false; }).length;
+    t.textContent = nodes[0].name + (nodes.length > 1 ? ' +' + (nodes.length - 1) : '');
+    $('hs-node').title = nodes.map(function (n) { return n.name + (n.reachable === false ? ' (not reachable)' : ''); }).join(', ') + ' · ' + up + ' of ' + nodes.length + ' reachable';
+  }
+  window.addEventListener('online', hsPaintConn);
+  window.addEventListener('offline', hsPaintConn);
+
+  // The CLI drop-down (R25): the agent in view, or the one picked in it.
+  var HSC = { open: false, agent: '', note: { kind: '', text: '' }, last: '' };
+  function hsCliAgents() {
+    var seen = {}, out = [];
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      (n.agents || []).forEach(function (a) {
+        if (!a || !a.id || seen[a.id]) return;
+        seen[a.id] = true;
+        out.push({ id: a.id, name: a.name || a.id, tier: a.tier || 'claude-code', node: n.name,
+          pendingTier: a.pendingTier || '', running: Math.max(a.active || 0, (a.runningTasks || []).length) });
+      });
+    });
+    return out.sort(function (x, y) { return String(x.name).localeCompare(String(y.name)); });
+  }
+  function hsCliCur() { return HSC.agent || (typeof haChatAgent === 'function' ? haChatAgent() : '') || ''; }
+  function hsPaintCli() {
+    var b = $('hs-cli');
+    if (!b) return;
+    // Owner only: Settings writes the engine (window.AX_WALL_SETTINGS is the owner's).
+    var list = window.AX_WALL_SETTINGS ? hsCliAgents() : [];
+    b.hidden = !list.length;
+    if (!list.length) return;
+    var cur = hsCliCur();
+    $('hs-cli-t').textContent = hubCliText(list.find(function (x) { return x.id === cur; }));
+    if (!HSC.open) return;
+    var html = hubCliHtml(list, cur, HSC.note, esc);
+    if (html === HSC.last) return;
+    // Keep the engine the owner just picked across a repaint.
+    var picked = document.querySelector('#hs-cli-pop input[name="hsc-eng"]:checked');
+    $('hs-cli-pop').innerHTML = HSC.last = html;
+    if (picked) { var again = document.querySelector('#hs-cli-pop input[name="hsc-eng"][value="' + picked.value + '"]'); if (again) again.checked = true; }
+  }
+  function hsCliOpen(on) {
+    HSC.open = on;
+    HSC.last = '';
+    if (!on) { HSC.agent = ''; HSC.note = { kind: '', text: '' }; }
+    $('hs-cli').setAttribute('aria-expanded', String(on));
+    $('hs-cli-pop').hidden = !on;
+    hsPaintCli();
+  }
+  async function hsCliSave() {
+    var id = hsCliCur(), pick = document.querySelector('#hs-cli-pop input[name="hsc-eng"]:checked');
+    var a = hsCliAgents().find(function (x) { return x.id === id; });
+    if (!a || !pick) return;
+    if (pick.value === (a.pendingTier || a.tier)) { HSC.note = { kind: '', text: a.name + (a.pendingTier ? ' already switches to ' : ' already runs on ') + hubEngineName(pick.value) + '.' }; HSC.last = ''; hsPaintCli(); return; }
+    HSC.note = { kind: '', text: 'Switching…' }; HSC.last = ''; hsPaintCli();
+    var r = await act('PATCH', '/api/admin/wall/settings/agents', { id: a.id, patch: { tier: pick.value } });
+    HSC.note = r.ok ? { kind: 'ok', text: hubCliSavedText(a, pick.value) }
+      : { kind: 'err', text: 'Not switched: ' + String(r.error).replace(/\.$/, '') + '.' };
+    HSC.last = '';
+    hsPaintCli();
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target : null;
+    if (!t) return;
+    if (t.closest('#hs-cli')) { hsCliOpen(!HSC.open); return; }
+    if (t.closest('[data-hsc-save]')) { hsCliSave(); return; }
+    if (HSC.open && !t.closest('#hs-cli-pop')) hsCliOpen(false);
+  });
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t && t.matches && t.matches('[data-hsc-agent]')) { HSC.agent = t.value; HSC.note = { kind: '', text: '' }; HSC.last = ''; hsPaintCli(); }
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && HSC.open) { hsCliOpen(false); $('hs-cli').focus(); } });
+
   function hsPaintRunning() {
+    hsPaintConn();
+    hsPaintCli();
     var el = $('hs-running');
     if (!el) return;
     if (!S.live) { el.textContent = 'Running agents —'; return; }
@@ -15,7 +101,10 @@ export const HUB_STATUS_SCRIPT = String.raw`
   }
   function hsPaintVersion() {
     var el = $('hs-version');
-    if (el && buildLast && buildLast.version) el.textContent = 'v' + buildLast.version;
+    if (!el || !buildLast || !buildLast.version) return;
+    // The one place the version shows on a computer (R27); hover tells the rest.
+    el.textContent = 'v' + buildLast.version;
+    el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + '. ' + buildTitle(buildLast);
   }
   function hsLoadUsage() {
     fetch('/api/admin/hub/usage', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); }).then(function (data) {
@@ -33,7 +122,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var b = $('hs-acct'), pop = $('hs-acct-pop');
     if (!b || !hsAcct) return;
     b.hidden = false;
-    b.textContent = 'Accounts · ' + hubAccountsText(hsAcct);
+    var said = hubAccountsText(hsAcct);
+    b.title = 'Accounts · ' + said;
+    b.innerHTML = 'Accounts<span class="hs__acct-s"> · ' + esc(said) + '</span>';
     if (!pop.hidden) pop.innerHTML = hubAccountsHtml(hsAcct, esc);
   }
   function hsAccounts(body) {

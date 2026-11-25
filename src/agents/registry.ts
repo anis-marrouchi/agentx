@@ -1,6 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
+import { modelAfterSwitch } from "./engine-model"
 import { cheapModelForEngine, triageModelFor, type RouteResult } from "./routing"
 import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
@@ -1344,6 +1345,66 @@ export class AgentRegistry {
    *  match setProviders. */
   setConfig(next: DaemonConfig): void {
     this.config = next
+    // An engine switch (the Hub's CLI drop-down, #2101) needs no restart: an
+    // idle agent's next run reads the new tier; a busy one takes it when its
+    // last run ends, so a run never changes engine under it.
+    // The model goes over with the tier (B1): a Claude model on Codex CLI or
+    // OpenCode fails the run, so a model the new engine cannot run is
+    // dropped and the engine's default is used.
+    for (const [id, def] of Object.entries(next.agents || {})) {
+      const state = this.agents.get(id)
+      if (!state) continue
+      if (state.def.tier === def.tier) { this.pendingTiers.delete(id); continue }
+      const model = modelAfterSwitch(def.model, def.tier)
+      if (state.activeTasks > 0) {
+        if (this.pendingTiers.get(id)?.tier !== def.tier) this.log(`[${id}] engine switch to ${def.tier} waits for ${state.activeTasks} run(s)`)
+        this.pendingTiers.set(id, { tier: def.tier, model })
+      } else {
+        this.switchEngine(state, def.tier, model); this.pendingTiers.delete(id)
+        this.log(`[${id}] engine switched to ${def.tier}${model ? ` (model ${model})` : " (engine's default model)"}`)
+      }
+    }
+  }
+
+  /** A tier (and its model) saved while the agent was busy, applied when its
+   *  last run ends. */
+  private pendingTiers = new Map<string, { tier: AgentDef["tier"]; model: string | undefined }>()
+  private switchEngine(state: AgentState, tier: AgentDef["tier"], model: string | undefined): void {
+    const { model: _old, ...rest } = state.def
+    state.def = model ? { ...rest, tier, model } : { ...rest, tier }
+  }
+  private applyPendingTier(state: AgentState): void {
+    const next = this.pendingTiers.get(state.id)
+    if (state.activeTasks > 0 || !next) return
+    this.switchEngine(state, next.tier, next.model)
+    this.pendingTiers.delete(state.id)
+    this.log(`[${state.id}] engine switched to ${state.def.tier} (its runs ended)`)
+  }
+
+  /** The engine an agent's next run uses (tests and the reload log). */
+  tierOf(id: string): AgentDef["tier"] | undefined {
+    return this.pendingTiers.get(id)?.tier ?? this.agents.get(id)?.def.tier
+  }
+
+  /** No new run may start: every slot is taken, or an engine switch waits
+   *  for the runs still going (#2101), so every run that starts after the
+   *  switch, queued ones too, starts on the new engine. */
+  private slotFull(state: AgentState): boolean {
+    return state.activeTasks >= state.def.maxConcurrent
+      || (state.activeTasks > 0 && this.pendingTiers.has(state.id))
+  }
+
+  /** The native session a run on `tier` resumes for this chat. Each engine
+   *  keeps its own id, so after a switch the new engine never gets the old
+   *  engine's id: it starts fresh (or resumes its own earlier session). */
+  resumeIdFor(agentId: string, tier: AgentDef["tier"], channel: string, chatId: string): string | undefined {
+    return tier === "claude-code"
+      ? this.sessions.getClaudeSessionId(agentId, channel, chatId)
+      : tier === "codex-cli"
+        ? this.sessions.getCodexSessionId(agentId, channel, chatId)
+        : tier === "opencode"
+          ? this.sessions.getOpenCodeSessionId(agentId, channel, chatId)
+          : undefined
   }
 
   /** Swap the workflows block on a config reload (#858): matching,
@@ -2607,7 +2668,7 @@ export class AgentRegistry {
     }
     const dropVoiceClaim = () => { if (voiceClaim) this.voiceClaims.delete(voiceClaim) }
 
-    if (state.activeTasks >= state.def.maxConcurrent) {
+    if (this.slotFull(state)) {
       // Synchronous API callers (mesh /task, /ask, direct curl) can't observe
       // a queued result — the queue's flush callback re-routes via channels,
       // not back to the awaiting HTTP caller. Returning `error: __queued__`
@@ -2644,10 +2705,10 @@ export class AgentRegistry {
         const pollIntervalMs = 500
         // A wake with a deadline can wait well under a minute (#1596).
         const waitLabel = maxWaitMs < 60_000 ? `${Math.max(1, Math.ceil(maxWaitMs / 1000))}s` : `${Math.round(maxWaitMs / 60000)}m`
-        if (state.activeTasks >= state.def.maxConcurrent) {
+        if (this.slotFull(state)) {
           this.log(`[${task.agentId}] busy, waiting for a slot (up to ${waitLabel}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId}`)
         }
-        while (state.activeTasks >= state.def.maxConcurrent) {
+        while (this.slotFull(state)) {
           if (task.callerSignal?.aborted) { dropVoiceClaim(); return this.callerGone(task, "slot wait") }
           if (Date.now() - start > maxWaitMs) {
             dropVoiceClaim()
@@ -2778,7 +2839,7 @@ export class AgentRegistry {
         // One question at a time per voice chat: the claim is taken at
         // admission, before any other entry of the same pass is checked,
         // and held until this run marks the chat running.
-        canStart: () => state.activeTasks < state.def.maxConcurrent
+        canStart: () => !this.slotFull(state)
           && !(voiceKey && voiceKey !== voiceClaim && (this.voiceClaims.has(voiceKey) || this.messageQueue.isBusy(task.agentId, qChannel, qChatId))),
         onStart: () => {
           state.activeTasks++
@@ -3103,6 +3164,7 @@ export class AgentRegistry {
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
       state.activeTasks--
+      this.applyPendingTier(state)
       this.admissionTickets.get(task)?.release()
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
@@ -3506,13 +3568,7 @@ export class AgentRegistry {
     }
 
     // Decide whether to resume or start fresh
-    let resumeSessionId = state.def.tier === "claude-code"
-      ? this.sessions.getClaudeSessionId(task.agentId, channel, chatId)
-      : state.def.tier === "codex-cli"
-        ? this.sessions.getCodexSessionId(task.agentId, channel, chatId)
-        : state.def.tier === "opencode"
-          ? this.sessions.getOpenCodeSessionId(task.agentId, channel, chatId)
-          : undefined
+    let resumeSessionId = this.resumeIdFor(task.agentId, state.def.tier, channel, chatId)
 
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
     if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId, priorIdleMs)) {
@@ -5067,6 +5123,8 @@ export class AgentRegistry {
     id: string
     name: string
     tier: string
+    /** An engine switch saved while busy, waiting for the runs going (#2101 B2). */
+    pendingTier?: string
     model?: string
     workspace: string
     active: number
@@ -5083,6 +5141,7 @@ export class AgentRegistry {
         id: s.id,
         name: s.def.name,
         tier: s.def.tier,
+        ...(this.pendingTiers.has(s.id) ? { pendingTier: this.pendingTiers.get(s.id)!.tier } : {}),
         model: s.def.model,
         workspace: s.def.workspace,
         active: s.activeTasks,
@@ -5446,7 +5505,7 @@ export class AgentRegistry {
   slotHolders(agentId: string): { full: boolean; runIds: string[] } | null {
     const state = this.agents.get(agentId)
     if (!state) return null
-    return { full: state.activeTasks >= state.def.maxConcurrent, runIds: state.runningTasks.map((r) => r.id) }
+    return { full: this.slotFull(state), runIds: state.runningTasks.map((r) => r.id) }
   }
 
   /** True while `agentId` has a turn running on this chat. */
