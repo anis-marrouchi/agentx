@@ -477,8 +477,11 @@ export class CronScheduler {
     if (!job || !job.enabled || !this.running) return
     // The next regular run is a new scheduled run, not a hold retry: a
     // hold retry stopped by a hook, its goal or a pause must not hand its
-    // window to that run (#2247).
-    job.holdRetryPending = false
+    // window to that run (#2247). The saved slot marker goes with it.
+    if (job.holdRetryPending) {
+      job.holdRetryPending = false
+      this.saveLastRuns()
+    }
 
     // Clear any existing timer
     const existing = this.timers.get(jobId)
@@ -950,7 +953,8 @@ export class CronScheduler {
 
     for (const [jobId, job] of this.jobs) {
       // A one-time job's missed run is handled by scheduleNext (#2004).
-      if (!job.enabled || job.runAt) continue
+      // A held run waiting for its hold retry in this process is not missed.
+      if (!job.enabled || job.runAt || job.holdRetryPending) continue
 
       const lastRunStr = lastRuns[jobId]
       if (!lastRunStr) continue // Never ran before
@@ -1026,26 +1030,28 @@ export class CronScheduler {
           ...(!error && isQuietJobAnswer(job, response.content) ? { quiet: true } : {}),
         }
 
-        // A catch-up run held by a limit is a missed run, not a failure: it
-        // is not retried (the regular schedule runs next), its owner is told
-        // (#2247).
+        // A catch-up run held by a limit (a restart while the hold is still
+        // on) is not a failure: like a scheduled run, it is retried when the
+        // hold ends inside the slot's window, else reported missed (#2247).
         const hold = error ? runHold(response) : null
         if (hold) {
-          result.held = true
-          result.missed = true
-          if (hold.until) result.heldUntil = new Date(hold.until).toISOString()
+          job.lastRun = new Date()
+          job.totalRuns++
+          job.windowStart = missedAt
+          job.holdRetries = 0
+          // The hold retry takes the place of the regular timer armed at start.
+          const armed = this.timers.get(jobId)
+          if (armed) clearTimeout(armed)
+          await this.onHeld(job, result, hold, 0)
+          continue
         }
         this.logRun(result)
         job.lastRun = new Date()
         job.totalRuns++
 
-        if (hold) {
-          job.lastError = error
-          job.windowStart = missedAt
-          await this.reportMissed(job, `held by ${hold.cause}`, hold.until)
         // A failed catch-up run counts like a scheduled one (#1546), but is
         // not retried: the regular schedule runs it next.
-        } else if (error) {
+        if (error) {
           await this.recordFailure(job, error, "Missed job")
         } else {
           this.log(`Missed job "${jobId}" completed`)
@@ -1211,8 +1217,11 @@ export class CronScheduler {
         // A held run waiting for its hold retry lives only in a timer. Save
         // the moment just before its slot, so the next start sees the slot
         // as missed and catches it up instead of losing it (#2247).
-        if (job.holdRetryPending && job.windowStart && !job.runAt) {
-          data[id] = new Date(Math.floor(job.windowStart.getTime() / 60_000) * 60_000 - 1).toISOString()
+        // A one-time job saves the moment before its runAt, so it is run
+        // once more rather than retired.
+        if (job.holdRetryPending && job.windowStart) {
+          const slot = job.runAt ? Date.parse(job.runAt) : Math.floor(job.windowStart.getTime() / 60_000) * 60_000
+          data[id] = new Date(slot - 1).toISOString()
         } else if (job.lastRun) data[id] = job.lastRun.toISOString()
         else if (typeof saved[id] === "string") data[id] = saved[id]
       }

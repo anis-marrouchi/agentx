@@ -215,14 +215,37 @@ describe("a hold retry that does not happen", () => {
     const { s } = setup(job(), [{ error: NO_ROOM, errorKind: "no_room" }])
     await s.executeJob("wake")
     expect(s.jobs.get("wake").holdRetryPending).toBe(true)
-    s.saveLastRuns()
+    // While this process waits for the retry, the run is not counted missed.
+    expect(s.detectMissedRuns()).toEqual([])
+    await s.stop()
     vi.setSystemTime(new Date("2026-11-24T08:40:00Z"))
-    const missed = s.detectMissedRuns()
+    const { s: next } = setup(job(), [])
+    const missed = next.detectMissedRuns()
     expect(missed.map((m: any) => [m.jobId, m.missedAt.toISOString()])).toEqual([["wake", "2026-11-24T08:30:00.000Z"]])
   })
 
-  it("a caught-up run held again is recorded and reported as missed, not as a failure", async () => {
-    const { s, notices } = setup(job(), [{ error: PLAN, errorKind: "dispatch_hold" }])
+  it("a caught-up run still held is retried when the hold ends, not counted as a failure", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+    vi.setSystemTime(new Date("2026-11-24T10:00:00Z"))
+    const reset = Date.parse("2026-11-24T13:00:00Z")
+    const { s, execute, notices } = setup(job(), [{ error: PLAN, errorKind: "dispatch_hold", retryAt: reset }])
+    s.stillDue = async () => true
+    await s.executeMissedRuns([{ jobId: "wake", missedAt: new Date("2026-11-24T08:30:00Z") }])
+    const state = s.jobs.get("wake")
+    expect(state.consecutiveErrors).toBe(0)
+    expect(state.holdRetryPending).toBe(true)
+    expect(notices.add).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(reset - Date.now() + HOLD_RETRY_MARGIN_MS + 1000)
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(state.windowStart.toISOString()).toBe("2026-11-24T08:30:00.000Z")
+  })
+
+  it("a caught-up run held past its window is recorded and reported as missed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+    vi.setSystemTime(new Date("2026-11-24T10:00:00Z"))
+    const { s, notices } = setup(job({ retryWindowMinutes: 120 }), [
+      { error: PLAN, errorKind: "dispatch_hold", retryAt: Date.parse("2026-11-24T13:00:00Z") },
+    ])
     s.stillDue = async () => true
     await s.executeMissedRuns([{ jobId: "wake", missedAt: new Date("2026-11-24T08:30:00Z") }])
     const state = s.jobs.get("wake")
@@ -230,6 +253,17 @@ describe("a hold retry that does not happen", () => {
     expect(state.missedAt?.toISOString()).toBe("2026-11-24T08:30:00.000Z")
     expect(notices.add).toHaveBeenCalledTimes(1)
     expect(runRecords()[0]).toEqual(expect.objectContaining({ held: true, missed: true }))
+  })
+
+  it("a one-time job with a pending hold retry is run again after a restart, not retired", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+    vi.setSystemTime(new Date("2026-11-24T08:30:00Z"))
+    const once = job({ runAt: "2026-11-24T08:30:00Z" })
+    const { s } = setup(once, [{ error: NO_ROOM, errorKind: "no_room" }])
+    await s.executeJob("wake")
+    await s.stop()
+    const saved = JSON.parse(readFileSync(s.lastRunFile, "utf-8"))
+    expect(Date.parse(saved.wake)).toBeLessThan(Date.parse("2026-11-24T08:30:00Z"))
   })
 })
 
