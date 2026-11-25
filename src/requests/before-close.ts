@@ -30,6 +30,12 @@ export interface BeforeCloseCtx {
   /** Most seconds the judge may take (ownerCheck.beforeCloseSeconds). */
   seconds: number
   judge?: (r: RequestRecord, timeoutMs: number) => Promise<OwnerVerdict | null>
+  /** The judge without waiting, for a plan's close in the every-minute
+   *  sweep (#2047 review B2). Unset: a plan closes as before. */
+  judgeLater?: (r: RequestRecord, timeoutMs: number) => { ready: true; v: OwnerVerdict | null } | { ready: false }
+  /** Whether the after-close sweep will reopen a mismatch on this request
+   *  (under its reopen limit). Unset: assumed yes. */
+  willReopen?: (id: string) => boolean
   /** Keeps a verdict on a close that went through (OwnerWordsCheck). */
   keep?: (id: string, v: OwnerVerdict, now: number) => void
   /** Wall clock for the call's time budget. Default Date.now. */
@@ -43,6 +49,8 @@ export interface OwnerWordsNote {
   verdict: "mismatch"
   why: string
   uncovered: string[]
+  /** The after-close sweep will reopen it; false past maxReopens. */
+  reopens: boolean
 }
 
 /** Milliseconds the judge may take, counted from the start of the call;
@@ -75,6 +83,12 @@ export function blockedBody(v: OwnerVerdict): Record<string, unknown> {
 
 /** The note a warn close carries back to its caller; null when nothing
  *  is to be said. */
-export function warnNote(v: OwnerVerdict | null, mode: BeforeCloseMode): OwnerWordsNote | null {
-  return v?.verdict === "mismatch" && mode === "warn" ? { mode: "warn", verdict: "mismatch", why: v.why, uncovered: v.uncovered } : null
+export function warnNote(v: OwnerVerdict | null, mode: BeforeCloseMode, reopens: boolean): OwnerWordsNote | null {
+  return v?.verdict === "mismatch" && mode === "warn" ? { mode: "warn", verdict: "mismatch", why: v.why, uncovered: v.uncovered, reopens } : null
+}
+
+/** What the done tool says on a warn close (#2047 review N2). */
+export function warnText(n: Pick<OwnerWordsNote, "why" | "uncovered" | "reopens">): string {
+  return `Closed, but the proof does not show: ${uncoveredText(n)}. ` +
+    (n.reopens ? "The owner-words check will reopen it; do what is missing." : "It stays closed (reopen limit reached) and the owner is told; do what is missing.")
 }

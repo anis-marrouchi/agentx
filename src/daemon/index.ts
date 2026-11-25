@@ -3688,6 +3688,8 @@ export class AgentXDaemon {
       mode: s.enabled ? s.beforeClose ?? "warn" : "off",
       seconds: s.beforeCloseSeconds ?? 20,
       judge: (r, ms) => check.judgeBeforeClose(r, ms),
+      judgeLater: (r, ms) => check.judgeLater(r, ms),
+      willReopen: (id) => check.willReopen(id),
       keep: (id, v, now) => check.keepBeforeClose(id, v, now),
       log: this.log,
     }

@@ -426,16 +426,29 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
     const steps = plans.steps(r.id)
     const current = steps.find((s) => !isFinished(s))
     if (!current) {
+      // Read again: advance() awaited, so `r` may be stale (#2047 review B3).
+      const fresh = requests.get(r.id)
+      if (!fresh || CLOSED_STATES.includes(fresh.state as any)) {
+        if (plans.finish(r.id, "closed", now)) plans.event(r.id, null, "closed", `request ${fresh ? fresh.state : "deleted"}`, now)
+        return
+      }
       const evidence = planEvidence(steps)
-      const v = await judgePlanClose(deps, r, evidence, now)
+      const judged = judgePlanClose(deps, fresh, evidence, now)
+      // Not answered yet: the close waits for a later sweep (review B2).
+      if (!judged.ready) return
+      const v = judged.v
       if (v?.verdict === "mismatch" && deps.beforeClose?.mode === "block") {
-        holdPlan(deps, r, v, now)
+        holdPlan(deps, fresh, v, now)
         return
       }
       if (plans.finish(r.id, "done", now)) {
         plans.event(r.id, null, "finished", `${steps.length} steps`, now)
-        const closed = requests.close(r.id, "done", evidence, now, null, PLAN_BY)
-        if (closed && v) {
+        if (!requests.close(r.id, "done", evidence, now, null, PLAN_BY)) {
+          // A standing order is closed by its owner alone: the plan ends.
+          deps.log(`[plans] ${r.id}: every step finished; the request stays ${requests.get(r.id)?.state ?? "deleted"}`)
+          return
+        }
+        if (v) {
           deps.beforeClose?.keep?.(r.id, v, now)
           if (v.verdict === "mismatch") {
             plans.event(r.id, null, "owner-words-warn", uncoveredText(v), now)
@@ -452,18 +465,20 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
 }
 
 /** The owner-words judge on a plan's close, before it is written (#2047).
- *  Null: off, or no answer (the close goes through as before). The judge
- *  keeps its verdict per evidence, so a held plan costs one call. */
-async function judgePlanClose(deps: PlanSweepDeps, r: RequestRecord, evidence: string, now: number): Promise<OwnerVerdict | null> {
+ *  Never awaited inside the sweep (review B2): the first sweep starts it,
+ *  a later one reads its verdict. v null: off, or no answer (the close goes
+ *  through as before). The judge keeps its verdict per prompt, so a held
+ *  plan costs one call. */
+function judgePlanClose(deps: PlanSweepDeps, r: RequestRecord, evidence: string, now: number): { ready: true; v: OwnerVerdict | null } | { ready: false } {
   const ctx = deps.beforeClose
-  if (!ctx || ctx.mode === "off" || !ctx.judge) return null
+  if (!ctx || ctx.mode === "off" || !ctx.judgeLater) return { ready: true, v: null }
   const record = closingRecord(deps.requests, r.id, PLAN_BY, evidence, now)
-  if (!record) return null
+  if (!record) return { ready: true, v: null }
   try {
-    return await ctx.judge(record, ctx.seconds * 1000)
+    return ctx.judgeLater(record, ctx.seconds * 1000)
   } catch (e: any) {
     deps.log(`[plans] ${r.id}: owner-words before close failed, closing: ${e?.message ?? e}`)
-    return null
+    return { ready: true, v: null }
   }
 }
 

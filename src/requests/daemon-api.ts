@@ -1,7 +1,7 @@
 import { CLOSED_STATES, CLOSE_KINDS, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, OWNER_ASKED, type CloseKind, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
-import { checkEvidence, closeByCheckNow, deliverablesOf, oneLine, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
+import { checkCloseRefused, checkEvidence, closeByCheckNow, deliverablesOf, oneLine, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
@@ -404,7 +404,7 @@ function keepOwnerVerdict(deps: RequestsApiDeps, id: string, v: OwnerVerdict | n
   const ctx = deps.ownerBeforeClose
   if (!ctx || !v) return {}
   ctx.keep?.(id, v, now)
-  const note = warnNote(v, ctx.mode)
+  const note = warnNote(v, ctx.mode, ctx.willReopen?.(id) ?? true)
   if (!note) return {}
   ctx.log?.(`[requests] ${id}: owner-words before close (warn): ${note.why}${note.uncovered.length ? ` (not shown: ${note.uncovered.join("; ")})` : ""}`)
   return { ownerWords: note }
@@ -808,7 +808,10 @@ export function handleRequestsApi(
           : ""
         const said = [ev, extra].filter(Boolean).join("; ")
         const closing = checkEvidence(v.detail, said)
-        const owner = ownerGate(deps, request.id, CHECK_BY, closing, now)
+        // The held, blocked and reading gates first: a refused close is
+        // not judged (#2047 review N1).
+        const refused = checkCloseRefused(store, request.id, v.detail, deps.closeProof ?? PROOF_OFF)
+        const owner = refused ? { verdict: null } : ownerGate(deps, request.id, CHECK_BY, closing, now)
         if ("reply" in owner) return owner.reply
         const out = closeByCheckNow(store, request.id, v.detail, closing, now, deps.closeProof ?? PROOF_OFF)
         if (out.outcome === "held") return { status: 409, body: { error: `Not closed: its check gives the same result the owner already found does not match their words (${out.detail}).`, held: true } }
