@@ -31,7 +31,7 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
 import { hubAgentsFor } from "./hub-agents-api"
-import { planWindowUse } from "@/agents/claude-code-quota"
+import { liftProviderHolds, planWindowUse } from "@/agents/claude-code-quota"
 import { planUsageReader } from "@/agents/claude-plan-usage"
 import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
@@ -1123,7 +1123,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (path === "/api/admin/hub/accounts" && (method === "GET" || method === "POST")) {
     if (!wallOwnerOk(req, ctx)) { sendJson(res, 403, { error: "Accounts are for the owner." }); return }
     try {
-      if (method === "POST") changeCliAccounts(await readJson(req))
+      if (method === "POST") {
+        const body = await readJson(req)
+        changeCliAccounts(body)
+        // Holds are kept per window, not per account: after a switch the
+        // old account's used-up window must not hold the new one's runs.
+        // If the new account is used up too, its first refusal sets it again.
+        if (body?.action === "use" && body?.provider === "claude") liftProviderHolds()
+      }
       sendJson(res, 200, { providers: cliAccountsView() })
     } catch (e: any) { sendJson(res, e.status || 500, { error: e.message }) }
     return

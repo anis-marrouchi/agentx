@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "fs"
-import { withCliAccountEnv } from "@/agents/cli-accounts"
+import { CLI_PROVIDERS, withCliAccountEnv } from "@/agents/cli-accounts"
 import { resolve } from "path"
 
 // Loads per-agent secrets from the agent's workspace and tells the runtime
@@ -107,6 +107,22 @@ export function buildAgentEnv(
   }
   // The active CLI account profile (#2101 P9b), unless this workspace sets its own.
   return withCliAccountEnv(child, Object.keys(workspaceEnv))
+}
+
+/**
+ * The CLI account for a spawn that does not go through buildAgentEnv, such as
+ * a persistent Claude Code chat (#2101 P9b review): a config folder set in
+ * the workspace .env wins, else the active profile, else the parent's value.
+ */
+export function withWorkspaceCliAccountEnv(env: NodeJS.ProcessEnv, workspace: string): NodeJS.ProcessEnv {
+  const ws = loadWorkspaceEnv(workspace)
+  const own: string[] = []
+  for (const { envVar } of Object.values(CLI_PROVIDERS)) {
+    if (ws[envVar] === undefined) continue
+    env[envVar] = ws[envVar]
+    own.push(envVar)
+  }
+  return withCliAccountEnv(env, own)
 }
 
 // Force the `claude` CLI to use OAuth/subscription billing. When

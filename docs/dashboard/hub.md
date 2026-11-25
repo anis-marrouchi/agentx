@@ -85,12 +85,12 @@ If you have more than one Claude Code or Codex account, keep each in its own con
 1. **Terminal:** sign in once per folder with the CLI itself. For Claude Code: `CLAUDE_CONFIG_DIR=~/.claude-work claude`, then `/login`. For Codex: `CODEX_HOME=~/.codex-work codex login`. AgentX never reads, copies or stores the token; it stays where the CLI put it.
 2. **Browser:** in the Hub's bottom bar, select **Accounts**. Each provider lists **default** (the CLI's own folder, `~/.claude` or `~/.codex`) and the profiles you added.
 3. To add a profile, type a name (for example `work`) and its folder, then select **Add**. A folder that does not exist yet says **folder not there yet**: sign in first (step 1).
-4. Select a profile's button. The bar says **Accounts · Claude Code: work · Codex: default**, and every Claude Code or Codex process AgentX starts from then on uses that folder.
+4. Select a profile's button. The bar says **Accounts · Claude Code: work · Codex: default**, and every Claude Code or Codex process AgentX starts from then on uses that folder. A Claude Code switch also lifts any usage hold the old account left, so queued runs start on the new one.
 5. **Remove** deletes a profile from the list, not its folder. If it was in use, new runs go back to **default**.
 
 What stays as it was:
 - A run already going, and a chat whose Claude Code session is still open, keep the account they started with. The switch applies from their next new process.
-- An agent whose workspace `.env` sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` keeps its own folder.
+- An agent whose workspace `.env` sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` keeps its own folder, in one-off runs and in open chats alike.
 - The usage numbers in the bar still read the daemon's own Claude Code reading, not the picked profile's.
 - Gemini is not listed yet.
 

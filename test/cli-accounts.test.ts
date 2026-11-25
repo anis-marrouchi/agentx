@@ -80,3 +80,20 @@ describe("the Hub's picker", () => {
     expect(page).toContain("if (window.AX_WALL_SETTINGS) hsAccounts();")
   })
 })
+
+describe("persistent chats (review of 5ac450af)", () => {
+  it("a workspace .env folder wins over the active profile", async () => {
+    const { withWorkspaceCliAccountEnv } = await import("../src/utils/workspace-env")
+    const ws = join(dir, "own-ws"); mkdirSync(ws)
+    writeFileSync(join(ws, ".env"), "CLAUDE_CONFIG_DIR=/tmp/claude-own\nCODEX_HOME=/tmp/codex-own\n")
+    const env = withWorkspaceCliAccountEnv({ CLAUDE_CONFIG_DIR: "/tmp/parent" }, ws)
+    expect(env.CLAUDE_CONFIG_DIR).toBe("/tmp/claude-own")
+    expect(env.CODEX_HOME).toBe("/tmp/codex-own")
+  })
+  it("without one, the active profile applies", () => {
+    changeCliAccounts({ provider: "claude", action: "add", name: "work", dir: "/tmp/claude-work" }, file, dir)
+    const state = changeCliAccounts({ provider: "claude", action: "use", name: "work" }, file, dir)
+    expect(withCliAccountEnv({ CLAUDE_CONFIG_DIR: "/tmp/parent" }, [], state).CLAUDE_CONFIG_DIR).toBe("/tmp/claude-work")
+    expect(withCliAccountEnv({ CLAUDE_CONFIG_DIR: "/tmp/parent" }, ["CLAUDE_CONFIG_DIR"], state).CLAUDE_CONFIG_DIR).toBe("/tmp/parent")
+  })
+})
