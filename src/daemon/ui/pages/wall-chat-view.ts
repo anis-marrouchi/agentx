@@ -73,7 +73,8 @@ export function chatLiveHtml(live: string, o: { key: string; fold?: ChatFold; md
  * The conversation as HTML. `agent` is the display name of who answers;
  * `md` renders a reply's markdown (it escapes first). `notSent` is a
  * message the node did not take: it shows with "Not sent", and its text
- * stays in the composer. A failed reply offers Try again and Ask another
+ * stays in the composer. `notSentWhy` is the node's own error when it
+ * answered and refused (#2238); without it the node did not answer. A failed reply offers Try again and Ask another
  * agent when it is the last message. A pending answer whose run has
  * started shows `live`, the run's output so far (chatLiveHtml), with Stop
  * and, when `runHref` names it, Open the run (`stopFailed`: a Stop that
@@ -82,7 +83,7 @@ export function chatLiveHtml(live: string, o: { key: string; fold?: ChatFold; md
  * answer with tool steps in `runs` shows them folded above it (R14).
  */
 export function chatLogHtml(msgs: ChatMessage[], o: {
-  agent: string; md?: (s: string) => string; notSent?: string; live?: string; runHref?: string; stopFailed?: boolean
+  agent: string; md?: (s: string) => string; notSent?: string; notSentWhy?: string; live?: string; runHref?: string; stopFailed?: boolean
   runs?: Record<string, ChatRun>; fold?: ChatFold; open?: Record<string, boolean>; now?: number
 }): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string))
@@ -125,7 +126,9 @@ export function chatLogHtml(msgs: ChatMessage[], o: {
     return them("hc__md", body, "", false, foldOf(m))
   })
   if (o.notSent) {
-    out.push(me(o.notSent), them("hc__err", "<b>Not sent</b>This node does not answer just now. Your message is kept below; send it again when it is back.", ""))
+    out.push(me(o.notSent), them("hc__err", o.notSentWhy
+      ? "<b>Not sent</b>" + esc(o.notSentWhy.replace(/[.\s]+$/, "")) + ". Your message is kept below; send it again."
+      : "<b>Not sent</b>This node does not answer just now. Your message is kept below; send it again when it is back.", ""))
   }
   return out.join("")
 }

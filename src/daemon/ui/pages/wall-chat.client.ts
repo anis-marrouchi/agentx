@@ -248,7 +248,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // --- The conversation: it lives on the daemon, the page keeps its id ---
   // threadNode: the node that holds it, as the Hub's proxy names it; its
   // reads go there, and its run streams and stops from there.
-  var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], runs = {}, notSent = '', poll = null, busy = false, loaded = false;
+  var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], runs = {}, notSent = '', notSentWhy = '', sendError = '', poll = null, busy = false, loaded = false;
   // spoken: the conversation whose next answer is said aloud (the mic).
   var spoken = null, openFolds = {};
   function setThread(id, node) {
@@ -273,7 +273,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (thread && thread.agentId) remember(thread.agentId, threadId, threadNode);
     else if (!threadId) remember($('hc-agent').value, null, null);
     $('hc-agent').value = agent;
-    notSent = '';
+    notSent = ''; notSentWhy = '';
     // The work line follows the agent in view (wall-context.client.ts, #2101 R15).
     if (window.AXCtx) window.AXCtx.paintWork();
     var m = mem()[agent];
@@ -399,7 +399,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var log = $('hc-log');
     var p = pendingMsg();
     log.innerHTML = chatLogHtml(msgs, {
-      agent: agentName(), md: markdownToHtml, notSent: notSent, live: p && p.taskId === streamed ? live : '', runHref: runHref(p),
+      agent: agentName(), md: markdownToHtml, notSent: notSent, notSentWhy: notSentWhy, live: p && p.taskId === streamed ? live : '', runHref: runHref(p),
       stopFailed: !!p && p.taskId === stopFailed, runs: runs, fold: FOLD, open: openFolds, now: Date.now(),
     });
     log.scrollTop = log.scrollHeight;
@@ -431,7 +431,15 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // The owner is signed in, but the machine holding the chat refused or did not answer.
   function nodeDown(r) {
     return r.json().catch(function () { return {}; }).then(function (d) {
-      $('hc-log').innerHTML = '<div class="hc__guest"><b>That machine did not answer</b>' + esc(d.error || 'HTTP ' + r.status) + '</div>';
+      var why = d.error || 'HTTP ' + r.status;
+      $('hc-log').innerHTML = '<div class="hc__guest"><b>That machine did not answer</b>' + esc(why) + '</div>';
+      return why;
+    });
+  }
+  // The node answered a read with an error of its own (#2238): say it, not an empty chat.
+  function readFailed(r) {
+    return r.json().catch(function () { return {}; }).then(function (d) {
+      $('hc-log').innerHTML = '<div class="hc__guest"><b>This conversation could not be read</b>' + esc(d.error || 'HTTP ' + r.status) + '</div>';
     });
   }
   function loadThread(id) {
@@ -448,7 +456,9 @@ export const WALL_CHAT_SCRIPT = String.raw`
       if (id !== threadId) return;
       if (r.status === 401) { signedOut(); return; }
       if (r.status === 502) return nodeDown(r);
-      if (!r.ok) { setThread(null); thread = null; msgs = []; loaded = true; paintLog(); return; }
+      // Gone (deleted, or another node's): start a new one, as before.
+      if (r.status === 404) { setThread(null); thread = null; msgs = []; loaded = true; paintLog(); return; }
+      if (!r.ok) return readFailed(r);
       return r.json().then(function (d) {
         if (id !== threadId) return;
         thread = d.thread || null; msgs = d.messages || []; runs = d.runs || {}; loaded = true;
@@ -483,7 +493,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (!text || busy) return Promise.resolve(false);
     var agent = $('hc-agent').value;
     if (!agent && !threadId) { $('hc-agent').focus(); return Promise.resolve(false); }
-    busy = true; notSent = ''; $('hc-send').disabled = true; $('hc-text').value = '';
+    busy = true; notSent = ''; notSentWhy = ''; sendError = ''; $('hc-send').disabled = true; $('hc-text').value = '';
     // A conversation stays on its node; a new one goes to the node picked.
     var node = threadId ? threadNode || undefined : ($('hc-node').hidden ? undefined : $('hc-node').value || undefined);
     var ok = false;
@@ -495,10 +505,11 @@ export const WALL_CHAT_SCRIPT = String.raw`
         model: (typeof api.model === 'function' && api.model()) || undefined,
       }),
     }).then(function (r) {
-      if (r.status === 401) { $('hc-text').value = text; signedOut(); return; }
-      if (r.status === 502) { $('hc-text').value = text; return nodeDown(r); }
-      return r.json().then(function (d) {
-        if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+      if (r.status === 401) { $('hc-text').value = text; sendError = 'You are signed out.'; signedOut(); return; }
+      if (r.status === 502) { $('hc-text').value = text; return nodeDown(r).then(function (why) { sendError = 'That machine did not answer: ' + why; }); }
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        // The node answered and refused: keep its own words (#2238).
+        if (!r.ok || d.error) throw { answered: d.error || ('HTTP ' + r.status) };
         ok = true;
         setThread(d.threadId, d.node || node);
         remember(agent, d.threadId, d.node || node);
@@ -506,14 +517,18 @@ export const WALL_CHAT_SCRIPT = String.raw`
         if (typeof api.onSent === 'function') api.onSent();
         return loadThread(d.threadId);
       });
-    }).catch(function () {
-      // The node did not take it: say so, and keep the text to send again.
-      notSent = text; $('hc-text').value = text; paintLog();
+    }).catch(function (e) {
+      // Not taken: say why (the node's error, or that it did not answer), and keep the text to send again.
+      notSent = text; notSentWhy = e && e.answered ? String(e.answered) : '';
+      sendError = notSentWhy || 'This node does not answer just now.';
+      $('hc-text').value = text; paintLog();
     }).then(function () { busy = false; $('hc-send').disabled = false; return ok; });
   }
   // The ask box's files and mic (wall-chat-input.client.ts) use these.
   var api = window.AXHubChat = {
     send: send, headers: headers, agent: currentAgent,
+    // Why the last send was not taken, '' when it was (the mic's status line, #2238).
+    sendError: function () { return sendError; },
     node: function () { return threadId ? threadNode || '' : ($('hc-node').hidden ? '' : $('hc-node').value || ''); },
     attachments: null, onSent: null, onSpokenAnswer: null, onAgent: null, model: null,
   };
@@ -555,7 +570,9 @@ export const WALL_CHAT_SCRIPT = String.raw`
   function threads() {
     return fetch('/api/assistant/threads', { headers: headers() }).then(function (r) {
       var err = $('hc-hist-err');
-      if (r.status !== 502) { err.hidden = true; return r.ok ? r.json() : { threads: [] }; }
+      if (r.ok) { err.hidden = true; return r.json(); }
+      if (r.status === 401) { err.hidden = true; return { threads: [] }; }
+      // 502 (the machine refused) or the node's own error (#2238): show it, not an empty list.
       return r.json().catch(function () { return {}; }).then(function (d) {
         err.textContent = d.error || 'HTTP ' + r.status; err.hidden = false;
         return { threads: [] };
@@ -620,12 +637,12 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (!pick) return;
     setThread(pick.getAttribute('data-hc-thread'));
     $('hc-hist-panel').hidden = true; $('hc-hist').setAttribute('aria-expanded', 'false');
-    loaded = false; notSent = '';
+    loaded = false; notSent = ''; notSentWhy = '';
     loadThread(threadId);
   });
   $('hc-new').addEventListener('click', function () {
     remember(currentAgent(), null, null);
-    setThread(null); notSent = ''; loadThread(null);
+    setThread(null); notSent = ''; notSentWhy = ''; loadThread(null);
     $('hc-hist-panel').hidden = true; $('hc-hist').setAttribute('aria-expanded', 'false');
     $('hc-text').focus();
   });
