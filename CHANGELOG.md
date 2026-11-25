@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.272.0](https://github.com/anis-marrouchi/agentx/compare/v0.271.3...v0.272.0) (2026-11-25)
+
+
+### Features
+
+* **hub-chat:** mic sends on stop, Check before sending switch, Hear my message ([#2266](https://github.com/anis-marrouchi/agentx/issues/2266)) ([#2267](https://github.com/anis-marrouchi/agentx/issues/2267)) ([8b29cdc](https://github.com/anis-marrouchi/agentx/commit/8b29cdcb8787844ffadbcd882c2eaee9aab3fb6f))
+
 ## [0.271.3](https://github.com/anis-marrouchi/agentx/compare/v0.271.2...v0.271.3) (2026-11-25)
 
 
