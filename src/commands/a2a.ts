@@ -25,3 +25,6 @@ export const a2a = new Command()
 
     await server.start()
   })
+
+// Wake-proof test only (draft PR, will be closed): adds an undocumented env var so the docs gate fails.
+export const wakeProofProbe = process.env.AGENTX_WAKE_PROOF_PROBE
