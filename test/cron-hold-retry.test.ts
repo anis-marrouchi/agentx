@@ -198,14 +198,60 @@ describe("a scheduled run that is held", () => {
   })
 })
 
+describe("a hold retry that does not happen", () => {
+  it("does not hand its window to the next regular run", () => {
+    const { s } = setup(job(), [])
+    const state = s.jobs.get("wake")
+    state.holdRetryPending = true
+    // The real scheduleNext: what a hook block, a goal hold or a pause calls.
+    CronScheduler.prototype["scheduleNext" as keyof CronScheduler].call(s, "wake")
+    expect(state.holdRetryPending).toBe(false)
+    s.stop()
+  })
+
+  it("survives a restart: the held slot is caught up as a missed run", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+    vi.setSystemTime(new Date("2026-11-24T08:30:00.400Z"))
+    const { s } = setup(job(), [{ error: NO_ROOM, errorKind: "no_room" }])
+    await s.executeJob("wake")
+    expect(s.jobs.get("wake").holdRetryPending).toBe(true)
+    s.saveLastRuns()
+    vi.setSystemTime(new Date("2026-11-24T08:40:00Z"))
+    const missed = s.detectMissedRuns()
+    expect(missed.map((m: any) => [m.jobId, m.missedAt.toISOString()])).toEqual([["wake", "2026-11-24T08:30:00.000Z"]])
+  })
+
+  it("a caught-up run held again is recorded and reported as missed, not as a failure", async () => {
+    const { s, notices } = setup(job(), [{ error: PLAN, errorKind: "dispatch_hold" }])
+    s.stillDue = async () => true
+    await s.executeMissedRuns([{ jobId: "wake", missedAt: new Date("2026-11-24T08:30:00Z") }])
+    const state = s.jobs.get("wake")
+    expect(state.consecutiveErrors).toBe(0)
+    expect(state.missedAt?.toISOString()).toBe("2026-11-24T08:30:00.000Z")
+    expect(notices.add).toHaveBeenCalledTimes(1)
+    expect(runRecords()[0]).toEqual(expect.objectContaining({ held: true, missed: true }))
+  })
+})
+
 describe("a run that fails all its retries", () => {
+  it("does not send the notify chat a second message after its failure alert", async () => {
+    const { s, notices, notify } = setup(job({ onError: ["notify"] }), [])
+    s.jobs.get("wake").lastError = "API Error: 500"
+    s.scheduleRetry("wake", 5)
+    await Promise.resolve()
+    expect(notices.add).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+
   it("tells the owner the run was missed", async () => {
-    const { s, notices } = setup(job(), [])
+    const { s, notices, notify } = setup(job(), [])
     s.jobs.get("wake").lastError = "API Error: 500"
     s.scheduleRetry("wake", 5)
     await Promise.resolve()
     expect(notices.add).toHaveBeenCalledTimes(1)
     expect(notices.add.mock.calls[0][2]).toContain("it failed 6 times (API Error: 500)")
+    await Promise.resolve()
+    expect(notify).toHaveBeenCalledTimes(1)
   })
 })
 

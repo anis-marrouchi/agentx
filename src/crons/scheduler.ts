@@ -475,6 +475,10 @@ export class CronScheduler {
   private scheduleNext(jobId: string): void {
     const job = this.jobs.get(jobId)
     if (!job || !job.enabled || !this.running) return
+    // The next regular run is a new scheduled run, not a hold retry: a
+    // hold retry stopped by a hook, its goal or a pause must not hand its
+    // window to that run (#2247).
+    job.holdRetryPending = false
 
     // Clear any existing timer
     const existing = this.timers.get(jobId)
@@ -529,7 +533,10 @@ export class CronScheduler {
       this.log(`Job "${jobId}" exhausted all ${MAX_RETRIES} retries, scheduling next regular run`)
       this.scheduleNext(jobId)
       // The day's run is lost: its owner hears it now, not from a log (#2247).
-      void this.reportMissed(job, `it failed ${MAX_RETRIES + 1} times (${(job.lastError ?? "unknown error").slice(0, 200)})`)
+      // The failure alert already reached the notify chat when notifyFailure
+      // sent one: no second chat message for the same run.
+      const alerted = job.onError.includes("notify") || job.consecutiveErrors >= 2
+      void this.reportMissed(job, `it failed ${MAX_RETRIES + 1} times (${(job.lastError ?? "unknown error").slice(0, 200)})`, undefined, !alerted)
       return
     }
 
@@ -589,7 +596,7 @@ export class CronScheduler {
    * of its next run (it gets a run of its own within the hour), and the
    * job's `notify` chat whatever `onError` says.
    */
-  private async reportMissed(job: CronJobState, cause: string, heldUntil?: number): Promise<void> {
+  private async reportMissed(job: CronJobState, cause: string, heldUntil?: number, toChat = true): Promise<void> {
     job.missedAt = job.windowStart ?? job.lastRun ?? new Date()
     let nextRun: Date | undefined
     if (!job.runAt) {
@@ -604,7 +611,7 @@ export class CronScheduler {
         this.log(`Job "${job.id}" missed-run notice to ${agentId} failed: ${e?.message ?? e}`)
       }
     }
-    if (!this.notifyCallback) return
+    if (!toChat || !this.notifyCallback) return
     try {
       await this.notifyCallback(job.id, job.agent, text, job.consecutiveErrors)
     } catch {
@@ -1019,13 +1026,26 @@ export class CronScheduler {
           ...(!error && isQuietJobAnswer(job, response.content) ? { quiet: true } : {}),
         }
 
+        // A catch-up run held by a limit is a missed run, not a failure: it
+        // is not retried (the regular schedule runs next), its owner is told
+        // (#2247).
+        const hold = error ? runHold(response) : null
+        if (hold) {
+          result.held = true
+          result.missed = true
+          if (hold.until) result.heldUntil = new Date(hold.until).toISOString()
+        }
         this.logRun(result)
         job.lastRun = new Date()
         job.totalRuns++
 
+        if (hold) {
+          job.lastError = error
+          job.windowStart = missedAt
+          await this.reportMissed(job, `held by ${hold.cause}`, hold.until)
         // A failed catch-up run counts like a scheduled one (#1546), but is
         // not retried: the regular schedule runs it next.
-        if (error) {
+        } else if (error) {
           await this.recordFailure(job, error, "Missed job")
         } else {
           this.log(`Missed job "${jobId}" completed`)
@@ -1188,7 +1208,12 @@ export class CronScheduler {
       const saved = this.loadLastRuns() ?? {}
       const data: Record<string, string> = {}
       for (const [id, job] of this.jobs) {
-        if (job.lastRun) data[id] = job.lastRun.toISOString()
+        // A held run waiting for its hold retry lives only in a timer. Save
+        // the moment just before its slot, so the next start sees the slot
+        // as missed and catches it up instead of losing it (#2247).
+        if (job.holdRetryPending && job.windowStart && !job.runAt) {
+          data[id] = new Date(Math.floor(job.windowStart.getTime() / 60_000) * 60_000 - 1).toISOString()
+        } else if (job.lastRun) data[id] = job.lastRun.toISOString()
         else if (typeof saved[id] === "string") data[id] = saved[id]
       }
       const dir = resolve(process.cwd(), ".agentx/cron")
@@ -1297,7 +1322,7 @@ export class CronScheduler {
       missed: missed.length,
       jobs: jobs.map(j => ({
         id: j.id,
-        status: !j.enabled ? "disabled" : j.retryPending ? "retrying" : j.missedAt ? "missed" : j.consecutiveErrors > 0 ? "failing" : "healthy",
+        status: !j.enabled ? "disabled" : j.retryPending ? "retrying" : j.consecutiveErrors > 0 ? "failing" : j.missedAt ? "missed" : "healthy",
         consecutiveErrors: j.consecutiveErrors,
         lastError: j.lastError,
       })),
