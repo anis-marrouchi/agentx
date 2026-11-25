@@ -133,3 +133,17 @@ describe("runs that hold a --people-only upgrade", () => {
     ])
   })
 })
+
+describe("waiting for idle on a busy daemon", () => {
+  it("rides out a long run of missed checks instead of refusing the upgrade", async () => {
+    const { IDLE_MAX_MISSES } = await import("../src/commands/daemon-upgrade-run")
+    const { waitForIdle } = await import("../src/daemon/restart")
+    const answers: Array<number | null> = [...Array(IDLE_MAX_MISSES - 1).fill(null), 0, 0]
+    const r = await waitForIdle({
+      read: async () => answers.shift() ?? 0, intervalMs: 10_000, timeoutMs: 60 * 60_000,
+      maxUnreachable: IDLE_MAX_MISSES, sleep: async () => {}, now: () => 0,
+    })
+    expect(r.outcome).toBe("idle")
+    expect(IDLE_MAX_MISSES).toBeGreaterThan(6)
+  })
+})
