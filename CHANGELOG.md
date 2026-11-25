@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.270.1](https://github.com/anis-marrouchi/agentx/compare/v0.270.0...v0.270.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **agents:** start a new session when the stored model can't run on the agent's engine ([#2244](https://github.com/anis-marrouchi/agentx/issues/2244)) ([6b07add](https://github.com/anis-marrouchi/agentx/commit/6b07add0c7818ab135400ea45e2778b6cc15b5e9))
+* **upgrade:** keep waiting for idle when a busy daemon answers slowly ([#2246](https://github.com/anis-marrouchi/agentx/issues/2246)) ([6fc4cde](https://github.com/anis-marrouchi/agentx/commit/6fc4cdea7560b7fcf95abcdb6043ffe7bf6cfb97))
+
 ## [0.270.0](https://github.com/anis-marrouchi/agentx/compare/v0.269.2...v0.270.0) (2026-11-25)
 
 
