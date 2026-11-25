@@ -1052,6 +1052,8 @@ When a machine does not answer, its card turns red and the Hub still shows every
 
 A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
 
+In the side menu's machine tree, a machine on **checking…** keeps the agents of its last answer, with **as of** and the time of that answer (UTC, hours and minutes) next to the badge. Its rows do not disappear while it is asked again. A machine that has not answered in five minutes says **not checked** and shows no agents. The **At work now** and **Working** counts take only machines that are up.
+
 ![Happening now on a phone: one machine answered, the other is still checking](/screenshots/wall/checking-phone.png)
 
 *Scripted demo data; your team's names and machines will differ.*

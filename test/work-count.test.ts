@@ -85,7 +85,9 @@ describe("liveWorkCount (#2260)", () => {
     expect(ids).toEqual(["s1"])
     expect(peer.working).toBe(1)
     expect([...peer.done, ...peer.idle].some((r) => r.agentId === "coder")).toBe(false)
-    for (const m of tree) {
+    // Up machines: a checking one shows "checking…", no number, and keeps
+    // its last good rows (#2292).
+    for (const m of tree.filter((x) => x.state === "up")) {
       const working = new Set(m.projects.flatMap((p) => p.items.flatMap((i) => i.rows.map((r) => r.agentId))))
       expect(working.size).toBe(m.working)
     }
