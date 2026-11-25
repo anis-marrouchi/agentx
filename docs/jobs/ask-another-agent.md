@@ -199,7 +199,9 @@ curl -s -X POST http://127.0.0.1:18800/send/agent -H 'Content-Type: application/
 The answer is `202` with `"status": "notice"` and how many notices wait for that agent. Things to know:
 
 - Up to 20 notices wait per agent. When there are more, the oldest are dropped.
-- Notices are kept in memory: a daemon restart loses the ones not yet passed on.
+- Notices are kept in `.agentx/notices.json` in the daemon's folder, written each time one is added or passed on. A daemon restart keeps the ones not yet passed on, and the log says `[notices] N notice(s) kept from before the restart`. The hour still counts from when each was sent.
+- A notice older than 24 hours when the daemon starts is dropped: it is for information, and stale after a long outage. Notices for an agent no longer in the config are dropped at the hourly check.
+- A notice is passed on once at most. It is taken when the run really starts, after any wait for a free place, and is gone from the file before the run's model sees it. If that run fails, or the daemon stops during it, the notice is not sent again. The hourly run takes its notices before it waits, so a restart during that wait loses them.
 - Notices work for agents on this machine only. For an agent on another machine, the message is sent as usual.
 - Send anything urgent as a plain message, without `notice`. For an alert, add `"priority": "critical"`: see below.
 
@@ -263,7 +265,7 @@ Some requests are refused straight away with status `409`:
 - **An agent still messages a colleague just to ask for a status:** check that `agentx_lookup` is not left out by the agent's `session.lean.agentxTools` list. A lean session keeps it while `session.lean.contextOnDemand` is on.
 - **`agentx_lookup` finds nothing about a piece of work:** the runs must name it as a link, a `group/project!12` ref, or the project name with `!12`. Work from more than 7 days ago is not searched.
 - **An alert sent with `"priority": "critical"` still waited:** search the other machine's daemon log for `[admission]`. `started … (critical) past the gate` means it went past a swap or load hold. A wait on `memory:`, `disk:` or `session cap` is on purpose.
-- **A notice never reached the agent:** search the daemon log for `[send/agent] notice` (kept) and `[notices]` (sent after an hour). Check that the daemon did not restart in between.
+- **A notice never reached the agent:** search the daemon log for `[send/agent] notice` (kept) and `[notices]` (sent after an hour, kept or dropped at a restart). `couldn't save notices to <path>` means the file could not be written, so a restart loses what waits; the line gives the error.
 - **An agent seems slow to start on an owner's request:** search the daemon log for the request ID. `another run of this agent is on it` means it waits for that run, for up to 15 minutes.
 - **`/send` answers `"is not an a2a chat ID"`:** the `chatId` must look like `a2a:<agent>:<agent>`, optionally followed by `:<id>`. Copy it exactly as your agent was given it, or use `POST /send/agent` with `agentId`.
 - **`/send` answers `"is not in a2a chat"`:** the `agentId` you sent is not one of the two agents in the `chatId`. Send as the agent the chat belongs to, or use `POST /send/agent`.

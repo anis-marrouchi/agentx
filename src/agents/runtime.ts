@@ -184,6 +184,9 @@ export interface AgentTask {
   /** Set on the one automatic retry of a run whose preparation steps hit
    *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
   preSpawnRetry?: number
+  /** Notices already taken for this run (the hourly sweep, #2121), put
+   *  before the message once its work-lane key is read. */
+  notices?: string
   /** Offered to the run already going in this chat (mid-turn.ts). */
   midTurnId?: string
   /** Set on the one turn that asks a run for its job's state
