@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.271.0](https://github.com/anis-marrouchi/agentx/compare/v0.270.2...v0.271.0) (2026-11-25)
+
+
+### Features
+
+* **hub:** React app foundation behind a switch, one extension registry ([#2218](https://github.com/anis-marrouchi/agentx/issues/2218) PR 0) ([#2240](https://github.com/anis-marrouchi/agentx/issues/2240)) ([142ac27](https://github.com/anis-marrouchi/agentx/commit/142ac27404b2d09547bd5e10a4d07b8f6001992b))
+* **requests:** every request records the kind of work it was ([#2251](https://github.com/anis-marrouchi/agentx/issues/2251)) ([3db7c4b](https://github.com/anis-marrouchi/agentx/commit/3db7c4bf910ce9dee55c66091dca91fcb8b9aa54))
+
 ## [0.270.2](https://github.com/anis-marrouchi/agentx/compare/v0.270.1...v0.270.2) (2026-11-25)
 
 
