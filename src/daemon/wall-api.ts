@@ -215,6 +215,8 @@ export interface WallPlanStep {
   evidence: string | null
   /** Why it is blocked or skipped. */
   note: string | null
+  /** Its last move (#2101): when its state, proof or note last changed. */
+  updatedAt: number
 }
 
 export interface WallEvent {
@@ -767,6 +769,7 @@ export function wallPlan(r: RequestRecord, deps: WallDeps): WallPlanStep[] {
     // Redacted before the cut, so a secret across the limit is still caught.
     evidence: s.evidence ? redactSecrets(s.evidence.trim()).slice(0, EVIDENCE_MAX) : null,
     note: s.note ? clean(s.note, 200) : null,
+    updatedAt: s.updatedAt,
   }))
 }
 

@@ -24,9 +24,12 @@
 // than one, a picker. The chat script asks for it through window.AXCtx.
 
 import { HUB_NAME } from "../hub-name"
+import { injectFns } from "../inject"
+import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
 
 export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
+  ${injectFns({ chAgo, chDate, chReqMetaHtml })}
   S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {} };
   var CX_MAX = 6;
   var CX_NAME = { changes: 'Changes', plan: 'Plan', file: 'File' };
@@ -95,7 +98,11 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
   function cxHeadHtml(p, t) {
     return '<div class="wcx__h"><a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>' +
-      (t.kind === 'file' ? '<code>' + esc(t.path) + '</code>' : '') + '</div>';
+      (t.kind === 'file' ? '<code>' + esc(t.path) + '</code>' : '') + cxMetaHtml(p) + '</div>';
+  }
+  /** When it started, its last move, its project, its home and History (#2101). */
+  function cxMetaHtml(p) {
+    return chReqMetaHtml({ id: p.id, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project, home: p.home }, Date.now());
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
@@ -171,7 +178,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     if (!list.length) { w.hidden = true; w.innerHTML = ''; return; }
     var id = S.cx.pick[agent], p = list.filter(function (x) { return x.id === id; })[0] || list[0];
     var what = list.length > 1
-      ? '<select data-cx="pick" aria-label="The request in view">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.id ? ' selected' : '') + '>' + esc(x.headline) + '</option>'; }).join('') + '</select>'
+      ? '<select data-cx="pick" aria-label="The request in view">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.id ? ' selected' : '') + '>' + esc(x.headline) + (x.project ? ' · ' + esc(x.project) : '') + ' · ' + esc(chAgo(x.lastMoveAt || x.updatedAt, Date.now())) + '</option>'; }).join('') + '</select>'
       : '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
     w.innerHTML = '<span class="hc__worklbl">Working on</span>' + what +
@@ -179,7 +186,12 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       '<button type="button" class="hc__ib" data-cx="open" data-kind="plan" data-id="' + esc(p.id) + '"' + on('plan') + '>Plan</button>';
     w.hidden = false;
   }
-  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork };
+  /** A request's place and times, for the chat's Plan tab (wall-chat-head.client.ts). */
+  function cxPost(id) {
+    var p = findPost(id);
+    return p ? { project: p.project, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
+  }
+  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost };
 
   document.addEventListener('click', function (ev) {
     var t = ev.target && ev.target.closest && ev.target.closest('[data-cx]');

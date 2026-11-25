@@ -881,6 +881,24 @@ describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
     expect(plan).toMatch(/is-done[^]*✓[^]*Design note/)
     expect(plan).toContain("pm · now")
     expect(chPlanHtml([], "pm")).toContain("pm has no open request with a plan.")
+    // #2101: each request says when it started, its last move, its project, its home and History.
+    const now = Date.parse("2026-11-25T12:00:00Z")
+    const dated = [{ id: "req-2", agentId: "pm", summary: "Ship", createdAt: Date.parse("2026-11-24T09:30:00Z"), updatedAt: now - 3 * 3600_000,
+      home: { kind: "issue", link: "https://gitlab.example/noqta/site/-/issues/12" },
+      plan: { steps: [{ idx: 1, name: "Build", agentId: "pm", state: "done", updatedAt: now - 2 * 3600_000 }, { idx: 2, name: "Ship", agentId: "pm", state: "pending", updatedAt: now }] } }]
+    const card = chPlanHtml(dated, "pm", { now })
+    expect(card).toContain('datetime="2026-11-24T09:30:00.000Z"')
+    expect(card).toContain("moved 3h ago")
+    expect(card).toContain('href="https://gitlab.example/noqta/site/-/issues/12"')
+    expect(card).toContain(">noqta/site#12</a>")
+    expect(card).toContain('href="#post=req-2" title="Everything that happened on this request">History</a>')
+    expect(card).toContain("pm · done · 2h ago")
+    expect(card).not.toContain("pm · next ·")
+    // The Hub post, when the page has it, gives the project and its last move.
+    const withPost = chPlanHtml(dated, "pm", { now, post: () => ({ project: "Noqta site", lastMoveAt: now - 60_000, createdAt: 0, home: null }) })
+    expect(withPost).toContain("<b>Noqta site</b>")
+    expect(withPost).toContain("moved 1m ago")
+    expect(withPost).toContain('href="https://gitlab.example/noqta/site/-/issues/12"')
     const proofs = chProofsHtml(reqs, "pm")
     expect(proofs).toContain('href="https://x.test/c1"')
     expect(proofs).not.toContain("Review")

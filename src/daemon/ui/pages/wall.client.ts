@@ -654,6 +654,7 @@ ${HUB_NAV_SCRIPT}
         var proof = s.evidence ? (/^https?:\/\//.test(s.evidence) ? '<a href="' + esc(s.evidence) + '" target="_blank" rel="noopener">Proof</a>' : esc(s.evidence)) : '';
         return '<li class="is-' + esc(s.state) + '"><span class="wtk__mark" aria-hidden="true">' + (STEP_MARK[s.state] || '') + '</span><div>' +
           '<b>' + esc(s.name) + '</b> ' + avatar(s.agentId, 'sm') + '<span class="h">@' + esc(s.agentId) + '</span> <span class="chip ' + (s.state === 'blocked' ? 'chip--warn' : s.state === 'done' ? 'chip--done' : 'chip--ghost') + '">' + esc(s.state) + '</span>' +
+          (s.updatedAt && s.state !== 'pending' ? ' <span class="k">' + shortTime(s.updatedAt) + '</span>' : '') +
           (s.doneWhen ? '<div class="k">Done when: ' + esc(s.doneWhen) + '</div>' : '') +
           (s.note ? '<div class="wtk__note">' + esc(s.note) + '</div>' : '') +
           (proof ? '<div class="k">' + proof + '</div>' : '') +

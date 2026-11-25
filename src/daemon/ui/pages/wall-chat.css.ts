@@ -61,6 +61,10 @@ export const WALL_CHAT_CSS = `
 .hc__plan + .hc__plan { margin-top: 18px; }
 .hc__planh { display: flex; align-items: center; gap: 8px; font-weight: 650; margin-bottom: 8px; }
 .hc__planh a { color: var(--ax-text); text-decoration: none; } .hc__planh a:hover { text-decoration: underline; }
+.hc__planm { font-size: 12px; font-weight: 400; color: var(--ax-muted); margin: -4px 0 8px; overflow-wrap: anywhere; }
+.hc__planm b { font-weight: 600; color: var(--ax-text); }
+.hc__planm a, .wcx__h .hc__planm a { font-weight: 400; color: var(--ax-blue-d); text-decoration: none; } .hc__planm a:hover { text-decoration: underline; }
+.wcx__h .hc__planm { margin: 2px 0 0; }
 .hc__plan ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .hc__plan li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
 .hc__plan li small, .hc__proofs small { display: block; color: var(--ax-muted); font-size: 12.5px; }
