@@ -82,6 +82,15 @@ export interface GenerateOptions {
   /** Asked before each MCP tool call; a string refuses it with that
    *  reason. The runtime wires the write-tool card here (#1736). */
   beforeMcpCall?: McpPoolOptions["beforeCall"]
+  /** Added to the end of the system prompt: the daemon's per-turn text
+   *  (the PR/MR marker, a task worktree), as the CLI tiers get it with
+   *  `--append-system-prompt`. */
+  systemPromptAppend?: string
+}
+
+/** The system prompt with the caller's `systemPromptAppend`, if any. */
+export function withSystemPromptAppend(systemPrompt: string, append?: string): string {
+  return append && append.trim() ? `${systemPrompt}\n\n${append.trim()}` : systemPrompt
 }
 
 export interface GenerateResult {
@@ -207,7 +216,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   }
 
   // 4. Build system prompt
-  const systemPrompt = buildSystemPrompt(context, outputType, matchedSkills.map((m) => m.skill))
+  const systemPrompt = withSystemPromptAppend(buildSystemPrompt(context, outputType, matchedSkills.map((m) => m.skill)), options.systemPromptAppend)
 
   // 5. Ensure credentials exist (auto-prompt if missing)
   const hasCredentials = await ensureCredentials(apiKey)
@@ -457,7 +466,7 @@ export async function* generateStream(
   const matchedSkills = matchSkillsToTask(context.skills, effectiveTask, outputType)
 
   // 4. Build system prompt
-  const systemPrompt = buildSystemPrompt(context, outputType, matchedSkills.map((m) => m.skill))
+  const systemPrompt = withSystemPromptAppend(buildSystemPrompt(context, outputType, matchedSkills.map((m) => m.skill)), options.systemPromptAppend)
 
   // 5. Ensure credentials
   const hasCredentials = await ensureCredentials(apiKey)

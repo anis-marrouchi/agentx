@@ -7,8 +7,8 @@ enum OrbMath {
     /// `presence.color` is unset. Same list, same order and same hash as
     /// `presenceLook` in src/voice/presence.ts, so the orb matches the
     /// agent's on-screen cursor even when /agents sends no colour.
-    static let palette = ["#7C3AED", "#DB2777", "#EA580C", "#0D9488",
-                          "#2563EB", "#65A30D", "#C026D3", "#0891B2"]
+    static let palette = ["#1A56C4", "#DB2777", "#EA580C", "#0D9488",
+                          "#2563EB", "#65A30D", "#4D94FF", "#0891B2"]
 
     /// The colour for an agent: the daemon's when it sent one, else the
     /// hash of the id.

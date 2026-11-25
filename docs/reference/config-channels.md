@@ -221,7 +221,7 @@ AgentX never starts the agent in `routes` or the author's agent for a failed pip
 
 A merge request from a fork (its source project is not its target project) has no owner: AgentX skips the marker and the branch, starts no agent and posts the one note, as in step 3.
 
-A branch pipeline names no merge request. AgentX then looks for the open merge request whose source branch is the pipeline's branch, and treats the pipeline as part of it. If that lookup fails (no token, or a GitLab API error), AgentX starts no agent and logs it.
+A branch pipeline names no merge request. AgentX then looks for the open merge request whose source branch is the pipeline's branch, and treats the pipeline as part of it. A merge request from a fork with the same branch name does not count. If that lookup fails (a GitLab API error), AgentX starts no agent and logs it. Without `channels.gitlab.token` there is nothing to look up with: AgentX treats the branch as having no open merge request, so a failed branch pipeline starts the agent in `routes`, as below.
 
 The run belongs to the merge request, so the reply is a comment there. The message names the commit, the branch, and each failed pipeline and job with its link. It asks the agent to fix CI on that branch and push.
 
@@ -275,7 +275,7 @@ A failed workflow run on a pull request starts the agent that owns the pull requ
 
 AgentX never starts the agent in `routes` or the author's agent (`githubUsernames`) for a failed workflow run. So a person's own pull request, or a contributor's, does not start an agent that would push to their branch.
 
-A pull request from a fork (its head repository is not this repository) has no owner: AgentX skips the marker and the branch, starts no agent and posts the one comment, as in step 3.
+A pull request from a fork (its head repository is not this repository) has no owner: AgentX skips the marker and the branch, starts no agent and posts the one comment, as in step 3. When the pull request cannot be read, AgentX uses the run's head repository instead; a head repository that is gone (a deleted fork) still counts as a fork.
 
 The run belongs to the pull request, so the reply is a comment there. The message names each failed workflow with its run link, the commit and the branch. It asks the agent to fix CI on that branch and push.
 

@@ -1866,13 +1866,16 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /** The open MR whose source branch is `ref`, for a branch pipeline:
    *  undefined when the read worked and there is none, "error" when it
-   *  could not be read (no token, API error). */
+   *  could not be read (API error). With no token there is nothing to read
+   *  with, so it is "no MR" and a failed branch pipeline wakes the route
+   *  agent, as before the CI fix loop (#2130). A fork MR with the same
+   *  branch name is not this branch's MR. */
   private async openMergeRequestForRef(project: string, ref: string): Promise<PipelineMR | undefined | "error"> {
-    if (!ref) return undefined
-    const list = await this.ciRead<Array<{ iid?: number; title?: string; web_url?: string }>>(project,
+    if (!ref || !this.config.token) return undefined
+    const list = await this.ciRead<Array<{ iid?: number; title?: string; web_url?: string; source_project_id?: number; target_project_id?: number }>>(project,
       `merge_requests?state=opened&source_branch=${encodeURIComponent(ref)}`)
     if (!Array.isArray(list)) return "error"
-    const first = list.find((m) => typeof m.iid === "number")
+    const first = list.find((m) => typeof m.iid === "number" && !mrFromFork(m))
     return first ? { iid: first.iid!, title: first.title, url: first.web_url } : undefined
   }
 

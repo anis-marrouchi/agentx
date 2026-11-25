@@ -138,9 +138,9 @@ describe("resolveAddress", () => {
   it("a local agent with no colour of its own gets the default palette", () => {
     const hashed = (defaultPalette?: string) => resolveAddress({
       text: "", target: "ops-agent", local: [{ id: "ops-agent" }], remote: [], localNode: "n",
-      localLook: () => ({ color: "#7C3AED", colorSet: false }), defaultPalette,
+      localLook: () => ({ color: "#1A56C4", colorSet: false }), defaultPalette,
     })
-    expect(hashed()).toMatchObject({ color: "#7C3AED", palette: { id: "lagoon" } })
+    expect(hashed()).toMatchObject({ color: "#1A56C4", palette: { id: "lagoon" } })
     expect(hashed("forest").palette.id).toBe("forest")
   })
 

@@ -33,8 +33,10 @@ describe("orb palettes", () => {
     expect(paletteForColor("#0D9488").id).toBe("lagoon")
     expect(paletteForColor("#65A30D").id).toBe("forest")
     expect(paletteForColor("#EA580C").id).toBe("sunrise")
+    expect(paletteForColor("#1A56C4").id).toBe("ocean")
+    expect(paletteForColor("#4D94FF").id).toBe("ocean")
+    // A purple the owner sets by hand still finds dusk.
     expect(paletteForColor("#7C3AED").id).toBe("dusk")
-    expect(paletteForColor("#C026D3").id).toBe("dusk")
     expect(paletteForColor("#DB2777").id).toBe("blossom")
     expect(paletteForColor("#2563EB").id).toBe("ocean")
     expect(paletteForColor("#0891B2").id).toBe("ocean")

@@ -16,7 +16,7 @@ import { Channel, type LineModel } from "../src/voice/talk-model"
 import type { Presence } from "../src/voice/presence"
 
 const agents: any = {
-  "coder-agent": { name: "Coder", systemPrompt: "You are Coder.", presence: { color: "#7C3AED" } },
+  "coder-agent": { name: "Coder", systemPrompt: "You are Coder.", presence: { color: "#1A56C4" } },
   "helper-agent": { name: "Helper", systemPrompt: "You are Helper.", presence: { allowActions: true } },
 }
 
