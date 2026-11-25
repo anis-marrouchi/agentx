@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.270.0](https://github.com/anis-marrouchi/agentx/compare/v0.269.2...v0.270.0) (2026-11-25)
+
+
+### Features
+
+* **requests:** owner-words check runs inside done, before the close ([#2047](https://github.com/anis-marrouchi/agentx/issues/2047)) ([#2241](https://github.com/anis-marrouchi/agentx/issues/2241)) ([25c1e5b](https://github.com/anis-marrouchi/agentx/commit/25c1e5b00e98c1d9335a2df7c615738bc6bf304a))
+
+
+### Bug Fixes
+
+* **upgrade:** load native modules with the daemon's own Node before switching ([#2239](https://github.com/anis-marrouchi/agentx/issues/2239)) ([f4e713b](https://github.com/anis-marrouchi/agentx/commit/f4e713b1aca25474f11ee94d8cfcd9c5df276058))
+
 ## [0.269.2](https://github.com/anis-marrouchi/agentx/compare/v0.269.1...v0.269.2) (2026-11-25)
 
 
