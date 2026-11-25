@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.269.1](https://github.com/anis-marrouchi/agentx/compare/v0.269.0...v0.269.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ci:** install-matrix waits until the release tarball downloads ([#2233](https://github.com/anis-marrouchi/agentx/issues/2233)) ([e87985b](https://github.com/anis-marrouchi/agentx/commit/e87985bc4dac78d2348bf3ada1d9453f8bcd77d7)), closes [#2227](https://github.com/anis-marrouchi/agentx/issues/2227)
+* **voice:** one daemon owns the voice health file ([#2232](https://github.com/anis-marrouchi/agentx/issues/2232)) ([f85592d](https://github.com/anis-marrouchi/agentx/commit/f85592d1dfc99cd449c464fd469e26d7db9ee882))
+
 ## [0.269.0](https://github.com/anis-marrouchi/agentx/compare/v0.268.0...v0.269.0) (2026-11-25)
 
 
