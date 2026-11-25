@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hubCliHtml, hubCliText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { hubCliHtml, hubCliSavedText, hubCliText, hubCliWaitText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 describe("Hub bottom status", () => {
@@ -68,6 +68,23 @@ describe("Hub bottom status", () => {
     expect(html).not.toContain("restart")
     expect(html).toContain("next run uses")
     expect(html).toContain('class="hsa__note is-ok" role="status">Saved.')
+  })
+
+  it("a busy agent: the Switch note says when it lands and the drop-down shows it waiting (#2101 B2)", () => {
+    const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
+    const idle = { id: "cx", name: "CX", tier: "claude-code", running: 0 }
+    expect(hubCliSavedText(idle, "codex-cli")).toBe("Saved. CX's next run uses Codex CLI.")
+    const busy = { id: "cx", name: "CX", tier: "claude-code", running: 2 }
+    expect(hubCliSavedText(busy, "codex-cli")).toBe("Saved. CX switches to Codex CLI when its 2 running jobs end. New runs wait and start on Codex CLI.")
+    expect(hubCliSavedText({ ...busy, running: 1 }, "codex-cli")).toContain("when its 1 running job ends")
+    const waiting = { ...busy, pendingTier: "codex-cli" }
+    expect(hubCliWaitText(busy)).toBe("")
+    expect(hubCliWaitText(waiting)).toBe("Waiting to switch: Claude Code → Codex CLI when its 2 running jobs end.")
+    expect(hubCliText(waiting)).toBe("Claude Code → Codex CLI (waiting) · CX")
+    const html = hubCliHtml([waiting], "cx", { kind: "", text: "" }, esc)
+    expect(html).toContain("data-hsc-wait")
+    expect(html).toContain('value="codex-cli" checked')
+    expect(hubCliHtml([busy], "cx", { kind: "", text: "" }, esc)).not.toContain("data-hsc-wait")
   })
 
   it("has icons, the light/dark switch and the CLI drop-down; the side menu has no theme button (#2101 R23, R25)", () => {

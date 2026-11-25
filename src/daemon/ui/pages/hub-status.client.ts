@@ -28,7 +28,8 @@ export const HUB_STATUS_SCRIPT = String.raw`
       (n.agents || []).forEach(function (a) {
         if (!a || !a.id || seen[a.id]) return;
         seen[a.id] = true;
-        out.push({ id: a.id, name: a.name || a.id, tier: a.tier || 'claude-code', node: n.name });
+        out.push({ id: a.id, name: a.name || a.id, tier: a.tier || 'claude-code', node: n.name,
+          pendingTier: a.pendingTier || '', running: Math.max(a.active || 0, (a.runningTasks || []).length) });
       });
     });
     return out.sort(function (x, y) { return String(x.name).localeCompare(String(y.name)); });
@@ -63,10 +64,10 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var id = hsCliCur(), pick = document.querySelector('#hs-cli-pop input[name="hsc-eng"]:checked');
     var a = hsCliAgents().find(function (x) { return x.id === id; });
     if (!a || !pick) return;
-    if (pick.value === a.tier) { HSC.note = { kind: '', text: a.name + ' already runs on ' + hubEngineName(a.tier) + '.' }; HSC.last = ''; hsPaintCli(); return; }
+    if (pick.value === (a.pendingTier || a.tier)) { HSC.note = { kind: '', text: a.name + (a.pendingTier ? ' already switches to ' : ' already runs on ') + hubEngineName(pick.value) + '.' }; HSC.last = ''; hsPaintCli(); return; }
     HSC.note = { kind: '', text: 'Switching…' }; HSC.last = ''; hsPaintCli();
     var r = await act('PATCH', '/api/admin/wall/settings/agents', { id: a.id, patch: { tier: pick.value } });
-    HSC.note = r.ok ? { kind: 'ok', text: 'Saved. ' + a.name + '\'s next run uses ' + hubEngineName(pick.value) + '.' }
+    HSC.note = r.ok ? { kind: 'ok', text: hubCliSavedText(a, pick.value) }
       : { kind: 'err', text: 'Not switched: ' + String(r.error).replace(/\.$/, '') + '.' };
     HSC.last = '';
     hsPaintCli();

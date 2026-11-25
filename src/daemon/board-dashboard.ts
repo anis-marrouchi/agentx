@@ -2333,6 +2333,8 @@ export async function fetchDaemonAgents(
     const agents: any[] = await agentsRes.json()
     base.agents = agents.map((a) => ({
       id: a.id, name: a.name, tier: a.tier, model: a.model,
+      // An engine switch waiting for the runs going (#2101 B2).
+      ...(typeof a.pendingTier === "string" ? { pendingTier: a.pendingTier } : {}),
       // The agent's colour (#157), for the phone app's voice orb.
       ...(typeof a.color === "string" && /^#[0-9a-fA-F]{6}$/.test(a.color) ? { color: a.color } : {}),
       skillCount: Number.isFinite(a.skillCount) ? a.skillCount : undefined,

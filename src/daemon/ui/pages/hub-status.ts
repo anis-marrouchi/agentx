@@ -55,7 +55,25 @@ export function hubEngines(): Array<[string, string]> {
 }
 
 /** One agent the CLI drop-down can switch: from the live snapshot. */
-export interface HubCliAgent { id: string; name: string; tier: string; node?: string }
+export interface HubCliAgent { id: string; name: string; tier: string; node?: string; pendingTier?: string; running?: number }
+
+export function hubRunsWord(n: number): string {
+  return n === 1 ? "its 1 running job ends" : n > 1 ? "its " + n + " running jobs end" : "its running jobs end"
+}
+
+/** The note after a Switch: at once for an idle agent; a busy one switches
+ *  when its running jobs end, and new runs wait till then (#2101 B2). */
+export function hubCliSavedText(a: HubCliAgent, picked: string): string {
+  const to = hubEngineName(picked)
+  if (!(a.running && a.running > 0)) return "Saved. " + a.name + "'s next run uses " + to + "."
+  return "Saved. " + a.name + " switches to " + to + " when " + hubRunsWord(a.running) + ". New runs wait and start on " + to + "."
+}
+
+/** The waiting line under the agent while a switch has not landed yet (#2101 B2). */
+export function hubCliWaitText(a: HubCliAgent): string {
+  if (!a.pendingTier || a.pendingTier === a.tier) return ""
+  return "Waiting to switch: " + hubEngineName(a.tier) + " → " + hubEngineName(a.pendingTier) + " when " + hubRunsWord(a.running || 0) + "."
+}
 
 /** An engine's name; an engine we do not list keeps its own id. */
 export function hubEngineName(tier: string): string {
@@ -65,16 +83,21 @@ export function hubEngineName(tier: string): string {
 
 /** The drop-down button's words: the agent in view and its engine. */
 export function hubCliText(a: HubCliAgent | null | undefined): string {
-  return a ? hubEngineName(a.tier) + " · " + a.name : "CLI · pick an agent"
+  if (!a) return "CLI · pick an agent"
+  const wait = a.pendingTier && a.pendingTier !== a.tier
+  return hubEngineName(a.tier) + (wait ? " → " + hubEngineName(a.pendingTier!) + " (waiting)" : "") + " · " + a.name
 }
 
 /** The CLI drop-down (R25): which agent, then one choice per engine, then Save. */
 export function hubCliHtml(list: HubCliAgent[], cur: string, note: { kind: string; text: string }, esc: (s: unknown) => string): string {
   const a = list.find((x) => x.id === cur) || null
   const opts = '<option value="">Pick an agent</option>' + list.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === cur ? " selected" : "") + ">" + esc(x.name) + (x.node ? " · " + esc(x.node) : "") + "</option>").join("")
-  const engines = a ? hubEngines().map(([k, label]) => '<label class="hsc__eng"><input type="radio" name="hsc-eng" value="' + esc(k) + '"' + (k === (a.tier || "claude-code") ? " checked" : "") + "><span>" + esc(label) + "</span></label>").join("") : ""
-  return '<p class="hsa__lead">The engine this agent\'s next run uses. A run already going keeps its engine.</p>' +
+  const next = a ? a.pendingTier || a.tier || "claude-code" : ""
+  const engines = a ? hubEngines().map(([k, label]) => '<label class="hsc__eng"><input type="radio" name="hsc-eng" value="' + esc(k) + '"' + (k === next ? " checked" : "") + "><span>" + esc(label) + "</span></label>").join("") : ""
+  const wait = a ? hubCliWaitText(a) : ""
+  return '<p class="hsa__lead">The engine this agent\'s next run uses. A run already going keeps its engine; a busy agent switches when its running jobs end.</p>' +
     '<label class="hsc__who">Agent <select data-hsc-agent aria-label="Agent">' + opts + "</select></label>" +
+    (wait ? '<p class="hsa__note is-wait" data-hsc-wait>' + esc(wait) + "</p>" : "") +
     (a ? '<fieldset class="hsa__p"><legend>Engine</legend>' + engines + "</fieldset>" +
       '<div class="hsc__acts"><button type="button" class="ax-btn" data-hsc-save>Switch</button></div>' : "") +
     '<p class="hsa__note' + (note.kind ? " is-" + esc(note.kind) : "") + '" role="status">' + esc(note.text) + "</p>"
@@ -132,6 +155,7 @@ export const HUB_STATUS_CSS = `
 .hsa__lead, .hsa__hint, .hsa__note { margin: 0 0 8px; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .hsa__note.is-ok { color: var(--ax-green-d, var(--ax-text)); }
 .hsa__note.is-err { color: var(--ax-red-ink, var(--ax-red)); }
+.hsa__note.is-wait { color: var(--ax-amber-ink, var(--ax-text)); }
 .hsa__p { border: 0; border-top: 1px solid var(--ax-border); margin: 8px 0 0; padding: 8px 0 4px; }
 .hsa__p legend { font-weight: 600; padding: 0; }
 .hsa__hint code { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); }

@@ -109,4 +109,56 @@ describe("an engine switch without a restart", () => {
     r.setConfig(next)
     expect(def(r, "front")).toBe(before)
   })
+
+  // #2101 B2: an agent running several jobs at once.
+  const row = (r: AgentRegistry, id: string) => r.list().find((a) => a.id === id)!
+  const endRun = (r: AgentRegistry, state: any) => { state.activeTasks--; (r as any).applyPendingTier(state) }
+
+  it("with two runs going, the switch waits for both and the list shows it waiting", () => {
+    const r = new AgentRegistry(config("claude-code", 3), () => {})
+    const state = (r as any).agents.get("front")
+    state.activeTasks = 2
+    r.setConfig(config("codex-cli", 3))
+    expect(row(r, "front")).toMatchObject({ tier: "claude-code", pendingTier: "codex-cli", active: 2 })
+    expect((r as any).slotFull(state)).toBe(true)
+    endRun(r, state)
+    // One run still going: still the old engine, still no new run.
+    expect(state.def.tier).toBe("claude-code")
+    expect(row(r, "front").pendingTier).toBe("codex-cli")
+    expect((r as any).slotFull(state)).toBe(true)
+    endRun(r, state)
+    expect(state.def.tier).toBe("codex-cli")
+    expect(row(r, "front").pendingTier).toBeUndefined()
+    expect((r as any).slotFull(state)).toBe(false)
+    expect(row(r, "other").pendingTier).toBeUndefined()
+  })
+
+  it("a run waiting for a slot when the switch is saved starts on the new engine", async () => {
+    const r = new AgentRegistry(config("claude-code", 2), () => {})
+    const state = (r as any).agents.get("front")
+    state.activeTasks = 2
+    // A queued run waits on the same gate the queue and the slot wait use.
+    const started = (async () => {
+      while ((r as any).slotFull(state)) await new Promise((res) => setTimeout(res, 5))
+      state.activeTasks++
+      return state.def.tier
+    })()
+    await new Promise((res) => setTimeout(res, 15))
+    r.setConfig(config("codex-cli", 2))
+    endRun(r, state)
+    // A slot is free now, but the run still waits: the old run is going.
+    await new Promise((res) => setTimeout(res, 15))
+    expect(state.activeTasks).toBe(1)
+    endRun(r, state)
+    expect(await started).toBe("codex-cli")
+  })
+
+  it("switching back to the old engine resumes that engine's earlier session", () => {
+    const r = new AgentRegistry(config("claude-code"), () => {})
+    const sessions = (r as any).sessions
+    sessions.setClaudeSessionId("front", "telegram", "42", "claude-sess-1")
+    r.setConfig(config("codex-cli"))
+    r.setConfig(config("claude-code"))
+    expect(r.resumeIdFor("front", r.tierOf("front")!, "telegram", "42")).toBe("claude-sess-1")
+  })
 })

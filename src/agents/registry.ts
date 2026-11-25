@@ -5011,6 +5011,8 @@ export class AgentRegistry {
     id: string
     name: string
     tier: string
+    /** An engine switch saved while busy, waiting for the runs going (#2101 B2). */
+    pendingTier?: string
     model?: string
     workspace: string
     active: number
@@ -5027,6 +5029,7 @@ export class AgentRegistry {
         id: s.id,
         name: s.def.name,
         tier: s.def.tier,
+        ...(this.pendingTiers.has(s.id) ? { pendingTier: this.pendingTiers.get(s.id) } : {}),
         model: s.def.model,
         workspace: s.def.workspace,
         active: s.activeTasks,
