@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.269.0](https://github.com/anis-marrouchi/agentx/compare/v0.268.0...v0.269.0) (2026-11-25)
+
+
+### Features
+
+* **daemon:** upgrade starts when no person is waiting ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227)) ([#2230](https://github.com/anis-marrouchi/agentx/issues/2230)) ([06c7ac1](https://github.com/anis-marrouchi/agentx/commit/06c7ac17d092601f87ecebbebf6ae70c793d02ae))
+
 ## [0.268.0](https://github.com/anis-marrouchi/agentx/compare/v0.267.0...v0.268.0) (2026-11-25)
 
 
