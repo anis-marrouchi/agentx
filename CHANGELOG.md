@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.269.2](https://github.com/anis-marrouchi/agentx/compare/v0.269.1...v0.269.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ci:** a failed check wakes the PR's agent when it lives on another node ([#2235](https://github.com/anis-marrouchi/agentx/issues/2235)) ([a0cfc34](https://github.com/anis-marrouchi/agentx/commit/a0cfc34bd88dfe5a1c02ea5e1539c33a63e0c365)), closes [#2227](https://github.com/anis-marrouchi/agentx/issues/2227)
+
 ## [0.269.1](https://github.com/anis-marrouchi/agentx/compare/v0.269.0...v0.269.1) (2026-11-25)
 
 
