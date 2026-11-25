@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.274.2](https://github.com/anis-marrouchi/agentx/compare/v0.274.1...v0.274.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **a2a:** mark a /send/agent sender that is not a local agent as unverified ([#2052](https://github.com/anis-marrouchi/agentx/issues/2052)) ([#2298](https://github.com/anis-marrouchi/agentx/issues/2298)) ([245e55c](https://github.com/anis-marrouchi/agentx/commit/245e55c64b9df4dbf3f1f0b09d332fe7af4488a9))
+* **agents:** Claude Code's other model names keep their session ([#2245](https://github.com/anis-marrouchi/agentx/issues/2245)) ([#2288](https://github.com/anis-marrouchi/agentx/issues/2288)) ([3aa43fe](https://github.com/anis-marrouchi/agentx/commit/3aa43feef0dc422462e534f9e9a73609db58a43b))
+* **docker:** use locally built image for daemon and dashboard ([#2277](https://github.com/anis-marrouchi/agentx/issues/2277)) ([32122ef](https://github.com/anis-marrouchi/agentx/commit/32122efe1b70f36293941fa7c54767b9c5d5619b)), closes [#2275](https://github.com/anis-marrouchi/agentx/issues/2275)
+* **orca:** [#2110](https://github.com/anis-marrouchi/agentx/issues/2110) + [#2112](https://github.com/anis-marrouchi/agentx/issues/2112) + [#2127](https://github.com/anis-marrouchi/agentx/issues/2127) post-merge follow-ups ([#2130](https://github.com/anis-marrouchi/agentx/issues/2130)) ([#2301](https://github.com/anis-marrouchi/agentx/issues/2301)) ([b7dfb2d](https://github.com/anis-marrouchi/agentx/commit/b7dfb2d6aa78c60aae3906e63f69e6754c59695e))
+
 ## [0.274.1](https://github.com/anis-marrouchi/agentx/compare/v0.274.0...v0.274.1) (2026-11-25)
 
 
