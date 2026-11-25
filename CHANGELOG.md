@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.266.0](https://github.com/anis-marrouchi/agentx/compare/v0.265.0...v0.266.0) (2026-11-25)
+
+
+### Features
+
+* **hub:** plan views say when, where and link History ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2214](https://github.com/anis-marrouchi/agentx/issues/2214)) ([b05fe74](https://github.com/anis-marrouchi/agentx/commit/b05fe74c06f08d7b1c9a5bfee84d53b63eb13e42))
+
 ## [0.265.0](https://github.com/anis-marrouchi/agentx/compare/v0.264.0...v0.265.0) (2026-11-25)
 
 
