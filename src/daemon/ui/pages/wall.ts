@@ -238,12 +238,6 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
 ${hubAgentsNavHtml()}
-    <details class="lt ax-wall__navgroup lt--fold" id="wall-tree-fold"><summary>Machines and runs</summary>
-    <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
-      <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
-      <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
-    </section>
-    </details>
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
 ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}

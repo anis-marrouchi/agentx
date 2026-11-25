@@ -93,14 +93,13 @@ import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
-import { haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
+import { haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
-import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
+import { ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount } from "./wall-tree"
 import { engineIconKey, engineIcon } from "./engine-icons"
-import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -124,10 +123,10 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
-  ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
+  ${injectFns({ haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
   ${injectFns({ engineIconKey, engineIcon })}
   ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
-  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
+  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_KEEP_SCRIPT}
@@ -1317,50 +1316,18 @@ ${HUB_NAV_SCRIPT}
   }
   // Needs you (#2101 R3) is no longer a box of its own in the side menu:
   // it is the agent list's group and Desk's count (R27, one place each).
-  // --- The live tree at the top of the nav (#2101 PR 1c) ---
-  // machine → project → work item → agent, from the live snapshot and the
-  // posts already on the page (wall-tree.ts). Drawn only when it changed,
-  // so a fold, a hover or the keyboard focus is not lost every 2 s.
-  var treeClosed = {}, treeLast = '', treeNames = {};
+  // --- The agent list at the top of the nav (#2101 P4, R26) ---
+  // It is the side menu's one list of agents: the machine → runs tree that
+  // sat under it ("Machines and runs") is gone, and a working agent's row
+  // opens its live run (hub-nav.client.ts haHref). It follows the live
+  // snapshot stream while it is on screen.
   var treeWide = window.matchMedia ? window.matchMedia('(min-width: 1181px)') : null;
   function treeShown() {
-    return !!$('wall-tree') && !document.hidden && !!treeWide && treeWide.matches;
+    return !!$('hub-agents') && !document.hidden && !!treeWide && treeWide.matches;
   }
   function renderTree() {
     renderHubAgents();
-    var el = $('wall-tree-body');
-    if (!el) return;
-    // A snapshot can name a node by its URL while its name is still on the
-    // way: keep the last real name seen for that URL.
-    var live = ((S.live && S.live.nodes) || []).map(function (n) {
-      if (n.url && n.name && n.name !== n.url) treeNames[n.url] = n.name;
-      return n.url && (!n.name || n.name === n.url) && treeNames[n.url] ? Object.assign({}, n, { name: treeNames[n.url] }) : n;
-    });
-    var now = Date.now();
-    var html = !live.length && S.liveError ? '<p class="lt__empty">Could not reach the machines just now; trying again.</p>'
-      : liveTreeHtml(ltAddWorkers(liveTreeModel(live, (S.data && S.data.posts) || [], now), live, now, function (t) { return ltTitle(t, null); }), function (r, m) {
-        return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
-      }, treeClosed, function (r, m) {
-        // The workers the run started (#2145), each opening its chat.
-        return ltWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge);
-      }, function (p) { return engineIcon(p, 'lt__prov'); });
-    if (html === treeLast) return;
-    treeLast = html;
-    el.innerHTML = html;
   }
-  /** A worker's link (#2145): its run's Task page (its chat) when its run
-   *  is known, else its workflow, else its agent's activity. */
-  function workerHref(w, m) {
-    if (w.task && w.agentId) return wallTaskHref(w.task, w.agentId, w.nodeUrl || m.url, w.state !== 'working');
-    if (w.workflowId) return '#page=workflows&w-open=' + encodeURIComponent(w.workflowId);
-    return w.agentId ? activityHref(w.agentId) : '';
-  }
-  document.addEventListener('toggle', function (ev) {
-    var d = ev.target;
-    if (!d || !d.matches || !d.matches('#wall-tree details[data-lt-key]')) return;
-    var k = d.getAttribute('data-lt-key');
-    treeClosed[k] = !d.open;
-  }, true);
   // Back on the tab or wide again: follow the stream again (or let it go).
   document.addEventListener('visibilitychange', function () { followLive(S.post ? 'post' : S.page); });
   if (treeWide && treeWide.addEventListener) treeWide.addEventListener('change', function () { followLive(S.post ? 'post' : S.page); });

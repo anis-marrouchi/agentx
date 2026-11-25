@@ -85,6 +85,10 @@ export const HUB_NAV_CSS = `
 .ha__k span { flex: 1; }
 .ha__k kbd, .hk kbd { font: 500 11px/1 var(--ax-font-mono, ui-monospace, monospace); padding: 3px 5px; border: 1px solid var(--ax-border-2); border-radius: 4px; color: var(--ax-muted); background: var(--ax-bg); }
 .ha { margin: 0 0 6px; }
+/* The side menu itself never scrolls on a computer (#2101 R27): the agent
+   list takes the room left between the switcher and the foot row, and
+   scrolls inside it when the fleet is long. */
+@media (min-width: 1181px) { .ax-wall__nav > .ha { flex: 1 1 auto; min-height: 0; overflow-y: auto; } }
 .ha__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .ha__chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); background: none; color: var(--ax-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .ha__chip b { font-weight: 600; color: var(--ax-text); font-variant-numeric: tabular-nums; }
@@ -119,8 +123,6 @@ export const HUB_NAV_CSS = `
 .ha__n { align-self: center; min-width: 18px; padding: 0 5px; line-height: 18px; border-radius: var(--ax-radius-pill); background: var(--ax-accent); color: #fff; font-size: 11px; font-weight: 700; text-align: center; }
 .ha__empty { margin: 8px 6px; font-size: 13px; color: var(--ax-muted); }
 .ax-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.lt--fold > summary { font-size: 12.5px; color: var(--ax-muted); }
-.lt--fold > .lt { margin-top: 4px; }
 /* The foot row: Desk · Jobs · Workflows · Mobile app · Settings. */
 .hf { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin-top: auto; padding: 10px 2px 2px; border-top: 1px solid var(--ax-border); }
 .hf__item { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font-size: 13px; text-decoration: none; }
