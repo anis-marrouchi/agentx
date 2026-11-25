@@ -49,4 +49,6 @@ jobs:
       - run: pnpm test
 
       - run: pnpm build
+      # The React Hub's first load stays at or under 250 kB gzip (#2218 C4).
+      - run: pnpm hub:budget
       - run: node scripts/check-package.mjs

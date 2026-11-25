@@ -10,7 +10,10 @@ on:
       - "src/daemon/ui/**"
       - "src/daemon/wall*.ts"
       - "src/daemon/board-dashboard.ts"
+      - "src/hub/**"
+      - "vite.hub.config.ts"
       - "scripts/wall-page-check.*"
+      - "scripts/hub-reconnect-check.mjs"
       - ".github/workflows/wall-pages.yml"
   workflow_dispatch:
 
@@ -57,6 +60,12 @@ jobs:
         env:
           WALL_CHECK_TOKEN: ci-demo-only-token
         run: node scripts/wall-page-check.mjs --out wall-pages
+
+      # The React Hub's one live connection comes back after a daemon
+      # restart, without a page reload (#2218 condition C3). Last: it
+      # restarts the demo.
+      - name: React Hub reconnects after a daemon restart
+        run: node scripts/hub-reconnect-check.mjs --out wall-pages/hub-reconnect
 
       - if: always()
         uses: actions/upload-artifact@v4
