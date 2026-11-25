@@ -3741,7 +3741,7 @@ export class AgentRegistry {
       let target: string | undefined
       // The agent moved to another runtime since this session started:
       // its stored model can't run there, so it always starts anew.
-      const wrongRuntime = !modelFitsRuntime(state.def.tier, storedModel)
+      const wrongRuntime = !modelFitsRuntime(state.def.tier, storedModel, state.def.model)
       if (wrongRuntime) {
         target = task.model ?? state.def.model
       } else if (task.model) {
