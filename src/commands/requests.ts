@@ -2,7 +2,7 @@ import { Command } from "commander"
 import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { CLOSED_STATES, OPEN_STATES, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES, OWNER_ASKED, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
 import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
@@ -278,6 +278,12 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       // Run from an agent's own shell, it is that agent's close, and the
       // owner-words check reads it like any other agent close.
       const by = process.env.AGENTX_AGENT_ID?.trim() || OWNER_BY
+      // While the owner is asked whether a close as superseded stands
+      // (#2082), only the owner moves it: the same guard as the API.
+      if (by !== OWNER_BY && r.state === "waiting_owner" && r.ownerCheck === OWNER_ASKED) {
+        console.error(chalk.red(`  Not changed: the owner is asked about your close as superseded ("${r.question ?? "Agree?"}"). Their close is the yes; their reply sends it back to you.`))
+        process.exitCode = 1; return
+      }
       const now = Date.now()
       const proof = link ? { kind: "link" as const, value: link.slice(0, 500), ranAt: now } : null
       if (!s.close(id, name === "done" ? "done" : "dropped", detail, now, proof, by, link ? "superseded" : null)) {
