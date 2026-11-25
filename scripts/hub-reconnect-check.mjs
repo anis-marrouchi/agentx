@@ -79,7 +79,9 @@ if (!await waitFor("live card open", (v) => v.state === "open", 30)) done(1)
 await cdp("Runtime.evaluate", { expression: "window.__hubMark = 'same-page'" })
 await shot("1-open.png")
 
-execSync(`pkill -f "dist/cli.js demo" || true`)
+// "[d]ist": the pattern must not match this pkill's own shell, whose
+// command line holds the same words.
+execSync(`pkill -f "[d]ist/cli.js demo" || true`)
 if (!await waitFor("reconnecting shown while the daemon is down", (v) => v.state === "reconnecting" && v.banner, 30)) done(1)
 await shot("2-reconnecting.png")
 
