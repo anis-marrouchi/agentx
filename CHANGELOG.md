@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.271.2](https://github.com/anis-marrouchi/agentx/compare/v0.271.1...v0.271.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** one count rule for At work now and Working ([#2260](https://github.com/anis-marrouchi/agentx/issues/2260)) ([#2261](https://github.com/anis-marrouchi/agentx/issues/2261)) ([bede04d](https://github.com/anis-marrouchi/agentx/commit/bede04d6277d104ad9190742536fba176a6a29df))
+
 ## [0.271.1](https://github.com/anis-marrouchi/agentx/compare/v0.271.0...v0.271.1) (2026-11-25)
 
 
