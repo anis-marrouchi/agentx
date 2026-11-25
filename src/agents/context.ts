@@ -117,6 +117,7 @@ export interface ContextInput {
   senderId?: string                  // platform user ID (e.g. Telegram user ID)
   senderUsername?: string            // platform username (e.g. @username)
   senderRole?: string                // "user", "agent:other-agent"
+  senderVerified?: boolean           // false: a name a caller gave, not an agent of this machine (#2052)
 
   // Landscape (cached world model from LandscapeBuilder)
   landscape?: string
@@ -674,6 +675,10 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
         tags.push("webhook", "automated")
       }
   }
+
+  // A /send/agent caller that is not an agent of this machine (#2052): its
+  // `agent:<name>` is only what it said, so the callee is told.
+  if (input.senderVerified === false) lines.push(`From: ${input.sender} (not an agent of this machine; its name is not checked)`)
 
   if (rules.length) {
     lines.push("")

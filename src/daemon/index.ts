@@ -5478,7 +5478,7 @@ export class AgentXDaemon {
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
         target.callee,
-        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
+        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", ...(!named && label ? { senderVerified: false } : {}), chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
         target.message,
         named,
       )

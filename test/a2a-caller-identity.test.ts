@@ -7,6 +7,7 @@ import { DelegationManager, NONE_ORIGIN, type CallerTurn, type DelegationDeps, t
 import { agentCallerOf, ignoredFlags, noneBody, type CallerHint } from "../src/daemon/delegation-wiring"
 import * as sendAgent from "../src/daemon/send-agent"
 import { waitForHandoffReply } from "../src/commands/demo-handoff"
+import { buildAgentContext } from "../src/agents/context"
 
 // #2007 piece 2: who calls decides, not the flags. An agent caller always
 // gets a 202 receipt on /send/agent, /task and /mesh/task; a caller that
@@ -405,6 +406,21 @@ describe("a named sender that is not a local agent (review item 2)", () => {
     expect(row(db, r.taskId).caller).toBe("?")
   })
 
+  it("marks the label unverified for the callee; a local agent stays verified (#2052)", () => {
+    const h = manager(freshDb())
+    h.mgr.start({ caller: labelled("not-local"), callee: "worker", message: "one", kind: "send", wayHome: "none", calleeContext: { senderVerified: true } })
+    h.mgr.start({ caller: agentCaller("builder"), callee: "worker", message: "two", kind: "send", wayHome: "none" })
+    expect(h.runs[0].context).toMatchObject({ sender: "agent:not-local", senderVerified: false })
+    expect(h.runs[1].context.sender).toBe("agent:builder")
+    expect(h.runs[1].context).not.toHaveProperty("senderVerified")
+  })
+
+  it("tells the callee in its prompt that the name is not checked (#2052)", () => {
+    const base = { channel: "a2a", chatId: "a2a:?:worker:dlg-1", agentId: "worker", agentName: "Worker", message: "hi" }
+    expect(buildAgentContext({ ...base, sender: "agent:not-local", senderVerified: false })).toContain("From: agent:not-local (not an agent of this machine; its name is not checked)")
+    expect(buildAgentContext({ ...base, sender: "agent:builder" })).not.toContain("not an agent of this machine")
+  })
+
   it("does not join the same text from another label", () => {
     const db = freshDb()
     const h = manager(db)
@@ -433,6 +449,8 @@ describe("a named sender that is not a local agent (review item 2)", () => {
     const src = readFileSync(join(__dirname, "../src/daemon/index.ts"), "utf-8")
     const none = src.slice(src.indexOf("  private startNone("), src.indexOf("  private recordInboundDispatch("))
     expect(none).toMatch(/sender: `agent:\$\{label\}`/)
+    // The inbound record marks it unverified too (#2052).
+    expect(none).toMatch(/!named && label \? \{ senderVerified: false \}/)
   })
 })
 
