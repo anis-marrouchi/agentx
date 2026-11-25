@@ -6,6 +6,7 @@ import { wakeConfig } from "../wake"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
 import { sendToChat } from "@/situations/send-to-chat"
+import { leaseHomeOfText } from "@/agents/work-lane"
 
 // --- Node handlers (Phase 1 set) ---
 //
@@ -49,6 +50,15 @@ const agentHandler: NodeHandler = async (ctx) => {
     return { error: `agent node "${ctx.node.id}" has invalid autonomy "${autonomy}" (expected report, propose or act)` }
   }
 
+  // The step's home (#2084): one run of the agent at a time on it. Empty
+  // after rendering: no home. A bare `#12` or `!12` names different work
+  // in every repository, so it fails the step instead of locking nothing.
+  const rawHome = cfg.home === undefined || cfg.home === null ? "" : render(String(cfg.home), ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow }).trim()
+  const home = rawHome ? leaseHomeOfText(rawHome) : null
+  if (rawHome && !home) {
+    return { error: `agent node "${ctx.node.id}" has home "${rawHome.slice(0, 120)}", which is not a project issue or merge request (group/project#12, group/project!12 or a link)` }
+  }
+
   // Optional per-node concurrency cap. When N runs of this workflow all
   // arrive at the same hot node, the gate serializes execution past N
   // active. Prevents the scenario where a burst of triggers fans out
@@ -74,6 +84,7 @@ const agentHandler: NodeHandler = async (ctx) => {
       workflowId: ctx.run.workflowId,
       timeoutMinutes,
       ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
+      ...(home ? { home } : {}),
     })
     const durationMs = Date.now() - start
     // A stop signal (#870): the run pauses at this step, it does not fail.

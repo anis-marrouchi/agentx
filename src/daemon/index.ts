@@ -253,6 +253,8 @@ import { NodeEnvironment } from "@/node-env"
 import { formatNode } from "@/node-env/format"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
+import { workflowAgents } from "@/daemon/workflow-agents"
+import { MESH_TASK_WAIT_MS } from "@/agents/work-lane"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveGitlabTokenForAgent, gitlabIntegrationToken, ownGitlabToken, setAgentGitlabTokenResolver } from "@/channels/gitlab-token"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -263,8 +265,6 @@ import {
   PollTriggers,
   startWorkflowTriggers,
   workflowSchema,
-  type AgentExecuteRequest,
-  type AgentExecuteResponse,
   type MeshForwarder as WorkflowMeshForwarder,
 } from "@/workflows"
 import { createWorkflowHookHandlers } from "@/workflows/hooks"
@@ -4657,52 +4657,8 @@ export class AgentXDaemon {
       if (adapter) channels[name] = adapter
     }
 
-    // Agent-execute shim for the `agent` node handler. Awaits AgentRegistry
-    // inside the walk loop — the walk itself runs in a background async
-    // context detached from the webhook response, so long-running agent
-    // calls don't block webhook delivery.
-    const agents = {
-      execute: async (req: AgentExecuteRequest): Promise<AgentExecuteResponse> => {
-        const start = Date.now()
-        try {
-          // Scope each workflow run to its own session bucket so concurrent
-          // runs of the same workflow (or even different workflows hitting
-          // the same agent) don't collide in api:default. Without this,
-          // every workflow turn for `coder-agent` ends up in
-          // `coder-agent:api:default:<day>.json` regardless of which run
-          // produced it — bleeding context across runs and breaking the
-          // single-conversation guarantee per workflow run.
-          const wfChatId = req.workflowRunId ? `workflow:${req.workflowRunId}` : "workflow:adhoc"
-          let runTaskId: string | undefined
-          const resp = await this.registry.execute({
-            agentId: req.agentId,
-            message: req.message,
-            workflowRunId: req.workflowRunId,
-            ...(req.workflowId ? { workflowId: req.workflowId } : {}),
-            timeoutMinutes: req.timeoutMinutes,
-            autonomy: req.autonomy,
-            context: {
-              channel: "workflow",
-              chatId: wfChatId,
-              sender: "workflow",
-            },
-            // A stop signal names this id; the paused step keeps it (#870).
-            onStart: (id) => { runTaskId = id },
-          })
-          return {
-            content: resp.content ?? "",
-            error: resp.error,
-            errorKind: resp.errorKind,
-            autonomyBlocks: resp.autonomyBlocks,
-            taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
-            ...(runTaskId ? { runTaskId } : {}),
-            durationMs: Date.now() - start,
-          }
-        } catch (e: any) {
-          return { content: "", error: e.message }
-        }
-      },
-    }
+    // Agent-execute shim for the `agent` node handler (workflow-agents.ts).
+    const agents = workflowAgents(this.registry)
 
     // Mesh forwarder: when an event arrives here but the run is home'd on
     // another peer, POST directly to the peer's /workflow/event endpoint.
@@ -9368,6 +9324,10 @@ export class AgentXDaemon {
           // A mesh peer sends the root its task belongs to; any other caller
           // starts a new one.
           const taskRoot = rootFromTaskBody(body)
+          // A peer's task waits for its home's lane and a slot 20 min at most
+          // (#2084), so its `home_busy` reaches the peer before the peer's
+          // own 30 min cap and the peer does not send it again.
+          const peerWait = (body.context as Record<string, unknown> | undefined)?.fromPeer === true ? { slotWaitMs: MESH_TASK_WAIT_MS } : {}
 
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
@@ -9502,6 +9462,7 @@ export class AgentXDaemon {
                   freshSession,
                   onStart: track.onStart,
                   callerSignal: callerGone.signal,
+                  ...peerWait,
                 },
                 onDelta,
                 onThinking,
@@ -9544,6 +9505,7 @@ export class AgentXDaemon {
               origin,
               onStart: track.onStart,
               callerSignal: callerGone.signal,
+              ...peerWait,
             },
             () => {},
           )).finally(track.end), origin)

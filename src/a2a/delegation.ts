@@ -201,8 +201,19 @@ export interface DelegationDeps {
       /** How long the run may wait for a free slot of a busy callee
        *  (registry.execute's slotWaitMs). */
       slotWaitMs?: number
+      /** Read once the run may start (after its home lease, #2084), in
+       *  place of `resumeFrom`: by then the run ahead on the home ended,
+       *  so its session is free to continue. */
+      resumeLater?: () => Array<{ channel: string; chatId: string }>
+      /** Aborted at the delegation's time limit: a run still waiting for
+       *  its home or a slot leaves the line and never starts (#2084). */
+      signal?: AbortSignal
     },
   ): Promise<CalleeRun>
+  /** True when a local run of `callee` on this named home will hold the
+   *  registry's home lease (#2084), which then waits for the run ahead.
+   *  Absent or false: the hand-off waits for it here, as before. */
+  leasesHome?(callee: string, home: string): boolean
   /** Run the callee on a mesh peer and return its answer text. */
   runPeer(
     peer: string,
@@ -927,16 +938,23 @@ export class DelegationManager {
       }
       return from
     }
+    // The registry's home lease waits for a run ahead on this home (#2084)
+    // only for a local run on a home that names its project, with the lease
+    // on. Any other hand-off on a home waits for it here, as before.
+    const leased = !!home && !record.peer && !opts.run && !!this.deps.leasesHome?.(record.callee, home)
     if (prior && !implicit) {
-      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
+      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? `waits for it${leased ? " on the home's lane" : ""}, then ` : ""}continues its session`)
     }
 
     const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
     const launch = (): Promise<CalleeRun> => {
       // Gone already (a restart reported it lost while it waited).
       if (!this.pendingById.has(id)) return Promise.resolve({ content: "", error: "no longer pending" })
-      // The clock starts when the work does, not while it waits its turn.
+      // The clock starts when the hand-off is sent: a wait for the home's
+      // lane (#2084) counts, and at the limit the waiter leaves the line.
+      const gone = new AbortController()
       const timer = setTimeout(() => {
+        gone.abort(new Error(`delegation ${id} timed out`))
         const runId = this.localRuns.get(id)
         if (runId) {
           try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
@@ -950,7 +968,11 @@ export class DelegationManager {
         return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, ...(record.caller !== UNNAMED_CALLER ? { senderAgentId: record.caller } : {}) })
           .then((text) => ({ content: text } as CalleeRun))
       }
-      const resumeFrom = resumable()
+      // A named home's session is read once the run holds its lease
+      // (#2084): the run ahead of it there has ended by then. Topic and
+      // caller-chat sessions are read now, as before.
+      const later = leased && !(this.deps.topicSessions && homeKey)
+      const resumeFrom = later ? undefined : resumable()
       const mine = chatKeyOf(calleeChat)
       // With topic sessions on (#2010), two keys can name one source chat
       // (a topic key and a caller-chat key): a run that takes a source
@@ -971,7 +993,9 @@ export class DelegationManager {
           },
           extras: opts.extras,
           ...(resumeFrom?.length ? { resumeFrom, ...(useTopic ? { topic: true as const } : {}) } : {}),
+          ...(later ? { resumeLater: resumable } : {}),
           ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
+          signal: gone.signal,
         })
       } catch (e) {
         release()
@@ -979,9 +1003,11 @@ export class DelegationManager {
       }
       return started.finally(release)
     }
-    // The wait is bounded by this delegation's own time limit: a run ahead
-    // that never settles (stuck before it started) does not hold it forever.
-    const waitFor = prior?.running && !implicit
+    // A leased run waits for the run ahead in the registry's home lane
+    // (#2084), not here as well. Without a lease the wait is here, bounded
+    // by this delegation's own time limit: a run ahead that never settles
+    // (stuck before it started) does not hold it forever.
+    const waitFor = prior?.running && !implicit && !leased
       ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
       : null
     const run = waitFor ? waitFor.then(launch) : launch()

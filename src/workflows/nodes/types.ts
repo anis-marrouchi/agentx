@@ -23,6 +23,9 @@ export interface AgentExecuteRequest {
   timeoutMinutes?: number
   /** Step autonomy (report | propose | act). Unset = act. */
   autonomy?: "report" | "propose" | "act"
+  /** The issue or merge request the step works on (#2084), qualified
+   *  with its project: one run of the agent at a time on it. */
+  home?: string
 }
 
 export interface AgentExecuteResponse {

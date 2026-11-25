@@ -2508,6 +2508,15 @@ export const daemonConfigSchema = z.object({
     enabled: z.boolean().default(true),
     channels: z.array(z.string()).default(["a2a", "cron", "reminder", "events"]),
   }).default({}),
+  /** One run at a time per agent and named home (#2084): while a run of
+   *  an agent works on an issue, pull request or merge request, another
+   *  run of that agent on the same home waits for it to end. Awaited
+   *  callers wait within their slot-wait budget and are refused
+   *  (`home_busy`, never run) past it; a forge comment waits its turn.
+   *  Off: as before (only the same-home note). */
+  homeLease: z.object({
+    enabled: z.boolean().default(true),
+  }).default({}),
   /** Admission queue (src/admission, #1521): every new agent session waits
    *  in one priority queue until the node has room (memory, swap, disk,
    *  load), is under its session caps, and the start pace allows it.

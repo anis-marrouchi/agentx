@@ -21,6 +21,10 @@ export const SIGNAL_KINDS = [
   "delegation_failed",
   "callback_repeat_skipped",
   "same_work_waited",
+  // The home lease (#2084): a run waited for, or was refused by, the run of
+  // the same agent that holds its home.
+  "same_work_joined",
+  "home_busy",
   "close_proof_missing",
   "job_stalled",
   // Cost signals (#1995): token waste, ranked like failures.
@@ -49,6 +53,8 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   delegation_failed: "a hand-off ended in error, timeout or lost",
   callback_repeat_skipped: "a helper's end repeated what it had already written",
   same_work_waited: "a run waited for another run of the same agent on the same request",
+  same_work_joined: "a run waited for another run of the same agent on the same home (issue, merge request) and ran after it (#2084)",
+  home_busy: "a run was refused: another run of the same agent held its home until the caller's wait budget ran out (#2084)",
   close_proof_missing: "a close by check went through with deliverables that have no proof link (closeProof warn)",
   job_stalled: "a run of agent work ended without stating its job's state, even when asked once (jobState)",
   job_cost_high: "a run used 3 times or more the usual tokens of its job type (agent + channel + workflow or cron job)",
@@ -56,7 +62,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   context_rewrite: "a call wrote 80% or more of its context to the cache again, instead of reading it",
   model_switch: "the main thread changed model inside a run, or a resumed session went on with another model",
   start_over_budget: "a new session's first call read more than 64,000 tokens, far over the 15,000 start budget (#2009)",
-  duplicate_session: "two runs of one agent went ahead on the same request at once: the lane wait ran out",
+  duplicate_session: "two runs of one agent went ahead on the same request at once: the lane wait ran out, or a home lease backstop stopped a stuck run",
   stale_status_told: "an agent said it waits on another agent whose hand-off had already ended done",
   a2a_extra_rounds: "a hand-off took more than one round before the receiver started the work",
   clarification_asked: "the receiver of a hand-off asked back what was meant or missing instead of starting",
