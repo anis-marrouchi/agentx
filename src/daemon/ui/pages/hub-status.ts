@@ -72,7 +72,7 @@ export function hubCliSavedText(a: HubCliAgent, picked: string): string {
 /** The waiting line under the agent while a switch has not landed yet (#2101 B2). */
 export function hubCliWaitText(a: HubCliAgent): string {
   if (!a.pendingTier || a.pendingTier === a.tier) return ""
-  return "Waiting to switch: " + hubEngineName(a.tier) + " → " + hubEngineName(a.pendingTier) + " when " + hubRunsWord(a.running || 0) + "."
+  return "Waiting to switch: " + hubEngineName(a.tier) + " → " + hubEngineName(a.pendingTier) + " when " + hubRunsWord(a.running || 0) + ". Pick " + hubEngineName(a.tier) + " again to cancel the wait."
 }
 
 /** An engine's name; an engine we do not list keeps its own id. */

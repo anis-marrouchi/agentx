@@ -79,7 +79,7 @@ describe("Hub bottom status", () => {
     expect(hubCliSavedText({ ...busy, running: 1 }, "codex-cli")).toContain("when its 1 running job ends")
     const waiting = { ...busy, pendingTier: "codex-cli" }
     expect(hubCliWaitText(busy)).toBe("")
-    expect(hubCliWaitText(waiting)).toBe("Waiting to switch: Claude Code → Codex CLI when its 2 running jobs end.")
+    expect(hubCliWaitText(waiting)).toBe("Waiting to switch: Claude Code → Codex CLI when its 2 running jobs end. Pick Claude Code again to cancel the wait.")
     expect(hubCliText(waiting)).toBe("Claude Code → Codex CLI (waiting) · CX")
     const html = hubCliHtml([waiting], "cx", { kind: "", text: "" }, esc)
     expect(html).toContain("data-hsc-wait")
