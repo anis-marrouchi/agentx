@@ -90,7 +90,7 @@ agentx desktop start
 | `agentx daemon logs` | Read logs; `-f` to follow, `-n <lines>` for more |
 | `agentx daemon stop` | Stop the daemon after its running tasks finish ([restart without losing work](../jobs/restart-safely.md)) |
 | `agentx daemon restart` | Restart through launchd, systemd, or stop + start, and wait until it answers again; `--when-idle` waits for running tasks first (`--timeout`, `--abort-on-timeout`, `--reload-service`, `--boot-timeout`, `--dry-run`). See [restart without losing work](../jobs/restart-safely.md) |
-| `agentx daemon upgrade <release-folder>` | Mac (launchd): move the daemon, and the jobs that use the same release folder, to a built release folder; waits for idle, rolls back if the new one doesn't answer (`--expect-version`, `--timeout`, `--force`, `--boot-timeout`, `--no-follow`, `--dry-run`). See [move to a new release](../jobs/restart-safely.md#move-to-a-new-release-mac) |
+| `agentx daemon upgrade <release-folder>` | Mac (launchd): move the daemon, and the jobs that use the same release folder, to a built release folder; waits for idle, rolls back if the new one doesn't answer (`--expect-version`, `--timeout`, `--force`, `--people-only`, `--boot-timeout`, `--no-follow`, `--dry-run`). See [move to a new release](../jobs/restart-safely.md#move-to-a-new-release-mac) |
 | `agentx config check` | Validate the configuration |
 | `agentx config get <path>` | Read one configuration field |
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |

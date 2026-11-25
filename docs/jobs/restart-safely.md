@@ -84,6 +84,7 @@ Options:
 | `--expect-version <version>` | Refuse to start unless the release folder reports this version. |
 | `--timeout <minutes>` | How long to wait for running tasks to finish. The default is 60. When the wait runs out, nothing is changed. |
 | `--force` | When `--timeout` runs out, upgrade anyway. Running tasks still get the usual time to finish. |
+| `--people-only` | Wait only for runs a person is waiting on, such as a chat, an email or a call. Runs that are the agents' own work (one agent asking another, schedules, workflow steps, GitHub and GitLab events) are not waited for. They get the usual time to finish, then they are stopped. The log names each one, and so does `cut` in `.agentx/upgrade/last.json`. |
 | `--boot-timeout <minutes>` | How long the new daemon may take to answer before rolling back. The default is 5. |
 | `--no-follow` | Start the upgrade and return straight away. Read the log or `.agentx/upgrade/last.json` later. |
 | `--dry-run` | Show what would change, without changing anything. |

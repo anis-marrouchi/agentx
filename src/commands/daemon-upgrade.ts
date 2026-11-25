@@ -31,6 +31,7 @@ export const upgradeCommand = new Command("upgrade")
   .option("--expect-version <version>", "refuse unless the release reports this version")
   .option("--timeout <minutes>", "how long to wait for running tasks to finish", "60")
   .option("--force", "restart even if tasks are still running when --timeout runs out")
+  .option("--people-only", "wait only for runs a person is waiting on; the fleet's own runs (agent to agent, schedules, workflows) get the drain time and are cut")
   .option("--boot-timeout <minutes>", "how long the new daemon may take to answer", "5")
   .option("--no-follow", "start the upgrade and return without showing its log")
   .option("--dry-run", "show what would change, without changing anything")
@@ -44,6 +45,7 @@ export const upgradeCommand = new Command("upgrade")
       timeoutMin: Number(opts.timeout),
       force: !!opts.force,
       bootTimeoutMin: Number(opts.bootTimeout),
+      peopleOnly: !!opts.peopleOnly,
     }
     if (!Number.isFinite(runOpts.timeoutMin) || runOpts.timeoutMin < 0) fail("--timeout must be a number of minutes")
     if (!Number.isFinite(runOpts.bootTimeoutMin) || runOpts.bootTimeoutMin <= 0) fail("--boot-timeout must be a number of minutes")
@@ -73,7 +75,7 @@ export const upgradeCommand = new Command("upgrade")
     console.log()
     console.log(`  Upgrade ${chalk.bold(service.label)}: ${oldDir} → ${chalk.bold(dir)} (${version})`)
     if (opts.dryRun) {
-      console.log(chalk.dim(`  Would wait up to ${runOpts.timeoutMin} min for idle${runOpts.force ? ", then restart anyway" : ", then give up"}, switch every loaded job naming ${oldDir},`))
+      console.log(chalk.dim(`  Would wait up to ${runOpts.timeoutMin} min for ${runOpts.peopleOnly ? "runs a person is waiting on (other runs are not waited for)" : "idle"}${runOpts.force ? ", then restart anyway" : ", then give up"}, switch every loaded job naming ${oldDir},`))
       console.log(chalk.dim(`  reload them, and wait up to ${runOpts.bootTimeoutMin} min for ${version}; on failure put the old settings back.`))
       console.log()
       return
@@ -90,6 +92,7 @@ export const upgradeCommand = new Command("upgrade")
     const args = [process.execPath, cli, "daemon", "upgrade", dir, "--run",
       "--timeout", String(runOpts.timeoutMin), "--boot-timeout", String(runOpts.bootTimeoutMin),
       ...(runOpts.force ? ["--force"] : []),
+      ...(runOpts.peopleOnly ? ["--people-only"] : []),
       ...(opts.expectVersion ? ["--expect-version", opts.expectVersion] : []),
       ...(opts.config ? ["-c", resolve(opts.config)] : [])]
     const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "" }
