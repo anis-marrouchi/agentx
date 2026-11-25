@@ -122,12 +122,12 @@ A run that fails for another reason, on every one of its normal retries, is repo
 
 If the plan limit holds the 08:30 run until 11:00, the run starts again at 11:02. If the hold lasts until 17:00, the run is missed and the writer agent is told.
 
-#### Check it worked
+**To see a held or missed run:**
 
 1. **Browser:** open Settings › Schedules. A held run shows **Held, retry waiting** as its last result; a missed one shows **Missed**.
 2. **Terminal:** run `curl -s http://localhost:<port>/crons/health` (or ask an agent to use its `agentx_crons` tool). A job whose last scheduled run was missed shows the status `missed` until its next run works.
 
-#### If something is wrong
+**When a held run goes wrong:**
 
 - **The run was not tried again:** check that the hold ends inside the window. Raise `retryWindowMinutes`, or leave it unset to allow up to the next regular run.
 - **Nobody was told about a missed run:** the agent named in `agent` must be on this machine. Add a `notify` chat to the job to get the line in a chat as well.
