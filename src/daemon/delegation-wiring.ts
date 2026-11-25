@@ -634,6 +634,11 @@ export function pushPreview(text: string): string {
  *  is renamed to `delegations.jsonl.imported`. */
 export const DELEGATION_LOG = ".agentx/a2a/delegations.jsonl"
 
+/** A no-op onDelta: it puts the run in stream-json mode, so a hand-off run's
+ *  Task page in the Hub shows its output while it works, not only the final
+ *  answer at the end (#2256). The caller still gets only the result. */
+export const liveOutput = (): void => {}
+
 export function createDelegations(w: DelegationWiring): DelegationManager {
   const cfg = w.config.mesh.delegation
   const store = handoffStoreFor(w.db, w.log)
@@ -688,7 +693,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
         ...(opts.signal ? { callerSignal: opts.signal } : {}),
         ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
         ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
-      })
+      }, liveOutput)
     },
     runPeer: (peer, callee, message, context, opts) => {
       // The peer cannot check a person's limit (ids are per machine).
@@ -702,7 +707,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     injectTurn: (turn) => {
       const from = (turn.context.delegation as { from?: unknown } | undefined)?.from
       const intentRef = typeof from === "string" ? w.recordDispatch?.(turn.agentId, turn.context, turn.message, from) : undefined
-      return w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any, ...(intentRef ? { intentRef } : {}) })
+      return w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any, ...(intentRef ? { intentRef } : {}) }, liveOutput)
     },
     isChatBusy: (agentId, channel, chatId) => w.registry.isChatBusy(agentId, channel, chatId),
     canDeliver: (channel) => canDeliverToChat(w.router, channel),
