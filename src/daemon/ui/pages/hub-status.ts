@@ -1,7 +1,7 @@
 // The Hub's desktop status bar (#2101 P9a, R23, R25). It reads the same
-// Claude plan windows as /usage/plan. Codex and Gemini stay unknown until
-// their CLIs provide a reading; we never present a guessed percentage as
-// usage. R25 (Orca's bottom bar): each item has an icon, and the CLI
+// Claude plan windows as /usage/plan. Codex and Gemini get an item only
+// once their CLIs provide a reading; we never present a guessed percentage
+// as usage, and never write "not known" (Anis 11-25). R25 (Orca's bottom bar): each item has an icon, and the CLI
 // drop-down switches the engine of the agent in view; R23: the light/dark
 // switch lives here, not in the side menu.
 
@@ -12,17 +12,19 @@ export function hubUsageText(windows: HubUsageWindow[], now: number): string {
     const minutes = Math.ceil(ms / 60_000)
     return minutes < 60 ? minutes + "m" : minutes < 48 * 60 ? Math.ceil(minutes / 60) + "h" : Math.ceil(minutes / (24 * 60)) + "d"
   }
+  // A window with no reading is left out, never written as "not known"
+  // (Anis 11-25: no "not known" text in the UI). A reading taken before its
+  // window reset no longer says anything about current use, so it is left
+  // out too. No window at all gives "", and the bar hides the item.
   const label = (key: string, short: string): string => {
     const w = windows.find((item) => item.window === key && Number.isFinite(item.utilization))
-    if (!w) return short + " not known"
-    // A reading taken before its window reset no longer says anything about
-    // current use, so we do not show its old percentage.
-    if (w.resetsAt && w.resetsAt <= now) return short + " not known (reset since last reading)"
+    if (!w) return ""
+    if (w.resetsAt && w.resetsAt <= now) return ""
     const used = Math.round(Math.max(0, Math.min(1, w.utilization)) * 100)
     const reset = w.resetsAt ? " · resets in " + until(w.resetsAt - now) : ""
     return short + " " + used + "%" + reset
   }
-  return label("five_hour", "5h") + " · " + label("seven_day", "7d")
+  return [label("five_hour", "5h"), label("seven_day", "7d")].filter(Boolean).join(" · ")
 }
 
 /** One provider row of the account picker (#2101 P9b): what GET /api/admin/hub/accounts returns. */
@@ -128,13 +130,11 @@ export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="H
   <span class="hs__i" id="hs-node" title="The machines this Hub reads">${HS_ICON.node}<span id="hs-node-t">Machine —</span></span>
   <span class="hs__i">${HS_ICON.agents}<span id="hs-running">Running agents —</span></span>
   <span class="hs__i hs__usage">${HS_ICON.gauge}<span id="hs-claude">Claude: checking usage…</span></span>
-  <span class="hs__usage" title="No Codex usage reading is available yet">Codex: not known</span>
-  <span class="hs__usage" title="No Gemini usage reading is available yet">Gemini: not known</span>
   <span class="hs__gap"></span>
   <button type="button" class="hs__btn hs__acct" id="hs-acct" aria-expanded="false" aria-controls="hs-acct-pop" hidden>Accounts</button>
   <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" title="Switch the CLI of the agent in view" hidden><span id="hs-cli-i" class="hs__eng">${HS_ICON.cli}</span><span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
   <button type="button" class="hs__btn" data-wall-theme title="Light / dark" aria-label="Switch light or dark">${HS_ICON.theme}<span>Theme</span></button>
-  <span class="hs__i">${HS_ICON.tag}<span id="hs-version">Version —</span></span>
+  <span class="hs__i" id="hs-version-i" hidden>${HS_ICON.tag}<span id="hs-version"></span></span>
 </footer>
 <section class="hsa" id="hs-acct-pop" aria-label="CLI accounts for new runs" hidden></section>
 <section class="hsa hsc" id="hs-cli-pop" aria-label="Switch the CLI of an agent" hidden></section>`
@@ -180,9 +180,10 @@ export const HUB_STATUS_CSS = `
 /* Up to 1180 px (the icon nav), everything still fits on one line: the
    Claude reading and the CLI button shorten with an ellipsis (the CLI
    drop-down names the agent), Accounts is its one word (the full words
-   stay in its title), Codex and Gemini are left out (both "not known" today) and
+   stay in its title) and
    Theme is its icon (#2101 "fits 900 px"). */
 .hs > * { flex: none; }
+.hs [hidden] { display: none !important; }
 .hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px; overflow: hidden; }
 #hs-claude, #hs-cli-t { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1180px) {

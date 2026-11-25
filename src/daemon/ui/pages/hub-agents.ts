@@ -1,9 +1,10 @@
 // --- The Hub's left column: every agent, grouped by state (#2101 P4, V1) ---
 //
 // The v3 mock (V1) opens the Hub with the agents, not the pages: filter
-// chips All · Working · Needs you · Done, then the agents grouped Working,
-// Needs you and Done today. Each row is a face (letter in the agent's
-// colour, state dot on the corner), the agent, its computer, its last line,
+// chips All · Working · Done, then one agent list (R26) grouped Working,
+// Needs you and Done today. Needs you is a group, not a chip (R27). Each
+// row is a face (letter in the agent's colour, state dot on the corner),
+// the agent, its computer, its last line,
 // how long ago it moved and how many questions it has for you. One click
 // opens its chat (#page=chat&agent=, which opens its latest conversation);
 // a working agent's row opens its live run instead (#2270, #2101 R26).

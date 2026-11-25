@@ -2474,8 +2474,15 @@ export async function executeTask(
         const persistent = await executeClaudeCodePersistent(agent, task, historyContext, resumeSessionId, onEvent, abortSignal, onDelta)
         if (persistent !== null) return persistent
       }
-      if (onDelta) {
-        return executeClaudeCodeStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+      // A caller that listens to events gets them, with or without onDelta.
+      // The registry always does: it writes them to the run's live output.
+      // In one-shot json mode `claude` sends no events, so a Task page
+      // opened from a working agent showed "Waiting for the first words…"
+      // until the run ended (#2101 R26 B1). #2256 fixed this for hand-offs
+      // only, by passing a no-op onDelta; job wakes, schedules and channel
+      // runs of a non-persistent agent still ran in json mode.
+      if (onDelta || onEvent) {
+        return executeClaudeCodeStreaming(agent, task, onDelta ?? (() => {}), historyContext, resumeSessionId, onEvent, abortSignal)
       }
       return executeClaudeCode(agent, task, historyContext, resumeSessionId, abortSignal)
 
