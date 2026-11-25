@@ -109,9 +109,13 @@ export const HUB_NAV_CSS = `
 .ha__node { font-size: 11px; padding: 0 5px; border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-muted); white-space: nowrap; }
 .ha__top time { margin-left: auto; font-size: 11.5px; color: var(--ax-muted); white-space: nowrap; }
 .ha__line { font-size: 12.5px; color: var(--ax-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ha__bar { display: block; height: 3px; margin-top: 5px; border-radius: 2px; background: linear-gradient(90deg, var(--ax-accent) 0 40%, var(--ax-surface-3) 40%); background-size: 250% 100%; animation: ha-run 1.6s linear infinite; }
-@keyframes ha-run { from { background-position: 100% 0; } to { background-position: -150% 0; } }
-@media (prefers-reduced-motion: reduce) { .ha__bar { animation: none; } }
+/* A working agent (#2270): its dot breathes a soft ring and the run's line
+   shimmers, in place of the old sliding stripe. Still under reduced motion. */
+.ha__row.is-working .ha__dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--ha-s); opacity: 0; animation: ha-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
+@keyframes ha-ping { 0% { transform: scale(.6); opacity: .7; } 80%, 100% { transform: scale(1.5); opacity: 0; } }
+.ha__row.is-working .ha__line { color: transparent; background: linear-gradient(100deg, var(--ax-text-2) 0 40%, var(--ax-text) 50%, var(--ax-text-2) 60% 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; animation: ha-shine 2.4s ease-in-out infinite; }
+@keyframes ha-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .ha__row.is-working .ha__dot::after { animation: none; opacity: 0; } .ha__row.is-working .ha__line { animation: none; color: var(--ax-text-2); background: none; } }
 .ha__n { align-self: center; min-width: 18px; padding: 0 5px; line-height: 18px; border-radius: var(--ax-radius-pill); background: var(--ax-accent); color: #fff; font-size: 11px; font-weight: 700; text-align: center; }
 .ha__empty { margin: 8px 6px; font-size: 13px; color: var(--ax-muted); }
 .ax-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

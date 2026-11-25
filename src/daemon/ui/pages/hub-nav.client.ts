@@ -6,7 +6,8 @@
 // ⌘K (Ctrl K) opens the switcher; ⌘1…⌘9 open the agents in its order
 // (Alt 1…9 too, as ⌘1 is the browser's own tab key); ⌃Tab goes back to the
 // last agent. Opening an agent is its chat link, #page=chat&agent=, which
-// opens its latest conversation (wall-chat.client.ts switchAgent).
+// opens its latest conversation (wall-chat.client.ts switchAgent); a
+// working agent's row in the list opens its live run instead (#2270).
 //
 // A fragment of WALL_PAGE_SCRIPT: it uses S, $, esc, decAll, decOwner,
 // isOpen and the injected hubAgentRows, haListHtml, haSwitchHits,
@@ -27,6 +28,19 @@ export const HUB_NAV_SCRIPT = String.raw`
     var needs = typeof decAll === 'function' ? decAll() : [];
     return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain, liveWorkCount(nodes));
   }
+  /** A working row's run, on the Task page the live tree opens too
+   *  (wall-task.client.ts wallTaskHref, #2270); '' when the run is gone. */
+  function haRunHref(r) {
+    var nodes = (S.live && S.live.nodes) || [];
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (!n || (n.url || '') !== r.nodeUrl) continue;
+      var a = (n.agents || []).filter(function (x) { return x && x.id === r.id; })[0];
+      var t = a && (a.runningTasks || []).filter(function (x) { return x && x.id === r.taskId; })[0];
+      if (t) return wallTaskHref(t, r.id, n.url);
+    }
+    return '';
+  }
   function renderHubAgents() {
     hsPaintRunning();
     var el = $('hub-agents');
@@ -34,7 +48,7 @@ export const HUB_NAV_SCRIPT = String.raw`
     if (!S.live) { if (S.liveError) el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; return; }
     HA.model = haModel();
     HA.cur = haChatAgent();
-    var html = haListHtml(HA.model, HA.filter, HA.cur, HA.idleOpen, esc, ltAge);
+    var html = haListHtml(HA.model, HA.filter, HA.cur, HA.idleOpen, esc, ltAge, haRunHref);
     if (html === HA.last) return;
     HA.last = html;
     el.innerHTML = html;

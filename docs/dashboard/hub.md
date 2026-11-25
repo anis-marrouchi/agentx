@@ -33,17 +33,19 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## See every agent at a glance
 
-The top of the nav lists every agent of every connected machine once, by what it is doing, and opens its chat in one click. It changes by itself every 2 seconds.
+The top of the nav lists every agent of every connected machine once, by what it is doing. One click opens a working agent's live run, or any other agent's chat. It changes by itself every 2 seconds.
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
 2. The chips at the top filter the list: **All**, **Working**, **Needs you** and **Done**, each with its count. The Hub remembers your choice.
 3. The agents are grouped:
-   - **Working**: a run is going. The row shows the run's title and a moving blue bar. Each agent is listed once. Only agents of machines that answer count as working, so **Working**'s count is the sum of the machine numbers under **At work now**. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**.
+   - **Working**: a run is going. The row shows the run's title with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. Each agent is listed once. Only agents of machines that answer count as working, so **Working**'s count is the sum of the machine numbers under **At work now**. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**.
    - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
    - **Done today**: its last run ended today. The row shows the first line of its last answer.
    - **Not working today**, folded at the end: every other agent.
 4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and a blue number when it has questions for you. The agent whose chat is open has a blue bar on its left.
-5. Select a row to open that agent's chat, with its latest conversation.
+5. Select a row to open it:
+   - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. It is the same page as the run in the tree under **At work now**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
+   - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
 
 ### Jump to an agent or request
 
