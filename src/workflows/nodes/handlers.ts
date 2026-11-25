@@ -6,8 +6,7 @@ import { wakeConfig } from "../wake"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
 import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
 import { sendToChat } from "@/situations/send-to-chat"
-import { normalizeHome } from "@/a2a/home"
-import { leaseHomeOf } from "@/agents/work-lane"
+import { leaseHomeOfText } from "@/agents/work-lane"
 
 // --- Node handlers (Phase 1 set) ---
 //
@@ -55,7 +54,7 @@ const agentHandler: NodeHandler = async (ctx) => {
   // after rendering: no home. A bare `#12` or `!12` names different work
   // in every repository, so it fails the step instead of locking nothing.
   const rawHome = cfg.home === undefined || cfg.home === null ? "" : render(String(cfg.home), ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow }).trim()
-  const home = rawHome ? leaseHomeOf(normalizeHome(rawHome)) : null
+  const home = rawHome ? leaseHomeOfText(rawHome) : null
   if (rawHome && !home) {
     return { error: `agent node "${ctx.node.id}" has home "${rawHome.slice(0, 120)}", which is not a project issue or merge request (group/project#12, group/project!12 or a link)` }
   }

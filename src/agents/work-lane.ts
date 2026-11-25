@@ -18,6 +18,7 @@
  */
 
 import { emitSignal } from "@/improve/signals"
+import { normalizeHome } from "@/a2a/home"
 
 const REQUEST_ID = /\breq-[0-9A-HJKMNP-TV-Z]{26}\b/
 /** How long a run waits for the holder before it goes ahead anyway. */
@@ -58,6 +59,12 @@ export function takesNotices(channel: string | undefined): boolean {
 export function leaseHomeOf(home: string | undefined | null): string | null {
   if (!home) return null
   return /^[\w.-]+(?:\/[\w.-]+)+[#!]\d+$/.test(home) ? home : null
+}
+
+/** The lease home of a home as written (a link or a ref), or null. For
+ *  callers outside a2a, such as workflow nodes, which may not import it. */
+export function leaseHomeOfText(v: unknown): string | null {
+  return leaseHomeOf(normalizeHome(v))
 }
 
 export function workKeyOf(message: string | undefined, channel: string | undefined): string | null {

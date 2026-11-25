@@ -269,7 +269,33 @@ describe("AgentRegistry: an issue placed on an SSH server", () => {
     expect(run.calls).toBe(0)
   })
 
-  it("refuses a second run of the same issue while the first is going, and runs again after", async () => {
+  it("a second run of the same agent on the same issue waits for the first (home lease, #2084), then runs", async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => { release = r })
+    registry.setSshSpawn(async (args, input) => {
+      calls.push({ args, input })
+      if (calls.length === 1) { await held; return { code: 0, stdout: "READY /srv/.agentx-worktrees/app/issue-7\n", stderr: "" } }
+      return calls.length === 3 ? { code: 0, stdout: "READY /srv/.agentx-worktrees/app/issue-7\n", stderr: "" } : { code: 0, stdout: JSON.stringify({ result: "ok" }), stderr: "" }
+    })
+    const ctx = { channel: "github", chatId: "acme/app:issue:7" } as any
+    const first = registry.execute({ agentId: "coder", message: "a", context: ctx })
+    await new Promise((r) => setTimeout(r, 10))
+    const second = registry.execute({ agentId: "coder", message: "b", context: ctx })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(calls.length).toBe(1)
+    release()
+    expect((await first).content).toBe("ok")
+    expect((await second).content).toBe("ok")
+    expect(calls.length).toBe(4)
+  })
+
+  it("with the home lease off, refuses a second run of the same issue while the first is going, and runs again after", async () => {
+    registry = new AgentRegistry(daemonConfigSchema.parse({
+      node: { id: "mac", name: "mac" }, jobState: { enabled: false }, people, homeLease: { enabled: false },
+      sshServers: [{ name: "box", host: "box.example", checkouts: { "acme/app": "/srv/app" }, pushLimit: "github ruleset 1" }],
+      agents: { coder: { name: "Coder", tier: "claude-code", workspace: dir, maxExecutionMinutes: 45 } },
+    }), () => {})
+    registry.setPlacements({ placement: (c, id) => (c === "github" && id === "acme/app:issue:7" ? at("ssh:box") : null) })
     let release!: () => void
     const held = new Promise<void>((r) => { release = r })
     registry.setSshSpawn(async (args, input) => {
