@@ -157,11 +157,12 @@ describe("liveTreeHtml", () => {
 })
 
 describe("the Hub page", () => {
-  it("opens its nav with the live tree, before the pages", () => {
+  it("opens its nav with the agent list, not the tree, before the pages (#2101 R26)", () => {
     const page = renderWallPage()
-    const tree = page.indexOf('id="wall-tree"'), first = page.indexOf('data-nav="wall"')
-    expect(tree).toBeGreaterThan(0)
-    expect(tree).toBeLessThan(first)
+    const agents = page.indexOf('id="hub-agents"'), first = page.indexOf('data-nav="wall"')
+    expect(page).not.toContain('id="wall-tree"')
+    expect(agents).toBeGreaterThan(0)
+    expect(agents).toBeLessThan(first)
     expect(page).toContain("@keyframes lt-spin")
     expect(page).toContain("prefers-reduced-motion")
   })

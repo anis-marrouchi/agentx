@@ -71,10 +71,25 @@ describe("haListHtml", () => {
     expect(h).toContain('<b class="ha__n" title="2 questions for you">2</b>')
   })
   it("filters to one group", () => {
-    const h = haListHtml(m, "needs", "", false, ltEsc, ltAge)
-    expect(h).toContain('data-ha-agent="pm"')
-    expect(h).not.toContain('data-ha-agent="coder"')
+    const h = haListHtml(m, "working", "", false, ltEsc, ltAge)
+    expect(h).toContain('data-ha-agent="coder"')
+    expect(h).not.toContain('data-ha-agent="pm"')
     expect(h).not.toContain("Not working today")
+  })
+  it("shows Needs you as a group only, not a chip; a saved needs filter shows all (#2101 R27)", () => {
+    const h = haListHtml(m, "needs", "", false, ltEsc, ltAge)
+    expect(h).not.toContain('data-ha-filter="needs"')
+    expect(h).toContain('data-ha-filter="all" aria-pressed="true"')
+    expect(h.match(/Needs you/g)).toHaveLength(1)
+    expect(h).toContain('data-ha-agent="coder"')
+  })
+  it("sends a working agent's row to the link the browser gives, others to their chat (#2101 R26)", () => {
+    const href = (r: { id: string; taskId: string }) => r.taskId ? "#page=task&task=" + r.taskId + "&agent=" + r.id : ha.haChatHref(r as never)
+    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, href)
+    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder" data-ha-agent="coder"')
+    expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm"')
+    const k = haSwitchHtml(haSwitchHits(m.rows, [], "main"), 0, ltEsc, href)
+    expect(k).toContain('href="#page=task&amp;task=t2&amp;agent=main"')
   })
   it("escapes fleet text and drops a colour that is not a hex colour", () => {
     const badNodes: LtNode[] = [{ name: "<b>n</b>", reachable: true, agents: [{ id: "x\"y", name: "<img>", color: "red;background:url(x)", runningTasks: [{ id: "t", messagePreview: "<script>alert(1)</script>" }] }] }]
@@ -148,17 +163,29 @@ describe("the switcher", () => {
 
 describe("the Hub page's left column", () => {
   const page = renderWallPage({ owner: true })
-  it("opens with the switcher and the agents, then the machines; the old page menu is not shown (#2101 R22)", () => {
-    const k = page.indexOf('id="hub-k"'), agents = page.indexOf('id="hub-agents"'), tree = page.indexOf('id="wall-tree"')
+  it("opens with the switcher and the one agent list; the old page menu is not shown (#2101 R22)", () => {
+    const k = page.indexOf('id="hub-k"'), agents = page.indexOf('id="hub-agents"')
     expect(k).toBeGreaterThan(0)
     expect(k).toBeLessThan(agents)
-    expect(agents).toBeLessThan(tree)
     const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
     const shown = nav.slice(0, nav.indexOf('id="wall-pagelinks"'))
     for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "Light / dark", "ax-wall__navfoot"]) {
       expect(shown.replace(/<a class="ax-wall__item ax-wall__shortcut[^>]*>/g, "")).not.toContain(gone)
     }
     expect(nav).toMatch(/<div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>/)
+  })
+  it("lists the agents once: no Machines and runs tree beside the list (#2101 R26)", () => {
+    const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
+    expect(nav).not.toContain('id="wall-tree"')
+    expect(nav).not.toContain("Machines and runs")
+    expect(nav.match(/id="hub-agents"/g)).toHaveLength(1)
+  })
+  it("shows each place once in the side menu on a computer (#2101 R27)", () => {
+    const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf('id="wall-pagelinks"'))
+    // The phone bar's shortcuts are hidden on a computer (wall-space.ts).
+    const desktop = nav.replace(/<a class="ax-wall__item ax-wall__shortcut[^]*?<\/a>/g, "")
+    expect(desktop.match(/view=decide/g)).toHaveLength(1)
+    expect(desktop).not.toContain(">Needs you<")
   })
   it("ends with Desk, Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
@@ -176,7 +203,7 @@ describe("the Hub page's left column", () => {
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
-    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml })
+    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml })
     const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
     expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
   })

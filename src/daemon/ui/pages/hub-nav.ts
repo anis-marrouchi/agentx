@@ -119,8 +119,6 @@ export const HUB_NAV_CSS = `
 .ha__n { align-self: center; min-width: 18px; padding: 0 5px; line-height: 18px; border-radius: var(--ax-radius-pill); background: var(--ax-accent); color: #fff; font-size: 11px; font-weight: 700; text-align: center; }
 .ha__empty { margin: 8px 6px; font-size: 13px; color: var(--ax-muted); }
 .ax-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.lt--fold > summary { font-size: 12.5px; color: var(--ax-muted); }
-.lt--fold > .lt { margin-top: 4px; }
 /* The foot row: Desk · Jobs · Workflows · Mobile app · Settings. */
 .hf { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin-top: auto; padding: 10px 2px 2px; border-top: 1px solid var(--ax-border); }
 .hf__item { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font-size: 13px; text-decoration: none; }
