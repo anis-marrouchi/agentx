@@ -1,6 +1,6 @@
 # Hub — every task as a post
 
-The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed by what it is doing: **Working**, **Needs you** and **Done today**, and **⌘K** jumps to any agent or request. Under them, **Needs you** lists the first things that wait on you, and **Machines and runs** shows what every machine runs at this moment. Beside the feed, **Agents** lists who has posts this week. At the top of the side column, **Chat** asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
+The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed by what it is doing: **Working**, **Needs you** and **Done today**, and **⌘K** jumps to any agent or request. Under them, **Machines and runs** shows what every machine runs at this moment. The page takes the rest of the width; there is no side column with Chat and Agents any more. The chat button at the top right of each page asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
 
 The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
 
@@ -11,27 +11,23 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in the row of agent names at the top of the chat to open its conversation, as in the phone app. Slide the row sideways when there are more agents than fit. Close Chat to see the feed. On a phone, use **Back to the page**. A link to a post or another Hub page opens that page directly.
-2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Then comes **Needs you**, in red, when something waits on you: the five oldest questions, each with the agent that asked and how long ago, then **Show all** with the full count. Select one, or **Show all**, to answer on the [Needs you](#see-what-waits-on-you) page. Nothing waiting, no box. Next comes **Machines and runs**, folded: select it to open **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)). Under it come **Hub** (open posts) and **Needs you** (posts waiting on you). Select **Work**, **Automation** or **Fleet** to open its links. Those groups start collapsed. The owner also sees **Settings**.
-   - **Work:** **Jobs** (see [Jobs](./jobs.md)), **Live**, **Projects** and **Activity**. On a narrower screen, where the tree is hidden, **Running now** is here too; on a wide screen open it with **All** next to **At work now**.
-   - **Automation:** **Schedules**, **Workflows**, **Reviews**, **Events** and **Failures**.
-   - **Fleet:** **Agents**, **People**, **Org**, **Operations** and **Cost**.
-   - **Owner:** **Settings**, for the owner only (see [Change settings](#change-settings)).
+2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). What waits on you shows once: as the agent list's **Needs you** group, and as **Desk**'s count. Next comes **Machines and runs**, folded: select it to open **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)).
 
    At the bottom of the nav: **Desk** (what waits on you, to answer there, with its count), **Jobs**, **Workflows**, **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) and, for the owner, the gear for **Settings**.
 
-   Under the groups, **Dashboard** opens the classic pages at **Operations**. Each other item opens its own page, and the number next to it counts what is there: open posts, posts waiting on you, live sessions, tasks running now, projects with open work, recurring jobs, workflows, classifications waiting for review, events since the machines last started, failures in the last 24 hours, people listed, the people and agents in the org chart, what this machine spent this month, and agents. The page you are on is in bold.
+   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Needs you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
 3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
-4. The **Quiet by design** box on the right says the Hub never pings you. Select **Dashboard pages** in it to list the classic pages that still hold something the Hub does not have yet: **Monitor**, **Org**, **Activity** and **Workflows**. Its **Operations** link opens the Hub's [Operations](#see-fleet-operations) page. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
-5. **Light / dark**, at the bottom of the nav, switches the colours. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
-6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. The round **+** opens the Creator. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. Agents and the classic page links sit under the feed. On a tablet, the classic page links come before the feed.
+4. The Hub never pings you on its own. The classic pages that still hold something the Hub does not have yet, **Monitor**, **Org**, **Activity** and **Workflows**, are in the **⌘K** switcher as **Dashboard ·** *page*. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
+5. **Theme**, in the bottom status bar (see [Read the bottom status bar](#read-the-bottom-status-bar)), switches between light and dark. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
+6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
 
    ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
 
 
-   ![The Hub on a phone in dark mode, with the bottom bar and the round + button](/screenshots/wall/phone-dark.png)
+   ![The Hub on a phone in dark mode, with the bottom bar](/screenshots/wall/phone-dark.png)
 
 ![Mockup take B (left, post text blurred) next to the Hub as built](/screenshots/wall/compare-desktop.png)
 
@@ -68,7 +64,19 @@ Select **Mobile app** at the bottom of the nav. The page says what the phone app
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows how many agents are running, the AgentX version, and the Claude Code plan's five-hour and seven-day use and reset times. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. When a window has reset since the last reading, the bar shows **not known (reset since last reading)** for that window instead of the old percentage, until a new reading arrives. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden.
+On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, the Claude Code plan's five-hour and seven-day use and reset times, and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. When a window has reset since the last reading, the bar shows **not known (reset since last reading)** for that window instead of the old percentage, until a new reading arrives. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Codex and Gemini are left out, Theme is its icon, and the Claude reading, **Accounts** and **CLI** shorten with **…**.
+
+### Switch the CLI an agent runs on
+
+For the owner only. **CLI** names the agent whose chat is open and the engine it runs on, for example **Claude Code · CX**.
+
+1. Select **CLI** in the bottom bar.
+2. Pick the agent under **Agent**, if it is not the one in view.
+3. Under **Engine**, pick **Claude Code**, **Codex CLI**, **OpenCode**, **Anthropic API (SDK)** or **Orchestrator**, then select **Switch**.
+
+**Check it worked:** the note says **Saved.** *agent* **runs on** *engine* **after a daemon restart.** After `agentx daemon restart --when-idle`, the agent's next run uses that engine; a run already going keeps its own.
+
+**If something is wrong:** **Not switched:** and a reason means nothing was saved; the same change in **Settings**, on the agent's card, shows the full error. No **CLI** button: you are not signed in as the owner, or no machine answered the live view yet.
 
 ![The Hub's bottom status bar in a neutral demo](/screenshots/wall/status-bar.png)
 
@@ -292,7 +300,7 @@ A post goes to the machine the agent runs on. It needs requests turned on on tha
 
 The Creator is a longer form of the box at the top of the feed.
 
-1. **Browser:** select **New post** under the nav (the round **+** on a phone).
+1. **Browser:** press **⌘K** (**Ctrl K**) and pick **New post** (on a phone, **More**, then **New post**).
 2. Under **Who does it**, select an agent. Each card shows its machines, its open posts, and **over capacity** when it carries more than your [capacity threshold](#capacity-per-owner).
 3. Write the **Request**. Add **Done when** (the proof it should close with, for example a merged PR), a **Project** and an **Estimate** in minutes if you want them.
 4. Read **What happens**, then select **Post to** *agent*. The note beside the button says it was posted.
@@ -1108,13 +1116,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 
 ## Check it worked
 
-1. **Browser:** open the dashboard. The Hub opens in its own space, with no dashboard top bar: the nav on the left, the feed in the middle and **Happening now** on the right (under the feed on a phone). Select **Dashboard** in the nav: the classic Operations page opens, and its **Hub** tab brings you back.
+1. **Browser:** open the dashboard. The Hub opens in its own space, with no dashboard top bar: the nav on the left and the page across the rest of the width, with no Chat or Agents column on the right. No label shows twice in the nav, and at 900 pixels high it does not scroll. The bottom status bar has **Theme**, and at 900 pixels wide it still fits on one line. Press **⌘K** and pick **Dashboard**: the classic Operations page opens, and its **Hub** tab brings you back.
 2. Send an agent a small task from a channel. Within a minute (or after **Refresh**), a post for it appears with status **in progress**.
 3. Select **Thread** on it. You see the request and at least one **run**. Then select the post itself: it opens on its own page with the same thread. Press Escape: you are back on the feed.
-4. Select **Agents** in the nav. Every agent on your machines is listed, and the number next to **Agents** matches the list. Each agent has a status (**Working**, **Needs you**, **Idle**, **Paused** or **Not started**). As the owner, select **New agent**, type a name and select **Create agent**, then **Restart when idle**. After the restart, **Test drive** the new agent: it answers, and you edited no file.
-5. When an agent raises a decision card while working on a task, select **Needs you** in the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
+4. Press **⌘K** and pick **Agents**. Every agent on your machines is listed, and the number next to **Agents** matches the list. Each agent has a status (**Working**, **Needs you**, **Idle**, **Paused** or **Not started**). As the owner, select **New agent**, type a name and select **Create agent**, then **Restart when idle**. After the restart, **Test drive** the new agent: it answers, and you edited no file.
+5. When an agent raises a decision card while working on a task, select **Desk** at the bottom of the nav (or the **Waiting** tab). The card shows on that task's post, with its expiry and what happens with no answer.
 6. Open a post that is in progress, type a comment and select **Comment**. The note under the buttons says it was sent to the agent, and a **comment** line by **owner** appears in its thread. Within a minute, a new **run** of that agent follows it. Select **Call** *agent*: your AgentX Voice widget rings.
-7. Select **Live** in the nav. The Hub's **Live** page opens.
+7. Press **⌘K** and pick **Live**. The Hub's **Live** page opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
 9. **Browser:** open the Hub in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
 10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
