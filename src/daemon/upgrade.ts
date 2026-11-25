@@ -19,6 +19,14 @@ export function releaseDirFromArgs(args: unknown): string | null {
   return null
 }
 
+/** The Node binary a job runs the release with: its first program argument,
+ *  when that is an absolute path to a `node` binary. Null otherwise (the
+ *  caller then falls back to the Node running the upgrade). */
+export function daemonNodeFromArgs(args: unknown): string | null {
+  if (!Array.isArray(args) || typeof args[0] !== "string") return null
+  return /^\/.*\/node$/.test(args[0]) ? args[0] : null
+}
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /** Whether a settings file names the release folder (as a path, not as the

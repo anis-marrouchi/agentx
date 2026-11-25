@@ -5,7 +5,8 @@ import { waitForIdle } from "@/daemon/restart"
 import { launchdDomain, launchdPlistPath } from "@/daemon/restart-host"
 import { jobPid, loadedJobsNaming, plistValid, readPlistJson, reloadJob, type LaunchdJob } from "@/native/macos/launchd"
 import { writeShutdownRequest } from "@/daemon/shutdown"
-import { healthIsUpgraded, releaseDirFromArgs, retargetPlist, runsToCut, upgradeJobLabel, type UpgradeOutcome } from "@/daemon/upgrade"
+import { ensureNativeModules } from "@/daemon/upgrade-native"
+import { daemonNodeFromArgs, healthIsUpgraded, releaseDirFromArgs, retargetPlist, runsToCut, upgradeJobLabel, type UpgradeOutcome } from "@/daemon/upgrade"
 import { daemonBase, drainLimitMs, getJson, readHolding, readInflight, readRunning } from "./daemon-http"
 
 // The upgrade itself, run inside the one-shot launchd job that
@@ -78,11 +79,20 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   const oldPid: number | null = info.pid ?? jobPid(daemon)
   outcome.from.version = health?.version ?? null
   const daemonPlist = launchdPlistPath(daemon)
-  const oldDir = daemonPlist ? releaseDirFromArgs(readPlistJson(daemonPlist)?.ProgramArguments) : null
+  const programArgs = daemonPlist ? readPlistJson(daemonPlist)?.ProgramArguments : null
+  const oldDir = releaseDirFromArgs(programArgs)
   if (!daemonPlist || !oldDir) return finish("refused", "daemon settings file does not run a release folder")
   outcome.from.dir = oldDir
   if (oldDir === o.dir) return finish("refused", `already on ${o.dir}`)
   log(`daemon ${daemon.label} PID ${oldPid ?? "?"} runs ${oldDir} (${outcome.from.version ?? "?"})`)
+
+  // 0. Native modules must load with the Node launchd runs the daemon with,
+  // not the Node that staged the folder (#2227: /health stayed ok while
+  // every openDb failed).
+  const daemonNode = daemonNodeFromArgs(programArgs) ?? process.execPath
+  const native = ensureNativeModules(o.dir, daemonNode, log)
+  if (!native.ok) return finish("refused", `${native.detail}; nothing changed`)
+  log(`better-sqlite3 with ${daemonNode}: ${native.detail}`)
 
   // 1. Idle. With --people-only, only runs a person is waiting on count.
   const what = o.peopleOnly ? "run(s) with a person waiting" : "task(s) running"
