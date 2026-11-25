@@ -108,20 +108,82 @@ const defaultFetch: typeof fetch = (input, init) => {
   return undiciFetch(input as any, { ...(init as any), dispatcher: pinned }) as unknown as Promise<Response>
 }
 
+// --- The allowed addresses: this daemon and its mesh peers ---
+//
+// A "release X is live" check reads this daemon's own /health on
+// 127.0.0.1, or a mesh peer's on its Tailscale address. Those are private
+// addresses the guard would refuse. They are allowed by exact host and
+// port: the daemon's own listen address, the configured mesh peers, and
+// requests.checkers.urlAllow. Any other port on the same host stays
+// refused.
+
+/** The `host:port` key of a URL, with the scheme's port when none is
+ *  written. IPv6 hosts keep their brackets ("[::1]:18800"). */
+export function hostPort(url: URL): string {
+  const port = url.port || (url.protocol === "https:" ? "443" : "80")
+  return `${url.hostname.replace(/\.$/, "").toLowerCase()}:${port}`
+}
+
+function entryKey(entry: string): string | null {
+  try {
+    return hostPort(new URL(/^https?:\/\//i.test(entry) ? entry : `http://${entry}`))
+  } catch {
+    return null
+  }
+}
+
+const LOOPBACK_NAMES = ["127.0.0.1", "localhost", "[::1]"]
+
+/** The allowed `host:port` keys from the daemon's config: its listen
+ *  address (and the loopback names when it listens on all addresses or on
+ *  loopback), every mesh peer's URL, and requests.checkers.urlAllow. */
+export function fetchAllowFromConfig(config: {
+  node: { bind: string }
+  mesh?: { peers?: Array<{ url: string }> }
+  requests?: { checkers?: { urlAllow?: string[] } }
+}): string[] {
+  const keys: string[] = []
+  const own = entryKey(config.node.bind)
+  if (own) {
+    keys.push(own)
+    const [host, port] = [own.slice(0, own.lastIndexOf(":")), own.slice(own.lastIndexOf(":") + 1)]
+    if (["0.0.0.0", "[::]", ...LOOPBACK_NAMES].includes(host)) keys.push(...LOOPBACK_NAMES.map((h) => `${h}:${port}`))
+  }
+  for (const p of config.mesh?.peers ?? []) keys.push(...[entryKey(p.url)].filter((k): k is string => !!k))
+  for (const a of config.requests?.checkers?.urlAllow ?? []) keys.push(...[entryKey(a)].filter((k): k is string => !!k))
+  return [...new Set(keys)]
+}
+
+let allowed = new Set<string>()
+
+/** Sets the addresses the daemon's own fetch may open although they are
+ *  private. Called at daemon start and on config reload. */
+export function setFetchAllow(keys: string[]): void {
+  allowed = new Set(keys.map((k) => entryKey(k)).filter((k): k is string => !!k))
+}
+
+/** An allowed address is fetched without the connect-time guard. */
+const plainFetch: typeof fetch = (input, init) => undiciFetch(input as any, init as any) as unknown as Promise<Response>
+
 /** A fetch that refuses private addresses and follows redirects itself,
  *  checking each one. Throws (as fetch does on a network error) when an
- *  address is refused, so a check reads it as not reachable. Tests give
- *  their own `fetch` and `lookup`. */
-export function guardedFetch(opts: { fetch?: typeof fetch; lookup?: HostLookup; maxRedirects?: number } = {}): typeof fetch {
+ *  address is refused, so a check reads it as not reachable. An address in
+ *  the allow list (see setFetchAllow) is opened, but only on its exact
+ *  host and port, and a redirect from it is checked like any other. Tests
+ *  give their own `fetch`, `lookup` and `allow`. */
+export function guardedFetch(opts: { fetch?: typeof fetch; lookup?: HostLookup; maxRedirects?: number; allow?: string[] } = {}): typeof fetch {
   const inner = opts.fetch ?? defaultFetch
+  const open = opts.fetch ?? plainFetch
   const lookup = opts.lookup ?? systemLookup
   const max = opts.maxRedirects ?? MAX_REDIRECTS
+  const allow = opts.allow ? new Set(opts.allow.map((k) => entryKey(k)).filter((k): k is string => !!k)) : null
   return (async (input: string | URL | Request, init?: RequestInit) => {
     let url = new URL(typeof input === "string" || input instanceof URL ? input : input.url)
     for (let hop = 0; ; hop++) {
-      const why = await refusedUrl(url, lookup)
+      const ok = (url.protocol === "http:" || url.protocol === "https:") && (allow ?? allowed).has(hostPort(url))
+      const why = ok ? null : await refusedUrl(url, lookup)
       if (why) throw new Error(`refused: ${why}${hop ? ` (redirected to ${url.href})` : ""}`)
-      const res = await inner(url.href, { ...init, redirect: "manual" })
+      const res = await (ok ? open : inner)(url.href, { ...init, redirect: "manual" })
       const to = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null
       if (!to) return res
       await res.body?.cancel().catch(() => {})

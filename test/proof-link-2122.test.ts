@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
-import { blockedAddress, guardedFetch, refusedUrl, type HostLookup } from "../src/requests/checkers/fetch-guard"
+import { blockedAddress, fetchAllowFromConfig, guardedFetch, refusedUrl, type HostLookup } from "../src/requests/checkers/fetch-guard"
 import { checkUrl } from "../src/requests/checkers/url"
 import { forgeCommitReader, type ForgeItem, type ForgeReader } from "../src/requests/checkers/issue"
 import { checkProofLink, claimedRef, proofVerify } from "../src/requests/proof-link"
@@ -78,6 +78,42 @@ describe("fetch guard (#2122)", () => {
     await expect(f("https://docs.example.com/to-meta")).rejects.toThrow(/refused/)
     expect(s.asked).not.toContain("http://localhost:18800/secret")
     expect(s.asked.some((u) => u.includes("169.254") || u.includes("fd00"))).toBe(false)
+  })
+
+  it("allows this daemon's own address and the mesh peers by exact host and port", async () => {
+    const allow = fetchAllowFromConfig({
+      node: { bind: "0.0.0.0:18800" },
+      mesh: { peers: [{ url: "http://100.101.102.103:18800" }, { url: "https://box.tail1234.ts.net" }] },
+      requests: { checkers: { urlAllow: ["10.0.0.9:9000"] } },
+    })
+    expect(allow).toEqual(expect.arrayContaining(["0.0.0.0:18800", "127.0.0.1:18800", "localhost:18800", "[::1]:18800", "100.101.102.103:18800", "box.tail1234.ts.net:443", "10.0.0.9:9000"]))
+    const ok = () => new Response("0.300.0", { status: 200 })
+    const s = server({
+      "http://127.0.0.1:18800/health": ok,
+      "http://localhost:18800/health": ok,
+      "http://100.101.102.103:18800/health": ok,
+      "http://127.0.0.1:18800/hop": redirect("http://127.0.0.1:6379/"),
+    })
+    const f = guardedFetch({ fetch: s.fetch, lookup: PUBLIC, allow })
+    // Own /health allowed.
+    expect((await f("http://127.0.0.1:18800/health")).status).toBe(200)
+    expect((await f("http://localhost:18800/health")).status).toBe(200)
+    // Another localhost port refused.
+    await expect(f("http://127.0.0.1:6379/")).rejects.toThrow(/refused/)
+    await expect(f("http://localhost:3000/")).rejects.toThrow(/refused/)
+    // Peer allowed; the same peer on another port refused.
+    expect((await f("http://100.101.102.103:18800/health")).status).toBe(200)
+    await expect(f("http://100.101.102.103:22/")).rejects.toThrow(/refused/)
+    // A redirect from an allowed address is checked like any other.
+    await expect(f("http://127.0.0.1:18800/hop")).rejects.toThrow(/refused/)
+    expect(s.asked).not.toContain("http://127.0.0.1:6379/")
+    // The live check of a release closes on its own /health.
+    const r = await checkUrl({ kind: "url", url: "http://127.0.0.1:18800/health", contains: "0.300.0" }, { fetch: f })
+    expect(r.verdict).toBe("met")
+  })
+
+  it("a daemon bound to one address allows that address only", () => {
+    expect(fetchAllowFromConfig({ node: { bind: "100.64.1.2:18800" } })).toEqual(["100.64.1.2:18800"])
   })
 
   it("the URL check reads a refused address as unverifiable", async () => {

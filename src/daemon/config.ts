@@ -1940,6 +1940,10 @@ export const requestsConfigSchema = z.object({
     checkEveryMinutes: z.number().positive().max(24 * 60).default(10),
     /** Local clones the git-ancestor check may read, by name: { "app": "/srv/app" }. */
     repos: z.record(z.string(), z.string().min(1)).default({}),
+    /** Private addresses the URL check may open anyway, by exact
+     *  "host:port" (#2122). This daemon's own listen address and the mesh
+     *  peers are always allowed; any other private address is refused. */
+    urlAllow: z.array(z.string().min(1)).default([]),
     /** The issue check's GitHub connector. Unset: channels.github.token. */
     github: z.object({
       apiUrl: z.string().url().default("https://api.github.com"),
