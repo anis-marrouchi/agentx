@@ -606,6 +606,12 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `jobState.enabled` | boolean | `true` | A run of agent work ends by stating its job's state: done, continue, waiting or blocked. See [Say where the work stands when a run ends](/jobs/end-of-run-state). |
 | `jobState.channels` | list of strings | `["a2a", "cron", "reminder", "events"]` | Channels whose runs must state it. Chat with a person is never checked. |
 
+## `homeLease`
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `homeLease.enabled` | boolean | `true` | One run at a time per agent and issue, pull request or merge request: another run of the same agent on that home waits for it. An awaited caller past its wait budget is refused (`home_busy`) and never runs. See [one run per agent and issue](/jobs/ask-another-agent#one-run-per-agent-and-issue-home-lease). Off: runs on one home go side by side, with only the `[agentx:same-home]` line. |
+
 ## `quality`
 
 Release quality gates. Each one has its own switch and is off unless you turn it on.

@@ -91,6 +91,19 @@ export interface AgentXEvents {
     queuedAt?: number
   }
 
+  /** A run waits for the run of the same agent that holds its home (#2084):
+   *  it runs after it, never beside it. `holderId` names the holder's lane
+   *  grant; `taskId` its running task once it runs. */
+  "task:joined": {
+    agentId: string
+    home: string
+    holderId: string
+    taskId?: string
+    channel: string
+    chatId: string
+    at: string
+  }
+
   /** The line of one chat was handed over: every message queued up to
    *  `flushedAt` now runs as a turn of its own, or as one combined turn
    *  (#443). Fires before those turns start. */
@@ -497,6 +510,8 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
       return { ...base, kind: "message", ref: p.commentId, summary: `comment ${p.commentId} on ${p.channel} ${p.chatId}` }
     case "task:queued":
       return { ...base, kind: "agent", summary: `queued on ${p.channel} ${p.chatId}` }
+    case "task:joined":
+      return { ...base, kind: "agent", ref: p.taskId ?? p.holderId, summary: `waits for run ${p.taskId ?? p.holderId} on ${p.home} (${p.channel} ${p.chatId})` }
     case "task:queue-flushed":
       return { ...base, kind: "agent", summary: `${p.count} queued message(s) handed over on ${p.channel} ${p.chatId}` }
     case "task:queue-ended":

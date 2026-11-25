@@ -201,6 +201,13 @@ export interface DelegationDeps {
       /** How long the run may wait for a free slot of a busy callee
        *  (registry.execute's slotWaitMs). */
       slotWaitMs?: number
+      /** Read once the run may start (after its home lease, #2084), in
+       *  place of `resumeFrom`: by then the run ahead on the home ended,
+       *  so its session is free to continue. */
+      resumeLater?: () => Array<{ channel: string; chatId: string }>
+      /** Aborted at the delegation's time limit: a run still waiting for
+       *  its home or a slot leaves the line and never starts (#2084). */
+      signal?: AbortSignal
     },
   ): Promise<CalleeRun>
   /** Run the callee on a mesh peer and return its answer text. */
@@ -928,15 +935,18 @@ export class DelegationManager {
       return from
     }
     if (prior && !implicit) {
-      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
+      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it on the home's lane, then " : ""}continues its session`)
     }
 
     const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
     const launch = (): Promise<CalleeRun> => {
       // Gone already (a restart reported it lost while it waited).
       if (!this.pendingById.has(id)) return Promise.resolve({ content: "", error: "no longer pending" })
-      // The clock starts when the work does, not while it waits its turn.
+      // The clock starts when the hand-off is sent: a wait for the home's
+      // lane (#2084) counts, and at the limit the waiter leaves the line.
+      const gone = new AbortController()
       const timer = setTimeout(() => {
+        gone.abort(new Error(`delegation ${id} timed out`))
         const runId = this.localRuns.get(id)
         if (runId) {
           try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
@@ -950,7 +960,11 @@ export class DelegationManager {
         return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, ...(record.caller !== UNNAMED_CALLER ? { senderAgentId: record.caller } : {}) })
           .then((text) => ({ content: text } as CalleeRun))
       }
-      const resumeFrom = resumable()
+      // A named home's session is read once the run holds its lease
+      // (#2084): the run ahead of it there has ended by then. Topic and
+      // caller-chat sessions are read now, as before.
+      const later = !!home && !(this.deps.topicSessions && homeKey)
+      const resumeFrom = later ? undefined : resumable()
       const mine = chatKeyOf(calleeChat)
       // With topic sessions on (#2010), two keys can name one source chat
       // (a topic key and a caller-chat key): a run that takes a source
@@ -971,7 +985,9 @@ export class DelegationManager {
           },
           extras: opts.extras,
           ...(resumeFrom?.length ? { resumeFrom, ...(useTopic ? { topic: true as const } : {}) } : {}),
+          ...(later ? { resumeLater: resumable } : {}),
           ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
+          signal: gone.signal,
         })
       } catch (e) {
         release()
@@ -979,12 +995,9 @@ export class DelegationManager {
       }
       return started.finally(release)
     }
-    // The wait is bounded by this delegation's own time limit: a run ahead
-    // that never settles (stuck before it started) does not hold it forever.
-    const waitFor = prior?.running && !implicit
-      ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
-      : null
-    const run = waitFor ? waitFor.then(launch) : launch()
+    // A run ahead on the same home is waited for in the registry's home
+    // lane (#2084), the one place that grants a home: not here as well.
+    const run = launch()
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
       this.homes.set(homeKey, { chats: [calleeChat, ...(keyPrior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null, implicit, ...(senderKey ? { sender: true as const } : {}) })

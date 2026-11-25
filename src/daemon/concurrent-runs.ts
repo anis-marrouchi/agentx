@@ -83,3 +83,36 @@ export function findOverlaps(spans: RunSpan[], now: number): RunOverlap[] {
   }
   return out
 }
+
+// --- Runs on a home beside another (#2084) ---
+//
+// The number for the home lease: runs that started on a home (an issue,
+// a merge request) while a run of the same agent was still live on it,
+// from the task traces' `home` field. Different agents on one home do
+// not count; back to back does not count.
+
+export interface HomeRunSpan {
+  runId: string
+  agentId: string
+  home: string
+  startedAt: number
+  endedAt: number
+}
+
+/** How many runs started on a home while the same agent already had a
+ *  live run there, with those runs' ids. */
+export function countHomeOverlaps(spans: HomeRunSpan[]): { count: number; runs: string[] } {
+  const list = [...spans].sort((a, b) => a.startedAt - b.startedAt || a.runId.localeCompare(b.runId))
+  const runs: string[] = []
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i]
+    for (let j = 0; j < i; j++) {
+      const a = list[j]
+      if (a.agentId === b.agentId && a.home === b.home && a.startedAt <= b.startedAt && b.startedAt < a.endedAt) {
+        runs.push(b.runId)
+        break
+      }
+    }
+  }
+  return { count: runs.length, runs }
+}

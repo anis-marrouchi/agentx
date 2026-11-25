@@ -1080,35 +1080,37 @@ describe("one session per piece of work (#1100)", () => {
     return { h, runs, calls }
   }
 
-  it("waits for the callee's run on the same home, then continues its session", async () => {
+  // #2084: the registry's home lane is the one place that makes a run on
+  // a home wait. The delegation hands the run over at once, and the
+  // session to continue is read once the run holds the home.
+  it("hands a run on the same home to the registry at once, and continues the session once the run ahead ended", async () => {
     const { h, runs, calls } = twoRuns()
     const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Draft the page", kind: "send", home: "team/site#7" })
     const b = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "Use hero A instead", kind: "send", home: "Team/Site#7" })
     await flush()
-    // The follow-up does not start beside the first one.
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
     expect(calls[0].context.home).toBe("team/site#7")
+    expect(calls[1].context.home).toBe("team/site#7")
     expect(b.record.home).toBe("team/site#7")
+    // Read later, not now: no fixed session is passed.
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
     runs[0].resolve({ content: "Draft done." })
     await flush()
-    expect(calls).toHaveLength(2)
-    expect(calls[1].message).toBe("Use hero A instead")
-    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
-    expect(h.logs.some((l) => l.includes("waits for it"))).toBe(true)
+    expect(calls[1].opts.resumeLater()).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
+    expect(h.logs.some((l) => l.includes("waits for it on the home's lane"))).toBe(true)
   })
 
-  it("starts its clock only when it starts", async () => {
+  it("aborts a run still waiting for its home or a slot at its time limit", async () => {
     vi.useFakeTimers()
-    const { h, runs, calls } = twoRuns({ timeoutMs: 1000 })
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", home: "team/site#7", timeoutMs: 5000, kind: "send" })
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", home: "team/site#7", timeoutMs: 5000, kind: "send" })
-    await vi.advanceTimersByTimeAsync(4000)
-    runs[0].resolve({ content: "ok" })
-    await vi.advanceTimersByTimeAsync(10)
+    const { h, calls } = twoRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "stuck", home: "team/site#7", kind: "send", timeoutMs: 60_000 })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send", timeoutMs: 5_000 })
+    await vi.advanceTimersByTimeAsync(4_000)
     expect(calls).toHaveLength(2)
-    // 4 s after the second asked, it has run for ~0 s: no timeout yet.
-    await vi.advanceTimersByTimeAsync(3000)
-    expect(h.injected.filter((t) => t.message.includes("status=timeout"))).toHaveLength(0)
+    expect(calls[1].opts.signal.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(calls[1].opts.signal.aborted).toBe(true)
+    expect(calls[0].opts.signal.aborted).toBe(false)
   })
 
   it("continues a recent session on the same home, not an old one or another agent's", async () => {
@@ -1120,36 +1122,22 @@ describe("one session per piece of work (#1100)", () => {
     h.mgr.start({ caller: AGENT_TURN, callee: "reviewer", message: "other agent", home: "team/site#7", kind: "send" })
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "soon after", home: "team/site#7", kind: "send" })
     await flush()
-    expect(calls[1].opts.resumeFrom).toBeUndefined()
-    expect(calls[2].opts.resumeFrom?.[0].chatId).toContain("a2a:planner:writer:")
+    expect(calls[1].opts.resumeLater()).toEqual([])
+    expect(calls[2].opts.resumeLater()[0].chatId).toContain("a2a:planner:writer:")
     runs[2].resolve({ content: "ok" })
     await flush()
     now += 120_000
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "much later", home: "team/site#7", kind: "send" })
     await flush()
-    expect(calls[3].opts.resumeFrom).toBeUndefined()
+    expect(calls[3].opts.resumeLater()).toEqual([])
   })
 
-  it("does not wait past its own time limit for a run ahead that never settles", async () => {
-    vi.useFakeTimers()
+  it("starts fresh, not on a session in use, when the run ahead is still going", async () => {
     const { h, calls } = twoRuns()
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "stuck", home: "team/site#7", kind: "send", timeoutMs: 60_000 })
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send", timeoutMs: 5_000 })
-    await vi.advanceTimersByTimeAsync(4_000)
-    expect(calls).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(1_500)
-    expect(calls).toHaveLength(2)
-    expect(calls[1].message).toBe("next")
-  })
-
-  it("starts fresh, not on a session in use, when it stopped waiting for a run still going", async () => {
-    vi.useFakeTimers()
-    const { h, calls } = twoRuns()
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "long", home: "team/site#7", kind: "send", timeoutMs: 60_000 })
-    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send", timeoutMs: 5_000 })
-    await vi.advanceTimersByTimeAsync(5_500)
-    expect(calls).toHaveLength(2)
-    expect(calls[1].opts.resumeFrom).toBeUndefined()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "long", home: "team/site#7", kind: "send" })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send" })
+    await flush()
+    expect(calls[1].opts.resumeLater()).toEqual([])
     expect(h.logs.some((l) => l.includes("starting a fresh session instead"))).toBe(true)
   })
 
@@ -1162,7 +1150,7 @@ describe("one session per piece of work (#1100)", () => {
     await flush()
     runs[1].resolve({ content: "", error: "refused" })
     await flush()
-    expect(calls[2].opts.resumeFrom.map((c: any) => c.chatId)).toEqual([`a2a:planner:writer:${b.taskId}`, `a2a:planner:writer:${a.taskId}`])
+    expect(calls[2].opts.resumeLater().map((c: any) => c.chatId)).toEqual([`a2a:planner:writer:${b.taskId}`, `a2a:planner:writer:${a.taskId}`])
   })
 
   it("runs work without a home beside a run still going from the same chat", async () => {

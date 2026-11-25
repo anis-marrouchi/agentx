@@ -669,20 +669,25 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       const waiting = w.registry.notices.add(rec.caller, rec.callee, noneNotice(rec, result))
       w.log(`[delegation ${rec.id}] ${rec.caller} told with a notice (${result.status}; ${waiting} waiting)`)
     },
-    runLocal: (callee, message, context, opts) => w.registry.execute({
-      agentId: callee,
-      message,
-      context: context as any,
-      // A follow-up on the same home continues that run's session (#1100).
-      freshSession: !(opts.resumeFrom && continueSession(w.registry.getSessionStore(), callee, opts.resumeFrom, {
+    runLocal: (callee, message, context, opts) => {
+      // A follow-up on the same home continues that run's session (#1100),
+      // read once this run holds the home's lease (#2084).
+      const fresh = (from: Array<{ channel: string; chatId: string }> | undefined) => !(from?.length && continueSession(w.registry.getSessionStore(), callee, from, {
         channel: String((context as any).channel ?? "a2a"),
         chatId: String((context as any).chatId ?? ""),
-      }, { pointer: !!opts.topic })),
-      timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
-      onStart: opts.onStart,
-      ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
-      ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
-    }),
+      }, { pointer: !!opts.topic }))
+      return w.registry.execute({
+        agentId: callee,
+        message,
+        context: context as any,
+        ...(opts.resumeLater ? { freshSessionAt: () => fresh(opts.resumeLater!()) } : { freshSession: fresh(opts.resumeFrom) }),
+        timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
+        onStart: opts.onStart,
+        ...(opts.signal ? { callerSignal: opts.signal } : {}),
+        ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
+        ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
+      })
+    },
     runPeer: (peer, callee, message, context, opts) => {
       // The peer cannot check a person's limit (ids are per machine).
       const refusal = w.registry.refusalFor(callee, context)

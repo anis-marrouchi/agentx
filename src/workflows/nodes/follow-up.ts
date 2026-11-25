@@ -124,9 +124,13 @@ function lastLine(text: string | undefined): string {
 /** The prompt of a nudge. */
 export function nudgeText(run: Pick<WorkflowRun, "id" | "meta">, nodeId: string, n: number, max: number, sinceMs: number): string {
   const mins = Math.max(1, Math.round(sinceMs / 60_000))
+  // The title may quote the owner's request id: a nudge that named it
+  // would wait in that request's lane (work-lane.ts) behind the very run
+  // it reminds (#2084). The run id and step say which work it is.
+  const title = run.meta?.title?.replace(/\breq-[0-9A-HJKMNP-TV-Z]{26}\b/g, "").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ").trim()
   return [
     `[agentx:workflow-nudge run=${run.id} step=${nodeId} nudge=${n}/${max}]`,
-    `Reminder ${n} of ${max}: the workflow step "${nodeId}"${run.meta?.title ? ` of "${run.meta.title}"` : ""} has shown no progress for ${mins} minute(s).`,
+    `Reminder ${n} of ${max}: the workflow step "${nodeId}"${title ? ` of "${title}"` : ""} has shown no progress for ${mins} minute(s).`,
     "Check where it stands and finish it now if you can.",
     `When it is done, end your reply with \`RESULT: done\` and the proof, or call agentx_workflow {action:"done", runId:"${run.id}", step:"${nodeId}", evidence:"<proof>"}.`,
     "If you cannot finish it without the owner, end with `RESULT: blocked` and the reason.",

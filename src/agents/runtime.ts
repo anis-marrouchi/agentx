@@ -193,6 +193,19 @@ export interface AgentTask {
    *  (run-state.ts), and on the one that asks it to record a due time it
    *  set (requests/due-gate.ts): a question to the run, not work. */
   jobStateAsk?: boolean
+  /** The home lease (#2084), set by the registry on a run that holds one:
+   *  the home it holds, the end of its shared lane and slot wait budget
+   *  (epoch ms; absent: it waits its turn), and that its admission ran
+   *  before the lane. `onFollowUp` gets the due-time ask that runs after
+   *  the answer, so the lease is kept until it ends. Internal. */
+  leaseHome?: string
+  leaseDeadline?: number
+  admitted?: boolean
+  onFollowUp?: (p: Promise<unknown>) => void
+  /** Decided once the run may start (after its home lease, #2084): true
+   *  for a fresh session. A hand-off continues the session of the run
+   *  ahead of it on its home only once that run has ended. */
+  freshSessionAt?: () => boolean
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and

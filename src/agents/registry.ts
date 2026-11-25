@@ -42,7 +42,7 @@ import { queueCostSignals, startTokens } from "@/improve/cost"
 import { queueAwarenessSignals, type RunEnd } from "@/improve/awareness"
 import { queueBayanSignals } from "@/improve/bayan"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
-import { homesOfRun, sameHomeNote } from "@/a2a/home"
+import { homesOfRun, normalizeHome, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
@@ -63,7 +63,7 @@ import { buildOwnerDecisions } from "./owner-decisions"
 import { decisionPagesFor, decisionsForBlock } from "@/wiki/decision-approvals"
 import { buildRulesBlock, parseRegistry, rulesForRun, rulesHash, wallProjectsOf, type RunFacts } from "./rules-registry"
 import { repoOfChat } from "@/daemon/wall-projects"
-import { WorkLanes, workKeyOf, takesNotices } from "./work-lane"
+import { WorkLanes, workKeyOf, takesNotices, isPersonChannel, isHomeRefusal, leaseHomeOf, type HomeEntry } from "./work-lane"
 import { AgentNotices } from "./notices"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
@@ -98,6 +98,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn, isInsideDelegation } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { wokenJobId } from "@/jobs/wake"
+import { homeOfForgeChat } from "@/jobs/doors"
 import { awaitsSlot } from "@/agents/await-slot"
 import { isOperatorTurn } from "@/requests/operator"
 import { dueAtOf, taskTypeOf } from "@/agents/task-context"
@@ -294,6 +295,8 @@ export interface TaskRecord {
   responseText: string
   /** Terminal-style transcript captured from stream-json events. */
   transcript: string
+  /** The home the run held the lease on (#2084): counted per week. */
+  home?: string
 }
 
 /** Outcome of AgentRegistry.continueFinishedTask. `taskId` is the new run's
@@ -848,6 +851,16 @@ interface AgentState {
   lastActive?: Date
   errors: number
   runningTasks: RunningTask[]
+}
+
+/** The answer to an awaited caller refused on a home (#2084): another run
+ *  of the agent held it past the caller's wait budget. Never run. */
+function homeBusy(agentId: string, home: string, holder: string, waitedMs: number): AgentResponse {
+  return {
+    content: "",
+    error: `home_busy: agent "${agentId}" is already working on ${home} (${holder}); waited ${Math.round(waitedMs / 60_000)} min, not run`,
+    errorKind: "agent_busy",
+  }
 }
 
 export class AgentRegistry {
@@ -1906,11 +1919,183 @@ export class AgentRegistry {
     // One run at a time per agent and owner's request (work-lane.ts),
     // keyed on the message as sent, not on notices put before it.
     const key = workKeyOf(task.message, channel)
+    // One run at a time per agent and named home (#2084): admitted, then
+    // the home's lane, then the request's lane (always in that order).
+    const home = this.leaseHomeOfTask(task)
+    if (home) return this.executeOnHome(home, key, task, onDelta, onThinking, onEvent)
+    return this.executeInLane(key, this.prepareRun(task), onDelta, onThinking, onEvent)
+  }
+
+  /** What a run carries once it may start: notices the hourly sweep took,
+   *  the job-state rule, and its session (decided now, not when it was
+   *  sent). Waiting notices are taken later, once the run has its slot
+   *  (executeInternal, #2121). */
+  private prepareRun(task: AgentTask): AgentTask {
+    const channel = task.context?.channel as string | undefined
     // Notices the hourly sweep already took (#2121).
     if (task.notices) task = { ...task, message: task.notices + task.message, notices: undefined }
     if (needsJobState(this.config.jobState, channel) && !task.jobStateAsk) {
       task = { ...task, message: JOB_STATE_RULE + task.message }
     }
+    if (task.freshSessionAt) {
+      const { freshSessionAt, ...rest } = task
+      task = { ...rest, freshSession: freshSessionAt() }
+    }
+    return task
+  }
+
+  /** The home a run holds the lease on (#2084), or null for none: a named
+   *  home (`context.home`) or the issue or merge request of a forge
+   *  thread, qualified with its project. Nothing is read from the message
+   *  text. Person chats never wait (the same-home note still tells them),
+   *  a question to a finished run is part of that run, and an agent that
+   *  does not run on this node holds nothing here. */
+  private leaseHomeOfTask(task: AgentTask): string | null {
+    if (this.config.homeLease?.enabled === false) return null
+    if (task.jobStateAsk || task.leaseHome) return null
+    const ctx = (task.context ?? {}) as Record<string, unknown>
+    const channel = typeof ctx.channel === "string" ? ctx.channel : undefined
+    if (isPersonChannel(channel)) return null
+    if (!this.agents.has(task.agentId)) return null
+    const named = leaseHomeOf(normalizeHome(ctx.home))
+    if (named) return named
+    if ((channel === "gitlab" || channel === "github") && ctx.chatId) return leaseHomeOf(homeOfForgeChat(String(ctx.chatId)))
+    return null
+  }
+
+  /** Refusal, hold and budget hold, before a run takes a place in a home's
+   *  lane (#2084): a refused or held message never waits there, and its
+   *  checks do not run again once it is let in. Null: admitted. */
+  private admit(task: AgentTask): AgentResponse | null {
+    const refusal = this.refusalFor(task.agentId, task.context)
+    if (refusal) return { content: refusal, duration: 0 }
+    const held = holdMessage(holdsRoot(), task.agentId)
+    if (held) {
+      this.log(`[${task.agentId}] refused — on hold`)
+      return { content: "", error: held, errorKind: "agent_held" }
+    }
+    if (isRestricted(task.isolated ? "report" : task.autonomy)) return null
+    return this.budgetHold(task)
+  }
+
+  /** Monthly budget (#1162): a chat message to an agent over budget is
+   *  held until it resumes. The answer for a held message, or null. */
+  private budgetHold(task: AgentTask): AgentResponse | null {
+    const ctxChannel = task.context?.channel
+    const ctxChat = task.context?.chatId
+    const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, ctxChat))
+    // Not a run the daemon starts to wake a job (#1861): released later,
+    // its reply would be posted to the job's chat. The gate inside the
+    // run refuses it, and its job says why.
+    if (overBudget && ctxChannel && ctxChat && !wokenJobId(task.context) && getMessageRouter()?.getChannel(ctxChannel)) {
+      const held = this.budgetHolds.hold(task.agentId, {
+        text: task.message,
+        channel: ctxChannel,
+        chatId: String(ctxChat),
+        context: task.context as Record<string, unknown>,
+        heldAt: task.queuedAt ?? Date.now(),
+      })
+      if (held !== "full") {
+        this.armBudgetRelease()
+        const waiting = this.budgetHolds.count(task.agentId)
+        this.log(`[${task.agentId}] over budget — message held (${waiting} waiting) chat=${ctxChannel}:${ctxChat}`)
+        if (held === "held") return { content: "", error: queuedMarker("budget", waiting) }
+        return {
+          content: "",
+          error: `${overBudget.message} This message is kept and runs when the agent resumes.`,
+          errorKind: "budget_cap",
+        }
+      }
+      this.log(`[${task.agentId}] over budget — hold is full, message refused`)
+    }
+    return null
+  }
+
+  /**
+   * A run on a named home (#2084): one at a time per agent and home. An
+   * awaited caller waits for the run ahead within its slot-wait budget,
+   * shared with the slot and rate-limit waits after the lane, and is
+   * refused past it (`home_busy`, never run). A forge comment and a job
+   * wake have no caller waiting on them: they wait their turn. The lease
+   * is kept until the run's due-time ask ends, and a backstop stops a run
+   * still going 5 min past its time limit, then frees the lease.
+   */
+  private async executeOnHome(home: string, key: string | null, task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
+    const start = Date.now()
+    const ctx = (task.context ?? {}) as Record<string, unknown>
+    const channel = typeof ctx.channel === "string" ? ctx.channel : "api"
+    const chatId = String(ctx.chatId ?? "default")
+    const notAdmitted = this.admit(task)
+    if (notAdmitted) return notAdmitted
+    const awaited = channel !== "gitlab" && channel !== "github" && !wokenJobId(task.context)
+    const deadline = awaited ? start + (task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS) : undefined
+    const entry = await this.workLanes.enterHome(task.agentId, home, {
+      deadline,
+      signal: task.callerSignal,
+      source: `${channel}:${chatId}`,
+      onWait: (h) => getEventBus().emit("task:joined", {
+        agentId: task.agentId, home, holderId: h.holderId, ...(h.taskId ? { taskId: h.taskId } : {}),
+        channel, chatId, at: new Date().toISOString(),
+      }),
+    })
+    if (isHomeRefusal(entry)) {
+      if (entry.refused === "caller_gone") return this.callerGone(task, `the wait for ${home}`)
+      return homeBusy(task.agentId, home, entry.taskId ?? entry.holderId, entry.waitedMs)
+    }
+    // Let the run ahead finish its own wrap-up (a hand-off frees its
+    // session there) before this one reads which session to continue.
+    if (entry.waitedMs > 0) await new Promise((r) => setImmediate(r))
+    const def = this.agents.get(task.agentId)?.def
+    const limitMin = (typeof task.timeoutMinutes === "number" && task.timeoutMinutes > 0 ? task.timeoutMinutes : def?.maxExecutionMinutes ?? 20) + 5
+    let backstop: ReturnType<typeof setTimeout> | undefined
+    let followUp: Promise<unknown> | undefined
+    // Armed on every spawn (the job-state and due-time asks too), and
+    // stops the spawn that is live before the lease is freed.
+    const onStart = (runId: string) => {
+      entry.setTaskId(runId)
+      if (backstop) clearTimeout(backstop)
+      backstop = setTimeout(() => this.leaseBackstop(task.agentId, home, runId, limitMin, entry), limitMin * 60_000)
+      ;(backstop as any).unref?.()
+      task.onStart?.(runId)
+    }
+    let response: AgentResponse = { content: "", error: "run did not end" }
+    let run = task
+    try {
+      run = this.prepareRun({
+        ...task, admitted: true, leaseHome: home, onStart,
+        ...(deadline !== undefined ? { leaseDeadline: deadline } : {}),
+        onFollowUp: (p) => { followUp = p },
+      })
+      if (entry.note) run = { ...run, message: entry.note + run.message }
+      response = await this.executeInLane(key, run, onDelta, onThinking, onEvent)
+      // The lane wait used the budget up and the slot wait ran out after it.
+      if (entry.waitedMs > 0 && response.errorKind === "agent_busy" && /slot wait timed out/.test(response.error ?? "")) {
+        emitSignal({ kind: "home_busy", agentId: task.agentId, ref: home, detail: `${channel} refused: no slot within the wait budget left after the lane` })
+        response = homeBusy(task.agentId, home, "a busy slot", Date.now() - start)
+      }
+    } finally {
+      const queued = !!response.error && isQueued(response.error)
+      const release = () => {
+        if (backstop) clearTimeout(backstop)
+        entry.release({ text: response.error ? response.error : response.content ?? "", ok: !response.error, ran: !queued })
+      }
+      if (followUp) void followUp.then(release, release)
+      else release()
+    }
+    return response
+  }
+
+  /** A run still going 5 min past its time limit on a home (#2084): stop
+   *  it first, then free the lease once it had time to exit. */
+  private leaseBackstop(agentId: string, home: string, runId: string, limitMin: number, entry: HomeEntry): void {
+    this.log(`[${agentId}] ${home}: run ${runId} still holds the home ${limitMin} min after it started; lease backstop stops it`)
+    emitSignal({ kind: "duplicate_session", agentId, ref: home, detail: `the lease backstop stopped run ${runId} on ${home} after ${limitMin} min` })
+    try { this.cancelRunningTask(runId, "lease backstop") } catch { /* freed below either way */ }
+    const t = setTimeout(() => entry.release({ text: "", ok: false }), CANCEL_GRACE_MS)
+    ;(t as any).unref?.()
+  }
+
+  private async executeInLane(key: string | null, task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
     if (!key) {
       const startedAt = Date.now()
       const response = await this.runWithRecovery(task, onDelta, onThinking, onEvent)
@@ -2112,7 +2297,7 @@ export class AgentRegistry {
     // The question is a turn of its own, not the work again: it does not
     // settle the run's intent (the run does, below in runWithRecovery).
     const { intentRef: _intent, ...rest } = task
-    const ask: AgentTask = { ...rest, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+    const ask: AgentTask = { ...rest, message: JOB_STATE_ASK, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom, leaseDeadline: undefined }
     let asked: AgentResponse
     try {
       // Not streamed: the caller reads the run's answer, not this question's.
@@ -2150,11 +2335,11 @@ export class AgentRegistry {
       // A question to the run, like the job-state ask: not the work again,
       // and it does not settle the run's intent.
       const { intentRef: _intent, ...rest } = task
-      const ask: AgentTask = { ...rest, message: text, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom }
+      const ask: AgentTask = { ...rest, message: text, jobStateAsk: true, runningTaskId: undefined, freshSession: false, resumedFrom: task.taskId ?? task.resumedFrom, leaseDeadline: undefined }
       const asked = await this.runWithRecovery(ask)
       return { reply: asked.content, error: asked.error }
     }
-    void Promise.resolve()
+    const followUp = Promise.resolve()
       .then(() => gate({
         agentId: task.agentId,
         channel: String(task.context?.channel ?? ""),
@@ -2162,6 +2347,8 @@ export class AgentRegistry {
         runIds, startedAt, reply,
       }, askAgent))
       .catch((e: any) => this.log(`[due-time] ${task.agentId} ${task.taskId ?? "-"}: check failed: ${e?.message ?? e}`))
+    // A run on a home keeps its lease until this ends (#2084).
+    task.onFollowUp?.(followUp)
   }
 
   /**
@@ -2171,7 +2358,8 @@ export class AgentRegistry {
   private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, callerOnEvent?: (event: any) => void): Promise<AgentResponse> {
     // People permissions (#379), before every way to the agent: an attached
     // session, a mesh peer, the local queue.
-    const refusal = this.refusalFor(task.agentId, task.context)
+    // Admitted before its home's lane (#2084): not refused twice.
+    const refusal = task.admitted ? null : this.refusalFor(task.agentId, task.context)
     if (refusal) return { content: refusal, duration: 0 }
 
     // An isolated run (#990) is read-only whoever asked: autonomy `report`
@@ -2294,34 +2482,10 @@ export class AgentRegistry {
     // per pause; the reply comes when the held message runs. Callers that
     // await the answer (API, crons, other agents) get the refusal from the
     // gate inside the run instead.
-    if (!restricted) {
-      const ctxChannel = task.context?.channel
-      const ctxChat = task.context?.chatId
-      const overBudget = preflightBudgetGate(task.agentId, undefined, budgetProjectOf(task.agentId, ctxChat))
-      // Not a run the daemon starts to wake a job (#1861): released later,
-      // its reply would be posted to the job's chat. The gate inside the
-      // run refuses it, and its job says why.
-      if (overBudget && ctxChannel && ctxChat && !wokenJobId(task.context) && getMessageRouter()?.getChannel(ctxChannel)) {
-        const held = this.budgetHolds.hold(task.agentId, {
-          text: task.message,
-          channel: ctxChannel,
-          chatId: String(ctxChat),
-          context: task.context as Record<string, unknown>,
-          heldAt: task.queuedAt ?? Date.now(),
-        })
-        if (held !== "full") {
-          this.armBudgetRelease()
-          const waiting = this.budgetHolds.count(task.agentId)
-          this.log(`[${task.agentId}] over budget — message held (${waiting} waiting) chat=${ctxChannel}:${ctxChat}`)
-          if (held === "held") return { content: "", error: queuedMarker("budget", waiting) }
-          return {
-            content: "",
-            error: `${overBudget.message} This message is kept and runs when the agent resumes.`,
-            errorKind: "budget_cap",
-          }
-        }
-        this.log(`[${task.agentId}] over budget — hold is full, message refused`)
-      }
+    // Admitted before its home's lane (#2084): the hold is not written twice.
+    if (!restricted && !task.admitted) {
+      const budgetHeld = this.budgetHold(task)
+      if (budgetHeld) return budgetHeld
     }
 
     // A run of this agent is already going in this chat: offer the message
@@ -2369,9 +2533,10 @@ export class AgentRegistry {
       // A schedule's goal-check wake (#863, await-slot.ts) is awaited by the
       // goal check, which raises the card when the turn ends: queued, the
       // card would go up at once with no recommendation.
-      if (qChannel === "api" || qChannel === "sensor" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context) || awaitsSlot(task.context)) {
+      if (qChannel === "api" || qChannel === "sensor" || (qChannel === "app" && !spokenInApp) || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || qChannel === "sprint" || restricted || !!wokenJobId(task.context) || awaitsSlot(task.context) || task.leaseDeadline !== undefined) {
         const start = Date.now()
-        const maxWaitMs = task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
+        // A run on a home (#2084) has what its lane wait left of the budget.
+        const maxWaitMs = task.leaseDeadline !== undefined ? Math.max(0, task.leaseDeadline - start) : task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS
         const pollIntervalMs = 500
         // A wake with a deadline can wait well under a minute (#1596).
         const waitLabel = maxWaitMs < 60_000 ? `${Math.max(1, Math.ceil(maxWaitMs / 1000))}s` : `${Math.round(maxWaitMs / 60000)}m`
@@ -2450,7 +2615,7 @@ export class AgentRegistry {
     // like the bot is broken; queueing for ~5 minutes gives chatty channels a
     // smooth experience and still bails if something's genuinely stuck.
     const rateResult = await this.rateLimiter.acquire(task.agentId, {
-      maxWaitMs: 5 * 60_000,
+      maxWaitMs: task.leaseDeadline !== undefined ? Math.max(0, Math.min(5 * 60_000, task.leaseDeadline - Date.now())) : 5 * 60_000,
       onWait: (reason, waitMs) => {
         this.log(`[${task.agentId}] ${reason} — queued, resumes in ~${Math.max(1, Math.round(waitMs / 1000))}s`)
       },
@@ -2878,6 +3043,7 @@ export class AgentRegistry {
             : timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
+          ...(task.leaseHome ? { home: task.leaseHome } : {}),
         }
         this.persistTaskRecord(record)
         // Stash a one-line summary so the dashboard card can show "what the

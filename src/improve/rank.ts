@@ -29,6 +29,10 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   delegation_failed: 2,
   handoff_refused: 1,
   same_work_waited: 1,
+  // The home lease (#2084): a run waited for, or was refused by, the run
+  // of the same agent on its issue or merge request.
+  same_work_joined: 1,
+  home_busy: 2,
   callback_repeat_skipped: 1,
   // A close the owner never saw proof for: their words, unanswered.
   close_proof_missing: 2,
