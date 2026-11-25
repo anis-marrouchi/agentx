@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.271.1](https://github.com/anis-marrouchi/agentx/compare/v0.271.0...v0.271.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **a2a:** stream hand-off runs to their Task page ([#2257](https://github.com/anis-marrouchi/agentx/issues/2257)) ([0ac8a84](https://github.com/anis-marrouchi/agentx/commit/0ac8a847a2e2dac60156f2f99d5223a04140da9f)), closes [#2256](https://github.com/anis-marrouchi/agentx/issues/2256)
+* **hub-chat:** show the node's real send error instead of "does not answer" ([#2254](https://github.com/anis-marrouchi/agentx/issues/2254)) ([1904a4b](https://github.com/anis-marrouchi/agentx/commit/1904a4be32ab0e57d95dcfb6a47c81f88f5ed3af))
+
 ## [0.271.0](https://github.com/anis-marrouchi/agentx/compare/v0.270.2...v0.271.0) (2026-11-25)
 
 
