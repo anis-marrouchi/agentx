@@ -32,7 +32,7 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
@@ -43,9 +43,17 @@ jobs:
           v="${WANTED#v}"
           [ -n "$v" ] || v="$(npm view agentix-cli version)"
           [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Not a version: $v"; exit 1; }
-          # A release just published can take a few minutes to show on the registry.
-          for _ in $(seq 1 30); do npm view "agentix-cli@$v" version >/dev/null 2>&1 && break; sleep 20; done
+          # A release just published can take a few minutes to show on the registry, and the
+          # tarball can still answer 404 for about a minute after `npm view` already shows the
+          # version (v0.262.1 run 45423651747, v0.268.0 run 45581082722). Wait for both.
+          tarball_ok() {
+            local url
+            url="$(npm view "agentix-cli@$v" dist.tarball 2>/dev/null)" || return 1
+            [ -n "$url" ] && curl -fsIL --max-time 30 "$url" >/dev/null
+          }
+          for _ in $(seq 1 45); do tarball_ok && break; sleep 20; done
           npm view "agentix-cli@$v" version
+          tarball_ok || { echo "agentix-cli@$v tarball is not downloadable yet"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
   npm:
