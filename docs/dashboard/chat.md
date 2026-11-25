@@ -33,7 +33,7 @@ Under the message box, **Goes with it** says what the Hub sends with your messag
 
 The Hub and the classic pages share the open conversation: a question asked on `/monitor` continues on the Hub, and back. While the agent is answering, the panel says **is answering**. Once its run starts, the answer streams into the panel as the agent writes it. Beside **is answering**, **Stop** ends the run, and **Open the run** opens its Task page on the Hub with the full log. A conversation stays on the machine it started on, so its next messages go there too. When the panel is closed, the stream stops and the Hub checks every 10 seconds for the answer. Under the Chat box, the last conversation stays one tap away, with a blue dot while an answer is not opened yet (on the header's chat button too).
 
-When an agent cannot answer, its reply shows in red with **Try again** and **Ask another agent**. When the machine does not take the message, it shows **Not sent**, and your text stays in the message box to send again.
+When an agent cannot answer, its reply shows in red with **Try again** and **Ask another agent**. When the machine does not take the message, it shows **Not sent** with the machine's own reason (for example a store error), or **This node does not answer just now** when the machine cannot be reached at all. Your text stays in the message box to send again. A message spoken with the mic that fails to send shows **Not sent:** and the reason under the message box.
 
 Chat and **New post** stay separate: the chat asks a question and leaves no post; to give an agent a task that shows on the Hub, use [Post a task](./hub.md#post-a-task).
 
@@ -64,6 +64,7 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 - **No reply, or an error about the model:** the agent's model connection isn't working. Try the agent with **Test drive** in [Settings](./settings.md).
 - **The panel says "Sign in to ask an agent from this page", or History says "Sign in to see past conversations":** the dashboard did not recognise you as its owner. Select **Sign in**, enter the dashboard token, and you come back to the same page. With no `dashboard.token` set, open the dashboard on its own machine instead.
 - **History says "Not deleted. Try again.":** the dashboard did not remove the conversation. Select **×** again; if it keeps failing, check the daemon. **Terminal:** run `agentx daemon status`.
+- **The chat says "Not sent" with a reason:** the machine got the message but could not take it; the reason is the machine's own error. Fix what it names (for example a full disk or a locked store), then send again. **Terminal:** run `agentx daemon status` on that machine. If it says **This node does not answer just now**, the machine cannot be reached: see [It's not answering](../help/its-not-answering.md).
 - **Stop says "Not stopped. Try again":** the machine running the answer did not take the stop. Select it again, or open the run with **Open the run** and stop it there.
 - **The answer only shows when it is finished, with no text arriving as it is written:** the panel can't reach the run's stream, so it falls back to checking every few seconds. The answer still lands. A Hub served by the daemon itself, rather than the dashboard, has no stream.
 - **Costs:** every question uses the chosen agent's normal model and billing.

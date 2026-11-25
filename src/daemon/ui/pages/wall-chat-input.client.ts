@@ -230,7 +230,11 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
       return r.json().catch(function () { return {}; }).then(function (d) {
         if (!r.ok || !d.text) throw new Error(d.hint || d.error || ('HTTP ' + r.status));
         say('');
-        return api.send(d.text, { spoken: true });
+        return api.send(d.text, { spoken: true }).then(function (ok) {
+          // Written down but not sent: say why here too, not only in the log (#2238).
+          var why = !ok && typeof api.sendError === 'function' ? api.sendError() : '';
+          if (why) say('Not sent: ' + why, true);
+        });
       });
     }).catch(function (e) { say('Not written down: ' + (e && e.message || 'failed'), true); });
   }

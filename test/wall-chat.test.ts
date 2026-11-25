@@ -178,7 +178,14 @@ describe("Hub chat: what it draws (#1528)", () => {
     const html = chatLogHtml([], { agent: "Scout", notSent: "Is <it> up?" })
     expect(html).toContain("Is &lt;it&gt; up?")
     expect(html).toContain("<b>Not sent</b>")
+    expect(html).toContain("does not answer just now")
     expect(html).not.toContain("hc__empty")
+  })
+
+  it("says the node's own reason when it answered and refused (#2238)", () => {
+    const html = chatLogHtml([], { agent: "Scout", notSent: "Hi", notSentWhy: "assistant <requires> SQLite." })
+    expect(html).toContain("<b>Not sent</b>assistant &lt;requires&gt; SQLite. Your message is kept below")
+    expect(html).not.toContain("does not answer")
   })
 })
 
@@ -253,7 +260,79 @@ describe("Hub chat: on the page (#1528)", () => {
     await w.fire("hc-form", "submit")
     expect(w.el("hc-text").value).toBe("Is it up?")
     expect(w.el("hc-log").innerHTML).toContain("<b>Not sent</b>")
+    expect(w.el("hc-log").innerHTML).toContain("does not answer just now")
+    expect(w.win.AXHubChat.sendError()).toBe("This node does not answer just now.")
     expect(w.el("hc-send").disabled).toBe(false)
+  })
+
+  for (const status of [503, 500, 400]) {
+    it(`shows the node's own error on a ${status}, keeps the text, and never says it does not answer (#2238)`, async () => {
+      const w = openChat({ route: (url, init) => (url === "/api/assistant" && init.method === "POST" ? { status, body: { error: "assistant requires SQLite" } } : undefined) })
+      await w.settle()
+      w.el("hc-agent").value = "scout"
+      w.el("hc-text").value = "Is it up?"
+      await w.fire("hc-form", "submit")
+      expect(w.el("hc-text").value).toBe("Is it up?")
+      expect(w.el("hc-log").innerHTML).toContain("<b>Not sent</b>assistant requires SQLite.")
+      expect(w.el("hc-log").innerHTML).not.toContain("does not answer")
+      expect(w.win.AXHubChat.sendError()).toBe("assistant requires SQLite")
+      expect(w.el("hc-send").disabled).toBe(false)
+    })
+  }
+
+  it("shows a 200 that carries an error as the node's reason (#2238)", async () => {
+    const w = openChat({ route: (url, init) => (url === "/api/assistant" && init.method === "POST" ? { status: 200, body: { error: "agent not found" } } : undefined) })
+    await w.settle()
+    w.el("hc-agent").value = "scout"
+    expect(await w.win.AXHubChat.send("Hello")).toBe(false)
+    expect(w.el("hc-log").innerHTML).toContain("<b>Not sent</b>agent not found.")
+    expect(w.el("hc-text").value).toBe("Hello")
+  })
+
+  it("clears the reason once a send is taken (#2238)", async () => {
+    let fail = true
+    const w = openChat({
+      route: (url, init) => url === "/api/assistant" && init.method === "POST" ? (fail ? { status: 503, body: { error: "assistant requires SQLite" } } : { status: 200, body: { threadId: "t1" } })
+        : url === "/api/assistant/thread?id=t1" ? { status: 200, body: { thread: { id: "t1", title: "Hi", agentId: "scout" }, messages: [{ role: "user", content: "Hi", status: "done" }] } }
+        : undefined,
+    })
+    await w.settle()
+    w.el("hc-agent").value = "scout"
+    await w.win.AXHubChat.send("Hi")
+    expect(w.win.AXHubChat.sendError()).toBe("assistant requires SQLite")
+    fail = false
+    expect(await w.win.AXHubChat.send("Hi")).toBe(true)
+    await w.settle()
+    expect(w.win.AXHubChat.sendError()).toBe("")
+    expect(w.el("hc-log").innerHTML).not.toContain("Not sent")
+  })
+
+  it("shows a thread read error instead of an empty chat, and keeps the conversation (#2238)", async () => {
+    const w = openChat({ thread: "t1", route: (url) => (url.startsWith("/api/assistant/thread?id=t1") ? { status: 503, body: { error: "assistant requires SQLite" } } : undefined) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-log").innerHTML).toContain("could not be read")
+    expect(w.el("hc-log").innerHTML).toContain("assistant requires SQLite")
+    expect(w.el("hc-log").innerHTML).not.toContain("hc__empty")
+    expect(w.ls.get("ax-assistant-thread")).toBe("t1")
+  })
+
+  it("starts a new conversation when the open one is gone (404), as before", async () => {
+    const w = openChat({ thread: "t1", route: (url) => (url.startsWith("/api/assistant/thread?id=t1") ? { status: 404, body: { error: "no such conversation" } } : undefined) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-log").innerHTML).toContain("hc__empty")
+    expect(w.ls.get("ax-assistant-thread")).toBeUndefined()
+  })
+
+  it("shows the node's error on the conversation list, not an empty list (#2238)", async () => {
+    const w = openChat({ route: (url) => (url === "/api/assistant/threads" ? { status: 503, body: { error: "assistant requires SQLite" } } : undefined) })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    await w.fire("hc-hist", "click")
+    expect(w.el("hc-hist-err").hidden).toBe(false)
+    expect(w.el("hc-hist-err").textContent).toBe("assistant requires SQLite")
+    expect(w.el("hc-hist-empty").hidden).toBe(true)
   })
 
   it("names the machine's refusal to the signed-in owner, with no sign-in", async () => {
@@ -1023,5 +1102,57 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     await w.fire("hc-tabs", "click", { target: tab("chat") })
     expect(w.el("hc-log").hidden).toBe(false)
     expect(w.el("hc-tabview").hidden).toBe(true)
+  })
+})
+
+describe("Hub chat mic: a written-down message that is not sent (#2238)", () => {
+  async function record(api: any) {
+    const els = new Map<string, any>()
+    const el = (id: string) => {
+      if (!els.has(id)) {
+        const attrs: Record<string, string> = {}
+        const e: any = { id, on: {}, hidden: id === "hc-voice", value: "", textContent: "", innerHTML: "", className: "",
+          getAttribute: (k: string) => attrs[k] ?? null, setAttribute: (k: string, v: string) => { attrs[k] = v },
+          classList: { toggle: () => {} }, addEventListener: (t: string, f: any) => { (e.on[t] ??= []).push(f) } }
+        els.set(id, e)
+      }
+      return els.get(id)
+    }
+    class Rec {
+      on: Record<string, (e: any) => void> = {}
+      state = "inactive"
+      mimeType = "audio/webm"
+      addEventListener(t: string, f: (e: any) => void) { this.on[t] = f }
+      start() { this.state = "recording" }
+      stop() { this.state = "inactive"; this.on.dataavailable?.({ data: new Blob(["abc"]) }); this.on.stop?.({}) }
+    }
+    const nav = { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } }
+    const fetchStub = async (url: string) => url === "/api/assistant/voice/transcribe"
+      ? { ok: true, status: 200, json: async () => ({ text: "Is it up?" }) }
+      : { ok: false, status: 404, json: async () => ({}) }
+    const storage = { getItem: () => null, setItem: () => {} }
+    new Function("document", "window", "fetch", "localStorage", WALL_CHAT_INPUT_SCRIPT)({ getElementById: el }, { AXHubChat: api, navigator: nav, MediaRecorder: Rec }, fetchStub, storage)
+    const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
+    el("hc-mic").on.click[0]({})
+    await settle()
+    el("hc-mic").on.click[0]({})
+    await settle()
+    return el("hc-voice")
+  }
+  const base = { agent: () => "scout", node: () => "", headers: (h: any) => h }
+
+  it("says the node's reason on the mic status line", async () => {
+    let sent = ""
+    const voice = await record({ ...base, send: (t: string) => { sent = t; return Promise.resolve(false) }, sendError: () => "assistant requires SQLite" })
+    expect(sent).toBe("Is it up?")
+    expect(voice.textContent).toBe("Not sent: assistant requires SQLite")
+    expect(voice.hidden).toBe(false)
+    expect(voice.className).toContain("is-err")
+  })
+
+  it("says nothing more when the message was sent", async () => {
+    const voice = await record({ ...base, send: () => Promise.resolve(true), sendError: () => "" })
+    expect(voice.textContent).toBe("")
+    expect(voice.hidden).toBe(true)
   })
 })
