@@ -116,6 +116,15 @@ Turn it off with `agentx requests settings --auto-resend off`. Change the wait w
 
 Agents close their own requests as done or declined. A run that ends with the line `State: done — <proof>` closes the open request it worked on, with that proof. A promise closes this way only when the proof has a link. A standing order and a request with a check of its own stay open. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one. An agent that runs `agentx requests drop` or `agentx requests done` from its own run is recorded as that agent, not as you, and its close is checked as described below.
 
+### Every request says what kind of work it was
+
+Each request records the kind of work it was, in one short word such as `code`, `ops`, `review`, `research`, `writing` or `reply` (a short answer). Reports, such as how long each kind of work usually takes, use it.
+
+- An agent gives the kind when it accepts a request: `agentx_request {action:"accept", id:"<id>", work:"ops"}`.
+- An agent that closes a request with no kind yet gives it on the close: `{action:"done", id:"<id>", work:"reply", evidence:"<link>"}`.
+- An accept or a done without a kind, on a request that has none, is refused with a message that says how to add it. Nothing changes until the agent sends it again with one.
+- When you close a request, or a check or handed-on work closes it, and nobody gave a kind, it is recorded as `reply`. You never have to type one.
+
 ### When handed-on work came back and nobody closed it
 
 Agents often forget to close a request after the work they handed on comes back. Such a request used to come back to you as "Not finished", even though the work was done. Now the daily check closes it:

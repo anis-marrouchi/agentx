@@ -120,7 +120,7 @@ describe("done on a loop with a check", () => {
 
   it("is refused while the check says not met, and marked failed", async () => {
     const id = await withCheck()
-    const res = await post({ action: "done", agentId: "coder", id, evidence: "I sent it" })
+    const res = await post({ action: "done", work: "ops", agentId: "coder", id, evidence: "I sent it" })
     expect(res.status).toBe(409)
     expect((res.body as any).error).toMatch(/not finished \(not yet\)/)
     expect(store.get(id)).toMatchObject({ state: "in_progress", verifyState: "failed", verifyDetail: "not yet" })
@@ -129,7 +129,7 @@ describe("done on a loop with a check", () => {
   it("stays open and is marked unverified when the check cannot say", async () => {
     const id = await withCheck()
     verdict = { verdict: "unverifiable", detail: "could not be reached" }
-    const res = await post({ action: "done", agentId: "coder", id, evidence: "I sent it" })
+    const res = await post({ action: "done", work: "ops", agentId: "coder", id, evidence: "I sent it" })
     expect(res.status).toBe(202)
     expect(res.body).toMatchObject({ verify: "unverified", detail: "could not be reached" })
     expect(store.get(id)).toMatchObject({ state: "in_progress", verifyState: "unverified" })
@@ -140,7 +140,7 @@ describe("done on a loop with a check", () => {
     const before = store.get(id)!.updatedAt
     clock += 5 * HOUR
     verdict = { verdict: "unverifiable", detail: "could not be reached" }
-    await post({ action: "done", agentId: "coder", id, evidence: "I sent it" })
+    await post({ action: "done", work: "ops", agentId: "coder", id, evidence: "I sent it" })
     expect(store.get(id)!.updatedAt).toBe(before)
   })
 
@@ -149,7 +149,7 @@ describe("done on a loop with a check", () => {
     const before = store.get(id)!.updatedAt
     clock += 5 * HOUR
     verdict = { verdict: "unverifiable", detail: "could not be reached" }
-    await post({ action: "done", agentId: "coder", id, evidence: "I sent it", home: { kind: "issue", link: "https://example.com/i/1" } })
+    await post({ action: "done", work: "ops", agentId: "coder", id, evidence: "I sent it", home: { kind: "issue", link: "https://example.com/i/1" } })
     expect(store.get(id)!.updatedAt).toBe(before)
     expect(store.get(id)!.home).toMatchObject({ kind: "issue", link: "https://example.com/i/1" })
   })
@@ -158,7 +158,7 @@ describe("done on a loop with a check", () => {
     const spy = vi.spyOn(AbortSignal, "timeout")
     try {
       const fake = (async () => new Response(JSON.stringify({ request: { id: "r1", evidence: "e" } }), { status: 200 })) as unknown as typeof fetch
-      await runRequestTool({ action: "done", id: "r1", evidence: "e" }, { daemonUrl: "http://127.0.0.1:1", fetch: fake, env: { AGENTX_AGENT_ID: "coder" } as any })
+      await runRequestTool({ action: "done", work: "ops", id: "r1", evidence: "e" }, { daemonUrl: "http://127.0.0.1:1", fetch: fake, env: { AGENTX_AGENT_ID: "coder" } as any })
       expect(spy).toHaveBeenCalledWith(DONE_TIMEOUT_MS)
       expect(DONE_TIMEOUT_MS).toBeGreaterThan(30_000)
     } finally {
@@ -169,7 +169,7 @@ describe("done on a loop with a check", () => {
   it("closes with the checker's evidence when met", async () => {
     const id = await withCheck()
     verdict = { verdict: "met", detail: "https://example.com/v answered" }
-    const res = await post({ action: "done", agentId: "coder", id, evidence: "https://example.com/pr/1" })
+    const res = await post({ action: "done", work: "ops", agentId: "coder", id, evidence: "https://example.com/pr/1" })
     expect(res.status).toBe(200)
     expect(store.get(id)).toMatchObject({ state: "done", verifyState: "verified", evidence: "https://example.com/v answered (agent: https://example.com/pr/1)" })
   })
@@ -185,21 +185,21 @@ describe("done on a loop with a check", () => {
 
   it("a node with no checker leaves it open as unverified", async () => {
     const id = await withCheck()
-    const res = await handleRequestsCall("POST", "/requests", { action: "done", agentId: "coder", id }, { ...deps(), check: undefined })
+    const res = await handleRequestsCall("POST", "/requests", { action: "done", work: "ops", agentId: "coder", id }, { ...deps(), check: undefined })
     expect(res.status).toBe(202)
     expect(store.get(id)?.verifyState).toBe("unverified")
   })
 
   it("accept and wait give an owner's request a check and a due time", async () => {
     ownerTurn("t1")
-    expect((await post({ action: "accept", agentId: "coder", due: "2030-03-02T09:00:00Z", closeWhen: { kind: "issue", provider: "github", ref: "acme/app#12" } })).status).toBe(200)
+    expect((await post({ action: "accept", work: "ops", agentId: "coder", due: "2030-03-02T09:00:00Z", closeWhen: { kind: "issue", provider: "github", ref: "acme/app#12" } })).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ owedTo: "owner", dueAt: Date.parse("2030-03-02T09:00:00Z"), closeWhen: { kind: "issue", ref: "acme/app#12" } })
-    expect((await post({ action: "done", agentId: "coder", evidence: "merged" })).status).toBe(409)
+    expect((await post({ action: "done", work: "ops", agentId: "coder", evidence: "merged" })).status).toBe(409)
   })
 
   it("accept refuses a note pattern that is short or only digits (#885)", async () => {
     ownerTurn("t1")
-    const out = await post({ action: "accept", agentId: "coder", closeWhen: { kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "12345678" } })
+    const out = await post({ action: "accept", work: "ops", agentId: "coder", closeWhen: { kind: "issue", provider: "gitlab", ref: "noqta/noqta#842", notePattern: "12345678" } })
     expect(out).toMatchObject({ status: 400, body: { error: expect.stringMatching(/not only digits/) } })
     expect(store.get("req-t1")).toMatchObject({ closeWhen: null })
   })
@@ -208,9 +208,9 @@ describe("done on a loop with a check", () => {
 describe("requests without the new fields", () => {
   it("close on the agent's word, as before, and never run a check", async () => {
     ownerTurn("t1")
-    await post({ action: "accept", agentId: "coder" })
+    await post({ action: "accept", work: "ops", agentId: "coder" })
     expect(store.get("req-t1")).toMatchObject({ dueAt: null, closeWhen: null, promise: false, verifyState: null })
-    expect((await post({ action: "done", agentId: "coder", evidence: "https://example.com/pr/1" })).status).toBe(200)
+    expect((await post({ action: "done", work: "ops", agentId: "coder", evidence: "https://example.com/pr/1" })).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.com/pr/1" })
     expect(checks).toBe(0)
   })
@@ -248,7 +248,7 @@ describe("the requests check", () => {
     expect(store.get(id)?.verifyState).toBe("unverified")
     clock += 11 * 60_000
     verdict = { verdict: "not_met", detail: "not yet" }
-    await post({ action: "done", agentId: "coder", id })
+    await post({ action: "done", work: "ops", agentId: "coder", id })
     clock += 11 * 60_000
     await sweep()
     expect(store.get(id)?.verifyState).toBe("failed")
@@ -286,7 +286,7 @@ describe("the requests check", () => {
 
   it("an owner's request with no due time comes back after staleAfterHours, as before", async () => {
     ownerTurn("t1")
-    await post({ action: "accept", agentId: "coder" })
+    await post({ action: "accept", work: "ops", agentId: "coder" })
     clock += 25 * HOUR
     await sweep()
     expect(store.get("req-t1")?.attentionReason).toBe("No activity for 24 h")

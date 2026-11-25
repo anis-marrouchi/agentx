@@ -92,7 +92,7 @@ const STEPS = [
 ]
 
 function makePlan(steps: unknown[] = STEPS) {
-  const res = api({ action: "accept", agentId: "coder", id: "req-1", steps })
+  const res = api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps })
   expect(res.status).toBe(200)
   return res
 }
@@ -141,7 +141,7 @@ describe("making a plan", () => {
       [[{ name: "a", done: "x" }, { name: "b", done: "y", check: { url: "file:///etc/passwd" } }], /http/],
     ]
     for (const [steps, error] of cases) {
-      const res = api({ action: "accept", agentId: "coder", id: "req-1", steps })
+      const res = api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps })
       expect(res.status).toBe(400)
       expect((res.body as any).error).toMatch(error)
     }
@@ -150,17 +150,17 @@ describe("making a plan", () => {
 
   it("is refused for an agent the plans are turned off for, and when off", () => {
     settings.disabledAgents = ["coder"]
-    expect((api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).body as any).error).toMatch(/turned off for coder/)
+    expect((api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps: STEPS }).body as any).error).toMatch(/turned off for coder/)
     settings.disabledAgents = []
     settings.enabled = false
-    expect((api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).body as any).error).toMatch(/turned off on this node/)
+    expect((api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps: STEPS }).body as any).error).toMatch(/turned off on this node/)
     // Accept without steps still works.
-    expect(api({ action: "accept", agentId: "coder", id: "req-1" }).status).toBe(200)
+    expect(api({ action: "accept", work: "ops", agentId: "coder", id: "req-1" }).status).toBe(200)
   })
 
   it("keeps one plan per request", () => {
     makePlan()
-    expect(api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
+    expect(api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
   })
 })
 
@@ -182,8 +182,8 @@ describe("the plan gate (#1048)", () => {
   })
 
   it("refuses work estimated over the threshold, not at or under it", () => {
-    expect(accept({ estimateMinutes: 45 }).status).toBe(409)
-    expect((accept({ estimateMinutes: 45 }).body as any).error).toMatch(/45 minutes \(over 30\)/)
+    expect(accept({ work: "ops", estimateMinutes: 45 }).status).toBe(409)
+    expect((accept({ work: "ops", estimateMinutes: 45 }).body as any).error).toMatch(/45 minutes \(over 30\)/)
     expect(accept({ work: "research", estimateMinutes: 30 }).status).toBe(200)
   })
 
@@ -212,10 +212,11 @@ describe("the plan gate (#1048)", () => {
     expect(accept({ work: "writing" }).status).toBe(200)
   })
 
-  it("does not need work once the gate is off", () => {
+  it("still needs work once the gate is off: every request has a kind (Anis 2026-11-25)", () => {
     settings.requireForWork = []
     settings.requireOverMinutes = 0
-    expect(accept({}).status).toBe(200)
+    expect(accept({}).body).toMatchObject({ workRequired: true })
+    expect(accept({ work: "ops" }).status).toBe(200)
   })
 
   it("follows the owner's kinds and threshold", () => {
@@ -550,7 +551,7 @@ describe("the client message", () => {
 
     requests.addCandidate({ id: "req-2", runId: "run-2", channel: "telegram", chatId: "owner-chat", agentId: "coder", text: "x", now: clock })
     requests.progress("req-2", clock)
-    expect(api({ action: "accept", agentId: "coder", id: "req-2", steps: STEPS }).status).toBe(200)
+    expect(api({ action: "accept", work: "ops", agentId: "coder", id: "req-2", steps: STEPS }).status).toBe(200)
     await sweep()
     const card2 = cardsRaised[1]
     await runApprovalsSweep({ ctx: { root: tmp, now: clock + 4 * 24 * 60 * MIN }, settings: { notifyAgent: true, digest: { enabled: false } } as any, log: () => {} })
@@ -631,7 +632,7 @@ describe("the end of a plan", () => {
     expect(old.status).not.toBe(200)
     expect((old.body as any).error).toMatch(/accept it with new steps/)
     // 1. accept with new steps replaces the closed plan.
-    const res = api({ action: "accept", agentId: "coder", id: "req-1", steps: [{ name: "Model", done: "upload link" }, { name: "Render", done: "clip link" }] })
+    const res = api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps: [{ name: "Model", done: "upload link" }, { name: "Render", done: "clip link" }] })
     expect(res.status).toBe(200)
     expect((res.body as any).plan).toMatchObject({ state: "active", finishedAt: null })
     expect(plans.steps("req-1").map((s) => [s.idx, s.name, s.state])).toEqual([[1, "Model", "active"], [2, "Render", "pending"]])
@@ -640,7 +641,7 @@ describe("the end of a plan", () => {
     expect(api({ action: "step", agentId: "coder", id: "req-1", step: 1, status: "done", evidence: "https://example.com/a" }).status).toBe(200)
     expect(plans.step("req-1", 1)?.state).toBe("done")
     // An active plan is still one per request.
-    expect(api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
+    expect(api({ action: "accept", work: "ops", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
   })
 
   it("takes proofs on a reopened request whose plan is closed (#692 path)", async () => {
@@ -657,7 +658,7 @@ describe("the end of a plan", () => {
   it("lets the owner skip or finish a step", () => {
     makePlan()
     expect(ownerStepAction(requests, plans, { requestId: "req-1", step: 2, action: "skip", detail: "deployed by hand" }, clock)).toBeNull()
-    expect(ownerStepAction(requests, plans, { requestId: "req-1", step: 1, action: "done" }, clock)).toBeNull()
+    expect(ownerStepAction(requests, plans, { requestId: "req-1", step: 1, action: "done", work: "ops" }, clock)).toBeNull()
     expect(plans.steps("req-1").map((s) => s.state)).toEqual(["done", "skipped", "pending"])
     expect(ownerStepAction(requests, plans, { requestId: "req-1", step: 2, action: "skip" }, clock)).toMatch(/already skipped/)
   })

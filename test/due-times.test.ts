@@ -77,7 +77,7 @@ function ownerRequest(id: string, agent = "writer", text = "Send the offer") {
 }
 
 function accept(mode: DueTimeMode, id: string, body: Record<string, unknown> = {}, now = T0, agent = "writer") {
-  return handleRequestsApi("POST", "/requests", { agentId: agent, action: "accept", id, ...body }, deps(mode, now))
+  return handleRequestsApi("POST", "/requests", { agentId: agent, action: "accept", work: "ops", id, ...body }, deps(mode, now))
 }
 
 describe("the scheduler, on a fake clock", () => {
@@ -318,7 +318,7 @@ describe("who may ask for critical (#1919): the owner's words only", () => {
     const coderId = coderWork("on")
     const own = call("on", { action: "promise", owedTo: "owner", text: "Fix my thing", estimateMinutes: 30 })
     expect(own.status).toBe(200)
-    const res = call("on", { action: "accept", id: (own.body as any).request.id, priority: "critical" })
+    const res = call("on", { action: "accept", work: "ops", id: (own.body as any).request.id, priority: "critical" })
     expect(res.status).toBe(403)
     expect(store.get(coderId)!.dueAt).toBe(T0 + HOUR)
     expect(told).toEqual([])

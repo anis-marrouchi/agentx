@@ -28,6 +28,7 @@
 // out was to send something, even older work.
 
 import { createHash } from "crypto"
+import { workHint } from "./work-hint.js"
 import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
 import { deliverablesOf, missingProofs, oneLine, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
 
@@ -163,8 +164,8 @@ export function planMismatchText(r: RequestRecord, why: string): string {
     ...(r.evidence ? [`What the plan closed with: ${clip(r.evidence)}`] : []),
     "",
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
-    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link to the proof>"}. ` +
-      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link to the proof>"}. ` +
+      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}"${workHint(r)}, due:"<ISO time>"} so you are woken for it. ` +
       "The owner is told it is open again.",
   ].join("\n")
 }
@@ -208,8 +209,8 @@ export function mismatchText(r: RequestRecord, why: string, d: Deliverables | nu
     ...(byCheck ? ["", "Its check alone does not close it again: give a proof link for each thing the owner asked, numbered in the order they asked."] : []),
     "",
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
-    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length || byCheck ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
-      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"${missing.length || byCheck ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
+      `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}"${workHint(r)}, due:"<ISO time>"} so you are woken for it. ` +
       "The owner is told it is open again and that it is yours.",
     "",
     "There are two ways out:",

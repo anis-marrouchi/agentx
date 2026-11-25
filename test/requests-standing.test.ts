@@ -89,7 +89,7 @@ describe("only the owner ends a standing order", () => {
 
   it("refuses its agent's done and decline, and says to report the number", async () => {
     for (const body of [
-      { action: "done", agentId: "marketing", id: "req-daily", evidence: "https://example.com/post/1" },
+      { action: "done", work: "ops", agentId: "marketing", id: "req-daily", evidence: "https://example.com/post/1" },
       { action: "decline", agentId: "marketing", id: "req-daily", reason: "busy" },
     ]) {
       const res = await post(body)

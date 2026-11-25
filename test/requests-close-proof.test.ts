@@ -111,12 +111,12 @@ describe("proof per deliverable before a close by check (Part A)", () => {
 
   it("block through done: 409 with the missing items, then closes once the links are given", async () => {
     const proof: CloseProofCtx = { mode: "block", ownerCheckOn: false }
-    const first = await api({ action: "done", id: ID, evidence: "all stages done" }, 7_000, proof)
+    const first = await api({ action: "done", work: "ops", id: ID, evidence: "all stages done" }, 7_000, proof)
     expect(first.status).toBe(409)
     expect((first.body as any).missing).toHaveLength(6)
     expect(store.get(ID)!.proofAskedAt).toBe(7_000)
     const proofs = STAGES.map((n, i) => ({ deliverable: n, link: noteLink(i) }))
-    const second = await api({ action: "done", id: ID, evidence: "all stages done", proofs }, 8_000, proof)
+    const second = await api({ action: "done", work: "ops", id: ID, evidence: "all stages done", proofs }, 8_000, proof)
     expect(second.status).toBe(200)
     expect(store.get(ID)!.state).toBe("done")
   })
@@ -232,19 +232,19 @@ describe("only an active plan stands in for the deliverables (#2020)", () => {
     expect(plans.finish(ID, "closed", 5_700)).toBe(true)
     const proofs = STAGES.map((n, i) => ({ deliverable: n, link: noteLink(i) }))
     expect((await call({ action: "step", id: ID, proofs }, 6_000)).status).toBe(200)
-    expect((await call({ action: "done", id: ID, evidence: "all stages done" }, 7_000)).status).toBe(200)
+    expect((await call({ action: "done", work: "ops", id: ID, evidence: "all stages done" }, 7_000)).status).toBe(200)
     expect(store.get(ID)!.state).toBe("done")
   })
 
   it("active plan: its steps are still the list", async () => {
-    const res = await call({ action: "done", id: ID, evidence: "all done" }, 7_000)
+    const res = await call({ action: "done", work: "ops", id: ID, evidence: "all done" }, 7_000)
     expect(res.status).toBe(409)
     expect((res.body as any).missing).toEqual(["1. old build", "2. old review"])
   })
 
   it("closed plan, no kept proofs: the refusal names the request's deliverables, not the old steps", async () => {
     expect(plans.finish(ID, "done", 5_700)).toBe(true)
-    const res = await call({ action: "done", id: ID, evidence: "all done" }, 7_000)
+    const res = await call({ action: "done", work: "ops", id: ID, evidence: "all done" }, 7_000)
     expect(res.status).toBe(409)
     const missing = (res.body as any).missing as string[]
     expect(missing).toHaveLength(6)
@@ -325,7 +325,7 @@ describe("reopen once (Part B)", () => {
 
   it("the agent's new words on done are not new (B1): 409, no close", async () => {
     await closeAndMismatch()
-    const res = await api({ action: "done", id: ID, evidence: "now really finished" }, 20 * MIN, { mode: "off", ownerCheckOn: true })
+    const res = await api({ action: "done", work: "ops", id: ID, evidence: "now really finished" }, 20 * MIN, { mode: "off", ownerCheckOn: true })
     expect(res.status).toBe(409)
     expect((res.body as any).held).toBe(true)
     expect(store.get(ID)!.state).toBe("needs_attention")

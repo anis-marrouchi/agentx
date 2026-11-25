@@ -1,4 +1,5 @@
 import type { DecisionCard } from "@/approvals/cards"
+import { workHint } from "./work-hint.js"
 import { CLOSED_STATES, type RequestRecord, type RequestStore } from "./store"
 import { checkUrl } from "./checkers/url"
 import type { ForgeCounter } from "./checkers/count"
@@ -506,7 +507,7 @@ function holdPlan(deps: PlanSweepDeps, r: RequestRecord, v: OwnerVerdict, now: n
     ...(v.uncovered.length ? [`Not shown by the proof: ${v.uncovered.join("; ")}`] : []),
     "",
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
-    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>", proofs:[{deliverable:<number>, link:"<url>"}]}. The owner sees it as needing attention until then.`,
+    `When it is really done, close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>", proofs:[{deliverable:<number>, link:"<url>"}]}. The owner sees it as needing attention until then.`,
   ].join("\n")
   deps.tellAgent(r.agentId, text, r, last).catch((e: any) => plans.event(r.id, null, "owner-words-wake-failed", `${r.agentId}: ${e?.message ?? e}`, now))
 }

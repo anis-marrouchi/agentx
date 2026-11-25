@@ -1,4 +1,5 @@
 import { isQueued } from "@/agents/queued"
+import { workHint } from "./work-hint.js"
 import { OVERDUE_REASON, WALL_CHANNEL, type RequestRecord, type RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
@@ -180,7 +181,7 @@ function pickupParts(r: RequestRecord, resend: ResendCause | null): { lead: stri
     tail: [
       ...goalLine(r.goal),
       ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
-      `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
+      `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"}. If you will not do it, use decline with the reason.`,
     ],
   }
 }
@@ -224,7 +225,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export function overdueText(r: RequestRecord): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
   return `[agentx:request-overdue id=${r.id}] It fell due (${when(r.dueAt!)}) and is not finished: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}. ` +
-    `Finish it now and close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"}, or give a new due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} and the reason. The owner is told it is late and that it is yours.`
+    `Finish it now and close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"}, or give a new due time with {action:"accept", id:"${r.id}"${workHint(r)}, due:"<ISO time>"} and the reason. The owner is told it is late and that it is yours.`
 }
 
 /** Wakes the agent of an overdue request: its job's wake when it takes
@@ -246,7 +247,7 @@ export function noProofText(r: RequestRecord): string {
     `[agentx:request-no-proof id=${r.id}] ${words.length > 300 ? `${words.slice(0, 299)}…` : words}`,
     `It is not closed: the hand-off came back with no proof: bring the link for each thing asked.`,
     ...(names.length ? ["Asked:", ...names.map((n, i) => `${i + 1}. ${n}`)] : []),
-    `Close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"}${names.length > 1 ? `, with proofs: [{deliverable: <number>, link: "<url>"}] for each` : ""}.`,
+    `Close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"}${names.length > 1 ? `, with proofs: [{deliverable: <number>, link: "<url>"}] for each` : ""}.`,
   ].join("\n")
 }
 
