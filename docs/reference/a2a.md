@@ -97,6 +97,13 @@ A `none` receipt looks like this:
 
 Every one of these is a hand-off with a `dlg-` id. The old `snd-…` ids are gone, and `"async": false` no longer makes `/send/agent` wait. A `snd-` send that was still running when you upgraded is not reported, as on any restart before.
 
+### The agentx-bridge skill
+
+`skills/agentx-bridge/agentx-bridge.sh` sends a message to an agent on this machine (`AGENTX_LOCAL=true`) or on a mesh peer (`AGENTX_PEER`). `skills/agentx-bridge/SKILL.md` lists its settings.
+
+- **Inside an agent run** (the daemon sets `AGENTX_AGENT_ID`), the script names its caller: `senderAgentId`, `callerChannel`, `callerChatId` and the `X-AgentX-Task` header. It stops at the receipt above and prints "do not wait or poll". The answer comes later in the caller's chat. If no receipt comes within 10 seconds, it exits `0` and says not to send the message again: the send may still have been taken.
+- **From a person, Claude Code or a script**, nothing changes. A send to this machine waits for the answer and prints it. A mesh send is async unless `AGENTX_ASYNC=false`.
+
 ## See the hand-offs and read one by its id
 
 A **hand-off** is one piece of work an agent on this machine gave to another agent. Each one has an id that starts with `dlg-`. AgentX keeps every hand-off in its database (`.agentx/db.sqlite`), so the list and the answers are still there after a restart. They are deleted with old requests, after `requests.retentionDays`.
