@@ -35,10 +35,15 @@ if (!chromePath) throw new Error("Set CHROME_PATH to Chrome or Chromium")
 
 const port = 9333
 const profile = mkdtempSync(join(tmpdir(), "hub-reconnect-"))
-const chrome = spawn(chromePath, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], { stdio: "ignore" })
+// Linux CI runners have no user namespaces for Chrome's sandbox, as in
+// wall-page-check.mjs. CI only: on a desktop the sandbox stays on.
+const ciFlags = process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []
+const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--no-first-run", `--remote-debugging-port=${port}`, ...ciFlags, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" })
 const done = (code) => { try { chrome.kill() } catch {} rmSync(profile, { recursive: true, force: true }); process.exit(code) }
 
-for (let i = 0; i < 100; i++) { try { await fetch(`http://127.0.0.1:${port}/json/version`); break } catch { await sleep(200) } }
+let up = false
+for (let i = 0; i < 150 && !up; i++) { try { await fetch(`http://127.0.0.1:${port}/json/version`); up = true } catch { await sleep(200) } }
+if (!up) { console.error("✗ Chrome did not start"); done(1) }
 const tab = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json()
 const ws = new WebSocket(tab.webSocketDebuggerUrl)
 await new Promise((r) => ws.addEventListener("open", r))
