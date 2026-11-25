@@ -1389,7 +1389,9 @@ export class AgentXDaemon {
     // the disk is low): tell the owner once per voice, and look again
     // every minute so a reinstalled one is used without a restart. After
     // the channels start, so the first notice has somewhere to go.
-    if (process.platform === "darwin") {
+    // Not in `agentx demo`: its daemons share ~/.agentx with the main one
+    // and must not touch its voice state or the Mac's spoken voice.
+    if (process.platform === "darwin" && !process.env.AGENTX_DEMO_SCRIPT) {
       restoreSpokenVoice()
       this.voiceHealth = new VoiceHealth({
         // A voice gone missing is a nag: the daily digest says it (#1126).
@@ -1397,6 +1399,8 @@ export class AgentXDaemon {
           await this.tellOwner({ title, message, from: "voice", kind: "nag" })
         },
         log: (m) => this.log(m),
+        // One daemon per Mac owns ~/.agentx/voice/health.json.
+        owner: resolve(this.configPath || resolve(process.cwd(), "agentx.json")),
       })
       const checkVoices = () => {
         const installed = listSystemVoices(Date.now(), this.voiceHealth?.hasMissing() ? MISSING_REFRESH_MS : undefined)

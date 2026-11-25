@@ -187,4 +187,45 @@ describe("VoiceHealth", () => {
     expect(await health().check(cfg, [])).toBeNull()
     expect(readVoiceHealth(file)).toBeNull()
   })
+
+  describe("two daemons on one Mac", () => {
+    // The main daemon names Nora; a demo daemon names no Siri voice.
+    const mainCfg = cfg
+    const demoCfg = { agents: agents({ demo: { system: "Allison" } }), voice: {} }
+    let alive: Set<number>
+    const daemon = (owner: string, pid: number) => new VoiceHealth({
+      file, owner, pid, isAlive: (p) => alive.has(p), log: (m) => log.push(m),
+      notify: async (_t, m) => { sent.push(m) },
+    })
+    beforeEach(() => { alive = new Set([100, 200]) })
+
+    it("tells the owner once, though a second daemon with other voices checks every minute", async () => {
+      const main = daemon("/main/agentx.json", 100)
+      const demo = daemon("/demo/node-a/agentx.json", 200)
+      for (let i = 0; i < 4; i++) {
+        await main.check(mainCfg, PURGED)
+        expect(await demo.check(demoCfg, PURGED)).toBeNull()
+      }
+      expect(sent).toHaveLength(1)
+      expect(readVoiceHealth(file)).toMatchObject({ owner: { id: "/main/agentx.json", pid: 100 }, missing: [{ voice: NORA_ID }] })
+      expect(log.filter((l) => l.includes("voice check left to the daemon of /main/agentx.json"))).toHaveLength(1)
+    })
+
+    it("leaves the check alone while the owner lives, and takes it over once it is gone", async () => {
+      await daemon("/demo/node-a/agentx.json", 200).check(demoCfg, PURGED)
+      expect(await daemon("/main/agentx.json", 100).check(mainCfg, PURGED)).toBeNull()
+      expect(sent).toHaveLength(0)
+      alive.delete(200)
+      await daemon("/main/agentx.json", 100).check(mainCfg, PURGED)
+      expect(sent).toHaveLength(1)
+      expect(readVoiceHealth(file)?.owner).toEqual({ id: "/main/agentx.json", pid: 100 })
+    })
+
+    it("a restart of the same daemon (new pid) keeps the notice already sent", async () => {
+      await daemon("/main/agentx.json", 100).check(mainCfg, PURGED)
+      await daemon("/main/agentx.json", 101).check(mainCfg, PURGED)
+      expect(sent).toHaveLength(1)
+      expect(readVoiceHealth(file)?.owner?.pid).toBe(101)
+    })
+  })
 })
