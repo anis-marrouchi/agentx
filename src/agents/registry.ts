@@ -6,7 +6,9 @@ import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, 
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
-import { askSeat } from "@/decisions/seat"
+import { askSeat, getSeatMode } from "@/decisions/seat"
+import { getPolicy } from "@/guard/service"
+import { gatesWithoutRow, liveGateRules } from "@/gates"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   SESSION_CONTINUITY_SEAT,
@@ -102,7 +104,7 @@ import { awaitsSlot } from "@/agents/await-slot"
 import { isOperatorTurn } from "@/requests/operator"
 import { recordGateEvent } from "@/gates/events"
 import {
-  STATUS_CLAIM_GATE, STATUS_CLAIM_RULE, claimAsk, judgeClaim, midRunClaims, notCheckedLine, statusClaimMode,
+  STATUS_CLAIM_GATE, STATUS_CLAIM_RULE, STATUS_CLAIM_SEAT, claimAsk, judgeClaim, midRunClaims, notCheckedLine, statusClaimMode,
 } from "@/gates/status-claim"
 import type { SeatMode } from "@/decisions/store"
 import { dueAtOf, taskTypeOf } from "@/agents/task-context"
@@ -888,6 +890,8 @@ export class AgentRegistry {
   }
   /** See setStatusClaimMode. */
   private statusClaimModeOf?: () => SeatMode
+  /** Gates without a Registry row are logged once per process (#2085 §3). */
+  private gateRowsChecked = false
   /** See setTraceToolCalls. */
   private traceToolCalls?: (traceId: string) => Array<{ action: string | null; inputSummary: string | null }>
   /** See setTimeLimitHandoff. */
@@ -1420,8 +1424,20 @@ export class AgentRegistry {
         ...(cronSpec ? { cronSpec } : {}),
       }
       const agents = Object.entries(this.config.agents).map(([id, a]) => ({ id, name: a.name }))
-      const rows = rulesForRun(parseRegistry(readable.content), facts, agents)
-      const block = buildRulesBlock(rows, { maxTokens: cfg.maxTokens })
+      const allRows = parseRegistry(readable.content)
+      if (!this.gateRowsChecked) {
+        this.gateRowsChecked = true
+        for (const g of gatesWithoutRow(allRows.map((r) => r.id))) {
+          this.log(`[rules] gate ${g.gate} names rule ${g.ruleId}, which has no Rules Registry row: it never shortens a rule`)
+        }
+      }
+      const rows = rulesForRun(allRows, facts, agents)
+      const checked = liveGateRules({
+        config: this.config,
+        seatMode: (seat) => (seat === STATUS_CLAIM_SEAT && this.statusClaimModeOf ? this.statusClaimModeOf() : getSeatMode(seat)),
+        policy: (id) => getPolicy(process.cwd(), id),
+      }, task.agentId)
+      const block = buildRulesBlock(rows, { maxTokens: cfg.maxTokens, checked })
       if (!block) return { ids: [] }
       const hash = rulesHash(block)
       const session = this.sessions.getSession(task.agentId, channel, chatId)
