@@ -189,8 +189,10 @@ export class CallStore {
   /** A call-back about this request in this state was already placed
    *  (rung, merged or kept as missed): each fires once (#2265). */
   hasCallback(ref: CallbackRef): boolean {
-    return !!this.db.prepare("SELECT 1 FROM calls WHERE origin='callback' AND about LIKE ? LIMIT 1")
-      .get(`%${refKey(ref).replace(/[%_]/g, "")}%`)
+    // Escape LIKE's wildcards instead of dropping them: `waiting_owner`
+    // and `needs_attention` must match as written.
+    return !!this.db.prepare("SELECT 1 FROM calls WHERE origin='callback' AND about LIKE ? ESCAPE '\\' LIMIT 1")
+      .get(`%${refKey(ref).replace(/[\\%_]/g, (c) => `\\${c}`)}%`)
   }
 
   /** Add requests to a call-back still waiting to be answered, with its

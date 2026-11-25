@@ -196,6 +196,51 @@ describe("every path that changes the state (C4)", () => {
     expect(callbacks().map((c) => c.reason)).toEqual(["Needs you: Fix the login page"])
   })
 
+  // B1 (Hakim, #2274): the once-per-request-and-state check must hold for
+  // the states with "_" in them, after the first call has ended.
+  it.each([
+    { state: "waiting_owner" as const, enter: (id: string, at: number) => requests.waitOnOwner(id, "Which branch?", at) },
+    { state: "needs_attention" as const, enter: (id: string, at: number) => { requests.needsAttention(id, "plan step 2 is blocked", at) } },
+  ])("$state → in_progress → $state again rings once", async ({ state, enter }) => {
+    const id = ask()
+    enter(id, now)
+    await settle()
+    const first = callbacks()[0]
+    expect(first.about).toEqual([{ id, state }])
+    calls.answer(first.id)
+    calls.hangup(first.id)
+    requests.progress(id, now + 1)
+    enter(id, now + 2)
+    await settle()
+    expect(callbacks()).toHaveLength(1)
+    expect(rings()).toHaveLength(1)
+    expect(callStore.hasCallback({ id, state })).toBe(true)
+  })
+
+  it("the once check matches the state exactly, not as a LIKE pattern", () => {
+    callStore.insert({
+      id: "call-x", agentId: "coder", kind: "voice", reason: "r", urgency: "normal", status: "ended", createdAt: now,
+      ringingSince: null, answeredAt: null, endedAt: now, ringAgainAt: null, note: null, summary: null, channel: null, chatId: null,
+      origin: "callback", about: [{ id: "req-a", state: "waiting_owner" }],
+    })
+    expect(callStore.hasCallback({ id: "req-a", state: "waiting_owner" })).toBe(true)
+    expect(callStore.hasCallback({ id: "req-a", state: "needs_attention" })).toBe(false)
+    expect(callStore.hasCallback({ id: "req-b", state: "waiting_owner" })).toBe(false)
+  })
+
+  // B2 (Hakim, #2274): settle closes unverified, so it fires only the
+  // call-back hook, never onDone (a promise's fact).
+  it("settle does not fire onDone hooks", () => {
+    const done: string[] = []
+    const settled: string[] = []
+    requests.onDone((r) => done.push(r.id))
+    requests.onSettled((r) => settled.push(r.id))
+    const id = ask()
+    expect(requests.settle(id, "https://example.com/pr/2", "handed back", now)).toBe(true)
+    expect(done).toEqual([])
+    expect(settled).toEqual([id])
+  })
+
   it("a request that later finishes calls again, for done", async () => {
     const id = ask()
     requests.waitOnOwner(id, "Which branch?", now)

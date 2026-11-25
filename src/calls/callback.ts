@@ -88,6 +88,7 @@ export function attachCallbacks(store: RequestStore, deps: CallbackDeps): () => 
     }
   }
   const offDone = store.onDone((r) => fire(r, "done"))
+  const offSettled = store.onSettled((r) => fire(r, "done"))
   const offOwner = store.onNeedsOwner((r, state) => fire(r, state))
-  return () => { offDone(); offOwner() }
+  return () => { offDone(); offSettled(); offOwner() }
 }

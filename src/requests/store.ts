@@ -841,6 +841,22 @@ export class RequestStore {
     if (r) for (const fn of this.doneHooks) fn(r)
   }
 
+  private settledHooks = new Set<(r: RequestRecord) => void>()
+
+  /** Called after the settle pass closes a request (unverified, #2265).
+   *  Kept apart from `onDone`, whose hooks (a promise's fact) want a
+   *  verified close. Returns the function that removes it. */
+  onSettled(fn: (r: RequestRecord) => void): () => void {
+    this.settledHooks.add(fn)
+    return () => { this.settledHooks.delete(fn) }
+  }
+
+  private settledDone(id: string): void {
+    if (!this.settledHooks.size) return
+    const r = this.get(id)
+    if (r) for (const fn of this.settledHooks) fn(r)
+  }
+
   /** The wiki fact a promise's close wrote. */
   setFact(id: string, factId: string): void {
     this.db.prepare("UPDATE requests SET fact_id = ? WHERE id = ?").run(factId, id)
@@ -1163,7 +1179,7 @@ export class RequestStore {
     ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
     if (settled) {
       this.typeIfMissing(id)
-      this.done(id)
+      this.settledDone(id)
     }
     return settled
   }
