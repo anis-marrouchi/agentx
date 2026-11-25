@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.271.3](https://github.com/anis-marrouchi/agentx/compare/v0.271.2...v0.271.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** keep slow machines' agents listed; one row place per agent ([#2260](https://github.com/anis-marrouchi/agentx/issues/2260)) ([#2262](https://github.com/anis-marrouchi/agentx/issues/2262)) ([eecef96](https://github.com/anis-marrouchi/agentx/commit/eecef96212b97a1d08abe02ab5ca4a54eacc1336))
+
 ## [0.271.2](https://github.com/anis-marrouchi/agentx/compare/v0.271.1...v0.271.2) (2026-11-25)
 
 
