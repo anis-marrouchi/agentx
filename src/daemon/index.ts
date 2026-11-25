@@ -5079,10 +5079,20 @@ export class AgentXDaemon {
     // quiet agent still gets them (agents/notices.ts).
     this.noticeSweep = setInterval(() => {
       for (const agentId of this.registry.notices.overdue()) {
+        // Kept from before a restart for an agent since removed (#2121).
+        if (!this.registry.getAgent(agentId)) {
+          this.log(`[notices] ${agentId}: not in the config; dropped ${this.registry.notices.drop(agentId)} notice(s)`)
+          continue
+        }
         this.log(`[notices] ${agentId}: ${this.registry.notices.count(agentId)} notice(s) waited an hour; sending them as one run`)
+        // Taken now, not when the run gets its slot: a run that ends before
+        // that (an attached session, a paused agent) would leave them here
+        // and this sweep would start another run every minute (#2121).
+        const notes = this.registry.notices.take(agentId)
         void this.registry.execute({
           agentId,
-          message: "Notices that waited for your next run are below.",
+          message: "Notices that waited for your next run are above.",
+          notices: notes,
           context: { channel: "a2a", sender: "agent", chatId: "notices" },
           slotWaitMs: SEND_AGENT_SLOT_WAIT_MS,
         }).catch((e: any) => this.log(`[notices] ${agentId}: ${e?.message ?? e}`))

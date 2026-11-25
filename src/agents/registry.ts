@@ -930,7 +930,7 @@ export class AgentRegistry {
   /** One run at a time per agent and owner's request (work-lane.ts). */
   private workLanes = new WorkLanes({ log: (line) => this.log(line) })
   /** Notices for an agent's next run (notices.ts, /send/agent notice:true). */
-  readonly notices = new AgentNotices()
+  readonly notices: AgentNotices
   /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
   private budgetHolds: BudgetHolds
   private budgetReleaseTimer: ReturnType<typeof setInterval> | null = null
@@ -1043,6 +1043,8 @@ export class AgentRegistry {
     // Monthly money budgets (#1162, #1290). The daemon re-applies them on save.
     setAgentBudgets(budgetConfigFrom(config))
     setBudgetProjectResolver(budgetProjectResolver(config))
+    // Notices not yet delivered are on disk too (#2121).
+    this.notices = new AgentNotices({ file: resolve(process.cwd(), ".agentx/notices.json"), log: (m) => this.log(m) })
     // Held work is on disk, so a restart keeps it; release what may run.
     this.budgetHolds = new BudgetHolds(MAX_HELD_PER_AGENT, resolve(process.cwd(), ".agentx/budget-holds.json"), (m) => this.log(m))
     if (this.budgetHolds.size) {
@@ -1904,13 +1906,8 @@ export class AgentRegistry {
     // One run at a time per agent and owner's request (work-lane.ts),
     // keyed on the message as sent, not on notices put before it.
     const key = workKeyOf(task.message, channel)
-    // Notices waiting for this agent ride on its next run of agent work
-    // (a2a, cron, workflow, ...), never on a person's or visitor's chat
-    // nor on an internal run whose output is parsed (notices.ts).
-    if (takesNotices(channel) && !task.preSpawnRetry) {
-      const notes = this.notices.take(task.agentId)
-      if (notes) task = { ...task, message: notes + task.message }
-    }
+    // Notices the hourly sweep already took (#2121).
+    if (task.notices) task = { ...task, message: task.notices + task.message, notices: undefined }
     if (needsJobState(this.config.jobState, channel) && !task.jobStateAsk) {
       task = { ...task, message: JOB_STATE_RULE + task.message }
     }
@@ -2553,6 +2550,17 @@ export class AgentRegistry {
     if (clash) {
       this.log(`[${task.agentId}] ${clash.slice(0, 160)}`)
       task.message = `${clash}\n${task.message}`
+    }
+
+    // Notices waiting for this agent ride on its next run of agent work
+    // (a2a, cron, workflow, ...), never on a person's or visitor's chat
+    // nor on an internal run whose output is parsed (notices.ts). Taken
+    // here, once the run has its slot, and not when it starts to wait:
+    // a crash during a long work-lane or slot wait no longer loses them
+    // (#2121). The retry of a stalled start already carries them.
+    if (!task.preSpawnRetry) {
+      const notes = takesNotices(task.context?.channel) ? this.notices.take(task.agentId) : ""
+      if (notes) task.message = notes + task.message
     }
 
     state.totalTasks++
