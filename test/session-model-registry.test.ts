@@ -118,6 +118,22 @@ describe("one model per session (#2001)", () => {
     expect(modelRotations()).toHaveLength(0)
   })
 
+  it("a session stored on another runtime's model starts anew on the agent's model, warm or cold", async () => {
+    for (const idle of [5 * MIN, 90 * MIN]) {
+      calls.length = 0
+      rotations.length = 0
+      const r = registry(AGENT)
+      const sessions = stored(r, "gpt-6.2-sol", idle)
+      await turn(r)
+      expect(calls[0].resume).toBeUndefined()
+      expect(calls[0].model).toBe(AGENT)
+      expect(calls[0].context).toContain("earlier question about the queue")
+      expect(modelRotations()).toHaveLength(1)
+      expect(lines.some((l) => l.includes("not a claude-code model"))).toBe(true)
+      expect(sessions.getSessionModel("ops", "telegram", "chat-1")).not.toBe("gpt-6.2-sol")
+    }
+  })
+
   it("ping-pong: hard, easy, hard on a warm session gives no new session and one model", async () => {
     const r = registry()
     stored(r, AGENT, 5 * MIN)
