@@ -78,6 +78,34 @@ Select **Operations**, under **Fleet**. The Hub shows the fleet's Operations vie
 
 The page loads when you first open it, not with the Hub, because Operations checks the fleet every few seconds while it shows. **Open Operations on its own page**, under it, opens the full classic page at `/mesh`. **Light / dark** changes both.
 
+## Switch the Claude Code or Codex account for new runs
+
+If you have more than one Claude Code or Codex account, keep each in its own config folder and choose which one new runs use. Only the owner sees this.
+
+1. **Terminal:** sign in once per folder with the CLI itself. For Claude Code: `CLAUDE_CONFIG_DIR=~/.claude-work claude`, then `/login`. For Codex: `CODEX_HOME=~/.codex-work codex login`. AgentX never reads, copies or stores the token; it stays where the CLI put it.
+2. **Browser:** in the Hub's bottom bar, select **Accounts**. Each provider lists **default** (the CLI's own folder, `~/.claude` or `~/.codex`) and the profiles you added.
+3. To add a profile, type a name (for example `work`) and its folder, then select **Add**. A folder that does not exist yet says **folder not there yet**: sign in first (step 1).
+4. Select a profile's button. The bar says **Accounts · Claude Code: work · Codex: default**, and every Claude Code or Codex process AgentX starts from then on uses that folder. A Claude Code switch also lifts any usage hold the old account left, so queued runs start on the new one.
+5. **Remove** deletes a profile from the list, not its folder. If it was in use, new runs go back to **default**.
+
+What stays as it was:
+- A run already going, and a chat whose Claude Code session is still open, keep the account they started with. The switch applies from their next new process.
+- An agent whose workspace `.env` sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` keeps its own folder, in one-off runs and in open chats alike.
+- The usage numbers in the bar still read the daemon's own Claude Code reading, not the picked profile's.
+- Gemini is not listed yet.
+
+The list is kept in `~/.agentx/cli-accounts.json` (names and folders only, readable by your user alone).
+
+### Check the account switch worked
+
+Pick a profile, then start a new task for a Claude Code agent and ask it to run `echo $CLAUDE_CONFIG_DIR`. It prints the profile's folder.
+
+### If the account switch goes wrong
+
+- **The new run asks to sign in, or uses the wrong plan:** that folder has no sign-in yet. Run step 1 for it.
+- **No Accounts button:** you are not signed in as the owner, or you are on a phone (the bar is hidden there).
+- **An agent ignores the switch:** its workspace `.env` sets the folder itself; remove that line to follow the switch.
+
 ## See the fleet at work in the sidebar
 
 **At work now**, under **Machines and runs** in the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
