@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.265.0](https://github.com/anis-marrouchi/agentx/compare/v0.264.0...v0.265.0) (2026-11-25)
+
+
+### Features
+
+* **hub:** switch the Claude Code or Codex account for new runs ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P9b) ([#2206](https://github.com/anis-marrouchi/agentx/issues/2206)) ([8910342](https://github.com/anis-marrouchi/agentx/commit/89103425c482f75c43c73a4cfbe1aea720cd046d))
+
+
+### Bug Fixes
+
+* **requests:** a superseded decline goes to the owner once instead of looping ([#2082](https://github.com/anis-marrouchi/agentx/issues/2082)) ([#2208](https://github.com/anis-marrouchi/agentx/issues/2208)) ([dd78b19](https://github.com/anis-marrouchi/agentx/commit/dd78b19819ac747efee5676fd2559d8c9e4cea67))
+
 ## [0.264.0](https://github.com/anis-marrouchi/agentx/compare/v0.263.1...v0.264.0) (2026-11-24)
 
 
