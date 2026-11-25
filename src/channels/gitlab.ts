@@ -63,6 +63,9 @@ export interface GitLabChannelConfig {
    *  Removal: when an agent is deleted from agents.<id>, its default mapping
    *  disappears on next daemon restart. */
   knownAgentIds?: string[]
+  /** An agent a mesh peer hosts also owns its marked MRs for the CI fix
+   *  wake, which the router forwards to its node (#2227). */
+  ciKnownAgent?: (agentId: string) => boolean
   /** Prefixes for extra derived usernames (e.g. "team-" → @team-<agentId>).
    *  An organisation's naming convention, so it lives in config, not code. */
   agentUsernamePrefixes?: string[]
@@ -1760,6 +1763,7 @@ export class GitLabAdapter implements ChannelAdapter {
       branch,
       agentForIssue: (n) => this.config.ciAgentForIssue?.(project, n),
       knownAgentIds: this.config.knownAgentIds,
+      isKnownAgent: this.config.ciKnownAgent,
     })
     if (!owner) {
       if (!info) { this.log(`MR !${mr.iid}: CI failed on ${sha}, MR unreadable and no owner from its branch, no wake`); return }

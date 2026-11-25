@@ -92,6 +92,9 @@ export interface GitHubChannelConfig {
   /** The registered agent ids: a PR body marker naming another id wakes
    *  nobody (#2102). Unset: any marker id. */
   knownAgentIds?: string[]
+  /** An agent a mesh peer hosts also owns its marked PRs: the CI wake is
+   *  forwarded to its node (#2227). */
+  ciKnownAgent?: (agentId: string) => boolean
 }
 
 /** Defaults for the event gate (#612). `channels.github` in agentx.json
@@ -1212,6 +1215,7 @@ export class GitHubAdapter implements ChannelAdapter {
       branch,
       agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n),
       knownAgentIds: this.config.knownAgentIds,
+      isKnownAgent: this.config.ciKnownAgent,
     })
     if (!owner) {
       if (!pr) { this.log(`[github] ${chatId}: CI failed on ${sha}, PR unreadable and no owner from its branch, no wake`); return }

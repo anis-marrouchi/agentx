@@ -213,7 +213,7 @@ A milestone, label, time, estimate, title or state change starts nothing, even o
 
 A failed pipeline on a merge request starts the agent that owns the merge request. AgentX finds that agent in this order:
 
-1. The AgentX marker `<!-- agentx:<agent id> -->` in the merge request description, when it names an agent in `agents`. Agents should write this marker in every merge request they open.
+1. The AgentX marker `<!-- agentx:<agent id> -->` in the merge request description, when it names an agent in `agents` or an agent on a mesh peer. A peer's agent is started on its own node. Agents should write this marker in every merge request they open.
 2. The source branch `agentx/issue-<n>`: the agent of the open request on issue `<n>`.
 3. Nobody. AgentX starts no agent and posts one note on the merge request saying no agent owns it.
 
@@ -268,7 +268,7 @@ A failed pipeline with no open merge request starts the agent in `routes`, as be
 
 A failed workflow run on a pull request starts the agent that owns the pull request. AgentX finds that agent in this order:
 
-1. The AgentX marker `<!-- agentx:<agent id> -->` in the pull request description, when it names an agent in `agents`. Agents should write this marker in every pull request they open.
+1. The AgentX marker `<!-- agentx:<agent id> -->` in the pull request description, when it names an agent in `agents` or an agent on a mesh peer. A peer's agent is started on its own node. Agents should write this marker in every pull request they open.
 2. The head branch `agentx/issue-<n>`: the agent of the open request on issue `<n>`.
 3. Nobody. AgentX starts no agent and posts one comment on the pull request saying no agent owns it.
 
