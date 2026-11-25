@@ -111,6 +111,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
   var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile', 'operations'];
+  // The pages the React Hub draws (#2218, src/hub/pages.ts), when its switch
+  // is on: this script keeps the hash and the nav, and hides its own sections.
+  var HUB_PAGES = (window.AX_HUB && window.AX_HUB.pages) || [];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
   var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
@@ -359,7 +362,7 @@ ${HUB_NAV_SCRIPT}
     S.view = q.get('view') || S.view;
     // The Cost page's range (#1423) is in the link: 7, 14, 30, 90 or all.
     if (S.view === 'cost' && q.has('range')) { var cr = q.get('range') === 'all' ? 0 : +q.get('range'); if ([7, 14, 30, 90, 0].indexOf(cr) >= 0) C.range = cr; }
-    S.page = PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
+    S.page = PAGES.indexOf(q.get('page')) >= 0 || HUB_PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
     // A Task page names its run (#1381); without one it is the Wall.
     S.task = S.page === 'task' ? readTask(q) : null;
     if (S.page === 'task' && !S.task) S.page = 'wall';
@@ -1403,6 +1406,7 @@ ${HUB_NAV_SCRIPT}
     // Settings (#1428): the owner's sections, or for anyone else a line saying it is the owner's.
     $('wall-settings').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
+    document.querySelector('.ax-wall').classList.toggle('is-hub', HUB_PAGES.indexOf(page) >= 0);
     if (page === 'settings') settingsShow();
     $('wall-activity').hidden = page !== 'activity';
     $('wall-act-switch').hidden = page !== 'activity';

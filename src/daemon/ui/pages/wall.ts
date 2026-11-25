@@ -39,6 +39,7 @@ import { WALL_PEOPLE_CSS } from "./wall-people.client"
 import { WALL_WORKFLOWS_CSS } from "./wall-workflows.client"
 import { WALL_EDITOR_CSS } from "./wall-editor.client"
 import { assetUrl } from "../asset-url"
+import { HUB_REACT_ROOT, hubReactHead } from "../hub-react"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_PICTURES_CSS } from "./wall-pictures.client"
@@ -71,6 +72,9 @@ export interface WallPageOpts {
    *  (/login). Without one there is no sign-in: "Settings are for the
    *  owner" says to use the machine that serves the Hub instead. */
   signIn?: boolean
+  /** The React Hub (#2218): on for this load, and the pages sent back to
+   *  the old code. Off or missing: the page is exactly the old Hub. */
+  hub?: { react: boolean; legacyPages?: readonly string[] }
 }
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
@@ -206,6 +210,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const editorCfg = `<script>window.AX_WALL_EDITOR = ${JSON.stringify({ src: assetUrl("workflow-editor.global.js"), owner })};</script>`
     // The Task page conversation's bundle (#2101 R16), by its hashed URL.
     + `<script>window.AX_TASK_CONVERSATION_SRC = ${JSON.stringify(assetUrl("task-conversation.global.js"))};</script>`
+  // The React Hub (#2218): its tags, or "" when off or not built here.
+  const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages }) : ""
   const groups = wallNavGroups(owner)
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
@@ -249,7 +255,7 @@ ${dashboard}
     </div>
   </nav>
   ${moreSheetHtml(groups, owner)}
-  <div class="ax-wall__main">
+  <div class="ax-wall__main">${hubHead ? "\n    " + HUB_REACT_ROOT : ""}
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
@@ -331,6 +337,7 @@ ${HUB_STATUS_HTML}`
     title: `AgentX · ${HUB_NAME}`,
     body,
     css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS,
+    head: hubHead,
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }

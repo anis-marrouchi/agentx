@@ -152,6 +152,14 @@ export const dashboardConfigSchema = z.object({
       threshold: z.number().int().min(0).max(1000).optional(),
     }).optional(),
   }).default({}),
+  /** The Hub's move to React (#2218). `react` loads the React app on /hub;
+   *  off by default until the first page has moved. `legacyPages` sends a
+   *  moved page back to the old code without a release (page ids as in
+   *  `#page=`). */
+  hub: z.object({
+    react: z.boolean().default(false),
+    legacyPages: z.array(z.string().min(1).max(40)).max(50).default([]),
+  }).default({}),
 }).default({})
 
 export type BoardConfig = z.infer<typeof boardSchema>

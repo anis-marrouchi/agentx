@@ -20,6 +20,8 @@ The dashboard is the web page served by `agentx board serve`. See [Dashboard](/d
 | `dashboard.wall.rhythmHours` | number | `requests.staleAfterHours` | The normal rhythm of work on the [Hub](/dashboard/hub#see-every-project-at-once), in hours. An open task with no move for more than twice this is **stalled**. |
 | `dashboard.wall.projects` | list of objects | `[]` | Names the Hub's projects. A task's project comes from its home repo, its agent, or that agent's workspace, checked in that order. Empty: a task's project is its home repo. |
 | `dashboard.wall.capacity.threshold` | whole number | — | Flags an agent **over capacity** on the [Hub](/dashboard/hub#capacity-per-owner) when its tasks in progress plus the tasks waiting on it are above this. Unset: no flag. |
+| `dashboard.hub.react` | true / false | `false` | Loads the new version of the Hub, which is being rebuilt page by page. Off: the Hub is exactly as before. To try it once without changing the setting, open `/hub?react=1`; to turn it off for one visit, open `/hub?legacy=1`. Today the new version draws one page only, the owner's component list at `/hub?react=1#page=catalog`. |
+| `dashboard.hub.legacyPages` | list of page names | `[]` | Pages that keep the old version while `dashboard.hub.react` is on, for example `["catalog"]`. Names are what follows `#page=` in the Hub's address. Use it to go back on one page without waiting for a release. |
 
 Each entry in `dashboard.daemons`:
 
@@ -628,6 +630,7 @@ The courtesy gate: after a talk in a chat has ended with a goodbye, more "thanks
 
 - **`config check` names a field:** fix the value to match the type in the tables above. Ids for boards and columns must be lowercase.
 - **Dashboard changes don't show:** the dashboard is its own process. Restart it after changing `dashboard` settings.
+- **A Hub page looks wrong with `dashboard.hub.react` on:** open the same address with `?legacy=1` after `/hub` to see the old version. If that one is right, add the page's name to `dashboard.hub.legacyPages` and restart the dashboard.
 - **A script that reads the dashboard's admin data gets `401`:** with `dashboard.token` set, every `/api/admin/` address needs it. Send the header `Authorization: Bearer <your token>` with each request.
 - **The live log in Settings › Diagnostics or the Activity map stays empty on another computer:** sign in at `/login` on that dashboard first, then reload the page.
 - **The config is refused with `mail.sender.user` or `mail.sender.password: put the value in .env`:** move the value to `.env` and write the `${VAR}` reference in `agentx.json`, as in the [mail sender](#mail-sender) example.
