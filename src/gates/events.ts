@@ -18,6 +18,7 @@ export type GateOutcome =
   | "not-fixed"
   | "covered-by-plan"
   | "asked"
+  | "would-ask"
   | "corrected"
   | "untied"
 

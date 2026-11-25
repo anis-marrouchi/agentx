@@ -1,4 +1,5 @@
 import { gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
+import { ClaimHold } from "@/gates/claim-hold"
 import { hookOutput as midTurnHookOutput } from "@/agents/mid-turn"
 import { heldLine } from "@/admission/wait-notice"
 import { handleLookup } from "@/daemon/lookup-api"
@@ -9440,7 +9441,14 @@ export class AgentXDaemon {
                 this.registry.cancelChatTasks(agentId, ctx.channel, ctx.chatId, "client-interrupt")
               }
             })
-            const onDelta = (text: string) => { if (text) writeSse("text", { text }) }
+            // G3 (#2085 v5 T″): an owner turn (operator key or vouched
+            // forward, marked above) holds its text events from the first
+            // claim word; the rest goes out from the checked final text.
+            const claimHold = this.registry.holdsClaims(body.context as any) ? new ClaimHold() : undefined
+            const onDelta = (text: string) => {
+              const out = claimHold ? claimHold.push(text) : text
+              if (out) writeSse("text", { text: out })
+            }
             const onThinking = (text: string) => { if (text) writeSse("thinking", { text }) }
             // Map orchestrator stream events → public SSE shape. The
             // orchestrator (`src/agent/index.ts`) emits flat
@@ -9507,6 +9515,10 @@ export class AgentXDaemon {
               if (resp.error) {
                 writeSse("error", { error: resp.error, errorKind: resp.errorKind })
               } else {
+                if (claimHold?.held) {
+                  const rest = claimHold.rest(resp.content ?? "")
+                  if (rest) writeSse("text", { text: rest })
+                }
                 writeSse("done", {
                   content: resp.content,
                   duration: resp.duration,
