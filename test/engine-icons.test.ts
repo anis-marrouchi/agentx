@@ -40,6 +40,27 @@ describe("engine icons", () => {
     }
   })
 
+  it("in a browser, puts the gradients once at the top of the page, outside every fold (#2276 C1)", () => {
+    const inserted: string[] = []
+    const g = globalThis as { document?: unknown }
+    g.document = {
+      body: { insertAdjacentHTML: (where: string, html: string) => { expect(where).toBe("afterbegin"); inserted.push(html) } },
+      getElementById: (id: string) => (id === "ax-eng-defs" && inserted.length ? {} : null),
+    }
+    try {
+      const svgs = ["codex-cli", "gemini-cli", "google", "codex-cli"].map((k) => engineIcon(k, "x"))
+      expect(inserted.length).toBe(1)
+      expect(inserted[0]).toMatch(/^<svg id="ax-eng-defs"/)
+      for (const svg of svgs) {
+        expect(svg).not.toContain("<defs>")
+        for (const id of svg.match(/url\(#([^)]+)\)/g)!.map((u) => u.slice(5, -1))) expect(inserted[0]).toContain('id="' + id + '"')
+      }
+      expect(engineIcon("google", "x")).toBe(svgs[2])
+    } finally {
+      delete g.document
+    }
+  })
+
   it("is hidden from a screen reader unless named, and escapes the name", () => {
     expect(engineIcon("openai")).toContain('aria-hidden="true"')
     const named = engineIcon("openai", "c", 'Open"AI<')

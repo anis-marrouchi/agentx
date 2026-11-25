@@ -355,7 +355,7 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
       return ltFold("m:" + m.key, "lt__m", head, '<p class="lt__idle">' + (m.state === "silent" ? "Does not answer, so its agents are not shown." : "Slow to answer; asking again.") + "</p>", closed)
     }
     const projects = m.projects.map((p) => ltFold("p:" + m.key + "|" + p.key, "lt__p", '<span class="lt__proj">' + ltEsc(p.label) + "</span>",
-      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m), icon) +(under ? under(r, m) : "")).join("") + "</div>").join(""), closed)).join("")
+      p.items.map((i) => '<div class="lt__i"><div class="lt__item">' + ltEsc(i.label) + "</div>" + i.rows.map((r) => ltRowHtml(r, hrefOf(r, m), icon) + (under ? under(r, m) : "")).join("") + "</div>").join(""), closed)).join("")
     const done = m.done.length ? ltFold("d:" + m.key, "lt__p lt__done", '<span class="lt__proj">Done in the last hour</span><span class="lt__n">' + m.done.length + "</span>",
       m.done.slice(0, 6).map((r) => ltRowHtml(r, hrefOf(r, m), icon)).join("") +
       (m.done.length > 6 ? '<a class="lt__more" href="#page=activity">+' + (m.done.length - 6) + " more</a>" : ""), closed, true) : ""
