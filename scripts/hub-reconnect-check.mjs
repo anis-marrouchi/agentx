@@ -39,11 +39,18 @@ const profile = mkdtempSync(join(tmpdir(), "hub-reconnect-"))
 // wall-page-check.mjs. CI only: on a desktop the sandbox stays on.
 const ciFlags = process.env.CI && process.platform === "linux" ? ["--no-sandbox"] : []
 const chrome = spawn(chromePath, ["--headless=new", "--disable-gpu", "--no-first-run", `--remote-debugging-port=${port}`, ...ciFlags, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" })
-const done = (code) => { try { chrome.kill() } catch {} rmSync(profile, { recursive: true, force: true }); process.exit(code) }
+// Chrome keeps writing its profile while it closes: wait for it to exit,
+// and never let removing the temporary profile change the result.
+const done = async (code) => {
+  try { chrome.kill() } catch {}
+  await Promise.race([new Promise((r) => chrome.once("exit", r)), sleep(5000)])
+  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch {}
+  process.exit(code)
+}
 
 let up = false
 for (let i = 0; i < 150 && !up; i++) { try { await fetch(`http://127.0.0.1:${port}/json/version`); up = true } catch { await sleep(200) } }
-if (!up) { console.error("✗ Chrome did not start"); done(1) }
+if (!up) { console.error("✗ Chrome did not start"); await done(1) }
 const tab = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json()
 const ws = new WebSocket(tab.webSocketDebuggerUrl)
 await new Promise((r) => ws.addEventListener("open", r))
@@ -75,22 +82,22 @@ const waitFor = async (what, ok, seconds) => {
   return null
 }
 
-if (!await waitFor("live card open", (v) => v.state === "open", 30)) done(1)
+if (!await waitFor("live card open", (v) => v.state === "open", 30)) await done(1)
 await cdp("Runtime.evaluate", { expression: "window.__hubMark = 'same-page'" })
 await shot("1-open.png")
 
 // "[d]ist": the pattern must not match this pkill's own shell, whose
 // command line holds the same words.
 execSync(`pkill -f "[d]ist/cli.js demo" || true`)
-if (!await waitFor("reconnecting shown while the daemon is down", (v) => v.state === "reconnecting" && v.banner, 30)) done(1)
+if (!await waitFor("reconnecting shown while the daemon is down", (v) => v.state === "reconnecting" && v.banner, 30)) await done(1)
 await shot("2-reconnecting.png")
 
 const log = openSync(join(out, "demo-restart.log"), "w")
 spawn("node", ["dist/cli.js", "demo", "--no-open", "--keep", "--dashboard-token", token], { cwd: repo, detached: true, stdio: ["ignore", log, log] }).unref()
 const back = await waitFor("open again after the restart, same page", (v) => v.state === "open" && v.back === "1" && !v.banner, 180)
-if (!back) done(1)
-if (back.mark !== "same-page") { console.error("✗ the page was reloaded"); done(1) }
+if (!back) await done(1)
+if (back.mark !== "same-page") { console.error("✗ the page was reloaded"); await done(1) }
 await shot("3-back.png")
 console.log(`Reconnected without a reload. Screenshots in ${out}`)
 ws.close()
-done(0)
+await done(0)
