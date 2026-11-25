@@ -60,7 +60,7 @@ A few tools keep a page of their own: the [workflow history and follow-ups](./wo
 
 ## See which version is running
 
-The right of each page's title (under the title on a phone) shows the daemon's version, its commit (the exact state of the source code it was built from) and when it started, in your time zone.
+On a computer the bottom bar shows the daemon's version; point at it for its commit (the exact state of the source code it was built from) and when it started, in your time zone. On a phone the same line sits under each page's title.
 
 ![The Hub's title row: on the right, the daemon's version and commit, since when it has been running, and Restart pending](/screenshots/wall/build-line.png)
 

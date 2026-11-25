@@ -64,7 +64,7 @@ A card raised while an agent works on a task is also on that task's post, with t
 
 A request whose agent asked you a question has a reply box. **Send reply** sends your words to the agent that has it, which goes on with the work. **Hand to…** gives it to another agent. **Done** closes it, and **Drop** drops it. Each one asks you to confirm first. **Stalled on you** means it has waited on you longer than the quiet time in the requests settings.
 
-On a computer, the side column shows what waits on you (posts paused on an answer, runs held, the oldest wait), **Answered today** with a link to everything answered, and how new items reach you, with a link to the settings. With the Mac popup on, **Show it on the Mac again** in a card's details shows the card on your Mac. It shows within a minute.
+Under the count, one line says what the cards do not: the runs held on an answer and the oldest wait. What was answered is on the **Answered** tab; how new items reach you is in **Settings** › **Inbox**. With the Mac popup on, **Show it on the Mac again** in a card's details shows the card on your Mac. It shows within a minute.
 
 On a phone, the cards fill the width and the buttons share it:
 
@@ -213,7 +213,7 @@ Once a day AgentX sends you one message: how many items are waiting, and the mos
 
 To change the time, or where it goes:
 
-1. **Browser:** on **Needs you**, select **Change in Settings** in the **Reaching you** box. It opens the Hub's **Settings** › **Inbox**; scroll to **Approvals**.
+1. **Browser:** open the Hub's **Settings** › **Inbox** and scroll to **Approvals**.
 2. **Browser:** change **Digest time**, or type a destination such as `telegram:123456` in **Digest goes to**.
 3. **Browser:** select **Save**.
 

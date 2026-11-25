@@ -16,7 +16,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    At the bottom of the nav: **Desk** (what waits on you, to answer there, with its count), **Jobs**, **Workflows**, **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) and, for the owner, the gear for **Settings**.
 
    Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Needs you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
-3. The right of each page's title shows which build the daemon runs: its version, its commit (the exact state of the source code it was built from) and since when it runs. **Restart pending** is added when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
+3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
@@ -64,7 +64,7 @@ Select **Mobile app** at the bottom of the nav. The page says what the phone app
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, the Claude Code plan's five-hour and seven-day use and reset times, and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. When a window has reset since the last reading, the bar shows **not known (reset since last reading)** for that window instead of the old percentage, until a new reading arrives. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Codex and Gemini are left out, Theme is its icon, and the Claude reading, **Accounts** and **CLI** shorten with **…**.
+On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, the Claude Code plan's five-hour and seven-day use and reset times, and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. It shows **not known** when there is no reading. When a window has reset since the last reading, the bar shows **not known (reset since last reading)** for that window instead of the old percentage, until a new reading arrives. Codex and Gemini also show **not known** until they provide usage data; the bar never guesses a percentage. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Codex and Gemini are left out, Theme is its icon, the Claude reading and **CLI** shorten with **…**, and **Accounts** is just its name (point at it for the full text).
 
 ### Switch the CLI an agent runs on
 
@@ -74,7 +74,7 @@ For the owner only. **CLI** names the agent whose chat is open and the engine it
 2. Pick the agent under **Agent**, if it is not the one in view.
 3. Under **Engine**, pick **Claude Code**, **Codex CLI**, **OpenCode**, **Anthropic API (SDK)** or **Orchestrator**, then select **Switch**.
 
-**Check it worked:** the note says **Saved.** *agent* **runs on** *engine* **after a daemon restart.** After `agentx daemon restart --when-idle`, the agent's next run uses that engine; a run already going keeps its own.
+**Check it worked:** the note says **Saved.** *agent***'s next run uses** *engine***.** No restart is needed: the agent's next run uses that engine. A run already going keeps its own, and a busy agent switches when its last run ends.
 
 **If something is wrong:** **Not switched:** and a reason means nothing was saved; the same change in **Settings**, on the agent's card, shows the full error. No **CLI** button: you are not signed in as the owner, or no machine answered the live view yet.
 
@@ -489,7 +489,7 @@ Each agent card shows the agent's name, @handle, its role in the org chart when 
 
    *Scripted demo data; your team's names and machines will differ.*
 
-Most changes apply from the agent's next run, with no restart. A new engine, model or permission mode applies only after a daemon restart; the bar says so before you save, and the **Saved** line names the command. **Terminal**, on that machine:
+Most changes apply from the agent's next run, with no restart, a new engine too. A new model or permission mode applies only after a daemon restart; the bar says so before you save, and the **Saved** line names the command. **Terminal**, on that machine:
 
 ```bash
 agentx daemon restart --when-idle
@@ -714,7 +714,7 @@ The **Activity** page lists every run of every agent on your machines, newest fi
    - **24 h**, **7 d** or **30 d** picks the period.
    - Select an agent's name on a row to see only its runs.
 7. The filters are in the page's address, so you can bookmark or share a view. When nothing matches, **Clear filters** takes the tab and the filters back to their defaults.
-8. On a computer, the column on the right sums up what is listed: runs, failed runs, agent time and cost (runs with no recorded cost are counted apart), then the runs per agent. Select an agent there to see only its runs.
+8. The line over the list sums up what is listed: runs, failed runs, agent time and cost (runs with no recorded cost are counted apart), and links to the Map on the classic page. To see one agent's runs, select its name on a run.
 9. **Timeline**, next to **Feed** beside the title, opens the classic Activity page, with its lane view and the Map.
 
 ![The Activity page: outcome tabs, filters and the period, a line saying one machine does not answer, then runs newest first, with one failed job opened in place, and the period summed up on the right, in a demo](/screenshots/wall/activity.png)
@@ -1042,7 +1042,7 @@ The **Org** page draws your org chart from the top down: whoever reports to no o
 6. Select **Hide … reports** on a card to fold that branch. **Show … under** opens it again.
 7. Select **−** and **+** to zoom out and in, or the percentage to go back to 100%. On a laptop trackpad, pinch over the chart.
 8. Select an agent's card to open its [profile](#see-one-agent-s-profile).
-9. The box on the right, **In the org**, counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
+9. Under the chart, the page counts the people, agents and levels, and lists the agents that are not in the chart. Select one to open its profile.
 10. **Phone:** the chart becomes a list. Each card is indented under its boss, on a line like a thread's, and shows its dotted lines as words. The page says **Only the owner can change the org** and has no **Open the org chart** link.
 
 A person has a grey card with a **person** chip. The page only reads: the Hub has no forms for the org. **Open the org chart** opens the org chart page at `/org`, where you, the owner, change the chart (see [Edit the org chart](./org.md#edit-the-org-chart)).
