@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.273.1](https://github.com/anis-marrouchi/agentx/compare/v0.273.0...v0.273.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** engine logo gradients live once, outside every fold ([#2272](https://github.com/anis-marrouchi/agentx/issues/2272)) ([#2283](https://github.com/anis-marrouchi/agentx/issues/2283)) ([da8e81e](https://github.com/anis-marrouchi/agentx/commit/da8e81ea8f1ded48217500fb4fcf3ad0504d7848))
+
 ## [0.273.0](https://github.com/anis-marrouchi/agentx/compare/v0.272.1...v0.273.0) (2026-11-25)
 
 
