@@ -283,22 +283,21 @@ function guardPreToolUseHooks(
   if (mcpMatcher) {
     entries.push({ matcher: mcpMatcher, hooks: [{ type: "command", command: mcpGuardHookCommand(agentId, daemonPort), timeout: MCP_GUARD_HOOK_TIMEOUT_S }] })
   }
-  // GitLab issue creates through MCP (#2085 G1): every GitLab server the
-  // agent's session loads (its own list and the workspace .mcp.json), under
-  // each name its package gives the create tool. A server with an allow
-  // list is already hooked above.
+  // GitLab issue creates through MCP (#2085 G1): any server whose key names
+  // GitLab, wherever it is set up (user settings included), plus the GitLab
+  // servers the agent's own list and the workspace .mcp.json name by
+  // package or URL, under each name its package gives the create tool. A
+  // server with an allow list is already hooked above.
   const servers: Record<string, McpPolicyFields> = { ...(workspace ? workspaceMcpServers(workspace) : {}), ...(mcp ?? {}) }
-  const gitlabMatcher = gitlabCreateMatcher(gitlabServers(servers).filter((name) => !servers[name]?.allowTools?.length))
-  if (gitlabMatcher) {
-    entries.push({
-      matcher: gitlabMatcher,
-      hooks: [{
-        type: "command",
-        command: mcpGuardHookCommand(agentId, daemonPort, "AgentX guard did not answer; GitLab issue creation through MCP is refused until it does."),
-        timeout: MCP_GUARD_HOOK_TIMEOUT_S,
-      }],
-    })
-  }
+  const listed = Object.keys(servers).filter((name) => servers[name]?.allowTools?.length)
+  entries.push({
+    matcher: gitlabCreateMatcher(gitlabServers(servers), listed),
+    hooks: [{
+      type: "command",
+      command: mcpGuardHookCommand(agentId, daemonPort, "AgentX guard did not answer; GitLab issue creation through MCP is refused until it does."),
+      timeout: MCP_GUARD_HOOK_TIMEOUT_S,
+    }],
+  })
   return entries
 }
 

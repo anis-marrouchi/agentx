@@ -33,11 +33,17 @@ export function gitlabServers(servers?: Record<string, McpServerSpec | null> | n
   return Object.entries(servers ?? {}).filter(([name, spec]) => isGitlabServer(name, spec)).map(([name]) => name)
 }
 
-/** An anchored hook matcher for the create tools of these servers, or
- *  null when there are none. Never matches `create_issue_note`. */
-export function gitlabCreateMatcher(servers: string[]): string | null {
-  if (!servers.length) return null
-  return `^mcp__(?:${servers.map(escapeRe).join("|")})__(?:${GITLAB_CREATE_ISSUE_TOOLS.join("|")})$`
+/** A server key that names GitLab, any case (hook matchers take no flags). */
+const GITLAB_NAMED_SERVER = "[A-Za-z0-9_-]*[Gg][Ii][Tt][Ll][Aa][Bb][A-Za-z0-9_-]*"
+
+/** An anchored hook matcher for the create tools of every server whose key
+ *  names GitLab, wherever it is set up (agent config, workspace .mcp.json,
+ *  user settings), plus the listed `servers`. Servers in `skip` are left
+ *  out (they have a hook already). Never matches `create_issue_note`. */
+export function gitlabCreateMatcher(servers: string[], skip: string[] = []): string {
+  const names = [GITLAB_NAMED_SERVER, ...servers.filter((s) => !skip.includes(s)).map(escapeRe)]
+  const not = skip.length ? `(?!(?:${skip.map(escapeRe).join("|")})__)` : ""
+  return `^mcp__${not}(?:${names.join("|")})__(?:${GITLAB_CREATE_ISSUE_TOOLS.join("|")})$`
 }
 
 /** Is `tool` a GitLab issue create? A server whose key names GitLab is
