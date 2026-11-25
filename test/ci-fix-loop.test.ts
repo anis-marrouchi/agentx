@@ -314,7 +314,7 @@ describe("GitLab: failed MR pipeline", () => {
 
 // --- GitHub ---
 
-function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; webhookSecret?: string; knownAgentIds?: string[] } = {}) {
+function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: number) => string | undefined; handler?: (m: IncomingMessage) => Promise<void>; webhookSecret?: string; knownAgentIds?: string[]; ciKnownAgent?: (id: string) => boolean } = {}) {
   const gh = new GitHubAdapter({
     routes: [{ repo: REPO, agent: "route-agent" }],
     agentMappings: [{ agentId: "author-agent", githubUsernames: ["anis"] }],
@@ -323,6 +323,7 @@ function github(opts: { fixAttempts?: number; agentForIssue?: (r: string, n: num
     ciAgentForIssue: opts.agentForIssue,
     webhookSecret: opts.webhookSecret,
     knownAgentIds: opts.knownAgentIds,
+    ciKnownAgent: opts.ciKnownAgent,
   } as GitHubChannelConfig, () => {})
   ;(gh as any).globalToken = "t"
   const runs: IncomingMessage[] = []
@@ -444,6 +445,15 @@ describe("GitHub: failed workflow run", () => {
     expect(notePosts()).toHaveLength(0)
   })
 
+  it("a marker naming an agent on a mesh peer wakes it (#2227: webhook node hosts other agents)", async () => {
+    prDetails = { ...prDetails, body: "<!-- agentx:dev-session -->" }
+    const { gh, runs } = github({ knownAgentIds: ["atlas"], ciKnownAgent: (id) => id === "dev-session" })
+    await hook(gh, "workflow_run", workflowRun("failure"))
+    await settle(gh)
+    expect(runs.map((r) => r.resolvedAgent)).toEqual(["dev-session"])
+    expect(notePosts()).toHaveLength(0)
+  })
+
   it("a marker naming an unregistered agent wakes nobody", async () => {
     prDetails = { ...prDetails, body: "<!-- agentx:intruder -->" }
     const { gh, runs } = github({ knownAgentIds: ["coder-agent"] })
@@ -525,6 +535,12 @@ describe("ciOwner", () => {
     expect(ciOwner({ body: "", branch: "agentx/issue-5-extra", agentForIssue: forIssue })).toBeUndefined()
     expect(ciOwner({ body: MARKED, branch: "agentx/issue-5", agentForIssue: forIssue, knownAgentIds: ["req-agent"] })).toEqual({ agentId: "req-agent", via: "branch" })
     expect(ciOwner({ body: MARKED, knownAgentIds: ["coder-agent"] })).toEqual({ agentId: "coder-agent", via: "marker" })
+  })
+
+  it("a marker naming an agent a mesh peer hosts owns the PR (#2227)", () => {
+    const onPeer = (id: string) => id === "coder-agent"
+    expect(ciOwner({ body: MARKED, knownAgentIds: ["atlas"], isKnownAgent: onPeer })).toEqual({ agentId: "coder-agent", via: "marker" })
+    expect(ciOwner({ body: "<!-- agentx:intruder -->", knownAgentIds: ["atlas"], isKnownAgent: onPeer })).toBeUndefined()
   })
 })
 

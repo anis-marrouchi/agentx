@@ -204,9 +204,13 @@ export function ciOwner(input: {
   /** The registered agent ids. Set: a marker naming another id is ignored,
    *  since anyone who can edit the description can write one. */
   knownAgentIds?: readonly string[]
+  /** Also registered: an agent another node of the mesh hosts. The webhook
+   *  lands on one node, the PR's agent often lives on another (#2227). */
+  isKnownAgent?: (agentId: string) => boolean
 }): { agentId: string; via: "marker" | "branch" } | undefined {
   const marked = detectAgentxMarker(input.body)
-  if (marked && marked !== UNKNOWN_AGENT && (!input.knownAgentIds || input.knownAgentIds.includes(marked))) {
+  const known = (id: string) => !input.knownAgentIds || input.knownAgentIds.includes(id) || !!input.isKnownAgent?.(id)
+  if (marked && marked !== UNKNOWN_AGENT && known(marked)) {
     return { agentId: marked, via: "marker" }
   }
   const m = input.branch?.match(/^agentx\/issue-(\d+)$/)

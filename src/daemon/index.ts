@@ -4260,6 +4260,7 @@ export class AgentXDaemon {
           // custom usernames); anything else gets a default derivation on
           // (re)start. Add/remove an agent → no GitLab config change needed.
           knownAgentIds: Object.keys(this.config.agents),
+          ciKnownAgent: (id: string) => !!this.config.agents[id] || !!this.mesh?.findAgentPeer(id),
           agentUsernamePrefixes: this.config.channels.gitlab.agentUsernamePrefixes,
           noWakeLabel: this.config.channels.gitlab.noWakeLabel,
           // The CI fix loop's cap (#2102).
@@ -4375,6 +4376,9 @@ export class AgentXDaemon {
           ci: githubConfig.ci,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
           knownAgentIds: Object.keys(this.config.agents),
+          // The webhook lands on one node; a marked PR's agent may live on
+          // a peer. The router forwards the wake there (#2227).
+          ciKnownAgent: (id: string) => !!this.config.agents[id] || !!this.mesh?.findAgentPeer(id),
           ciAgentForIssue: (repo: string, n: number) => requestStoreFor({ root: process.cwd() })
             ?.newestOpenOnIssue(issueHomeLinks("github", repo, n))?.agentId,
         },
