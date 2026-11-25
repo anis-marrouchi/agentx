@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.268.0](https://github.com/anis-marrouchi/agentx/compare/v0.267.0...v0.268.0) (2026-11-25)
+
+
+### Features
+
+* **gates:** Rules Registry gates G1–G3 checked in code ([#2085](https://github.com/anis-marrouchi/agentx/issues/2085)) ([#2213](https://github.com/anis-marrouchi/agentx/issues/2213)) ([0064662](https://github.com/anis-marrouchi/agentx/commit/0064662f2eaf4fd040638c9fba5fc1317fd4f6f7))
+* **hub:** side menu, bottom bar and no right column, like Orca ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR A) ([#2211](https://github.com/anis-marrouchi/agentx/issues/2211)) ([96e4f5d](https://github.com/anis-marrouchi/agentx/commit/96e4f5dbc0f4b66cbf64a2f93627938295170015))
+
 ## [0.267.0](https://github.com/anis-marrouchi/agentx/compare/v0.266.3...v0.267.0) (2026-11-25)
 
 
