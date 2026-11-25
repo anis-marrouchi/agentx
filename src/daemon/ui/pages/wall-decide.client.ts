@@ -26,9 +26,9 @@
 
 export const WALL_DECIDE_SCRIPT = String.raw`
   var D = { data: null, loading: false, reqs: null, tab: 'waiting', kind: '', note: '', noteErr: false, picks: {}, texts: {}, replies: {}, hand: {}, sending: {}, confirm: null };
-  var DEC_BADGE = { card: 'Decision', schedule: 'Schedule', agent: 'New agent', memory: 'Memory', wiki: 'Wiki', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'Draft', email: 'Draft', content: 'Draft', request: 'Request', review: 'Review' };
+  var DEC_BADGE = { card: 'Decision', schedule: 'Schedule', agent: 'New agent', memory: 'Memory', wiki: 'Wiki', fact: 'Wiki fact', question: 'Wiki question', whatsapp: 'Draft', email: 'Draft', content: 'Draft', request: 'Request', ci: 'CI still red', review: 'Review' };
   var DEC_CHIPS = [['decisions', 'Decisions', ['card', 'agent']], ['schedules', 'Schedules', ['schedule']], ['memory', 'Memory', ['memory']], ['wiki', 'Wiki', ['wiki', 'question']],
-    ['drafts', 'Drafts', ['whatsapp', 'email', 'content']], ['requests', 'Requests', ['request']], ['reviews', 'Reviews', []]];
+    ['drafts', 'Drafts', ['whatsapp', 'email', 'content']], ['requests', 'Requests', ['request']], ['ci', 'CI', ['ci']], ['reviews', 'Reviews', []]];
   var DEC_SILENT = { discard: 'the agent drops it', keep: 'nothing is approved', pause: 'the agent pauses this work' };
   var DEC_REACH = { all: 'all', urgent: 'urgent only', off: 'off' };
   /** The choice the advice names: same rule as /approvals and the Mac card. */

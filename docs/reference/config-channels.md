@@ -228,6 +228,7 @@ The run belongs to the merge request, so the reply is a comment there. The messa
 - **One start per commit.** AgentX waits `ci.holdSeconds` after the first failed pipeline of a commit, and puts every failed pipeline of that commit in one start. A later failure on the same commit starts nothing.
 - **A limit per merge request.** `ci.fixAttempts` counts the starts on a merge request, across its commits. After that, AgentX posts one note asking a person to look. A passing pipeline on the merge request's latest commit resets the count. It does not when another pipeline of that commit failed, for example a passing branch pipeline beside a failing merge request pipeline, and a late pass of an older commit does not either.
 - **Repeats are dropped.** The same pipeline sent again with the same status starts nothing and does not count.
+- **Where "still red" shows.** Besides the note on the merge request, the merge request goes on the Hub's **Needs you** list (kind *CI still red*) with its project, number and link, latest commit, number of tries and the agent that owns it. One item per merge request. It leaves the list when a passing pipeline resets the count, when the merge request is merged or closed, or when you answer it. The owning agent's last run on the merge request gets a `ci_still_red` step, so it shows on that run's timeline.
 
 A merge request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed pipeline.
 
@@ -281,6 +282,7 @@ The run belongs to the pull request, so the reply is a comment there. The messag
 - **One start per commit.** AgentX waits `ci.holdSeconds` after the first failed run of a commit, and puts every failed workflow of that commit in one start. A later failure on the same commit, a re-run included, starts nothing.
 - **A limit per pull request.** `ci.fixAttempts` counts the starts on a pull request, across its commits. After that, AgentX posts one comment asking a person to look. The count resets when every workflow run of the pull request's latest commit has passed, if that commit had not started the agent. A late pass of an older commit does not reset it.
 - **Repeats are dropped.** The same run and attempt sent again starts nothing and does not count.
+- **Where "still red" shows.** Besides the comment on the pull request, the pull request goes on the Hub's **Needs you** list (kind *CI still red*) with its repository, number and link, latest commit, number of tries and the agent that owns it. One item per pull request. It leaves the list when the count resets on a passing commit, when the pull request is merged or closed, or when you answer it. The owning agent's last run on the pull request gets a `ci_still_red` step, so it shows on that run's timeline.
 
 A pull request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed run.
 
