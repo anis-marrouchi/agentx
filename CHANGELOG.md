@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.273.0](https://github.com/anis-marrouchi/agentx/compare/v0.272.1...v0.273.0) (2026-11-25)
+
+
+### Features
+
+* **calls:** agent calls the owner back when a long request changes ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265)) ([#2274](https://github.com/anis-marrouchi/agentx/issues/2274)) ([4f3d769](https://github.com/anis-marrouchi/agentx/commit/4f3d769267e0842456a8d988263c7983caa1ceb2))
+* **hub:** show each AI engine's own logo in its own colours ([#2276](https://github.com/anis-marrouchi/agentx/issues/2276)) ([0ee9b37](https://github.com/anis-marrouchi/agentx/commit/0ee9b373b4d1589cd8969242a15188330c4106d3)), closes [#2272](https://github.com/anis-marrouchi/agentx/issues/2272)
+
 ## [0.272.1](https://github.com/anis-marrouchi/agentx/compare/v0.272.0...v0.272.1) (2026-11-25)
 
 
