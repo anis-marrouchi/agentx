@@ -68,11 +68,11 @@ On a desktop screen, the thin bar at the bottom shows, each with its icon: wheth
 
 ### Switch the CLI an agent runs on
 
-For the owner only. **CLI** names the agent whose chat is open and the engine it runs on, for example **Claude Code · CX**.
+For the owner only. **CLI** names the agent whose chat is open and the engine it runs on, for example **Claude Code · CX**, with that engine's own logo in front.
 
 1. Select **CLI** in the bottom bar.
 2. Pick the agent under **Agent**, if it is not the one in view.
-3. Under **Engine**, pick **Claude Code**, **Codex CLI**, **OpenCode**, **Anthropic API (SDK)** or **Orchestrator**, then select **Switch**.
+3. Under **Engine**, pick **Claude Code**, **Codex CLI**, **OpenCode**, **Anthropic API (SDK)** or **Orchestrator**, each shown with its own logo, then select **Switch**.
 
 **Check it worked:** the note says **Saved.** *agent***'s next run uses** *engine***.** No restart is needed: the agent's next run uses that engine. A run already going keeps its own, and a busy agent switches when its last run ends. A saved model the new engine cannot run (for example a Claude model after a switch to Codex CLI or OpenCode) is cleared, so the agent uses that engine's default model; set another one in the agent's **Edit**.
 
@@ -123,7 +123,7 @@ Pick a profile, then start a new task for a Claude Code agent and ask it to run 
    - **Machine**, with a number: how many agents are working on it now, counted as the **Working** list counts them, so the machine numbers add up to **Working**'s count. An agent with two runs counts once and has two rows; point at the number to see the runs. An agent that two machines list counts and shows on the first one only. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
    - **Project**: the project or repository of the work. Runs with no project are under **No project**, at the end.
    - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
-   - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
+   - **One row per agent run**: a turning ring while it works, the model maker's own logo in its own colours (Claude, OpenAI, Gemini; a plain circle for any other model), a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
 3. **Workers**, indented under a working row: the work that run started. That is the agents it handed work to (on this machine or another one, which is then named with **on** and the machine), the agents it called, and the workflows it started or that run under its workflow. Each worker shows a small mark (a turning ring while it works, green when done, red when it failed, amber when it waits), its title, its agent, its state and how long ago it started or ended. A worker that ended stays for an hour. Select a worker to open its run's Task page, with its conversation; a workflow opens on **Workflows**.
 4. **Done in the last hour**, under each machine, lists the agents that finished a run in the last hour and run nothing now, each with a green dot and the first line of its last answer.
    - Every other agent on the machine has an **Idle** row with a green dot, grouped under a folded **N idle** line at the end of the machine. Select the line to unfold it. The order is: working, done in the last hour, idle. A machine with nothing working says **Nothing running.** and still shows its idle group; a machine with no agents at all says **No agents.**
@@ -161,7 +161,7 @@ On a narrow window the panel slides over the page from the right. On a phone it 
 
 The panel reads the same pull or merge requests, with the same tokens, as the **Diff** view, and line comments in **Changes** work as described in [Comment on the lines of a pull or merge request](#comment-on-the-lines-of-a-pull-or-merge-request). A file longer than 3,000 lines shows its first 3,000.
 
-The top of the chat shows the agent's letter, the computer it runs on and its engine, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
+The top of the chat shows the agent's letter, the computer it runs on and its engine with the engine's own logo, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
 
 1. Select **Plan** to see the steps of the agent's open requests and who has each step. Above the steps, a line shows when the request started, when it last moved, its project (its repository when it has no project, or **no project** when it has neither) and links to its home and **History**. Each step shows how long ago it last moved; a step with no known time shows none.
 2. Select **Proofs** to see the steps that are done, each with its proof link.

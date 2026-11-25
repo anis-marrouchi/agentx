@@ -258,7 +258,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
       return '<li><span class="wmc__who">' + who + '</span><span class="wmc__m"><b>' + esc(r.project || 'A session') + '</b> · ' + esc(time) +
         (ATTACH_MODE[r.mode] ? ' · ' + esc(ATTACH_MODE[r.mode]) : '') + (r.pending ? ' · ' + r.pending + ' waiting for it' : '') + '</span></li>';
     }).join('') + '</ul>' : '<p class="wls__k">None attached. Connect one below, or open Claude Code with the AgentX attach hooks.</p>';
-    return '<section class="wmc__s"><h4>Claude Code sessions <small>' + rows.length + '</small></h4>' + list + '</section>';
+    return '<section class="wmc__s"><h4>' + engineIcon('claude-code', 'ax-eng') + ' Claude Code sessions <small>' + rows.length + '</small></h4>' + list + '</section>';
   }
   function connectHtml(n) {
     var c = lvState().cli[n.url], body = '';

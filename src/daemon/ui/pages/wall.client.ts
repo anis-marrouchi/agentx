@@ -99,6 +99,7 @@ import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliTex
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml } from "./wall-tree"
+import { engineIconKey, engineIcon } from "./engine-icons"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -124,6 +125,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
+  ${injectFns({ engineIconKey, engineIcon })}
   ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml, liveTreeHtml, ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
@@ -1341,7 +1343,7 @@ ${HUB_NAV_SCRIPT}
       }, treeClosed, function (r, m) {
         // The workers the run started (#2145), each opening its chat.
         return ltWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge);
-      });
+      }, function (p) { return engineIcon(p, 'lt__prov'); });
     if (html === treeLast) return;
     treeLast = html;
     el.innerHTML = html;

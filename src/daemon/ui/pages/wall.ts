@@ -377,8 +377,10 @@ const WALL_PAGE_CSS = `
 .lt__done .lt__row { margin-left: 12px; }
 .lt__row { display: flex; align-items: flex-start; gap: 7px; padding: 4px 6px; border-radius: var(--ax-radius-sm); color: var(--ax-text); text-decoration: none; min-width: 0; }
 a.lt__row:hover { background: var(--ax-surface-3); }
-.lt__ico { flex: none; display: inline-flex; margin-top: 2px; color: var(--ax-muted); }
-.lt__prov { width: 13px; height: 13px; }
+.lt__ico { flex: none; display: inline-flex; margin-top: 1px; color: var(--ax-text); }
+.lt__prov { width: 14px; height: 14px; }
+/* An engine's logo in its own colours (engine-icons.ts, #2272); one-colour marks take the text colour. */
+.ax-eng { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; color: var(--ax-text); }
 .lt__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lt__title { font-size: 12.5px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt__sub { font-size: 11px; color: var(--ax-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }

@@ -88,12 +88,14 @@ export function hubCliText(a: HubCliAgent | null | undefined): string {
   return hubEngineName(a.tier) + (wait ? " → " + hubEngineName(a.pendingTier!) + " (waiting)" : "") + " · " + a.name
 }
 
-/** The CLI drop-down (R25): which agent, then one choice per engine, then Save. */
-export function hubCliHtml(list: HubCliAgent[], cur: string, note: { kind: string; text: string }, esc: (s: unknown) => string): string {
+/** The CLI drop-down (R25): which agent, then one choice per engine, then Save.
+ *  `icon(tier)`, when given, puts the engine's own logo before its name
+ *  (engine-icons.ts, #2272). */
+export function hubCliHtml(list: HubCliAgent[], cur: string, note: { kind: string; text: string }, esc: (s: unknown) => string, icon?: (tier: string) => string): string {
   const a = list.find((x) => x.id === cur) || null
   const opts = '<option value="">Pick an agent</option>' + list.map((x) => '<option value="' + esc(x.id) + '"' + (x.id === cur ? " selected" : "") + ">" + esc(x.name) + (x.node ? " · " + esc(x.node) : "") + "</option>").join("")
   const next = a ? a.pendingTier || a.tier || "claude-code" : ""
-  const engines = a ? hubEngines().map(([k, label]) => '<label class="hsc__eng"><input type="radio" name="hsc-eng" value="' + esc(k) + '"' + (k === next ? " checked" : "") + "><span>" + esc(label) + "</span></label>").join("") : ""
+  const engines = a ? hubEngines().map(([k, label]) => '<label class="hsc__eng"><input type="radio" name="hsc-eng" value="' + esc(k) + '"' + (k === next ? " checked" : "") + ">" + (icon ? icon(k) : "") + "<span>" + esc(label) + "</span></label>").join("") : ""
   const wait = a ? hubCliWaitText(a) : ""
   return '<p class="hsa__lead">The engine this agent\'s next run uses. A run already going keeps its engine; a busy agent switches when its running jobs end.</p>' +
     '<label class="hsc__who">Agent <select data-hsc-agent aria-label="Agent">' + opts + "</select></label>" +
@@ -130,7 +132,7 @@ export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="H
   <span class="hs__usage" title="No Gemini usage reading is available yet">Gemini: not known</span>
   <span class="hs__gap"></span>
   <button type="button" class="hs__btn hs__acct" id="hs-acct" aria-expanded="false" aria-controls="hs-acct-pop" hidden>Accounts</button>
-  <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" title="Switch the CLI of the agent in view" hidden>${HS_ICON.cli}<span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
+  <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" title="Switch the CLI of the agent in view" hidden><span id="hs-cli-i" class="hs__eng">${HS_ICON.cli}</span><span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
   <button type="button" class="hs__btn" data-wall-theme title="Light / dark" aria-label="Switch light or dark">${HS_ICON.theme}<span>Theme</span></button>
   <span class="hs__i">${HS_ICON.tag}<span id="hs-version">Version —</span></span>
 </footer>
@@ -162,6 +164,8 @@ export const HUB_STATUS_CSS = `
 .hsc__who { display: flex; align-items: center; gap: 8px; }
 .hsc__who select { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
 .hsc__eng { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.hsc__eng .ax-eng, .hs__eng .ax-eng { width: 15px; height: 15px; }
+.hs__eng { display: inline-flex; }
 .hsc__acts { margin: 8px 0; }
 @media (min-width: 641px) { body { padding-bottom: 30px; } .ax-wall__nav { height: calc(100vh - 30px); } }
 .hs__acct { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid var(--ax-border); border-radius: 999px; padding: 1px 10px; cursor: pointer; }

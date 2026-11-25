@@ -68,6 +68,10 @@ describe("Hub bottom status", () => {
     expect(html).not.toContain("restart")
     expect(html).toContain("next run uses")
     expect(html).toContain('class="hsa__note is-ok" role="status">Saved.')
+    // Each engine choice carries its own logo when the page passes the map (#2272).
+    const logos = hubCliHtml(list, "ops", { kind: "", text: "" }, esc, (k) => '<i data-e="' + k + '"></i>')
+    expect(logos).toContain('value="codex-cli" checked><i data-e="codex-cli"></i><span>Codex CLI</span>')
+    expect(html).not.toContain("data-e=")
   })
 
   it("a busy agent: the Switch note says when it lands and the drop-down shows it waiting (#2101 B2)", () => {
