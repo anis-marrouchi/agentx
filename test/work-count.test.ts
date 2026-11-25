@@ -55,8 +55,39 @@ describe("liveWorkCount (#2260)", () => {
     ])
   })
 
-  it("leaves out the agents of a machine that is not up, in both", () => {
+  it("keeps listing the agents of a machine that is not up, never as working (C1)", () => {
     const hub = hubAgentRows(NODES, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, work)
-    expect(hub.rows.some((r) => r.id === "atlas" || r.id === "omar")).toBe(false)
+    const by = (id: string) => hub.rows.find((r) => r.id === id)
+    expect(by("atlas")).toMatchObject({ node: "Clawd", state: "idle", runs: 0, taskId: "" })
+    expect(by("omar")).toMatchObject({ node: "Slow", state: "idle", runs: 0, taskId: "" })
+    expect(hub.rows.map((r) => r.id).sort()).toEqual(["atlas", "coder", "devops", "omar", "pm", "seif"])
+  })
+
+  it("lists an agent on a slow machine under the up machine that also has it", () => {
+    const nodes: LtNode[] = [
+      { id: "slow", name: "Slow", url: "http://slow", reachable: true, checking: true, agents: [{ id: "x", name: "X", runningTasks: [run("x1")] }] },
+      { id: "up", name: "Up", url: "http://up", reachable: true, agents: [{ id: "x", name: "X", runningTasks: [run("x2")] }] },
+    ]
+    const hub = hubAgentRows(nodes, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(nodes))
+    expect(hub.rows).toHaveLength(1)
+    expect(hub.rows[0]).toMatchObject({ node: "Up", state: "working", taskId: "x2" })
+  })
+
+  it("leaves out a machine that does not answer at all", () => {
+    const nodes: LtNode[] = [{ id: "off", name: "Off", url: "http://off", reachable: false, agents: [{ id: "z", name: "Z" }] }]
+    expect(hubAgentRows(nodes, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(nodes)).rows).toEqual([])
+  })
+
+  it("shows an agent two machines list only under the first, so rows match the badge (C2)", () => {
+    const tree = liveTreeModel(NODES, [], NOW)
+    const peer = tree.find((m) => m.name === "Peer")!
+    const ids = peer.projects.flatMap((p) => p.items.flatMap((i) => i.rows.map((r) => r.task && r.task.id)))
+    expect(ids).toEqual(["s1"])
+    expect(peer.working).toBe(1)
+    expect([...peer.done, ...peer.idle].some((r) => r.agentId === "coder")).toBe(false)
+    for (const m of tree) {
+      const working = new Set(m.projects.flatMap((p) => p.items.flatMap((i) => i.rows.map((r) => r.agentId))))
+      expect(working.size).toBe(m.working)
+    }
   })
 })

@@ -266,6 +266,9 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     if (c) { m.working = c.agents; m.runs = c.runs }
     const projects: Record<string, LtProject> = {}
     for (const a of n.agents || []) {
+      // Listed by an earlier machine too: it shows there only, so the rows
+      // match the badge (#2260 C2).
+      if (!a || !a.id || work.home[a.id] !== m.key) continue
       const base = {
         agentId: a.id, agentName: String(a.name || a.id), color: a.color || null,
         model: ltModel(a.model), provider: ltProvider(a.model),
