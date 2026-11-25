@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.273.2](https://github.com/anis-marrouchi/agentx/compare/v0.273.1...v0.273.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** one agent list in the side menu; Needs you once; fits 900 px ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R26, R27) ([#2278](https://github.com/anis-marrouchi/agentx/issues/2278)) ([d066f07](https://github.com/anis-marrouchi/agentx/commit/d066f07d5e9a89f1696cc81b39ebfd19cff14e0c))
+
 ## [0.273.1](https://github.com/anis-marrouchi/agentx/compare/v0.273.0...v0.273.1) (2026-11-25)
 
 
