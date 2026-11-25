@@ -3124,7 +3124,8 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     const line = w.el("hc-work")
     expect(line.hidden).toBe(false)
     // Open ones it owns or holds a step of, newest first; never a closed one.
-    expect(line.innerHTML).toContain('<option value="r1" selected>Post r1</option><option value="r2">Post r2</option><option value="r4">Post r4</option>')
+    // #2101: each choice also says its project and its last move.
+    expect(line.innerHTML).toMatch(/<option value="r1" selected>Post r1( · [^<·]+)? · [^<]*ago<\/option><option value="r2">Post r2[^<]*<\/option><option value="r4">Post r4[^<]*<\/option>/)
     expect(line.innerHTML).not.toContain('value="r3"')
     expect(line.innerHTML).toContain('data-cx="open" data-kind="changes" data-id="r1" aria-pressed="false" title="The changes in acme/shop#12">Changes</button>')
 
@@ -3132,6 +3133,11 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     await w.settle()
     expect(w.el("wall-ctx").hidden).toBe(false)
     expect(w.el("wcx-body").innerHTML).toContain("Build the fix")
+    // #2101: the panel head says when it started, its home and a History link to its timeline.
+    expect(w.el("wcx-body").innerHTML).toContain('<div class="hc__planm">Started <time datetime="')
+    expect(w.el("wcx-body").innerHTML).toContain('href="https://github.com/acme/shop/pull/12"')
+    expect(w.el("wcx-body").innerHTML).toContain('>acme/shop#12</a>')
+    expect(w.el("wcx-body").innerHTML).toContain('href="#post=r1" title="Everything that happened on this request">History</a>')
     expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r1" aria-pressed="true"')
 
     // Picking a request with no forge home: Plan only.

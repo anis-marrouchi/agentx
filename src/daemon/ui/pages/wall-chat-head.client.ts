@@ -46,7 +46,48 @@ export interface HeadReq {
   agentId?: string
   summary?: string
   state?: string
-  plan?: { state?: string; steps?: Array<{ idx: number; name: string; agentId?: string; state?: string; evidence?: string | null; note?: string | null }> } | null
+  plan?: { state?: string; steps?: Array<{ idx: number; name: string; agentId?: string; state?: string; evidence?: string | null; note?: string | null; updatedAt?: number | null }> } | null
+  /** From the request's record (RequestCard extends RequestRecord). */
+  createdAt?: number
+  updatedAt?: number
+  home?: { kind: string; link: string } | null
+}
+
+/** Where and when a request is, for the line under its title in the
+ *  plan views (#2101): its project and its forge home come from the Hub
+ *  post when the page has it (WallPost), else from the card. */
+export interface ReqMeta {
+  id: string
+  createdAt?: number | null
+  /** Its last move: the post's lastMoveAt, else updatedAt. */
+  movedAt?: number | null
+  project?: string | null
+  home?: { kind: string; link: string } | null
+}
+
+/** "24 Nov, 14:02" in the viewer's time, with the full time as its title. */
+export function chDate(ms: number): string {
+  if (!(ms > 0)) return ""
+  const d = new Date(ms)
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]
+  const p2 = (n: number) => (n < 10 ? "0" : "") + n
+  return `<time datetime="${d.toISOString()}" title="${d.toISOString()}">${d.getDate()} ${mon}, ${p2(d.getHours())}:${p2(d.getMinutes())}</time>`
+}
+
+/** The line under a request's title: started · moved · project · home · History.
+ *  History is the request's own timeline, its Hub post (#post=<id>). */
+export function chReqMetaHtml(m: ReqMeta, now: number): string {
+  const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+  const bits: string[] = []
+  if (m.createdAt && m.createdAt > 0) bits.push(`Started ${chDate(m.createdAt)}`)
+  if (m.movedAt && m.movedAt > 0) bits.push(`moved ${esc(chAgo(m.movedAt, now))}`)
+  if (m.project) bits.push(`<b>${esc(m.project)}</b>`)
+  if (m.home && /^https?:\/\//.test(m.home.link)) {
+    const ref = m.home.link.replace(/^https?:\/\/[^/]+\//, "").replace(/\/-\//, "/").replace(/\/(issues|pull|merge_requests)\//, (_s, k) => (k === "merge_requests" ? "!" : "#"))
+    bits.push(`<a href="${esc(m.home.link)}" target="_blank" rel="noopener" title="Its ${esc(m.home.kind)} home">${esc(ref)}</a>`)
+  }
+  bits.push(`<a href="#post=${encodeURIComponent(m.id)}" title="Everything that happened on this request">History</a>`)
+  return `<div class="hc__planm">${bits.join(" · ")}</div>`
 }
 
 /** What the answer box under a card holds while it is being written. */
@@ -131,16 +172,20 @@ export function chAskHtml(a: HeadAsk, o: { name: string; now: number; draft?: As
 }
 
 /** The Plan tab: each request's steps, who has each, and where it is. */
-export function chPlanHtml(reqs: HeadReq[], name: string): string {
+export function chPlanHtml(reqs: HeadReq[], name: string, o: { now?: number; post?: (id: string) => { project?: string | null; home?: { kind: string; link: string } | null; createdAt?: number; lastMoveAt?: number } | null } = {}): string {
   const words: Record<string, string> = { done: "done", active: "now", pending: "next", blocked: "blocked", skipped: "skipped", failed: "failed" }
+  const now = o.now || Date.now()
   if (!reqs.length) return `<p class="hc__tabe">${chEsc(name)} has no open request with a plan.</p>`
   return reqs.map((r) => {
     const steps = (r.plan && r.plan.steps) || []
-    const head = `<div class="hc__planh"><a href="#post=${encodeURIComponent(r.id)}">${chEsc(r.summary || r.id)}</a><span class="hc__pill">${steps.length ? `${steps.length} steps` : "no plan"}</span></div>`
+    const p = (o.post && o.post(r.id)) || null
+    const meta = chReqMetaHtml({ id: r.id, createdAt: (p && p.createdAt) || r.createdAt, movedAt: (p && p.lastMoveAt) || r.updatedAt, project: p ? p.project : null, home: (p && p.home) || r.home || null }, now)
+    const head = `<div class="hc__planh"><a href="#post=${encodeURIComponent(r.id)}">${chEsc(r.summary || r.id)}</a><span class="hc__pill">${steps.length ? `${steps.length} steps` : "no plan"}</span></div>` + meta
     if (!steps.length) return `<section class="hc__plan">${head}</section>`
     return `<section class="hc__plan">${head}<ol>` + steps.map((s) => {
       const st = String(s.state || "pending")
-      return `<li class="is-${chEsc(st)}"><span class="hc__planno" aria-hidden="true">${st === "done" ? "✓" : chEsc(s.idx)}</span><span><b>${chEsc(s.name)}</b><small>${chEsc(s.agentId || "")}${words[st] ? ` · ${words[st]}` : ""}</small></span></li>`
+      const at = s.updatedAt && st !== "pending" ? ` · ${chEsc(chAgo(s.updatedAt, now))}` : ""
+      return `<li class="is-${chEsc(st)}"><span class="hc__planno" aria-hidden="true">${st === "done" ? "✓" : chEsc(s.idx)}</span><span><b>${chEsc(s.name)}</b><small>${chEsc(s.agentId || "")}${words[st] ? ` · ${words[st]}` : ""}${at}</small></span></li>`
     }).join("") + `</ol></section>`
   }).join("")
 }
@@ -176,7 +221,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-face')) return;
-  ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chPlanHtml, chProofsHtml, chEsc })}
+  ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chDate, chReqMetaHtml, chPlanHtml, chProofsHtml, chEsc })}
   var asks = [], reqs = [], drafts = {}, view = null, tab = 'chat', loadedAt = 0, timer = null;
 
   function load() {
@@ -237,7 +282,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
       if (log.insertAdjacentHTML) log.insertAdjacentHTML('beforeend', html); else log.innerHTML += html;
       log.scrollTop = log.scrollHeight;
     }
-    if (tab === 'plan') $('hc-tabview').innerHTML = chPlanHtml(rq, name);
+    if (tab === 'plan') $('hc-tabview').innerHTML = chPlanHtml(rq, name, { now: Date.now(), post: window.AXCtx && window.AXCtx.post });
     if (tab === 'proofs') $('hc-tabview').innerHTML = chProofsHtml(rq, name);
   }
 
