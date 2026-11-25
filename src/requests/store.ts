@@ -68,6 +68,15 @@ export type VerifyState = "verified" | "unverified" | "failed" | "held" | "proof
 /** One proof link the agent gave for one deliverable (close-proof.ts). */
 export interface DeliverableProof { deliverable: string; link: string; at: number }
 
+/** The kinds of reason a decline or drop can name (#2082). */
+export const CLOSE_KINDS = ["superseded"] as const
+export type CloseKind = (typeof CLOSE_KINDS)[number]
+
+/** owner_check while the owner is asked whether a close as superseded
+ *  stands (#2082), and once that ask has moved on. */
+export const OWNER_ASKED = "asked"
+export const OWNER_ANSWERED = "answered"
+
 /** Who a loop is owed to: the owner, an agent id, or a known person id. */
 export const OWED_TO_OWNER = "owner"
 
@@ -100,6 +109,11 @@ export interface RequestRecord {
   evidence: string | null
   /** Why it was declined or dropped. */
   closeReason: string | null
+  /** What kind of reason a decline or drop gave (#2082): "superseded",
+   *  newer work or a later word of the owner replaced it, with the link
+   *  to that kept in `proof`. Null: a plain reason. Unset on hand-built
+   *  rows. */
+  closeKind?: CloseKind | null
   /** Who closed it: OWNER_BY, an agent id, or what closed it on its own
    *  ("plan", "settle", "home", ...). Null for closes before it was kept. */
   closedBy: string | null
@@ -337,7 +351,7 @@ export function ensureRequestTables(db: Database.Database): void {
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
     ["goal_id", "TEXT"], ["goal_title", "TEXT"],
     ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"],
-    ["standing", "TEXT"], ["owner_reopens", "INTEGER"]]) {
+    ["standing", "TEXT"], ["owner_reopens", "INTEGER"], ["close_kind", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -383,6 +397,7 @@ function toRecord(r: any): RequestRecord {
     deliverables: readDeliverables(r.deliverables), deliverableProofs: readProofs(r.deliverable_proofs),
     proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
     standing: readStanding(r.standing), ownerReopens: r.owner_reopens ?? 0,
+    closeKind: (CLOSE_KINDS as readonly string[]).includes(r.close_kind) ? r.close_kind : null,
   }
 }
 
@@ -450,6 +465,9 @@ const settleableAttention = (col: string) => `(${col} LIKE '${OVERDUE_REASON}%' 
 /** SET clause for a statement that writes `state`: the change time moves
  *  only when the state is really different. Takes the new state, then now. */
 const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
+/** The owner's ask about a close as superseded (#2082) is over once the
+ *  request moves on: their reply, their chat, a new question. */
+const ASK_ENDS = `owner_check = CASE WHEN owner_check = '${OWNER_ASKED}' THEN '${OWNER_ANSWERED}' ELSE owner_check END`
 
 export class RequestStore {
   /** Seen once: the job store's columns are on the table (`armDueWake`). */
@@ -991,11 +1009,14 @@ export class RequestStore {
    *  settle and quiet rules follow them from there. Promises are left:
    *  their own check follows them, and so are requests with a decision
    *  card not yet decided: the card's answer moves them. A card linked
-   *  before its ending was kept counts as undecided. Returns the ids moved. */
+   *  before its ending was kept counts as undecided. A close as superseded
+   *  the owner is asked about (#2082) waits for their answer on the
+   *  request itself: a word in the chat is not a yes or a no. Returns the
+   *  ids moved. */
   releaseOwnerWaits(agentId: string, channel: string, chatId: string, now: number): string[] {
     const ids = (this.db.prepare(
       `SELECT r.id FROM requests r WHERE r.agent_id = ? AND r.channel = ? AND r.chat_id = ? AND r.state = 'waiting_owner'
-         AND COALESCE(r.promise, 0) = 0 AND COALESCE(r.state_changed_at, r.updated_at) < ?
+         AND COALESCE(r.promise, 0) = 0 AND COALESCE(r.state_changed_at, r.updated_at) < ? AND COALESCE(r.owner_check, '') != '${OWNER_ASKED}'
          AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'card' AND l.ended IS NULL)`,
     ).all(agentId, channel, chatId, now) as Array<{ id: string }>).map((r) => r.id)
     for (const id of ids) this.progress(id, now)
@@ -1145,7 +1166,7 @@ export class RequestStore {
     // A need written for the owner's answer is met once work goes on (#1126).
     this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL,
-         need = CASE WHEN state IN ('waiting_owner', 'needs_attention') THEN NULL ELSE need END
+         need = CASE WHEN state IN ('waiting_owner', 'needs_attention') THEN NULL ELSE need END, ${ASK_ENDS}
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
@@ -1155,7 +1176,7 @@ export class RequestStore {
    *  unless the agent gives a new one (#1126). */
   waitOnOwner(id: string, question: string, now: number, need: string | null = null): void {
     this.db.prepare(
-      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL
+      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL, ${ASK_ENDS}
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
   }
@@ -1238,19 +1259,25 @@ export class RequestStore {
   }
 
   /** Close it: done needs evidence, declined and dropped need a reason.
-   *  A done may carry a typed proof (#1138 D), kept beside the evidence. */
-  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: string | null = null): boolean {
+   *  A done may carry a typed proof (#1138 D), kept beside the evidence.
+   *  A decline or drop as superseded (#2082) carries the link to what
+   *  replaced it as a link proof, kept the same way. */
+  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: string | null = null, kind: CloseKind | null = null): boolean {
     const text = detail.trim()
     if (!text) throw new Error(state === "done" ? "a finished request needs a link to the evidence" : `a ${state} request needs a reason`)
-    const kept = state === "done" && proof ? JSON.stringify(proof) : null
+    if (kind === "superseded" && state === "done") throw new Error("only a decline or a drop can be superseded")
+    if (kind === "superseded" && (proof?.kind !== "link" || !/^https?:\/\/\S+$/i.test(proof.value))) {
+      throw new Error("a close as superseded needs a link (http or https) to the newer work or the owner's later instruction")
+    }
+    const kept = (state === "done" || kind === "superseded") && proof ? JSON.stringify(proof) : null
     // A close not made by the owner waits for the owner-words check.
     const check = by && by !== OWNER_BY ? "pending" : null
     // A standing order (noqta#807) is ended by the owner alone.
     const res = this.db.prepare(
-      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?,
+      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?, close_kind = ?,
          closed_by = ?, owner_check = ?, owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND state != 'job' AND state NOT IN (${placeholders(CLOSED_STATES.length)})${by === OWNER_BY ? "" : ` AND ${NOT_STANDING}`}`,
-    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept,
+    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept, kind,
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0
     if (closed && state === "done") this.done(id)
@@ -1295,6 +1322,21 @@ export class RequestStore {
     // The count is in the signal (#2056): a loop shows as reopen 1, 2, ...
     if (reopened) this.signal("owner_check_mismatch", id, `reopen ${this.get(id)?.ownerReopens ?? 1}: ${why}`, now)
     return reopened
+  }
+
+  /** A close as superseded after the check already reopened it (#2082):
+   *  not judged again, and not reopened again. The request waits on the
+   *  owner with one question; how it was closed (reason, link) stays.
+   *  Their close (the Hub, the terminal) is the yes; their reply sends it
+   *  back to its agent with their words. True only for the call that
+   *  asked, so the owner is told once. */
+  askOwnerOnClose(id: string, question: string, need: string, now: number): boolean {
+    const q = question.replace(/\s+/g, " ").trim().slice(0, REASON_MAX)
+    return this.db.prepare(
+      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', closed_at = NULL, updated_at = ?, question = ?, need = ?,
+         attention_reason = NULL, notified_at = NULL, owner_check = '${OWNER_ASKED}', owner_check_at = ?, owner_check_note = ?
+       WHERE id = ? AND owner_check = 'pending' AND state IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run("waiting_owner", now, now, q, need.slice(0, REASON_MAX), now, q, id, ...CLOSED_STATES).changes > 0
   }
 
   /** The check found a mismatch again after the reopen limit (#2056): the
@@ -1434,7 +1476,7 @@ export class RequestStore {
     return this.db.transaction(() => {
       const moved = this.db.prepare(
         `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-           question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}
+           question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}, ${ASK_ENDS}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
       ).run("in_progress", now, agentId, now, now, note.trim().slice(0, max) || null, id, ...OPEN_STATES).changes > 0
       if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }

@@ -22,7 +22,9 @@ import { describeDue } from "./due-times"
 //            (link, test, output, check; #1138 D). On a loop with a
 //            closeWhen the daemon runs its check first (#1039). A promise
 //            closed with a proof leaves a dated wiki fact
-//   decline  I will not do it, with the reason
+//   decline  I will not do it, with the reason. reasonKind "superseded"
+//            with a link: newer work or a later word of the owner
+//            replaced it (#2082)
 //   promise  I owe someone something (owedTo, text, due, closeWhen):
 //            an open loop of its own, listed with the open requests
 //   describe what it is (headline) and what is needed from the owner
@@ -225,6 +227,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       body: JSON.stringify({
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, proofs: args.proofs, reason: args.reason,
+        reasonKind: args.reasonKind, link: args.link,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, waitUntil: args.waitUntil, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
         priority: args.priority, dueSource: args.dueSource, makeRoom: args.makeRoom,
@@ -272,6 +275,9 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "done") {
       const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""
       return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${describeProofLinks(r)}${fact}`
+    }
+    if (r.closeKind === "superseded" && r.proof?.value) {
+      return `Request ${r.id} is closed as declined, superseded by ${r.proof.value}. Reason: ${r.closeReason}`
     }
     return `Request ${r.id} is closed as declined. Reason: ${r.closeReason}`
   } catch (e: any) {

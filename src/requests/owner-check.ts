@@ -17,6 +17,15 @@
 //   unclear   recorded, nothing happens (never a reason to bother them)
 // A call that fails is tried again at the next check; after MAX_TRIES the
 // close is marked unclear. Closes older than `maxAgeHours` are left alone.
+//
+// A decline or drop can say it was superseded (#2082), with a link to the
+// newer work or the owner's later word. The check reads that as a match
+// unless the owner's words ask for the old version anyway. Once the check
+// has reopened a request, a later close as superseded is not judged again:
+// the request waits on the owner with one question ("Closed as superseded
+// by <link>. Agree?"). Their close is the yes, their reply the no. Before,
+// the same close was reopened again and again, and the agent's only way
+// out was to send something, even older work.
 
 import { OWNER_BY, type RequestRecord, type RequestStore } from "./store"
 import { deliverablesOf, missingProofs, oneLine, proofBlock, splitCheckEvidence, type Deliverables } from "./close-proof"
@@ -44,6 +53,30 @@ export interface OwnerCheckSettings {
 }
 
 export const DEFAULT_OWNER_CHECK: OwnerCheckSettings = { enabled: false, perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2 }
+
+/** The link a close as superseded points to, or null (#2082). */
+export function supersededLink(r: Pick<RequestRecord, "state" | "closeKind" | "proof">): string | null {
+  return r.state !== "done" && r.closeKind === "superseded" && r.proof?.kind === "link" ? r.proof.value : null
+}
+
+/** The one question the owner is asked about a close as superseded after
+ *  a reopen (#2082), and what they are told with it. */
+export function supersededAsk(r: RequestRecord, link: string): { question: string; need: string; title: string; text: string } {
+  const question = `Closed as superseded by ${link}. Agree?`
+  const need = "Yes: close it (the Hub or agentx requests drop). No: reply on it with what you want, and it goes back to its agent."
+  return {
+    question,
+    need,
+    title: "Closed as superseded: agree?",
+    text: [
+      `${r.closedBy ?? r.agentId} ${r.state === "dropped" ? "dropped" : "declined"} it as superseded by ${link}. The check already reopened it once, so it is not judged or reopened again: it waits on you.`,
+      `What you asked: ${clip(oneLine(r.text))}`,
+      ...(r.closeReason ? [`Reason given: ${clip(oneLine(r.closeReason))}`] : []),
+      question,
+      `Yes: close it (on the Hub, or agentx requests drop ${r.id}). No: reply on it with what you want, and ${r.agentId} gets your words.`,
+    ].join("\n"),
+  }
+}
 
 /** The owner's notice for a close kept after the reopen limit (#2056). */
 export function reopenLimitText(r: RequestRecord, why: string, reopens: number): { title: string; text: string } {
@@ -149,7 +182,13 @@ export function mismatchText(r: RequestRecord, why: string, d: Deliverables | nu
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
     `When it is really done, close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"${missing.length || byCheck ? ', proofs:[{deliverable:<number>, link:"<url>"}]' : ""}}. ` +
       `If work goes on past this turn, give it a due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} so you are woken for it. ` +
-      `If it cannot be done, decline it with the reason in the owner's terms. The owner is told it is open again and that it is yours.`,
+      "The owner is told it is open again and that it is yours.",
+    "",
+    "There are two ways out:",
+    "- deliver what the owner asked, as above;",
+    `- or, when newer work or a later word of the owner replaced this request, close it as superseded with a link to that: {action:"decline", id:"${r.id}", reasonKind:"superseded", link:"<url of the newer work or the owner's later instruction>", reason:"<what replaced it>"}. ` +
+      "That close is not reopened again: it goes to the owner as one question.",
+    "Never send older work just to get the request closed.",
   ].join("\n")
 }
 
@@ -167,12 +206,14 @@ export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deli
     : r.state === "done"
     ? `Closed as DONE by ${r.closedBy}. Evidence given: ${clip(oneLine(r.evidence ?? "(none)"))}`
     : `Closed as ${r.state.toUpperCase()} by ${r.closedBy}. Reason given: ${clip(oneLine(r.closeReason ?? "(none)"))}`
+  const link = supersededLink(r)
   return [
     "The owner asked for this (their own words, possibly a voice transcript):",
     clip(r.text),
     ...(r.ownerNote ? ["", "The owner's latest note on it:", clip(r.ownerNote)] : []),
     "",
     how,
+    ...(link ? [`It was closed as SUPERSEDED: newer work or a later instruction of the owner replaced it. Link given: ${link}`] : []),
     ...proofBlock(d, r.deliverableProofs ?? []),
     "",
     "Answer \"mismatch\" when the close does not deliver what the owner asked, for example:",
@@ -181,6 +222,13 @@ export function ownerCheckPrompt(r: RequestRecord, d: Deliverables | null = deli
     "- it was declined or dropped for a reason that goes against the owner's words;",
     "- it claims done but the evidence does not show what was asked.",
     "Answer \"match\" when the close does what was asked, or the owner's words were only a question, a status check or a remark that the close answers.",
+    ...(link
+      ? [
+          "A close as SUPERSEDED, with a link to newer work or to a later instruction of the owner, is a \"match\", unless the owner's words say to deliver the old version anyway. " +
+            "It is not a refusal: the owner's later word is not in this text, the link points to it.",
+          "If that link cannot be read or does not show what replaced the request, answer \"unclear\", not \"mismatch\".",
+        ]
+      : []),
     "Answer \"unclear\" when you cannot tell from this text.",
     "",
     "Reply as {\"verdict\":\"match\"|\"mismatch\"|\"unclear\",\"why\":\"one plain sentence, addressed to the owner\"}.",
@@ -218,7 +266,8 @@ export interface OwnerCheckDeps {
    *  (noqta#876). Unset: every id is taken for one. */
   hasAgent?: (id: string) => boolean
   /** Tells the request's owner (#2056): a close kept after the reopen
-   *  limit. Unset: only recorded. */
+   *  limit, or the one question about a close as superseded (#2082).
+   *  Unset: only recorded. */
   tellOwner?: (r: RequestRecord, title: string, text: string) => Promise<void> | void
 }
 
@@ -229,15 +278,22 @@ export class OwnerWordsCheck {
   constructor(private readonly deps: OwnerCheckDeps) {}
 
   /** Judge up to `perCheck` closes. Never throws; one run at a time. */
-  async run(): Promise<{ checked: number; reopened: string[]; woken: string[] }> {
+  async run(): Promise<{ checked: number; reopened: string[]; woken: string[]; asked: string[] }> {
     const s = this.deps.settings()
-    const out = { checked: 0, reopened: [] as string[], woken: [] as string[] }
+    const out = { checked: 0, reopened: [] as string[], woken: [] as string[], asked: [] as string[] }
     if (!s.enabled || this.running) return out
     this.running = true
     try {
       const now = this.deps.now?.() ?? Date.now()
       for (const r of this.deps.store.pendingOwnerChecks(now - s.maxAgeHours * 3600_000, s.perCheck)) {
         out.checked++
+        // Reopened once already: a close as superseded goes to the owner
+        // as one question, not to the model again (#2082).
+        const link = supersededLink(r)
+        if (link && (r.ownerReopens ?? 0) >= 1) {
+          await this.askOwner(r, link, out)
+          continue
+        }
         const v = await this.judge(r, s)
         const at = this.deps.now?.() ?? Date.now()
         if (!v) {
@@ -302,6 +358,21 @@ export class OwnerWordsCheck {
       this.running = false
     }
     return out
+  }
+
+  /** The owner is asked once whether a close as superseded stands
+   *  (#2082). Nothing is woken: the next step is theirs. */
+  private async askOwner(r: RequestRecord, link: string, out: { asked: string[] }): Promise<void> {
+    const ask = supersededAsk(r, link)
+    if (!this.deps.store.askOwnerOnClose(r.id, ask.question, ask.need, this.deps.now?.() ?? Date.now())) return
+    out.asked.push(r.id)
+    this.deps.log?.(`[requests] ${r.id}: closed as superseded by ${link} after ${r.ownerReopens ?? 0} reopen(s); asked the owner, not judged again`)
+    if (!this.deps.tellOwner) return
+    try {
+      await this.deps.tellOwner(r, ask.title, ask.text)
+    } catch (e: any) {
+      this.deps.log?.(`[requests] ${r.id}: could not ask the owner about its close as superseded: ${e?.message ?? e}`)
+    }
   }
 
   /** Who is woken for a close judged a mismatch, or null. A plan's

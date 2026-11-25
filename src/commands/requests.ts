@@ -2,7 +2,7 @@ import { Command } from "commander"
 import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { CLOSED_STATES, OPEN_STATES, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES, OWNER_ASKED, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
 import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
@@ -107,6 +107,7 @@ function printRequest(r: RequestRecord): void {
   else if (r.qa) console.log((r.qa.verdict === "block" ? chalk.red : r.qa.verdict === "risk" ? chalk.yellow : chalk.green)(`    QA: ${describeQa(r.qa)}`))
   if (r.evidence) console.log(chalk.green(`    Evidence: ${r.evidence}`))
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
+  if (r.closeKind === "superseded" && r.proof) console.log(chalk.dim(`    Superseded by: ${r.proof.value}`))
   if (r.closedBy) console.log(chalk.dim(`    Closed by: ${r.closedBy}`))
   if (r.ownerCheck) console.log((r.ownerCheck === "mismatch" ? chalk.red : chalk.dim)(`    Owner-words check: ${r.ownerCheck}${r.ownerCheckNote ? ` (${r.ownerCheckNote})` : ""}`))
 }
@@ -259,23 +260,36 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
     .description(description)
     .option(flag, name === "done" ? "link to the proof: PR, issue, message, deploy" : "why it is dropped")
   if (name === "done") cmd.option("--reason <text>", "close it by hand without a link, saying why (\"checked by hand\"); also closes a loop its check cannot verify")
-  cmd.action((id: string, opts: { evidence?: string; reason?: string }) => {
+  else cmd.option("--superseded-by <link>", "newer work or a later instruction of the owner replaced it: the link to that (#2082)")
+  cmd.action((id: string, opts: { evidence?: string; reason?: string; supersededBy?: string }) => {
       const s = store()
       if (!s) return
       // The owner's hand close (#1039): the record says it skipped any check.
       const detail = name === "done"
         ? opts.evidence ?? (opts.reason ? `closed by owner: ${opts.reason}` : undefined)
-        : opts.reason ?? "dropped by the owner"
+        : opts.reason ?? (opts.supersededBy ? `superseded by ${opts.supersededBy}` : "dropped by the owner")
       if (!detail) { console.error(chalk.red(`  ${missing}`)); process.exitCode = 1; return }
+      const link = opts.supersededBy?.trim()
+      if (link !== undefined && !/^https?:\/\/\S+$/i.test(link)) {
+        console.error(chalk.red("  --superseded-by needs an http or https link")); process.exitCode = 1; return
+      }
       const r = s.get(id)
       if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
       // Run from an agent's own shell, it is that agent's close, and the
       // owner-words check reads it like any other agent close.
       const by = process.env.AGENTX_AGENT_ID?.trim() || OWNER_BY
-      if (!s.close(id, name === "done" ? "done" : "dropped", detail, Date.now(), null, by)) {
+      // While the owner is asked whether a close as superseded stands
+      // (#2082), only the owner moves it: the same guard as the API.
+      if (by !== OWNER_BY && r.state === "waiting_owner" && r.ownerCheck === OWNER_ASKED) {
+        console.error(chalk.red(`  Not changed: the owner is asked about your close as superseded ("${r.question ?? "Agree?"}"). Their close is the yes; their reply sends it back to you.`))
+        process.exitCode = 1; return
+      }
+      const now = Date.now()
+      const proof = link ? { kind: "link" as const, value: link.slice(0, 500), ranAt: now } : null
+      if (!s.close(id, name === "done" ? "done" : "dropped", detail, now, proof, by, link ? "superseded" : null)) {
         console.error(chalk.red(`  ${id} is already closed (${STATE_LABEL[r.state] ?? r.state})`)); process.exitCode = 1; return
       }
-      console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : "dropped"}`))
+      console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : link ? `dropped, superseded by ${link}` : "dropped"}`))
     })
 }
 closeCommand("done", "close a request as finished, with a link to the evidence or the reason", "--evidence <link>", "a finished request needs --evidence <link> or --reason <text>")

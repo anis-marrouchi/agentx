@@ -1152,6 +1152,7 @@ const TOOLS = [
       "Say what you are doing with a request the owner gave you, so it stays on their list of open requests until it is closed. " +
       "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
+      "When newer work or a later instruction of the owner replaced the request, decline it with reasonKind:'superseded' and link (the newer work or the owner's later message): never send older work just to close it. " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
       "flow gives the daily flow rate (requests closed, done or dropped, out of those asked), today first then one line per day, with the stuck, waiting and dropped counts: use it when the owner asks how the requests are flowing or what the rate is. " +
       "When the request serves a larger goal (a launch, a client project, a quarter's target), name it on accept with goal {id, title}; goals lists every goal with its open and done requests, how far along it is and what it cost. " +
@@ -1231,6 +1232,13 @@ const TOOLS = [
             "When the owner named several things, a close by check waits for a link for each. The request's own issue is no proof. Give them on step (no step number) as you go.",
         },
         reason: { type: "string", description: "decline: why you will not do it." },
+        reasonKind: {
+          type: "string",
+          enum: ["superseded"],
+          description: "decline, optional: superseded when newer work or a later instruction of the owner replaced the request. Needs link. " +
+            "The close check reads it as done unless the owner asked for the old version anyway; after the check reopened the request once, it goes to the owner as one question instead.",
+        },
+        link: { type: "string", description: "decline with reasonKind superseded: the http or https link to the newer work or the owner's later instruction." },
         owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
         text: { type: "string", description: "promise: what you promised, in one sentence." },
         due: { type: "string", description: "promise, accept, wait, optional: when it is due, as an ISO date. Past it, the owner sees it as stalled. Where the node gives due times from the queue, leave it out on promise and accept (send estimateMinutes and priority instead) unless the requester named the time or an outside fact sets it: then give dueSource too." },

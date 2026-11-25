@@ -796,6 +796,7 @@ Drop a request you no longer want.
 | Flag | Default | What it does |
 |---|---|---|
 | `--reason <text>` | — | Why it is dropped. |
+| `--superseded-by <link>` | — | Newer work or a later instruction replaced it: the http or https link to that. Kept like a done's proof. Run from an agent's own run, the owner-words check reads it as a match unless the owner asked for the old version, and asks the owner once instead of reopening it a second time. |
 
 ### `agentx requests due <id> <time>`
 

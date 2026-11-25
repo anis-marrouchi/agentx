@@ -1,4 +1,4 @@
-import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
+import { CLOSED_STATES, CLOSE_KINDS, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, OWNER_ASKED, type CloseKind, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
 import { checkEvidence, closeByCheckNow, deliverablesOf, oneLine, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
@@ -333,6 +333,20 @@ export async function handleRequestsCall(
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
+/** A decline's reason kind and its link (#2082): superseded, with a link
+ *  (http or https) to the newer work or the owner's later instruction.
+ *  Null: a plain reason. A string: why it is refused. */
+export function parseCloseKind(input: Record<string, any>, action: string): { kind: CloseKind; link: string } | null | string {
+  const kind = str(input.reasonKind).toLowerCase()
+  const link = str(input.link)
+  if (!kind && !link) return null
+  if (action !== "decline") return "reasonKind and link go with decline only"
+  if (!kind) return 'link goes with reasonKind "superseded": the link to what replaced the request'
+  if (!(CLOSE_KINDS as readonly string[]).includes(kind)) return `reasonKind must be one of ${CLOSE_KINDS.join(", ")}`
+  if (!/^https?:\/\/\S+$/i.test(link)) return "a decline as superseded needs link: the http or https address of the newer work or the owner's later instruction"
+  return { kind: kind as CloseKind, link: link.slice(0, 500) }
+}
+
 export const LIST_MAX = 500
 
 /** GET /requests filters (#394), all optional:
@@ -637,6 +651,20 @@ export function handleRequestsApi(
     if ((action === "done" || action === "decline") && request.standing) {
       return { status: 409, body: { error: standingRefusal(request.standing), standing: true } }
     }
+    // The owner is asked whether a close as superseded stands (#2082):
+    // their answer moves it, not the agent.
+    if (request.state === "waiting_owner" && request.ownerCheck === OWNER_ASKED && ["accept", "wait", "done", "decline"].includes(action)) {
+      return {
+        status: 409,
+        body: {
+          error: `Not changed: the owner is asked about your close as superseded ("${request.question ?? "Agree?"}"). ` +
+            "Their close is the yes; their reply sends it back to you with their words. If they answered you in chat, ask them to close it or reply on the request.",
+          ownerAsked: true,
+        },
+      }
+    }
+    const closeKind = parseCloseKind(input, action)
+    if (typeof closeKind === "string") return { status: 400, body: { error: closeKind } }
 
     // Kept before the check runs: the gate reads them. The same link
     // twice is not added again, so the second pass adds nothing.
@@ -818,7 +846,9 @@ export function handleRequestsApi(
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
       } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof, agentId)
-      else store.close(request.id, "declined", str(input.reason), now, null, agentId)
+      else if (closeKind) {
+        store.close(request.id, "declined", str(input.reason) || `superseded by ${closeKind.link}`, now, { kind: "link", value: closeKind.link, ranAt: now }, agentId, closeKind.kind)
+      } else store.close(request.id, "declined", str(input.reason), now, null, agentId)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       // A due time the agent accepts wakes it when it comes (#1908), like
