@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.267.0](https://github.com/anis-marrouchi/agentx/compare/v0.266.3...v0.267.0) (2026-11-25)
+
+
+### Features
+
+* **agents:** one run per agent and home, as a lease ([#2084](https://github.com/anis-marrouchi/agentx/issues/2084)) ([#2215](https://github.com/anis-marrouchi/agentx/issues/2215)) ([42f59ea](https://github.com/anis-marrouchi/agentx/commit/42f59ea28a699fa95b0cc3ab36d9b59d617f67d8))
+
 ## [0.266.3](https://github.com/anis-marrouchi/agentx/compare/v0.266.2...v0.266.3) (2026-11-25)
 
 
