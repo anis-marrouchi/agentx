@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { hubAgentRows } from "../src/daemon/ui/pages/hub-agents"
-import { liveTreeModel, liveWorkCount, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
+import { haListHtml, hubAgentRows } from "../src/daemon/ui/pages/hub-agents"
+import { liveTreeModel, liveWorkCount, ltEsc, ltNodeKey, ltNodeState, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 
 // #2260: the Hub's "At work now" tree and its "Working" list read the same
 // live snapshot but counted with two rules (runs against agents; a machine
@@ -89,5 +90,66 @@ describe("liveWorkCount (#2260)", () => {
       const working = new Set(m.projects.flatMap((p) => p.items.flatMap((i) => i.rows.map((r) => r.agentId))))
       expect(working.size).toBe(m.working)
     }
+  })
+})
+
+// #2258: the other pages that count work read the same rule.
+const src = (f: string) => readFileSync(new URL("../src/daemon/ui/pages/" + f, import.meta.url), "utf8")
+/** One browser function out of a page script, by its name (two-space indent). */
+function pick(file: string, name: string): string {
+  const s = src(file)
+  const at = s.indexOf("  function " + name + "(")
+  expect(at, name + " in " + file).toBeGreaterThan(-1)
+  return s.slice(at, s.indexOf("\n  }\n", at) + 4)
+}
+
+describe("every page counts work with liveWorkCount (#2258)", () => {
+  const work = liveWorkCount(NODES)
+  const S = { live: { nodes: NODES } }
+
+  it("the nav's running count is the runs of working agents", () => {
+    const f = new Function("S", "liveWorkCount", pick("wall.client.ts", "runningCount") + "; return runningCount()")
+    expect(f(S, liveWorkCount)).toBe(work.runs) // 4, not 7 (all runs on every machine)
+  })
+
+  it("the Agents page counts an agent's runs on its home machine only", () => {
+    const f = new Function("S", "liveWorkCount", "ltNodeKey", "agentStats", "nameOf",
+      pick("wall.client.ts", "allAgents") + "; return allAgents()")
+    const list = f(S, liveWorkCount, ltNodeKey, () => [], (id: string) => id) as Array<{ id: string; running: number }>
+    const runs = Object.fromEntries(list.map((a) => [a.id, a.running]))
+    expect(runs).toMatchObject({ coder: 2, devops: 1, seif: 1, atlas: 0, omar: 0 })
+    expect(list.filter((a) => a.running).length).toBe(work.agents)
+  })
+
+  it("the status bar's agents running is the Working count", () => {
+    const el = { textContent: "" }
+    const f = new Function("S", "liveWorkCount", "$", "hsPaintConn", "hsPaintCli",
+      pick("hub-status.client.ts", "hsPaintRunning") + "; hsPaintRunning()")
+    f(S, liveWorkCount, () => el, () => {}, () => {})
+    expect(el.textContent).toBe(work.agents + " agents running")
+  })
+
+  it("the Live page's running now is the Working count", () => {
+    const live = src("live.ts")
+    expect(live).toContain("busy: liveWorkCount(snapshot.nodes).agents")
+    expect(live).toMatch(/injectFns\(\{ ltNodeKey, ltNodeState, liveWorkCount \}\)/)
+    expect(live).not.toContain("summary.busy++")
+    // The rule the page runs is the shared one; its inputs are the same snapshot.
+    expect(ltNodeState(NODES[1])).toBe("silent")
+  })
+
+  it("the Working list groups by machine, each agent once", () => {
+    const m = hubAgentRows(NODES, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, work)
+    const html = haListHtml(m, "working", "", false, ltEsc, () => "now")
+    const heads = [...html.matchAll(/<h4 class="ha__m">([^<]*) <span>(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
+    expect(heads).toEqual([["MacBook-Local", 2], ["Peer", 1]])
+    expect(heads.reduce((n, h) => n + (h[1] as number), 0)).toBe(work.agents)
+    expect((html.match(/data-ha-agent="coder"/g) || []).length).toBe(1)
+  })
+
+  it("one machine working: no machine headings", () => {
+    const one = NODES.slice(0, 1)
+    const m = hubAgentRows(one, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(one))
+    expect(haListHtml(m, "all", "", false, ltEsc, () => "now")).not.toContain("ha__m")
   })
 })

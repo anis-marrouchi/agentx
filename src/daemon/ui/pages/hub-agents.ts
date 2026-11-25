@@ -181,7 +181,15 @@ export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: bo
     if (filter !== "all" && filter !== k) continue
     const rows = m.rows.filter((r) => r.state === k)
     if (!rows.length) continue
-    body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>" + rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
+    body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>"
+    // Working groups by machine, as the "At work now" tree does (#2258):
+    // each agent once, on the machine it counts on (hubAgentRows).
+    const order: string[] = []
+    const byNode: Record<string, HaRow[]> = {}
+    for (const r of rows) (byNode[r.node] || (order.push(r.node), byNode[r.node] = [])).push(r)
+    body += k === "working" && order.length > 1
+      ? order.map((n) => '<h4 class="ha__m">' + esc(n || "?") + " <span>" + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
+      : rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
   }
   const idle = m.rows.filter((r) => r.state === "idle")
   if (filter === "all" && idle.length) {
