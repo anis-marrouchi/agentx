@@ -68,6 +68,7 @@ A release folder is a built copy of AgentX: a folder that holds `dist/cli.js`. W
    agentx daemon upgrade /opt/agentx/releases/2.4.0 --expect-version 2.4.0
    ```
 4. Read what it prints. It starts a one-time background job, then shows that job's log:
+   - `better-sqlite3 with /usr/local/bin/node: loaded (modules 127)` first. The upgrade loads the release's database module with the same Node that launchd runs the daemon with. If it doesn't load (the folder was built with another Node), it rebuilds the module for that Node and says `rebuilt`. If that fails too, it ends with `RESULT refused` and changes nothing.
    - `waiting: 2 task(s) running` while agents are still busy.
    - `… 1 path(s) → /opt/agentx/releases/2.4.0` for the daemon and for every other running job that uses the same release folder, such as the dashboard.
    - `daemon answers: 2.4.0 PID … after 95s` once the new daemon answers.
@@ -370,7 +371,7 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`restart` stops and prints a `sudo systemctl restart …` command:** `sudo` needed a password and no terminal was attached. AgentX is still running. Run the printed command yourself, or allow that one command in `sudoers`.
 - **`restart` says `The daemon did not come back within 5 min`:** the new daemon didn't start, or starts slowly. Check `curl -s http://127.0.0.1:18800/health` once more. If it still doesn't answer, run the `Start it with:` command it printed, then read `agentx daemon logs`.
 - **`upgrade` says `Another upgrade is running`:** wait for it to end. Its log is the newest `.agentx/logs/upgrade-*.log`.
-- **`upgrade` ends with `RESULT refused`:** nothing was changed. The reason follows: tasks still running (raise `--timeout` or add `--force`), the wrong version, or a settings file that doesn't run a release folder.
+- **`upgrade` ends with `RESULT refused`:** nothing was changed. The reason follows: tasks still running (raise `--timeout` or add `--force`), the wrong version, a settings file that doesn't run a release folder, or `better-sqlite3 does not load with the daemon's Node`. For that last one, run the `pnpm rebuild better-sqlite3` command it prints inside the release folder, then run `upgrade` again.
 - **`upgrade` ends with `RESULT rolled-back`:** the new release didn't answer in time and the old one is running again. Read `agentx daemon logs` for why the new one failed to start.
 - **`upgrade` ends with `RESULT down`:** neither release answers. Run the `launchctl bootstrap …` command it printed. The old settings files are in `.agentx/upgrade/backup-<time>/`.
 - **`restart --abort-on-timeout` exited with `Not restarting`:** tasks were still running when the wait ran out. Try again later, or raise `--timeout`.
