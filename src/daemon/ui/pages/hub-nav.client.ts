@@ -25,7 +25,7 @@ export const HUB_NAV_SCRIPT = String.raw`
   function haModel() {
     var nodes = (S.live && S.live.nodes) || [];
     var needs = typeof decAll === 'function' ? decAll() : [];
-    return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain);
+    return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain, liveWorkCount(nodes));
   }
   function renderHubAgents() {
     hsPaintRunning();

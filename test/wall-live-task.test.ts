@@ -464,7 +464,7 @@ describe("The live tree in the nav (#2101 PR 1c)", () => {
     const tree = w.el("wall-tree-body").innerHTML
     expect(tree.match(/class="lt__spin"/g)).toHaveLength(2)
     expect(tree).toContain("Customer Desk")
-    expect(tree).toContain('title="2 working now">2</span>')
+    expect(tree).toContain('title="2 agents working now">2</span>')
     expect(w.el("wall-feed").innerHTML).toBe(feed)
     // A snapshot that names the node by its URL keeps the name seen before.
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...LIVE.nodes[0], name: "http://node-a" }] }) })

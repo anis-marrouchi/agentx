@@ -8,7 +8,7 @@
 import { listInbox } from "@/approvals/inbox"
 import { readOwnerList } from "@/desk/owner-list"
 import { hubAgentRows, type HaModel, type HaNeed } from "./ui/pages/hub-agents"
-import { ltPlain, ltTitle, type LtNode } from "./ui/pages/wall-tree"
+import { liveWorkCount, ltPlain, ltTitle, type LtNode } from "./ui/pages/wall-tree"
 
 /** What waits on the owner, one entry per item, with the agent that asks. */
 export function hubNeeds(root: string, node: { url: string; name: string }): HaNeed[] {
@@ -27,6 +27,6 @@ export function hubNeeds(root: string, node: { url: string; name: string }): HaN
 
 /** The rows, from a live snapshot's nodes (board-dashboard's buildLiveSnapshot, quick). */
 export function hubAgentsFor(nodes: LtNode[], node: { url: string; name: string }, now: number, dayStart: number, root = process.cwd()): HaModel & { at: string } {
-  const model = hubAgentRows(nodes || [], hubNeeds(root, node), now, dayStart, (t) => ltTitle(t, null), ltPlain)
+  const model = hubAgentRows(nodes || [], hubNeeds(root, node), now, dayStart, (t) => ltTitle(t, null), ltPlain, liveWorkCount(nodes || []))
   return { ...model, at: new Date(now).toISOString() }
 }

@@ -97,7 +97,10 @@ export interface LtMachine {
   /** up, checking (slow, asked again) or silent (does not answer: "not checked"). */
   state: "up" | "checking" | "silent"
   error: string
+  /** Agents working on it, by liveWorkCount (the Hub's Working rule, #2260). */
   working: number
+  /** Their runs: one agent can have several. */
+  runs: number
   projects: LtProject[]
   /** Agents that finished in the last hour, with nothing running now. */
   done: LtRow[]
@@ -194,6 +197,52 @@ export function ltPlace(t: LtTask, post: LtPost | null): { project: string; item
   return { project, item: names[ch] || ch || "Other", itemKey: "ch:" + ch }
 }
 
+/** A machine's key in the Hub: its URL first (a node still being asked has
+ *  its URL as id, and its real id once it answers). */
+export function ltNodeKey(n: LtNode): string {
+  return String(n.url || n.id || n.name)
+}
+
+/** Whether a machine's agents count: up (answers), checking (slow, asked
+ *  again) or silent (does not answer, or answered with an error). */
+export function ltNodeState(n: LtNode): "up" | "checking" | "silent" {
+  if (n.checking) return "checking"
+  return !n.reachable || n.error ? "silent" : "up"
+}
+
+/** Who is working now: the one count rule for the tree's "At work now"
+ *  badges and the Hub's "Working" list (#2260). Only machines that are up
+ *  count. An agent counts once, on the first up machine that lists it, and
+ *  is working when it has at least one run; its runs are counted apart. */
+export interface LtWorkCount {
+  /** Agents working, all machines. */
+  agents: number
+  /** Runs going, of those agents. */
+  runs: number
+  /** Per machine (ltNodeKey), up machines only. */
+  byNode: Record<string, { agents: number; runs: number }>
+  /** agent id → the machine (ltNodeKey) it counts on. */
+  home: Record<string, string>
+}
+
+export function liveWorkCount(nodes: LtNode[]): LtWorkCount {
+  const out: LtWorkCount = { agents: 0, runs: 0, byNode: {}, home: {} }
+  for (const n of nodes || []) {
+    if (!n || ltNodeState(n) !== "up") continue
+    const key = ltNodeKey(n)
+    const c = out.byNode[key] || (out.byNode[key] = { agents: 0, runs: 0 })
+    for (const a of n.agents || []) {
+      if (!a || !a.id || out.home[a.id]) continue
+      out.home[a.id] = key
+      const runs = (a.runningTasks || []).filter(Boolean).length
+      if (!runs) continue
+      c.agents++; c.runs += runs
+      out.agents++; out.runs += runs
+    }
+  }
+  return out
+}
+
 /** The tree, from the live snapshot and the Hub posts. `now` in ms. */
 export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): LtMachine[] {
   const byId: Record<string, LtPost> = {}
@@ -204,16 +253,17 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     if (p.group && p.group.channel && p.group.chatId) byChat[p.group.channel + "|" + p.group.chatId] = p
   }
   const DONE_WINDOW = 3_600_000
+  const work = liveWorkCount(nodes)
   return (nodes || []).map((n) => {
-    const silent = (!n.reachable || !!n.error) && !n.checking
     const m: LtMachine = {
-      // The URL first: a node still being asked has its URL as id, and its
-      // real id once it answers, so an id key would reopen a folded machine.
-      key: String(n.url || n.id || n.name), id: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
-      state: n.checking ? "checking" : silent ? "silent" : "up", error: String(n.error || ""),
-      working: 0, projects: [], done: [], idle: [],
+      key: ltNodeKey(n), id: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
+      state: ltNodeState(n), error: String(n.error || ""),
+      working: 0, runs: 0, projects: [], done: [], idle: [],
     }
     if (m.state !== "up") return m
+    // The badge counts as the Hub's Working list does (#2260).
+    const c = work.byNode[m.key]
+    if (c) { m.working = c.agents; m.runs = c.runs }
     const projects: Record<string, LtProject> = {}
     for (const a of n.agents || []) {
       const base = {
@@ -231,7 +281,6 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
         if (!item) { item = { key: place.itemKey, label: place.item, rows: [] }; proj.items.push(item) }
         const moved = Date.parse(t.lastActivity || t.startedAt || "")
         item.rows.push({ ...base, title: ltTitle(t, post), ageMs: Number.isFinite(moved) ? Math.max(0, now - moved) : 0, state: "working", task: t })
-        m.working++
       }
       const last = Date.parse(a.lastActive || "")
       if (!running.length && Number.isFinite(last) && now - last <= DONE_WINDOW) {
@@ -295,7 +344,8 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
   return machines.map((m) => {
     const badge = m.state === "silent" ? '<span class="lt__badge is-silent" title="' + ltEsc(m.error || "does not answer") + '">not checked</span>'
       : m.state === "checking" ? '<span class="lt__badge">checking…</span>'
-      : '<span class="lt__badge' + (m.working ? " is-live" : "") + '" title="' + m.working + ' working now">' + m.working + "</span>"
+      : '<span class="lt__badge' + (m.working ? " is-live" : "") + '" title="' + m.working + (m.working === 1 ? " agent" : " agents") + " working now" +
+        (m.runs > m.working ? ", " + m.runs + " runs" : "") + '">' + m.working + "</span>"
     const head = '<span class="lt__mach">' + ltEsc(m.name) + "</span>" + badge
     if (m.state !== "up") {
       return ltFold("m:" + m.key, "lt__m", head, '<p class="lt__idle">' + (m.state === "silent" ? "Does not answer, so its agents are not shown." : "Slow to answer; asking again.") + "</p>", closed)
