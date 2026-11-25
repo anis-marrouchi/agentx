@@ -686,9 +686,11 @@ export function handleRequestsApi(
       if (typeof loop === "string") return { status: 400, body: { error: loop } }
       // A run that follows an open loop of this agent (a wake of its
       // promise, the [Due time] ask, the turn of its request) moves that
-      // loop on instead of opening a second one (#2079).
+      // loop on instead of opening a second one (#2079). Only when it is
+      // owed to the same party: a promise to someone else made in that run
+      // is new work, not this loop's next check.
       const own = followedLoop(deps, agentId, turn)
-      if (own) return updateLoop(deps, own, { input, text, loop, home: home ?? null, described, needsQa }, now)
+      if (own && (own.promise ? own.owedTo === owedTo : owedTo === "owner" || owedTo === own.owedTo)) return updateLoop(deps, own, { input, text, loop, home: home ?? null, described, needsQa }, now)
       // The same promise again (#2078, #2079): a retry of a call that timed
       // out on the agent's side, or the same words while the first is still
       // open. Give that one back, unchanged.

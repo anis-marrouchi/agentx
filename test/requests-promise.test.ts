@@ -297,9 +297,23 @@ describe("a follow-up run updates the open promise instead of opening another (#
       at: "", humanRoot: true, sender: { id: "4242" },
     } as any)
     expect((await post({ action: "accept", agentId: "coder", work: "ops" })).status).toBe(200)
-    const res = await post({ ...body, due: new Date(clock + 2 * HOUR).toISOString() })
+    const res = await post({ ...body, owedTo: "owner", due: new Date(clock + 2 * HOUR).toISOString() })
     expect(res.body).toMatchObject({ reused: true, request: { id: "req-t9", dueAt: clock + 2 * HOUR, text: "ship the fix", headline: "Deploy the login fix to production" } })
     expect(store.openPromises("coder")).toBe(0)
+    // A promise to someone else in that turn is new work: its own row.
+    const other = await post({ ...body, owedTo: "pm-agent" })
+    expect((other.body as any).reused).toBeUndefined()
+    expect(store.get("req-t9")).toMatchObject({ headline: "Deploy the login fix to production" })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("a promise to someone else from P's wake run opens a new row and leaves P as it was", async () => {
+    const p = (await post({ ...body, due: new Date(clock + HOUR).toISOString() })).body as any
+    const res = await post({ ...body, owedTo: "pm-agent", text: "Send Hakim the deploy log" }, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect((res.body as any).reused).toBeUndefined()
+    expect((res.body as any).request.id).not.toBe(p.request.id)
+    expect(store.get(p.request.id)).toMatchObject({ dueAt: clock + HOUR, text: body.text })
+    expect(store.openPromises("coder")).toBe(2)
   })
 
   it("two identical promise calls give one row, and the second returns the first one's id, at any distance and in any case", async () => {
