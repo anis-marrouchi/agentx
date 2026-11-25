@@ -313,6 +313,9 @@ Two more things now happen without the seat, wherever requests are on:
 
 - **A due time an agent accepts wakes it.** When an agent accepts your request with a due time (`agentx_request` with `action: "accept"` and `due`), AgentX starts a run of that agent at that time, as it already does for a promise.
 - **A promise that falls due is pushed the same minute.** The requests check wakes the agent that owes it, even when no wake-up was set for it, and tells whoever waits on it: you get **Promise not kept**, and an agent that waits on it reads a `[Promise due]` line at the start of its next run. It no longer waits for a day of silence first.
+- **A promised pull request that is late wakes the agent, then the project manager.** When a promise's words say a PR is due (for example "Draft PR for issue 12 by 17:00") and the due time passes with no PR linked to it, the agent that owes it is woken at once with a link to the issue. If it cannot take a wake-up then, AgentX starts a run of its own for it. If 15 minutes later the promise is still open and still has no PR, the agent named in `requests.promises.prLead` is woken too (`pm-agent` by default). Each wake-up happens once per due time.
+
+  A promise counts as having its PR when any of its own records names a pull request or merge request address (or a GitLab `group/project!12`): its home, a link, its check, its words, or the proof it was closed with. AgentX does not ask GitHub or GitLab for PRs here. So when an agent opens the PR, it closes the promise with the PR link as its proof.
 
 #### Turn one of these wake-ups off
 
@@ -322,6 +325,7 @@ Each of the three wake-ups that came with the due-time check has its own switch.
 |---|---|---|
 | `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
 | `promises.acceptWake` | `true` | A due time an agent accepts on your request is stored and shown, but no run is started at that time. |
+| `promises.prLead` | `"pm-agent"` | An agent id, not `true` or `false`. Set it to `""` and only the agent that owes a late PR is woken; nobody else is woken 15 minutes later. |
 | `ownerCheck.wakeOnPlanMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request that a plan closed, you are told and no agent is woken. |
 | `ownerCheck.wakeOnMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request an agent, a check or a settle closed, you are told and no agent is woken. |
 
@@ -750,6 +754,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 34. **Terminal:** with the mode set to `"on"`, ask an agent to accept a request with an estimate and no due time. Its reply gives a line starting `Due time given by the daemon:`, and `agentx requests show <id>` shows that due time.
 35. **Terminal:** with the mode set to `"on"`, ask an agent to promise something of its own with `priority: "critical"`. The call is refused with `Not recorded: priority critical is only for the owner's requests`, and `agentx requests list` shows no new promise.
 36. **Terminal:** with the owner-words check on and the request of step 22 reopened, ask the agent to decline it as superseded, with a link to a newer issue. Within two minutes, `agentx requests show <id>` shows it waiting on you with the question `Closed as superseded by <link>. Agree?` and the line `Superseded by: <link>`, you were told once, and the daemon log has a line ending `asked the owner, not judged again`. It is not reopened again.
+37. **Terminal:** ask an agent to promise you "Draft PR for issue 12" due in five minutes, and open no PR. Six minutes later, the daemon log has a line `fell due with no PR linked: <agent> woken`. About 15 minutes after that, it has the line `still has no PR 15 min after <agent> was woken: pm-agent woken`, once.
 
 ## If something is wrong
 
@@ -767,6 +772,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **An agent is asked `[Due time]` when it set no due time:** the seat read the reply wrongly. The agent answers `Due: none` and nothing else happens. If it happens often, set the seat back to `shadow` and review its rows with `agentx decisions calls --seat due-time`.
 - **A request needs attention with `Set a due time and recorded none`:** the agent wrote a due time, was asked to record it, and did not. Reply on the request with the time you expect, or hand it back to the agent.
 - **A promise fell due and its agent was not woken:** the log line says `not woken`. A run of that agent is already on it, the agent is not on this computer, or the job reached its wake-up limit (`requests.jobs.wake.maxWakes`). You are told in every case.
+- **A late PR woke the agent but not the project manager:** the log line says `could not be woken (not on this node)`: the agent in `requests.promises.prLead` runs on another computer. Or the promise was closed, got a new due time, or got a PR link within the 15 minutes. Check `agentx requests show <id>`.
+- **A late PR woke nobody:** the promise's words must say "PR", "MR", "pull request" or "merge request". A promise that already names a PR address counts as having its PR.
 - **A promise fell due and nothing happened that minute:** check `requests.promises.duePush` in `agentx.json`. With `false`, the push is off and the promise comes back to you later as **needs attention**. Remove the line or set it to `true`, then restart AgentX.
 - **An agent accepted a due time and was not woken at that time:** check `requests.promises.acceptWake` in `agentx.json`. With `false`, the due time is only stored.
 - **A plan's close was reopened and its agent was not woken:** check `requests.ownerCheck.wakeOnPlanMismatch` in `agentx.json`. With `false`, only you are told.

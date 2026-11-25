@@ -308,3 +308,140 @@ describe("a due time an agent accepts on a request", () => {
     expect(jobs.get("req-t1")?.wakeAt ?? null).toBeNull()
   })
 })
+
+// A missed PR due time (#2279): a promise whose words name a PR, past due
+// with no PR linked, wakes its agent at once with the issue, and the lead
+// (pm-agent) 15 min later if there is still no PR. Each wake once.
+describe("a promised PR past its due time", () => {
+  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+  const ISSUE = "https://github.com/acme/app/issues/12"
+  let turns: Array<{ to: string; text: string }>
+  let notes: Array<{ id: string; note: string }>
+  let jobTakes: boolean
+
+  const check = (over: Partial<RequestSettings> = {}) => runRequestsSweep({
+    store, settings: { ...settings, ...over }, log: () => {}, now: clock,
+    hasAgent: (id) => ["coder", "pm-agent"].includes(id),
+    wakeJob: (id, note) => {
+      if (!jobTakes) return false
+      notes.push({ id, note })
+      return wake.wakeFor(id, note)
+    },
+    tellAgent: async (to, text) => { turns.push({ to, text }) },
+    notify: async () => {},
+  })
+
+  const prPromise = (over: Partial<Parameters<typeof openPromise>[1]> = {}) => promise({
+    agentId: "coder", owedTo: "owner", text: `Open the Draft PR for ${ISSUE} by 10:00Z`, ...over,
+  })
+
+  beforeEach(() => {
+    turns = []
+    notes = []
+    jobTakes = true
+  })
+
+  it("wakes the agent at once with the issue, and the PM 15 min later, each once", async () => {
+    const p = prPromise()
+    clock += 2 * HOUR + MIN
+    const first = await check()
+    expect(first.duePushed).toBe(1)
+    expect(first.prLeads).toBe(0)
+    expect(notes).toHaveLength(1)
+    expect(notes[0].id).toBe(p.id)
+    expect(notes[0].note).toContain("[agentx:pr-due")
+    expect(notes[0].note).toContain(ISSUE)
+    expect(notes[0].note).toContain("pm-agent is woken")
+    expect(turns).toEqual([])
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(started.map((s) => s.assignee)).toEqual(["coder"])
+
+    // Not before 15 min.
+    clock += 10 * MIN
+    expect((await check()).prLeads).toBe(0)
+    expect(turns).toEqual([])
+
+    clock += 5 * MIN
+    expect((await check()).prLeads).toBe(1)
+    expect(turns).toHaveLength(1)
+    expect(turns[0].to).toBe("pm-agent")
+    expect(turns[0].text).toContain("[agentx:pr-due-lead")
+    expect(turns[0].text).toContain(ISSUE)
+    expect(turns[0].text).toContain("coder")
+
+    // Once: later checks wake nobody again.
+    for (let i = 0; i < 3; i++) {
+      clock += MIN
+      const r = await check()
+      expect(r.duePushed).toBe(0)
+      expect(r.prLeads).toBe(0)
+    }
+    expect(turns).toHaveLength(1)
+    expect(notes).toHaveLength(1)
+  })
+
+  it("wakes the agent by a turn of its own when its job's wake cannot take it", async () => {
+    const p = prPromise()
+    jobTakes = false
+    clock += 2 * HOUR + MIN
+    expect((await check()).duePushed).toBe(1)
+    expect(turns).toHaveLength(1)
+    expect(turns[0].to).toBe("coder")
+    expect(turns[0].text).toContain(`[agentx:pr-due id=${p.id}]`)
+    expect(turns[0].text).toContain(ISSUE)
+    expect(store.get(p.id)!.attentionReason).toContain("woken")
+  })
+
+  it("wakes nobody about a PR when one is linked", async () => {
+    prPromise({ chatId: "c-1", home: { kind: "issue", link: "https://github.com/acme/app/pull/40" } })
+    prPromise({ chatId: "c-2", text: "Get https://gitlab.example.com/acme/app/-/merge_requests/7 (the PR) reviewed by 10:00Z" })
+    const viaLink = prPromise({ chatId: "c-3" })
+    store.link(viaLink.id, "issue", "https://github.com/acme/app/pull/41", clock)
+    clock += 2 * HOUR + MIN
+    expect((await check()).duePushed).toBe(3)
+    for (const n of notes) expect(n.note).not.toContain("pr-due")
+    clock += 16 * MIN
+    expect((await check()).prLeads).toBe(0)
+    expect(turns).toEqual([])
+  })
+
+  it("does not wake the PM when the PR came in the 15 min, or for a promise with no PR due", async () => {
+    const kept = prPromise({ chatId: "c-1" })
+    promise({ agentId: "coder", chatId: "c-2" })
+    clock += 2 * HOUR + MIN
+    await check()
+    store.close(kept.id, "done", "https://github.com/acme/app/pull/42", clock + 5 * MIN)
+    clock += 16 * MIN
+    expect((await check()).prLeads).toBe(0)
+    expect(turns).toEqual([])
+  })
+
+  it("wakes no lead with promises.prLead empty, nor when the lead owes the PR itself", async () => {
+    prPromise({ chatId: "c-1" })
+    clock += 2 * HOUR + MIN
+    await check({ promises: { prLead: "" } })
+    expect(notes[0].note).not.toContain("is woken")
+    clock += 16 * MIN
+    expect((await check({ promises: { prLead: "" } })).prLeads).toBe(0)
+
+    prPromise({ agentId: "pm-agent", chatId: "c-2", dueAt: clock + 2 * HOUR })
+    clock += 2 * HOUR + MIN
+    await check()
+    clock += 16 * MIN
+    expect((await check()).prLeads).toBe(0)
+    expect(turns).toEqual([])
+  })
+})
+
+describe("missed PR words", () => {
+  it("reads a PR due from the words, and a PR linked from any of its records", async () => {
+    const { namesPrDue, issueOf } = await import("../src/requests/pr-due")
+    expect(namesPrDue({ headline: null, text: "Draft PR for #2238 by 17:00Z" })).toBe(true)
+    expect(namesPrDue({ headline: null, text: "open the merge request today" })).toBe(true)
+    expect(namesPrDue({ headline: null, text: "send the pr-ready email" })).toBe(false)
+    expect(namesPrDue({ headline: null, text: "Send the follow-up email" })).toBe(false)
+    const p = promise({ text: "Draft PR", closeWhen: { kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "x", after: clock } })
+    expect(issueOf(p)).toBe("https://github.com/acme/app/issues/12")
+  })
+})

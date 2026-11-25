@@ -333,6 +333,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // would hide that due time after a rollback; a due time that differs from
   // this one is not pushed yet.
   ensureColumns(db, "requests", [["due_pushed_for", "INTEGER"]])
+  // The due time the missed-PR follow-up ran for (#2279): the lead is
+  // woken once per due time, 15 min after the agent was.
+  ensureColumns(db, "requests", [["pr_lead_for", "INTEGER"]])
   // The hand-back a no-proof ask was for (noqta#884): the end time of the
   // newest delegation that came back done. Its agent is woken once per
   // hand-back, not at every check.
@@ -601,6 +604,22 @@ export class RequestStore {
    *  not pushed yet. */
   markDuePushed(id: string, now: number): void {
     this.db.prepare("UPDATE requests SET due_pushed_at = ?, due_pushed_for = due_at WHERE id = ?").run(now, id)
+  }
+
+  /** Open promises an agent owes, pushed for the due time they have now
+   *  between `since` and `before`, whose missed-PR follow-up has not run
+   *  for that due time (#2279). Each is read once: `markPrLead`. */
+  prLeadsDue(since: number, before: number): Array<RequestRecord & { duePushedAt: number }> {
+    return (this.db.prepare(
+      `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN (${placeholders(OPEN_STATES.length)})
+         AND due_at IS NOT NULL AND due_pushed_for = due_at AND due_pushed_at >= ? AND due_pushed_at <= ?
+         AND (pr_lead_for IS NULL OR pr_lead_for != due_at) ORDER BY due_pushed_at, rowid`,
+    ).all(OWED_TO_OWNER, ...OPEN_STATES, since, before) as any[]).map((row) => ({ ...toRecord(row), duePushedAt: row.due_pushed_at }))
+  }
+
+  /** The missed-PR follow-up ran for the due time it has now (#2279). */
+  markPrLead(id: string): void {
+    this.db.prepare("UPDATE requests SET pr_lead_for = due_at WHERE id = ?").run(id)
   }
 
   /** It was already pushed for the due time it has now (noqta#876). */
