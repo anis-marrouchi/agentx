@@ -1023,11 +1023,13 @@ ${HUB_NAV_SCRIPT}
   // --- Agents page (#1316): every agent the nodes report, with its posts ---
   function allAgents() {
     var by = {};
+    // An agent's runs count on its home machine only (liveWorkCount, #2258).
+    var home = liveWorkCount((S.live && S.live.nodes) || []).home;
     ((S.live && S.live.nodes) || []).forEach(function (n) {
       (n.agents || []).forEach(function (a) {
         var x = by[a.id] || (by[a.id] = { id: a.id, name: a.name || a.id, nodes: [], running: 0, errors: 0, lastActive: 0 });
         x.nodes.push(n.name);
-        x.running += (a.runningTasks || []).length;
+        if (home[a.id] === ltNodeKey(n)) x.running += (a.runningTasks || []).length;
         x.errors += a.errors || 0;
         x.tier = x.tier || a.tier; x.model = x.model || a.model;
         if (a.skillCount != null) x.skills = Math.max(x.skills || 0, a.skillCount);
@@ -1077,10 +1079,11 @@ ${HUB_NAV_SCRIPT}
   }
 
   // --- The nav: which page is on, and its counts (#1316) ---
+  // Agents working, by the Hub's Working rule (liveWorkCount, #2258):
+  // machines that are up, each agent once. Agents, not runs, so it matches
+  // the tree, Working, the status bar and the Live page.
   function runningCount() {
-    var n = 0;
-    ((S.live && S.live.nodes) || []).forEach(function (x) { (x.agents || []).forEach(function (a) { n += (a.runningTasks || []).length; }); });
-    return n;
+    return liveWorkCount((S.live && S.live.nodes) || []).agents;
   }
   function jobCount() {
     var n = 0;

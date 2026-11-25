@@ -103,12 +103,8 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var el = $('hs-running');
     if (!el) return;
     if (!S.live) { el.textContent = 'Running agents —'; return; }
-    var seen = {};
-    ((S.live && S.live.nodes) || []).forEach(function (n) {
-      if (n.reachable === false) return;
-      (n.agents || []).forEach(function (a) { if ((a.runningTasks || []).length) seen[a.id] = true; });
-    });
-    var count = Object.keys(seen).length;
+    // The Hub's Working count (liveWorkCount, #2258).
+    var count = liveWorkCount(S.live.nodes || []).agents;
     el.textContent = count + (count === 1 ? ' agent running' : ' agents running');
   }
   function hsPaintVersion() {

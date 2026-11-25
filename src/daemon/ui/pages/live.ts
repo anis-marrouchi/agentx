@@ -15,6 +15,8 @@
 
 import { renderShell, esc, type TopbarPeer } from ".."
 import { UI_LABELS } from "../../ui-labels"
+import { injectFns } from "../inject"
+import { liveWorkCount, ltNodeKey, ltNodeState } from "./wall-tree"
 
 export interface LivePageOpts {
   peers?: TopbarPeer[]
@@ -46,7 +48,7 @@ export function renderLivePage(opts: LivePageOpts = {}): string {
     noMain: true,
     body,
     css: LIVE_PAGE_CSS,
-    scripts: labelsScript + `<script>${LIVE_PAGE_SCRIPT}</script>`,
+    scripts: labelsScript + `<script>${injectFns({ ltNodeKey, ltNodeState, liveWorkCount })}${LIVE_PAGE_SCRIPT}</script>`,
     headExtras: `<script>
       // rightExtras for the topbar are injected at runtime — they reference
       // IDs (#ts, #conn-dot) that the script below addresses directly.
@@ -313,14 +315,15 @@ function render(snapshot) {
   const grid = document.getElementById('grid');
   const nowTs = new Date(snapshot.ts).toLocaleTimeString();
   document.getElementById('ts').textContent = nowTs;
-  const summary = { nodes: snapshot.nodes.length, reachable: 0, agents: 0, busy: 0, errors: 0 };
+  // "running now" is the Hub's Working count (liveWorkCount, #2258): agents
+  // with a run, once each, on machines that are up. A card still shows busy
+  // for a lesson or an "active" slot; the number does not.
+  const summary = { nodes: snapshot.nodes.length, reachable: 0, agents: 0, busy: liveWorkCount(snapshot.nodes).agents, errors: 0 };
   grid.innerHTML = '';
   for (const node of snapshot.nodes) {
     if (node.reachable) summary.reachable++;
     summary.agents += node.agents.length;
     for (const a of node.agents) {
-      const busy = (a.runningTasks && a.runningTasks.length > 0) || (a.active || 0) > 0 || !!lessonOf(a, node);
-      if (busy) summary.busy++;
       summary.errors += (a.errors || 0);
     }
     grid.appendChild(renderNode(node));

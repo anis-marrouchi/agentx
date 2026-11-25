@@ -100,6 +100,8 @@ export const HUB_NAV_CSS = `
 .ha__row.is-idle, .hk__hit.is-idle { --ha-s: var(--ax-muted); }
 .ha__h { display: flex; justify-content: space-between; margin: 12px 0 4px; padding: 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
 .ha__h span { font-weight: 500; letter-spacing: 0; }
+.ha__m { display: flex; justify-content: space-between; margin: 6px 0 2px; padding: 0 6px 0 12px; font-size: 11px; font-weight: 500; color: var(--ax-muted); }
+.ha__m span { font-variant-numeric: tabular-nums; }
 .ha__idle > summary { cursor: pointer; list-style: none; }
 .ha__idle > summary::-webkit-details-marker { display: none; }
 .ha__row, .hk__hit { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px; border-radius: var(--ax-radius-sm); color: var(--ax-text); text-decoration: none; }
