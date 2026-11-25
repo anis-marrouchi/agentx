@@ -24,6 +24,7 @@ import { cardWords } from "@/requests/card-view"
 import { parseDotEnv } from "@/utils/workspace-env"
 import { readHolds, releaseAgent } from "@/agents/holds"
 import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
+import { answerCiStillRed, ciStillRedRef, readCiStillRed } from "@/channels/ci-still-red"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -63,8 +64,8 @@ import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "agent" | "memory" | "wiki" | "fact" | "question" | "whatsapp" | "email" | "content" | "request"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "agent", "memory", "wiki", "fact", "question", "whatsapp", "email", "content", "request"]
+export type ApprovalKind = "card" | "schedule" | "agent" | "memory" | "wiki" | "fact" | "question" | "whatsapp" | "email" | "content" | "request" | "ci"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "agent", "memory", "wiki", "fact", "question", "whatsapp", "email", "content", "request", "ci"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -527,6 +528,27 @@ function requestItems(ctx: InboxContext): InboxItem[] {
   }))
 }
 
+/** MR/PRs whose CI stayed red past ci.fixAttempts (#2212): one item each,
+ *  gone when a green run resets the count or the MR/PR closes. */
+function ciItems(ctx: InboxContext): InboxItem[] {
+  return readCiStillRed(ctx.root).map((r) => {
+    const ref = ciStillRedRef(r)
+    const tries = `${r.tries} ${r.tries === 1 ? "try" : "tries"}`
+    return {
+      key: `ci:${r.key}`,
+      kind: "ci" as const,
+      title: clip(`CI still red on ${r.repo} ${ref} after ${tries}${r.title ? `: ${r.title}` : ""}`, 120),
+      ask: `${r.agentId} will not be woken again for CI on ${ref} until it passes. Will you take a look?`,
+      yes: "I will look at it: take it off the list",
+      no: "leave it red: take it off the list",
+      raised_by: r.agentId,
+      created_at: r.at,
+      detail: clip(`${r.repo} ${ref}, head commit ${r.sha.slice(0, 12)}, ${tries} by ${r.agentId}.${r.url ? ` ${r.url}` : ""}`),
+      ...(r.url ? { source: r.url } : {}),
+    }
+  })
+}
+
 const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   card: cardItems,
   schedule: scheduleItems,
@@ -540,6 +562,7 @@ const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   email: emailItems,
   content: contentItems,
   request: requestItems,
+  ci: ciItems,
 }
 
 // ── Read model ───────────────────────────────────────────────────────
@@ -786,6 +809,12 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
       }
       store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now, null, by === "operator" ? OWNER_BY : by)
       return { ok: true, message: `${key}: dropped` }
+    }
+    case "ci": {
+      // Either answer only takes it off the list: the cap and who is woken
+      // stay as they are. A new still-red note brings it back (#2212).
+      if (!answerCiStillRed(ctx.root, ref)) return { ok: false, error: `nothing waiting for "${key}"` }
+      return { ok: true, message: yes ? `${key}: off the list, over to you` : `${key}: off the list, left red` }
     }
   }
 }
