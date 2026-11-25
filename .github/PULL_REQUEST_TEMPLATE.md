@@ -4,6 +4,21 @@ Linked issue or concrete problem:
 
 ## What changed
 
+## Impacted
+
+<!-- Impact sweep (CLAUDE.md, Rule A). One line per surface this change
+touches and how you checked it in this PR. Write "none (checked)" only
+after looking. Hub page still in the old style? Add it to issue #2218. -->
+
+- Hub pages:
+- CLI:
+- Phone / Mac apps:
+- Docs:
+- Settings:
+- Other agents' flows:
+
+- [ ] New controls are hidden by default or the PR says why they must always show (Rule B, progressive disclosure).
+
 ## Verification
 
 Commands run and results; include OS/Node version for installation changes:
