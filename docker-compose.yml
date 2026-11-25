@@ -24,6 +24,8 @@ services:
 
   daemon:
     image: agentx:${AGENTX_IMAGE_TAG:-latest}
+    # Built locally by `init`; there is no agentx image on Docker Hub (#2275).
+    pull_policy: never
     depends_on:
       init:
         condition: service_completed_successfully
@@ -38,6 +40,7 @@ services:
 
   dashboard:
     image: agentx:${AGENTX_IMAGE_TAG:-latest}
+    pull_policy: never
     depends_on:
       init:
         condition: service_completed_successfully
