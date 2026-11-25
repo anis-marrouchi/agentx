@@ -110,6 +110,20 @@ The agent is told you are busy from what AgentX Voice last reported, which can b
 
 A waiting call survives a restart of AgentX. It keeps the time it started waiting, so it still ends at the time the agent was given, and you are not told about it a second time. If you answer it or pick **Later** first, the wait is over: when that call rings again, it starts a new wait.
 
+## When an agent calls you back
+
+You don't have to ask again when a long request is finished. When a request **you** asked for is done, waits on your answer, or is stuck and needs you, the agent that has it calls you. It only does this when the request took longer than `calls.callback.afterMinutes` (3 minutes by default), so quick answers don't ring. Say "call me when it's done" in your request and it calls even when the work is quick.
+
+- **What counts as your request:** one you asked on AgentX Voice, in the Hub, in the phone app, or in your own Telegram or WhatsApp chat. Work agents ask each other, scheduled jobs and requests you closed yourself never call.
+- **Answer**, and the agent speaks first: the result in two or three sentences, the one question it needs answered, or what is stuck and what would unblock it. AgentX then counts the request as told, so the requests check doesn't tell you again.
+- **Calls.allow doesn't apply.** You asked for the work, so any agent that has your request may call you back.
+- **Focus:** a call-back doesn't ring. It is kept as a missed call, and you get its notice when Focus ends. Set `calls.callback.quietWhenFocus` to `false` to let call-backs ring through Focus.
+- **Several at once:** while one call-back from an agent is still ringing, the next one from that agent joins it ("2 of your requests need you or are done"). When the agent is already on a call with you, or has used its `calls.maxPerHour`, the call-back is kept as a missed call and you get its notice, so nothing is lost.
+- **Your Mac is locked:** with `calls.phone.ring` set to `"away"`, a locked screen counts as away, so the phone rings too.
+- **Only requests on this computer** call back. A request handled on another AgentX computer doesn't ring here.
+
+To turn call-backs off: `agentx config set calls.callback.enabled false`.
+
 ## How an agent places a call
 
 Agents call through the `agentx_call_owner` tool, which AgentX gives them. Inside an agent's run, `agentx call request --reason "…"` does the same (add `--urgent` for something that can't wait).
@@ -142,6 +156,9 @@ All settings are under `calls` in `agentx.json`:
 | `calls.busy.notice` | `"AgentX Voice is busy. The call rings when it is free."` | Its second line, under the caller's reason. |
 | `calls.phone.ring` | `"always"` | When a call also rings your phone. `"always"`: together with AgentX Voice. `"away"`: only when AgentX Voice isn't running. |
 | `calls.phone.appUrl` | not set | The address your phone opens the app at, for example `https://my-mac.example.ts.net`. With ntfy, a tap on the call opens it in the phone app. |
+| `calls.callback.enabled` | `true` | The agent calls you back when a long request you asked for is done, waits on you or needs you. See [When an agent calls you back](#when-an-agent-calls-you-back). |
+| `calls.callback.afterMinutes` | `3` | Requests shorter than this don't call back, unless you said "call me when it's done". |
+| `calls.callback.quietWhenFocus` | `true` | In Focus, a call-back doesn't ring: it is kept as missed and you are told when Focus ends. |
 
 For example:
 

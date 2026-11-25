@@ -26,6 +26,7 @@ check(CallModel.pollQuery(ringing: nil, canRing: true) == "", "free: the poll sa
 check(CallModel.pollQuery(ringing: nil, canRing: false) == "?busy=1", "in a turn: busy, so a new call waits")
 check(CallModel.pollQuery(ringing: "call-a", canRing: true) == "?busy=1&showing=call-a", "ringing: busy for other calls, showing this one")
 check(CallModel.pollQuery(ringing: "call-a", canRing: false) == "?busy=1&showing=call-a", "ringing during a turn: still showing it")
+check(CallModel.pollQuery(ringing: nil, canRing: true, locked: true) == "?locked=1", "locked screen: the phone rings too (#2265)")
 
 // --- Decoding the daemon's poll ---
 

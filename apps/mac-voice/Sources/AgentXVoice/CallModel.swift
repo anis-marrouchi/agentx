@@ -43,10 +43,13 @@ enum CallModel {
     /// cannot ring here, `showing` with the call that is ringing. The
     /// daemon keeps a call waiting while the widget is busy, so its ring
     /// time runs only once it can ring.
-    static func pollQuery(ringing: String?, canRing: Bool) -> String {
+    /// `locked` (#2265): the screen is locked, so the owner is away and
+    /// the daemon rings the phone too.
+    static func pollQuery(ringing: String?, canRing: Bool, locked: Bool = false) -> String {
         var items: [String] = []
         if ringing != nil || !canRing { items.append("busy=1") }
         if let ringing { items.append("showing=\(ringing)") }
+        if locked { items.append("locked=1") }
         return items.isEmpty ? "" : "?" + items.joined(separator: "&")
     }
 

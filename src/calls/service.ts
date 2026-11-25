@@ -40,7 +40,7 @@ import { ownerFocus } from "@/situations/sources/owner-busy"
 import { callEndedSignal } from "@/situations/sources/calls"
 import { publishSignal } from "@/situations/sources/hub"
 import type { CallsConfig } from "@/daemon/config"
-import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency, type Waiting } from "./store"
+import { LIVE, type Call, type CallbackRef, type CallKind, type CallStore, type CallUrgency, type Waiting } from "./store"
 
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
@@ -93,6 +93,9 @@ export interface WidgetState {
   busy?: boolean
   /** The call ringing on it. */
   showing?: string
+  /** The Mac's screen is locked (#2265): the owner is away, so the phone
+   *  rings even with calls.phone.ring "away". */
+  locked?: boolean
 }
 
 export interface CallDeps {
@@ -114,13 +117,27 @@ export interface CallDeps {
   /** File a finished summary where the dashboard shows it. */
   file?: (call: Call, summary: string) => void
   focus?: () => FocusState
+  /** A call-back (#2265): one line on a request it is about, for the
+   *  opener (its headline and the result, question or reason). Null when
+   *  the request is gone. */
+  callbackBrief?: (ref: CallbackRef) => string | null
+  /** A call-back was answered: the owner heard about these requests, so
+   *  the requests check does not tell him again. */
+  callbackAnswered?: (call: Call) => void
   now?: () => number
   log?: (m: string) => void
 }
 
 /** What the widget sends through /ask when the owner answers, so the
  *  agent speaks first and says why it called. */
-export function openerPrompt(call: Pick<Call, "reason" | "placedBy">): string {
+export function openerPrompt(call: Pick<Call, "reason" | "placedBy" | "origin">, briefs: string[] = []): string {
+  if (call.origin === "callback") {
+    const about = briefs.length ? briefs.map((b) => `- ${b}`).join("\n") : `- ${call.reason}`
+    return "[Call answered] You called the owner back about work they asked you for:\n" + about + "\n" +
+      "Speak first: greet them in a few words. For work that is done, give the result in two or three sentences. " +
+      "For work that waits on them, ask the one question. For work that is stuck, say where, why, and what would unblock it. " +
+      "Then let them answer."
+  }
   if (call.placedBy === "owner") {
     return "[Call answered] The owner called you to talk about this: " +
       `"${call.reason}". Speak first: greet them in a few words, say in a sentence or two where that work stands, ` +
@@ -238,6 +255,50 @@ export class CallService {
     return this.waiting.has(call.id) ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang: "widget" }
   }
 
+  /** The daemon calls the owner back for an agent (#2265): a request he
+   *  asked for himself is done, waits on him, or needs him. Never refused
+   *  (C5): with a call-back of the same agent still ringing it joins that
+   *  call; with another call of that agent in progress, or over
+   *  calls.maxPerHour, it is kept as a missed call and the owner gets its
+   *  notice. Each request and state calls back once. calls.allow does not
+   *  apply: the owner asked for the work. */
+  async callback(input: { agentId: string; ref: CallbackRef; headline: string }): Promise<CallbackOutcome> {
+    const { agentId, ref } = input
+    if (this.deps.agentName(agentId) === null) return { placed: "skipped", why: `${agentId} does not run on this computer` }
+    if (this.deps.store.hasCallback(ref)) return { placed: "skipped", why: "already called back" }
+    await this.sweep()
+    const reason = callbackReason(ref.state, input.headline)
+    const live = this.deps.store.list({ status: LIVE, limit: 200 }).filter((c) => c.agentId === agentId)
+    const joinable = live.find((c) => c.origin === "callback" && (c.status === "ringing" || c.status === "later"))
+    if (joinable) {
+      const n = (joinable.about?.length ?? 1) + 1
+      const joined = this.deps.store.addAbout(joinable.id, [ref], `${n} of your requests need you or are done`.slice(0, REASON_MAX))
+      if (joined) {
+        this.deps.log?.(`[calls] call-back for ${ref.id} (${ref.state}) joins ${joined.id}`)
+        return { placed: "joined", call: joined }
+      }
+    }
+    const now = this.now()
+    const cfg = this.deps.config()
+    const held = live.length ? "the agent is on another call"
+      : this.deps.store.countSince(agentId, now - 3_600_000) >= cfg.maxPerHour ? "over calls.maxPerHour" : null
+    const call: Call = {
+      id: `call-${randomUUID().slice(0, 8)}`, agentId, kind: "voice", reason, urgency: "normal",
+      status: held ? "missed" : "ringing", createdAt: now, ringingSince: held ? null : now,
+      answeredAt: null, endedAt: null, ringAgainAt: null, note: held, summary: null, channel: null, chatId: null,
+      origin: "callback", about: [ref],
+    }
+    this.deps.store.insert(call)
+    if (held) {
+      this.deps.log?.(`[calls] call-back from ${agentId} for ${ref.id} (${ref.state}) kept as missed: ${held}`)
+      await this.notice(call, `${this.name(agentId)}: ${callbackTitle(ref.state)}`)
+      return { placed: "held", call: this.deps.store.get(call.id)! }
+    }
+    this.deps.log?.(`[calls] ${agentId} calls back for ${ref.id} (${ref.state}): ${input.headline}`)
+    const rang = await this.ring(call)
+    return { placed: rang === false ? "held" : "rang", rang, call: this.deps.store.get(call.id)! }
+  }
+
   /** The caller withdraws its own voice call while it waits or rings, for
    *  example to send a message instead (#969). */
   async cancel(input: { agentId?: unknown }, proof: CallerProof = {}): Promise<CallResult> {
@@ -260,7 +321,12 @@ export class CallService {
    *  Returns how it rang. */
   private async ring(call: Call): Promise<Rang> {
     const focus = (this.deps.focus ?? ownerFocus)()
-    if (focus.active && call.urgency !== "urgent" && call.placedBy !== "owner") {
+    // A call-back has its own rule (#2265 C2): quiet in Focus unless
+    // calls.callback.quietWhenFocus is off.
+    const holds = call.origin === "callback"
+      ? this.deps.config().callback.quietWhenFocus
+      : call.urgency !== "urgent" && call.placedBy !== "owner"
+    if (focus.active && holds) {
       if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
       await this.notice(call, this.missedTitle(call))
       return false
@@ -295,7 +361,8 @@ export class CallService {
       if (!withWidget) await this.notice(call, `${this.name(call.agentId)} is calling`, `Open AgentX Voice to answer within ${cfg.ringSeconds} s.`)
       return
     }
-    if (withWidget && cfg.phone?.ring === "away") return
+    // A locked Mac counts as away (#2265).
+    if (withWidget && cfg.phone?.ring === "away" && !this.widget.locked) return
     await this.notice(call, `${this.name(call.agentId)} is calling`,
       `Answer on your phone${withWidget ? " or in AgentX Voice" : ""} within ${cfg.ringSeconds} s.`,
       { callId: call.id, state: "ringing", since: call.ringingSince ?? this.now(), ...(withWidget ? { widget: true } : {}) })
@@ -458,7 +525,17 @@ export class CallService {
     const answered = this.deps.store.transition(id, "ringing", { status: "answered", answeredAt: this.now(), ringingSince: null })
     if (!answered) return { ok: false, status: 409, error: `call is ${this.deps.store.get(id)?.status}, not ringing` }
     this.deps.log?.(`[calls] ${id} answered (${call.agentId})`)
-    return answered.kind === "camera" ? { ok: true, call: answered } : { ok: true, call: answered, opener: openerPrompt(answered) }
+    if (answered.kind === "camera") return { ok: true, call: answered }
+    if (answered.origin !== "callback") return { ok: true, call: answered, opener: openerPrompt(answered) }
+    const briefs: string[] = []
+    for (const ref of answered.about ?? []) {
+      try {
+        const b = this.deps.callbackBrief?.(ref)
+        if (b) briefs.push(b)
+      } catch { /* a brief that fails leaves the reason */ }
+    }
+    try { this.deps.callbackAnswered?.(answered) } catch (e: any) { this.deps.log?.(`[calls] ${id}: could not mark its requests told: ${e?.message ?? e}`) }
+    return { ok: true, call: answered, opener: openerPrompt(answered, briefs) }
   }
 
   decline(id: string): CallResult {
@@ -548,6 +625,26 @@ export interface PhoneRing {
 /** How a call reached the owner: on the widget, through notify, waiting
  *  for a busy widget, or not at all (held as missed). */
 export type Rang = "widget" | "notify" | "waiting" | false
+
+/** What `callback` did: rang (or waits for a busy widget), joined a
+ *  call-back still ringing, kept as missed with a notice (Focus, another
+ *  call, the hourly limit), or nothing (already called, unknown agent). */
+export type CallbackOutcome =
+  | { placed: "rang"; rang: Rang; call: Call }
+  | { placed: "joined" | "held"; call: Call; rang?: Rang }
+  | { placed: "skipped"; why: string }
+
+/** A call-back's notice title, by the state its request reached. */
+export function callbackTitle(state: CallbackRef["state"]): string {
+  return state === "done" ? "your request is done" : state === "waiting_owner" ? "your request waits on you" : "your request needs you"
+}
+
+/** A call-back's reason: the state, then the request's headline. */
+export function callbackReason(state: CallbackRef["state"], headline: string): string {
+  const lead = state === "done" ? "Done" : state === "waiting_owner" ? "Waits on you" : "Needs you"
+  const text = `${lead}: ${headline.replace(/\s+/g, " ").trim()}`
+  return text.length > REASON_MAX ? `${text.slice(0, REASON_MAX - 1)}…` : text
+}
 
 /** The note on a call its caller withdrew. */
 export const CANCELLED_NOTE = "withdrawn by the caller"
