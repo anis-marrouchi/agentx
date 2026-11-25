@@ -111,11 +111,13 @@ export async function scheduleExceptions(
   for (const job of jobs) {
     const run = latest.get(job.id)?.[0]
     const startedAt = run ? Date.parse(run.startedAt) : NaN
-    if (run && run.status !== "success" && startedAt >= opts.since) {
-      const why = run.errorSummary?.split("\n")[0]?.slice(0, 160) || (run.status === "timeout" ? "timed out" : "failed")
+    // A held run has its retry waiting (#2247): not an exception yet.
+    if (run && run.status !== "success" && run.status !== "held" && startedAt >= opts.since) {
+      const word = run.status === "timeout" ? "timed out" : run.status === "missed" ? "missed" : "failed"
+      const why = run.errorSummary?.split("\n")[0]?.slice(0, 160) || word
       out.push({
         jobId: job.id, agent: job.agent, kind: "failed", at: run.startedAt,
-        detail: `${run.status === "timeout" ? "timed out" : "failed"}: ${why}${job.enabled ? "" : " (now switched off)"}`,
+        detail: `${word}: ${why}${job.enabled ? "" : " (now switched off)"}`,
       })
       continue
     }

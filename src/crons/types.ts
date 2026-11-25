@@ -68,6 +68,20 @@ export interface CronJobState {
   totalFailures: number
   /** Whether a retry is currently pending */
   retryPending?: boolean
+  /** Agent that created the job through the schedule tool; told too when
+   *  a run is missed (#2247). */
+  createdBy?: string
+  /** Minutes after the scheduled time in which a held run may still be
+   *  retried (#2247). Unset: until the next regular run. */
+  retryWindowMinutes?: number
+  /** The scheduled time of the run now being tried, retries included. */
+  windowStart?: Date
+  /** Hold retries used for that run (#2247). */
+  holdRetries?: number
+  /** The next start is a hold retry, not a new scheduled run. */
+  holdRetryPending?: boolean
+  /** The last scheduled run that was missed; cleared by a success (#2247). */
+  missedAt?: Date
 }
 
 export interface CronRunResult {
@@ -106,4 +120,12 @@ export interface CronRunResult {
   /** Answer lines that stated a fact without a source, on a job with
    *  `requireSources` (#1288). Absent when every line had one. */
   unsourced?: number
+  /** The run did not start: a plan or usage limit, or no room on the
+   *  machine, held it (#2247). Not a success and not a normal failure. */
+  held?: boolean
+  /** When the hold ends (ISO), when the run said so. */
+  heldUntil?: string
+  /** No retry fitted the job's window: the scheduled run was missed and
+   *  its owner was told (#2247). */
+  missed?: boolean
 }

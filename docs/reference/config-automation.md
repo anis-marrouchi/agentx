@@ -23,6 +23,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
 | `requireSources` | boolean | — | Check each answer before it is sent: every line that states a fact must carry a link (`https://…`, or a link to a `.md` file in the agent's folder). If one does not, the message ends with a warning that names the line, and the run record counts it as `unsourced`. See [sales leads](../jobs/sales.md). |
 | `expectExitZero` | boolean | — | For a prompt that tells the agent to run a shell command. The agent is asked to end its answer with a line `EXIT=<code>`, the command's exit code (0 means it worked). The run counts as failed when that line is missing or is not `EXIT=0`, so the failure shows in the schedule's run history and `onError` applies. Without it, a run counts as a success whenever the agent itself finished, even if the command it ran failed. Not allowed on command jobs, which already fail on a non-zero exit. See [a prompt that runs a command](#a-prompt-that-runs-a-command). |
+| `retryWindowMinutes` | whole number (1 to 10080) | — | How long after its scheduled time a run that could not start is still tried again. Unset: up to the next regular run. See [a run that could not start](#a-run-that-could-not-start). |
 | `value` | object | — | The job's value line: why it runs and the number that proves it. Shown as written on the Hub's **Schedules** tab and in Settings › Schedules. A job without one shows **no value line**. |
 | `value.why` | string (1–200 characters) | required | Why the job runs, for example `Keeps the support queue answered overnight`. |
 | `value.metric` | string (1–200 characters) | required | The number that proves it, for example `Tickets older than 12 h each morning: 0`. AgentX does not measure it. |
@@ -85,6 +86,51 @@ A run that ends with `EXIT=1`, or with no `EXIT=` line at all, is recorded as fa
 On a run that worked, the `EXIT=0` line is removed before the answer is sent to `notify`, so the reader never sees it. The run history keeps the answer as the agent wrote it. With `requireSources`, the `EXIT=0` line is not checked for a source.
 
 A run the daemon makes up after a restart, for a time it missed while it was off, counts the same way: a failure adds to the failures in a row, sends the failure message, and can turn the job off under `onError`. It is not retried; the next regular run follows the schedule.
+
+### A run that could not start
+
+A scheduled run can end before it starts. Three things cause this, and AgentX calls the run **held**:
+
+- the AI plan limit is reached, or the plan is past the share kept for background work;
+- the Codex plan says "try again at" a time;
+- the machine had no free memory or disk for the whole wait, so the run was taken out of the queue.
+
+A held run is not counted as a failure, so it does not add to the failures in a row and does not turn the job off under `onError`. Instead, AgentX tries it again once the hold ends: two minutes after the time the limit message gives, or after 15 minutes when there is no time (a full machine). It tries up to 6 times for one scheduled run.
+
+The new try must start inside the job's window. The window runs from the scheduled time to the next regular run, or to `retryWindowMinutes` after the scheduled time when that is sooner, and never past `until`.
+
+When no try fits the window, the run is **missed**:
+
+1. The job's agent gets a notice at the start of its next run (or a run of its own within the hour). It names the job, why it did not run and when the next regular run is.
+2. The agent that created the job (`createdBy`) gets the same notice, when it is another agent.
+3. The `notify` chat gets the same line, whatever `onError` says.
+
+A run that fails for another reason, on every one of its normal retries, is reported the same way.
+
+**Example.** A job runs every day at 08:30 and must be done by 16:00:
+
+```json
+"crons": {
+  "daily-outreach": {
+    "schedule": "30 8 * * *",
+    "agent": "writer",
+    "prompt": "Send the messages planned for today",
+    "retryWindowMinutes": 450
+  }
+}
+```
+
+If the plan limit holds the 08:30 run until 11:00, the run starts again at 11:02. If the hold lasts until 17:00, the run is missed and the writer agent is told.
+
+#### Check it worked
+
+1. **Browser:** open Settings › Schedules. A held run shows **Held, retry waiting** as its last result; a missed one shows **Missed**.
+2. **Terminal:** run `curl -s http://localhost:<port>/crons/health` (or ask an agent to use its `agentx_crons` tool). A job whose last scheduled run was missed shows the status `missed` until its next run works.
+
+#### If something is wrong
+
+- **The run was not tried again:** check that the hold ends inside the window. Raise `retryWindowMinutes`, or leave it unset to allow up to the next regular run.
+- **Nobody was told about a missed run:** the agent named in `agent` must be on this machine. Add a `notify` chat to the job to get the line in a chat as well.
 
 ### What an agent may do with its own job
 

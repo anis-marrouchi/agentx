@@ -995,6 +995,12 @@ const cronJobSchema = z.object({
    *  that line is missing or not 0 (#1540). The agent run alone succeeds
    *  even when the command it ran failed. See src/crons/exit-check.ts. */
   expectExitZero: z.boolean().optional(),
+  /** Minutes after the scheduled time in which a run held by a plan or
+   *  usage limit, or by a full machine, is still retried once the hold
+   *  ends (#2247). Unset: up to the next regular run. A run that cannot
+   *  be retried in time is reported to the job's owner as missed.
+   *  See src/crons/hold-retry.ts. */
+  retryWindowMinutes: z.number().int().min(1).max(10_080).optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */

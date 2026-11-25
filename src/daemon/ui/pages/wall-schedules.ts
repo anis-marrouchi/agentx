@@ -24,8 +24,9 @@ export function wsLast(
   when: (t: number) => string,
 ): { html: string; failed: boolean; why: string } {
   if (!run || !run.status) return { html: '<span class="wsc__none">No run yet</span>', failed: false, why: "" }
-  const failed = run.status === "failed" || run.status === "timeout"
-  const word = run.status === "success" ? "Worked" : run.status === "timeout" ? "Timed out" : run.status === "failed" ? "Failed" : run.status
+  const failed = run.status === "failed" || run.status === "timeout" || run.status === "missed"
+  const word = run.status === "success" ? "Worked" : run.status === "timeout" ? "Timed out" : run.status === "failed" ? "Failed"
+    : run.status === "missed" ? "Missed" : run.status === "held" ? "Held, retry waiting" : run.status
   const t = run.at ? Date.parse(run.at) : NaN
   const why = failed && run.summary ? String(run.summary).split("\n")[0].slice(0, 160) : ""
   return {
