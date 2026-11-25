@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.272.1](https://github.com/anis-marrouchi/agentx/compare/v0.272.0...v0.272.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** a Working row opens its live run; calmer live style ([#2270](https://github.com/anis-marrouchi/agentx/issues/2270)) ([#2271](https://github.com/anis-marrouchi/agentx/issues/2271)) ([9ee7691](https://github.com/anis-marrouchi/agentx/commit/9ee7691eb932321b7cffbe4461f7db3767dc985a))
+
 ## [0.272.0](https://github.com/anis-marrouchi/agentx/compare/v0.271.3...v0.272.0) (2026-11-25)
 
 
