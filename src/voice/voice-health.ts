@@ -8,6 +8,12 @@
 // when it is back. The state lives in a small file, so a restart does not
 // repeat the notice, and so the dashboard and `agentx voice list` can show
 // it.
+//
+// One daemon owns the file. A demo or a second daemon on the same Mac has
+// other voices configured (often none), so if it wrote the file too, the
+// main daemon would find its missing voices "new" on every check and tell
+// the owner again each minute. The file names its owner (config + pid);
+// another daemon leaves the check alone while that owner is alive.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { homedir } from "os"
@@ -36,6 +42,19 @@ export interface MissingVoice {
 export interface VoiceHealthState {
   checkedAt: string
   missing: MissingVoice[]
+  /** The daemon that checks: its config path and pid. */
+  owner?: { id: string; pid: number }
+}
+
+/** Whether a process is still running (EPERM: it is, but not ours). */
+export function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: any) {
+    return e?.code === "EPERM"
+  }
 }
 
 export const voiceHealthPath = (home = homedir()) => join(home, ".agentx", "voice", "health.json")
@@ -137,6 +156,10 @@ export interface VoiceHealthDeps {
   notify: (title: string, message: string) => Promise<void>
   log: (msg: string) => void
   file?: string
+  /** This daemon, e.g. its config path. Absent: no owner is kept. */
+  owner?: string
+  pid?: number
+  isAlive?: (pid: number) => boolean
 }
 
 /** Checks configured voices, notifies once per missing voice, and logs
@@ -144,6 +167,7 @@ export interface VoiceHealthDeps {
 export class VoiceHealth {
   private running = false
   private missingNow = false
+  private leftTo?: string
 
   constructor(private deps: VoiceHealthDeps) {}
 
@@ -155,7 +179,18 @@ export class VoiceHealth {
     this.running = true
     try {
       const file = this.deps.file ?? voiceHealthPath()
-      const before = new Map((readVoiceHealth(file)?.missing ?? []).map((m) => [m.voice, m]))
+      const prior = readVoiceHealth(file)
+      const pid = this.deps.pid ?? process.pid
+      const other = this.deps.owner && prior?.owner && prior.owner.id !== this.deps.owner ? prior.owner : undefined
+      if (other && (this.deps.isAlive ?? pidAlive)(other.pid)) {
+        // Another daemon checks; say so once, not every minute.
+        if (this.leftTo !== other.id) this.deps.log(`[voice] voice check left to the daemon of ${other.id} (pid ${other.pid})`)
+        this.leftTo = other.id
+        return null
+      }
+      this.leftTo = undefined
+      const owner = this.deps.owner ? { id: this.deps.owner, pid } : undefined
+      const before = new Map((prior?.missing ?? []).map((m) => [m.voice, m]))
       const found = findMissingVoices(config, installed)
       const missing: MissingVoice[] = found.map((m) => ({ ...m, since: before.get(m.voice)?.since ?? now.toISOString(), ...(before.get(m.voice)?.notifiedAt ? { notifiedAt: before.get(m.voice)!.notifiedAt } : {}) }))
       const back = [...before.keys()].filter((v) => !found.some((m) => m.voice === v))
@@ -175,9 +210,10 @@ export class VoiceHealth {
         }
       }
       this.missingNow = missing.length > 0
-      const state = { checkedAt: now.toISOString(), missing }
+      const state: VoiceHealthState = { checkedAt: now.toISOString(), missing, ...(owner ? { owner } : {}) }
       // Only on a change: this runs every minute, often on a nearly full disk.
-      if (!existsSync(file) || JSON.stringify(missing) !== JSON.stringify([...before.values()])) writeVoiceHealth(file, state)
+      const ownerChanged = JSON.stringify(owner) !== JSON.stringify(prior?.owner)
+      if (!existsSync(file) || ownerChanged || JSON.stringify(missing) !== JSON.stringify([...before.values()])) writeVoiceHealth(file, state)
       return state
     } finally {
       this.running = false
