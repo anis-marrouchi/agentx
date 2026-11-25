@@ -11010,6 +11010,9 @@ function detectAgentRestartFields(
     const p = prev[id], n = next[id]
     if (!p || !n) { changed.add("add/remove"); continue }
     for (const f of restartFields) {
+      // A model change that comes with an engine switch goes over with the
+      // tier in registry.setConfig (#2101 B1), so it needs no restart.
+      if (f === "model" && p.tier !== n.tier) continue
       if (JSON.stringify(p[f]) !== JSON.stringify(n[f])) {
         changed.add(`${id}.${f}`)
       }

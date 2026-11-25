@@ -74,7 +74,7 @@ For the owner only. **CLI** names the agent whose chat is open and the engine it
 2. Pick the agent under **Agent**, if it is not the one in view.
 3. Under **Engine**, pick **Claude Code**, **Codex CLI**, **OpenCode**, **Anthropic API (SDK)** or **Orchestrator**, then select **Switch**.
 
-**Check it worked:** the note says **Saved.** *agent***'s next run uses** *engine***.** No restart is needed: the agent's next run uses that engine. A run already going keeps its own, and a busy agent switches when its last run ends.
+**Check it worked:** the note says **Saved.** *agent***'s next run uses** *engine***.** No restart is needed: the agent's next run uses that engine. A run already going keeps its own, and a busy agent switches when its last run ends. A saved model the new engine cannot run (for example a Claude model after a switch to Codex CLI or OpenCode) is cleared, so the agent uses that engine's default model; set another one in the agent's **Edit**.
 
 **If something is wrong:** **Not switched:** and a reason means nothing was saved; the same change in **Settings**, on the agent's card, shows the full error. No **CLI** button: you are not signed in as the owner, or no machine answered the live view yet.
 

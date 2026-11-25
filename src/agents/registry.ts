@@ -1,6 +1,7 @@
 import { DELIVERED_SPOKEN, DELIVERED_TEXT, MidTurnInbox, midTurnChat, midTurnKey, type MidTurnEntry } from "./mid-turn"
 import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
+import { modelAfterSwitch } from "./engine-model"
 import { cheapModelForEngine, triageModelFor, type RouteResult } from "./routing"
 import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
@@ -1318,32 +1319,42 @@ export class AgentRegistry {
     // An engine switch (the Hub's CLI drop-down, #2101) needs no restart: an
     // idle agent's next run reads the new tier; a busy one takes it when its
     // last run ends, so a run never changes engine under it.
+    // The model goes over with the tier (B1): a Claude model on Codex CLI or
+    // OpenCode fails the run, so a model the new engine cannot run is
+    // dropped and the engine's default is used.
     for (const [id, def] of Object.entries(next.agents || {})) {
       const state = this.agents.get(id)
       if (!state) continue
       if (state.def.tier === def.tier) { this.pendingTiers.delete(id); continue }
+      const model = modelAfterSwitch(def.model, def.tier)
       if (state.activeTasks > 0) {
-        if (this.pendingTiers.get(id) !== def.tier) this.log(`[${id}] engine switch to ${def.tier} waits for ${state.activeTasks} run(s)`)
-        this.pendingTiers.set(id, def.tier)
+        if (this.pendingTiers.get(id)?.tier !== def.tier) this.log(`[${id}] engine switch to ${def.tier} waits for ${state.activeTasks} run(s)`)
+        this.pendingTiers.set(id, { tier: def.tier, model })
       } else {
-        state.def = { ...state.def, tier: def.tier }; this.pendingTiers.delete(id)
-        this.log(`[${id}] engine switched to ${def.tier}`)
+        this.switchEngine(state, def.tier, model); this.pendingTiers.delete(id)
+        this.log(`[${id}] engine switched to ${def.tier}${model ? ` (model ${model})` : " (engine's default model)"}`)
       }
     }
   }
 
-  /** A tier saved while the agent was busy, applied when its last run ends. */
-  private pendingTiers = new Map<string, AgentDef["tier"]>()
+  /** A tier (and its model) saved while the agent was busy, applied when its
+   *  last run ends. */
+  private pendingTiers = new Map<string, { tier: AgentDef["tier"]; model: string | undefined }>()
+  private switchEngine(state: AgentState, tier: AgentDef["tier"], model: string | undefined): void {
+    const { model: _old, ...rest } = state.def
+    state.def = model ? { ...rest, tier, model } : { ...rest, tier }
+  }
   private applyPendingTier(state: AgentState): void {
-    if (state.activeTasks > 0 || !this.pendingTiers.has(state.id)) return
-    state.def = { ...state.def, tier: this.pendingTiers.get(state.id)! }
+    const next = this.pendingTiers.get(state.id)
+    if (state.activeTasks > 0 || !next) return
+    this.switchEngine(state, next.tier, next.model)
     this.pendingTiers.delete(state.id)
     this.log(`[${state.id}] engine switched to ${state.def.tier} (its runs ended)`)
   }
 
   /** The engine an agent's next run uses (tests and the reload log). */
   tierOf(id: string): AgentDef["tier"] | undefined {
-    return this.pendingTiers.get(id) ?? this.agents.get(id)?.def.tier
+    return this.pendingTiers.get(id)?.tier ?? this.agents.get(id)?.def.tier
   }
 
   /** No new run may start: every slot is taken, or an engine switch waits
@@ -5035,7 +5046,7 @@ export class AgentRegistry {
         id: s.id,
         name: s.def.name,
         tier: s.def.tier,
-        ...(this.pendingTiers.has(s.id) ? { pendingTier: this.pendingTiers.get(s.id) } : {}),
+        ...(this.pendingTiers.has(s.id) ? { pendingTier: this.pendingTiers.get(s.id)!.tier } : {}),
         model: s.def.model,
         workspace: s.def.workspace,
         active: s.activeTasks,

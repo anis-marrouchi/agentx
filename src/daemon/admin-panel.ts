@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { modelAfterSwitch } from "@/agents/engine-model"
 import { HIDDEN_SECRET, hideConfigSecrets, restoreConfigSecrets } from "./config-hidden"
 import { configRelationsProblem, memberKey } from "@/business/relations"
 import { cronValueOf } from "@/crons/value-line"
@@ -657,7 +658,12 @@ function editAgent(body: any) {
     // silently nuking nested config shapes.
     if (typeof patch.name === "string" && patch.name.trim()) a.name = patch.name.trim()
     if (typeof patch.model === "string") a.model = patch.model.trim() || undefined
-    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(patch.tier)) a.tier = patch.tier
+    if (typeof patch.tier === "string" && ["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"].includes(patch.tier)) {
+      // An engine switch drops a saved model the new engine cannot run
+      // (#2101 B1), unless this same save picks the model too.
+      if (patch.tier !== a.tier && typeof patch.model !== "string") a.model = modelAfterSwitch(a.model, patch.tier)
+      a.tier = patch.tier
+    }
     if (typeof patch.systemPrompt === "string") {
       // Instructions saved longer before the limit stay as they are until changed.
       if (patch.systemPrompt.trim() !== (a.systemPrompt || "") && patch.systemPrompt.trim().length > INSTRUCTIONS_MAX) throw new Error(INSTRUCTIONS_TOO_LONG)
