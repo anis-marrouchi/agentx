@@ -107,9 +107,10 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
   const work = liveWorkCount(NODES)
   const S = { live: { nodes: NODES } }
 
-  it("the nav's running count is the runs of working agents", () => {
+  it("the nav's running count is the working agents, not their runs", () => {
     const f = new Function("S", "liveWorkCount", pick("wall.client.ts", "runningCount") + "; return runningCount()")
-    expect(f(S, liveWorkCount)).toBe(work.runs) // 4, not 7 (all runs on every machine)
+    expect(work.runs).toBeGreaterThan(work.agents) // one agent has two runs
+    expect(f(S, liveWorkCount)).toBe(work.agents) // 3: not 4 (runs), not 7 (all runs on every machine)
   })
 
   it("the Agents page counts an agent's runs on its home machine only", () => {
@@ -145,6 +146,14 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
     expect(heads).toEqual([["MacBook-Local", 2], ["Peer", 1]])
     expect(heads.reduce((n, h) => n + (h[1] as number), 0)).toBe(work.agents)
     expect((html.match(/data-ha-agent="coder"/g) || []).length).toBe(1)
+  })
+
+  it("two machines with one name keep their own headings", () => {
+    const twins = [NODES[0], { ...NODES[3], name: "MacBook-Local" }]
+    const m = hubAgentRows(twins, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(twins))
+    const html = haListHtml(m, "working", "", false, ltEsc, () => "now")
+    const heads = [...html.matchAll(/<h4 class="ha__m">([^<]*) <span>(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
+    expect(heads).toEqual([["MacBook-Local", 2], ["MacBook-Local", 1]])
   })
 
   it("one machine working: no machine headings", () => {

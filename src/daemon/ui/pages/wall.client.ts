@@ -1079,10 +1079,11 @@ ${HUB_NAV_SCRIPT}
   }
 
   // --- The nav: which page is on, and its counts (#1316) ---
-  // Runs going, by the Hub's Working rule (liveWorkCount, #2258): machines
-  // that are up, each agent once.
+  // Agents working, by the Hub's Working rule (liveWorkCount, #2258):
+  // machines that are up, each agent once. Agents, not runs, so it matches
+  // the tree, Working, the status bar and the Live page.
   function runningCount() {
-    return liveWorkCount((S.live && S.live.nodes) || []).runs;
+    return liveWorkCount((S.live && S.live.nodes) || []).agents;
   }
   function jobCount() {
     var n = 0;

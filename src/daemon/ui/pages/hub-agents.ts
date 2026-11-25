@@ -184,11 +184,12 @@ export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: bo
     body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>"
     // Working groups by machine, as the "At work now" tree does (#2258):
     // each agent once, on the machine it counts on (hubAgentRows).
+    // Keyed by the machine's URL, so two machines with one name stay apart.
     const order: string[] = []
     const byNode: Record<string, HaRow[]> = {}
-    for (const r of rows) (byNode[r.node] || (order.push(r.node), byNode[r.node] = [])).push(r)
+    for (const r of rows) { const key = r.nodeUrl || r.node; (byNode[key] || (order.push(key), byNode[key] = [])).push(r) }
     body += k === "working" && order.length > 1
-      ? order.map((n) => '<h4 class="ha__m">' + esc(n || "?") + " <span>" + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
+      ? order.map((n) => '<h4 class="ha__m">' + esc(byNode[n][0].node || "?") + " <span>" + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
       : rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
   }
   const idle = m.rows.filter((r) => r.state === "idle")
