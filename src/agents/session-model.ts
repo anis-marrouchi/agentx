@@ -48,15 +48,28 @@ export function sameModel(a: string | null | undefined, b: string | null | undef
  * keeps that model's name; resuming it would ask Claude Code for an OpenAI
  * model, and every turn fails at once ("issue with the selected model").
  * Only the two CLIs whose model families are known are checked.
+ *
+ * Claude Code also takes names that are not `claude-*` (#2245): a context
+ * suffix on an alias (`opus[1m]`), its own aliases (`opusplan`, `default`)
+ * and Bedrock or Vertex ids (`us.anthropic.claude-…`). A model equal to the
+ * agent's configured one always fits: the agent runs on it by design.
  */
-export function modelFitsRuntime(tier: string | undefined, model: string | undefined): boolean {
+export function modelFitsRuntime(
+  tier: string | undefined,
+  model: string | undefined,
+  agentModel?: string,
+): boolean {
   if (!model) return true
-  const m = model.toLowerCase()
-  const claude = m.startsWith("claude") || ALIASES.has(m)
-  if (tier === "claude-code") return claude
+  if (agentModel && model.toLowerCase() === agentModel.toLowerCase()) return true
+  const m = model.toLowerCase().replace(/\[[^\]]*\]$/, "")
+  const claude = m.includes("claude") || ALIASES.has(m) || CLAUDE_CODE_ALIASES.has(m)
+  if (tier === "claude-code") return claude || m === "default"
   if (tier === "codex-cli") return !claude
   return true
 }
+
+/** Claude Code aliases beyond the model families (#2245). */
+const CLAUDE_CODE_ALIASES = new Set(["opusplan"])
 
 /** Whether the session's cache is still warm after `idleMs`. */
 export function isWarm(idleMs: number | null | undefined, ttlMs: number = CACHE_TTL_MS): boolean {
