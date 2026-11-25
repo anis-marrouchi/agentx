@@ -45,7 +45,8 @@ export function hubNavFootHtml(owner: boolean, settingsHref: string): string {
     </div>`
 }
 
-const PAIR_DOC = "https://github.com/anis-marrouchi/agentx/blob/main/docs/dashboard/mobile-app.md"
+// The docs website page, never the raw .md on GitHub (Anis 2026-11-25).
+const PAIR_DOC = "https://agentx-docs.pages.dev/dashboard/mobile-app"
 
 /** The Mobile app page (Anis, 2026-11-24): why to try it, then how. */
 export function hubMobilePageHtml(): string {

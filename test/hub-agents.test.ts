@@ -136,7 +136,10 @@ describe("the Hub page's left column", () => {
     expect(page).toContain('id="wall-mobile"')
     const m = hubMobilePageHtml()
     expect(m).toContain("agentx app pair")
-    expect(m).toContain('docs/dashboard/mobile-app.md')
+    // Anis 2026-11-25: the guide button opens the docs website page, not the raw .md on GitHub.
+    expect(m).toContain('href="https://agentx-docs.pages.dev/dashboard/mobile-app"')
+    expect(m).not.toContain(".md")
+    expect(m).not.toContain("github.com")
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
