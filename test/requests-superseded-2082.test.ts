@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
@@ -8,6 +8,8 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi } from "../src/requests/daemon-api"
 import { DEFAULT_OWNER_CHECK, OwnerWordsCheck, mismatchText, ownerCheckPrompt } from "../src/requests/owner-check"
 import { runRequestTool } from "../src/requests/tool"
+import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "../src/daemon/requests-panel"
+import { readSignals } from "../src/improve/signals"
 
 // #2082: a decline as "superseded / no longer needed" was reopened three
 // times by the owner-words check, until the agent sent old work to get out.
@@ -189,6 +191,44 @@ describe("the owner-words check and a close as superseded", () => {
     const again = checker('{"verdict":"mismatch","why":"x"}')
     expect(await again.c.run()).toMatchObject({ reopened: [], asked: [ID] })
     expect(store.get(ID)?.ownerReopens).toBe(1)
+  })
+})
+
+// #2126: the owner sending closed work back writes owner_reopened once,
+// with their words; an agent or the automatic check never does.
+describe("owner_reopened (#2126)", () => {
+  const reopened = () => readSignals(db, 0).filter((s) => s.kind === "owner_reopened")
+  const panel = (act: "reply" | "handoff", body: Record<string, unknown>) => {
+    const configPath = path.join(tmp, "agentx.json")
+    writeFileSync(configPath, JSON.stringify({ agents: { artist: { name: "Artist" }, coder: { name: "Coder" } }, requests: { enabled: true } }))
+    return handleRequestsPanel("POST", `${REQUESTS_PANEL_PREFIX}/${act}`, body, { root: tmp, configPath, requests: store, now: at + 2_000 })
+  }
+
+  it("a reply from the Desk, the Approvals page or the Wall to an asked close sends it back with one signal", async () => {
+    await askedOnce()
+    const r = await panel("reply", { id: ID, text: "  No, I still want the scroll video of the old page.  " })
+    expect(r.status).toBe(200)
+    expect(store.get(ID)).toMatchObject({ state: "in_progress", ownerCheck: OWNER_ANSWERED })
+    expect(reopened()).toMatchObject([{ agentId: "artist", ref: ID, detail: "No, I still want the scroll video of the old page." }])
+    // A second reply is a reply on open work, not another send-back.
+    expect((await panel("reply", { id: ID, text: "and keep the old colours" })).status).toBe(200)
+    expect(reopened()).toHaveLength(1)
+  })
+
+  it("a hand-off of an asked close to another agent sends it back with one signal", async () => {
+    await askedOnce()
+    expect((await panel("handoff", { id: ID, agentId: "coder", note: "Coder, do the scroll video" })).status).toBe(200)
+    expect(reopened()).toMatchObject([{ agentId: "coder", ref: ID, detail: "Coder, do the scroll video" }])
+  })
+
+  it("no signal when the check reopens, an agent acts on a closed request, or the owner replies on open work", async () => {
+    expect((await panel("reply", { id: ID, text: "how is it going?" })).status).toBe(200)
+    superseded()
+    expect((await checker('{"verdict":"mismatch","why":"You asked for the scroll video."}').c.run()).reopened).toEqual([ID])
+    expect(readSignals(db, 0).map((s) => s.kind)).toContain("owner_check_mismatch")
+    expect(api({ action: "decline", id: ID, reason: "busy" }).status).toBe(200)
+    expect(api({ action: "accept", id: ID }).status).toBe(409)
+    expect(reopened()).toEqual([])
   })
 })
 

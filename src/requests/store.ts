@@ -1569,14 +1569,25 @@ export class RequestStore {
    *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number, max = TEXT_MAX): boolean {
     return this.db.transaction(() => {
+      // Asked whether an agent's close as superseded stands (#2082): a
+      // reply is the owner's no, so the closed work goes back (#2126).
+      const asked = (this.db.prepare("SELECT owner_check FROM requests WHERE id = ?").get(id) as { owner_check?: string | null } | undefined)?.owner_check === OWNER_ASKED
       const moved = this.db.prepare(
         `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
            question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id), ${PROOF_RESET}, ${ASK_ENDS}
          WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
       ).run("in_progress", now, agentId, now, now, note.trim().slice(0, max) || null, id, ...OPEN_STATES).changes > 0
       if (moved) { this.supersedeHandBacks(id); this.liftJobHold(id) }
+      if (moved && asked) this.ownerSentBack(id, note, now, max)
       return moved
     })()
+  }
+
+  /** The owner sent closed work back (#2126): the clearest sign the close
+   *  was wrong. One `owner_reopened` signal, with the owner's words. Only
+   *  the owner's paths call it, never an agent or an automatic check. */
+  private ownerSentBack(id: string, words: string, now: number, max = TEXT_MAX): void {
+    this.signal("owner_reopened", id, words.trim().slice(0, max) || null, now)
   }
 
   /** The owner commented on a closed post (#1355): it opens again, in
@@ -1588,9 +1599,7 @@ export class RequestStore {
          question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, ${PROOF_RESET}
        WHERE id = ? AND state IN (${placeholders(CLOSED_STATES.length)})`,
     ).run("in_progress", now, now, now, note.trim().slice(0, max) || null, id, ...CLOSED_STATES).changes > 0
-    // The owner sending a closed request back is the clearest sign the
-    // close was wrong.
-    if (reopened) this.signal("owner_reopened", id, note || null, now)
+    if (reopened) this.ownerSentBack(id, note, now, max)
     return reopened
   }
 
