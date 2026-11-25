@@ -3,7 +3,7 @@ import { redactSourcesRead } from "@/situations/sources/redact"
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { modelAfterSwitch } from "./engine-model"
 import { cheapModelForEngine, triageModelFor, type RouteResult } from "./routing"
-import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
+import { canHoldUpgrade, coldResumeChoice, heldEdgeRoute, isWarm, modelFitsRuntime, modelToStore, namedModelRotates, resumeModel, sameModel, warmEdgeRotates } from "./session-model"
 import { IMPLIED_AT, edgeModelForEngine, edgePlanFor, edgeRouteLog, edgeSeatOn, jobModelFor, routeTaskEdge, type EdgeRouteResult } from "./edge-routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { decideResume, describeResume } from "./resume-gate"
@@ -3739,7 +3739,12 @@ export class AgentRegistry {
     let modelRotatedTo: string | undefined
     if (resumeSessionId && storedModel) {
       let target: string | undefined
-      if (task.model) {
+      // The agent moved to another runtime since this session started:
+      // its stored model can't run there, so it always starts anew.
+      const wrongRuntime = !modelFitsRuntime(state.def.tier, storedModel)
+      if (wrongRuntime) {
+        target = task.model ?? state.def.model
+      } else if (task.model) {
         if (namedModelRotates(storedModel, task.model)) target = task.model
       } else if (!warmResume || !canHoldUpgrade(storedModel, state.def.model, edgeModelForEngine(state.def.tier, this.config.decisions.routing))) {
         // Started now, without waiting for the request gate: its answer
@@ -3763,8 +3768,8 @@ export class AgentRegistry {
           target = warmEdgeRotates(storedModel, state.def.model, edgeModelForEngine(state.def.tier, this.config.decisions.routing), edge)
         }
       }
-      if (target) {
-        this.log(`[${task.agentId}] model changed for ${channel}:${chatId} (${storedModel} → ${target}): new session`)
+      if (target || wrongRuntime) {
+        this.log(`[${task.agentId}] model changed for ${channel}:${chatId} (${storedModel} → ${target ?? `${state.def.tier} default`}${wrongRuntime ? `, not a ${state.def.tier} model` : ""}): new session`)
         if (state.def.tier === "claude-code") {
           void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "model")
         }
