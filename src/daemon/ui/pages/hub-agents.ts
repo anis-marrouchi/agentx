@@ -66,10 +66,11 @@ export function haFace(name: unknown): string {
 }
 
 /**
- * Every agent of every node that answers, one row each (the first node
- * that has it wins, as the agent list does). Which nodes answer and where
- * an agent counts come from `work` (wall-tree.ts liveWorkCount, #2260), the
- * same count the "At work now" tree shows, so the two numbers agree.
+ * Every agent of every reachable node, one row each (the first up node
+ * that has it wins, else the first node). Where an agent counts comes from
+ * `work` (wall-tree.ts liveWorkCount, #2260), the same count the "At work
+ * now" tree shows, so the two numbers agree: an agent of a node that is
+ * checking or answered with an error is listed, never as working.
  * Working: a run is going.
  * Needs you: nothing running, a question for the owner open. Done: its
  * last run ended since `dayStart`. Idle: the rest. Order inside a group:
@@ -90,14 +91,18 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
   const seen: Record<string, boolean> = {}
   const rows: HaRow[] = []
   for (const n of nodes || []) {
-    if (!n) continue
+    if (!n || n.reachable === false) continue
     // wall-tree.ts ltNodeKey: written out, an injected function cannot import.
     const key = String(n.url || n.id || n.name)
-    if (!work.byNode[key]) continue
     for (const a of n.agents || []) {
-      if (!a || !a.id || seen[a.id] || work.home[a.id] !== key) continue
+      if (!a || !a.id || seen[a.id]) continue
+      // An agent an up machine lists has its row there (#2260 C1).
+      const home = work.home[a.id]
+      if (home && home !== key) continue
       seen[a.id] = true
-      const runs = (a.runningTasks || []).filter(Boolean) as LtTask[]
+      // A machine that is checking or answered with an error still lists its
+      // agents, but its runs are not counted: they show as not working.
+      const runs = (home === key ? (a.runningTasks || []).filter(Boolean) : []) as LtTask[]
       const t = runs.slice().sort((x, y) => (Date.parse(y.lastActivity || y.startedAt || "") || 0) - (Date.parse(x.lastActivity || x.startedAt || "") || 0))[0]
       const q = asked[a.id]
       const sumAt = a.lastSummary ? Date.parse(a.lastSummary.at) || 0 : 0

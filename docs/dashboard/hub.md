@@ -38,7 +38,7 @@ The top of the nav lists every agent of every connected machine once, by what it
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
 2. The chips at the top filter the list: **All**, **Working**, **Needs you** and **Done**, each with its count. The Hub remembers your choice.
 3. The agents are grouped:
-   - **Working**: a run is going. The row shows the run's title and a moving blue bar. Only agents of machines that answer are listed, each once, so **Working**'s count is the sum of the machine numbers under **At work now**.
+   - **Working**: a run is going. The row shows the run's title and a moving blue bar. Each agent is listed once. Only agents of machines that answer count as working, so **Working**'s count is the sum of the machine numbers under **At work now**. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**.
    - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
    - **Done today**: its last run ended today. The row shows the first line of its last answer.
    - **Not working today**, folded at the end: every other agent.
@@ -120,7 +120,7 @@ Pick a profile, then start a new task for a Claude Code agent and ask it to run 
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
 2. The tree reads from the top down:
-   - **Machine**, with a number: how many agents are working on it now, counted as the **Working** list counts them, so the machine numbers add up to **Working**'s count. An agent with two runs counts once and has two rows; point at the number to see the runs. An agent that two machines list counts on the first one. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
+   - **Machine**, with a number: how many agents are working on it now, counted as the **Working** list counts them, so the machine numbers add up to **Working**'s count. An agent with two runs counts once and has two rows; point at the number to see the runs. An agent that two machines list counts and shows on the first one only. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
    - **Project**: the project or repository of the work. Runs with no project are under **No project**, at the end.
    - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
    - **One row per agent run**: a turning ring while it works, the provider's icon, a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
