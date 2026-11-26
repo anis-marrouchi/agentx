@@ -264,6 +264,9 @@ A failed pipeline with no open merge request starts the agent in `routes`, as be
 | `channels.github.noWakeLabel` | string | `"agent:no-wake"` | An issue or pull request carrying this label starts no run: not when it is opened, not on a label change, not on a comment or review, even one that @-mentions the agent. A project rule is not needed. Adding the label also drops a run still waiting its `debounceSeconds`. Remove the label to let the agent in. `""` turns this off. |
 | `channels.github.ci.fixAttempts` | number | `3` | How many times failed workflow runs on one pull request start its agent, counted across all its commits. Each commit starts the agent at most once. After that, AgentX posts one comment on the pull request asking a person to look. The count resets when every workflow run of the pull request's latest commit passes, if that commit had not started the agent. `0` never starts the agent. |
 | `channels.github.ci.holdSeconds` | number (0–3600) | `30` | AgentX waits this many seconds after the first failed workflow run of a commit. Every failed run of that commit in the wait goes into one start. |
+| `channels.github.ci.reviewer` | string | unset | The agent woken when an agent-owned pull request is all green and has no review. Unset turns the review wait off. See [Green pull requests with no review](#green-pull-requests-with-no-review). |
+| `channels.github.ci.reviewWakeMinutes` | number | `15` | Minutes a pull request stays green with no review before `ci.reviewer` is woken on the pull request's chat. Once per wait. |
+| `channels.github.ci.reviewOwnerMinutes` | number | `30` | Minutes a pull request stays green with no review before the agent that owns it is told. Once per wait. |
 
 ### Failed workflow runs
 
@@ -287,6 +290,19 @@ The run belongs to the pull request, so the reply is a comment there. The messag
 A pull request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed run.
 
 A run with no pull request starts nothing. The webhook must send **Workflow runs** events. Check suite and check run events start nothing.
+
+### Green pull requests with no review
+
+When `ci.reviewer` is set, a pull request whose latest commit has passed every workflow run, that an agent owns (found as in [Failed workflow runs](#failed-workflow-runs)) and that has no review yet starts a review wait.
+
+- After `ci.reviewWakeMinutes` the reviewer agent is woken on the pull request's chat, once.
+- After `ci.reviewOwnerMinutes` the owning agent is told that no review has come, once.
+- The wait ends on a submitted GitHub review, a comment on the pull request signed by the reviewer (`<!-- agentx:<reviewer> -->`) from an account AgentX posts with, or the pull request closing or merging. A comment signed by another agent does not end it.
+- A new push ends the wait. The next all-green commit starts a new one.
+- Release pull requests (release-please), pull requests from a fork and pull requests labelled with `noWakeLabel` never wait.
+- Waits are kept in `.agentx/state/review-wait-github.json` and checked once a minute, so a daemon restart neither loses a wait nor wakes twice.
+
+A review given only agent to agent, with no comment on the pull request, does not end the wait.
 
 ### Which comments start a run
 
