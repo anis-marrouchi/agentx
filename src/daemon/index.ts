@@ -12,10 +12,10 @@ import { workflowHealth, scanRuns } from "./workflow-health"
 import { AssistantStore } from "./assistant-store"
 import { resolveClient, parseWorkRef, listClients, type BusinessShape } from "@/business/clients"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
-import { createReadStream } from "fs"
+import { closeSync, constants as fsConstants, createReadStream, fstatSync, openSync } from "fs"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
 import { watchConfigFile } from "./config-watch"
-import { resolve, dirname, extname, normalize, sep } from "path"
+import { resolve, dirname, extname, normalize } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { describeJobState, jobStateFrom, needsJobState } from "@/agents/run-state"
@@ -289,6 +289,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
+import { resolveWorkspaceFile, WORKSPACE_FILE_ROUTE_MAX } from "@/daemon/workspace-path-guard"
 import { checkPayloadWithConfirmation, checkAutonomyPayload, checkPersonLimitPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import { MISSING_REFRESH_MS, setMissingVoiceHook, setVoiceLog } from "@/voice/system-voices"
@@ -7599,8 +7600,10 @@ export class AgentXDaemon {
       //
       // Returns the raw file with an appropriate Content-Type so browsers /
       // example.com can display images, PDFs, and other artifacts the agent wrote
-      // during a /chat turn. Path traversal is blocked — the resolved path must
-      // stay inside the agent's workspace directory.
+      // during a /chat turn. Only a regular file whose real path (links
+      // followed) is inside the agent's workspace, not a secret-looking name
+      // (.env, keys, .git, ...) and at most WORKSPACE_FILE_ROUTE_MAX bytes is
+      // served (workspace-path-guard.ts, #2316).
       const workspaceFileMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/workspace\/(.+)$/)
       if (workspaceFileMatch) {
         const allowed = workspaceFileAllowed({
@@ -7614,18 +7617,31 @@ export class AgentXDaemon {
           this.json(res, 401, { error: "unauthorized" }); return
         }
         const wsAgentId = workspaceFileMatch[1]
-        const rawFilePath = decodeURIComponent(workspaceFileMatch[2])
+        let rawFilePath: string
+        try { rawFilePath = decodeURIComponent(workspaceFileMatch[2]) } catch { this.json(res, 400, { error: "bad path" }); return }
         const agentDef = this.registry.getAgent(wsAgentId)
         if (!agentDef) { this.json(res, 404, { error: `agent "${wsAgentId}" not found` }); return }
 
-        // Resolve and guard against path traversal.
-        const workspaceDir = resolve(process.cwd(), agentDef.workspace)
-        const resolvedFile = resolve(workspaceDir, rawFilePath)
-        if (!resolvedFile.startsWith(workspaceDir + sep) && resolvedFile !== workspaceDir) {
-          this.json(res, 403, { error: "path traversal denied" }); return
-        }
-        if (!existsSync(resolvedFile)) {
+        // The real path (links followed) must be inside the workspace and
+        // must not be a secret-looking name (workspace-path-guard.ts, #2316).
+        const found = resolveWorkspaceFile(agentDef.workspace, rawFilePath)
+        if (!found.ok) { this.json(res, found.status, { error: found.error }); return }
+        const resolvedFile = found.realPath
+        // Opened without following a link swapped in after the check; type
+        // and size are read from the open file.
+        let wsFd: number
+        try { wsFd = openSync(resolvedFile, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0)) } catch {
           this.json(res, 404, { error: "file not found" }); return
+        }
+        let wsSize: number
+        try {
+          const st = fstatSync(wsFd)
+          if (!st.isFile()) { closeSync(wsFd); this.json(res, 404, { error: "not a file" }); return }
+          wsSize = st.size
+        } catch { closeSync(wsFd); this.json(res, 404, { error: "file not found" }); return }
+        if (wsSize > WORKSPACE_FILE_ROUTE_MAX) {
+          closeSync(wsFd)
+          this.json(res, 413, { error: `the file is larger than ${WORKSPACE_FILE_ROUTE_MAX / 1024 / 1024} MB` }); return
         }
 
         // Derive Content-Type from extension.
@@ -7641,9 +7657,13 @@ export class AgentXDaemon {
         const contentType = mimeMap[ext] ?? "application/octet-stream"
         res.writeHead(200, {
           "Content-Type": contentType,
+          "Content-Length": String(wsSize),
           "Cache-Control": "private, max-age=3600",
         })
-        createReadStream(resolvedFile).pipe(res)
+        const wsStream = createReadStream("", { fd: wsFd, autoClose: true })
+        wsStream.on("error", () => res.destroy())
+        res.on("close", () => wsStream.destroy())
+        wsStream.pipe(res)
         return
       }
 

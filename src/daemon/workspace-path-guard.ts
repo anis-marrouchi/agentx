@@ -1,0 +1,80 @@
+import { realpathSync } from "fs"
+import { join, relative, resolve, sep } from "path"
+
+// --- Where a path asked for in an agent's workspace really is (#2316) ---
+//
+// Shared by the routes that read a file from an agent's workspace by a path
+// the caller chooses: GET /agents/:id/workspace/<file> (index.ts), which
+// serves /chat artifacts. Whatever the path says, only something whose real
+// location (links followed) is inside the workspace is returned:
+//   - the path is relative, without `..`, NUL, `~` or a drive letter;
+//   - a link that leads out of the workspace is refused;
+//   - names that usually hold secrets (.env, keys, tokens, .ssh, cloud and
+//     package-registry logins), .git and node_modules are refused: checked on
+//     every part of the path as asked AND of the real path. The real path
+//     comes from realpathSync.native, which gives the names as stored on
+//     disk, so a case-insensitive file system (".ENV") or a link to a hidden
+//     file ("notes.txt -> .env") cannot reach a hidden name another way.
+//
+// The name list is the same as the Files tab's (#2315,
+// workspace-files-api.ts), so both can use this module.
+
+const PATH_MAX = 1024
+
+/** Largest file GET /agents/:id/workspace/<file> serves. Above the 20 MB a
+ *  declared artifact may have (ARTIFACT_LIMITS), as /chat callers may also
+ *  open videos and other files the agent wrote. */
+export const WORKSPACE_FILE_ROUTE_MAX = 50 * 1024 * 1024
+
+/** Names never served: version control, packages, and what usually holds secrets. */
+export function isHiddenName(name: string): boolean {
+  const n = name.toLowerCase()
+  return n === ".git" || n === "node_modules" ||
+    n === ".env" || n.startsWith(".env.") || n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
+    /\.(pem|key|p12|pfx|keystore|jks)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)/.test(n) ||
+    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)?$/.test(n) || n === "tokens.json" || n === "auth.json" ||
+    // Logins of git, Claude, MCP servers, Python packages; whole folders of
+    // SSH, Docker and Kubernetes logins (.docker/config.json, .kube/config).
+    n === ".git-credentials" || n === ".credentials.json" || n === ".mcp.json" || n === "settings.local.json" ||
+    n === ".pypirc" || n === ".ssh" || n === ".docker" || n === ".kube"
+}
+
+/** Whether any part of a path relative to the workspace is a hidden name. */
+function hasHiddenPart(rel: string): boolean {
+  return rel.split(/[\\/]+/).some((s) => s && isHiddenName(s))
+}
+
+/** The relative path's parts, or why it is refused. "" or "." is the workspace itself. */
+export function workspaceParts(path: string): string[] | { status: number; error: string } {
+  const p = String(path ?? "")
+  if (p.length > PATH_MAX || p.includes("\0")) return { status: 400, error: "bad path" }
+  if (p.startsWith("/") || p.startsWith("\\") || /^[a-zA-Z]:/.test(p) || p.startsWith("~")) return { status: 400, error: "the path must be relative to the workspace" }
+  const parts = p.split(/[\\/]+/).filter((s) => s && s !== ".")
+  if (parts.includes("..")) return { status: 403, error: "the path leaves the workspace" }
+  if (parts.some(isHiddenName)) return { status: 403, error: "this file is not shown" }
+  return parts
+}
+
+export type WorkspaceFileResolution =
+  | { ok: true; realPath: string }
+  | { ok: false; status: number; error: string }
+
+/**
+ * The real path of a file asked for in a workspace, or why it is refused
+ * (400 bad path, 403 outside or hidden, 404 missing or not a file name).
+ * The caller opens `realPath` with O_NOFOLLOW and checks it is a regular
+ * file on the open descriptor.
+ */
+export function resolveWorkspaceFile(workspaceDir: string, rawPath: string, cwd = process.cwd()): WorkspaceFileResolution {
+  if (!workspaceDir) return { ok: false, status: 404, error: "the agent has no workspace" }
+  const parts = workspaceParts(rawPath)
+  if (!Array.isArray(parts)) return { ok: false, ...parts }
+  if (parts.length === 0) return { ok: false, status: 404, error: "file not found" }
+  let root: string
+  try { root = realpathSync.native(resolve(cwd, workspaceDir)) } catch { return { ok: false, status: 404, error: "the agent's workspace is missing" } }
+  let real: string
+  try { real = realpathSync.native(join(root, ...parts)) } catch { return { ok: false, status: 404, error: "file not found" } }
+  if (!real.startsWith(root + sep)) return { ok: false, status: 403, error: "the path leads out of the workspace" }
+  if (hasHiddenPart(relative(root, real))) return { ok: false, status: 403, error: "this file is not shown" }
+  return { ok: true, realPath: real }
+}
