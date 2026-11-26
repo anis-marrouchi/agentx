@@ -57,6 +57,49 @@ describe("hubAgentRows", () => {
   })
 })
 
+describe("the counts next to each agent (#2145)", () => {
+  // 24 hourly slots, oldest first; the last one ends at NOW (12:00Z), so
+  // slots 12..23 are today (00:00Z-12:00Z) and 11 ends exactly at midnight.
+  const hourly = Array.from({ length: 24 }, (_, i) => (i === 11 ? 7 : i === 12 ? 2 : i === 23 ? 1 : i === 0 ? 9 : 0))
+
+  it("sums the hours that are today, and nothing before midnight", () => {
+    expect(ha.haRunsToday(hourly, NOW, DAY)).toBe(3)
+    expect(ha.haRunsToday(hourly, NOW, NOW - 3600_000)).toBe(1)
+    expect(ha.haRunsToday(undefined, NOW, DAY)).toBe(0)
+    expect(ha.haRunsToday([1, "x", -2, null], NOW, 0)).toBe(1)
+  })
+  it("counts a slot that is partly today (a run can be up to 59 min before midnight)", () => {
+    // Midnight at 11:30Z: the slot 11:00-12:00Z (index 23) counts whole.
+    expect(ha.haRunsToday(hourly, NOW, NOW - 1800_000)).toBe(1)
+  })
+  it("gives each row its runs going and runs today, the Hub and the phone alike", () => {
+    const ns: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+      { id: "lead", name: "lead", hourlyTasks: hourly, runningTasks: [{ id: "a", startedAt: ago(60_000) }, { id: "b", startedAt: ago(120_000) }] },
+      { id: "quiet", name: "quiet" },
+    ] }]
+    const m = hubAgentRows(ns, [], NOW, DAY, title, ltPlain, liveWorkCount(ns))
+    const lead = m.rows.find((r) => r.id === "lead")!
+    expect([lead.runs, lead.today]).toEqual([2, 3])
+    const h = ha.haRowHtml(lead, "", ltEsc, ltAge)
+    expect(h).toContain('<span class="ha__stats" title="2 running now, 3 runs today"><span data-stat="now">2 running</span><span data-stat="today">3 today</span></span>')
+    // Next to the name, before the time.
+    expect(h.indexOf("ha__stats")).toBeGreaterThan(h.indexOf("ha__name"))
+    expect(h.indexOf("ha__stats")).toBeLessThan(h.indexOf("<time>"))
+    const quiet = m.rows.find((r) => r.id === "quiet")!
+    expect([quiet.runs, quiet.today]).toEqual([0, 0])
+    expect(ha.haRowHtml(quiet, "", ltEsc, ltAge)).not.toContain("ha__stats")
+  })
+  it("says one run in the singular and leaves out a zero", () => {
+    const row = { ...hubAgentRows(nodes, [], NOW, DAY, title, ltPlain, liveWorkCount(nodes)).rows[0], runs: 0, today: 1 }
+    const h = ha.haRowHtml(row, "", ltEsc, ltAge)
+    expect(h).toContain('title="1 run today"')
+    expect(h).not.toContain('data-stat="now"')
+  })
+  it("styles the counts quietly, with even-width digits", () => {
+    expect(HUB_NAV_CSS).toMatch(/\.ha__stats \{[^}]*color: var\(--ax-muted\)[^}]*font-variant-numeric: tabular-nums/)
+  })
+})
+
 describe("haListHtml", () => {
   const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   it("draws the chips, the groups and the current agent", () => {
@@ -288,7 +331,7 @@ describe("the Hub page's left column", () => {
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
-    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunsHtml: ha.haRunsHtml })
+    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunsHtml: ha.haRunsHtml, haRunsToday: ha.haRunsToday })
     const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
     expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
   })

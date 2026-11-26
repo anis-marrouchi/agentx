@@ -140,6 +140,8 @@ export const HUB_NAV_CSS = `
 .ha__top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .ha__name { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ha__node { font-size: 11px; padding: 0 5px; border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-muted); white-space: nowrap; }
+.ha__stats { display: inline-flex; gap: 6px; font-size: 11px; color: var(--ax-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ha__stats > span + span::before { content: "·"; margin-right: 6px; }
 .ha__top time { margin-left: auto; font-size: 11.5px; color: var(--ax-muted); white-space: nowrap; }
 .ha__line { font-size: 12.5px; color: var(--ax-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* A working agent's other runs, under its row (#2328). */
