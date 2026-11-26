@@ -73,6 +73,18 @@
   @keyframes ax-sheet-out { to { transform: translateX(var(--ax-sheet-from, -100%)); } }
   @keyframes ax-fade-in { from { opacity: 0; } }
   @keyframes ax-fade-out { to { opacity: 0; } }
+
+  /* S4 (orca-design motion.md): floating parts 150/100 ms and dialogs
+     200/150 ms, from scale 0.95 at the trigger's origin; the dialog scrim
+     fades 200/150 ms on main's ax-fade-in/out. Sheets use the tokens above. */
+  --animate-ax-pop-in: ax-pop-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-ax-pop-out: ax-pop-out 100ms cubic-bezier(0.7, 0, 0.84, 0);
+  --animate-ax-dialog-in: ax-pop-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-ax-dialog-out: ax-pop-out 150ms cubic-bezier(0.7, 0, 0.84, 0);
+  --animate-ax-fade-in: ax-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-ax-fade-out: ax-fade-out 150ms cubic-bezier(0.7, 0, 0.84, 0);
+  @keyframes ax-pop-in { from { opacity: 0; transform: scale(0.95); } }
+  @keyframes ax-pop-out { to { opacity: 0; transform: scale(0.95); } }
 }
 
 /* The roots. */
@@ -122,6 +134,22 @@
 /* The utilities, only inside the roots. */
 .ax-hub {
   @tailwind utilities;
+}
+
+/* Reduced motion: no movement, only a short fade. After the utilities, so it
+   wins over the animate-ax-* classes the parts carry. Tooltips that open
+   instantly (instant-open) stay still. */
+@media (prefers-reduced-motion: reduce) {
+  .ax-hub :is([data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="sheet-overlay"], [data-slot="sheet-content"],
+    [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="select-content"],
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"]):is([data-state="open"], [data-state="delayed-open"]) {
+    animation: ax-fade-in 150ms ease-out;
+  }
+  .ax-hub :is([data-slot="dialog-overlay"], [data-slot="dialog-content"], [data-slot="sheet-overlay"], [data-slot="sheet-content"],
+    [data-slot="popover-content"], [data-slot="tooltip-content"], [data-slot="select-content"],
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"])[data-state="closed"] {
+    animation: ax-fade-out 100ms ease-in;
+  }
 }
 
 /* Stage 1 of the move (#2218 part 3): on a React page the old script sets

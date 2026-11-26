@@ -10,9 +10,12 @@ import { useLiveSnapshot, useLiveStatus } from "../live-react"
 import type { HubPageProps } from "../registry"
 import {
   AfCard, AfCount, AfLoader, AfRow, AfSkeletonRows, AfStateLabel, Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger,
   EmptyState, ICON_NAMES, Icon, Kbd, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-  Skeleton, StatusDot, Switch, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, TooltipContent, TooltipTrigger,
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
+  Skeleton, StatusDot, Switch, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, TooltipContent, TooltipTrigger, toast,
 } from "../ui"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -21,6 +24,57 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
       <div className="flex flex-wrap items-center gap-3">{children}</div>
     </section>
+  )
+}
+
+function IconButton({ size, label, icon, shortcut }: { size: "icon-lg" | "icon" | "icon-sm" | "icon-xs"; label: string; icon: string; shortcut?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild><Button variant="ghost" size={size} aria-label={label}><Icon name={icon} /></Button></TooltipTrigger>
+      <TooltipContent>{label}{shortcut ? <Kbd>{shortcut}</Kbd> : null}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function RowMenu() {
+  const [pinned, setPinned] = useState(true)
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="More actions"><Icon name="ellipsis" /></Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent>
+        <DropdownMenuLabel>Agent</DropdownMenuLabel>
+        <DropdownMenuItem><Icon name="pencil" className="text-muted-foreground" />Rename<DropdownMenuShortcut>⌘R</DropdownMenuShortcut></DropdownMenuItem>
+        <DropdownMenuItem><Icon name="history" className="text-muted-foreground" />View logs</DropdownMenuItem>
+        <DropdownMenuCheckboxItem checked={pinned} onCheckedChange={(v) => setPinned(v === true)}>Pin to the side menu</DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive"><Icon name="trash-2" />Delete</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function FoldSection() {
+  const [open, setOpen] = useState(true)
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="w-full max-w-md">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md py-1 text-sm font-semibold outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 cursor-pointer">
+        <Icon name={open ? "chevron-down" : "chevron-right"} className="size-3.5 text-muted-foreground" />
+        Running now
+        <span className="text-xs font-normal tabular-nums text-muted-foreground">3</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col pl-5.5 text-[13px]">
+        <span className="border-b border-border py-1.5">Triage the inbox</span>
+        <span className="border-b border-border py-1.5">Fix the login page</span>
+        <span className="py-1.5">Weekly report</span>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -112,10 +166,10 @@ function LiveCard() {
 export default function CatalogPage(_: HubPageProps) {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border/60 pb-5">
         <div>
-          <h1 className="text-xl font-semibold">Components</h1>
-          <p className="text-sm text-muted-foreground">The Hub's one component set (src/hub/ui). Pages use these, or add to them here.</p>
+          <h1 className="text-2xl font-semibold leading-tight">Components</h1>
+          <p className="text-sm leading-6 text-muted-foreground">The Hub's one component set (src/hub/ui). Pages use these, or add to them here.</p>
         </div>
         <ThemeSwitch />
       </header>
@@ -128,7 +182,15 @@ export default function CatalogPage(_: HubPageProps) {
         <Button variant="destructive">Delete</Button>
         <Button variant="link">Link</Button>
         <Button size="sm">Small</Button>
+        <Button size="xs">Extra small</Button>
         <Button disabled>Disabled</Button>
+      </Section>
+
+      <Section title="Icon button">
+        <IconButton size="icon-lg" label="Add agent" icon="plus" />
+        <IconButton size="icon" label="Search" icon="search" shortcut="⌘K" />
+        <IconButton size="icon-sm" label="Settings" icon="settings" />
+        <IconButton size="icon-xs" label="Close" icon="x" />
       </Section>
 
       <Section title="Badge and status">
@@ -147,7 +209,12 @@ export default function CatalogPage(_: HubPageProps) {
       </Section>
 
       <Section title="Icons">
-        {ICON_NAMES.map((n) => <span key={n} title={n} className="text-muted-foreground"><Icon name={n} /></span>)}
+        {ICON_NAMES.map((n) => (
+          <span key={n} className="inline-flex w-40 items-center gap-2 text-muted-foreground">
+            <Icon name={n} />
+            <span className="truncate font-mono text-[11px]">{n}</span>
+          </span>
+        ))}
       </Section>
       <Section title="Tabs">
         <Tabs defaultValue="changes" className="w-full max-w-md">
@@ -178,8 +245,34 @@ export default function CatalogPage(_: HubPageProps) {
         </Dialog>
         <Tooltip>
           <TooltipTrigger asChild><Button variant="ghost">Hover me</Button></TooltipTrigger>
-          <TooltipContent>Opens on hover and on keyboard focus</TooltipContent>
+          <TooltipContent>Opens on hover and on keyboard focus <Kbd>⌘K</Kbd></TooltipContent>
         </Tooltip>
+      </Section>
+
+      <Section title="Sheet">
+        {(["left", "right"] as const).map((side) => (
+          <Sheet key={side}>
+            <SheetTrigger asChild><Button variant="outline">Open from the {side}</Button></SheetTrigger>
+            <SheetContent side={side}>
+              <SheetHeader>
+                <SheetTitle>Files</SheetTitle>
+                <SheetDescription>What this task wrote, newest first.</SheetDescription>
+              </SheetHeader>
+            </SheetContent>
+          </Sheet>
+        ))}
+      </Section>
+
+      <Section title="Dropdown menu">
+        <RowMenu />
+      </Section>
+
+      <Section title="Collapsible">
+        <FoldSection />
+      </Section>
+
+      <Section title="Toast">
+        <Button variant="outline" onClick={() => toast.success("Saved")}>Show a toast</Button>
       </Section>
 
       <Section title="Switch">
@@ -220,7 +313,7 @@ export default function CatalogPage(_: HubPageProps) {
           <CardFooter><Button size="sm">Open</Button></CardFooter>
         </Card>
         <div className="flex w-full max-w-xs flex-col gap-2"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-16 w-full" /></div>
-        <EmptyState className="w-full max-w-xs" title="Nothing waiting on you" action={<Button size="sm" variant="outline">Open the Desk</Button>}>
+        <EmptyState className="w-full max-w-xs" icon="inbox" title="Nothing waiting on you" action={<Button size="sm" variant="outline">Open the Desk</Button>}>
           New asks from your agents show here.
         </EmptyState>
       </Section>

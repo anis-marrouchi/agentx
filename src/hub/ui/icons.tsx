@@ -6,7 +6,7 @@ import {
   Building2, CalendarClock, ChartLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleDollarSign,
   CircleDot, CircleX, Clock, Cog, Copy, Download, Ellipsis, ExternalLink, Eye, EyeOff, File, FilePenLine, Files, FileText, Folder, FolderGit2, Gauge, GitBranch,
   GitMerge, GitPullRequest, Globe, GripVertical, Hash, Heading, History, House, Inbox, Info, Kanban, KeyRound, LayoutDashboard, LayoutList, Link, List, ListChecks,
-  ListTodo, LoaderCircle, Mail, Megaphone, Menu, MessageCircle, MessageSquare, MessageSquareMore, Monitor, Moon, Network, PanelLeft, PanelRight, Pause, Pencil,
+  ListTodo, LoaderCircle, Mail, Megaphone, Menu, MessageCircle, MessageSquare, MessageSquareMore, Monitor, Moon, Network, OctagonX, PanelLeft, PanelRight, Pause, Pencil,
   Phone, Play, Plug, Plus, Radio, RefreshCw, RotateCcw, Search, Send, Server, Settings, Settings2, Shapes, ShieldCheck, Smartphone, SquareKanban,
   SquareTerminal, Star, SunMoon, Trash2, TriangleAlert, Undo2, Unlink, Unplug, User, UserRound, UserRoundPlus, Users, Webhook, Workflow, X, Zap,
 } from "lucide-static"
@@ -24,7 +24,7 @@ const ICONS: Record<string, string> = {
   "inbox": Inbox, "info": Info, "kanban": Kanban, "key-round": KeyRound, "layout-dashboard": LayoutDashboard, "layout-list": LayoutList,
   "link": Link, "list": List, "list-checks": ListChecks, "list-todo": ListTodo, "loader-circle": LoaderCircle, "mail": Mail, "megaphone": Megaphone,
   "menu": Menu, "message-circle": MessageCircle, "message-square": MessageSquare, "message-square-more": MessageSquareMore, "monitor": Monitor, "moon": Moon,
-  "network": Network, "panel-left": PanelLeft, "panel-right": PanelRight, "pause": Pause, "pencil": Pencil, "phone": Phone, "play": Play, "plug": Plug, "plus": Plus,
+  "network": Network, "octagon-x": OctagonX, "panel-left": PanelLeft, "panel-right": PanelRight, "pause": Pause, "pencil": Pencil, "phone": Phone, "play": Play, "plug": Plug, "plus": Plus,
   "radio": Radio, "refresh-cw": RefreshCw, "rotate-ccw": RotateCcw, "search": Search, "send": Send, "server": Server, "settings": Settings, "settings-2": Settings2,
   "shapes": Shapes, "shield-check": ShieldCheck, "smartphone": Smartphone, "square-kanban": SquareKanban, "square-terminal": SquareTerminal,
   "star": Star, "sun-moon": SunMoon, "trash-2": Trash2, "triangle-alert": TriangleAlert, "undo-2": Undo2, "unlink": Unlink, "unplug": Unplug, "user": User, "user-round": UserRound,
