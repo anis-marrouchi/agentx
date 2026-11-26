@@ -185,7 +185,7 @@ const heldAgent = (calls: AgentExecuteRequest[]) => ({
   }),
 })
 
-function boot(agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }) {
+function boot(agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteResponse> }, owner?: { notify: (...a: any[]) => Promise<void>; ask: (...a: any[]) => Promise<{ cardId: string }> }) {
   const sends: string[] = []
   const logs: string[] = []
   const notices: Array<{ to: string; from: string; text: string }> = []
@@ -196,6 +196,7 @@ function boot(agents: { execute(req: AgentExecuteRequest): Promise<AgentExecuteR
   const dispatcher = new WorkflowDispatcher({
     store, runs, nodeId: "node-a", channels, agents, timers, log: (m) => logs.push(m),
     noticeAgent: (to, from, text) => notices.push({ to, from, text }),
+    owner,
   })
   return { store, runs, dispatcher, sends, logs, notices }
 }
@@ -259,5 +260,18 @@ describe("#2334 a held answer step", () => {
     await until(() => b.sends.length > 0)
     expect(b.notices).toHaveLength(0)
     expect(b.logs.some((l) => /Workflow step "answer" \(agent pm-agent\) has waited/.test(l))).toBe(true)
+  })
+
+  it("when the owner agent is the held step's agent, the owner person is told, not the agent", async () => {
+    const calls: AgentExecuteRequest[] = []
+    const notify = vi.fn(async () => {})
+    const b = boot(heldAgent(calls), { notify, ask: async () => ({ cardId: "c" }) })
+    b.store.save(answerWf({ queueTimeoutMinutes: 0.0005, heldNoticeMinutes: 0.0001, onError: "continue" }))
+    await start(b)
+    await until(() => b.sends.length > 0)
+    expect(b.sends).toEqual(["fail: queue_timeout"])
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify.mock.calls[0][0]).toMatch(/step "answer".*queue_timeout/)
+    expect(b.notices).toHaveLength(0)
   })
 })
