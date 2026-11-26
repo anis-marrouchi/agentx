@@ -86,7 +86,7 @@ export function AutomationRow({ a, now = Date.now() }: { a: Automation; now?: nu
         <dd className="sm:hidden"><RunStrip recent={a.recent} /></dd>
         {a.flags.length ? (
           <>
-            <dt className="text-muted-foreground">Looks stale</dt>
+            <dt className="text-muted-foreground">Notes</dt>
             <dd className="text-warn-ink">{a.flags.join("; ")}</dd>
           </>
         ) : null}

@@ -110,9 +110,9 @@ Tasks only shows: moving a card does not change a task's state. Close or hand ov
 *Demo data; your schedules will differ.*
 
 1. **Browser:** in the simple shell, select **Automations** in the side menu.
-2. **The figures** at the top: how many are on, how many failed on their last run, how many look stale.
+2. **The figures** at the top: how many are on, how many are failing (last run failed, or several failures in a row), how many look stale.
 3. **Each machine** has its own table. A row shows the name and its agent, what it is for (or the first line of its last failure, in red), **Next run** (`off` for one that is off, `on event` for a workflow an event starts), **Last result** and **Last 7**: one square per run, oldest first, green for worked, red for failed or timed out, grey for an empty slot.
-4. **The badge** at the end: **On**, **Off**, **Last run failed**, or **Looks stale** (off for a long time, failed several times in a row, or no value line; the reason is under the name).
+4. **The badge** at the end, first match wins: **Off** (or **Quarantined**) for one that is off, whatever else it shows; **Last run failed**; **Failing** (failed several times in a row); **Looks stale** (overdue: no run since its schedule should have fired, or dormant: ran the week before, silent the last one); **Not run yet** for a new job with no run so far; else **On**. The reason is under the name, and under **Notes** when you open the row.
 5. **Select a row** to open it: its schedule and time zone (or the event that starts it), whether it is a job or a workflow, its project, and what its last run said.
 
    ![A job opened: its schedule, kind and last run](/screenshots/hub-automations/automations-open.png)

@@ -89,10 +89,21 @@ describe("automations as data", () => {
     expect(a).toMatchObject({ source: "workflow", name: "Review each PR", starts: "event", when: "on:pr.opened", agent: "reviewer" })
     expect(automationStatus(a)).toEqual({ label: "On", tone: "ok" })
   })
-  it("three failures in a row look stale even without a flag", () => {
+  it("three failures in a row read as failing even without a flag", () => {
     const g = automationGroups({ nodes: [{ name: "n", crons: [{ id: "x", enabled: true, schedule: "* * * * *", agent: "a", consecutiveErrors: 3 }] }] })
     expect(g[0].rows[0].flags).toEqual(["failed 3 times in a row"])
-    expect(automationStatus(g[0].rows[0]).label).toBe("Looks stale")
+    expect(automationStatus(g[0].rows[0])).toEqual({ label: "Failing", tone: "err" })
+  })
+  it("only overdue or dormant look stale; a new job that never ran gets a neutral label; Off wins", () => {
+    const row = (reason: string, enabled = true) => automationGroups({ nodes: [{ name: "n",
+      crons: [{ id: "x", enabled, schedule: "0 9 * * *", agent: "a" }],
+      routines: [{ id: "cron:x", source: "cron", kind: "schedule", name: "x", trigger: { schedule: "0 9 * * *" }, agent: "a", enabled, state: enabled ? "enabled" : "disabled", nextRunAt: null, lastRun: null, consecutiveFailures: 0, flags: [{ reason, detail: reason }] }],
+    }] })[0].rows[0]
+    expect(automationStatus(row("never-ran"))).toEqual({ label: "Not run yet", tone: "idle" })
+    expect(automationStatus(row("overdue"))).toEqual({ label: "Looks stale", tone: "warn" })
+    expect(automationStatus(row("dormant"))).toEqual({ label: "Looks stale", tone: "warn" })
+    expect(automationStatus(row("something-else")).label).toBe("On")
+    expect(automationStatus(row("overdue", false)).label).toBe("Off")
   })
   it("totals, machine states, pending", () => {
     expect(automationTotals(automationGroups(live))).toEqual({ total: 4, on: 3, failed: 1, stale: 0 })

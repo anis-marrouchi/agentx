@@ -89,6 +89,8 @@ export interface Automation {
   recent: string[]
   /** Why it looks stale or failing, in words; empty when it is fine. */
   flags: string[]
+  /** The same flags as codes (overdue, dormant, failing, never-ran...): the badge reads these. */
+  reasons: string[]
   /** What it is for, when the job says. */
   why: string
   project: { label: string; href: string }
@@ -124,7 +126,9 @@ export function nodeAutomations(n: LiveNode): Automation[] {
       : lastRun ? { status: lastRun.status, at: ms(lastRun.startedAt), summary: lastRun.errorSummary || lastRun.responseSummary || "" } : null
     const flags = (r?.flags ?? []).map((f) => f.detail || f.reason)
     const fails = Math.max(j.consecutiveErrors ?? 0, r?.consecutiveFailures ?? 0)
+    const reasons = (r?.flags ?? []).map((f) => f.reason)
     if (fails >= 3 && !flags.some((f) => /fail/i.test(f))) flags.push(`failed ${fails} times in a row`)
+    if (fails >= 3 && !reasons.includes("failing")) reasons.push("failing")
     return {
       id: "cron:" + j.id,
       source: "cron",
@@ -139,6 +143,7 @@ export function nodeAutomations(n: LiveNode): Automation[] {
       last,
       recent: (r?.recent ?? []).slice().reverse().map((x) => x.status),
       flags,
+      reasons,
       why: j.value?.why ? String(j.value.why) : "",
       project: wsProject(j),
     }
@@ -157,6 +162,7 @@ export function nodeAutomations(n: LiveNode): Automation[] {
     last: r.lastRun ? { status: r.lastRun.status, at: ms(r.lastRun.at), summary: r.lastRun.summary || "" } : null,
     recent: (r.recent ?? []).slice().reverse().map((x) => x.status),
     flags: (r.flags ?? []).map((f) => f.detail || f.reason),
+    reasons: (r.flags ?? []).map((f) => f.reason),
     why: "",
     project: { label: "", href: "" },
   }))
@@ -202,11 +208,15 @@ export function runTone(status: string): RunTone {
   return "idle"
 }
 
-/** The row's own state: off, quarantined, failing, stale, or on. */
+/** The row's own state: off, quarantined, failing, stale, not run yet, or on.
+ *  Off wins. Only an overdue or dormant flag reads as stale; a job that never
+ *  ran is new, not stale, so it gets a neutral label. */
 export function automationStatus(a: Automation): { label: string; tone: "ok" | "warn" | "err" | "idle" } {
   if (!a.enabled) return { label: a.state === "quarantined" ? "Quarantined" : "Off", tone: a.state === "quarantined" ? "err" : "idle" }
   if (a.last && runTone(a.last.status) === "err") return { label: "Last run failed", tone: "err" }
-  if (a.flags.length) return { label: "Looks stale", tone: "warn" }
+  if (a.reasons.includes("failing")) return { label: "Failing", tone: "err" }
+  if (a.reasons.includes("overdue") || a.reasons.includes("dormant")) return { label: "Looks stale", tone: "warn" }
+  if (!a.last && a.reasons.includes("never-ran")) return { label: "Not run yet", tone: "idle" }
   return { label: "On", tone: "ok" }
 }
 
@@ -217,7 +227,7 @@ export function automationTotals(groups: AutomationGroup[]): { total: number; on
   return {
     total: rows.length,
     on: rows.filter((r) => r.enabled).length,
-    failed: st.filter((s) => s.label === "Last run failed").length,
+    failed: st.filter((s) => s.label === "Last run failed" || s.label === "Failing").length,
     stale: st.filter((s) => s.label === "Looks stale").length,
   }
 }
