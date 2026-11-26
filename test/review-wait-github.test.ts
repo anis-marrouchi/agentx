@@ -146,4 +146,30 @@ describe("GitHub: green PR with no review", () => {
     await at(gh, 40)
     expect(runs).toHaveLength(0)
   })
+  it("a re-run green after the reviewer's signed PASS starts no wait (#2368 C1)", async () => {
+    const { gh, runs } = github()
+    await hook(gh, "workflow_run", green())
+    await hook(gh, "issue_comment", { action: "created", comment: { id: 3, body: "PASS\n\n<!-- agentx:pm-agent -->", user: { login: "anis" } }, issue: { number: 7, title: "t", pull_request: {} }, repository: { full_name: REPO } })
+    await hook(gh, "workflow_run", green(SHA, 901))
+    expect((gh as any).reviewWait.has(`github:${REPO}:7`)).toBe(false)
+    await at(gh, 40)
+    expect(runs.filter((r) => r.text.includes("NO REVIEW"))).toHaveLength(0)
+  })
+  it("a signed PASS before the head goes green starts no wait on it", async () => {
+    const { gh, runs } = github()
+    await hook(gh, "issue_comment", { action: "created", comment: { id: 4, body: "PASS\n\n<!-- agentx:pm-agent -->", user: { login: "anis" } }, issue: { number: 7, title: "t", pull_request: {} }, repository: { full_name: REPO } })
+    await hook(gh, "workflow_run", green())
+    expect((gh as any).reviewWait.has(`github:${REPO}:7`)).toBe(false)
+    await at(gh, 40)
+    expect(runs.filter((r) => r.text.includes("NO REVIEW"))).toHaveLength(0)
+  })
+  it("a release PR is read once per head, not on every green (#2368 C2)", async () => {
+    prDetails = { ...prDetails, title: "chore(main): release 0.280.0" }
+    const { gh } = github()
+    await hook(gh, "workflow_run", green())
+    const calls = () => (fetch as any).mock.calls.filter((c: unknown[]) => /\/pulls\/7$/.test(String(c[0]))).length
+    const before = calls()
+    await hook(gh, "workflow_run", green(SHA, 902))
+    expect(calls()).toBe(before)
+  })
 })

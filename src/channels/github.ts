@@ -228,12 +228,15 @@ interface GitHubPRReviewEvent {
     state: string  // "approved", "changes_requested", "commented"
     html_url: string
     user: GitHubUser
+    /** The commit the review was made on. */
+    commit_id?: string
   }
   pull_request: {
     number: number
     title: string
     html_url: string
     labels?: Array<{ name: string }>
+    head?: { sha?: string }
   }
   repository: GitHubRepo
 }
@@ -544,7 +547,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     switch (event) {
       case "issue_comment":
-        this.reviewCommentSeen(body as unknown as GitHubIssueCommentEvent)
+        await this.reviewCommentSeen(body as unknown as GitHubIssueCommentEvent)
         await this.handleIssueComment(body as unknown as GitHubIssueCommentEvent)
         break
       case "pull_request":
@@ -869,7 +872,7 @@ export class GitHubAdapter implements ChannelAdapter {
     }
     if (pr) {
       const key = ciFixKey("github", repo, pr.number)
-      if (event.action === "closed" && this.reviewWait.end(key)) this.log(`[github] ${repo}#${pr.number} closed: review wait ended`)
+      if (event.action === "closed" && this.reviewWait.forget(key)) this.log(`[github] ${repo}#${pr.number} closed: review wait ended`)
       else if (event.action === "converted_to_draft" && this.reviewWait.end(key)) this.log(`[github] ${repo}#${pr.number} back to draft: review wait ended`)
       else if (event.action === "synchronize" && pr.head?.sha && this.reviewWait.pushed(key, pr.head.sha)) {
         this.log(`[github] ${repo}#${pr.number} new head ${pr.head.sha}: review wait ended until it is green`)
@@ -1216,8 +1219,9 @@ export class GitHubAdapter implements ChannelAdapter {
       for (const pr of prs) {
         const key = ciFixKey("github", repo, pr.number)
         const fix = this.ciFix.has(key)
-        // A wait already running on this commit needs no second look.
-        const wait = !!reviewer && !this.reviewWait.waiting(key, run.head_sha)
+        // A wait already running on this commit, a commit already reviewed,
+        // or one that needs no wait needs no second look (#2368 C1, C2).
+        const wait = !!reviewer && !this.reviewWait.settled(key, run.head_sha)
         if (!fix && !wait) continue
         // Only the PR's head commit resets, and one green workflow is not
         // a green commit: another may be red.
@@ -1329,12 +1333,12 @@ export class GitHubAdapter implements ChannelAdapter {
     const key = ciFixKey("github", repo, number)
     const pr = await this.pullRequestInfo(repo, number)
     if (!pr || pr.headSha !== sha) return
-    if (isReleasePr(pr.title, pr.headRef)) return
+    if (isReleasePr(pr.title, pr.headRef)) return this.reviewWait.skip(key, sha)
     // A draft is not asking for a review yet (#2368).
     if (pr.draft) return
     if (noWakeLabelIn(pr.labels, this.config.noWakeLabel)) return
     const fromFork = pr.headRepo === null || (typeof pr.headRepo === "string" && pr.headRepo.toLowerCase() !== repo.toLowerCase())
-    if (fromFork) return
+    if (fromFork) return this.reviewWait.skip(key, sha)
     const owner = ciOwner({
       body: pr.body,
       branch: pr.headRef ?? event.workflow_run.head_branch,
@@ -1342,8 +1346,8 @@ export class GitHubAdapter implements ChannelAdapter {
       knownAgentIds: this.config.knownAgentIds,
       isKnownAgent: this.config.ciKnownAgent,
     })
-    if (!owner) return
-    if (await this.hasReview(repo, number)) return
+    if (!owner) return this.reviewWait.skip(key, sha)
+    if (await this.hasReview(repo, number)) { this.reviewWait.reviewed(key, sha); return }
     const started = this.reviewWait.green(key, {
       repo, number, sha, greenAt: new Date().toISOString(), owner: owner.agentId,
       url: pr.url ?? `https://github.com/${repo}/pull/${number}`,
@@ -1362,18 +1366,24 @@ export class GitHubAdapter implements ChannelAdapter {
   private reviewSeen(event: GitHubPRReviewEvent): void {
     if (event.action !== "submitted" || !event.pull_request) return
     const key = ciFixKey("github", event.repository.full_name, event.pull_request.number)
-    if (this.reviewWait.end(key)) this.log(`[github] ${key}: review by ${event.review?.user?.login ?? "?"}, review wait ended`)
+    const sha = event.review?.commit_id ?? event.pull_request.head?.sha
+    if (this.reviewWait.reviewed(key, sha)) this.log(`[github] ${key}: review by ${event.review?.user?.login ?? "?"}, review wait ended`)
   }
 
   /** A PR comment signed by the reviewer agent, from an account AgentX posts
    *  with, ends the wait: agent reviews are often comments (#2227). */
-  private reviewCommentSeen(event: GitHubIssueCommentEvent): void {
+  private async reviewCommentSeen(event: GitHubIssueCommentEvent): Promise<void> {
     const reviewer = this.config.ci?.reviewer
     if (!reviewer || event.action !== "created" || !event.issue?.pull_request) return
     if (!this.postsAs(event.comment?.user?.login ?? "")) return
     if (detectAgentxMarker(event.comment?.body) !== reviewer) return
-    const key = ciFixKey("github", event.repository.full_name, event.issue.number)
-    if (this.reviewWait.end(key)) this.log(`[github] ${key}: ${reviewer} commented, review wait ended`)
+    const repo = event.repository.full_name
+    const key = ciFixKey("github", repo, event.issue.number)
+    // The comment carries no commit: a running wait gives it, else the PR's
+    // head now, so a green that comes after the comment starts no wait.
+    const sha = this.reviewWait.has(key) ? null : (await this.pullRequestInfo(repo, event.issue.number))?.headSha
+    if (this.reviewWait.reviewed(key, sha)) this.log(`[github] ${key}: ${reviewer} commented, review wait ended`)
+    else if (sha) this.log(`[github] ${key}: ${reviewer} commented on ${sha}, no review wait for it`)
   }
 
   /** Send the review-wait wakes that are due (#2227). */
