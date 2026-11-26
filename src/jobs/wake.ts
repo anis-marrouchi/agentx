@@ -307,16 +307,6 @@ export class JobWake {
     }
   }
 
-  /** Another part of the daemon has a reason to start a job's next run:
-   *  a request a limit or a restart stopped is due its one resend
-   *  (#1861 box 4). Instead of a
-   *  run of its own, it arms the job's wake: the run starts in the job's
-   *  chat, under the job's caps, linked to the same job. True only when
-   *  the wake is armed and its run will carry `note`. False, and the
-   *  caller keeps its old path, when the wake is off; the job is closed,
-   *  missing, a schedule's or another node's; it is blocked or stalled
-   *  (its reason stands); it is at its cap of wakes or cost; or a run is
-   *  on it or about to start (that run would never see `note`). */
   /** A run is on the job now or about to start: why wakeFor refused, for
    *  the sweep's words (#2383). */
   busy(jobId: string): boolean {
@@ -328,6 +318,16 @@ export class JobWake {
     }
   }
 
+  /** Another part of the daemon has a reason to start a job's next run:
+   *  a request a limit or a restart stopped is due its one resend
+   *  (#1861 box 4). Instead of a
+   *  run of its own, it arms the job's wake: the run starts in the job's
+   *  chat, under the job's caps, linked to the same job. True only when
+   *  the wake is armed and its run will carry `note`. False, and the
+   *  caller keeps its old path, when the wake is off; the job is closed,
+   *  missing, a schedule's or another node's; it is blocked or stalled
+   *  (its reason stands); it is at its cap of wakes or cost; or a run is
+   *  on it or about to start (that run would never see `note`). */
   wakeFor(jobId: string, note: string): boolean {
     const settings = this.deps.settings()
     if (!settings.enabled) return false
