@@ -8,6 +8,8 @@
 //
 // Plain data: no React, so the test and search read it without a browser.
 
+import { MENU_ROWS } from "./rows/menu"
+
 export type SettingsGroupId = "general" | "work" | "people" | "connections" | "system"
 
 export interface SettingsRowDef {
@@ -64,7 +66,11 @@ export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
     rows: GENERAL_ROWS,
   },
   { id: "agent", label: "Agent", icon: "bot", group: "general", oldSection: "agents", help: "One agent's engine, model, files and access.", rows: [] },
-  { id: "menu", label: "Menu", icon: "panel-left", group: "general", oldSection: "layout", help: "What the side menu shows, and in which order.", rows: [] },
+  {
+    id: "menu", label: "Menu", icon: "panel-left", group: "general", oldSection: "layout", built: true,
+    help: "The Hub's side menu and the phone bar. A page you hide stays in More and in ⌘K.",
+    rows: MENU_ROWS,
+  },
   { id: "inbox", label: "Inbox", icon: "inbox", group: "work", oldSection: "inbox", help: "How the inbox reaches you.", rows: [] },
   { id: "jobs", label: "Jobs", icon: "calendar-clock", group: "work", oldSection: "schedules", help: "Recurring jobs and calls from other services.", rows: [] },
   { id: "actions", label: "Actions", icon: "zap", group: "work", oldSection: "actions", help: "Commands and web calls workflows run.", rows: [] },
