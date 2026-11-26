@@ -66,7 +66,20 @@ Select **Mobile app** at the bottom of the nav. The page says what the phone app
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, the Claude Code plan's five-hour and seven-day use and reset times, and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The use comes from the same local reading as `/usage/plan`; the bar refreshes it once a minute. A window with no reading, or one that has reset since the last reading, is left out until a new reading arrives; with no reading at all the Claude item is hidden. Codex and Gemini get an item only once they provide usage data. The bar never guesses a percentage, and the version appears once the daemon has reported it. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the Claude reading and **CLI** shorten with **…**, and **Accounts** is just its name (point at it for the full text).
+On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each plan engine your agents use now (**Claude** and **Codex**), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
+
+### See plan usage and the agents from the status bar
+
+An engine gets an item only while at least one agent runs on it. Its item shows a small bar and the percent used for the five-hour window (**5h**) and the week (**wk**). Claude's numbers come from the daemon's own reading, the same one as `/usage/plan`; Codex's come from the limits Codex wrote after its last run on this machine. The bar refreshes them once a minute.
+
+1. Point at **Claude** or **Codex** in the bottom bar (or select it, on a touch screen or with the keyboard). A drop-down opens with one bar per limit window, its reset time, when it was read, and the agents that use the engine.
+2. Select **Add account** at the bottom of the drop-down to add another account for that engine (owner only). It opens the **Accounts** form at that engine's row.
+3. Point at **agents running**. A drop-down lists every agent with its state (**Working**, **Needs you**, **Done today**, **Idle** or **Paused**), its engine's logo and its quick actions: **Chat**, **Open run** (while it runs a task), **Pause** or **Resume** new work (owner only) and **Stop run**, which asks first.
+4. Press **Escape**, or select anywhere else, to close a drop-down.
+
+**Check it worked:** the engine item shows its bars, and its drop-down says when it was read, for example **Read 2 min ago** or **As of the last Codex run on this machine, 1 h ago**.
+
+**If something is wrong:** a window with no number, or one that has reset since it was read, is left out until a new reading arrives; the bar never guesses. When a run reported only that a limit was reached or is near, the drop-down says **Limit reached** or **Near the limit** with the reset time, and the item shows a red or amber dot instead of a bar. No Codex bars: no Codex run has finished on this machine yet, or Codex is signed in with an API key, which has no plan limit. No Claude bars for long: the daemon's Claude sign-in may have lapsed; open `claude` in a terminal and run `/login`.
 
 ### Switch the CLI an agent runs on
 

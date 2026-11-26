@@ -23,6 +23,7 @@ import { existsSync, readFileSync } from "fs"
 import os from "os"
 import path from "path"
 import { readClaudeCodeKeychainEntry } from "@/native/keyring"
+import { withCliAccountEnv } from "./cli-accounts"
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 const KEYCHAIN_SERVICE = "Claude Code-credentials"
@@ -210,7 +211,9 @@ export class PlanUsageReader {
   private log: (msg: string) => void
 
   constructor(deps: PlanUsageReaderDeps = {}) {
-    this.readLogin = deps.readLogin ?? (() => readStoredLogin())
+    // The login of the Claude account new runs use (the Hub's active
+    // profile, #2101 P9b), not always the default one (#2101 R28g cause 2).
+    this.readLogin = deps.readLogin ?? (() => readStoredLogin({ env: withCliAccountEnv({ ...process.env }) }))
     this.fetchUsage = deps.fetchUsage ?? ((t) => fetchPlanUsage(t))
     this.now = deps.now ?? Date.now
     this.log = deps.log ?? (() => {})

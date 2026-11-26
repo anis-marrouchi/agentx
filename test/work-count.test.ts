@@ -126,11 +126,13 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
 
   it("the status bar's agents running is the Working count", () => {
     // The item starts hidden and shows once there is a reading (#2101 R26).
-    const el = { textContent: "", parentNode: { hidden: true } }
+    const el = { innerHTML: "", parentNode: { hidden: true } }
     const f = new Function("S", "liveWorkCount", "$", "hsPaintConn", "hsPaintCli",
       pick("hub-status.client.ts", "hsPaintRunning") + "; hsPaintRunning()")
     f(S, liveWorkCount, () => el, () => {}, () => {})
-    expect(el.textContent).toBe(work.agents + " agents running")
+    // "3 running" when narrow: the word "agents" is its own span (#2101 R5).
+    expect(el.innerHTML.replace(/<[^>]+>/g, "")).toBe(work.agents + " agents running")
+    expect(el.innerHTML).toContain('<span class="hs__long"> agents</span> running')
     expect(el.parentNode.hidden).toBe(false)
   })
 

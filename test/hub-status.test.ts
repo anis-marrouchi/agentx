@@ -1,46 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { hubCliHtml, hubCliSavedText, hubCliText, hubCliWaitText, hubConnState, hubEngineName, hubUsageText, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { hubCliHtml, hubCliSavedText, hubCliText, hubCliWaitText, hubConnState, hubEngineName, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 describe("Hub bottom status", () => {
-  const now = Date.UTC(2026, 10, 24, 14)
-
-  it("shows only reported plan windows and their remaining reset time", () => {
-    expect(hubUsageText([
-      { window: "five_hour", utilization: 0.756, resetsAt: now + 31 * 60_000 },
-      { window: "seven_day", utilization: 0.34, resetsAt: now + 7 * 60_000 },
-    ], now)).toBe("5h 76% · resets in 31m · 7d 34% · resets in 7m")
-  })
-
-  it("leaves out a missing reading instead of saying not known (Anis 11-25)", () => {
-    expect(hubUsageText([], now)).toBe("")
-    expect(hubUsageText([{ window: "five_hour", utilization: 1.5 }], now)).toBe("5h 100%")
-  })
-
-  it("shows the percentage and time left when the reset is in the future", () => {
-    expect(hubUsageText([
-      { window: "five_hour", utilization: 0.92, resetsAt: now + 2 * 60 * 60_000 },
-      { window: "seven_day", utilization: 0.1, resetsAt: now + 3 * 24 * 60 * 60_000 },
-    ], now)).toBe("5h 92% · resets in 2h · 7d 10% · resets in 3d")
-  })
-
-  it("does not show an old percentage once its window has reset", () => {
-    expect(hubUsageText([
-      { window: "five_hour", utilization: 0.92, resetsAt: now - 60_000 },
-      { window: "seven_day", utilization: 0.4, resetsAt: now },
-    ], now)).toBe("")
-  })
-
-  it("shows the percentage only when no reset time is reported", () => {
-    expect(hubUsageText([
-      { window: "five_hour", utilization: 0.5 },
-      { window: "seven_day", utilization: 0.25 },
-    ], now)).toBe("5h 50% · 7d 25%")
-  })
-
-  it("shows only the window that has a reading", () => {
-    expect(hubUsageText([{ window: "seven_day", utilization: 0.3 }], now)).toBe("7d 30%")
-  })
 
   it("names the connection from the last live read (#2101 R25)", () => {
     expect(hubConnState({ live: true, error: false, online: true })).toEqual({ state: "ok", text: "Connected" })
@@ -109,7 +71,8 @@ describe("Hub bottom status", () => {
     expect(HUB_STATUS_CSS).not.toContain(".hs__usage:not(.hs__i)")
     // Accounts is its one word there, never cut mid-word (#2101 C2).
     expect(narrow).toContain(".hs__acct-s { display: none; }")
-    expect(HUB_STATUS_CSS).toContain(".hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px;")
+    // The plan usage moved to per-engine items (hub-status-usage.ts, #2101 R28).
+    expect(HUB_STATUS_CSS).not.toContain("hs__usage")
   })
 
   it("adds the status strip without replacing the phone navigation", () => {
@@ -121,7 +84,7 @@ describe("Hub bottom status", () => {
     // Machine and Running agents too: hidden until a reading fills them.
     expect(HUB_STATUS_HTML).not.toContain("Machine —")
     expect(HUB_STATUS_HTML).not.toContain("Running agents —")
-    expect(HUB_STATUS_HTML).toContain('id="hs-running-i" hidden')
+    expect(HUB_STATUS_HTML).toMatch(/id="hs-running-i"[^>]* hidden>/)
     expect(HUB_STATUS_HTML).toMatch(/id="hs-node"[^>]* hidden>/)
     expect(HUB_STATUS_CSS).toContain(".hs [hidden] { display: none !important; }")
     const html = renderWallPage({ owner: true })

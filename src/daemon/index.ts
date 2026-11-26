@@ -255,6 +255,8 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
+import { readCodexPlanUsage } from "@/agents/codex-plan-usage"
+import { activeCliDir } from "@/agents/cli-accounts"
 import { NodeEnvironment } from "@/node-env"
 import { formatNode } from "@/node-env/format"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
@@ -8284,7 +8286,12 @@ export class AgentXDaemon {
 
       if (PLAN_USAGE_API_PATHS.has(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
-        const reply = handlePlanUsageApi(req.method || "GET", path)
+        // Codex's limits as its last run on this machine wrote them, for the
+        // account new runs use (#2101 R28b). Read only on the GET.
+        const codex = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
+          ? await readCodexPlanUsage(activeCliDir("codex")).catch(() => null)
+          : undefined
+        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex })
         const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted
         if (lifted) this.log(`  Claude plan holds lifted by operator: ${lifted.map((s) => s.window).join(", ") || "none active"}`)
         this.json(res, reply.status, reply.body)

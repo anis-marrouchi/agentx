@@ -80,6 +80,17 @@ export function withCliAccountEnv(env: NodeJS.ProcessEnv, own: Iterable<string> 
   return env
 }
 
+/**
+ * The config directory new runs of `provider` use: the active profile's, else
+ * the variable as this process has it, else the CLI's own default. The plan
+ * readers use it so they read the account the runs use (#2101 R28g).
+ */
+export function activeCliDir(provider: CliProvider, state: CliAccounts = readCliAccounts(), env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
+  const s = state[provider]
+  const prof = s && s.active !== DEFAULT_PROFILE ? s.profiles.find((x) => x.name === s.active) : undefined
+  return prof?.dir || env[CLI_PROVIDERS[provider].envVar]?.trim() || CLI_PROVIDERS[provider].defaultDir(home)
+}
+
 /** What the Hub shows: per provider, its profiles (default first), the active one and whether each dir exists. */
 export function cliAccountsView(state: CliAccounts = readCliAccounts(), home = homedir()) {
   return (Object.keys(CLI_PROVIDERS) as CliProvider[]).map((p) => {
