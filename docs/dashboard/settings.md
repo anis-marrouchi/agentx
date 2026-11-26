@@ -264,6 +264,10 @@ Hiding never turns anything off: schedules, gates and workflows keep running, a 
 2. Select **Full**, or turn one item's switch on.
 3. The message reads **Saved**, and the item shows in the Hub at once, with no reload and no restart.
 
+![The Hub with the simple layout: Waiting on you, Jobs and Settings at the bottom of the nav](/screenshots/hub-layout/simple.png)
+
+![The same Hub with the full layout: Workflows and Mobile app added at the bottom of the nav](/screenshots/hub-layout/full.png)
+
 The keys are `dashboard.hub.layout` and `dashboard.hub.show` in the [configuration reference](../reference/config-operations.md).
 
 ## Check it worked
