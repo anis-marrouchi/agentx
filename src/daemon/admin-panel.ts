@@ -313,10 +313,13 @@ function getAdminState() {
     // The integration list endpoint also resolves env-set status server-side
     // so the UI can render ✓/✗ without leaking secrets.
     integrations: (Array.isArray(a.integrations) ? a.integrations : []).map((i: any) => {
-      const creds = i.credentials || {}
+      // A value typed into the file instead of a ref never leaves the
+      // daemon: only its "literal" status does (#2420).
+      const creds: Record<string, string> = {}
       const credStatus: Record<string, "set" | "unset" | "literal"> = {}
-      for (const [k, v] of Object.entries(creds)) {
+      for (const [k, v] of Object.entries(i.credentials || {})) {
         if (typeof v === "string" && /^[A-Z][A-Z0-9_]*$/.test(v)) {
+          creds[k] = v
           credStatus[k] = process.env[v] ? "set" : "unset"
         } else if (typeof v === "string") {
           credStatus[k] = "literal"
