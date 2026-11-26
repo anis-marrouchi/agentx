@@ -286,7 +286,8 @@ export const WALL_DECIDE_SCRIPT = String.raw`
       return '<p class="wdc__ro">' + esc(b.title) + '. Not counted above. See them in the terminal: <code>' + esc(b.more) + '</code></p>';
     }).join('') : '';
     return note + head + (D.tab === 'later' ? '' : decLineHtml()) + decTabs() + (decOwner() ? decChips(tabList, D.tab === 'waiting' ? reviews : []) : '') + ro + err + reviewNote +
-      (shown.length ? shown.map(decCardHtml).join('') : decEmpty()) + backlog;
+      // The first 3 cards, then Show all (N) (#2352, hub-folds.ts): the Desk once drew all 253.
+      (shown.length ? '<div class="wdc__cards" data-cap="desk">' + shown.map(decCardHtml).join('') + '</div>' : decEmpty()) + backlog;
   }
   /** One line under the count (#2101 R24): only what the page does not show
    *  itself, the runs held on an answer and the oldest wait. The answered

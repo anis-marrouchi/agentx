@@ -219,6 +219,12 @@ export interface HaOpen {
   working?: boolean
   /** Not working today shows its rows. */
   idle?: boolean
+  /** Working shows its rows (open unless false: it is the live group). */
+  work?: boolean
+  /** Done today shows its rows (folded by default: it only grows). */
+  done?: boolean
+  /** Needs you shows every row, not the first 3. */
+  needsAll?: boolean
 }
 
 /**
@@ -227,15 +233,17 @@ export interface HaOpen {
  * the side menu, here and as Desk's count (#2101 R27). `runHref` links a
  * working row to its run (haRowHtml).
  *
- * So the menu stays short (Anis 2026-11-26): Needs you is a fold, closed
- * unless `open.needs`; in the All view Working shows its first 3 rows and
- * a "Show all (N)" button, unless `open.working`. The Working chip shows
+ * So the menu stays short (Anis 2026-11-26): in the All view every group
+ * is a fold with its count (Working open unless `open.work === false`,
+ * Needs you and Done today closed unless `open.needs` / `open.done`), and
+ * Working and Needs you show their first 3 rows and a "Show all (N)"
+ * button, unless `open.working` / `open.needsAll`. The Working chip shows
  * every working agent: it is the reader asking for them. A boolean `open`
  * is the old idleOpen.
  */
 export function haListHtml(m: HaModel, filter: string, cur: string, open: boolean | HaOpen, esc: (s: unknown) => string, age: (ms: number) => string, runHref?: (r: HaRow) => string): string {
   const o: HaOpen = typeof open === "object" && open ? open : { idle: !!open }
-  // Working rows before Show all; here, as an injected function cannot read a module const.
+  // Rows before Show all; here, as an injected function cannot read a module const.
   const cap = 3
   const c = m.counts
   // A choice saved before R27 (needs) or unknown shows everything.
@@ -250,8 +258,13 @@ export function haListHtml(m: HaModel, filter: string, cur: string, open: boolea
     if (filter !== "all" && filter !== k) continue
     const all = m.rows.filter((r) => r.state === k)
     if (!all.length) continue
-    // Working in the All view: the first rows, then Show all (N).
-    const capped = k === "working" && filter === "all" && !o.working && all.length > cap
+    // In the All view (#2352, orca-design C22): every group is a fold with
+    // its count, and the live ones (Working, Needs you) show their first 3
+    // rows, then Show all (N). A chip is the reader asking for that group:
+    // it shows every row, with a plain header.
+    const allView = filter === "all"
+    const moreKey = k === "working" ? "working" : k === "needs" ? "needsAll" : ""
+    const capped = allView && !!moreKey && !o[moreKey as keyof HaOpen] && all.length > cap
     const rows = capped ? all.slice(0, cap) : all
     // Working groups by machine, as the "At work now" tree does (#2258):
     // each agent once, on the machine it counts on (hubAgentRows).
@@ -262,15 +275,14 @@ export function haListHtml(m: HaModel, filter: string, cur: string, open: boolea
     const list = k === "working" && order.length > 1
       ? order.map((n) => '<h4 class="ha__m">' + esc(byNode[n][0].node || "?") + ' <span class="ax-af-count" data-n="' + byNode[n].length + '">' + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
       : rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
-    if (k === "needs") {
-      body += '<details class="ha__fold" data-ha-open="needs"' + (o.needs ? " open" : "") + '><summary class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></summary>" + list + "</details>"
-      continue
-    }
-    body += '<h3 class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></h3>" + list
-    if (k === "working" && filter === "all" && all.length > cap) {
-      body += '<button type="button" class="ha__more" data-ha-more="working" aria-expanded="' + !capped + '">' +
-        (capped ? "Show all (" + all.length + ")" : "Show fewer") + "</button>"
-    }
+    const more = allView && moreKey && all.length > cap
+      ? '<button type="button" class="ha__more" data-ha-more="' + k + '" aria-expanded="' + !capped + '">' + (capped ? "Show all (" + all.length + ")" : "Show fewer") + "</button>"
+      : ""
+    if (!allView) { body += '<h3 class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></h3>" + list; continue }
+    // Working starts open, Needs you and Done today folded.
+    const foldKey = k === "working" ? "work" : k
+    const isOpen = k === "working" ? o.work !== false : !!o[foldKey as keyof HaOpen]
+    body += '<details class="ha__fold" data-ha-open="' + foldKey + '"' + (isOpen ? " open" : "") + '><summary class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></summary>" + list + more + "</details>"
   }
   const idle = m.rows.filter((r) => r.state === "idle")
   if (filter === "all" && idle.length) {

@@ -114,6 +114,9 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
             '<button type="button" class="wsa__sw" role="switch" aria-checked="' + on + '" data-hl-item="' + esc(i.id) + '">' +
             '<i aria-hidden="true"></i><span>' + (on ? 'On' : 'Off') + '</span><span class="wst__sr"> ' + esc(i.label) + '</span></button>');
         }).join('') +
+        // One click puts the widths and the folds back as they start (#2352, hub-folds.ts).
+        row('Reset layout', 'Menu and panel widths, collapsed panels and folded sections go back to how they start, in this browser.',
+          '<button type="button" class="ax-btn ax-btn--ghost" data-hub-reset>Reset layout</button>') +
       '</div>' + stNoteHtml('hl') + (HL.failed ? '<button type="button" class="whl__own" data-st-act="hl-retry">Retry</button>' : '');
   }
   async function stLayoutSave(body) {

@@ -61,6 +61,7 @@ import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml, hubSw
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
 import { HUB_PANELS_CSS, HUB_PANELS_FNS, HUB_PANELS_SCRIPT, hubHistoryHtml, hubNavFoldHtml, hubPanelGripHtml, hubPanelReopenHtml } from "./hub-panels"
+import { HUB_FOLDS_CSS, HUB_FOLDS_FNS, HUB_FOLDS_SCRIPT } from "./hub-folds"
 import { HUB_USAGE_CSS } from "./hub-status-usage"
 import { HUB_LAYOUT_CSS, hubLayoutBoot } from "./hub-layout"
 import { resolveHubLayout, type HubLayoutView } from "../../../hub/layout"
@@ -284,6 +285,8 @@ ${dashboard}
       </div>
     </header>
     <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
+      <details class="axp-fold ax-wall__fold" data-fold="wall.filters" data-fold-start="closed" open><summary class="axp-fold__h"><span class="axp-fold__t">Filters</span><span class="axp-fold__n" id="wall-fn" title="Filters in use"></span></summary>
+      <div class="ax-wall__fset">
       <label>Owner <select id="f-owner"><option value="">All</option></select></label>
       <label>Asked by <select id="f-asker"><option value="">All</option></select></label>
       <label>Counted for <select id="f-load"><option value="">All</option></select></label>
@@ -301,6 +304,7 @@ ${dashboard}
       <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
       <label class="ax-wall__check"><input type="checkbox" id="f-qa"> Awaiting QA only</label>
+      </div></details>
       <input id="f-q" type="search" placeholder="Search" aria-label="Search posts">
       <span class="ax-wall__saved">
         <button type="button" id="v-mine" class="ax-btn ax-btn--ghost">My view</button>
@@ -352,9 +356,9 @@ ${hubSwitcherHtml()}`
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS + HUB_FOLDS_CSS,
     head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns(HUB_PANELS_FNS)}\n${HUB_PANELS_SCRIPT}</script>`,
+    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns({ ...HUB_PANELS_FNS, ...HUB_FOLDS_FNS })}\n${HUB_PANELS_SCRIPT}\n${HUB_FOLDS_SCRIPT}</script>`,
   })
 }
 
@@ -484,6 +488,12 @@ a.lt__wk:hover { background: var(--ax-surface-3); }
 .ax-wall__filters input[type=search] { order: -1; flex-basis: 100%; }
 /* Closed until the search button opens it (#1355). */
 .ax-wall__filters:not(.is-open) { display: none; }
+/* The search box first; the filters fold behind one "Filters" header (#2352). */
+.ax-wall__fold { flex-basis: 100%; }
+.ax-wall__fold > summary { margin: 0; }
+.ax-wall__fset { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 4px 6px 2px; }
+.wag__grp > summary { margin: 8px 10px 0; }
+.wag__grp > .axp-more, #wall-decide .axp-more { margin: 8px 10px 12px; }
 
 /* Avatars: initials on a colour taken from the agent id. */
 .av { --av-h: 210; width: 40px; height: 40px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;

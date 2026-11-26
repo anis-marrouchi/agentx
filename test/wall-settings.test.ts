@@ -94,7 +94,9 @@ describe("Wall Settings: the shell (#1428)", () => {
     expect(w.el("wall-settings").hidden).toBe(false)
     expect(w.wall.classList.contains("is-settings")).toBe(true)
     const html = settingsHtml(w)
-    const groups = html.split("</nav>")[0].split('<h3 class="wst__grp">').slice(1).map((g) => [g.split("<")[0], [...g.matchAll(/<span>([^<]+)<small/g)].map((m) => m[1])])
+    // Each group folds from its header, with its count (#2352).
+    const groups = html.split("</nav>")[0].split('<span class="axp-fold__t">').slice(1).map((g) => [g.split("<")[0], [...g.matchAll(/<span>([^<]+)<small/g)].map((m) => m[1])])
+    expect(html).toContain('<details class="axp-fold wst__fold" data-fold="settings.Fleet" open><summary class="axp-fold__h wst__grp"><span class="axp-fold__t">Fleet</span><span class="axp-fold__n">9</span></summary>')
     expect(groups).toEqual([
       ["Fleet", ["Agents", "Channels", "Schedules", "Webhooks", "Mesh", "Boards", "Actions", "Inbox", "Requests"]],
       ["Access", ["Guests", "People", "Tokens"]],

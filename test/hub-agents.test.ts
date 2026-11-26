@@ -152,6 +152,27 @@ describe("a short side menu", () => {
     expect(h).not.toContain("data-ha-more")
     expect(haListHtml(m3(), "all", "", {}, ltEsc, ltAge)).not.toContain("data-ha-more")
   })
+  // #2352 (orca-design C22): every group folds with its count; Needs you is capped too.
+  it("folds every group in the All view: Working open, Done today folded, both kept", () => {
+    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
+    expect(h).toContain('<details class="ha__fold" data-ha-open="work" open><summary class="ha__h">Working <span class="ax-af-count" data-n="5">5</span></summary>')
+    expect(haListHtml(mm, "all", "", { work: false }, ltEsc, ltAge)).toContain('data-ha-open="work"><summary')
+    const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
+    expect(haListHtml(m, "all", "", {}, ltEsc, ltAge)).toContain('<details class="ha__fold" data-ha-open="done"><summary class="ha__h">Done today <span class="ax-af-count" data-n="1">1</span>')
+    expect(haListHtml(m, "all", "", { done: true }, ltEsc, ltAge)).toContain('data-ha-open="done" open>')
+  })
+  it("shows 3 rows under Needs you, then Show all (N)", () => {
+    const four: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: ["n1", "n2", "n3", "n4"].map((id) => ({ id, name: id })) }]
+    const q: HaNeed[] = ["n1", "n2", "n3", "n4"].map((id, i) => ({ key: "k" + id, title: "Ok?", agent: id, at: NOW - i * 1000 }))
+    const m4 = hubAgentRows(four, q, NOW, DAY, title, ltPlain, liveWorkCount(four))
+    const h = haListHtml(m4, "all", "", { needs: true }, ltEsc, ltAge)
+    expect(rowsOf(h)).toHaveLength(3)
+    expect(h).toContain('data-ha-more="needs" aria-expanded="false">Show all (4)</button>')
+    expect(rowsOf(haListHtml(m4, "all", "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(4)
+  })
+  it("keeps a plain header when a chip picks the group", () => {
+    expect(haListHtml(mm, "working", "", {}, ltEsc, ltAge)).toContain('<h3 class="ha__h">Working <span class="ax-af-count" data-n="5">5</span></h3>')
+  })
   it("still takes the old idleOpen boolean", () => {
     expect(haListHtml(mm, "all", "", true, ltEsc, ltAge)).not.toContain('data-ha-open="needs" open')
   })

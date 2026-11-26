@@ -203,11 +203,11 @@ The top of the nav lists every agent of every connected machine once, by what it
 2. The chips at the top filter the list: **All**, **Working** and **Done**, each with its count. The Hub remembers your choice. **Needs you** is a group in the list, not a chip, so it shows once.
 3. The agents are grouped:
    - **Working**: a run is going. The row shows the title of its newest run with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. A voice call's turn starts with **Voice ·**. Each agent is listed once. When it has more than one run going, its other runs are listed under its row, newest first, each with where it came from (**Voice**, **Agent to agent**, **GitLab** and so on) and its title: the first 3, then how many more. Select one to open that run live. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page. Under **All**, **Working** shows its first 3 agents and **Show all (N)**; select it to see every one, and **Show fewer** to go back. The **Working** chip always shows every working agent.
-   - **Needs you**: nothing running, and it asked you something. The row shows its oldest question. The group starts folded, with its count on the heading: select **Needs you** to open it. The Hub remembers which groups you opened and whether **Working** shows all its agents.
-   - **Done today**: its last run ended today. The row shows the first line of its last answer.
+   - **Needs you**: nothing running, and it asked you something. The row shows its oldest question. The group starts folded, with its count on the heading: select **Needs you** to open it. Open, it shows its first 3 agents and **Show all (N)**.
+   - **Done today**: its last run ended today. The row shows the first line of its last answer. It starts folded.
    - **Not working today**, folded at the end: every other agent.
 
-   Each time the Hub opens, **Needs you** and **Not working today** are folded and **Working** shows 3 agents. What you open stays open until you reload the page.
+   Under **All** every group folds: select its heading to open or close it. The first time, **Working** is open and the others are folded. The Hub remembers in this browser which groups you opened or closed and whether a group shows all its agents, also after a reload. **Reset layout** in Settings › Layout puts them back.
 4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and an amber number when it has questions for you. The agent whose chat is open has a blue bar on its left.
 5. The whole side menu scrolls as one, so the last agent is always in reach; **Jump to an agent or request** stays at the top and **Desk**, **Jobs**, **Workflows** stay at the bottom.
 6. Select a row to open it:
@@ -375,6 +375,22 @@ Narrower windows keep the icon menu and the sliding panel, as above.
 ### Go back to the previous page
 
 Select **‹** at the top left of the page to go back to the page you were on before, and **›** to go forward again. They follow your browser's history in this tab. A post opened from a link, with nothing before it, goes back to the feed. On a phone these buttons are hidden and the post's own **←** goes back to the feed.
+
+### Fold sections and long lists
+
+Long pages start short, and you choose what to open. The Hub remembers your choices in this browser, also after a reload.
+
+1. **Browser:** a heading with **›** and a count folds. Select it to open or close what is under it:
+   - **Agents**: one section per machine, with its number of agents.
+   - **Settings**: the groups of the menu (Fleet, Access, Machines, Hub), with their number of sections.
+   - **Search**: after the search box, the filters are folded under **Filters**. The number next to it says how many filters are in use.
+2. A long list shows its first 3 items and **Show all (N)** under them: the Desk's cards and each machine's agents. Select **Show all (N)** to see every item, and **Show fewer** to go back.
+3. **Back** (**‹** or your browser's Back) returns to the page you were on at the place you had scrolled to.
+
+### Reset the layout
+
+1. **Browser:** open **Settings** › **Layout** and select **Reset layout**.
+2. The page reloads with the side menu and the right panel at their first widths and expanded, and every section and list folded as the first time. Only this browser is changed.
 
 ### See a run's files
 
