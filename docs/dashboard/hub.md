@@ -257,6 +257,8 @@ Every Hub page and the phone app show the same few things in the same way, so yo
 
 The look is adapted from the free [affectUI](https://github.com/flohoeller/affectui) items (MIT) and uses the AgentX colours in light and dark.
 
+The icons in the new version of the Hub come from the free [Lucide](https://lucide.dev) set (ISC licence). The classic Hub page is moving to the same icons, so one thing has one icon on both.
+
 ### Check the look worked
 
 Open **Workflows** and open a run: each step is one line with its state word at the end. Open **Live** with nothing running: you see **No session or job is running** and **Open Jobs**.
