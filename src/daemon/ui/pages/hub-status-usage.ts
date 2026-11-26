@@ -313,8 +313,8 @@ export const HUB_USAGE_CSS = `
 .hsu__usd { font-weight: 600; color: var(--ax-text-2); font-variant-numeric: tabular-nums; }
 .hsu__spend { margin: 0 0 4px; color: var(--ax-text-2); }
 .hsu__spend b { color: var(--ax-text); font-variant-numeric: tabular-nums; }
-.hsu__acct { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; font-size: 12px; }
-.hsu__acct:first-of-type { margin-top: 0; }
+.hsu__acct { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12px; }
+.hsu__acct ~ .hsu__acct { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ax-border); }
 .hsu__in { color: var(--ax-muted); font-size: 11px; padding: 0 6px; border: 1px solid var(--ax-border); border-radius: 999px; }
 .hsu-pop { position: fixed; z-index: 11; bottom: 36px; left: 8px; width: 300px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow: auto; padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); color: var(--ax-text); box-shadow: 0 12px 32px rgba(0,0,0,.18); font-size: 12.5px; transform-origin: bottom left; animation: hsu-in .14s cubic-bezier(.2, .8, .2, 1); }
 .hsu-pop.is-agents { width: 440px; }
