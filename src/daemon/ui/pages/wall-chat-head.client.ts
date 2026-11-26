@@ -291,7 +291,8 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
       var html = '<div class="hc__asks">' + mine.map(function (a) { return chAskHtml(a, { name: name, now: now, draft: drafts[a.key] }); }).join('') + '</div>';
       // Appended, not re-parsed: the live answer and its open folds stay as they are.
       if (log.insertAdjacentHTML) log.insertAdjacentHTML('beforeend', html); else log.innerHTML += html;
-      log.scrollTop = log.scrollHeight;
+      var hcApi = window.AXHubChat;
+      if (hcApi && hcApi.follow) hcApi.follow.stick(); else log.scrollTop = log.scrollHeight;
     }
     if (tab === 'plan') $('hc-tabview').innerHTML = chPlanHtml(rq, name, { now: Date.now(), post: window.AXCtx && window.AXCtx.post });
     if (tab === 'proofs') $('hc-tabview').innerHTML = chProofsHtml(rq, name);

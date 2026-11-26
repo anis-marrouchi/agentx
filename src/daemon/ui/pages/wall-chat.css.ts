@@ -1,6 +1,8 @@
 // --- Hub chat: its styles (#1528; middle pane and transcript, #2101 PR 2) ---
 
-export const WALL_CHAT_CSS = `
+import { FOLLOW_CSS } from "./wall-follow"
+
+export const WALL_CHAT_CSS = FOLLOW_CSS + `
 /* Hub chat (#1528): the middle pane (#2101 PR 2), in place of the page it
    was opened from; the header's chat button opens it (#2101 R24). */
 .hc__dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ax-accent); margin-right: 4px; }
@@ -152,7 +154,17 @@ export const WALL_CHAT_CSS = `
 .hc__guest { margin: auto 8px; text-align: center; color: var(--ax-muted); font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .hc__guest svg { width: 30px; height: 30px; }
 .hc__guest b { color: var(--ax-text); font-size: 17px; }
-.hc__foot { padding: 4px max(16px, calc((100% - 720px) / 2)) 12px; display: flex; flex-direction: column; gap: 6px; }
+.hc__foot { padding: 4px max(16px, calc((100% - 720px) / 2)) 12px; display: flex; flex-direction: column; gap: 6px; position: relative; }
+/* An earlier turn, folded to its ask (#2101): one click opens it. */
+.hc__turn { border-radius: 12px; }
+.hc__turn > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--ax-border); border-radius: 12px; color: var(--ax-text-2); font-size: 13.5px; }
+.hc__turn > summary::-webkit-details-marker { display: none; }
+.hc__turn > summary::before { content: "›"; color: var(--ax-muted); transition: transform .12s; }
+.hc__turn[open] > summary::before { transform: rotate(90deg); }
+.hc__turn > summary:hover { background: var(--ax-surface); }
+.hc__turnask { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc__turnn { flex: none; color: var(--ax-muted); font-size: 12px; }
+.hc__turnbody { display: flex; flex-direction: column; gap: 14px; padding-top: 14px; }
 .hc__sends { font-size: 11.5px; color: var(--ax-muted); padding: 0 4px; }
 .hc__sends summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc__sends code { display: block; max-height: 30vh; overflow: auto; margin-top: 6px; padding: 8px 10px; background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: 10px; font-family: var(--ax-mono); font-size: 11.5px; color: var(--ax-text); white-space: pre-wrap; }

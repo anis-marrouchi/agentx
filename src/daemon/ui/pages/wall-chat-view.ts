@@ -85,6 +85,8 @@ export function chatLiveHtml(live: string, o: { key: string; fold?: ChatFold; md
 export function chatLogHtml(msgs: ChatMessage[], o: {
   agent: string; md?: (s: string) => string; notSent?: string; notSentWhy?: string; live?: string; runHref?: string; stopFailed?: boolean
   runs?: Record<string, ChatRun>; fold?: ChatFold; open?: Record<string, boolean>; now?: number
+  /** Fold each earlier turn (an ask and its answers) to one line; the newest stays open (#2101). */
+  foldTurns?: boolean; openTurns?: Record<string, boolean>
 }): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string))
   const who = esc(o.agent || "The agent")
@@ -125,6 +127,21 @@ export function chatLogHtml(msgs: ChatMessage[], o: {
     if (o.md && m.content) { try { body = o.md(m.content) } catch { /* plain text above */ } }
     return them("hc__md", body, "", false, foldOf(m))
   })
+  if (o.foldTurns) {
+    // A turn starts at each ask. Every turn before the last one folds to
+    // one line with its ask; a click opens it. Key: the ask's index.
+    const asks = msgs.map((m, i) => (m.role === "user" ? i : -1)).filter((i) => i >= 0)
+    for (let k = asks.length - 2; k >= 0; k--) {
+      const from = asks[k], to = asks[k + 1]
+      const ask = chatAttached(msgs[from].content).text.replace(/\s+/g, " ").trim()
+      const line = ask.length > 110 ? ask.slice(0, 109) + "…" : ask || "(attached files)"
+      const key = String(from)
+      const n = to - from - 1
+      out.splice(from, to - from, '<details class="hc__turn" data-hc-turn="' + key + '"' + (o.openTurns && o.openTurns[key] ? " open" : "") + ">" +
+        '<summary><span class="hc__turnask">' + esc(line) + '</span><span class="hc__turnn">' + (n === 1 ? "1 reply" : n + " replies") + "</span></summary>" +
+        '<div class="hc__turnbody">' + out.slice(from, to).join("") + "</div></details>")
+    }
+  }
   if (o.notSent) {
     out.push(me(o.notSent), them("hc__err", o.notSentWhy
       ? "<b>Not sent</b>" + esc(o.notSentWhy.replace(/[.\s]+$/, "")) + ". Your message is kept below; send it again."

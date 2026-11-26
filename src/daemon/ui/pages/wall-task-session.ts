@@ -77,3 +77,16 @@ export function tsCatchUp(have: string, all: string): { add: string } | { reset:
   if (a.indexOf(h) === 0) return { add: a.slice(h.length) }
   return { reset: a }
 }
+
+/** An earlier turn folded to one line, its ask; one click opens the whole
+ *  turn (#2101, Orca's chat). `html` is the turn from tsTurnHtml. */
+export function tsFoldHtml(t: TsTurn, html: string, open: boolean, plain: (s: string) => string): string {
+  const esc = (x: unknown) => String(x == null ? "" : x).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
+  const ask = plain(t.message || "").replace(/\s+/g, " ").trim()
+  const line = ask.length > 110 ? ask.slice(0, 109) + "…" : ask || "No request text."
+  return '<details class="wsess__fold" data-turn-fold="' + esc(t.id) + '"' + (open ? " open" : "") + ">" +
+    '<summary><span class="wsess__foldn">turn ' + esc(t.n || "") + '</span><span class="wsess__foldask">' + esc(line) + "</span>" +
+    (t.running ? '<span class="wsess__foldn">working now</span>' : t.ok === false ? '<span class="wsess__foldn">failed</span>' : "") +
+    "</summary>" + html + "</details>"
+}
