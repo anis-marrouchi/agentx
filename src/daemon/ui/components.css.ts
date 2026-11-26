@@ -7,7 +7,9 @@
 // All class names are prefixed `ax-` — they won't collide with host-app or
 // per-page styles.
 
-export const AX_COMPONENTS_CSS = `
+import { ICONS_CSS } from "./icons"
+
+export const AX_COMPONENTS_CSS = `${ICONS_CSS}
 /* --- Dots --- */
 .ax-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-muted); }
 .ax-dot--ok, .ax-dot--live { background: var(--ax-ok); }

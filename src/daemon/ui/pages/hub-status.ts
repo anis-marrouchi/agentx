@@ -5,6 +5,7 @@
 // the CLI drop-down switches the engine of the agent in view; R23: the
 // light/dark switch lives here, not in the side menu.
 
+import { icon } from "../icons"
 import { HUB_USAGE_POP_HTML } from "./hub-status-usage"
 
 /** One provider row of the account picker (#2101 P9b): what GET /api/admin/hub/accounts returns. */
@@ -95,13 +96,14 @@ export function hubConnState(o: { live: boolean; error: boolean; online: boolean
   return { state: "ok", text: "Connected" }
 }
 
+// Lucide, 14 px in this dense bar (icons.ts).
 const HS_ICON = {
-  node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
-  agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01"/></svg>',
-  cli: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7"/></svg>',
-  theme: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg>',
-  tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2" fill="currentColor"/></svg>',
-  down: '<svg class="hs__chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>',
+  node: icon("monitor", 14),
+  agents: icon("bot", 14),
+  cli: icon("terminal", 14),
+  theme: icon("contrast", 14),
+  tag: icon("tag", 14),
+  down: icon("chevron-down", 14, "hs__chev"),
 }
 
 export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="Hub status">
@@ -122,7 +124,7 @@ ${HUB_USAGE_POP_HTML}`
 export const HUB_STATUS_CSS = `
 .hs { position: fixed; z-index: 9; bottom: 0; left: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-top: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-muted); font-size: 11.5px; white-space: nowrap; overflow-x: auto; font-variant-numeric: tabular-nums; }
 .hs__i, .hs__conn, .hs__btn { display: inline-flex; align-items: center; gap: 5px; }
-.hs svg { width: 13px; height: 13px; flex: none; }
+.hs svg { width: 14px; height: 14px; flex: none; }
 .hs__gap { margin-left: auto; }
 .hs__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ax-muted); }
 .hs__conn[data-state="ok"] .hs__dot { background: var(--ax-green); }

@@ -18,6 +18,8 @@
 // so no imports are used inside the functions; filesTabHtml calls wflIcon
 // and the workspace parts call wflLoader, which are injected with them.
 
+import { icon, type IconName } from "../icons"
+
 export type FileOp = "read" | "edited" | "wrote"
 
 export interface FileChange { before: string; after: string; isNew: boolean }
@@ -144,21 +146,16 @@ export function mergeRunFiles(all: RunFiles[]): RunFiles {
   return { files, artifacts, attached }
 }
 
-/** A small line icon (lucide-style, stroke = currentColor) for a file row or button (U1). */
+/** A file row's or button's icon, 14 px (lucide, src/daemon/ui/icons.ts). Shipped to the
+ *  page with injectFns, so it reads the SVG strings from its own `svg`
+ *  property, which injectFns writes into the page with it. */
 export function wflIcon(kind: string): string {
-  const paths: Record<string, string> = {
-    files: '<path d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
-    wrote: '<path d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>',
-    edited: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
-    read: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-    pr: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V21M18 15.5V9a3 3 0 0 0-3-3h-4M13 3l-2 3 2 3"/>',
-    art: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
-    dir: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-    att: '<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',
-    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-  }
-  return `<svg class="wfl__ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind] || paths.files}</svg>`
+  return wflIcon.svg[kind] || wflIcon.svg.files
 }
+wflIcon.svg = Object.fromEntries(([
+  ["files", "files"], ["file", "file"], ["wrote", "file-plus"], ["edited", "pencil-line"], ["read", "eye"], ["pr", "git-pull-request"],
+  ["art", "package"], ["dir", "folder"], ["att", "paperclip"], ["x", "x"],
+] as Array<[string, IconName]>).map(([k, n]) => [k, icon(n, 14, "wfl__ic")])) as Record<string, string>
 
 /** The shared eight-ray loader (#2152): the markup of afLoaderHtml
  *  (../affect.css.ts), here as its own function so it ships with these. */
@@ -227,7 +224,7 @@ export function workspaceHtml(w: WorkspaceView | null | undefined, key: string):
   const at = (n: string) => (w.dir ? `${w.dir}/${n}` : n)
   const rows = (w.list.entries || []).map((e) => e.kind === "dir"
     ? `<li><button type="button" class="wfl__i wfl__ws" data-cx="wsdir" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op is-dir">${wflIcon("dir")}folder</span><b>${esc(e.name)}</b></button></li>`
-    : `<li><button type="button" class="wfl__i wfl__ws" data-cx="wsfile" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op">${wflIcon("files")}file</span><b>${esc(e.name)}</b><small>${kb(e.size)}</small></button></li>`)
+    : `<li><button type="button" class="wfl__i wfl__ws" data-cx="wsfile" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op">${wflIcon("file")}file</span><b>${esc(e.name)}</b><small>${kb(e.size)}</small></button></li>`)
   if (!rows.length) return head + `<p class="ax-wall__empty">This folder is empty.</p>`
   return head + `<ul class="wfl">${rows.join("")}</ul>` + (w.list.more ? `<p class="wcx__at">Only the first 500 are listed.</p>` : "")
 }

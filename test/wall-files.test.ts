@@ -110,7 +110,7 @@ describe("Files tab: what it draws (#2101 R17)", () => {
     const html = filesTabHtml(r, { key: "task:n|cx|t1", changes: { id: "r1", ref: "acme/shop#12" } })
     expect(html).toContain('<p class="wcx__at">1 changed · 1 read · 1 sent · 1 attached</p>')
     expect(html.indexOf('data-kind="changes" data-id="r1"')).toBeLessThan(html.indexOf('data-cx="wfile"'))
-    expect(html).toContain('data-cx="wfile" data-src="task:n|cx|t1" data-i="0" title="src/&lt;app&gt;.ts"><span class="wfl__op is-edited"><svg class="wfl__ic"')
+    expect(html).toContain('data-cx="wfile" data-src="task:n|cx|t1" data-i="0" title="src/&lt;app&gt;.ts"><span class="wfl__op is-edited"><svg class="lucide lucide-pencil-line wfl__ic"')
     expect(html).toContain("edited</span><b>&lt;app&gt;.ts</b><small>src</small>")
     expect(html).toContain('data-i="1" title="README.md"')
     expect(html).toContain("<b>report.pdf</b><small>application/pdf · sent with the answer</small>")

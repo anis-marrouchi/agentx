@@ -18,6 +18,8 @@ The picture follows one Telegram message from arrival to reply. Each step names 
 8. **Tracked.** Requests, tracked plans and promises stay open in `src/requests/` until they are done.
 9. **Kept.** Events (`src/events/`) and run history (`src/storage/`) feed the dashboard pages (`src/daemon/ui/`).
 
+The older HTML dashboard pages take their icons from `src/daemon/ui/icons.ts`: Lucide icons by a fixed name (the SVGs are kept once, in `src/daemon/ui/pages/hub-lucide.ts`), and one icon and word per task state, the same set the React Hub (`src/hub/ui/icons.tsx`) uses.
+
 Around this path: schedules and jobs start work without a message (`src/crons/`, `src/jobs/`), workflows run saved steps (`src/workflows/`), the wiki and memory hold what agents know (`src/wiki/`, `src/memory/`), and AgentX Voice is the Mac app you speak to (`apps/mac-voice/`, `src/voice/`).
 
 ## 1. You choose an entry point

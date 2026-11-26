@@ -28,7 +28,7 @@
 // in history.state (hubHistStep), so a browser Back or swipe counts down,
 // not up, and a reload reads the index of the entry it is on.
 
-import { hubIcon } from "./hub-lucide"
+import { icon } from "../icons"
 
 /** The panels the Hub remembers. */
 export type HubPanelId = "nav" | "cx"
@@ -157,11 +157,12 @@ export function hubCxOpened(prev: { n: number; on: string | null }, next: { n: n
 /** The helpers HUB_PANELS_SCRIPT calls, for injectFns() in the page. */
 export const HUB_PANELS_FNS = { hubPanelClamp, hubPanelsRead, hubPanelsFit, hubPanelsApply, hubPanelDrag, hubPanelKey, hubHistStep, hubCxOpened }
 
+// Lucide, 16 px (icons.ts).
 const PANEL_ICON = {
-  menu: hubIcon("panel-left"),
-  panel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>',
-  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
-  fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
+  menu: icon("panel-left"),
+  panel: icon("panel-right"),
+  back: icon("chevron-left"),
+  fwd: icon("chevron-right"),
 }
 
 /** The menu's fold button, at the top of the nav. */
