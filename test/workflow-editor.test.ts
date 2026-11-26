@@ -78,6 +78,34 @@ describe("workflow editor", () => {
     }
     expect(outside).toEqual([])
   })
+
+  it("shows its text in the Hub: Hub faces, hints under labels, a narrower menu (#2101 W)", async () => {
+    const css = (await import("fs")).readFileSync("src/web/workflow-editor/redesign.css", "utf-8")
+    // Every rule that names a face the Hub does not load gets the Hub's own.
+    const sansFixed = css.slice(css.lastIndexOf("#wfe-root .btn, #wfe-root .pal__search input"))
+    for (const sel of [".fld__label", ".insp__section-head h4", ".insp__tab", ".cv__mini-head", ".expr__hint", ".card__add"]) {
+      expect(sansFixed.split("{ font-family: var(--ax-font); }")[0]).toContain("#wfe-root " + sel)
+    }
+    expect(css).toMatch(/#wfe-root \.fld__label \{ flex-direction: column;/)
+    expect(css).toContain("--menu-w: 300px;")
+    expect(css).not.toContain("--menu-w: 340px;")
+    // The chat button clears the Hub's bottom bar on a wide screen only.
+    expect(css).toMatch(/@media \(min-width: 641px\) \{\s*#wfe-root \.ax-chat__pill, #wfe-root \.ax-chat__panel \{ bottom: 48px; \}/)
+  })
+
+  it("folds the Hub side menu to icons on the editor page and stops above the bottom bar (#2101 W)", async () => {
+    const { WALL_EDITOR_CSS } = await import("../src/daemon/ui/pages/wall-editor.client")
+    // The agent list and the switcher's words go; the foot row is a column of icons.
+    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .lt")
+    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .ha__k span")
+    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .hf__item span { display: none; }")
+    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .hf { flex-direction: column;")
+    expect(WALL_EDITOR_CSS).toContain("#wall-editor { height: calc(100vh - 30px); height: calc(100dvh - 30px);")
+    // The phone keeps its own height, above its bottom bar.
+    expect(WALL_EDITOR_CSS).toContain("#wall-editor { height: calc(100vh - 56px); height: calc(100dvh - 56px); }")
+    // The rendered Hub carries the rules.
+    expect(renderWallPage({ owner: true })).toContain(".ax-wall.is-editor .ax-wall__nav > .lt")
+  })
 })
 
 describe("n8n inside the builder", () => {
