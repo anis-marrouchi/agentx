@@ -4876,6 +4876,10 @@ export class AgentXDaemon {
       // An action.run step acts for the run's agent, the same one a card
       // from the run is raised in the name of (owner.ask above, #1849).
       stepProof: stepProofMinter(this.stepProofs, (id) => !!this.registry.getAgent(id)),
+      // A step held long in the node queue tells the owner agent (#2334).
+      noticeAgent: (to, from, text) => {
+        if (this.registry.getAgent(to) && this.registry.notices.count(to) < MAX_NOTICES) this.registry.notices.add(to, from, text)
+      },
       // The situation workflows run only when the situation record starts them (#1892).
       startGuard: situationStartGuard,
       onRunEnded: async (run, wf) => {
