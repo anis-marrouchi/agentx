@@ -48,9 +48,25 @@ export interface AccountsReadDeps {
   /** A reader for the login in `env` (tests pass a fake). */
   claudeReader?: (env: NodeJS.ProcessEnv) => PlanUsageReader
   codex?: (dir: string) => Promise<CodexPlanUsage | null>
+  /**
+   * session.planUsage.enabled, read per call so a settings change applies
+   * without a restart. Off: no added Claude account is read, as the main
+   * reader then reads nothing either (claude-plan-usage.ts configure).
+   */
+  enabled?: boolean
+  log?: (msg: string) => void
 }
 
 const claudeReaders = new Map<string, { reader: PlanUsageReader; next: number; pending?: Promise<void> }>()
+
+/** Drops the readers of folders no longer read: removed accounts, the one now in use, or all when reading is off. */
+function dropClaudeReaders(keep: Set<string>): void {
+  for (const [dir, e] of claudeReaders) {
+    if (keep.has(dir)) continue
+    e.reader.stop()
+    claudeReaders.delete(dir)
+  }
+}
 
 async function readClaudeAccount(dir: string, env: NodeJS.ProcessEnv, now: number, make: (env: NodeJS.ProcessEnv) => PlanUsageReader) {
   let e = claudeReaders.get(dir)
@@ -81,21 +97,30 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
   const now = deps.now ?? Date.now()
   const make = deps.claudeReader ?? ((e: NodeJS.ProcessEnv) => new PlanUsageReader({ readLogin: () => readStoredLogin({ env: e }) }))
   const codex = deps.codex ?? ((dir: string) => readCodexPlanUsageCached(dir, now))
+  const enabled = deps.enabled ?? true
+  const log = deps.log ?? (() => {})
   const out: AccountsPlanUsage = {}
+  const claudeDirs = new Set<string>()
   for (const p of Object.keys(CLI_PROVIDERS) as CliProvider[]) {
     const s = state[p]
     if (!s || !s.profiles.length) continue
+    // Claude's usage endpoint is not called while the owner has turned it off.
+    if (p === "claude" && !enabled) continue
     const names = [DEFAULT_PROFILE, ...s.profiles.map((x) => x.name)]
     out[p] = await Promise.all(names.map(async (name): Promise<AccountPlanReading> => {
       if (name === s.active) return { name, active: true }
       // That account as if it were the one in use: its folder, and the env a run on it gets.
       const as: CliAccounts = { ...state, [p]: { ...s, active: name } }
       const dir = activeCliDir(p, as, env, home)
-      if (p === "claude") return { name, active: false, ...(await readClaudeAccount(dir, withCliAccountEnv({ ...env }, [], as), now, make)) }
-      const r = await codex(dir).catch(() => null)
+      if (p === "claude") {
+        claudeDirs.add(dir)
+        return { name, active: false, ...(await readClaudeAccount(dir, withCliAccountEnv({ ...env }, [], as), now, make)) }
+      }
+      const r = await codex(dir).catch((e) => { log(`[plan-usage] Codex account "${name}" not read: ${e?.message ?? e}`); return null })
       return { name, active: false, ...(r && { windows: r.windows, readAt: r.readAt, ...(r.plan && { plan: r.plan }) }) }
     }))
   }
+  dropClaudeReaders(claudeDirs)
   return out
 }
 

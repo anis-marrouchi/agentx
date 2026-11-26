@@ -1126,7 +1126,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const opened = openReadOnly()
     if (opened) {
       try { spend = hubSpendToday(opened.db, Object.keys(currentBudgetSource(ctx.config)?.agents ?? {})) }
-      catch { spend = null }
+      catch (e: any) { console.warn(`[hub] spend today not read: ${e?.message ?? e}`); spend = null }
       finally { opened.close() }
     }
     try { sendJson(res, 200, { ...(await fetchHubUsage(ctx.config)), spend }) }

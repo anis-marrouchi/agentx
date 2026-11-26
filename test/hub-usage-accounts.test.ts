@@ -87,6 +87,67 @@ describe("readAccountsPlanUsage (R28d, daemon side)", () => {
     expect(calls).toBe(3)
   })
 
+  it("reads no added Claude account while session.planUsage.enabled is off, and reads again once it is on", async () => {
+    let calls = 0
+    let made = 0
+    const reader = () => { made++; return new PlanUsageReader({
+      now: () => now,
+      readLogin: async () => ({ token: "t", source: "keychain", renewable: true }),
+      fetchUsage: async () => { calls++; return [{ window: "five_hour", utilization: 0.1 }] },
+    }) }
+    const codex = async (dir: string) => dir === "/t/codex" ? { windows: [{ window: "five_hour", utilization: 0.5 }], readAt: now } : null
+    const off = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, enabled: false })
+    expect(calls).toBe(0)
+    expect(made).toBe(0)
+    expect(off.claude).toBeUndefined()
+    // Codex reads its own session files, not Claude's endpoint: still listed.
+    expect(off.codex?.[1]).toMatchObject({ name: "team", windows: [{ window: "five_hour", utilization: 0.5 }] })
+    const on = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, enabled: true })
+    expect(calls).toBe(2)
+    expect(on.claude?.map((a) => a.name)).toEqual(["default", "work", "gone"])
+  })
+
+  it("drops the reader of an account that was removed", async () => {
+    let calls = 0
+    const made: Array<string | undefined> = []
+    const stopped: Array<string | undefined> = []
+    const reader = (env: NodeJS.ProcessEnv) => {
+      made.push(env.CLAUDE_CONFIG_DIR)
+      const r = new PlanUsageReader({
+        now: () => now,
+        readLogin: async () => ({ token: "t", source: "keychain", renewable: true }),
+        fetchUsage: async () => { calls++; return [{ window: "five_hour", utilization: 0.1 }] },
+      })
+      const stop = r.stop.bind(r)
+      r.stop = () => { stopped.push(env.CLAUDE_CONFIG_DIR); stop() }
+      return r
+    }
+    const both = { claude: { profiles: [{ name: "work", dir: "/w" }, { name: "side", dir: "/s" }], active: "work" } }
+    const read = (st: typeof both) => readAccountsPlanUsage({ state: st, env: {}, home: "/h", now, claudeReader: reader, codex: async () => null })
+    await read(both)
+    expect(made).toEqual([undefined, "/s"])
+    expect(calls).toBe(2)
+    // "side" removed: its reader stops and goes.
+    const out = await read({ claude: { profiles: [{ name: "work", dir: "/w" }], active: "work" } })
+    expect(out.claude?.map((a) => a.name)).toEqual(["default", "work"])
+    expect(stopped).toEqual(["/s"])
+    expect(calls).toBe(2)
+    // Added back within 5 minutes: a fresh reader, so it was not kept.
+    await read(both)
+    expect(made).toEqual([undefined, "/s", "/s"])
+    expect(calls).toBe(3)
+  })
+
+  it("logs a Codex account that could not be read", async () => {
+    const logs: string[] = []
+    const out = await readAccountsPlanUsage({
+      state: { codex: { profiles: [{ name: "team", dir: "/t/codex" }], active: "default" } }, env: {}, home: "/h", now,
+      codex: async () => { throw new Error("bad file") }, log: (m) => logs.push(m),
+    })
+    expect(out.codex?.[1]).toEqual({ name: "team", active: false })
+    expect(logs).toEqual(['[plan-usage] Codex account "team" not read: bad file'])
+  })
+
   it("the daemon's /usage/plan carries the accounts only when it read them", () => {
     const accounts = { claude: [{ name: "default", active: true }] }
     expect((handlePlanUsageApi("GET", "/usage/plan", now, { accounts }).body as any).accounts).toEqual(accounts)
