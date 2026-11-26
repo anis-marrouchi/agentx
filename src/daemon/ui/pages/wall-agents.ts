@@ -60,7 +60,7 @@ export function agmSlug(name: unknown): string {
 
 /** One status per agent. Needs you comes first: it is what the owner acts on. */
 export function agmStatus(f: AgmFacts): AgmStatus {
-  if (f.hold === "waiting") return { key: "needs", label: "Needs you", title: "Waits for your approval in Needs you" }
+  if (f.hold === "waiting") return { key: "needs", label: "Needs you", title: "Waits for your approval in Waiting on you" }
   if (f.needs > 0) return { key: "needs", label: "Needs you", title: f.needs + (f.needs === 1 ? " item waits" : " items wait") + " on you" }
   if (f.hold === "paused") return { key: "paused", label: "Paused", title: "Starts no run until you resume it" }
   if (f.running > 0) return { key: "working", label: "Working", title: f.running + (f.running === 1 ? " task" : " tasks") + " running now" }
@@ -193,7 +193,7 @@ export function agmFormHtml(f: AgmForm, mode: string, engines: Array<[string, st
 /** The owner's buttons on an agent's card, and its confirm line. */
 export function agmActsHtml(id: string, name: string, st: AgmStatus, hold: string, confirm: string): string {
   const e = agmEsc(id), paused = hold === "paused"
-  const hold_ = hold === "waiting" ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=decide">Approve in Needs you</a>'
+  const hold_ = hold === "waiting" ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=decide">Approve in Waiting on you</a>'
     : '<button type="button" class="ax-btn ax-btn--ghost" data-agm-act="' + (paused ? "resume" : "pause") + '" data-id="' + e + '">' + (paused ? "Resume" : "Pause") + "</button>"
   const ask = confirm === id
     ? '<div class="wsk agm-confirm" role="alertdialog" aria-label="Confirm"><p>Remove @' + e + " (" + agmEsc(name) + ")? It leaves agentx.json and the org chart (with its lines), and its Telegram, Slack and Discord bots are unbound. Its workspace folder stays on disk.</p>" +

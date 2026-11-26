@@ -256,13 +256,17 @@ Text that is not valid JSON is refused and nothing is saved. A value that is val
 
 **Layout** sets how much the Hub shows. **Simple**, the default, keeps the bare minimum: agents, chat, **Waiting on you**, **Jobs** and **Settings**. **Full** also shows the Workflows and Mobile app pages, plan gates and request steps on a post, the hosts in the status bar, and every page in ⌘K.
 
-Under **Shown in the Hub**, each item has its own switch, which wins over the layout. **As the layout** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default.
+**Layout** is the first row: **Simple** or **Full**. Under it, each item has its own switch, which wins over the layout. **Reset** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default. If a change is not saved, the message says why; select **Retry** to send it again.
 
 Hiding never turns anything off: schedules, gates and workflows keep running, a hidden page still opens from a link, and a gate that waits on you still shows in **Waiting on you**.
 
 1. **Browser:** in **Settings**, select **Layout**.
 2. Select **Full**, or turn one item's switch on.
 3. The message reads **Saved**, and the item shows in the Hub at once, with no reload and no restart.
+
+![Settings › Layout: the Layout row with Simple and Full, then one switch per item](/screenshots/hub-layout/settings-light.png)
+
+![The same pane in dark mode](/screenshots/hub-layout/settings-dark.png)
 
 ![The Hub with the simple layout: Waiting on you, Jobs and Settings at the bottom of the nav](/screenshots/hub-layout/simple.png)
 

@@ -123,7 +123,7 @@ Without the first two, the sign-in page says it is not set up, for you as for ev
 
 1. **The other browser:** open `https://your-mac.tailnet-name.ts.net/member/signin`, type your address and select **Send me a link**. The answer is the same as for any address.
 2. **Your mail:** open the link, give this browser a name and select **Sign in**. The page says **Confirm this browser on the home machine**. Until you do, this browser has no owner rights.
-3. **The home machine:** within a minute the popup shows a card **Anna K signed in as the owner from a new browser** (with your name), with where the sign-in came from and the browser's name. If you dismissed it, select **Show on Mac** on the card in **Needs you** to bring it back.
+3. **The home machine:** within a minute the popup shows a card **Anna K signed in as the owner from a new browser** (with your name), with where the sign-in came from and the browser's name. If you dismissed it, select **Show on Mac** on the card in **Waiting on you** to bring it back.
 4. **The home machine:** answer **Yes** in the popup if it is you. **No** signs that browser out.
 5. **The other browser:** the page opens the Hub by itself, as the owner.
 

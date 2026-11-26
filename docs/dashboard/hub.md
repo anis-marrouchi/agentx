@@ -2,7 +2,7 @@
 
 The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed once, by what it is doing: **Working**, **Needs you** and **Done today**. Select a working agent to watch its run live, and **⌘K** jumps to any agent or request. The page takes the rest of the width; there is no side column with Chat and Agents any more. The chat button at the top right of each page asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
 
-The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
+The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Waiting on you** (see [See what waits on you](#see-what-waits-on-you)).
 
 ![The Hub in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
@@ -15,14 +15,14 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
    At the bottom of the nav: **Waiting on you** (what waits on you, to answer there, with its count), **Jobs** and, for the owner, the gear for **Settings**. **Upgrading:** Workflows, Mobile app and some ⌘K pages are hidden after this upgrade; [Settings › Layout](./settings.md#layout) › **Full** brings them back. With the full layout, or their switches on there, **Workflows** and **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) show there too.
 
-   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Needs you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
+   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Waiting on you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
 3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute; if an ask fails, it asks again after 5, 10, 20 and 40 seconds. The dashboard keeps the daemon's last answer, so when the daemon is slow to answer, that answer still shows, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
 4. The Hub never pings you on its own. The classic pages that still hold something the Hub does not have yet, **Monitor**, **Org**, **Activity** and **Workflows**, are in the **⌘K** switcher as **Dashboard ·** *page*. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Theme**, in the bottom status bar (see [Read the bottom status bar](#read-the-bottom-status-bar)), switches between light and dark. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
-6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
+6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Waiting on you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
 
    ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
 
@@ -153,7 +153,7 @@ Automations only shows. To add, change or turn off a schedule, use [Settings ›
 
 ### Waiting on you in the shell
 
-**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Needs you**, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
+**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Waiting on you** in the old Hub, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
 
 ![Waiting on you: each item with its kind, its question, who asked and how long ago](/screenshots/hub-automations/waiting.png)
 
@@ -165,18 +165,18 @@ Automations only shows. To add, change or turn off a schedule, use [Settings ›
 
    ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
 
-4. **Answer** opens **Needs you**, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
+4. **Answer** opens **Waiting on you** in the old Hub, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
 5. **Phone:** the list and the opened item fill the screen.
 
    ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
    ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
 
-What you put off with **Later** is not listed; the line under the list counts it and links to it in Needs you.
+What you put off with **Later** is not listed; the line under the list counts it and links to it in the old Hub's Waiting on you.
 
 ### Check Waiting on you worked
 
-- The number next to **Waiting on you** matches the **Needs you** count in the old Hub and the phone app's Desk.
-- Answer an item in Needs you, then come back: within 15 seconds it is gone from the list.
+- The number next to **Waiting on you** matches the **Waiting on you** count in the old Hub and the phone app's Desk.
+- Answer an item in the old Hub's Waiting on you, then come back: within 15 seconds it is gone from the list.
 
 ### If Waiting on you is wrong
 
@@ -437,12 +437,12 @@ A card on the Hub shows:
 
 Only the owner answers on the Hub: the dashboard asks for its key. To answer:
 
-1. **Browser:** select **Needs you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
+1. **Browser:** select **Waiting on you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
 2. On a card with choices, the one the agent advised is already picked. Pick another if you want. The draft and what Yes and No do are folded under the card.
 3. Select **Yes**, **No** or **Later** (**Keep** or **Drop** for a memory fact). A line opens that says exactly what is sent; select **Confirm**. The card leaves the list, and its post updates without a reload.
 4. A card raised while working on a task is also on that task's post, with the same buttons and confirm.
 
-Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub). The old Approvals page's address, `/approvals`, opens **Needs you**, so old links and bookmarks still work.
+Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub). The old Approvals page's address, `/approvals`, opens **Waiting on you**, so old links and bookmarks still work.
 
 To see the waiting tasks in the feed instead:
 
@@ -527,7 +527,7 @@ Every open post is a request you gave an agent. As the owner, you can close it o
 
 *Scripted demo data; your team's names and machines will differ.*
 
-These are the same calls as **Needs you** makes for a request that waits on you, and the same as `agentx requests done` and `agentx requests drop` in a terminal.
+These are the same calls as **Waiting on you** makes for a request that waits on you, and the same as `agentx requests done` and `agentx requests drop` in a terminal.
 
 ### Comment on the lines of a pull or merge request
 
@@ -627,7 +627,7 @@ Each agent on the **Agents** page has a status next to its @handle: **Working** 
 On an agent this machine runs:
 
 - **Edit** opens the same form with what is saved. **Save** changes only what you changed. Channels, skills and files are under **Settings**.
-- **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Needs you** instead.
+- **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Waiting on you** instead.
 - **Remove** asks first, then takes the agent out of `agentx.json` and out of the org chart (with its lines and departments), and unbinds the Telegram, Slack and Discord bots that answered as it. You can then create an agent with the same id and a role. An agent that manages a project is not removed: give the project another manager first. Its workspace folder stays on disk. Select **Restart when idle** to stop it.
 
 ## Change settings
@@ -651,7 +651,7 @@ It saves to `agentx.json`, the AgentX settings file on the machine that serves t
 
    ![Settings on a phone: the Agents section with one agent card and its on/off switch](/screenshots/wall/settings-phone-agents.png)
 
-Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in **Needs you**: select it to answer there.
+Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in **Waiting on you**: select it to answer there.
 
 ### Turn an agent off or on
 
@@ -747,7 +747,7 @@ Health only reads. It refreshes with the Hub, without losing what you are typing
 1. **Browser:** in **Settings**, select **Channels**, under **Fleet**. Pick one along the top: **Telegram**, **WhatsApp**, **Email**, **Slack**, **Discord**, **GitLab**, **GitHub** or **Calls**. Each says **on**, **off** or **not set up**.
 2. Put the secret (a bot token or a password) in the `.env` file next to `agentx.json` first. The forms take only the *name* of that variable, such as `TG_SUPPORT_BOT_TOKEN`, and never show a secret.
 3. **Telegram:** under **Add a Telegram account**, type a name, pick the agent that answers, and type the token's variable name, then **Add account**. **Edit** changes an account in place; **Delete** asks you first.
-4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Needs you** unless you tick **Send replies at once**.
+4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Waiting on you** unless you tick **Send replies at once**.
 5. **Slack**, **Discord**, **GitLab:** fill the form and select **Connect** (or **Save** once connected). A switch turns each one on or off.
 6. **GitHub** lists its webhooks; add one on **Webhooks** with source GitHub. **Calls** lists active and recent calls, and only reads.
 
@@ -808,7 +808,7 @@ Each card says **receiving**, **off**, or **signing secret missing**. **Turn off
 
 ### Choose approvals and requests
 
-**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings the old Approvals page had, with the same saves. That page's address, `/approvals`, now opens **Needs you**.
+**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings the old Approvals page had, with the same saves. That page's address, `/approvals`, now opens **Waiting on you**.
 
 1. **Browser:** in **Settings** › **Inbox**, under **Approvals**, pick what is sent to your phone and shown on this computer at once, how long cards wait, how long **Later** hides an item, and the daily digest. Select **Save**.
 2. In **Settings** › **Requests**, choose whether your requests are recorded and followed, what counts as you on shared channels, when a quiet request comes back, the plan rules and the loop checks. Select **Save**. See [Open requests](../jobs/open-requests.md).
@@ -878,7 +878,7 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 
 ![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
 
-![A demo conversation waiting for output and the Needs you count](/screenshots/wall/run-waiting.png)
+![A demo conversation waiting for output and the count of what waits on you](/screenshots/wall/run-waiting.png)
 
 ![Demo tool steps on a narrow screen, showing an edit diff and the Completed, Failed and Running states](/screenshots/wall/run-tool-states.png)
 
@@ -1180,7 +1180,7 @@ The **People** page lists everyone who talks to your agents: you, your teammates
 
 The **Cost** page shows what your agents spent, in total and per agent, on every machine the Hub reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. Old links to the classic Cost page open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
 
-1. **Browser:** select **Cost** in the nav (under **More** on a phone). With the simple layout, the default, Cost is not in the menus: turn **Usage page** on in [Settings › Layout](./settings.md#layout), or open `/hub#status=open&view=cost`, which always works. The amount next to it is what every machine spent this month.
+1. **Browser:** select **Cost** in the nav (under **More** on a phone). With the simple layout, the default, Cost is not in the menus: turn **Cost page** on in [Settings › Layout](./settings.md#layout), or open `/hub#status=open&view=cost`, which always works. The amount next to it is what every machine spent this month.
 2. The top line shows this month's total, against the budget for all agents when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
 3. Pick a range: **7 days**, **14 days**, **30 days**, **90 days** or **All**. The range is kept in the page's address, so you can share the view. The line under the tabs gives the total, the runs, the cost per run and, with more than one machine, how many were read.
 4. The chart stacks each day's spend by agent: the five agents that spent most each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
@@ -1343,13 +1343,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Hub** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
-39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
+39. Waiting on you: with a decision card pending, select **Waiting on you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as `agentx workflow list` in a terminal, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 42. One agent's runs: select an agent's name, then **Activity** under its profile. **Activity** is underlined and the list shows only that agent's runs.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Hub. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`.
-46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Needs you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
+46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Waiting on you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 47. Events: give an agent a subscription such as `{ "kinds": ["test:ping"], "delivery": "wake", "prompt": "Reply with agentx events emit test:pong" }`. **Terminal:** run `agentx events emit test:ping --summary "hello"`. **Browser:** select **Events**, then **Refresh** after a minute. The `test:ping` card says **1 wake: 1 ran**, and `test:pong` is under it, marked **in reply to test:ping**.
 48. Right panel: open the chat of an agent that works on an open request on a GitHub or GitLab issue. The **Working on** line names it. Select **Changes**: the panel opens on the right with its diff, and the chat narrows. Select **File** next to a file: a second tab shows the whole file with its new lines in green. Close both tabs: the chat takes the whole width again.
@@ -1411,8 +1411,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
 - **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Hub could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Hub.
 - **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
-- **A card is on Needs you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Needs you**.
-- **Needs you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
+- **A card is on Waiting on you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Waiting on you**.
+- **Waiting on you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
 - **Answering unblocks names no run:** runs show there only when they were paused on that card by a workflow's owner-decision step, on a machine that answered within five seconds.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.

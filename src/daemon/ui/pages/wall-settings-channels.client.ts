@@ -102,7 +102,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
         stChField('st-em-env', 'Password, as an environment variable name', '', 'EMAIL_SUPPORT_PASSWORD') +
         stChField('st-em-allow', 'Who may write', '*', '', '(addresses, @domain, or * for anyone)') +
         '<label class="wsf__check"><input type="checkbox" id="st-em-auto"> Send replies at once, without my approval</label>' +
-        '<p class="wsj__sub">Only mail that arrives after the daemon starts reading is answered, and the mailbox is never changed. Each reply waits in Needs you unless you tick the box. To check the login first, run <code>agentx connect email</code>.</p>' +
+        '<p class="wsj__sub">Only mail that arrives after the daemon starts reading is answered, and the mailbox is never changed. Each reply waits in Waiting on you unless you tick the box. To check the login first, run <code>agentx connect email</code>.</p>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Add mailbox</button>' + stNoteHtml('em-add') + '</div></form></details></section>';
   }
 

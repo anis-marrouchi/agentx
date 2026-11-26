@@ -1,6 +1,6 @@
 # Activity — what ran, where, and what it decided
 
-Needs you answers "what needs me?" Activity answers "what ran, where, and what did it decide?" Use Activity to look into a finished task, or a message that seems to have gone to the wrong agent.
+Waiting on you answers "what needs me?" Activity answers "what ran, where, and what did it decide?" Use Activity to look into a finished task, or a message that seems to have gone to the wrong agent.
 
 **Activity** is a page of the [Hub](./hub.md), the dashboard's home. It lists every run of every agent on your machines, newest first, with its result, what started it, how long it took and what it cost. A run is one task an agent worked on.
 

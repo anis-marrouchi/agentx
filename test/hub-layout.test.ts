@@ -97,7 +97,7 @@ describe("hide, never disable: the current Hub", () => {
     expect(hubHideSelectors("sessions")).toEqual(['[data-nav="live"]'])
     expect(hubHideSelectors("usage")).toEqual(['[data-nav="cost"]'])
     expect(hubHideSelectors("hosts")).toEqual(["#hs-node"])
-    expect(hubHideSelectors("gates")).toEqual([".wtk__prog", '.wtk__sec[aria-label="Plan"]'])
+    expect(hubHideSelectors("gates")).toEqual(['[data-hub-item="gates"]'])
     // No selector reaches Waiting on you (#wall-decide) or the needs nav.
     for (const id of HUB_SHOW_IDS) for (const s of hubHideSelectors(id)) expect(s).not.toMatch(/decide|needs/)
     expect(Object.values(HUB_NAV_ITEM).every((i) => (HUB_SHOW_IDS as readonly string[]).includes(i))).toBe(true)
@@ -155,11 +155,12 @@ describe("Settings › Layout", () => {
     await w.settle()
     const html = settingsHtml(w)
     expect(html).toContain("<h2>Layout</h2>")
-    expect(html).toContain('data-hl-layout="simple" checked')
-    expect(html).not.toContain('data-hl-layout="full" checked')
-    for (const id of ALL) expect(html).toContain(`data-hl-item="${id}"`)
-    expect(html).toContain('data-hl-item="gates" checked')
-    expect(html).not.toContain('data-hl-item="workflows" checked')
+    expect(html).toContain('aria-checked="true" data-hl-layout="simple"')
+    expect(html).toContain('aria-checked="false" data-hl-layout="full"')
+    for (const id of ALL) expect(html).toContain(`role="switch" aria-checked="${id === "gates"}" data-hl-item="${id}"`)
+    // One group of rows with switches: no native checkboxes, no cards in a card.
+    expect(html).not.toMatch(/type="(checkbox|radio)"/)
+    expect(html).not.toContain("whl__opt")
     // Gates has its own switch set: it can go back to the layout's default.
     expect(html).toContain('data-st-act="hl-reset" data-hl-item="gates"')
     expect(html).toContain("Hidden items keep running")
@@ -169,17 +170,17 @@ describe("Settings › Layout", () => {
   it("Full is one switch away, and applies at once with no reload", async () => {
     const w = open()
     await w.settle()
-    await w.change({ "data-hl-layout": "full" }, true)
+    await w.click({ "data-hl-layout": "full" })
     expect(w.writes().map((c) => [c.url, c.body])).toEqual([["/api/admin/wall/settings/hub-layout", { layout: "full" }]])
     expect(w.win.AX_HUB_LAYOUT.layout).toBe("full")
-    expect(settingsHtml(w)).toContain('data-hl-layout="full" checked')
-    expect(settingsHtml(w)).toContain("no restart needed")
+    expect(settingsHtml(w)).toContain('aria-checked="true" data-hl-layout="full"')
+    expect(settingsHtml(w)).toContain('id="st-n-hl" role="status">Saved.</p>')
   })
 
   it("one item's switch saves that item only; As the layout clears it", async () => {
     const w = open({ summary: "ok", layout: resolveHubLayout({ show: { workflows: true } }) })
     await w.settle()
-    await w.change({ "data-hl-item": "workflows" }, true)
+    await w.click({ "data-hl-item": "workflows" })
     expect(w.writes().at(-1)!.body).toEqual({ show: { workflows: true } })
     expect(w.win.AX_HUB_LAYOUT.show.workflows).toBe(true)
     await w.click({ "data-st-act": "hl-reset", "data-hl-item": "workflows" })
@@ -192,9 +193,78 @@ describe("Settings › Layout", () => {
       route: (u, i) => i?.method === "POST" ? { status: 400, body: { error: "layout must be \"simple\" or \"full\"" } } : undefined,
     })
     await w.settle()
-    await w.change({ "data-hl-layout": "full" }, true)
-    expect(w.el("st-n-hl").textContent).toContain("Not saved:")
+    await w.click({ "data-hl-layout": "full" })
+    expect(settingsHtml(w)).toContain("Not saved: layout must be")
     expect(w.win.AX_HUB_LAYOUT).toBeUndefined()
+    // Retry sends the same change again.
+    expect(settingsHtml(w)).toContain('data-st-act="hl-retry"')
+    await w.click({ "data-st-act": "hl-retry" })
+    expect(w.writes().map((c) => c.body)).toEqual([{ layout: "full" }, { layout: "full" }])
+  })
+
+  /** A Simple | Full button as the browser has it, in a group that finds its peers. */
+  const radios = () => {
+    const make = (id: string, on: boolean) => {
+      const attrs: Record<string, string> = { role: "radio", "aria-checked": String(on), "data-hl-layout": id, tabindex: on ? "0" : "-1" }
+      const b: any = {
+        id: "", tagName: "BUTTON", attrs, focused: 0,
+        get attributes() { return Object.entries(attrs).map(([name, value]) => ({ name, value })) },
+        getAttribute: (k: string) => attrs[k] ?? null, setAttribute: (k: string, v: string) => { attrs[k] = v }, hasAttribute: (k: string) => k in attrs,
+        focus() { b.focused++ },
+        closest: (sel: string) => (sel === '[role="radiogroup"]' ? group : null),
+      }
+      return b
+    }
+    const all: Record<string, any> = { simple: make("simple", true), full: make("full", false) }
+    const group = { querySelector: (sel: string) => all[/data-hl-layout="(\w+)"/.exec(sel)?.[1] ?? ""] ?? null }
+    return all
+  }
+
+  it("Simple | Full is a radio group with one tab stop", async () => {
+    const w = open()
+    await w.settle()
+    const html = settingsHtml(w)
+    expect(html).toContain('<div class="whl__seg" role="radiogroup" aria-label="Layout">')
+    expect(html).toContain('role="radio" aria-checked="true" data-hl-layout="simple" tabindex="0"')
+    expect(html).toContain('role="radio" aria-checked="false" data-hl-layout="full" tabindex="-1"')
+  })
+
+  it("arrow keys move the choice, take the focus and save it as a click does", async () => {
+    const w = open()
+    await w.settle()
+    const r = radios()
+    expect(await w.keyAt(r.simple, "ArrowRight")).toBe(true)
+    expect(r.full.focused).toBe(1)
+    expect(r.full.attrs.tabindex).toBe("0")
+    expect(r.simple.attrs.tabindex).toBe("-1")
+    expect(w.writes().map((c) => [c.url, c.body])).toEqual([["/api/admin/wall/settings/hub-layout", { layout: "full" }]])
+    expect(w.win.AX_HUB_LAYOUT.layout).toBe("full")
+    expect(settingsHtml(w)).toContain('aria-checked="true" data-hl-layout="full" tabindex="0"')
+    // Left and Up go back (wrapping), Down goes on; each saves its layout.
+    const r2 = radios()
+    await w.keyAt(r2.simple, "ArrowLeft")
+    await w.keyAt(r2.full, "ArrowUp")
+    expect(w.writes().slice(1).map((c) => c.body)).toEqual([{ layout: "full" }, { layout: "simple" }])
+    // Home on the chosen first one changes nothing; other keys are left alone.
+    const r3 = radios()
+    await w.keyAt(r3.simple, "Home")
+    expect(await w.keyAt(r3.simple, "a")).toBe(false)
+    expect(w.writes()).toHaveLength(3)
+  })
+
+  it("a repaint gives the keyboard back to the element that had it", async () => {
+    const w = open()
+    await w.settle()
+    const r = radios()
+    const box = w.el("wall-settings")
+    box.contains = (e: unknown) => e === r.full
+    box.querySelectorAll = (tag: string) => (tag === "BUTTON" ? [r.simple, r.full] : [])
+    ;(w.doc as any).activeElement = r.full
+    const before = w.paints()
+    await w.click({ "data-hl-layout": "full" })
+    expect(w.paints()).toBeGreaterThan(before)
+    expect(r.full.focused).toBeGreaterThan(0)
+    expect(r.simple.focused).toBe(0)
   })
 
   it("is listed in Settings for the owner", async () => {

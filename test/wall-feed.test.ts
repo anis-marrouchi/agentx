@@ -1751,7 +1751,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(page).toContain('data-nav="needs" href="#status=open&amp;view=decide"')
     const w = openWall({ hash: "#status=open&view=decide" })
     await w.settle()
-    expect(w.el("wall-title").textContent).toBe("Needs you")
+    expect(w.el("wall-title").textContent).toBe("Waiting on you")
     expect(w.el("nav-n-needs").textContent).toBe("1")
     expect(w.el("wall-decide").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
@@ -2553,7 +2553,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(dlg.innerHTML).toMatch(/<label for="wfr-title">Page title <span aria-hidden="true">\*<\/span><\/label><input id="wfr-title" type="text"/)
     expect(dlg.innerHTML).toMatch(/<select id="wfr-source" data-wfr-key="source"><option value=""><\/option><option>Shipping notes<\/option>/)
     expect(dlg.innerHTML).toContain("<summary>Inputs as JSON</summary>")
-    expect(dlg.innerHTML).toContain("Customer Desk does the steps. A message to a person waits for your yes in Needs you.")
+    expect(dlg.innerHTML).toContain("Customer Desk does the steps. A message to a person waits for your yes in Waiting on you.")
     // A required input left empty is asked for; nothing is sent.
     w.click({ "data-wf-start": "" })
     expect(dlg.innerHTML).toContain("Fill in Page title.")

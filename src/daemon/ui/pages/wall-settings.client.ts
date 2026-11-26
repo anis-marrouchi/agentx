@@ -169,6 +169,37 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   }
   function stPaint() { S.st.v++; settingsShow(); }
 
+  /** What has the keyboard in the Settings panel, so a repaint can give it
+   *  back (#2226 S1 review): its id, or else its tag and data-* attributes,
+   *  and the caret of a field. Null when focus is outside the panel. */
+  function stFocusKey(box) {
+    var a = document.activeElement;
+    if (!a || !box || typeof box.contains !== 'function' || !box.contains(a)) return null;
+    var k = { id: a.id || '', tag: String(a.tagName || ''), attrs: [], sel: null };
+    if (!k.id) {
+      var list = a.attributes || [];
+      for (var i = 0; i < list.length; i++) if (list[i].name.indexOf('data-') === 0) k.attrs.push([list[i].name, list[i].value]);
+      if (!k.attrs.length) return null;
+    }
+    try { if (typeof a.selectionStart === 'number') k.sel = [a.selectionStart, a.selectionEnd]; } catch (e) {}
+    return k;
+  }
+  /** Focuses the element of a key from stFocusKey(), if the repaint kept it. */
+  function stFocusBack(box, k) {
+    if (!k) return;
+    var el = null;
+    if (k.id) el = document.getElementById(k.id);
+    else if (box && typeof box.querySelectorAll === 'function') {
+      var all = box.querySelectorAll(k.tag || '*');
+      for (var i = 0; i < all.length && !el; i++) {
+        if (k.attrs.every(function (p) { return all[i].getAttribute(p[0]) === p[1]; })) el = all[i];
+      }
+    }
+    if (!el || typeof el.focus !== 'function') return;
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    if (k.sel && typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(k.sel[0], k.sel[1]); } catch (e) {} }
+  }
+
   /** Called from render(): paints only when the section, the agent or the data changed. */
   function settingsShow() {
     if (S.page !== 'settings' || S.post) return;
@@ -222,7 +253,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     }
     S.st.painted = painted;
     S.st.healthSig = health;
+    // The repaint keeps the keyboard where it was (#2226 S1 review).
+    var focusKey = stFocusKey(box);
     box.innerHTML = settingsHtml();
+    stFocusBack(box, focusKey);
     stPaintTest();
   }
 
@@ -350,7 +384,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Agents: one card each, then add one, then the wiki page curator ---
   function stSwitchHtml(a) {
     var o = stOrgNode(a.id);
-    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="#status=open&amp;view=decide" title="It starts once you approve it in Needs you">Waits for approval</a>';
+    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="#status=open&amp;view=decide" title="It starts once you approve it in Waiting on you">Waits for approval</a>';
     var on = o.status !== 'paused';
     return '<button type="button" class="wsa__sw" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-st-hold="' + esc(a.id) + '"' +
       ' title="' + (on ? 'On. Turn off: it starts no run until you turn it back on.' : 'Off: it starts no run. Turn on to let it work again.') + '">' +

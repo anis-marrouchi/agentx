@@ -41,7 +41,7 @@ Each row has:
 - **The door.**
 - **The home:** a link to the issue or merge request, when the job has one.
 - **Updated:** how long ago the job last moved.
-- **Your request:** a tag on a job that you asked for yourself. **See it in Requests** opens **Needs you** on its **Requests** chip, where you can answer or close it.
+- **Your request:** a tag on a job that you asked for yourself. **See it in Requests** opens **Waiting on you** on its **Requests** chip, where you can answer or close it.
 
 ## What the status line means
 

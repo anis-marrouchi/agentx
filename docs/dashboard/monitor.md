@@ -1,6 +1,6 @@
 # Monitor — what needs you, and what doesn't
 
-Monitor is a classic dashboard page, at `/monitor`. The Hub does not show its reviews yet. Decisions and other things that wait on you are on the Hub's [Needs you](./hub.md#see-what-waits-on-you) page; Monitor adds what AgentX's reviewer found after each task.
+Monitor is a classic dashboard page, at `/monitor`. The Hub does not show its reviews yet. Decisions and other things that wait on you are on the Hub's [Waiting on you](./hub.md#see-what-waits-on-you) page; Monitor adds what AgentX's reviewer found after each task.
 
 Monitor groups work into **Only you**, **Agents can handle**, **In motion**, and **Session briefings**:
 

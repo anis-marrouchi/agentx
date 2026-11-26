@@ -7,7 +7,7 @@ The dashboard opens on the [Hub](../dashboard/hub.md). Every view below is a pag
 | Need | Nav item | Path |
 |---|---|---|
 | Every task as a post, with its thread | **Hub** | `/hub` |
-| What waits on you: decisions, drafts, requests ([Needs you](../dashboard/hub.md#see-what-waits-on-you)) | **Needs you** | `/hub#status=open&view=decide` |
+| What waits on you: decisions, drafts, requests ([Waiting on you](../dashboard/hub.md#see-what-waits-on-you)) | **Waiting on you** | `/hub#status=open&view=decide` |
 | Every piece of assigned work and what it is doing now ([Jobs](../dashboard/jobs.md)) | **Jobs** | `/hub#page=jobledger` |
 | Live sessions, paused tasks, each machine, restart when idle ([Live](../dashboard/live.md)) | **Live** | `/hub#page=live` |
 | What each machine runs at this moment ([Running now](../dashboard/hub.md#running-now)) | **Running now** | `/hub#page=running` |
@@ -36,7 +36,7 @@ These classic pages are gone. Their addresses still work and open the matching H
 | `/live` | **Live** |
 | `/people` | **People** |
 | `/admin/cost` | **Cost** |
-| `/approvals` | **Needs you** |
+| `/approvals` | **Waiting on you** |
 | `/agents/<agent-id>/history` | the agent's profile, with its **Activity** open |
 | `/workflows/editor?id=<id>` | the workflow editor |
 

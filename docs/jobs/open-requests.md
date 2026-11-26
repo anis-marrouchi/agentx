@@ -74,7 +74,7 @@ Open the request's post on the [Hub](../dashboard/hub.md#act-on-a-post), one ste
 - **Done:** closes it as finished. A link to the evidence in the comment box is optional when you close it yourself.
 - **Drop:** closes one you no longer want. Text in the comment box is kept as the reason.
 
-**Hand to…**, **Done** and **Drop** each ask you to confirm first. See [Close or hand off a request](../dashboard/hub.md#close-or-hand-off-a-request). A request that waits on you is also on **Needs you**, with a reply box and the same buttons.
+**Hand to…**, **Done** and **Drop** each ask you to confirm first. See [Close or hand off a request](../dashboard/hub.md#close-or-hand-off-a-request). A request that waits on you is also on **Waiting on you**, with a reply box and the same buttons.
 
 Reply and hand-off need open requests turned on, because the daemon's check is what tells the agent.
 

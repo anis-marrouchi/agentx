@@ -98,7 +98,7 @@ export function WaitingDetail({ item, now = Date.now() }: { item: WaitingItem; n
           Answer <Icon name="external-link" className="size-3.5" />
         </a>
         {task ? <a href={taskHref(task)} className={buttonVariants({ size: "sm", variant: "outline" })} data-waiting="task">Open the task</a> : null}
-        <span className="text-xs text-muted-foreground">Answers open Needs you, where yes, no and later are given.</span>
+        <span className="text-xs text-muted-foreground">Answers open the old Hub's Waiting on you, where yes, no and later are given.</span>
       </div>
     </article>
   )
@@ -131,7 +131,7 @@ export function WaitingBody({ list, error, onRetry, now }: WaitingBodyProps) {
       ) : <WaitingRows items={list.items} now={now} />}
       {list.later ? (
         <p className="px-1 text-xs text-muted-foreground">
-          {list.later} put off for later. <a className="text-link hover:underline" href={NEEDS_YOU_PAGE}>See them in Needs you</a>.
+          {list.later} put off for later. <a className="text-link hover:underline" href={NEEDS_YOU_PAGE}>See them in the old Hub's Waiting on you</a>.
         </p>
       ) : null}
     </div>

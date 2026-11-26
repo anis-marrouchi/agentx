@@ -649,7 +649,7 @@ ${HUB_NAV_SCRIPT}
     ];
     if (waits) steps.push({ name: 'Waits', at: 'on ' + waitsOn(p, plan) + (p.blocked ? ' for ' + esc(ago(p.blocked.since).replace(' ago', '')) : ''), on: 'is-wait' });
     steps.push({ name: end, at: p.closedAt ? esc(ago(p.closedAt)) : p.estimateMinutes ? 'estimate ' + hm(p.estimateMinutes) : '', on: open ? '' : p.state === 'done' ? 'is-done' : 'is-end' });
-    return '<ol class="wtk__prog" aria-label="Where it stands">' + steps.map(function (s) {
+    return '<ol class="wtk__prog" data-hub-item="gates" aria-label="Where it stands">' + steps.map(function (s) {
       return '<li class="' + s.on + '"' + (s.on === 'is-now' || s.on === 'is-wait' ? ' aria-current="step"' : '') + '><b>' + esc(s.name) + '</b><span>' + s.at + '</span></li>';
     }).join('') + '</ol>';
   }
@@ -664,7 +664,7 @@ ${HUB_NAV_SCRIPT}
   /** The plan, when the post has one: each step, who owns it, its proof. */
   function planHtml(plan) {
     var done = plan.filter(function (s) { return s.state === 'done' || s.state === 'skipped'; }).length;
-    return '<section class="wtk__sec" aria-label="Plan"><h2>Plan <span class="k">' + done + ' of ' + plan.length + ' done</span></h2><ol class="wtk__plan">' +
+    return '<section class="wtk__sec" data-hub-item="gates" aria-label="Plan"><h2>Plan <span class="k">' + done + ' of ' + plan.length + ' done</span></h2><ol class="wtk__plan">' +
       plan.map(function (s) {
         var proof = s.evidence ? (/^https?:\/\//.test(s.evidence) ? '<a href="' + esc(s.evidence) + '" target="_blank" rel="noopener">Proof</a>' : esc(s.evidence)) : '';
         return '<li class="is-' + esc(s.state) + '"><span class="wtk__mark" aria-hidden="true">' + (STEP_MARK[s.state] || '') + '</span><div>' +
@@ -1128,7 +1128,7 @@ ${HUB_NAV_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
+    var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Waiting on you' };
     $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'operations' ? 'Operations' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 

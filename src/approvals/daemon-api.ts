@@ -33,7 +33,7 @@ import { listInbox, type InboxContext } from "./inbox"
 export const LIST_LIMIT = 100
 
 export const OPERATOR_ONLY =
-  "Decisions are made by the operator only: `agentx approvals approve|reject <key>`, or Needs you on the dashboard's Hub."
+  "Decisions are made by the operator only: `agentx approvals approve|reject <key>`, or Waiting on you on the dashboard's Hub."
 
 export interface ApprovalsApiDeps {
   ctx: InboxContext
