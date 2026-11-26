@@ -40,10 +40,14 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 *Demo data; your agents will differ.*
 
 1. **Browser:** open `/hub?react=1` (once), or turn `dashboard.hub.react` on and open `/hub`. The shell's own address is `/hub#page=home`.
-2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (open posts), **Automations** (the schedules), **Agents** (select one to chat with it), **Projects** and **Waiting on you**. **Settings** is at the bottom.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart. The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart and no reload:
+
+   ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
+
+   The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
@@ -52,7 +56,117 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
 
-Every menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+**Tasks**, **Automations** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+
+### Tasks: List or Kanban
+
+**Tasks** lists the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine. They are the posts of the old Hub's feed. Its address is `/hub#page=home&pane=tasks`.
+
+![Tasks as a list, grouped by state: In progress, Waiting on you, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
+
+*Demo data; your tasks will differ.*
+
+1. **Browser:** in the simple shell, select **Tasks** in the side menu.
+2. **List or Kanban:** the switch at the bottom of the side menu (on a phone, at the top of Tasks) changes the view. This browser remembers your choice.
+3. **Project:** the box at the top of Tasks shows one project's tasks only; **All projects** shows them all again. The project is in the address (`&project=<name>`), so Back and a shared link keep it.
+
+   ![Tasks for one project, picked in the box at the top](/screenshots/hub-automations/tasks-project.png)
+
+4. **The columns** are the request states: **In progress**, **Waiting on you**, **Waiting on others**, **Needs attention**, and **Closed** (done, declined or dropped in the last 7 days). Each task shows its agent, its project and how long ago it last moved.
+
+   ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
+
+5. **Open a task:** select it. Its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+
+   ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
+
+6. **Phone:** the list and the board fill the screen; the board scrolls sideways. The List and Kanban buttons are icons only, next to the project box.
+
+   ![Tasks as a list on a phone](/screenshots/hub-tasks/list-phone.png)
+   ![Tasks as a Kanban on a phone](/screenshots/hub-tasks/kanban-phone.png)
+   ![Tasks for one project on a phone](/screenshots/hub-automations/tasks-project-phone.png)
+
+Tasks only shows: moving a card does not change a task's state. Close or hand over a task from its **Full record**.
+
+### Check Tasks worked
+
+- Ask an agent something that leaves work open (for example a task it hands to another agent). Within 30 seconds it is under **In progress** in Tasks.
+- Pick **Kanban**, reload the page: Tasks opens as a Kanban again.
+
+### If Tasks is wrong
+
+- **Could not read the tasks:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **No tasks in the last 7 days:** nothing was asked that left work behind. A question an agent answers at once is not a task.
+- **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
+- **Task not found** after opening a link: it was closed more than 7 days ago, or its machine is not answering.
+- **No tasks in a project:** none of that project's tasks moved in the last 7 days. Select **All projects**. A task with no project shows under **All projects** only.
+
+### Automations
+
+**Automations** lists what runs on its own on every connected machine: the scheduled jobs, and the workflows a schedule or an event starts. It reads what the old Hub's **Schedules** page reads. Its address is `/hub#page=home&pane=automations`.
+
+![Automations: per machine, each job and workflow with its next run, its last result and its last seven runs](/screenshots/hub-automations/automations.png)
+
+*Demo data; your schedules will differ.*
+
+1. **Browser:** in the simple shell, select **Automations** in the side menu.
+2. **The figures** at the top: how many are on, how many are failing (last run failed, or several failures in a row), how many look stale.
+3. **Each machine** has its own table. A row shows the name and its agent, what it is for (or the first line of its last failure, in red), **Next run** (`off` for one that is off, `on event` for a workflow an event starts), **Last result** and **Last 7**: one square per run, oldest first, green for worked, red for failed or timed out, grey for an empty slot.
+4. **The badge** at the end, first match wins: **Off** (or **Quarantined**) for one that is off, whatever else it shows; **Last run failed**; **Failing** (failed several times in a row); **Looks stale** (overdue: no run since its schedule should have fired, or dormant: ran the week before, silent the last one); **Not run yet** for a new job with no run so far; else **On**. The reason is under the name, and under **Notes** when you open the row.
+5. **Select a row** to open it: its schedule and time zone (or the event that starts it), whether it is a job or a workflow, its project, and what its last run said.
+
+   ![A job opened: its schedule, kind and last run](/screenshots/hub-automations/automations-open.png)
+
+6. **Phone:** the name and the badge only; open a row for the rest, its last seven runs included.
+
+   ![Automations on a phone](/screenshots/hub-automations/automations-phone.png)
+
+Automations only shows. To add, change or turn off a schedule, use [Settings › Schedules](#add-or-remove-a-schedule). Sensors, host jobs and the day's totals stay on the old **Schedules** page; the link is at the bottom of Automations.
+
+### Check Automations worked
+
+- Every schedule in Settings › Schedules is in Automations, under its machine.
+- After a job runs, its **Last result** and its last square change within 30 seconds.
+
+### If Automations is wrong
+
+- **Could not read the automations:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **Nothing runs on its own yet:** no machine has a schedule, and no workflow starts on a schedule or an event.
+- **A machine says "does not answer":** it is off or out of reach. Its automations show again when it answers. **checking…** means it is slow; the page asks again every 2 seconds.
+- **No Last 7 squares:** the machine runs an older AgentX that does not report its runs this way. Update it.
+
+### Waiting on you in the shell
+
+**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Needs you**, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
+
+![Waiting on you: each item with its kind, its question, who asked and how long ago](/screenshots/hub-automations/waiting.png)
+
+*Demo data; your items will differ.*
+
+1. **Browser:** in the simple shell, select **Waiting on you** in the side menu.
+2. **Each row** shows the kind (Decision, Request, Schedule, Memory and so on), the title, the question, the agent and how long ago it asked. **Answer today** marks one that expires within a day: after that its default applies without you.
+3. **Select an item** to open it: the question, the choices, what is known, what the agent suggests, what **Yes** and **No** do, and when to answer by.
+
+   ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
+
+4. **Answer** opens **Needs you**, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
+5. **Phone:** the list and the opened item fill the screen.
+
+   ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
+   ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
+
+What you put off with **Later** is not listed; the line under the list counts it and links to it in Needs you.
+
+### Check Waiting on you worked
+
+- The number next to **Waiting on you** matches the **Needs you** count in the old Hub and the phone app's Desk.
+- Answer an item in Needs you, then come back: within 15 seconds it is gone from the list.
+
+### If Waiting on you is wrong
+
+- **Could not read what waits on you:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**.
+- **A yellow line above the list:** one source could not be read (for example the requests). The list may be short until it can; the line says which.
+- **No longer waiting** after opening a link: it was answered, put off, or it expired.
 
 ### Check the simple shell worked
 
