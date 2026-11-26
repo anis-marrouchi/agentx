@@ -468,7 +468,10 @@ export const WALL_TASK_SCRIPT = String.raw`
       '<header class="wtask__head">' + avatar(t.agent) + '<div class="wtask__who"><div><b id="wtask-name">' + esc(who) + '</b> <span class="h">@' + esc(t.agent) + '</span></div>' +
         '<div class="wtask__meta">' + (t.ch ? '<span class="chip chip--ghost">' + esc(t.ch) + '</span>' : '') +
         '<span class="ax-badge ax-badge--mono" id="task-status">connecting…</span><span class="ax-mono" id="task-elapsed"></span>' +
-        '<span id="wtask-where"></span></div>' +
+        '<span id="wtask-where"></span>' +
+        // The right panel's Files tab for this run (#2101 R17): wall-context.client.ts
+        // handles the press; wflIcon is injected there (wall-files.ts).
+        '<button type="button" class="wtask__files" id="wtask-files" data-cx="files" data-src="task" aria-pressed="false" title="The files this run read, changed or was given, and the workspace">' + wflIcon('files') + 'Files</button></div>' +
         '<div class="wtask__turn" id="wtask-turn" hidden></div></div>' +
       '</header>' +
       '<div id="wtask-ops"></div>' +

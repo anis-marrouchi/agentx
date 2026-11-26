@@ -332,6 +332,10 @@ ${HUB_NAV_SCRIPT}
   function shortTime(ms) {
     return '<time datetime="' + esc(new Date(ms).toISOString()) + '" title="' + esc(stamp(ms)) + '">' + short(ms) + '</time>';
   }
+  /** "3h ago" with the full time as its title: a plan step's last move, worded as in the chat's Plan tab (chAgo). */
+  function agoTime(ms) {
+    return '<time datetime="' + esc(new Date(ms).toISOString()) + '" title="' + esc(stamp(ms)) + '">' + esc(chAgo(ms, Date.now())) + '</time>';
+  }
   var ICON = {
     reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 0 1 8-8h1a7 7 0 0 1 0 14H9l-5 3v-9z"/></svg>',
     runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9h13l-3-3M20 15H7l3 3"/></svg>',
@@ -665,7 +669,8 @@ ${HUB_NAV_SCRIPT}
         var proof = s.evidence ? (/^https?:\/\//.test(s.evidence) ? '<a href="' + esc(s.evidence) + '" target="_blank" rel="noopener">Proof</a>' : esc(s.evidence)) : '';
         return '<li class="is-' + esc(s.state) + '"><span class="wtk__mark" aria-hidden="true">' + (STEP_MARK[s.state] || '') + '</span><div>' +
           '<b>' + esc(s.name) + '</b> ' + avatar(s.agentId, 'sm') + '<span class="h">@' + esc(s.agentId) + '</span> <span class="chip ' + (s.state === 'blocked' ? 'chip--warn' : s.state === 'done' ? 'chip--done' : 'chip--ghost') + '">' + esc(s.state) + '</span>' +
-          (s.updatedAt && s.state !== 'pending' ? ' <span class="k">' + shortTime(s.updatedAt) + '</span>' : '') +
+          // Its last move as "3h ago", the chat's Plan tab's wording (#2101).
+          (s.updatedAt && s.state !== 'pending' ? ' <span class="k">' + agoTime(s.updatedAt) + '</span>' : '') +
           (s.doneWhen ? '<div class="k">Done when: ' + esc(s.doneWhen) + '</div>' : '') +
           (s.note ? '<div class="wtk__note">' + esc(s.note) + '</div>' : '') +
           (proof ? '<div class="k">' + proof + '</div>' : '') +

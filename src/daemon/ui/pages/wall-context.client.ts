@@ -1,4 +1,4 @@
-// --- The Hub's right panel: Changes · Plan · File (#2101 R15) ---
+// --- The Hub's right panel: Files · Changes · Plan · File (#2101 R15, R17) ---
 //
 // Spliced into WALL_PAGE_SCRIPT's closure after WALL_DIFF_SCRIPT, so it uses
 // that script's S, $, esc(), findPost(), isOpen(), planHtml(), loadThread(),
@@ -15,6 +15,19 @@
 //   - File: one file the PR changes, whole, at the PR's head, with the
 //     lines it adds marked (GET /api/admin/wall/diff-file), from a file's
 //     File button in Changes.
+//   - Files (#2101 R17): what the selected run or chat touched, the files
+//     its runs read, edited or wrote, the files it sent and the files the
+//     owner attached (wall-files.ts), from the Task page's Files button or
+//     the chat header's. Its source is the run or the chat, not a post:
+//     { key, kind, label, href?, runs: [{ node, agent, task }], attached,
+//     changes? }, read from each run's record (GET /api/task/history), so
+//     nothing new is stored. A file in the list opens in its own tab
+//     (kind wfile) with the run's own before and after. Files tabs are
+//     listed first (#2226: the right tabs, files first).
+//     Below them, the agent's workspace (GET /api/task/workspace, read
+//     only, workspace-files-api.ts on the node): one folder at a time, a
+//     file opening in its own tab (kind wsfile) as it is now. A changed
+//     file's tab offers the same, when its path is in the workspace.
 // More than one open: they are tabs in the panel, each with its ×. Closing
 // the last one gives the width back to the main view.
 //
@@ -26,13 +39,17 @@
 import { HUB_NAME } from "../hub-name"
 import { injectFns } from "../inject"
 import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
+import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
 
 export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
   ${injectFns({ chAgo, chDate, chReqMetaHtml })}
-  S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {} };
+  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
+  S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {}, src: {} };
   var CX_MAX = 6;
-  var CX_NAME = { changes: 'Changes', plan: 'Plan', file: 'File' };
+  var CX_NAME = { files: 'Files', wfile: 'File', wsfile: 'File', changes: 'Changes', plan: 'Plan', file: 'File' };
+  /** A tab whose source is a run or a chat (S.cx.src), not a post. */
+  function cxIsSrc(kind) { return kind === 'files' || kind === 'wfile' || kind === 'wsfile'; }
   function cxKey(t) { return t.kind + '\n' + t.id + '\n' + (t.path || ''); }
   function cxFind(kind, id, path) {
     for (var i = 0; i < S.cx.tabs.length; i++) { var t = S.cx.tabs[i]; if (t.kind === kind && t.id === id && (t.path || '') === (path || '')) return i; }
@@ -42,17 +59,26 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   /** The post the Diff view acts on: the open Changes tab's, else the open post's. */
   function diffPostId() { var t = cxActive(); return t && t.kind === 'changes' ? t.id : S.post; }
   function cxOpen(kind, id, extra) {
-    var p = findPost(id);
-    if (!p) return;
+    var p = cxIsSrc(kind) ? null : findPost(id);
+    if (cxIsSrc(kind) ? !S.cx.src[id] : !p) return;
     var path = extra && extra.path || '';
     var i = cxFind(kind, id, path);
     if (i < 0) {
-      S.cx.tabs.push({ kind: kind, id: id, path: path, pr: extra && extra.pr || '' });
-      while (S.cx.tabs.length > CX_MAX) { var gone = S.cx.tabs.shift(); if (gone.kind === 'changes') diffOf(gone.id).open = false; }
-      i = cxFind(kind, id, path);
+      var tab = { kind: kind, id: id, path: path, pr: extra && extra.pr || '' };
+      // Files tabs go first, after the Files tabs already open.
+      var at = S.cx.tabs.length;
+      if (kind === 'files') { at = 0; while (at < S.cx.tabs.length && S.cx.tabs[at].kind === 'files') at++; }
+      S.cx.tabs.splice(at, 0, tab);
+      while (S.cx.tabs.length > CX_MAX) {
+        // The oldest other tab goes.
+        var g = S.cx.tabs[0] === tab ? 1 : 0, gone = S.cx.tabs.splice(g, 1)[0];
+        if (gone.kind === 'changes') diffOf(gone.id).open = false;
+      }
+      i = S.cx.tabs.indexOf(tab);
     }
     S.cx.on = i;
     S.cx.painted = '';
+    if (cxIsSrc(kind)) { cxPaint(); return; }
     if (kind === 'changes') {
       var d = diffOf(id);
       d.open = true;
@@ -83,15 +109,17 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     if (p && b) b.outerHTML = diffButtonHtml(p);
   }
   function cxTitle(t) {
-    var p = findPost(t.id);
-    if (t.kind === 'file') return t.path.split('/').pop();
+    var p = cxIsSrc(t.kind) ? null : findPost(t.id);
+    if (t.kind === 'file' || t.kind === 'wfile' || t.kind === 'wsfile') return t.path.split('/').pop();
     return CX_NAME[t.kind] + (p && p.mergeRef && t.kind === 'changes' ? ' · ' + p.mergeRef : '');
   }
   function cxTabsHtml() {
     return S.cx.tabs.map(function (t, i) {
-      var p = findPost(t.id), on = i === S.cx.on;
-      return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + (p ? p.headline : '')) + '">' +
-        '<b>' + esc(t.kind === 'file' ? 'File' : CX_NAME[t.kind]) + '</b>' + (t.kind === 'file' ? ' ' + esc(cxTitle(t)) : p ? ' ' + esc(cxShort(p.headline)) : '') + '</button>' +
+      var src = cxIsSrc(t.kind) ? S.cx.src[t.id] : null, p = src ? null : findPost(t.id), on = i === S.cx.on;
+      var what = src ? src.label : p ? p.headline : '';
+      return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
+        (t.kind === 'files' ? wflIcon('files') : '') +
+        '<b>' + esc(CX_NAME[t.kind]) + '</b>' + (t.path ? ' ' + esc(cxTitle(t)) : what ? ' ' + esc(cxShort(what)) : '') + '</button>' +
         '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '">×</button></span>';
     }).join('');
   }
@@ -151,9 +179,12 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var box = $('wall-ctx'), n = S.cx.tabs.length;
     document.querySelector('.ax-wall').classList.toggle('cx-open', n > 0);
     box.hidden = !n;
-    if (!n) { $('wcx-tabs').innerHTML = ''; $('wcx-body').innerHTML = ''; S.cx.painted = ''; return; }
+    if (!n) { $('wcx-tabs').innerHTML = ''; $('wcx-body').innerHTML = ''; S.cx.painted = ''; cxPressed(); return; }
     $('wcx-tabs').innerHTML = cxTabsHtml();
-    var t = cxActive(), p = findPost(t.id), k = cxKey(t);
+    cxPressed();
+    var t = cxActive(), k = cxKey(t);
+    if (cxIsSrc(t.kind)) { S.cx.painted = k; $('wcx-body').innerHTML = cxSrcHtml(t); return; }
+    var p = findPost(t.id);
     if (t.kind === 'changes' && (S.cx.painted === k || diffTyping())) return;
     S.cx.painted = k;
     if (!p) { $('wcx-body').innerHTML = '<p class="ax-wall__empty">This request is not on the ${HUB_NAME} any more.</p>'; return; }
@@ -165,6 +196,124 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     } else {
       $('wcx-body').innerHTML = cxHeadHtml(p, t) + cxFileHtml(t);
     }
+  }
+
+  // --- Files: what a run or a chat touched (#2101 R17) ---
+  /** The Task page's run, as a Files source. */
+  function cxTaskSrc() {
+    var t = S.task;
+    if (!t) return null;
+    var d = S.taskDetail, p = d && d.post ? findPost(d.post.id) || d.post : null;
+    return {
+      key: 'task:' + taskKey(t), kind: 'task', label: 'Run ' + t.task + ' · ' + nameOf(t.agent),
+      href: wallTaskHref({ id: t.task, channel: t.ch }, t.agent, t.node, !!t.done),
+      runs: [{ node: t.node, agent: t.agent, task: t.task }], attached: [], ws: { node: t.node, agent: t.agent },
+      changes: p && p.mergeRef && findPost(p.id) ? { id: p.id, ref: p.mergeRef } : null,
+    };
+  }
+  /** The source a Files button names: the Task page's run, or the chat in view. */
+  function cxSrcOf(which) {
+    if (which === 'task') return cxTaskSrc();
+    var chat = window.AXHubChat;
+    return which === 'chat' && chat && typeof chat.files === 'function' ? chat.files() : null;
+  }
+  /** Opens a source's Files tab; a second press while it is in view closes it. */
+  function cxFiles(src) {
+    if (!src || !src.key) return;
+    var at = cxFind('files', src.key);
+    if (at >= 0 && at === S.cx.on) { cxClose(at); return; }
+    var had = S.cx.src[src.key];
+    var wsAt = src.ws && src.ws.agent ? src.ws : null;
+    S.cx.src[src.key] = { key: src.key, kind: src.kind, label: src.label || 'Files', href: src.href || '', runs: (src.runs || []).slice(-12), attached: src.attached || [], changes: src.changes || null,
+      data: had && had.data, error: '', loading: false,
+      ws: wsAt ? { node: wsAt.node || '', agent: wsAt.agent, dir: had && had.ws ? had.ws.dir : '', list: null, loading: false, error: '', files: had && had.ws ? had.ws.files : {} } : null };
+    cxOpen('files', src.key);
+    cxLoadSrc(src.key);
+    if (wsAt) cxLoadDir(src.key, S.cx.src[src.key].ws.dir);
+  }
+  /** Reads each of the source's runs (GET /api/task/history) and adds their files up. */
+  function cxLoadSrc(key) {
+    var s = S.cx.src[key];
+    if (!s || s.loading) return;
+    s.loading = true; s.error = '';
+    var why = '';
+    var reads = s.runs.map(function (r) {
+      return fetch('/api/task/history?node=' + encodeURIComponent(r.node || '') + '&agent=' + encodeURIComponent(r.agent) + '&task=' + encodeURIComponent(r.task), { headers: headers() })
+        .then(function (res) { return res.json().catch(function () { return {}; }).then(function (b) { if (res.ok) return b; why = why || b.error || ('HTTP ' + res.status); return null; }); })
+        .catch(function (e) { why = why || String(e && e.message || e); return null; });
+    });
+    Promise.all(reads).then(function (recs) {
+      if (S.cx.src[key] !== s) return;
+      var got = recs.filter(Boolean);
+      s.loading = false;
+      if (s.runs.length && !got.length) { s.error = why || 'no run record'; s.data = null; }
+      else {
+        var all = mergeRunFiles(got.map(function (rec) { return runFilesOf(rec.transcript || '', rec.responseText || ''); }));
+        attachedOf(got.map(function (rec) { return rec.message || ''; })).concat(s.attached).forEach(function (a) { if (all.attached.indexOf(a) < 0) all.attached.push(a); });
+        s.data = all;
+      }
+      S.cx.painted = '';
+      cxPaint();
+    });
+  }
+  /** GET /api/task/workspace: one folder's list or one text file of the source's agent. */
+  function cxWsGet(ws, path) {
+    return fetch('/api/task/workspace?node=' + encodeURIComponent(ws.node) + '&agent=' + encodeURIComponent(ws.agent) + '&path=' + encodeURIComponent(path), { headers: headers() })
+      .then(function (res) { return res.json().catch(function () { return {}; }).then(function (b) { if (!res.ok) throw new Error(b.error || ('HTTP ' + res.status)); return b; }); });
+  }
+  /** Reads a workspace folder into the Files tab. */
+  function cxLoadDir(key, dir) {
+    var s = S.cx.src[key], w = s && s.ws;
+    if (!w) return;
+    w.dir = dir || ''; w.list = null; w.error = ''; w.loading = true;
+    var want = w.dir;
+    cxWsGet(w, want).then(function (b) {
+      if (S.cx.src[key] !== s || w.dir !== want) return;
+      w.loading = false;
+      if (b.kind === 'file') { w.error = 'not a folder'; }
+      else w.list = { root: String(b.root || ''), entries: Array.isArray(b.entries) ? b.entries : [], more: !!b.more };
+    }, function (e) {
+      if (S.cx.src[key] !== s || w.dir !== want) return;
+      w.loading = false; w.error = String(e && e.message || e);
+    }).then(function () { S.cx.painted = ''; cxPaint(); });
+  }
+  /** Opens a workspace file in its own tab, read as it is now. */
+  function cxOpenWsFile(key, path) {
+    var s = S.cx.src[key], w = s && s.ws;
+    if (!w || !path) return;
+    var f = w.files[path] = { path: path, loading: true };
+    cxOpen('wsfile', key, { path: path });
+    cxWsGet(w, path).then(function (b) {
+      if (b.kind !== 'file') throw new Error('not a file');
+      f.loading = false; f.content = String(b.content || ''); f.size = b.size;
+    }).catch(function (e) { f.loading = false; f.error = String(e && e.message || e); })
+      .then(function () { if (w.files[path] === f) { S.cx.painted = ''; cxPaint(); } });
+  }
+  /** A Files or a file tab's body. */
+  function cxSrcHtml(t) {
+    var s = S.cx.src[t.id];
+    if (!s) return '<p class="ax-wall__empty">Nothing to show here any more.</p>';
+    var head = '<div class="wcx__h wcx__src">' + (s.href ? '<a href="' + esc(s.href) + '" title="Open it">' + esc(s.label) + '</a>' : '<b>' + esc(s.label) + '</b>') +
+      (t.kind === 'files' ? '<button type="button" class="wcx__re" data-cx="freload" data-src="' + esc(s.key) + '"' + (s.loading ? ' disabled' : '') + '>Reload</button>' : '') + '</div>';
+    if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path]);
+    if (!s.data && s.loading) return head + '<p class="ax-wall__empty">Reading the runs…</p>' + workspaceHtml(s.ws, s.key);
+    if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '. A run still going has its record when it ends.</p>' + workspaceHtml(s.ws, s.key);
+    if (t.kind === 'wfile') {
+      // The file as it is now, from the workspace, when the path is in it.
+      var rel = s.ws && s.ws.list ? workspaceRel(t.path, s.ws.list.root) : null;
+      var now = rel ? '<p class="wcx__now"><button type="button" class="wcx__re" data-cx="wsfile" data-src="' + esc(s.key) + '" data-path="' + esc(rel) + '">Open it as it is now</button></p>' : '';
+      return head + now + runFileHtml(s.data.files.filter(function (f) { return f.path === t.path; })[0]);
+    }
+    return head + filesTabHtml(s.data, { key: s.key, changes: s.changes }) + workspaceHtml(s.ws, s.key);
+  }
+  /** The Files buttons say whether their tab is open. */
+  function cxPressed() {
+    var on = {};
+    S.cx.tabs.forEach(function (t) { if (t.kind === 'files') on[t.id] = true; });
+    var b = S.taskMounted && S.task ? $('wtask-files') : null;
+    if (b) b.setAttribute('aria-pressed', String(!!on['task:' + taskKey(S.task)]));
+    var chat = window.AXHubChat, h = chat && typeof chat.files === 'function' ? $('hc-files') : null;
+    if (h) { var c = chat.files(); h.setAttribute('aria-pressed', String(!!(c && on[c.key]))); }
   }
 
   // --- The chat's work line ---
@@ -196,13 +345,22 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var p = findPost(id);
     return p ? { project: p.project, repo: p.repo, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
   }
-  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost };
+  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost, files: function (src) { cxFiles(src); } };
 
   document.addEventListener('click', function (ev) {
     var t = ev.target && ev.target.closest && ev.target.closest('[data-cx]');
     if (!t) return;
     var what = t.getAttribute('data-cx'), i = +t.getAttribute('data-i');
     if (what === 'tab') { S.cx.on = i; S.cx.painted = ''; cxPaint(); return; }
+    if (what === 'files') { cxFiles(cxSrcOf(t.getAttribute('data-src'))); return; }
+    if (what === 'freload') { var rs = S.cx.src[t.getAttribute('data-src')]; if (rs) { rs.data = null; cxLoadSrc(rs.key); if (rs.ws) cxLoadDir(rs.key, rs.ws.dir); S.cx.painted = ''; cxPaint(); } return; }
+    if (what === 'wsdir') { cxLoadDir(t.getAttribute('data-src'), t.getAttribute('data-path') || ''); S.cx.painted = ''; cxPaint(); return; }
+    if (what === 'wsfile') { cxOpenWsFile(t.getAttribute('data-src'), t.getAttribute('data-path') || ''); return; }
+    if (what === 'wfile') {
+      var fs = S.cx.src[t.getAttribute('data-src')], f = fs && fs.data && fs.data.files[i];
+      if (f) cxOpen('wfile', fs.key, { path: f.path });
+      return;
+    }
     if (what === 'close') { cxClose(i); cxPaintWork(); return; }
     if (what === 'open') {
       var kind = t.getAttribute('data-kind'), id = t.getAttribute('data-id'), at = cxFind(kind, id);

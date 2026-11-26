@@ -38,7 +38,7 @@ const APPROVALS = {
   snoozed: 0, errors: [], desk: { count: 1, later: 0, items: [] }, settings: { popup: { enabled: false } },
 }
 
-function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown }; session?: Map<string, string>; chatAgent?: string } = {}) {
+function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; feed?: Promise<unknown>; live?: unknown; post?: Promise<unknown>; thread?: unknown; org?: unknown; cost?: unknown; budgets?: unknown; people?: unknown; person?: Record<string, unknown>; peerCost?: (peer: string, url: string) => unknown; budgetPost?: (body: any, peer: string | null) => { status: number; body: unknown }; timers?: Array<() => void>; liveFails?: boolean; workflows?: unknown; wfRuns?: unknown | ((url: string) => unknown); wfRun?: Record<string, unknown>; wfWrite?: (method: string, url: string, body: any) => { status: number; body: unknown }; approvals?: unknown; decide?: { status: number; body: unknown }; reviews?: unknown; requests?: unknown; runs?: unknown; editor?: unknown; editorCfg?: unknown; confirm?: () => boolean; owner?: boolean; diff?: (url: string, init: any) => { status: number; body: unknown }; session?: Map<string, string>; chatAgent?: string; chatFiles?: () => unknown; history?: (url: string) => { status: number; body: unknown }; workspace?: (url: string) => { status: number; body: unknown } } = {}) {
   // chatAgent: the owner's page, with the Hub chat on that agent (#2101 R15).
   const page = renderWallPage(opts.chatAgent ? { owner: true } : undefined)
   // As on the page: the value line helpers load before the Wall script.
@@ -89,6 +89,14 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
     if (opts.feed && url.startsWith("/api/admin/wall?")) return opts.feed
     if (opts.liveFails && url === "/api/live?quick=1") return Promise.resolve({ ok: false, status: 502, json: async () => ({}) })
     if (opts.post && url === "/api/admin/wall/post") return opts.post
+    if (opts.history && url.startsWith("/api/task/history?")) {
+      const r = opts.history(url)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
+    if (opts.workspace && url.startsWith("/api/task/workspace?")) {
+      const r = opts.workspace(url)
+      return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
+    }
     if (opts.diff && url.startsWith("/api/admin/wall/diff")) {
       const r = opts.diff(url, init)
       return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body })
@@ -137,7 +145,7 @@ function openWall(opts: { data?: unknown; hash?: string; throughput?: unknown; f
   // With `timers`, the script's timeouts are kept for the test to run.
   const later = opts.timers ? (f: () => void) => { opts.timers!.push(f); return 0 } : setTimeout
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "setTimeout", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXHubChat: opts.chatAgent ? { agent: () => opts.chatAgent } : undefined, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined,
+    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, AXHubChat: opts.chatAgent ? { agent: () => opts.chatAgent, files: opts.chatFiles } : undefined, AXWorkflowEditor: opts.editor, AX_WALL_EDITOR: opts.editorCfg, confirm: opts.confirm, AX_WALL_SETTINGS: opts.owner ? {} : undefined,
       sessionStorage: opts.session ? { getItem: (k: string) => opts.session!.get(k) ?? null, setItem: (k: string, v: string) => { opts.session!.set(k, v) }, removeItem: (k: string) => { opts.session!.delete(k) } } : undefined }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, later,
@@ -3152,6 +3160,127 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     const w = openWall({ data, chatAgent: "scout" })
     await w.settle()
     expect(w.el("hc-work").hidden).toBe(true)
+  })
+
+  // #2101 R17: the Files tab, for the chat in view (its runs' records).
+  const RUN1 = { ok: true, message: "Fix the price\n\nAttached: spec.pdf", transcript: [
+    '→ Read({"file_path":"src/price.ts"})',
+    '→ Edit({"file_path":"src/price.ts","old_string":"const p = 1","new_string":"const p = <2>"})',
+    '→ Read({"file_path":"README.md"})',
+  ].join("\n"), responseText: 'Done.<agentx-artifact>{"filename":"report.csv","mime":"text/csv"}</agentx-artifact>' }
+  const RUN2 = { ok: true, message: "And the docs", transcript: '→ Write({"file_path":"docs/price.md","content":"# Price"})', responseText: "Written." }
+  const chatSrc = { key: "chat:th1", kind: "chat", label: "Price fix", runs: [{ node: "http://node-a", agent: "cx", task: "k1" }, { node: "http://node-a", agent: "cx", task: "k2" }], attached: ["shot.png"] }
+  const history = (url: string) => url.endsWith("&task=k1") ? { status: 200, body: RUN1 } : url.endsWith("&task=k2") ? { status: 200, body: RUN2 } : { status: 404, body: { error: "not found" } }
+
+  it("the chat's Files opens a Files tab, listed first, with what its runs read, changed, sent and were given (R17)", async () => {
+    const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [] }, chatFiles: () => chatSrc, history })
+    await w.settle()
+    // A Plan tab is open first: Files still goes first in the panel (#2226: right tabs, files first).
+    w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
+    await w.settle()
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/task/history?")).map((c) => c.url)).toEqual([
+      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k1",
+      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k2",
+    ])
+    expect(w.el("wall-ctx").hidden).toBe(false)
+    const tabs = w.el("wcx-tabs").innerHTML
+    expect(tabs.indexOf("<b>Files</b>")).toBeGreaterThan(-1)
+    expect(tabs.indexOf("<b>Files</b>")).toBeLessThan(tabs.indexOf("<b>Plan</b>"))
+    expect(tabs).toContain('aria-selected="true" data-cx="tab" data-i="0"')
+    const body = w.el("wcx-body").innerHTML
+    expect(body).toContain("Price fix")
+    expect(body).toContain("2 changed · 1 read · 1 sent · 2 attached")
+    expect(body).toContain("wrote</span><b>price.md</b><small>docs</small>")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src · 2×</small>")
+    expect(body).toContain("read</span><b>README.md</b>")
+    expect(body).toContain("<b>report.csv</b>")
+    expect(body).toContain("<b>spec.pdf</b>")
+    expect(body).toContain("<b>shot.png</b>")
+
+    // A file opens in its own tab: the run's own before and after.
+    w.click({ "data-cx": "wfile", "data-src": "chat:th1", "data-i": "1" })
+    expect(w.el("wcx-tabs").innerHTML).toContain("<b>File</b> price.ts")
+    const file = w.el("wcx-body").innerHTML
+    expect(file).toContain("<code>src/price.ts</code> · edited in 2 calls")
+    expect(file).toContain('<tr class="is-del"><td class="wdf__c">const p = 1</td></tr><tr class="is-add"><td class="wdf__c">const p = &lt;2&gt;</td></tr>')
+
+    // A second press on Files while it is the tab in view closes it.
+    w.click({ "data-cx": "tab", "data-i": "0" })
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    expect(w.el("wcx-tabs").innerHTML).not.toContain("<b>Files</b>")
+    expect(w.el("wcx-tabs").innerHTML).toContain("<b>Plan</b>")
+  })
+
+  it("says why when no run record can be read, and Reload reads them again (R17)", async () => {
+    let up = false
+    const w = openWall({ data, chatAgent: "cx", chatFiles: () => chatSrc, history: (url) => up ? history(url) : { status: 502, body: { error: "node-a did not answer" } } })
+    await w.settle()
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toContain("Files not available: node-a did not answer")
+    up = true
+    w.click({ "data-cx": "freload", "data-src": "chat:th1" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toContain("<b>price.md</b>")
+  })
+
+  it("shows the agent's workspace under the run's files: folders open in place, a file in its own tab (R17)", async () => {
+    const wsSrc = { ...chatSrc, ws: { node: "http://node-a", agent: "cx" } }
+    const RUN3 = { ok: true, message: "Fix it", transcript: '→ Edit({"file_path":"/home/w/cx/src/price.ts","old_string":"1","new_string":"2"})', responseText: "Done." }
+    const workspace = (url: string) => {
+      const path = new URL(url, "http://x").searchParams.get("path")
+      if (path === "") return { status: 200, body: { kind: "dir", root: "/home/w/cx", path: "", entries: [{ name: "src", kind: "dir", size: 0 }, { name: "README.md", kind: "file", size: 12 }], more: false } }
+      if (path === "src") return { status: 200, body: { kind: "dir", root: "/home/w/cx", path: "src", entries: [{ name: "price.ts", kind: "file", size: 30 }], more: false } }
+      if (path === "src/price.ts") return { status: 200, body: { kind: "file", root: "/home/w/cx", path, size: 18, content: "const p = <2>" } }
+      return { status: 403, body: { error: "this file is not shown" } }
+    }
+    const w = openWall({ data, chatAgent: "cx", chatFiles: () => ({ ...wsSrc, runs: [{ node: "http://node-a", agent: "cx", task: "k3" }] }), history: () => ({ status: 200, body: RUN3 }), workspace })
+    await w.settle()
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/task/workspace?")).map((c) => c.url)).toEqual(["/api/task/workspace?node=http%3A%2F%2Fnode-a&agent=cx&path="])
+    let body = w.el("wcx-body").innerHTML
+    expect(body.indexOf("price.ts</b>")).toBeLessThan(body.indexOf("Workspace</h4>"))
+    expect(body).toContain('data-cx="wsdir" data-src="chat:th1" data-path="src"')
+    expect(body).toContain("<b>README.md</b><small>12 B</small>")
+
+    w.click({ "data-cx": "wsdir", "data-src": "chat:th1", "data-path": "src" })
+    await w.settle()
+    body = w.el("wcx-body").innerHTML
+    expect(body).toContain('data-path="src">src</button>')
+    expect(body).toContain('data-cx="wsfile" data-src="chat:th1" data-path="src/price.ts"')
+
+    w.click({ "data-cx": "wsfile", "data-src": "chat:th1", "data-path": "src/price.ts" })
+    await w.settle()
+    expect(w.el("wcx-tabs").innerHTML).toContain("<b>File</b> price.ts")
+    expect(w.el("wcx-body").innerHTML).toContain('<td class="wdf__c">const p = &lt;2&gt;</td>')
+
+    // A file the run changed offers the same, as it is now.
+    w.click({ "data-cx": "tab", "data-i": "0" })
+    w.click({ "data-cx": "wfile", "data-src": "chat:th1", "data-i": "0" })
+    expect(w.el("wcx-body").innerHTML).toContain('data-cx="wsfile" data-src="chat:th1" data-path="src/price.ts">Open it as it is now</button>')
+
+    // A refused file says why.
+    w.click({ "data-cx": "wsfile", "data-src": "chat:th1", "data-path": ".env" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toContain("Not shown: this file is not shown.")
+  })
+
+  it("has no Files for a chat with nothing to read yet (R17)", async () => {
+    const w = openWall({ data, chatAgent: "cx", chatFiles: () => null })
+    await w.settle()
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    expect(w.el("wall-ctx").hidden).toBe(true)
+  })
+
+  it("says each plan step's last move as \"… ago\", as the chat's Plan tab does", async () => {
+    const w = openWall({ data, chatAgent: "cx", thread: { events: [], plan: [{ idx: 0, name: "Build the fix", agentId: "cx", state: "active", updatedAt: NOW - 3 * 3600e3 - 60e3 }] } })
+    await w.settle()
+    w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
+    await w.settle()
+    expect(w.el("wcx-body").innerHTML).toMatch(/<time datetime="[^"]+" title="[^"]+">3h ago<\/time>/)
   })
 })
 

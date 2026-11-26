@@ -1104,6 +1104,36 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     expect(w.el("hc-log").hidden).toBe(false)
     expect(w.el("hc-tabview").hidden).toBe(true)
   })
+
+  // #2101 R17: the header's Files opens the right panel's Files tab for this chat.
+  it("offers Files when the right panel is there, and names the chat's runs and attachments for it", async () => {
+    const files = { status: 200, body: { thread: { id: "t1", title: "Restyle", agentId: "scout" }, messages: [
+      { role: "user", content: "Go\n\nAttached: mock.png, brief.pdf", status: "done" },
+      { role: "assistant", content: "Done", status: "done", taskId: "task-8" },
+      { role: "user", content: "Again", status: "done" },
+      { role: "assistant", content: "", status: "pending", taskId: "task-9" },
+    ] } }
+    const w = openChat({ thread: "t1", node: "http://studio", route: route((url) => (url.startsWith("/api/assistant/thread?id=t1") ? files : undefined)) })
+    w.win.AXCtx = { open() {}, paintWork() {}, post: () => null, files() {} }
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    const page = w.page
+    expect(page).toMatch(/<button type="button" class="hc__hb hc__files" id="hc-files" data-cx="files" data-src="chat" aria-pressed="false" title="[^"]+" hidden><svg class="wfl__ic"/)
+    expect(w.el("hc-files").hidden).toBe(false)
+    expect(w.win.AXHubChat.files()).toEqual({
+      key: "chat:t1", kind: "chat", label: "Restyle",
+      runs: [{ node: "http://studio", agent: "scout", task: "task-8" }, { node: "http://studio", agent: "scout", task: "task-9" }],
+      attached: ["mock.png", "brief.pdf"],
+      ws: { node: "http://studio", agent: "scout" },
+    })
+  })
+
+  it("hides Files with no right panel on the page", async () => {
+    const w = openChat({ thread: "t1", node: "http://studio", route: route() })
+    await w.settle()
+    await w.fire("hc-btn", "click")
+    expect(w.el("hc-files").hidden).toBe(true)
+  })
 })
 
 describe("Hub chat mic: a written-down message that is not sent (#2238)", () => {

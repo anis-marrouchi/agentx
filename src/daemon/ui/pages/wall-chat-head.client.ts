@@ -3,8 +3,9 @@
 // The header (mock V1/V2 in docs/design/2101/v3): the agent's face (a
 // letter in its colour, with a state dot), its name, "computer · engine",
 // a state pill (Working · Waiting on you · Done), the tabs Chat · Plan ·
-// Proofs, Stop while a run is going, and ↗ Request to the request the
-// agent is on (its Hub post, #post=<id>).
+// Proofs, Files (the right panel's Files tab for this chat, #2101 R17),
+// Stop while a run is going, and ↗ Request to the request the agent is on
+// (its Hub post, #post=<id>).
 //
 // Plan and Proofs read the owner's open requests
 // (GET /api/admin/approvals/requests, requests-panel.ts): the ones the
@@ -27,6 +28,7 @@
 
 import { injectFns } from "../inject"
 import { engineIconKey, engineIcon } from "./engine-icons"
+import { wflIcon } from "./wall-files"
 
 /** One open Desk card, as GET /api/admin/approvals lists it (InboxItem). */
 export interface HeadAsk {
@@ -220,6 +222,7 @@ export function wallChatHeadHtml(): string {
       <span class="hc__pill" id="hc-pill" hidden></span>
       <div class="hc__tabs" id="hc-tabs" role="tablist" aria-label="View"><button type="button" role="tab" data-hc-tab="chat" aria-selected="true">Chat</button><button type="button" role="tab" data-hc-tab="plan" aria-selected="false">Plan</button><button type="button" role="tab" data-hc-tab="proofs" aria-selected="false">Proofs</button></div>
       <span class="hc__sp"></span>
+      <button type="button" class="hc__hb hc__files" id="hc-files" data-cx="files" data-src="chat" aria-pressed="false" title="The files this chat's runs read, changed or were given, and the workspace" hidden>${wflIcon("files")}Files</button>
       <button type="button" class="hc__hb" id="hc-hstop" hidden><span class="hc__sq" aria-hidden="true"></span>Stop</button>
       <a class="hc__hb" id="hc-req" hidden>↗ Request</a>`
 }
@@ -280,6 +283,9 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     var stop = $('hc-hstop');
     stop.hidden = !view.pending;
     stop.disabled = false;
+    // Files: the right panel's Files tab for this chat (#2101 R17), when the page has the panel.
+    var fb = $('hc-files'), fsrc = window.AXCtx && typeof window.AXCtx.files === 'function' && typeof api.files === 'function' ? api.files() : null;
+    if (fb) fb.hidden = !(fsrc && (fsrc.runs.length || fsrc.attached.length || fsrc.ws));
     var req = $('hc-req'), r = rq[0];
     req.hidden = !r;
     if (r) { req.setAttribute('href', '#post=' + encodeURIComponent(r.id)); req.setAttribute('title', r.summary || r.id); }
