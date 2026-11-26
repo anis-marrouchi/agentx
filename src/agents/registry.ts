@@ -136,7 +136,7 @@ const STEP_BUDGET_MS: Record<string, number> = {
   "route-edge": 5_000,
 }
 import { appAttachHint } from "@/utils/artifact-sentinel"
-import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
+import { AdmissionQueue, DEFAULT_ADMISSION_SETTINGS, heldNoticeMsOf, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "@/admission/queue"
 import { waitRefusalText } from "@/admission/wait-notice"
 import { ResourceSampler } from "@/native/resources"
 import { prepareOutbox } from "@/utils/app-outbox"
@@ -2974,8 +2974,9 @@ export class AgentRegistry {
         keepOnClose: task.origin?.kind === "router",
         // One written line to the person once the run has waited a while
         // (admission.waitNotice); the router decides which channels ask.
-        ...(task.onHeld && (admissionSettings.waitNotice?.afterSeconds ?? 0) > 0
-          ? { longWait: { afterMs: admissionSettings.waitNotice!.afterSeconds * 1000, notify: task.onHeld } }
+        // A workflow step (#2334) sets its own time.
+        ...(task.onHeld && heldNoticeMsOf(task, admissionSettings) > 0
+          ? { longWait: { afterMs: heldNoticeMsOf(task, admissionSettings), notify: task.onHeld } }
           : {}),
         // One question at a time per voice chat: the claim is taken at
         // admission, before any other entry of the same pass is checked,

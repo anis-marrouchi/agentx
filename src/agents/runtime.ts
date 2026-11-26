@@ -162,7 +162,10 @@ export interface AgentTask {
   /** Called at most once when the run has waited in the admission queue
    *  for admission.waitNotice.afterSeconds, with the queue's reasons.
    *  Never awaited. Set by the router for chat messages. */
-  onHeld?: (w: { waitedMs: number; blockedBy: string[] }) => void
+  onHeld?: (w: { waitedMs: number; blockedBy: string[]; position?: number; of?: number }) => void
+  /** When onHeld is called, in ms; default admission.waitNotice.afterSeconds.
+   *  A workflow step sets its own (#2334). */
+  heldNoticeMs?: number
   /** Aborted when the HTTP caller waiting on this run has gone (timeout,
    *  disconnect). A run still waiting for a busy agent's slot is then
    *  dropped instead of started: nobody is left to read its answer, and a

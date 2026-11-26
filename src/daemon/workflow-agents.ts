@@ -35,9 +35,14 @@ export function workflowAgents(registry: Pick<AgentRegistry, "execute">): { exec
             // The step's issue or merge request (#2084): one run of the
             // agent at a time on it, whatever started the others.
             ...(req.home ? { home: req.home } : {}),
+            // A step a person waits on (#2334): the /send/agent rule.
+            ...(req.priority === "critical" ? { admissionPriority: "critical" } : {}),
           },
           // A stop signal names this id; the paused step keeps it (#870).
-          onStart: (id) => { runTaskId = id },
+          onStart: (id) => { runTaskId = id; req.onStarted?.() },
+          // The step's queue limit and held notice (#2334).
+          ...(req.signal ? { callerSignal: req.signal } : {}),
+          ...(req.onHeld ? { onHeld: req.onHeld, heldNoticeMs: req.heldNoticeMs } : {}),
         })
         return {
           content: resp.content ?? "",

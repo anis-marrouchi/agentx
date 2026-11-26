@@ -171,9 +171,13 @@ export interface AdmissionRequest {
    *  never retried: a slow or failing caller cannot hold up the queue.
    *  No timer of its own: the re-check every sampleSeconds while work
    *  waits is what sees the time pass. */
-  longWait?: { afterMs: number; notify: (w: { waitedMs: number; blockedBy: string[] }) => void }
+  longWait?: { afterMs: number; notify: (w: HeldWait) => void }
   signal?: AbortSignal
 }
+
+/** What a long-waiting run is told: how long, what holds it, and where it
+ *  stands in the queue (1 = next; #2334). */
+export interface HeldWait { waitedMs: number; blockedBy: string[]; position?: number; of?: number }
 
 export interface AdmissionTicket {
   id: string
@@ -295,6 +299,13 @@ export function skipsSoftHolds(priority: AdmissionPriority): boolean {
 /** A gate reason that holds a run of this priority. */
 export function holdsPriority(reason: string, priority: AdmissionPriority): boolean {
   return !(skipsSoftHolds(priority) && CRITICAL_SKIPS.some((p) => reason.startsWith(p)))
+}
+
+/** When a held run's caller is told (ms, 0 = never): the caller's own time
+ *  (a workflow step, #2334), else admission.waitNotice. */
+export function heldNoticeMsOf(task: { heldNoticeMs?: number }, s: Pick<AdmissionSettings, "waitNotice">): number {
+  if (typeof task.heldNoticeMs === "number") return Math.max(0, task.heldNoticeMs)
+  return Math.max(0, (s.waitNotice?.afterSeconds ?? 0) * 1000)
 }
 
 /** The priority a caller may ask for on a task (#1807): only "critical".
@@ -558,8 +569,9 @@ export class AdmissionQueue {
     const lw = e.req.longWait
     if (!lw || e.noticed || lw.afterMs <= 0 || waitedMs < lw.afterMs) return
     e.noticed = true
+    const order = this.ordered()
     try {
-      lw.notify({ waitedMs, blockedBy: [...e.blockedBy] })
+      lw.notify({ waitedMs, blockedBy: [...e.blockedBy], position: order.indexOf(e) + 1, of: order.length })
     } catch (err) {
       this.log(`[admission] ${e.agentId} long-wait notice failed: ${(err as Error)?.message ?? err}`)
     }

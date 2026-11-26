@@ -60,6 +60,22 @@ Run files and the run API show a run's context, so AgentX removes credentials fr
 
 An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. When set, AgentX stops the step once that many minutes have passed and frees the agent's slot, and the step fails with "timed out after …s". Leave it empty for no limit. Give agent work room: a review or a code change can take 20 minutes or more. See [time limits and cancel](/reference/config#time-limits-and-cancel). It can also set `home`, the issue or merge request the step works on (`group/project#12`, `group/project!12`, a link, or a template such as <code v-pre>{{inputs.home}}</code>): the step then waits while another run of the same agent works on that home, and is refused with `home_busy` if it is still held after 25 minutes (see [one run per agent and issue](/jobs/ask-another-agent#one-run-per-agent-and-issue-home-lease)). A home that renders empty means none; a bare `#12` or `!12` fails the step. An `action.send` node needs a live channel and destination. `branch` uses named ports to choose an edge; `checkpoint` pauses for review. Node configuration is validated by the corresponding handler, so passing the top-level file validator alone does not prove that credentials or destinations work.
 
+
+### When an agent step waits for room
+
+An agent step goes through the machine's queue like any other run, so it can wait before it starts, for example when the disk is nearly full. Four settings on the `agent` node keep that wait short and visible:
+
+- `priority: "critical"`: a person is waiting for this step, such as the answer to a chat message. It starts ahead of normal work and is not held by high swap or load. Low disk, low memory and the session limit still hold it. `critical` is the only value; leave it out for normal work.
+- `queueTimeoutMinutes`: how long the step may wait to start. It defaults to `timeoutMinutes`, so a 15-minute step no longer waits an hour. When it runs out, the step fails with the kind `queue_timeout`. A step that started in time is not cut by it.
+- `heldNoticeMinutes`: after this many minutes held (default 10, `0` = never), the run logs it and the workflow's `ownerAgent` gets one notice: which step, what holds it and its place in the queue.
+- `onError: "continue"`: a failed turn does not fail the run. The step ends with `reply` empty and `error` and `errorKind` set, and the next step routes it. A `branch` that sends an empty reply to your failure step catches a `queue_timeout` this way.
+
+```json
+{ "id": "answer", "type": "agent", "config": {
+  "agentId": "pm-agent", "prompt": "…", "timeoutMinutes": 15,
+  "priority": "critical", "onError": "continue" } }
+```
+
 ## Node types
 
 | Type | What it does |
@@ -264,6 +280,7 @@ The script writes its local state file and prints `RESULT steps=…` followed by
 
 - **The workflow never fires:** check `state` is `active` (not only `status`) and that the daemon has `workflows.enabled: true`.
 - **An `agent` step fails:** its `agentId` must match an agent in `agentx.json`.
+- **An `agent` step waits long or fails with `queue_timeout`:** the machine held it before it could start. The held notice and `agentx daemon logs` (look for `Workflow step "<id>"`) say what held it, such as low disk. Free the resource, set `priority: "critical"` when a person waits on the step, and set `onError: "continue"` with a branch to your failure step so the run reports it.
 - **A poll trigger starts nothing:** look for `[workflows] <id> poll` in `agentx daemon logs`. `poll baseline` means the first poll recorded the existing items; `poll failed` shows the action's error; `poll skipped` means lines were not a JSON object with the `key` field.
 - **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
 - **A run stays paused on a timer after its due time:** look for `timer-recovered` or `timer … dropped` in `agentx daemon logs`. `dropped` names the reason, such as a workflow that is not loaded. Such a run stays paused until its workflow loads again; the next check then moves it on.
