@@ -26,7 +26,9 @@ export interface RunFile {
   path: string
   /** The strongest thing a run did to it: wrote > edited > read. */
   op: FileOp
-  /** How many calls touched it. */
+  /** How many calls did what `op` says: the changing calls of a changed
+   *  file, the reads of a file only read. A read before an edit is not
+   *  counted, so "edited in 2 calls" means two edits. */
   n: number
   /** The edits and writes, in order, when their input was whole enough. */
   changes: FileChange[]
@@ -50,6 +52,7 @@ export function fileOpOf(name: string): FileOp | null {
 /** The files a run's transcript and answer name, most changed first. */
 export function runFilesOf(transcript: string, answer: string): RunFiles {
   const rank: Record<string, number> = { read: 0, edited: 1, wrote: 2 }
+  const changes = (o: string) => (o === "read" ? 0 : 1)
   const field = (input: string, key: string): string => {
     const m = input.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
     if (!m) return ""
@@ -61,7 +64,8 @@ export function runFilesOf(transcript: string, answer: string): RunFiles {
     if (!p) return
     let f = byPath.get(p)
     if (!f) byPath.set(p, f = { path: p, op, n: 0, changes: [] })
-    f.n++
+    if (changes(op) > changes(f.op)) f.n = 0
+    if (changes(op) >= changes(f.op)) f.n++
     if (rank[op] > rank[f.op]) f.op = op
     if (change && f.changes.length < 20) f.changes.push(change)
   }
@@ -120,6 +124,7 @@ export function attachedOf(texts: string[]): string[] {
 /** Several runs' files as one list (a chat): ops and changes add up. */
 export function mergeRunFiles(all: RunFiles[]): RunFiles {
   const rank: Record<string, number> = { read: 0, edited: 1, wrote: 2 }
+  const changes = (o: string) => (o === "read" ? 0 : 1)
   const byPath = new Map<string, RunFile>()
   const artifacts: Array<{ filename: string; mime: string }> = []
   const attached: string[] = []
@@ -127,7 +132,8 @@ export function mergeRunFiles(all: RunFiles[]): RunFiles {
     for (const f of r.files) {
       const g = byPath.get(f.path)
       if (!g) { byPath.set(f.path, { path: f.path, op: f.op, n: f.n, changes: f.changes.slice() }); continue }
-      g.n += f.n
+      if (changes(f.op) > changes(g.op)) g.n = f.n
+      else if (changes(f.op) === changes(g.op)) g.n += f.n
       if (rank[f.op] > rank[g.op]) g.op = f.op
       g.changes = g.changes.concat(f.changes).slice(0, 20)
     }
@@ -149,6 +155,7 @@ export function wflIcon(kind: string): string {
     art: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
     dir: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
     att: '<path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   }
   return `<svg class="wfl__ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind] || paths.files}</svg>`
 }
@@ -255,17 +262,15 @@ button.wfl__i:focus-visible { outline: 2px solid var(--ax-accent); outline-offse
 .wfl__ic { flex: none; }
 .wfl__op.is-wrote, .wfl__op.is-edited { background: color-mix(in srgb, var(--ax-green) 14%, transparent); color: var(--ax-green); }
 .wfl__op.is-pr { background: var(--ax-blue-t); color: var(--ax-accent); }
-.wfl__op.is-art, .wfl__op.is-att { background: color-mix(in srgb, var(--ax-amber) 14%, transparent); color: var(--ax-amber-ink); }
 .wfl__h { display: flex; align-items: center; gap: 6px; margin: 16px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ax-muted); }
 .wfl__crs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 6px; font-size: 12px; color: var(--ax-muted); }
 .wfl__cr { font: inherit; color: var(--ax-accent); background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 1px 4px; cursor: pointer; }
 .wfl__cr:hover, .wfl__cr:focus-visible { background: var(--ax-surface-2); }
-.wfl__op.is-dir { background: var(--ax-blue-t); color: var(--ax-accent); }
 .wfl__ws { grid-template-rows: auto; }
 .wcx__now { margin: 0 0 10px; }
 .wfl__ch { margin: 0 0 12px; } .wfl__chh { font-size: 12px; color: var(--ax-muted); margin: 0 0 4px; }
 .wcx__file tr.is-del { background: color-mix(in srgb, var(--ax-red) 12%, transparent); }
-.wcx__src { display: flex; align-items: center; gap: 8px; }
+.wcx__src { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .wcx__src a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wcx__re { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 2px 9px; cursor: pointer; }
 .wcx__re:hover { color: var(--ax-text); border-color: var(--ax-text-2); }

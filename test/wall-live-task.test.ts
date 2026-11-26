@@ -557,7 +557,7 @@ describe("The Task page's Files button (#2101 R17)", () => {
     const body = w.el("wcx-body").innerHTML
     expect(body).toContain('href="#page=task&amp;task=t1&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;ch=telegram&amp;done=1"')
     expect(body).toContain("1 changed · 0 read · 1 attached")
-    expect(body).toContain("edited</span><b>price.ts</b><small>src · 2×</small>")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src</small>")
     expect(body).toContain("<b>spec.pdf</b><small>you attached it</small>")
     expect(w.el("wtask-files").getAttribute("aria-pressed")).toBe("true")
   })

@@ -37,12 +37,28 @@ describe("Files tab: reading a run (#2101 R17)", () => {
     const r = runFilesOf(tx, "")
     expect(r.files.map((f) => [f.path, f.op, f.n])).toEqual([
       ["docs/new.md", "wrote", 1],
-      ["src/app.ts", "edited", 2],
+      ["src/app.ts", "edited", 1],
       ["README.md", "read", 1],
     ])
     expect(r.files[0].changes).toEqual([{ before: "", after: "# New\nHello", isNew: true }])
     expect(r.files[1].changes).toEqual([{ before: "const a = 1", after: "const a = 2", isNew: false }])
     expect(r.files[2].changes).toEqual([])
+  })
+
+  it("counts only the calls its op names: reads before an edit are not edits", () => {
+    const one = runFilesOf([
+      call("Read", { file_path: "a.ts" }),
+      call("Read", { file_path: "a.ts" }),
+      call("Edit", { file_path: "a.ts", old_string: "1", new_string: "2" }),
+      call("Read", { file_path: "b.ts" }),
+      call("Read", { file_path: "b.ts" }),
+    ].join("\n"), "")
+    expect(one.files.map((f) => [f.path, f.op, f.n])).toEqual([["a.ts", "edited", 1], ["b.ts", "read", 2]])
+    expect(runFileHtml(one.files[0])).not.toContain("calls")
+    const two = runFilesOf([call("Read", { file_path: "b.ts" }), call("Write", { file_path: "b.ts", content: "x" }), call("Edit", { file_path: "a.ts", old_string: "2", new_string: "3" })].join("\n"), "")
+    const all = mergeRunFiles([one, two])
+    expect(all.files.map((f) => [f.path, f.op, f.n])).toEqual([["b.ts", "wrote", 1], ["a.ts", "edited", 2]])
+    expect(runFileHtml(all.files[1])).toContain("edited in 2 calls")
   })
 
   it("keeps the path of a call whose input the log clipped, without its content", () => {
@@ -77,7 +93,7 @@ describe("Files tab: reading a run (#2101 R17)", () => {
     const a = runFilesOf(call("Read", { file_path: "x.ts" }), "")
     const b = runFilesOf(call("Edit", { file_path: "x.ts", old_string: "a", new_string: "b" }), '<agentx-artifact>{"filename":"o.csv"}</agentx-artifact>')
     const m = mergeRunFiles([a, b, { files: [], artifacts: [{ filename: "o.csv", mime: "" }], attached: ["in.png"] }])
-    expect(m.files).toEqual([{ path: "x.ts", op: "edited", n: 2, changes: [{ before: "a", after: "b", isNew: false }] }])
+    expect(m.files).toEqual([{ path: "x.ts", op: "edited", n: 1, changes: [{ before: "a", after: "b", isNew: false }] }])
     expect(m.artifacts).toEqual([{ filename: "o.csv", mime: "" }])
     expect(m.attached).toEqual(["in.png"])
   })
