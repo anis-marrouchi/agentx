@@ -521,15 +521,24 @@ export class RequestStore {
   }
 
   /** The newest open promise of this agent, owed to `owedTo`, with the
-   *  same words, opened at or after `since` (#2078). A promise call that
-   *  times out on the agent's side still lands in the daemon, and the
-   *  agent's retry must find it instead of opening a second one. */
-  findOpenPromise(agentId: string, owedTo: string, text: string, since: number): string | null {
-    const r = this.db.prepare(
-      `SELECT id FROM requests WHERE agent_id = ? AND promise = 1 AND owed_to = ? AND text = ? AND created_at >= ?
-         AND state IN (${placeholders(OPEN_STATES.length)}) ORDER BY created_at DESC LIMIT 1`,
-    ).get(agentId, owedTo, text.slice(0, TEXT_MAX), since, ...OPEN_STATES) as { id: string } | undefined
-    return r?.id ?? null
+   *  same words, trimmed and in any case (#2078, #2079). A promise call
+   *  that times out on the agent's side still lands in the daemon, and the
+   *  agent's retry must find it instead of opening a second one; so must
+   *  the same promise made again later while the first is still open. */
+  findOpenPromise(agentId: string, owedTo: string, text: string): string | null {
+    const words = (t: string) => t.slice(0, TEXT_MAX).trim().toLowerCase()
+    const want = words(text)
+    const rows = this.db.prepare(
+      `SELECT id, text FROM requests WHERE agent_id = ? AND promise = 1 AND owed_to = ?
+         AND state IN (${placeholders(OPEN_STATES.length)}) ORDER BY created_at DESC, rowid DESC`,
+    ).all(agentId, owedTo, ...OPEN_STATES) as Array<{ id: string; text: string }>
+    return rows.find((r) => words(r.text) === want)?.id ?? null
+  }
+
+  /** New words for an open request's loop (#2079): a follow-up run says
+   *  what it now promises on the loop it follows. */
+  setText(id: string, text: string, now: number): void {
+    this.db.prepare("UPDATE requests SET text = ?, updated_at = ? WHERE id = ?").run(text.slice(0, TEXT_MAX), now, id)
   }
 
   /** How many open promises this agent holds. */

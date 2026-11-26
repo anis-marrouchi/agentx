@@ -259,12 +259,11 @@ describe("a retried promise call (#2078)", () => {
     expect(store.openPromises("coder")).toBe(1)
   })
 
-  it("opens a new one for other words, another requester, or after the window", async () => {
+  it("opens a new one for other words or another requester", async () => {
     await post(body)
     await post({ ...body, text: "Deploy the signup fix to production" })
     await post({ ...body, owedTo: "client-b" })
-    await post(body, { now: clock + 11 * MIN })
-    expect(store.openPromises("coder")).toBe(4)
+    expect(store.openPromises("coder")).toBe(3)
   })
 
   it("opens a new one when the earlier promise is closed", async () => {
@@ -273,5 +272,108 @@ describe("a retried promise call (#2078)", () => {
     const again = await post(body, { now: clock + 30_000 })
     expect((again.body as any).repeated).toBeUndefined()
     expect(store.openPromises("coder")).toBe(1)
+  })
+})
+
+describe("a follow-up run updates the open promise instead of opening another (#2079)", () => {
+  const body = { action: "promise", agentId: "coder", owedTo: "client-a", text: "Deploy the login fix to production" }
+  /** The run a promise's wake starts: its chat is the promise's id. */
+  const inRunOf = (id: string): Partial<RequestsApiDeps> => ({ runningTurn: (agentId) => (AGENTS.has(agentId) ? { channel: "job", chatId: id } : null) })
+
+  it("a promise call from a wake run of open promise P moves P's due time and returns P's id, with no new row", async () => {
+    const p = (await post({ ...body, due: new Date(clock + HOUR).toISOString() })).body as any
+    const res = await post(
+      { ...body, text: "Deploy the login fix once CI is green", headline: "Login fix deploy", due: new Date(clock + 3 * HOUR).toISOString() },
+      { ...inRunOf(p.request.id), now: clock + HOUR },
+    )
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ reused: true, request: { id: p.request.id, dueAt: clock + 3 * HOUR, text: "Deploy the login fix once CI is green", headline: "Login fix deploy" } })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("a promise call in the turn of an owner's request updates that request, keeping the owner's words", async () => {
+    tracker.taskStarted({
+      agentId: "coder", channel: "telegram", chatId: "chat-1", taskId: "t9", messagePreview: "ship the fix", fullMessage: "ship the fix",
+      at: "", humanRoot: true, sender: { id: "4242" },
+    } as any)
+    expect((await post({ action: "accept", agentId: "coder", work: "ops" })).status).toBe(200)
+    const res = await post({ ...body, owedTo: "owner", due: new Date(clock + 2 * HOUR).toISOString() })
+    expect(res.body).toMatchObject({ reused: true, request: { id: "req-t9", dueAt: clock + 2 * HOUR, text: "ship the fix", headline: "Deploy the login fix to production" } })
+    expect(store.openPromises("coder")).toBe(0)
+    // A promise to someone else in that turn is new work: its own row.
+    const other = await post({ ...body, owedTo: "pm-agent" })
+    expect((other.body as any).reused).toBeUndefined()
+    expect(store.get("req-t9")).toMatchObject({ headline: "Deploy the login fix to production" })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("a promise to someone else from P's wake run opens a new row and leaves P as it was", async () => {
+    const p = (await post({ ...body, due: new Date(clock + HOUR).toISOString() })).body as any
+    const res = await post({ ...body, owedTo: "pm-agent", text: "Send Hakim the deploy log" }, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect((res.body as any).reused).toBeUndefined()
+    expect((res.body as any).request.id).not.toBe(p.request.id)
+    expect(store.get(p.request.id)).toMatchObject({ dueAt: clock + HOUR, text: body.text })
+    expect(store.openPromises("coder")).toBe(2)
+  })
+
+  it("two identical promise calls give one row, and the second returns the first one's id, at any distance and in any case", async () => {
+    const first = (await post(body)).body as any
+    const again = await post({ ...body, text: "  deploy the LOGIN fix to production " }, { now: clock + 3 * HOUR })
+    expect(again.status).toBe(200)
+    expect(again.body).toMatchObject({ repeated: true, request: { id: first.request.id, text: body.text } })
+    expect(store.openPromises("coder")).toBe(1)
+  })
+
+  it("the same words owed to someone else, or a promise made after P is closed, open a new row", async () => {
+    const p = (await post(body)).body as any
+    const other = (await post({ ...body, owedTo: "client-b" })).body as any
+    expect(other.request.id).not.toBe(p.request.id)
+    store.close(p.request.id, "done", "kept", clock)
+    // Even from P's own wake run: a closed P is not reused.
+    const after = await post(body, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect((after.body as any).reused).toBeUndefined()
+    expect((after.body as any).repeated).toBeUndefined()
+    expect((after.body as any).request.id).not.toBe(p.request.id)
+    expect(store.openPromises("coder")).toBe(2)
+  })
+
+  /** An open request owed to `who`, recorded as if its turn had been captured. */
+  const requestOwedTo = (id: string, channel: string, who: string, due: number) => {
+    store.addCandidate({ id, runId: `run-${id}`, channel, chatId: "chat-c", sender: who, agentId: "coder", text: "fix my site", now: clock })
+    store.progress(id, clock)
+    store.setLoop(id, { dueAt: due }, clock)
+  }
+
+  it("review B1: a client-turn promise to the owner opens a new row and leaves the client request unchanged", async () => {
+    requestOwedTo("req-client", "whatsapp", "21699000000", clock + 5 * HOUR)
+    const before = store.get("req-client")!
+    const res = await post(
+      { ...body, owedTo: "owner", text: "Tell Anis the client site is down", due: new Date(clock + HOUR).toISOString() },
+      { ...inRunOf("req-client"), now: clock + MIN },
+    )
+    expect(res.status).toBe(200)
+    expect((res.body as any).reused).toBeUndefined()
+    expect((res.body as any).request).toMatchObject({ promise: true, owedTo: "owner" })
+    expect(store.get("req-client")).toMatchObject({ dueAt: before.dueAt, closeWhen: before.closeWhen, text: "fix my site", headline: null })
+    expect(store.openPromises("coder")).toBe(1)
+    // The same call to the client is that request's next step.
+    const toClient = await post({ ...body, owedTo: "21699000000", due: new Date(clock + 2 * HOUR).toISOString() }, { ...inRunOf("req-client"), now: clock + MIN })
+    expect(toClient.body).toMatchObject({ reused: true, request: { id: "req-client", dueAt: clock + 2 * HOUR } })
+  })
+
+  it("review B1: a request owed to a person with the owner role takes a promise to the owner", async () => {
+    requestOwedTo("req-anis", "whatsapp", "anis", clock + 5 * HOUR)
+    const res = await post(
+      { ...body, owedTo: "owner", due: new Date(clock + 2 * HOUR).toISOString() },
+      { ...inRunOf("req-anis"), ownerPeople: () => ["anis"], now: clock + MIN },
+    )
+    expect(res.body).toMatchObject({ reused: true, request: { id: "req-anis", dueAt: clock + 2 * HOUR } })
+    expect(store.openPromises("coder")).toBe(0)
+  })
+
+  it("review C1: a follow-up keeps the loop's headline", async () => {
+    const p = (await post({ ...body, headline: "Login fix deploy" })).body as any
+    const res = await post({ ...body, text: "Deploy once CI is green", headline: "Something else" }, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect(res.body).toMatchObject({ reused: true, request: { id: p.request.id, headline: "Login fix deploy", text: "Deploy once CI is green" } })
   })
 })

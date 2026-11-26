@@ -112,6 +112,18 @@ describe("promise", () => {
       { daemonUrl: "http://127.0.0.1:1", fetch: fake, env: { AGENTX_AGENT_ID: "coder" } as any },
     )
     expect(text).toMatch(/^Promise prm-\S+ is open, owed to client-a, due 2030-03-03 17:00 UTC\. The daemon checks its evidence/)
+    // From the run of that promise's wake, it says the promise was updated (#2079).
+    const id = store.listOpen()[0].id
+    const inRun = (async (_url: string, init: any) => {
+      const reply = await handleRequestsCall("POST", "/requests", JSON.parse(init.body), deps({ runningTurn: () => ({ channel: "job", chatId: id }) }))
+      return new Response(JSON.stringify(reply.body), { status: reply.status })
+    }) as unknown as typeof fetch
+    const again = await runRequestTool(
+      { action: "promise", owedTo: "client-a", text: "Send the file after the review", due: "2030-03-04T17:00:00Z" },
+      { daemonUrl: "http://127.0.0.1:1", fetch: inRun, env: { AGENTX_AGENT_ID: "coder" } as any },
+    )
+    expect(again.startsWith(`No new promise: this run follows ${id}, so ${id} was updated instead and is now due 2030-03-04 17:00 UTC. ` +
+      `Close it with {action:"done", id:"${id}"`)).toBe(true)
   })
 })
 

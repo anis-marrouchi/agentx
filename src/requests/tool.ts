@@ -259,6 +259,12 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
     if (action === "accept") return `Request ${r.id} is open and in progress.${serves} Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.${due}`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
+    if (action === "promise" && data.reused) {
+      // This run follows an open loop (#2079): it was moved on, not doubled.
+      return `No new promise: this run follows ${r.id}, so ${r.id} was updated instead` +
+        `${r.dueAt ? ` and is now due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
+        `Close it with {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"} when it is kept.` + due
+    }
     if (action === "promise") {
       return `Promise ${r.id} is open, owed to ${r.owedTo}${r.dueAt ? `, due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
         (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>"} when it is kept.`) + due
