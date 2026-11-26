@@ -15,10 +15,15 @@
 // haSwitchHtml, haHitCount, ltAge.
 
 export const HUB_NAV_SCRIPT = String.raw`
-  // What the reader opened (Anis 2026-11-26): kept for the page's life, not
-  // saved, so every load starts with Needs you closed and Working at 3 rows.
+  // What the reader opened (Anis 2026-11-26, orca-design C21): saved like the
+  // filter. A first visit starts with Needs you folded and Working at 3 rows.
   var HA = { filter: 'all', open: { needs: false, working: false, idle: false }, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
   try { HA.filter = localStorage.getItem('ax.hub.agentFilter') || 'all'; } catch (e) { /* private mode */ }
+  try {
+    var haSaved = JSON.parse(localStorage.getItem('ax.hub.agentOpen') || '{}');
+    for (var hk in HA.open) if (haSaved[hk] === true) HA.open[hk] = true;
+  } catch (e) { /* private mode or bad value: keep the defaults */ }
+  function haSaveOpen() { try { localStorage.setItem('ax.hub.agentOpen', JSON.stringify(HA.open)); } catch (e) { /* private mode */ } }
   // The agent in view: its chat, or the Task page of one of its runs (R26).
   function haChatAgent() {
     var m = /(?:^#|&)page=(?:chat|task)(?:&|$)/.test(location.hash) && /(?:^#|&)agent=([^&]*)/.exec(location.hash);
@@ -75,7 +80,7 @@ export const HUB_NAV_SCRIPT = String.raw`
       HA.last = ''; renderHubAgents(); return;
     }
     var more = t.closest('[data-ha-more]');
-    if (more) { HA.open.working = !HA.open.working; HA.last = ''; renderHubAgents(); return; }
+    if (more) { HA.open.working = !HA.open.working; haSaveOpen(); HA.last = ''; renderHubAgents(); return; }
     if (t.closest('#hub-k')) { haOpenK(); return; }
     if (t.closest('[data-hk-close]')) { haCloseK(); return; }
     if (t.closest('#hub-k-dlg a[href]')) haCloseK(true);
@@ -83,7 +88,7 @@ export const HUB_NAV_SCRIPT = String.raw`
   document.addEventListener('toggle', function (ev) {
     var d = ev.target;
     var k = d && d.getAttribute && d.closest && d.closest('#hub-agents') ? d.getAttribute('data-ha-open') : '';
-    if (k) HA.open[k] = d.open;
+    if (k && HA.open[k] !== d.open) { HA.open[k] = d.open; haSaveOpen(); }
   }, true);
   // The agent in view changes: the current row follows, and ⌃Tab knows the last one.
   window.addEventListener('hashchange', function () {
