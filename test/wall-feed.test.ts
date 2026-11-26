@@ -381,12 +381,14 @@ describe("Wall v2 pages (#1316)", () => {
 })
 
 describe("The agents in the left column (#2101 P4, V1)", () => {
-  it("draws every agent by state from the live snapshot, with chips that filter", async () => {
+  it("draws every agent by state from the live snapshot, in folds with counts, no chips", async () => {
     const w = openWall({})
     await w.settle()
     const list = w.el("hub-agents").innerHTML
-    expect(list).toContain('data-ha-filter="working"')
-    expect(list).toContain('Working <span class="ax-af-count"')
+    expect(list).not.toContain("data-ha-filter")
+    expect(list).toMatch(/<span class="ha__ht">Working<\/span><span class="ha__hn" data-n="\d+">/)
+    expect(list).toContain("lucide-chevron-right")
+    expect(w.el("hub-rail").innerHTML).toContain('class="ha__ri ')
     expect(list).toContain('href="#page=chat&amp;agent=')
     expect(list).not.toContain("Loading the agents")
   })
@@ -909,11 +911,11 @@ describe("Wall v2 feed (#1355)", () => {
     expect(page).not.toContain("Happening now")
     expect(page).not.toContain('id="wall-nodes"')
     expect(page).not.toContain('id="wall-tree"')
-    // The phone's bar button has a word that fits under its icon (#2101 P2).
-    expect(page).toMatch(/ax-wall__shortcut" data-nav="running"[^>]*title="Running now">[\s\S]*?<span>Running<\/span>/)
+    // No phone bar: the phone opens the side menu as a Sheet (orca-design C26).
+    expect(page).not.toContain("ax-wall__shortcut")
+    // No machine tag on a row (the approved mock).
     const agents = w.el("hub-agents").innerHTML
-    expect(agents).toContain('<span class="ha__node">node-a</span>')
-    expect(agents).toContain('<span class="ha__node">node-b</span>')
+    expect(agents).not.toContain("ha__node")
   })
 
   it("posts from the composer to the agent its @name picks, on that agent's node", async () => {

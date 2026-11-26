@@ -93,18 +93,17 @@ describe("workflow editor", () => {
     expect(css).toMatch(/@media \(min-width: 641px\) \{\s*#wfe-root \.ax-chat__pill, #wfe-root \.ax-chat__panel \{ bottom: 48px; \}/)
   })
 
-  it("folds the Hub side menu to icons on the editor page and stops above the bottom bar (#2101 W)", async () => {
+  it("folds the Hub side menu to the icon rail on the editor page and stops above the bottom bar (#2101 W)", async () => {
     const { WALL_EDITOR_CSS } = await import("../src/daemon/ui/pages/wall-editor.client")
-    // The agent list and the switcher's words go; the foot row is a column of icons.
-    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .lt")
-    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .ha__k span")
-    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .hf__item span { display: none; }")
-    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor .ax-wall__nav > .hf { flex-direction: column;")
+    const { HUB_PANELS_SCRIPT } = await import("../src/daemon/ui/pages/hub-panels")
+    const { HUB_NAV_CSS } = await import("../src/daemon/ui/pages/hub-nav")
+    // The editor page is the same 56 px rail as 641-1180 px (hub-panels sets .is-rail; hub-nav draws it).
+    expect(WALL_EDITOR_CSS).toContain(".ax-wall.is-editor { grid-template-columns: 56px minmax(0, 1fr);")
+    expect(HUB_PANELS_SCRIPT).toContain("wall.classList.contains('is-editor')")
+    expect(HUB_NAV_CSS).toContain(".ax-wall.is-rail:not(.is-sheet) .ax-wall__nav > .ha__k span")
     expect(WALL_EDITOR_CSS).toContain("#wall-editor { height: calc(100vh - 30px); height: calc(100dvh - 30px);")
-    // The phone keeps its own height, above its bottom bar.
-    expect(WALL_EDITOR_CSS).toContain("#wall-editor { height: calc(100vh - 56px); height: calc(100dvh - 56px); }")
-    // The rendered Hub carries the rules.
-    expect(renderWallPage({ owner: true })).toContain(".ax-wall.is-editor .ax-wall__nav > .lt")
+    // The phone has no bottom bar: full height.
+    expect(WALL_EDITOR_CSS).toContain("#wall-editor { height: 100vh; height: 100dvh; }")
   })
 })
 

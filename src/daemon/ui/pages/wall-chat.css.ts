@@ -243,9 +243,9 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__voice { margin: 0; font-size: 12.5px; color: var(--ax-muted); }
 .hc__voice.is-err { color: var(--ax-red-ink); }
 
-/* Under 1180 px the nav is icons only. */
+/* Under 1180 px the nav is the 56 px icon rail. */
 @media (max-width: 1180px) {
-  .ax-wall.hc-open { grid-template-columns: 72px minmax(0, 1fr); }
+  .ax-wall.hc-open { grid-template-columns: 56px minmax(0, 1fr); }
 }
 /* Phone: the whole screen, with ← back to the page. */
 @media (max-width: 640px) {

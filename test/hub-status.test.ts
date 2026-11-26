@@ -89,6 +89,6 @@ describe("Hub bottom status", () => {
     expect(HUB_STATUS_CSS).toContain(".hs [hidden] { display: none !important; }")
     const html = renderWallPage({ owner: true })
     expect(html).toContain('id="hub-status"')
-    expect(html).toContain('id="wall-more"')
+    expect(html).toContain('id="wall-menu-btn"')
   })
 })

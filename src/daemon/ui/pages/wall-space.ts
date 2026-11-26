@@ -56,13 +56,10 @@ button, input, select { font-family: inherit; }
 .ax-wall__navgroup summary { cursor: pointer; padding: 8px 10px; color: var(--ax-text-2); font-size: 13px; border-radius: var(--ax-radius-sm); }
 .ax-wall__navgroup summary:hover, .ax-wall__navgroup summary:focus-visible { background: var(--ax-surface-2); }
 .ax-wall__navgroup > .ax-wall__item { display: flex; margin-left: 10px; }
-.ax-wall__nav > .ax-wall__shortcut { display: none; }
 .ax-wall__navlbl { font-size: 11px; font-weight: 500; color: var(--ax-muted); text-transform: none; letter-spacing: 0; padding: 14px 10px 4px; margin: 0; }
 .ax-wall__item span { white-space: nowrap; }
 /* Wide nav: each row fills the column, so the open page's band is one width (#2101). */
 @media (min-width: 1181px) { .ax-wall__item { width: auto; } }
-/* More is the phone bar's fifth button. */
-.ax-wall__morebtn { display: none; }
 /* Counts next to the nav items (#1316); a badge on the icon when the nav is narrow. */
 .ax-wall__item { position: relative; }
 .ax-wall__n { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
@@ -74,60 +71,25 @@ button, input, select { font-family: inherit; }
 .ax-wall__box { background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 12px 16px; margin-bottom: 16px; min-width: 0; }
 .ax-wall__box h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ax-text); }
 
-/* The phone's More sheet (#1451 frame 0); only the phone bar opens it. */
-.ax-wall__more { display: none; position: fixed; inset: 0 0 56px; z-index: 11; }
-.ax-wall__morescrim { position: absolute; inset: 0; width: 100%; border: 0; padding: 0; background: rgb(15 20 25 / 40%); cursor: pointer; }
-.ax-wall__moresheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: calc(100% - 24px); overflow-y: auto; background: var(--ax-bg); border-radius: var(--ax-radius-lg) var(--ax-radius-lg) 0 0; padding: 8px 16px 12px; box-shadow: 0 -6px 24px rgb(0 0 0 / 22%); display: flex; flex-direction: column; gap: 2px; }
-.ax-wall__grab { width: 36px; height: 4px; border-radius: var(--ax-radius-pill); background: var(--ax-border-2); align-self: center; margin-bottom: 4px; }
-.ax-wall__moresheet .ax-wall__navlbl { padding-left: 0; }
-.ax-wall__moregrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
-.ax-wall__moreitem { display: flex; gap: 8px; align-items: center; min-height: 44px; padding: 0 12px; border-radius: var(--ax-radius-pill); color: var(--ax-text); text-decoration: none; font-size: 16px; }
-.ax-wall__moreitem:hover, .ax-wall__moreitem:focus-visible { background: var(--ax-surface); }
-.ax-wall__moreitem.is-on { font-weight: 700; }
-.ax-wall__moren { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
-.ax-wall__morefoot { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--ax-border); padding-top: 10px; margin-top: 6px; }
-.ax-wall__morefoot .ax-btn { font-size: var(--ax-fs-xs); padding: 6px 12px; min-height: 36px; }
-
-/* Under 1180 px: an icon nav (the switcher and Desk · Jobs · Workflows ·
-   Mobile app · Settings as icons, hub-nav.ts) and the page; no side column. */
+/* Under 1180 px: the 56 px icon rail (hub-nav.ts, orca-design C26) and the
+   page; no side column. */
 @media (max-width: 1180px) {
-  .ax-wall { grid-template-columns: 72px minmax(0, 1fr); }
-  .ax-wall__nav { padding: 12px 8px; align-items: center; }
-  .ax-wall__logo small, .ax-wall__nav > .ax-wall__item span, .ax-wall__nav > .lt { display: none; }
+  .ax-wall { grid-template-columns: 56px minmax(0, 1fr); }
   .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
   .ax-wall__n.is-zero { display: none; }
-  .ax-wall__logo { padding: 8px 0 16px; }
 }
-/* Phone: the nav becomes a bar at the bottom, as on X. */
+/* Phone: the page only. The top bar's menu button opens the side menu as
+   a left Sheet (hub-nav.ts); no bottom bar. */
 @media (max-width: 640px) {
-  body { padding-bottom: 60px; }
   .ax-wall, .ax-wall.is-wide, .ax-wall.is-settings { grid-template-columns: minmax(0, 1fr); }
-  .ax-wall__nav { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 56px; z-index: 10; flex-direction: row; justify-content: space-around; padding: 0 4px;
-    background: color-mix(in srgb, var(--ax-bg) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--ax-border); overflow: visible; }
-  /* Wall, Needs you, Running now, Projects and More (#1355); More opens
-     a sheet with the rest, in the nav's groups (#1451 frame 0). */
-  .ax-wall__morebtn, .ax-wall__nav > .ax-wall__shortcut { display: flex; }
-  .ax-wall__navgroup { display: none; }
-  .ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn), .ax-wall__nav > .ax-wall__navlbl { display: none; }
-  .ax-wall__morebtn[aria-expanded="true"] svg { color: var(--ax-accent); }
-  .ax-wall__more:not([hidden]) { display: block; }
-  .ax-wall__logo { display: none; }
-  /* Each bar button says what it is under its icon (#2101 P2), as the
-     phone app's tabs do: 11 px words, the count on the icon. */
-  .ax-wall__nav > .ax-wall__item { padding: 6px 4px 4px; flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
-  .ax-wall__nav > .ax-wall__item[data-bar] span, .ax-wall__nav > .ax-wall__morebtn span { display: block; font-size: 11px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .ax-wall__nav > .ax-wall__item.is-on { box-shadow: none; background: none; color: var(--ax-accent); }
-  .ax-wall__nav > .ax-wall__item .ax-wall__n { right: calc(50% - 22px); top: 0; }
-  .ax-wall__main { grid-column: 1; }
-  /* The page only; the bar's buttons reach the rest. */
-  .ax-wall__main { grid-row: 1; border-left: 0; border-right: 0; border-top: 0; margin-top: 0; }
+  .ax-wall__main { grid-column: 1; grid-row: 1; border-left: 0; border-right: 0; border-top: 0; margin-top: 0; }
 }
 `
 
 /** Theme toggle. Display only; the nav opens pages (#1316, wall.client.ts). */
 export const WALL_SPACE_SCRIPT = `
 (function () {
-  // The nav's button and the phone's More sheet both switch it (#1451).
+  // The status bar's Theme button switches it (hub-status.ts).
   document.querySelectorAll('[data-wall-theme]').forEach(function (t) {
     t.addEventListener('click', function () {
       var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';

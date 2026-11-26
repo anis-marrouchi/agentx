@@ -57,7 +57,7 @@ import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_FILES_CSS } from "./wall-files"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml } from "./wall-chat.client"
-import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml, hubSwitcherHtml } from "./hub-nav"
+import { HUB_CHEVRON_MASK, HUB_FOLD_CHEVRON, HUB_NAV_CSS, hubAgentsNavHtml, hubMenuButtonHtml, hubMobilePageHtml, hubNavFootHtml, hubRailOpenHtml, hubSearchButtonHtml, hubSheetCloseHtml, hubSwitcherHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
 import { HUB_PANELS_CSS, HUB_PANELS_FNS, HUB_PANELS_SCRIPT, hubHistoryHtml, hubNavFoldHtml, hubPanelGripHtml, hubPanelReopenHtml } from "./hub-panels"
@@ -120,7 +120,6 @@ const NAV_ICON = {
   cost: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
   space: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
-  more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   numbers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg>',
   jobledger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17M11 6h10M11 12h10M11 18h10"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
@@ -131,8 +130,7 @@ type NavIcon = keyof typeof NAV_ICON
 /** One nav destination: data-nav key, label, link, icon, count id, tooltip. */
 /** hidden: drawn hidden; the page script shows it once it has something
  *  to show (Numbers, #1826: only once a machine has a number). */
-/** short: the word under its icon in the phone's bar, when the label is too long there (#2101 P2). */
-interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string; hidden?: boolean; short?: string }
+interface NavItem { key: string; label: string; href: string; icon: NavIcon; count?: string; title?: string; hidden?: boolean }
 
 /**
  * The nav, grouped (#1451 frame 0): one list for the left nav and the
@@ -147,7 +145,7 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "Work", items: [
     { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },
     { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
-    { key: "running", label: "Running now", short: "Running", href: "#page=running", icon: "live", count: "nav-n-running" },
+    { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
     { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
     { key: "activity", label: "Activity", href: "#page=activity", icon: "activity", title: "Activity: every run, newest first" },
     { key: "numbers", label: "Numbers", href: "#page=numbers", icon: "numbers", count: "nav-n-numbers", title: "Numbers: tracked measures, their newest reading and trend", hidden: true },
@@ -187,30 +185,11 @@ function wallNavGroups(owner: boolean): typeof WALL_NAV_GROUPS {
   return owner ? WALL_NAV_GROUPS : WALL_NAV_GROUPS.filter((g) => g.label !== "Owner")
 }
 
-/** The four pages in the phone's bottom bar; More holds the rest (#1355). */
-export const WALL_BAR_KEYS = ["wall", "needs", "running", "projects"]
-
-function navItemHtml(i: NavItem, mobileShortcut = false): string {
-  const bar = WALL_BAR_KEYS.includes(i.key) ? " data-bar" : ""
-  const n = i.count ? (mobileShortcut ? `<b class="ax-wall__n" data-n-for="${i.count}" hidden></b>` : `<b class="ax-wall__n" id="${i.count}"></b>`) : ""
-  return `<a class="ax-wall__item${mobileShortcut ? " ax-wall__shortcut" : ""}${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${bar}${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${mobileShortcut && i.short ? i.short : i.label}</span>${n}</a>`
-}
-
-/** The phone's More sheet: every page not in the bar, in the same groups. */
-function moreSheetHtml(navGroups: typeof WALL_NAV_GROUPS, owner: boolean): string {
-  const groups = navGroups.filter((g) => g.label && g.label !== "Owner").map((g) => {
-    const items = g.items.filter((i) => !WALL_BAR_KEYS.includes(i.key))
-    return `<h2 class="ax-wall__navlbl">${g.label}</h2><div class="ax-wall__moregrid">${items.map((i) =>
-      `<a class="ax-wall__moreitem" data-nav="${i.key}" href="${i.href}"${i.hidden ? " hidden" : ""}>${i.label}${i.count ? `<b class="ax-wall__moren" data-n-for="${i.count}" hidden></b>` : ""}</a>`).join("")}</div>`
-  }).join("")
-  return `<div class="ax-wall__more" id="wall-more" hidden>
-    <button type="button" class="ax-wall__morescrim" data-more-close aria-label="Close More"></button>
-    <section class="ax-wall__moresheet" role="dialog" aria-modal="true" aria-label="More pages">
-      <span class="ax-wall__grab" aria-hidden="true"></span>
-      ${groups}
-      <div class="ax-wall__morefoot">${owner ? `<a class="ax-btn ax-btn--ghost" data-nav="settings" href="${WALL_SETTINGS_HREF}">Settings</a>` : ""}<a class="ax-btn ax-btn--ghost" data-nav="creator" href="#page=creator">New post</a><a class="ax-btn ax-btn--ghost" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}">Dashboard</a><button type="button" class="ax-btn ax-btn--ghost" data-wall-theme>Light / dark</button></div>
-    </section>
-  </div>`
+/** A page's link in the hidden page list (the ⌘K Pages, #2101 R22), with
+ *  its count, which the Workspace items and the Desk badge copy. */
+function navItemHtml(i: NavItem): string {
+  const n = i.count ? `<b class="ax-wall__n" id="${i.count}"></b>` : ""
+  return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
 }
 
 export function renderWallPage(opts: WallPageOpts = {}): string {
@@ -237,30 +216,23 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     if (group.label === "Owner") return `<span class="ax-wall__navlbl" aria-hidden="true">Owner</span>\n${items}`
     return `<details class="ax-wall__navgroup"><summary>${group.label}</summary>\n${items}\n</details>`
   }).join("\n")
-  // The phone bar's four (#1355), drawn on their own now that the page
-  // menu is hidden (#2101 R22): Hub and Needs you included.
-  const shortcuts = groups.flatMap((group) => group.items)
-    .filter((item) => WALL_BAR_KEYS.includes(item.key)).map((item) => navItemHtml(item, true)).join("\n")
   const dashboard = `<a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
   // The old page menu (#2101 R22): no longer shown in the side menu, which
   // keeps the agents and Waiting on you · Jobs · Settings, plus Workflows
   // and Mobile app with the full layout or their switch on (#2226 S1).
-  // Its links stay in the page, hidden, as the ⌘K switcher's Pages and as
-  // the counts the phone's bar and the Desk badge copy (data-n-for).
+  // Its links stay in the page, hidden, as the ⌘K Pages and as the counts
+  // the Workspace items copy (data-n-for).
   const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a data-nav="dash-${label.toLowerCase()}" href="${href}">Dashboard · ${label}</a>`).join("")
   // The nav on the left and the page in the middle (#1242). The right
   // column holds only a page's own side summary (Activity, Desk, Workflows,
   // Org); the Chat and Agents boxes are gone from it (#2101 R24).
   const body = `<div class="ax-wall">
-  <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
-    <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
-    ${hubNavFoldHtml()}
+  <nav class="ax-wall__nav" id="wall-nav" aria-label="${HUB_NAME}">
+    <div class="ax-wall__navhead"><a class="ax-wall__logo" href="${HUB_PATH}">AgentX<small>${HUB_NAME}</small></a>${hubNavFoldHtml()}${hubRailOpenHtml()}${hubSheetCloseHtml()}</div>
 ${hubAgentsNavHtml()}
-    <details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">Machines <span id="wall-machines-n" title="Agents working now">0</span></summary>
+    <details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">${HUB_FOLD_CHEVRON}<span class="ha__ht">Machines</span><span class="ha__hn" id="wall-machines-n" data-tip="Agents working now">0</span></summary>
       <div id="wall-machines-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
     </details>
-${shortcuts}
-    <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
 ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
     <div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>
 ${navItems}
@@ -270,14 +242,14 @@ ${dashboard}
     </div>
   </nav>
   ${hubPanelGripHtml("nav")}
-  ${moreSheetHtml(groups, owner)}
+  <button type="button" class="hub-scrim" data-sheet-close tabindex="-1" aria-label="Close the menu"></button>
   <div class="ax-wall__main">${hubHead ? "\n    " + HUB_REACT_ROOT : ""}
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar">${hubHistoryHtml()}<button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
+      <div class="ax-wall__titlebar">${hubMenuButtonHtml()}${hubHistoryHtml()}<button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="#page=editor&amp;e-new=1" hidden>New workflow</a>
-        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${hubPanelReopenHtml()}${wallChatButtonHtml()}</div>
+        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${hubPanelReopenHtml()}${hubSearchButtonHtml()}${wallChatButtonHtml()}</div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
         ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
@@ -416,8 +388,9 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__mesh > summary { padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--ax-text); }
 .lt__mesh > .lt__m { margin-left: 10px; }
 .lt__mesh .lt__n { flex: none; }
-/* One fold arrow in the side menu: the agent list's › (hub-nav.ts .ha__fold). */
-.mt details > summary::before { content: "›"; width: 10px; height: auto; border: 0; font-size: 15px; font-weight: 400; line-height: 1; text-align: center; transition: transform 180ms ease-out; }
+/* One fold arrow in the side menu: lucide chevron-right, as the agent
+   list's (hub-nav.ts .ha__chev), drawn as a mask so it takes the text colour. */
+.mt details > summary::before { content: ""; width: 14px; height: 14px; border: 0; background: currentColor; -webkit-mask: ${HUB_CHEVRON_MASK} center / contain no-repeat; mask: ${HUB_CHEVRON_MASK} center / contain no-repeat; transition: transform 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .mt details > summary::before { transition: none; } }
 .lt__m > .lt__row, .lt__m > .lt__idle { margin-left: 12px; }
 .lt__m > .lt__ws { margin-left: 31px; }

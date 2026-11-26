@@ -165,7 +165,8 @@ describe("the side menu", () => {
   const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
 
   it("has a folded Machines under the one agent list", () => {
-    expect(nav).toMatch(/<details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">Machines <span id="wall-machines-n"/)
+    // The same header as the agent groups: lucide chevron, title, count (orca-design C22).
+    expect(nav).toMatch(/<details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h"><span class="ha__chev" aria-hidden="true"><svg class="lucide lucide-chevron-right"[^]*?<\/span><span class="ha__ht">Machines<\/span><span class="ha__hn" id="wall-machines-n"/)
     expect(nav.indexOf('id="hub-agents"')).toBeLessThan(nav.indexOf('id="wall-machines"'))
     expect(nav.match(/id="hub-agents"/g)).toHaveLength(1)
     expect(nav).not.toContain("Machines and runs")

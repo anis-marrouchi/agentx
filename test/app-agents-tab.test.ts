@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { IncomingMessage, ServerResponse } from "http"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
 import { APP_AGENTS_SCRIPT } from "../src/daemon/ui/pages/app-agents.client"
-import { haListHtml, haRowHtml, haRunsHtml, type HaModel, type HaRow } from "../src/daemon/ui/pages/hub-agents"
+import { haGroups, haListHtml, haRowHref, haRowHtml, haRunsHtml, haStateIcon, haStateWord, type HaModel, type HaRow } from "../src/daemon/ui/pages/hub-agents"
 import { APP_AGENTS_PATH, handleAppAgents, hubDayStart } from "../src/daemon/hub-agents-api"
 import { injectFns } from "../src/daemon/ui/inject"
 
@@ -40,8 +40,11 @@ describe("the bottom tabs (#2101 C1a)", () => {
   })
 
   it("ship the Agents script with every list function it calls, and it parses", () => {
-    const script = injectFns({ haRunsHtml, haRowHtml, haListHtml }) + APP_AGENTS_SCRIPT
+    const script = injectFns({ haStateIcon, haStateWord, haRowHref, haGroups, haRunsHtml, haRowHtml, haListHtml }) + APP_AGENTS_SCRIPT
     expect(html).toContain(script)
+    // With the Hub's lucide icons, so the folds and states draw the same.
+    expect(html).toMatch(/<script>var HA_IC = \{"circle-alert":"<svg /)
+    expect(APP_AGENTS_SCRIPT).not.toContain("data-ha-filter")
     expect(() => new Function(script)).not.toThrow()
     expect(APP_AGENTS_SCRIPT).toContain("fetch('/api/app/hub/agents?dayStart='")
   })
@@ -61,20 +64,20 @@ describe("the rows the phone draws", () => {
   } as HaRow)
   const model: HaModel = {
     rows: [row("coder", "working", { taskId: "t1" }), row("pm", "needs", { unread: 1 }), row("cx", "done"), row("nadia", "idle")],
-    counts: { all: 3, working: 1, needs: 1, done: 1, idle: 1 },
+    counts: { all: 3, working: 1, needs: 1, failed: 0, done: 1, idle: 1 },
   }
   const esc = (s: unknown) => String(s)
   const age = () => "1 min"
 
   it("open the agent's chat on every row, never a run link (no runHref on the phone)", () => {
-    const out = haListHtml(model, "all", "", { needs: true, idle: true }, esc, age)
-    for (const id of ["coder", "pm", "cx", "nadia"]) expect(out).toContain(`href="#page=chat&amp;agent=${id}" data-ha-agent="${id}"`)
+    const out = haListHtml(model, "", { needs: true, idle: true }, esc, age)
+    for (const id of ["coder", "pm", "cx", "nadia"]) expect(out).toContain(`data-ha-agent="${id}"><a class="ha__link" href="#page=chat&agent=${id}">`)
     expect(out).not.toContain("data-ha-run")
   })
 
   it("keep Needs you and Not working today closed until opened", () => {
-    const closed = haListHtml(model, "all", "", { needs: false, working: false, idle: false }, esc, age)
-    expect(closed).toContain('<details class="ha__fold" data-ha-open="needs">')
+    const closed = haListHtml(model, "", { needs: false, working: false, idle: false }, esc, age)
+    expect(closed).toContain('<details class="ha__fold" data-key="g:needs" data-ha-open="needs">')
     expect(closed).toContain('data-ha-open="idle">')
     expect(APP_AGENTS_SCRIPT).toContain("getAttribute('data-ha-open')")
     expect(APP_AGENTS_SCRIPT).toContain("closest('[data-ha-more]')")

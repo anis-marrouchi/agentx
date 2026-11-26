@@ -103,7 +103,7 @@ describe("Hub panels: the page (#2101 P)", () => {
 
   it("lets the grids read the widths", () => {
     expect(WALL_CONTEXT_CSS).toContain("var(--axp-nav-w, 280px) minmax(0, 1fr) var(--axp-cx-w, minmax(380px, 42vw))")
-    expect(HUB_PANELS_CSS).toContain(".ax-wall.nav-folded { --axp-nav-w: 72px; }")
+    expect(HUB_PANELS_CSS).toContain(".ax-wall.nav-folded { --axp-nav-w: 56px; }")
     expect(HUB_PANELS_CSS).toContain(".ax-wall.cx-folded .wcx { display: none; }")
   })
 
@@ -168,7 +168,7 @@ describe("Hub panels: the page keeps 480 px (#2101 P review)", () => {
   })
 
   it("counts a folded menu as the icon rail and the default menu as 280 px", () => {
-    expect(hubPanelsFit({ nav: { w: 420, folded: true }, cx: { w: 840, folded: false } }, 1200, true).cx.w).toBe(1200 - 72 - HUB_MAIN_MIN)
+    expect(hubPanelsFit({ nav: { w: 420, folded: true }, cx: { w: 840, folded: false } }, 1200, true).cx.w).toBe(1200 - 56 - HUB_MAIN_MIN)
     expect(hubPanelsFit({ nav: { w: null, folded: false }, cx: { w: 840, folded: false } }, 1200, true).cx.w).toBe(1200 - 280 - HUB_MAIN_MIN)
   })
 

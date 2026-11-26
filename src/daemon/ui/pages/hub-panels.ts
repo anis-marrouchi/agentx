@@ -5,9 +5,9 @@
 // or expand it, or we can also navigate back to the previous pages."
 //
 // Two panels on a computer (over 1180 px; under it the menu is already the
-// 72 px rail and the right panel a sheet, so nothing changes there):
+// 56 px rail and the right panel a sheet, so nothing changes there):
 //   - nav: the side menu. Drag its right edge (200–420 px), or collapse it
-//     to the 72 px icon rail and expand it again.
+//     to the 56 px icon rail and expand it again.
 //   - cx: the right context panel (wall-context.client.ts). Drag its left
 //     edge (320 px up to 70% of the window), or collapse it; its tabs stay
 //     open and the titlebar's Panel button brings it back. Opening a new tab
@@ -28,6 +28,8 @@
 // in history.state (hubHistStep), so a browser Back or swipe counts down,
 // not up, and a reload reads the index of the entry it is on.
 
+import { hubIcon } from "./hub-lucide"
+
 /** The panels the Hub remembers. */
 export type HubPanelId = "nav" | "cx"
 export interface HubPanelState { w: number | null; folded: boolean }
@@ -38,7 +40,7 @@ export const HUB_NAV_MIN = 200
 export const HUB_NAV_MAX = 420
 /** The menu's width when nothing is saved, and folded to icons (the CSS). */
 export const HUB_NAV_DEFAULT = 280
-export const HUB_NAV_RAIL = 72
+export const HUB_NAV_RAIL = 56
 export const HUB_CX_MIN = 320
 /** The right panel's widest, as a share of the window. */
 export const HUB_CX_MAX_SHARE = 0.7
@@ -156,7 +158,7 @@ export function hubCxOpened(prev: { n: number; on: string | null }, next: { n: n
 export const HUB_PANELS_FNS = { hubPanelClamp, hubPanelsRead, hubPanelsFit, hubPanelsApply, hubPanelDrag, hubPanelKey, hubHistStep, hubCxOpened }
 
 const PANEL_ICON = {
-  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>',
+  menu: hubIcon("panel-left"),
   panel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
   fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
@@ -210,21 +212,7 @@ body.axp-dragging, body.axp-dragging * { cursor: col-resize !important; user-sel
 /* The widths: the grids read these variables (wall-space.ts, wall-chat.css.ts, wall-context.client.ts). */
 @media (min-width: 1181px) {
   .ax-wall.nav-folded { --axp-nav-w: ${HUB_NAV_RAIL}px; }
-  .ax-wall.nav-folded .ax-wall__nav { padding: 12px 8px; align-items: center; }
-  .ax-wall.nav-folded .ax-wall__logo small, .ax-wall.nav-folded .ax-wall__nav > .ax-wall__item span, .ax-wall.nav-folded .ax-wall__nav > .lt,
-  .ax-wall.nav-folded .ax-wall__nav .ax-wall__navlbl, .ax-wall.nav-folded .ax-wall__nav > .ha { display: none; }
-  /* The same icon rail as under 1180 px (hub-nav.ts): the switcher is its magnifier, the foot row a column of icons. */
-  .ax-wall.nav-folded .ax-wall__nav > .ha__k { position: static; box-shadow: none; width: 40px; height: 40px; padding: 0; justify-content: center; }
-  .ax-wall.nav-folded .ax-wall__nav > .ha__k span, .ax-wall.nav-folded .ax-wall__nav > .ha__k kbd, .ax-wall.nav-folded .hf__item span { display: none; }
-  .ax-wall.nav-folded .ax-wall__nav > .hf { margin-top: auto; flex-direction: column; flex-wrap: nowrap; gap: 4px; padding: 10px 0 2px; }
-  .ax-wall.nav-folded .hf__item { position: relative; padding: 8px; }
-  .ax-wall.nav-folded .hf__item svg { width: 18px; height: 18px; }
-  .ax-wall.nav-folded .hf__set { margin-left: 0; }
-  .ax-wall.nav-folded .hf__n { position: absolute; top: 0; right: -4px; }
-  .ax-wall.nav-folded .ax-wall__item { width: max-content; }
-  .ax-wall.nav-folded .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
-  .ax-wall.nav-folded .ax-wall__logo { padding: 8px 0 8px; }
-  .ax-wall.nav-folded .axp-navfold { position: static; margin: 0 0 10px; }
+  /* The rail itself is hub-nav.ts .is-rail. */
   .ax-wall.nav-folded .axp-navfold svg { transform: scaleX(-1); }
   .ax-wall.nav-folded .axp-grip--nav { display: none; }
   .ax-wall.cx-open.cx-folded, .ax-wall.cx-open.cx-folded.is-wide, .ax-wall.cx-open.cx-folded.is-settings, .ax-wall.hc-open.cx-open.cx-folded { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr); }
@@ -269,6 +257,9 @@ export const HUB_PANELS_SCRIPT = String.raw`
     wall.style.removeProperty('--axp-nav-w'); wall.style.removeProperty('--axp-cx-w');
     Object.keys(a.vars).forEach(function (k) { wall.style.setProperty(k, a.vars[k]); });
     Object.keys(a.classes).forEach(function (k) { wall.classList.toggle(k, a.classes[k]); });
+    // The icon rail (hub-nav.ts, orca-design C26): 641-1180 px, the folded
+    // menu on a computer, and the workflow editor.
+    wall.classList.toggle('is-rail', innerWidth > 640 && (innerWidth <= 1180 || P.nav.folded || wall.classList.contains('is-editor')));
     document.querySelectorAll('[data-panel-toggle="nav"]').forEach(function (b) {
       b.setAttribute('aria-expanded', String(!P.nav.folded));
       b.setAttribute('aria-label', P.nav.folded ? 'Expand the side menu' : 'Collapse the side menu');
