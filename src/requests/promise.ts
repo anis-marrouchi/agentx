@@ -128,9 +128,12 @@ export interface PromiseSettings {
   duePush: boolean
   /** A due time an agent accepts on a request arms a wake-up (#1908). */
   acceptWake: boolean
+  /** The agent woken 15 min after a promised PR fell due with no PR
+   *  linked (#2279). Empty: only the agent that owes it is woken. */
+  prLead: string
 }
 
-export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true }
+export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent" }
 
 export const promiseSettingsOf = (s: { promises?: Partial<PromiseSettings> } | undefined): PromiseSettings => ({ ...DEFAULT_PROMISE_SETTINGS, ...s?.promises })
 

@@ -12,6 +12,8 @@ import { goalLine } from "./goals"
 import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./resend"
 import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { JOB_NOTE_MAX } from "@/jobs/store"
+import { DEFAULT_PROMISE_SETTINGS } from "./promise"
+import { missedPr, PR_LEAD_AFTER_MS, PR_LEAD_WINDOW_MS, prDueText, prLeadText } from "./pr-due"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -33,6 +35,10 @@ import { JOB_NOTE_MAX } from "@/jobs/store"
 //      `settleHandedBack: false` raises it as quiet instead, as before.
 //      A hand-off that failed or was lost no longer holds it once a later
 //      one came back done (#1522).
+//   1c. Missed PR (#2279, pr-due.ts): a due promise whose words name a PR
+//      and that has none linked wakes its agent with the issue, through
+//      its job's wake or else a turn of its own; 15 min after that push,
+//      still open with no PR, the lead (`promises.prLead`) is woken once.
 //   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
@@ -123,6 +129,8 @@ export interface RequestSweepResult {
   held: number
   /** Promises that fell due: their agent woken, whoever waits told (#1908). */
   duePushed: number
+  /** Missed PRs whose lead was woken 15 min after their agent (#2279). */
+  prLeads: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -261,6 +269,17 @@ function wakeNoProof(deps: RequestSweepDeps, r: RequestRecord): string | null {
   return "turn"
 }
 
+/** Wakes the agent of a promised PR that fell due with none linked
+ *  (#2279): its job's wake when it takes it, else a turn of its own, so a
+ *  wake the job cannot take (a run on it, its cap) still reaches it. */
+function wakePrDue(deps: RequestSweepDeps, r: RequestRecord, lead: string | null): string | null {
+  const text = prDueText(r, lead)
+  if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
+  if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
+  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its PR: ${e?.message ?? e}`))
+  return "turn"
+}
+
 /** What an agent that waits on a promise reads when it falls due (#1908). */
 export function duePromiseText(r: RequestRecord): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
@@ -271,8 +290,11 @@ export function duePromiseText(r: RequestRecord): string {
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0 }
   if (!settings.enabled) return result
+  // Who hears of a missed PR after its agent (#2279): never the agent itself.
+  const prLead = settings.promises?.prLead ?? DEFAULT_PROMISE_SETTINGS.prLead
+  const leadOf = (r: RequestRecord): string | null => (prLead && prLead !== r.agentId ? prLead : null)
 
   const proofSettings = { ...DEFAULT_CLOSE_PROOF, ...settings.closeProof }
   const proof: CloseProofCtx = {
@@ -421,18 +443,44 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     // promise is pushed once and then left out of this query by its mark.
     for (const r of settings.promises?.duePush === false ? [] : store.duePromises(now)) {
       const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
-      const woken = deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
+      // A PR due with none linked (#2279): woken with the issue, by a turn
+      // when the job's wake cannot take it.
+      const pr = missedPr(r, store.links(r.id)) ? wakePrDue(deps, r, leadOf(r)) : undefined
+      const woken = pr !== undefined ? !!pr
+        : deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
       const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
       store.markDuePushed(r.id, now)
       if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})${woken ? `.${wokenTail(r.agentId)}` : ""}`, now)) {
         result.quiet++
         result.duePushed++
-        log(`[requests] ${r.id} fell due: ${r.agentId} ${woken ? "woken" : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`)
+        log(`[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`)
       }
     }
   } catch (e: any) {
     log(`[requests] due promises failed: ${e?.message ?? e}`)
+  }
+
+  // 15 min after a missed PR's agent was woken, still open with no PR
+  // linked (#2279): its lead is woken, once per due time. Every promise
+  // pushed in the window is read once and marked, PR or not.
+  try {
+    if (settings.promises?.duePush !== false) {
+      for (const r of store.prLeadsDue(now - PR_LEAD_AFTER_MS - PR_LEAD_WINDOW_MS, now - PR_LEAD_AFTER_MS)) {
+        store.markPrLead(r.id)
+        const lead = leadOf(r)
+        if (!lead || !missedPr(r, store.links(r.id))) continue
+        if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(lead))) {
+          log(`[requests] ${r.id} still has no PR: ${lead} could not be woken (not on this node)`)
+          continue
+        }
+        void deps.tellAgent(lead, prLeadText(r, r.duePushedAt), r).catch((e: any) => log(`[requests] ${r.id}: could not wake ${lead} for the missing PR: ${e?.message ?? e}`))
+        result.prLeads++
+        log(`[requests] ${r.id} still has no PR ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min after ${r.agentId} was woken: ${lead} woken`)
+      }
+    }
+  } catch (e: any) {
+    log(`[requests] missed PR follow-up failed: ${e?.message ?? e}`)
   }
 
   try {

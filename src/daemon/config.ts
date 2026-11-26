@@ -1749,6 +1749,9 @@ export const requestsConfigSchema = z.object({
      *  time, like a promise's (#1908). Off: the due time is stored and no
      *  wake-up is armed. */
     acceptWake: z.boolean().default(true),
+    /** The agent woken when a promised PR fell due, its agent was woken,
+     *  and 15 min later no PR is linked (#2279). Empty: nobody else. */
+    prLead: z.string().default("pm-agent"),
   }).default({}),
   /** Catch "I'll do X" (src/requests/catch.ts, #1138 E): at the end of an
    *  owner-facing turn whose reply could hold one, one small model call

@@ -242,7 +242,7 @@ describe("one escalation path", () => {
 
 describe("settings", () => {
   it("requests.promises defaults: proof required, facts on for 7 days, cards off, due push and accept wake on", () => {
-    expect(requestsConfigSchema.parse(undefined).promises).toEqual({ requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true })
+    expect(requestsConfigSchema.parse(undefined).promises).toEqual({ requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent" })
     expect(requestsConfigSchema.safeParse({ promises: { factTtlDays: 0 } }).success).toBe(false)
   })
 })
