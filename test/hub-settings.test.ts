@@ -66,6 +66,7 @@ describe("Settings panes: one list, five groups", () => {
     ])
     expect(paneDef("general").built).toBe(true)
     expect(paneDef("menu").built).toBe(true)
+    expect(SETTINGS_PANES.filter((p) => p.built).every((p) => p.rows.length > 0)).toBe(true)
     expect(paneDef("nope").id).toBe("general")
   })
   it("a row drawn without a definition fails at once", () => {
@@ -538,5 +539,62 @@ describe("Settings › Actions (#2101 ST2a)", () => {
       { name: "note", type: "string", required: false },
     ])
     expect(inputsText(inputs)).toBe("version:string!, dryRun:boolean, note:string")
+  })
+})
+
+// --- ST3a: Guests, Business, Channels and WhatsApp (#2101) ---
+
+/** Every data-row a pane draws must be one of its row definitions (condition 1). */
+function expectDrawnInSearch(pane: string, html: string) {
+  const index = buildSettingsIndex()
+  const drawn = [...html.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1])
+  expect(drawn.length).toBeGreaterThan(1)
+  const inSearch = new Set(index.filter((e) => e.pane === pane).map((e) => e.row))
+  for (const id of drawn) expect(inSearch, `${pane}: row "${id}" is drawn but not in search`).toContain(id)
+}
+
+function renderWith(Pane: () => unknown, data: Record<string, unknown>): string {
+  const client = new QueryClient()
+  for (const [k, v] of Object.entries(data)) client.setQueryData(["settings", k], v)
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(Pane as () => null))),
+  )
+}
+
+const grants = {
+  grants: [
+    { id: "g1", name: "Site rebuild", guest: "Kairos Media", guestNode: { name: "kairos-mbp" }, agentId: "coder", level: "propose", state: "active", expiresAt: "2026-12-31T00:00:00Z",
+      folders: ["sites/kairos-web"], skills: ["nextjs"], commands: ["pnpm test"], usage: { turns: 142, tokens: 1_900_000, lastAt: "2026-11-25T14:02:00Z" },
+      trail: [{ at: "2026-11-25T14:02:00Z", event: "task", detail: "opened MR !412" }] },
+    { id: "g2", name: "Server audit", guest: "Baraka Logistics", agentId: "dev-session", level: "report", state: "paused", expiresAt: "2026-12-15T00:00:00Z", usage: { turns: 38, tokens: 410_000 } },
+    { id: "g3", name: "Support handover", guest: "Nadia Ferchichi", agentId: "pm-agent", level: "propose", state: "pending", expiresAt: "2027-01-31T00:00:00Z", usage: { turns: 0, tokens: 0 } },
+    { id: "g4", name: "Q3 pricing study", guest: "Atlas Conseil", agentId: "pm-agent", state: "ended", endedAt: "2026-10-02T00:00:00Z" },
+  ],
+}
+
+describe("Settings › Guests", () => {
+  it("is built, and every row it draws is in search", async () => {
+    const { default: GuestsPane } = await import("../src/hub/settings/GuestsPane")
+    expect(paneDef("guests").built).toBe(true)
+    const html = renderWith(GuestsPane, { state, guests: grants })
+    expectDrawnInSearch("guests", html)
+    expect(html).toContain("3 open")
+    expect(html).toContain("Site rebuild")
+    expect(html).toContain(">Pause<")
+    expect(html).toContain(">Resume<")
+    expect(html).toContain("Not joined yet")
+    expect(html).toContain("ended 2026-10-02")
+    expect(html).toContain("1.9M tokens")
+    expect(html).toMatch(/data-disclosure="guests-adv" data-state="closed"/)
+    // The badge moves under the name below 640 px (condition 4).
+    expect(html).toContain("mt-1 flex sm:hidden")
+  })
+  it("says each grant's state in words", async () => {
+    const { grantState, tokensShort } = await import("../src/hub/settings/GuestsPane")
+    expect(grantState({ id: "x", name: "", guest: "", agentId: "", state: "pending", guestNode: { name: "n" } }).word).toBe("Waits for your approval")
+    expect(grantState({ id: "x", name: "", guest: "", agentId: "", state: "pending" }).word).toBe("Not joined yet")
+    expect(tokensShort(410_000)).toBe("410k")
+    expect(tokensShort(1_900_000)).toBe("1.9M")
+    expect(tokensShort(12)).toBe("12")
   })
 })

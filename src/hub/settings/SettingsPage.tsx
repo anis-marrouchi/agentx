@@ -28,6 +28,7 @@ const PANES: Record<string, ComponentType> = {
   inbox: lazy(() => import("./InboxPane")),
   agent: lazy(() => import("./AgentPane")),
   actions: lazy(() => import("./ActionsPane")),
+  guests: lazy(() => import("./GuestsPane")),
   menu: lazy(() => import("./MenuPane")),
 }
 
