@@ -424,17 +424,15 @@ export const WALL_CONTEXT_CSS = `
 
 /* Under 1180 px the panel slides over the page from the right. */
 @media (max-width: 1180px) {
-  .ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings { grid-template-columns: 72px minmax(0, 600px); }
-  .ax-wall.hc-open.cx-open { grid-template-columns: 72px minmax(0, 1fr); }
+  .ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings { grid-template-columns: 56px minmax(0, 600px); }
+  .ax-wall.hc-open.cx-open { grid-template-columns: 56px minmax(0, 1fr); }
   .ax-wall.cx-open .ax-wall__aside { display: contents !important; }
   .wcx { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); height: auto; z-index: 12; box-shadow: var(--ax-shadow-lg); }
 }
-/* Phone: a full sheet over the page, above the bottom bar. */
+/* Phone: a full sheet over the page (no bottom bar since the Sheet menu). */
 @media (max-width: 640px) {
   .ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings, .ax-wall.hc-open.cx-open { grid-template-columns: minmax(0, 1fr); }
-  .wcx { left: 0; width: auto; bottom: 56px; box-shadow: none; border-left: 0; z-index: 30; }
-  /* The chat has no bottom bar: the panel covers its ask box too. */
-  .ax-wall.hc-open .wcx { bottom: 0; }
+  .wcx { left: 0; width: auto; bottom: 0; box-shadow: none; border-left: 0; z-index: 30; }
   .wcx__body { padding: 10px 12px 12px; }
 }
 `

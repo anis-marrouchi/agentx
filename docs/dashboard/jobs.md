@@ -25,7 +25,7 @@ The **door** is how the work came in:
 
 ## Open the page
 
-1. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Work**. On a phone, select **More**, then **Jobs**.
+1. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Work**. On a phone, select the menu button at the top left, then **Jobs**.
 2. The page opens on the **Open** jobs, most recently active first. Its address is `/hub#page=jobledger`.
 3. The number beside **Jobs** in the nav is how many jobs are stalled or blocked. It shows after the page has been opened once.
 

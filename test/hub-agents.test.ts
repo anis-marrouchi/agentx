@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { haFace, haHitCount, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
-import { HUB_NAV_CSS, hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
+import { haDownHtml, haFace, haHitCount, haListHtml, haRailHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
+import { HUB_NAV_CSS, HUB_NAV_ICON_NAMES, HUB_PAGE_ICON, hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
+import { hubIconMap } from "../src/daemon/ui/pages/hub-lucide"
 import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode, type LtTask } from "../src/daemon/ui/pages/wall-tree"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { injectFns } from "../src/daemon/ui/inject"
@@ -10,6 +11,7 @@ const NOW = Date.parse("2026-11-24T12:00:00Z")
 const DAY = Date.parse("2026-11-24T00:00:00Z")
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
 const title = (t: Parameters<typeof ltTitle>[0]) => ltTitle(t, null)
+const ic = hubIconMap(HUB_NAV_ICON_NAMES)
 
 const nodes: LtNode[] = [
   { name: "Mac", url: "http://mac", reachable: true, agents: [
@@ -35,11 +37,27 @@ describe("hubAgentRows", () => {
   const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   const by = (id: string) => m.rows.find((r) => r.id === id)!
 
-  it("groups every agent once: working, needs you, done today, idle", () => {
+  it("groups every agent once, in the one state order: needs you, working, done today, idle", () => {
     expect(m.rows.map((r) => [r.id, r.state])).toEqual([
-      ["coder", "working"], ["main", "working"], ["pm", "needs"], ["secretary", "done"], ["sales", "idle"],
+      ["pm", "needs"], ["coder", "working"], ["main", "working"], ["secretary", "done"], ["sales", "idle"],
     ])
-    expect(m.counts).toEqual({ all: 4, working: 2, needs: 1, done: 1, idle: 1 })
+    expect(m.counts).toEqual({ all: 4, working: 2, needs: 1, failed: 0, done: 1, idle: 1 })
+  })
+  it("names the machines that do not answer, once", () => {
+    expect(m.down).toEqual(["down"])
+    expect(hubAgentRows(nodes.slice(0, 2), [], NOW, DAY, title, ltPlain, liveWorkCount(nodes)).down).toBeUndefined()
+  })
+  it("puts an agent whose last run today failed under Needs you, with the reason", () => {
+    const ns: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+      { id: "graph", name: "Graph Agent", lastSummary: { text: "the answer was not valid JSON", at: ago(60_000), ok: false } },
+    ] }]
+    const fm = hubAgentRows(ns, [], NOW, DAY, title, ltPlain, liveWorkCount(ns))
+    expect(fm.rows[0].state).toBe("failed")
+    expect(fm.rows[0].line).toBe("Run failed: the answer was not valid JSON")
+    expect(fm.counts.failed).toBe(1)
+    const h = haListHtml(fm, "", { needs: true }, ltEsc, ltAge, { ic })
+    expect(h).toContain('data-key="g:needs"')
+    expect(h).toContain('<span class="ha__si is-failed" aria-hidden="true"><svg class="lucide lucide-circle-x"')
   })
   it("keeps the first node's copy and leaves out nodes that do not answer", () => {
     expect(by("coder").node).toBe("Mac")
@@ -81,12 +99,12 @@ describe("the counts next to each agent (#2145)", () => {
     const lead = m.rows.find((r) => r.id === "lead")!
     // 3 finished today from the hourly slots + the 2 going, started today.
     expect([lead.runs, lead.today]).toEqual([2, 5])
-    const h = ha.haRowHtml(lead, "", ltEsc, ltAge)
-    expect(h).toContain('<span class="ha__stats" title="2 running now, 5 runs today">')
+    const h = ha.haRowHtml(lead, "", ltEsc, ltAge, { ic })
+    expect(h).toContain('<span class="ha__stats" data-tip="2 running now, 5 runs today">')
     expect(h).toMatch(/<span data-stat="now"><svg [^]*?<\/svg>2<\/span><span data-stat="today"><svg [^]*?<\/svg>5<\/span><span class="ax-sr">2 running now, 5 runs today<\/span>/)
     // Next to the name, before the time.
     expect(h.indexOf("ha__stats")).toBeGreaterThan(h.indexOf("ha__name"))
-    expect(h.indexOf("ha__stats")).toBeLessThan(h.indexOf("<time>"))
+    expect(h.indexOf("ha__stats")).toBeLessThan(h.indexOf("<time"))
     const quiet = m.rows.find((r) => r.id === "quiet")!
     expect([quiet.runs, quiet.today]).toEqual([0, 0])
     expect(ha.haRowHtml(quiet, "", ltEsc, ltAge)).not.toContain("ha__stats")
@@ -107,62 +125,72 @@ describe("the counts next to each agent (#2145)", () => {
   it("says one run in the singular and leaves out a zero", () => {
     const row = { ...hubAgentRows(nodes, [], NOW, DAY, title, ltPlain, liveWorkCount(nodes)).rows[0], runs: 0, today: 1 }
     const h = ha.haRowHtml(row, "", ltEsc, ltAge)
-    expect(h).toContain('title="1 run today"')
+    expect(h).toContain('data-tip="1 run today"')
     expect(h).not.toContain('data-stat="now"')
   })
   it("styles the counts quietly, with even-width digits", () => {
     expect(HUB_NAV_CSS).toMatch(/\.ha__stats \{[^}]*color: var\(--ax-muted\)[^}]*font-variant-numeric: tabular-nums/)
-    // The name keeps its room: the machine chip gives way first.
-    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__name \{ flex-shrink: 0;/)
-    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__node \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/)
+    // No machine tag on a row any more (the approved mock): the name keeps its room.
+    expect(HUB_NAV_CSS).not.toContain(".ha__node")
   })
 })
 
 describe("haListHtml", () => {
   const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
-  it("draws the chips, the groups and the current agent", () => {
-    const h = haListHtml(m, "all", "pm", false, ltEsc, ltAge)
-    expect(h).toContain('data-ha-filter="all" aria-pressed="true">All <b>4</b>')
-    expect(h).toContain('Working <span class="ax-af-count" data-n="2">2</span>')
-    expect(h).toContain('Needs you <span class="ax-af-count" data-n="1">1</span>')
-    expect(h).toContain('Done today <span class="ax-af-count" data-n="1">1</span>')
-    expect(h).toContain('Not working today <span class="ax-af-count" data-n="1">1</span>')
-    expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm" aria-current="true"')
-    expect(h).toContain('style="--ha-c:#2979FF"')
-    expect(h).toContain('<b class="ax-af-count" data-tone="warn" data-n="2" title="2 questions for you">2</b>')
+  it("draws the groups with a chevron, title and count, and the current agent; no chips, no machine tag", () => {
+    const h = haListHtml(m, "pm", { needs: true }, ltEsc, ltAge, { ic })
+    expect(h).not.toContain("data-ha-filter")
+    expect(h).not.toContain("ha__node")
+    expect(h).toMatch(/<summary class="ha__h"><span class="ha__chev" aria-hidden="true"><svg class="lucide lucide-chevron-right"[^]*?<\/span><span class="ha__ht">Working<\/span><span class="ha__hn" data-n="2">2<\/span><\/summary>/)
+    for (const [t, n] of [["Needs you", 1], ["Done today", 1], ["Not working today", 1]]) expect(h).toContain('<span class="ha__ht">' + t + '</span><span class="ha__hn" data-n="' + n + '">' + n + "</span>")
+    expect(h).toContain('<div class="ha__row is-needs is-cur" data-key="a:pm" data-ha-agent="pm"><a class="ha__link" href="#page=chat&amp;agent=pm" aria-current="true">')
+    expect(h).toContain('<b class="ax-af-count ha__n" data-tone="warn" data-n="2">2<span class="ax-sr"> questions for you</span></b>')
+    // The groups in the one state order: Needs you, Working, Done today, Not working today.
+    const at = (k: string) => h.indexOf('data-key="g:' + k + '"')
+    expect(at("needs")).toBeLessThan(at("working"))
+    expect(at("working")).toBeLessThan(at("done"))
+    expect(at("done")).toBeLessThan(at("idle"))
   })
-  it("filters to one group", () => {
-    const h = haListHtml(m, "working", "", false, ltEsc, ltAge)
-    expect(h).toContain('data-ha-agent="coder"')
-    expect(h).not.toContain('data-ha-agent="pm"')
-    expect(h).not.toContain("Not working today")
+  it("draws each row as a neutral face and a lucide state icon, its age in a <time datetime>", () => {
+    const h = haListHtml(m, "", false, ltEsc, ltAge, { ic })
+    expect(h).not.toContain("--ha-c")
+    expect(h).not.toContain("ha__dot")
+    expect(h).toContain('<span class="ha__si is-working" aria-hidden="true"><svg class="lucide lucide-loader-circle"')
+    expect(h).toContain('<span class="ha__si is-done" aria-hidden="true"><svg class="lucide lucide-circle-check"')
+    expect(h).toContain('<time datetime="' + new Date(NOW - 60_000).toISOString() + '">1m</time>')
   })
-  it("shows Needs you as a group only, not a chip; a saved needs filter shows all (#2101 R27)", () => {
-    const h = haListHtml(m, "needs", "", false, ltEsc, ltAge)
-    expect(h).not.toContain('data-ha-filter="needs"')
-    expect(h).toContain('data-ha-filter="all" aria-pressed="true"')
-    expect(h.match(/Needs you/g)).toHaveLength(1)
-    expect(h).toContain('data-ha-agent="coder"')
+  it("puts Stop and the row menu on a working row, only the menu on the others, when asked", () => {
+    const h = haListHtml(m, "", { needs: true }, ltEsc, ltAge, { ic, acts: true })
+    expect(h).toContain('data-ha-stop="coder" aria-label="Stop the run of coder"')
+    expect(h).toContain('data-ha-menu="pm" aria-haspopup="menu" aria-expanded="false" aria-label="More for pm"')
+    expect(h).not.toContain('data-ha-stop="pm"')
+    expect(haListHtml(m, "", false, ltEsc, ltAge)).not.toContain("ha__acts")
+  })
+  it("keys every part, so a refresh patches rows in place", () => {
+    const h = haListHtml(m, "", { needs: true }, ltEsc, ltAge, { ic })
+    for (const k of ["g:needs", "g:working", "a:coder", "a:pm", "g:done", "g:idle"]) expect(h).toContain('data-key="' + k + '"')
   })
   it("sends a working agent's row to the link the browser gives, others to their chat (#2101 R26)", () => {
     const href = (r: { id: string; taskId: string }) => r.taskId ? "#page=task&task=" + r.taskId + "&agent=" + r.id : ha.haChatHref(r as never)
-    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, href)
-    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder" data-ha-agent="coder"')
-    expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm"')
+    const h = haListHtml(m, "", false, ltEsc, ltAge, { runHref: href })
+    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder" data-ha-run')
+    expect(h).toContain('href="#page=chat&amp;agent=pm"')
     const k = haSwitchHtml(haSwitchHits(m.rows, [], "main"), 0, ltEsc, href)
     expect(k).toContain('href="#page=task&amp;task=t2&amp;agent=main"')
   })
-  it("escapes fleet text and drops a colour that is not a hex colour", () => {
+  it("escapes fleet text and never uses an agent's colour", () => {
     const badNodes: LtNode[] = [{ name: "<b>n</b>", reachable: true, agents: [{ id: "x\"y", name: "<img>", color: "red;background:url(x)", runningTasks: [{ id: "t", messagePreview: "<script>alert(1)</script>" }] }] }]
     const bad = hubAgentRows(badNodes, [], NOW, DAY, title, ltPlain, liveWorkCount(badNodes))
-    const h = haListHtml(bad, "all", "", false, ltEsc, ltAge)
+    const h = haListHtml(bad, "", false, ltEsc, ltAge, { acts: true })
     expect(h).not.toContain("<script>")
     expect(h).not.toContain("<img>")
     expect(h).not.toContain("url(x)")
-    expect(h).toContain("&lt;b&gt;n&lt;/b&gt;")
+    expect(h).toContain("&lt;img&gt;")
   })
-  it("says so when there are no agents", () => {
-    expect(haListHtml(hubAgentRows([], [], NOW, DAY, title, ltPlain, liveWorkCount([])), "all", "", false, ltEsc, ltAge)).toContain("No agents yet.")
+  it("says so when there are no agents, with an action", () => {
+    const h = haListHtml(hubAgentRows([], [], NOW, DAY, title, ltPlain, liveWorkCount([])), "", false, ltEsc, ltAge)
+    expect(h).toContain("No agents yet.")
+    expect(h).toContain('href="#page=agents"')
   })
   // #2270: the chat only streams runs started from it, so a working row opens its run.
   it("opens a working agent's live run; other rows and a gone run open the chat", () => {
@@ -171,15 +199,48 @@ describe("haListHtml", () => {
       seen.push(r.id)
       return r.taskId === "t1" ? "#page=task&task=t1&agent=" + r.id + "&node=" + encodeURIComponent(r.nodeUrl) : ""
     }
-    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, runHref)
-    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder&amp;node=http%3A%2F%2Fmac" data-ha-agent="coder" data-ha-run')
-    expect(h).toContain("Opens its live run")
-    expect(h).toContain('href="#page=chat&amp;agent=main" data-ha-agent="main"')
-    expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm"')
-    expect(seen.sort()).toEqual(["coder", "main"])
+    const h = haListHtml(m, "", false, ltEsc, ltAge, { runHref })
+    expect(h).toContain('href="#page=task&amp;task=t1&amp;agent=coder&amp;node=http%3A%2F%2Fmac" data-ha-run')
+    expect(h).toContain('href="#page=chat&amp;agent=main"')
+    expect(h).toContain('href="#page=chat&amp;agent=pm"')
+    expect([...new Set(seen)].sort()).toEqual(["coder", "main"])
   })
-  it("draws no sliding stripe under a working row (#2270)", () => {
-    expect(haListHtml(m, "all", "", false, ltEsc, ltAge)).not.toContain("ha__bar")
+  it("draws no sliding stripe and no ping under a working row (#2270)", () => {
+    const h = haListHtml(m, "", false, ltEsc, ltAge)
+    expect(h).not.toContain("ha__bar")
+    expect(HUB_NAV_CSS).not.toContain("ha-ping")
+    expect(HUB_NAV_CSS).not.toContain("ha-shine")
+  })
+})
+
+describe("the icon rail and the machines that do not answer (orca-design C26, C15)", () => {
+  const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
+  it("lists every agent as its face with its state icon, in the list's order, with a tooltip", () => {
+    const h = haRailHtml(m, "coder", ltEsc, { ic })
+    expect((h.match(/class="ha__ri /g) || []).length).toBe(m.rows.length)
+    expect(h.indexOf('data-key="r:pm"')).toBeLessThan(h.indexOf('data-key="r:coder"'))
+    expect(h).toContain('class="ha__ri is-working is-cur" data-key="r:coder"')
+    expect(h).toContain('aria-label="coder, Working" data-tip="coder · Working: Restyle the phone app" data-tip-side="right"')
+    expect(h).toContain('<span class="ha__si is-working ha__fsi" aria-hidden="true">')
+    expect(h).toContain('<hr class="ha__rsep" data-key="rs:working">')
+  })
+  it("says once which machines do not answer, with where to look", () => {
+    expect(haDownHtml(undefined, ltEsc)).toBe("")
+    expect(haDownHtml(["Mac mini"], ltEsc, ic)).toContain("Mac mini is not answering, so its agents are not listed.")
+    expect(haDownHtml(["a", "b", "c"], ltEsc)).toContain("a, b and c are not answering, so their agents are not listed.")
+    expect(haDownHtml(["<x>"], ltEsc)).toContain("&lt;x&gt;")
+    expect(haDownHtml(["a"], ltEsc)).toContain('href="#page=running"')
+  })
+  it("draws the rail at 641-1180 px, the Sheet at 640 px and below, and no bottom bar", () => {
+    expect(HUB_NAV_CSS).toContain(".ax-wall.is-rail:not(.is-sheet) #hub-rail { display: flex;")
+    expect(HUB_NAV_CSS).toMatch(/@media \(max-width: 640px\) \{\n  \.ax-wall:not\(\.is-sheet\) \.ax-wall__nav \{ display: none; \}/)
+    expect(HUB_NAV_CSS).toContain("animation: hub-sheet-in 300ms")
+    expect(HUB_NAV_CSS).toMatch(/prefers-reduced-motion: reduce\) \{ \.ax-wall\.is-sheet \.ax-wall__nav \{ animation: none; \} \}/)
+    const page = renderWallPage({ owner: true })
+    expect(page).toContain('id="wall-menu-btn" data-sheet-open aria-label="Open the menu"')
+    expect(page).toContain('class="hub-scrim" data-sheet-close')
+    expect(page).toContain('data-sheet-close aria-label="Close the menu"')
+    expect(page).toContain('<div class="ha__rail" id="hub-rail" role="group" aria-label="Agents"></div>')
   })
 })
 
@@ -193,49 +254,44 @@ describe("a short side menu", () => {
   const asks: HaNeed[] = [{ key: "c1", title: "Yes?", agent: "q1", at: NOW - 1000 }, { key: "c2", title: "Go?", agent: "q2", at: NOW - 2000 }]
   const mm = hubAgentRows(many, asks, NOW, DAY, title, ltPlain, liveWorkCount(many))
   const rowsOf = (h: string) => (h.match(/data-ha-agent="([^"]+)"/g) || []).map((x) => x.slice(15, -1))
-  it("folds Needs you on first load and keeps its count in the header", () => {
-    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
-    expect(h).toContain('<details class="ha__fold" data-ha-open="needs"><summary class="ha__h">Needs you <span class="ax-af-count" data-n="2">2</span></summary>')
-    expect(haListHtml(mm, "all", "", { needs: true }, ltEsc, ltAge)).toContain('data-ha-open="needs" open>')
+  it("opens Needs you on first load (the approved mock), keeps the count in the header and the reader's fold", () => {
+    const h = haListHtml(mm, "", {}, ltEsc, ltAge)
+    expect(h).toContain('<details class="ha__fold" data-key="g:needs" data-ha-open="needs" open><summary class="ha__h"><span class="ha__ht">Needs you</span><span class="ha__hn" data-n="2">2</span></summary>')
+    expect(haListHtml(mm, "", { needs: false }, ltEsc, ltAge)).toContain('data-ha-open="needs"><summary')
   })
   it("shows 3 working agents, then Show all (N), and all of them once opened", () => {
-    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
+    const h = haListHtml(mm, "", {}, ltEsc, ltAge)
     expect(rowsOf(h).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3"])
-    expect(h).toContain('Working <span class="ax-af-count" data-n="5">5</span>')
+    expect(h).toContain('<span class="ha__ht">Working</span><span class="ha__hn" data-n="5">5</span>')
     expect(h).toContain('data-ha-more="working" aria-expanded="false">Show all (5)</button>')
-    const all = haListHtml(mm, "all", "", { working: true }, ltEsc, ltAge)
+    const all = haListHtml(mm, "", { working: true }, ltEsc, ltAge)
     expect(rowsOf(all).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3", "a4", "a5"])
     expect(all).toContain('aria-expanded="true">Show fewer</button>')
   })
-  it("shows every working agent under the Working chip, and no button at 3 or fewer", () => {
-    const h = haListHtml(mm, "working", "", {}, ltEsc, ltAge)
-    expect(rowsOf(h)).toEqual(["a1", "a2", "a3", "a4", "a5"])
-    expect(h).not.toContain("data-ha-more")
-    expect(haListHtml(m3(), "all", "", {}, ltEsc, ltAge)).not.toContain("data-ha-more")
+  it("has no Show all at 3 rows or fewer", () => {
+    expect(haListHtml(m3(), "", {}, ltEsc, ltAge)).not.toContain("data-ha-more")
   })
   // #2352 (orca-design C22): every group folds with its count; Needs you is capped too.
-  it("folds every group in the All view: Working open, Done today folded, both kept", () => {
-    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
-    expect(h).toContain('<details class="ha__fold" data-ha-open="work" open><summary class="ha__h">Working <span class="ax-af-count" data-n="5">5</span></summary>')
-    expect(haListHtml(mm, "all", "", { work: false }, ltEsc, ltAge)).toContain('data-ha-open="work"><summary')
+  it("folds every group: Working open, Done today folded, both kept", () => {
+    const h = haListHtml(mm, "", {}, ltEsc, ltAge)
+    expect(h).toContain('<details class="ha__fold" data-key="g:working" data-ha-open="work" open><summary class="ha__h">')
+    expect(haListHtml(mm, "", { work: false }, ltEsc, ltAge)).toContain('data-ha-open="work"><summary')
     const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
-    expect(haListHtml(m, "all", "", {}, ltEsc, ltAge)).toContain('<details class="ha__fold" data-ha-open="done"><summary class="ha__h">Done today <span class="ax-af-count" data-n="1">1</span>')
-    expect(haListHtml(m, "all", "", { done: true }, ltEsc, ltAge)).toContain('data-ha-open="done" open>')
+    expect(haListHtml(m, "", {}, ltEsc, ltAge)).toContain('<details class="ha__fold" data-key="g:done" data-ha-open="done"><summary class="ha__h"><span class="ha__ht">Done today</span><span class="ha__hn" data-n="1">1</span>')
+    expect(haListHtml(m, "", { done: true }, ltEsc, ltAge)).toContain('data-ha-open="done" open>')
   })
   it("shows 3 rows under Needs you, then Show all (N)", () => {
     const four: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: ["n1", "n2", "n3", "n4"].map((id) => ({ id, name: id })) }]
     const q: HaNeed[] = ["n1", "n2", "n3", "n4"].map((id, i) => ({ key: "k" + id, title: "Ok?", agent: id, at: NOW - i * 1000 }))
     const m4 = hubAgentRows(four, q, NOW, DAY, title, ltPlain, liveWorkCount(four))
-    const h = haListHtml(m4, "all", "", { needs: true }, ltEsc, ltAge)
+    const h = haListHtml(m4, "", { needs: true }, ltEsc, ltAge)
     expect(rowsOf(h)).toHaveLength(3)
     expect(h).toContain('data-ha-more="needs" aria-expanded="false">Show all (4)</button>')
-    expect(rowsOf(haListHtml(m4, "all", "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(4)
-  })
-  it("keeps a plain header when a chip picks the group", () => {
-    expect(haListHtml(mm, "working", "", {}, ltEsc, ltAge)).toContain('<h3 class="ha__h">Working <span class="ax-af-count" data-n="5">5</span></h3>')
+    expect(rowsOf(haListHtml(m4, "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(4)
   })
   it("still takes the old idleOpen boolean", () => {
-    expect(haListHtml(mm, "all", "", true, ltEsc, ltAge)).not.toContain('data-ha-open="needs" open')
+    expect(haListHtml(mm, "", true, ltEsc, ltAge)).toContain('data-ha-open="needs" open')
+    expect(haListHtml(mm, "", false, ltEsc, ltAge)).toContain('data-ha-open="needs" open')
   })
   function m3() {
     const three: LtNode[] = [{ ...many[0], agents: many[0].agents!.slice(0, 3) }]
@@ -275,10 +331,22 @@ describe("the switcher", () => {
     expect(html).toContain('aria-selected="true" href="#status=open&amp;view=cost"')
     expect(haHitCount(h)).toBe(h.agents.length + h.reqs.length + 1)
   })
-  it("face letters", () => {
+  it("face letters: the first letter of the first two words", () => {
     expect(haFace("secretary")).toBe("S")
     expect(haFace("")).toBe("?")
-    expect(haFace("é-agent")).toBe("É")
+    expect(haFace("é-agent")).toBe("ÉA")
+    expect(haFace("Dev Session")).toBe("DS")
+    expect(haFace("graph-agent")).toBe("GA")
+  })
+  it("gives each page its own lucide icon, and each agent its state icon and a platform shortcut", () => {
+    const pages = [{ key: "cost", label: "Cost", href: "#status=open&view=cost", icon: HUB_PAGE_ICON.cost }]
+    const html = haSwitchHtml(haSwitchHits(m.rows, [], "", pages), 0, ltEsc, undefined, { ic, mod: "Alt+" })
+    expect(html).toContain('<span class="hk__ico" aria-hidden="true"><svg class="lucide lucide-circle-dollar-sign"')
+    expect(html).not.toContain("↗")
+    expect(html).toContain('<kbd class="hk__kbd">Alt+1</kbd>')
+    expect(html).toContain("lucide-circle-alert")
+    expect(html).not.toContain("ha__node")
+    for (const n of Object.values(HUB_PAGE_ICON)) expect(HUB_NAV_ICON_NAMES).toContain(n)
   })
 })
 
@@ -290,10 +358,14 @@ describe("the Hub page's left column", () => {
     expect(k).toBeLessThan(agents)
     const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
     const shown = nav.slice(0, nav.indexOf('id="wall-pagelinks"'))
-    for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "Light / dark", "ax-wall__navfoot"]) {
+    for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "ax-wall__navfoot"]) {
       expect(shown.replace(/<a class="ax-wall__item ax-wall__shortcut[^>]*>/g, "")).not.toContain(gone)
     }
     expect(nav).toMatch(/<div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>/)
+    // No filter chips, no machine tag, no bottom bar or More sheet (the approved mock).
+    expect(page).not.toContain("data-ha-filter")
+    expect(page).not.toContain('id="wall-more"')
+    expect(page).not.toContain("ax-wall__shortcut")
   })
   it("lists the agents once: no Machines and runs tree beside the list (#2101 R26)", () => {
     const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
@@ -312,10 +384,13 @@ describe("the Hub page's left column", () => {
     const wide = HUB_NAV_CSS.slice(HUB_NAV_CSS.indexOf("@media (min-width: 1181px) {"))
     const block = wide.slice(0, wide.indexOf("\n}") + 2)
     // No scroll box of its own for the list: the wheel works anywhere on the menu.
-    expect(block).toContain(".ax-wall__nav > .ha { flex: 1 0 auto; }")
+    expect(HUB_NAV_CSS).toContain(".ax-wall__nav > .ha { flex: 1 0 auto; }")
+    // The search keeps its height when the menu overflows (the phone Sheet too).
+    expect(HUB_NAV_CSS).toContain(".ax-wall__nav > .ha__k, .ax-wall__nav > .ha__lbl { flex: none; }")
     expect(HUB_NAV_CSS).not.toMatch(/\.ax-wall__nav > \.ha \{[^}]*overflow-y/)
     expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
-    expect(block).toMatch(/\.ax-wall__nav > \.hf \{ position: sticky; bottom: 0;/)
+    // Settings is pinned at the bottom.
+    expect(HUB_NAV_CSS).toMatch(/\.hf--set \{[^}]*position: sticky; bottom: -12px;/)
   })
   it("mounts the ⌘K dialog on <body>, above every page, not in the sticky side menu (#2353)", () => {
     const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
@@ -336,7 +411,12 @@ describe("the Hub page's left column", () => {
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Waiting on you<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
-    expect(renderWallPage().includes('class="hf__item hf__set"')).toBe(false)
+    const guest = renderWallPage()
+    expect(guest.slice(guest.indexOf('id="hub-foot"'), guest.indexOf('id="wall-pagelinks"'))).not.toContain('data-nav="settings"')
+    // The phone has no status bar, so Light / dark sits at the foot of the Sheet there.
+    expect(foot).toContain('class="hf__item hf__theme" data-wall-theme>')
+    expect(HUB_NAV_CSS).toContain(".hf__item.hf__theme { display: none; }")
+    expect(HUB_NAV_CSS).toContain("  .hf__item.hf__theme { display: flex; }")
   })
   it("has the Mobile app setup page without an unpaired app preview link", () => {
     expect(page).toContain('id="wall-mobile"')
@@ -349,8 +429,8 @@ describe("the Hub page's left column", () => {
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
-    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunStart: ha.haRunStart, haRunsHtml: ha.haRunsHtml, haRunsToday: ha.haRunsToday })
-    const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
+    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haStateIcon: ha.haStateIcon, haStateWord: ha.haStateWord, haRowHref: ha.haRowHref, haGroups: ha.haGroups, haListHtml: ha.haListHtml, haRailHtml: ha.haRailHtml, haDownHtml: ha.haDownHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunStart: ha.haRunStart, haRunsHtml: ha.haRunsHtml, haRunsToday: ha.haRunsToday })
+    const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), '', false, ltEsc, ltAge)")
     expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
   })
 })
@@ -388,8 +468,8 @@ describe("an agent with more than one run (#2328)", () => {
   })
   it("lists each other run under the row, each opening its own run", () => {
     const runHref = (r: { id: string; taskId: string }) => "#page=task&task=" + r.taskId + "&agent=" + r.id
-    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, runHref)
-    expect(h).toContain('href="#page=task&amp;task=call&amp;agent=devops" data-ha-agent="devops" data-ha-run')
+    const h = haListHtml(m, "", false, ltEsc, ltAge, { runHref })
+    expect(h).toContain('href="#page=task&amp;task=call&amp;agent=devops" data-ha-run')
     expect(h).toContain('<a class="ha__run" href="#page=task&amp;task=gl&amp;agent=devops" data-ha-run')
     expect(h).toContain('<b class="ha__rch">Agent to agent</b> Job for coder-agent')
     expect(h.indexOf("task=call")).toBeLessThan(h.indexOf("task=gl"))

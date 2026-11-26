@@ -340,8 +340,8 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
     const order = [...nav.matchAll(/data-nav="([\w]+)"|(?:<summary>|ax-wall__navlbl" aria-hidden="true">)(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual([
-      // The phone bar's four, then the V1 foot row (#2101 P4, hub-nav.ts): Waiting on you · Jobs · Workflows · Mobile app · Settings.
-      "wall", "needs", "running", "projects", "needs", "jobledger", "workflows", "mobile", "settings",
+      // Workspace (#2101 P4, hub-nav.ts): Waiting on you · Jobs · Workflows · Mobile app, then Settings.
+      "needs", "jobledger", "workflows", "mobile", "settings",
       // The hidden page links: the ⌘K switcher's Pages and the counts' source.
       "wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
       "Fleet", "agents", "people", "org", "operations", "cost", "Owner", "settings", "dashboard", "creator"])
@@ -357,31 +357,19 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     expect(otherNav).not.toContain('data-nav="settings"')
   })
 
-  it("keeps four pages in the phone bar and puts the rest in the More sheet, in the same groups", () => {
+  it("has no phone bar or More sheet: a top bar's menu button opens the side menu as a left Sheet (orca-design C26)", () => {
     const page = renderWallPage({ owner: true })
-    for (const k of ["wall", "needs", "running", "projects"]) expect(page).toMatch(new RegExp(`data-nav="${k}" href="[^"]*" data-bar`))
-    expect(page).toContain(".ax-wall__nav > .ax-wall__item:not([data-bar]):not(.ax-wall__morebtn)")
-    const sheet = page.slice(page.indexOf('id="wall-more"'), page.indexOf('<div class="ax-wall__main">'))
-    expect([...sheet.matchAll(/<h2 class="ax-wall__navlbl">(\w+)<\/h2>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
-    expect([...sheet.matchAll(/class="ax-wall__moreitem" data-nav="(\w+)"/g)].map((m) => m[1])).toEqual(["jobledger", "live", "activity", "numbers", "jobs", "workflows", "reviews", "events", "failures", "agents", "people", "org", "operations", "cost"])
-    expect(sheet).toContain('data-n-for="nav-n-live"')
-    expect(sheet).toContain('data-nav="settings" href="#page=settings">Settings</a>')
-    expect(renderWallPage()).not.toContain('data-nav="settings"')
-    expect(sheet).toContain("data-wall-theme>Light / dark</button>")
+    expect(page).not.toContain("data-bar")
+    expect(page).not.toContain('id="wall-more"')
+    expect(page).not.toContain("data-more-nav")
+    // Menu first in the titlebar, the search (⌘K) beside the chat button.
+    const bar = page.slice(page.indexOf('class="ax-wall__titlebar"'), page.indexOf("</header>"))
+    expect(bar.indexOf('id="wall-menu-btn"')).toBeLessThan(bar.indexOf('id="wall-title"'))
+    expect(bar).toContain('data-hk-open aria-haspopup="dialog" aria-controls="hub-k-dlg" aria-label="Search agents and pages"')
+    // The Sheet holds the same menu: Settings, and every page through ⌘K.
+    const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
+    expect(nav).toContain('data-nav="settings" href="#page=settings"')
     expect(page).toMatch(/@media \(max-width: 640px\) \{\n {2}\.wac__bar/)
-  })
-
-  it("opens More as a sheet and closes it when a page is picked", async () => {
-    const w = openWall({ hash: "#page=activity" })
-    await w.settle()
-    expect(w.el("wall-more").hidden).toBe(true)
-    await w.click({ "data-more-nav": "" })
-    expect(w.el("wall-more").hidden).toBe(false)
-    await w.click({ "data-nav": "jobs" })
-    expect(w.el("wall-more").hidden).toBe(true)
-    await w.click({ "data-more-nav": "" })
-    await w.click({ "data-more-close": "" })
-    expect(w.el("wall-more").hidden).toBe(true)
   })
 })
 

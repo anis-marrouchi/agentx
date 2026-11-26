@@ -5,7 +5,7 @@ After you build a workflow, check three things: that it is set up the way you me
 ## Check the setup
 
 1. **Browser:** open the dashboard. The Hub is the first page you see.
-2. Select **Workflows** in the nav on the left, under **Automation**. On a phone, select **More** in the bottom bar, then **Workflows**.
+2. Select **Workflows** in the nav on the left, under **Automation**. On a phone, select the menu button at the top left, then **Workflows**.
 3. Find the workflow's row. It shows its state, what starts it in words (its **trigger**, such as **Fridays at 16:00** or **When a message arrives by email**), its agents and its project.
 4. Select the workflow's name, then **Open in the editor**, to check each step's destination and settings.
 

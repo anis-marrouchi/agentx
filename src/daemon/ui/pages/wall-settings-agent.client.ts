@@ -302,6 +302,5 @@ export const WALL_SETTINGS_AGENT_CSS = `
 .wsd__acts { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 640px) {
   .wsf__grid { grid-template-columns: minmax(0, 1fr); }
-  .wsb { bottom: 56px; }
 }
 `

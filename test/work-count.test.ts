@@ -138,8 +138,8 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
 
   it("the Working list groups by machine, each agent once", () => {
     const m = hubAgentRows(NODES, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, work)
-    const html = haListHtml(m, "working", "", false, ltEsc, () => "now")
-    const heads = [...html.matchAll(/<h4 class="ha__m">([^<]*) <span class="ax-af-count" data-n="\d+">(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
+    const html = haListHtml(m, "", { working: true }, ltEsc, () => "now")
+    const heads = [...html.matchAll(/<h4 class="ha__m" data-key="m:[^"]*">([^<]*) <span class="ha__hn">(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
     expect(heads).toEqual([["MacBook-Local", 2], ["Peer", 1]])
     expect(heads.reduce((n, h) => n + (h[1] as number), 0)).toBe(work.agents)
     expect((html.match(/data-ha-agent="coder"/g) || []).length).toBe(1)
@@ -148,14 +148,14 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
   it("two machines with one name keep their own headings", () => {
     const twins = [NODES[0], { ...NODES[3], name: "MacBook-Local" }]
     const m = hubAgentRows(twins, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(twins))
-    const html = haListHtml(m, "working", "", false, ltEsc, () => "now")
-    const heads = [...html.matchAll(/<h4 class="ha__m">([^<]*) <span class="ax-af-count" data-n="\d+">(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
+    const html = haListHtml(m, "", { working: true }, ltEsc, () => "now")
+    const heads = [...html.matchAll(/<h4 class="ha__m" data-key="m:[^"]*">([^<]*) <span class="ha__hn">(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
     expect(heads).toEqual([["MacBook-Local", 2], ["MacBook-Local", 1]])
   })
 
   it("one machine working: no machine headings", () => {
     const one = NODES.slice(0, 1)
     const m = hubAgentRows(one, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(one))
-    expect(haListHtml(m, "all", "", false, ltEsc, () => "now")).not.toContain("ha__m")
+    expect(haListHtml(m, "", false, ltEsc, () => "now")).not.toContain("ha__m")
   })
 })

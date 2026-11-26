@@ -6,7 +6,8 @@
 // agent opens a new Chat with it: the agent is looked up in the Chat
 // picker's list (GET /api/app/agents) for the node the Chat sends to.
 //
-// Needs haListHtml, haRowHtml and haRunsHtml through injectFns (app.ts).
+// Needs haListHtml and its helpers through injectFns, and the lucide
+// icons as HA_IC (app.ts). No filter chips, as in the Hub's side menu.
 // No runHref: on the phone every row opens a Chat, so no row links a run.
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
@@ -22,7 +23,7 @@ export const APP_AGENTS_SCRIPT = `
   if (wait) wait.replaceWith(box); else panel.appendChild(box);
   box.innerHTML = '<p class="ha__empty">Loading the agents…</p>';
   // open: the folds the reader opened (haListHtml's HaOpen); Working starts open, the rest folded.
-  var S = { model: null, filter: 'all', open: { needs: false, working: false, idle: false, work: true, done: false, needsAll: false }, loading: false };
+  var S = { model: null, open: { needs: false, working: false, idle: false, work: true, done: false, needsAll: false }, loading: false };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -39,7 +40,7 @@ export const APP_AGENTS_SCRIPT = `
   function paint() {
     if (!S.model) return;
     var cur = window.AXChat && window.AXChat.target() ? window.AXChat.target().agent : '';
-    box.innerHTML = haListHtml(S.model, S.filter, cur || '', S.open, esc, age);
+    box.innerHTML = haListHtml(S.model, cur || '', S.open, esc, age, { ic: HA_IC });
   }
   function refresh() {
     if (panel.hidden || S.loading || document.visibilityState !== 'visible') return;
@@ -81,8 +82,6 @@ export const APP_AGENTS_SCRIPT = `
   }
 
   box.addEventListener('click', function (ev) {
-    var chip = ev.target.closest('[data-ha-filter]');
-    if (chip) { S.filter = chip.getAttribute('data-ha-filter'); paint(); return; }
     var more = ev.target.closest('[data-ha-more]');
     if (more) { var mk = more.getAttribute('data-ha-more') === 'needs' ? 'needsAll' : 'working'; S.open[mk] = !S.open[mk]; paint(); return; }
     var a = ev.target.closest('[data-ha-agent]');
@@ -107,9 +106,8 @@ export const APP_AGENTS_SCRIPT = `
 
 export const APP_AGENTS_CSS = `
 .ag { margin: 0; }
-.ag .ha__row { padding: 10px 8px; }
+.ag .ha__row { min-height: 52px; }
 .ag .ha__name { font-size: 15px; }
 .ag .ha__line { font-size: 13.5px; }
-.ag .ha__chip { min-height: 36px; padding: 4px 12px; }
 .ag-note { margin: 0 0 8px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
 `

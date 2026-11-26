@@ -7,7 +7,7 @@ It shows what `agentx people` already records. There is nothing to set up: with 
 ## Open it
 
 1. **Browser:** open the dashboard. The Hub is the first page you see.
-2. Select **People** in the nav on the left. The number next to it is how many people are listed. On a phone, select **More** in the bottom bar, then **People**. The page's address is `/hub#page=people`. Old links to the classic People page open it too.
+2. Select **People** in the nav on the left. The number next to it is how many people are listed. On a phone, select the search button at the top, type `people` and pick **People**. The page's address is `/hub#page=people`. Old links to the classic People page open it too.
 3. Every person is one row: a round picture with their initials, their name, their handle (such as `@sara`), and their role (**Owner**, **Member**, **Client** or **Guest**). Under it, the channel identities you gave them, such as `gitlab:sara.b`, and the agents they may reach, when you limited them.
 4. The last line counts their machines, how many of those wait for your approval, and their open requests on the Hub.
 5. Under it, **Upload picture** gives them a picture in place of the initials; see [Give agents and people a picture](../jobs/profile-pictures.md).

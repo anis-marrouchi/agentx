@@ -69,7 +69,7 @@ Removing the app from the home screen also removes its pairing.
 ## Use it
 
 - Tap a tab at the bottom to switch sections. With a keyboard, use the **Left** and **Right** arrow keys.
-- **Agents** opens first. It lists your agents as the Hub's side menu does: **Working**, **Needs you** and **Done today**, then **Not working today**. Each row shows the agent, the computer it runs on, its counts (runs going now and runs today, as on the Hub, left out at 0) and its last line. **Needs you** and **Not working today** start closed; tap them to open. Tap an agent to start a new chat with it on the **Chat** tab. The list refreshes every 15 seconds while it is open.
+- **Agents** opens first. It lists your agents as the Hub's side menu does: **Needs you**, **Working** and **Done today**, then **Not working today**, with no filter chips. Each row shows the agent, its counts (runs going now and runs today, as on the Hub, left out at 0), a state icon and its last line. **Needs you** and **Not working today** start closed; tap them to open. Tap an agent to start a new chat with it on the **Chat** tab. The list refreshes every 15 seconds while it is open.
 - **More** holds **Fleet** and **Activity**. Tap one to open it, and **‹ More** to go back.
 - Swipe the page left or right to go to the next or the previous tab. The page follows your finger. At the first and the last tab it gives a little and stays.
 - A swipe that starts on something that scrolls sideways by itself scrolls that instead: the row of conversations, a wide code block or a wide table. A swipe that starts on the voice orb stays with the orb. Scrolling up or down never changes the tab.

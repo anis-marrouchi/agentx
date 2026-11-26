@@ -623,10 +623,10 @@ describe("The agent list in the nav (#2101 P4, R26)", () => {
     live.on.snapshot({ data: JSON.stringify(LIVE) })
     const agents = w.el("hub-agents").innerHTML
     expect(agents.match(/class="ha__row is-working/g)).toHaveLength(2)
-    expect(agents).toContain('Working <span class="ax-af-count" data-n="2">2</span>')
+    expect(agents).toContain('<span class="ha__ht">Working</span><span class="ha__hn" data-n="2">2</span>')
     expect(w.el("wall-feed").innerHTML).toBe(feed)
     // R26: a working agent's row opens its live run on the Task page, not its chat.
-    const row = /<a class="ha__row is-working[^"]*" href="([^"]*)" data-ha-agent="cx"/.exec(agents)
+    const row = /data-ha-agent="cx"><a class="ha__link" href="([^"]*)" data-ha-run/.exec(agents)
     expect(row).toBeTruthy()
     const href = row![1].replace(/&amp;/g, "&")
     expect(href.startsWith("#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a")).toBe(true)
