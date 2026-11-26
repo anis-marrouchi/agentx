@@ -1745,7 +1745,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(page).toContain('data-nav="needs" href="#status=open&amp;view=decide"')
     const w = openWall({ hash: "#status=open&view=decide" })
     await w.settle()
-    expect(w.el("wall-title").textContent).toBe("Needs you")
+    expect(w.el("wall-title").textContent).toBe("Waiting on you")
     expect(w.el("nav-n-needs").textContent).toBe("1")
     expect(w.el("wall-decide").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)

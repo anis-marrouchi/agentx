@@ -139,7 +139,7 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
     { key: "wall", label: HUB_NAME, href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
-    { key: "needs", label: "Needs you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
+    { key: "needs", label: "Waiting on you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
   ] },
   { label: "Work", items: [
     { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },

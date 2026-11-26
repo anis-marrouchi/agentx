@@ -30,10 +30,11 @@ export const HUB_NAV_ITEM: Record<string, HubShowItem> = {
 /** What else each item hides, besides its nav keys. Wiki and Rules have no
  *  place in this Hub yet; the React app reads their switches. */
 const HUB_HIDE_EXTRA: Partial<Record<HubShowItem, string[]>> = {
-  // A post's steps and its plan (wall.client.ts progressHtml, planHtml).
-  // Never the owner's decision card on a post (.wtk .wc, cardHtml) nor the
-  // Desk (#wall-decide): a gate that waits on the owner is answered there.
-  gates: [".wtk__prog", ".wtk__sec[aria-label=\"Plan\"]"],
+  // A post's steps and its plan: the parts wall.client.ts marks with
+  // data-hub-item="gates" (progressHtml, planHtml). Never the owner's
+  // decision card on a post nor the Desk (#wall-decide): a gate that waits
+  // on the owner is answered there.
+  gates: ['[data-hub-item="gates"]'],
   // The machines this Hub reads, in the status bar (hub-status.ts).
   hosts: ["#hs-node"],
 }
@@ -49,16 +50,15 @@ export const HUB_LAYOUT_CSS = "\n/* Simple and full layouts (#2226 S1, hub-layou
     const sels = hubHideSelectors(id)
     return sels.length ? `${sels.map((s) => `html[data-hub-hide~="${id}"] ${s}`).join(", ")} { display: none !important; }` : ""
   }).filter(Boolean).join("\n") + `
-.whl__opts { display: grid; gap: 8px; margin: 4px 0 0; }
-.whl__opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); cursor: pointer; }
-.whl__opt:has(input:checked) { border-color: var(--ax-accent); background: var(--ax-surface-2); }
-.whl__opt b { display: block; }
-.whl__opt span { color: var(--ax-muted); font-size: var(--ax-fs-sm); }
-.whl__item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--ax-border); }
-.whl__item:first-of-type { border-top: 0; }
-.whl__item input { margin-top: 3px; }
-.whl__item p { margin: 2px 0 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
-.whl__own { margin-left: 6px; font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; padding: 0; color: var(--ax-accent); cursor: pointer; text-decoration: underline; }
+.whl { margin-top: 4px; }
+.whl .wsa:hover { background: none; }
+.whl .wsa__b small { white-space: normal; }
+.whl__seg { display: inline-flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); }
+.whl__seg button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; color: var(--ax-muted); background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 4px 12px; cursor: pointer; }
+.whl__seg button[aria-checked="true"] { color: var(--ax-text); background: var(--ax-bg); box-shadow: 0 0 0 1px var(--ax-border); }
+.whl__seg button:focus-visible, .whl__own:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.whl__own { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px 8px; cursor: pointer; }
+.whl__own:hover { color: var(--ax-text); }
 `
 
 /** JSON safe inside a <script>. */
@@ -95,48 +95,51 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
   function stLayoutHtml() {
     var v = (S.st.data && S.st.data.hubLayout) || HL.view || { layout: 'simple', show: {}, overrides: [] };
     var own = v.overrides || [];
-    var opt = function (id, name, line) {
-      return '<label class="whl__opt"><input type="radio" name="st-hl-layout" data-hl-layout="' + id + '"' + (v.layout === id ? ' checked' : '') + '>' +
-        '<div><b>' + name + '</b><span>' + line + '</span></div></label>';
+    var seg = function (id, name) {
+      return '<button type="button" role="radio" aria-checked="' + (v.layout === id) + '" data-hl-layout="' + id + '">' + name + '</button>';
     };
-    return '<header class="wst__h"><h2>Layout</h2><p>What the ${HUB_NAME} shows. Hidden items keep running: schedules, gates and workflows still run, and a gate that waits on you is still in Waiting on you. A change shows at once, with no restart.</p></header>' +
-      '<section class="wsc"><h3>Layout</h3><div class="whl__opts" role="radiogroup" aria-label="Layout">' +
-        opt('simple', 'Simple', 'The bare minimum: agents, chat, Waiting on you, Jobs and Settings. The default.') +
-        opt('full', 'Full', 'Everything: workflows, plan gates and request steps, the mobile page, the hosts in the status bar, and every page in ⌘K.') +
-      '</div><p class="wsj__sub">Picking a layout sets every switch below to that layout\'s default.</p></section>' +
-      '<section class="wsc"><h3>Shown in the ${HUB_NAME}</h3>' +
+    var row = function (title, line, end) {
+      return '<div class="wsa"><div class="wsa__b"><b>' + title + '</b><small>' + line + '</small></div>' + end + '</div>';
+    };
+    return '<header class="wst__h"><h2>Layout</h2><p>What the ${HUB_NAME} shows. Hidden items keep running.</p></header>' +
+      '<div class="wsa-list whl">' +
+        row('Layout', 'Simple shows agents, chat, Waiting on you, Jobs and Settings. Full shows everything.',
+          '<div class="whl__seg" role="radiogroup" aria-label="Layout">' + seg('simple', 'Simple') + seg('full', 'Full') + '</div>') +
         HL_ITEMS.map(function (i) {
+          var on = !!(v.show && v.show[i.id]);
           var mine = own.indexOf(i.id) >= 0;
-          return '<label class="whl__item"><input type="checkbox" data-hl-item="' + esc(i.id) + '"' + (v.show && v.show[i.id] ? ' checked' : '') + '>' +
-            '<div><b>' + esc(i.label) + '</b>' + (mine ? '<button type="button" class="whl__own" data-st-act="hl-reset" data-hl-item="' + esc(i.id) + '">As the layout</button>' : '') +
-            '<p>' + esc(i.hint) + '</p></div></label>';
+          return row(esc(i.label), esc(i.hint),
+            (mine ? '<button type="button" class="whl__own" data-st-act="hl-reset" data-hl-item="' + esc(i.id) + '" title="Use the layout\'s default">Reset</button>' : '') +
+            '<button type="button" class="wsa__sw" role="switch" aria-checked="' + on + '" data-hl-item="' + esc(i.id) + '">' +
+            '<i aria-hidden="true"></i><span>' + (on ? 'On' : 'Off') + '</span><span class="wst__sr"> ' + esc(i.label) + '</span></button>');
         }).join('') +
-      '</section>' + stNoteHtml('hl');
+      '</div>' + stNoteHtml('hl') + (HL.failed ? '<button type="button" class="whl__own" data-st-act="hl-retry">Retry</button>' : '');
   }
   async function stLayoutSave(body) {
+    HL.last = body;
     stNote('hl', '', 'Saving…');
     var r = await act('POST', '/api/admin/wall/settings/hub-layout', body);
-    if (!r.ok) { stNote('hl', 'err', 'Not saved: ' + r.error); return; }
+    if (!r.ok) { HL.failed = true; stNote('hl', 'err', 'Not saved: ' + r.error); stPaint(); return; }
+    HL.failed = false;
     var view = r.body && r.body.layout;
     hlApply(view);
     if (S.st.data && view) S.st.data.hubLayout = view;
-    S.st.notes.hl = { kind: 'ok', text: 'Saved. The ${HUB_NAME} shows it now; no restart needed.' };
+    stNote('hl', 'ok', 'Saved.');
     stPaint();
   }
-  document.addEventListener('change', function (ev) {
-    var t = ev.target;
-    if (S.page !== 'settings' || !t || !t.getAttribute) return;
-    var layout = t.getAttribute('data-hl-layout');
-    if (layout) { if (t.checked) stLayoutSave({ layout: layout }); return; }
-    var item = t.getAttribute('data-hl-item');
-    if (item) { var show = {}; show[item] = !!t.checked; stLayoutSave({ show: show }); }
-  });
   document.addEventListener('click', function (ev) {
     if (S.page !== 'settings' || !ev.target || !ev.target.closest) return;
-    var t = ev.target.closest('[data-st-act]');
-    if (!t || t.getAttribute('data-st-act') !== 'hl-reset') return;
+    var t = ev.target.closest('[data-hl-layout],[data-hl-item],[data-st-act]');
+    if (!t) return;
+    var kind = t.getAttribute('data-st-act');
+    if (!t.getAttribute('data-hl-layout') && !t.getAttribute('data-hl-item') && kind !== 'hl-retry') return;
     if (ev.preventDefault) ev.preventDefault();
-    var show = {}; show[t.getAttribute('data-hl-item')] = null;
+    if (kind === 'hl-retry') { if (HL.last) stLayoutSave(HL.last); return; }
+    var layout = t.getAttribute('data-hl-layout');
+    if (layout) { if (t.getAttribute('aria-checked') !== 'true') stLayoutSave({ layout: layout }); return; }
+    var item = t.getAttribute('data-hl-item');
+    var show = {};
+    show[item] = kind === 'hl-reset' ? null : t.getAttribute('aria-checked') !== 'true';
     stLayoutSave({ show: show });
   });
 `

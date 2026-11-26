@@ -40,8 +40,8 @@ export const HUB_SHOW_ITEMS = [
   { id: "hosts", label: "Hosts and ports in the status bar", hint: "The machines this Hub reads, at the left of the bottom bar." },
   { id: "activity", label: "Activity page", hint: "Activity in ⌘K and the phone's More: every run, newest first." },
   { id: "org", label: "Org page", hint: "Org in ⌘K and the phone's More: the org chart." },
-  { id: "sessions", label: "Sessions page", hint: "Live in ⌘K and the phone's More: the live sessions on every machine." },
-  { id: "usage", label: "Usage page", hint: "Cost in ⌘K and the phone's More. The usage limits stay in the status bar either way." },
+  { id: "sessions", label: "Live page", hint: "Live in ⌘K and the phone's More: the live sessions on every machine." },
+  { id: "usage", label: "Cost page", hint: "Cost in ⌘K and the phone's More. The usage limits stay in the status bar either way." },
 ] as const satisfies readonly HubShowItemDef[]
 
 export type HubShowItem = (typeof HUB_SHOW_ITEMS)[number]["id"]

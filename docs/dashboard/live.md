@@ -13,7 +13,7 @@ The page's address is `/hub#page=live`. Old links to the classic Live page open 
 ## Open Live
 
 1. **Browser:** open the dashboard. The Hub opens.
-2. **Browser:** in the nav on the left, select **Live**. On a phone, it is under **More**. With the simple layout, the default, Live is not in the menus: turn **Sessions page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=live`, which always works. The number next to it counts what runs now.
+2. **Browser:** in the nav on the left, select **Live**. On a phone, it is under **More**. With the simple layout, the default, Live is not in the menus: turn **Live page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=live`, which always works. The number next to it counts what runs now.
 
 While the page is open, it updates every two seconds.
 

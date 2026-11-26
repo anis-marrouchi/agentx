@@ -97,7 +97,7 @@ describe("hide, never disable: the current Hub", () => {
     expect(hubHideSelectors("sessions")).toEqual(['[data-nav="live"]'])
     expect(hubHideSelectors("usage")).toEqual(['[data-nav="cost"]'])
     expect(hubHideSelectors("hosts")).toEqual(["#hs-node"])
-    expect(hubHideSelectors("gates")).toEqual([".wtk__prog", '.wtk__sec[aria-label="Plan"]'])
+    expect(hubHideSelectors("gates")).toEqual(['[data-hub-item="gates"]'])
     // No selector reaches Waiting on you (#wall-decide) or the needs nav.
     for (const id of HUB_SHOW_IDS) for (const s of hubHideSelectors(id)) expect(s).not.toMatch(/decide|needs/)
     expect(Object.values(HUB_NAV_ITEM).every((i) => (HUB_SHOW_IDS as readonly string[]).includes(i))).toBe(true)
@@ -155,11 +155,12 @@ describe("Settings › Layout", () => {
     await w.settle()
     const html = settingsHtml(w)
     expect(html).toContain("<h2>Layout</h2>")
-    expect(html).toContain('data-hl-layout="simple" checked')
-    expect(html).not.toContain('data-hl-layout="full" checked')
-    for (const id of ALL) expect(html).toContain(`data-hl-item="${id}"`)
-    expect(html).toContain('data-hl-item="gates" checked')
-    expect(html).not.toContain('data-hl-item="workflows" checked')
+    expect(html).toContain('aria-checked="true" data-hl-layout="simple"')
+    expect(html).toContain('aria-checked="false" data-hl-layout="full"')
+    for (const id of ALL) expect(html).toContain(`role="switch" aria-checked="${id === "gates"}" data-hl-item="${id}"`)
+    // One group of rows with switches: no native checkboxes, no cards in a card.
+    expect(html).not.toMatch(/type="(checkbox|radio)"/)
+    expect(html).not.toContain("whl__opt")
     // Gates has its own switch set: it can go back to the layout's default.
     expect(html).toContain('data-st-act="hl-reset" data-hl-item="gates"')
     expect(html).toContain("Hidden items keep running")
@@ -169,17 +170,17 @@ describe("Settings › Layout", () => {
   it("Full is one switch away, and applies at once with no reload", async () => {
     const w = open()
     await w.settle()
-    await w.change({ "data-hl-layout": "full" }, true)
+    await w.click({ "data-hl-layout": "full" })
     expect(w.writes().map((c) => [c.url, c.body])).toEqual([["/api/admin/wall/settings/hub-layout", { layout: "full" }]])
     expect(w.win.AX_HUB_LAYOUT.layout).toBe("full")
-    expect(settingsHtml(w)).toContain('data-hl-layout="full" checked')
-    expect(settingsHtml(w)).toContain("no restart needed")
+    expect(settingsHtml(w)).toContain('aria-checked="true" data-hl-layout="full"')
+    expect(settingsHtml(w)).toContain('id="st-n-hl" role="status">Saved.</p>')
   })
 
   it("one item's switch saves that item only; As the layout clears it", async () => {
     const w = open({ summary: "ok", layout: resolveHubLayout({ show: { workflows: true } }) })
     await w.settle()
-    await w.change({ "data-hl-item": "workflows" }, true)
+    await w.click({ "data-hl-item": "workflows" })
     expect(w.writes().at(-1)!.body).toEqual({ show: { workflows: true } })
     expect(w.win.AX_HUB_LAYOUT.show.workflows).toBe(true)
     await w.click({ "data-st-act": "hl-reset", "data-hl-item": "workflows" })
@@ -192,9 +193,13 @@ describe("Settings › Layout", () => {
       route: (u, i) => i?.method === "POST" ? { status: 400, body: { error: "layout must be \"simple\" or \"full\"" } } : undefined,
     })
     await w.settle()
-    await w.change({ "data-hl-layout": "full" }, true)
-    expect(w.el("st-n-hl").textContent).toContain("Not saved:")
+    await w.click({ "data-hl-layout": "full" })
+    expect(settingsHtml(w)).toContain("Not saved: layout must be")
     expect(w.win.AX_HUB_LAYOUT).toBeUndefined()
+    // Retry sends the same change again.
+    expect(settingsHtml(w)).toContain('data-st-act="hl-retry"')
+    await w.click({ "data-st-act": "hl-retry" })
+    expect(w.writes().map((c) => c.body)).toEqual([{ layout: "full" }, { layout: "full" }])
   })
 
   it("is listed in Settings for the owner", async () => {
