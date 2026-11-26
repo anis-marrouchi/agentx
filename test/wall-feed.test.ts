@@ -1759,6 +1759,8 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(html).toContain('<div class="ax-af-card__head wdc__head"><strong class="ax-af-card__title">Waiting for you</strong><span class="ax-af-count" data-tone="warn" data-n="1" title="1 waiting">1</span></div>')
     expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="ax-af-count n" data-n="1">1<\/span>[\s\S]*data-dtab="later"[^>]*>Put off<[\s\S]*data-dtab="answered"[^>]*>Answered</)
     expect(html).toContain('data-dkind="" class="wdc__chip is-on" aria-pressed="true">All <span class="n">1</span>')
+    // The chips fold from a header with the kind picked and its count (#2352).
+    expect(html).toContain('<details class="axp-fold wdc__fold" data-fold="desk.kinds" open><summary class="axp-fold__h"><span class="axp-fold__t">Kind: All</span><span class="axp-fold__n">1</span></summary><div class="wdc__chips"')
     for (const chip of ["Decisions <span class=\"n\">1", "Schedules <span class=\"n\">0", "Memory", "Wiki", "Drafts", "Requests", "Reviews <span class=\"n\">0"]) expect(html).toContain(chip)
     expect(html).toContain("Send the newsletter?")
     expect(html).toContain('<span class="wdc__badge is-card">Decision</span>')

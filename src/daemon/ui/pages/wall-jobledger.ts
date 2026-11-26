@@ -204,13 +204,17 @@ export function jlRowHtml(j: HubJob, o: { open: boolean; detail: HubJobDetail | 
 /** The whole page. */
 export function jobLedgerPageHtml(m: JobLedgerModel): string {
   const counts = m.counts
+  let on = "", onN: number | null = null
   const chips = jlStates().map((s) => {
     const n = counts ? s[2].reduce((sum, k) => sum + (counts[k] || 0), 0) : null
+    if (m.state === s[0]) { on = s[1]; onN = n }
     return '<button type="button" data-jlstate="' + s[0] + '" class="is-' + s[0] + '" aria-pressed="' + (m.state === s[0] ? "true" : "false") + '">' + s[1] +
       (n == null ? "" : ' <span class="n">' + n + "</span>") + "</button>"
   }).join("")
   const doors = jlDoors().map((d) => '<option value="' + d[0] + '"' + (m.door === d[0] ? " selected" : "") + ">" + d[1] + "</option>").join("")
-  const tools = '<div class="wjl__tools"><div class="wjl__chips" role="group" aria-label="Jobs by state">' + chips + "</div>" +
+  // The chips fold from a header that keeps the state picked and its count (#2352, hub-folds.ts).
+  const tools = '<div class="wjl__tools"><details class="axp-fold wjl__fold" data-fold="jobs.states" open><summary class="axp-fold__h"><span class="axp-fold__t">State' + (on ? ": " + on : "") + "</span>" +
+    (onN == null ? "" : '<span class="axp-fold__n">' + onN + "</span>") + '</summary><div class="wjl__chips" role="group" aria-label="Jobs by state">' + chips + "</div></details>" +
     '<label class="wjl__by">Door <select id="jl-door">' + doors + "</select></label></div>"
   const warn = m.missed.length ? '<p class="wjl__warn" role="status">Not read: ' + m.missed.map((x) => jlEsc(x.name) + " " + jlEsc(x.why)).join("; ") + ".</p>" : ""
   if (m.error) return tools + '<p class="ax-wall__empty" role="alert">Could not read the jobs: ' + jlEsc(m.error) + ". Select Refresh to try again.</p>"

@@ -384,6 +384,8 @@ Long pages start short, and you choose what to open. The Hub remembers your choi
    - **Agents**: one section per machine, with its number of agents.
    - **Settings**: the groups of the menu (Fleet, Access, Machines, Hub), with their number of sections.
    - **Search**: after the search box, the filters are folded under **Filters**. The number next to it says how many filters are in use.
+   - **Jobs** and **Desk**: the filter chips fold under **State** (Jobs) or **Kind** (Desk). The heading keeps the chip you picked and its number, for example **State: Open 5**.
+   - **Chat**: the row of agents folds under **Agents**, with the number of agents. While it is folded, the **To** list picks the agent.
 2. A long list shows its first 3 items and **Show all (N)** under them: the Desk's cards and each machine's agents. Select **Show all (N)** to see every item, and **Show fewer** to go back.
 3. **Back** (**‹** or your browser's Back) returns to the page you were on at the place you had scrolled to.
 

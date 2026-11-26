@@ -6,6 +6,8 @@ import {
 import { HUB_PANELS_FNS, HUB_PANELS_KEY } from "../src/daemon/ui/pages/hub-panels"
 import { injectFns } from "../src/daemon/ui/inject"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
+import { WALL_CHAT_CSS, wallChatPanelHtml } from "../src/daemon/ui/pages/wall-chat.client"
+import { jobLedgerPageHtml } from "../src/daemon/ui/pages/wall-jobledger"
 
 // #2352 (Anis 2026-11-26, orca-design C22–C23): sections fold with counts,
 // live lists show 3 then Show all (N), Back keeps the scroll, one Reset layout.
@@ -105,5 +107,29 @@ describe("Hub folds: in the page", () => {
     expect(fold).not.toContain('id="f-q"')
     expect(html).toContain("[data-cap]:not(.is-all)")
     expect(html).toContain("hubFoldsRead")
+  })
+})
+
+describe("Hub folds: the chat agent strip and the Jobs chips (#2352)", () => {
+  it("folds the chat's agent strip from an Agents header with its count, and shows the picker while folded", () => {
+    const html = wallChatPanelHtml({ owner: true, signIn: false })
+    expect(html).toContain('<details class="axp-fold hc__sfold" data-fold="chat.agents" open><summary class="axp-fold__h"><span class="axp-fold__t">Agents</span><span class="axp-fold__n" id="hc-strip-n"></span></summary><div class="hc__strip" id="hc-strip"')
+    // The To picker hides only behind an open strip; no strip yet, no header.
+    expect(WALL_CHAT_CSS).toContain(".hc__to:has(.hc__sfold[open] .hc__strip:not([hidden])) #hc-agent { display: none; }")
+    expect(WALL_CHAT_CSS).toContain(".hc__sfold:has(.hc__strip[hidden]) { display: none; }")
+    expect(wallChatPanelHtml({ owner: false, signIn: true })).not.toContain("data-fold")
+  })
+  it("folds the Jobs state chips from a header with the state picked and its count", () => {
+    const base = { list: [], counts: { working: 2, continue: 1, waiting: 0, blocked: 1, stalled: 1, done: 7, dropped: 1 }, total: 0, state: "open", door: "", open: "", detail: null, detailErr: "", missed: [], error: "", multi: false, now: 0 }
+    const html = jobLedgerPageHtml(base)
+    expect(html).toContain('<details class="axp-fold wjl__fold" data-fold="jobs.states" open><summary class="axp-fold__h"><span class="axp-fold__t">State: Open</span><span class="axp-fold__n">5</span></summary><div class="wjl__chips"')
+    expect(jobLedgerPageHtml({ ...base, state: "done" })).toContain('<span class="axp-fold__t">State: Done</span><span class="axp-fold__n">7</span>')
+    // Before the counts come, the header has no number.
+    expect(jobLedgerPageHtml({ ...base, counts: null, list: null })).toContain('<span class="axp-fold__t">State: Open</span></summary>')
+  })
+  it("keeps the three folds in the one store Reset layout clears", () => {
+    // Every fold goes through HUB_FOLDS_SCRIPT's details[data-fold], kept under ax.hub.folds.
+    expect(HUB_FOLDS_SCRIPT).toContain("details[data-fold]:not([data-fold-on])")
+    expect(HUB_LAYOUT_KEYS).toContain(HUB_FOLDS_KEY)
   })
 })

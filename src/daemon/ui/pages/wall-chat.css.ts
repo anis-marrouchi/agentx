@@ -107,7 +107,13 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__strip { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px 24px 1px 1px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 .hc__strip::-webkit-scrollbar { display: none; }
 .hc__strip[hidden] { display: none; }
-.hc__to:has(.hc__strip:not([hidden])) label, .hc__to:has(.hc__strip:not([hidden])) #hc-agent { display: none; }
+.hc__to:has(.hc__sfold[open] .hc__strip:not([hidden])) label, .hc__to:has(.hc__sfold[open] .hc__strip:not([hidden])) #hc-agent { display: none; }
+/* The strip folds from its "Agents" header, on the same line (#2352, hub-folds.ts); folded, the picker shows. */
+.hc__sfold { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hc__sfold[open] { flex: 1; }
+.hc__sfold[open]::details-content { flex: 1; min-width: 0; display: flex; }
+.hc__sfold > summary { margin: 0; flex: none; }
+.hc__sfold:has(.hc__strip[hidden]) { display: none; }
 .hc__chip { flex: none; min-height: 32px; padding: 0 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ax-text); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); cursor: pointer; white-space: nowrap; }
 .hc__chip:hover { border-color: var(--ax-border-2); }
 .hc__chip[aria-pressed="true"] { border-color: var(--ax-accent); background: var(--ax-accent-t); }

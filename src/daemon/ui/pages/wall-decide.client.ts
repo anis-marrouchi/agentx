@@ -234,10 +234,13 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     list.forEach(function (o) { var k = decChipOf(o); c[k] = (c[k] || 0) + 1; });
     c.reviews = reviews.length;
     var chips = [['', 'All', list.length]].concat(DEC_CHIPS.map(function (k) { return [k[0], k[1], c[k[0]] || 0]; }));
-    return '<div class="wdc__chips" role="group" aria-label="Kind">' + chips.map(function (t) {
+    var cur = chips.filter(function (t) { return t[0] === D.kind; })[0] || chips[0];
+    // The chips fold from a header that keeps the kind picked and its count (#2352, hub-folds.ts).
+    return '<details class="axp-fold wdc__fold" data-fold="desk.kinds" open><summary class="axp-fold__h"><span class="axp-fold__t">Kind: ' + cur[1] + '</span><span class="axp-fold__n">' + cur[2] + '</span></summary>' +
+      '<div class="wdc__chips" role="group" aria-label="Kind">' + chips.map(function (t) {
       var on = D.kind === t[0];
       return '<button type="button" data-dkind="' + t[0] + '" class="wdc__chip' + (on ? ' is-on' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + t[1] + ' <span class="n">' + t[2] + '</span></button>';
-    }).join('') + '</div>';
+    }).join('') + '</div></details>';
   }
   /** One answered line's word, the same on the Answered tab and in Answered today. */
   function decVerb(a) {
@@ -458,7 +461,10 @@ export const WALL_DECIDE_CSS = `
 .ax-wall__decide { padding: 0 0 12px; }
 .wdc__tabs { display: flex; border-bottom: 1px solid var(--ax-border); }
 .wdc__tabs button { flex: 1 1 0; }
-.wdc__chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
+.wdc__fold { border-bottom: 1px solid var(--ax-border); }
+.wdc__fold > summary { margin: 8px 10px 0; }
+.wdc__fold .axp-fold__n { margin-left: 0; }
+.wdc__chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 12px; }
 .wdc__chip { font: inherit; font-size: var(--ax-fs-sm); padding: 5px 14px; min-height: 36px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; }
 .wdc__chip.is-on { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
 .wdc__chip .n { opacity: .75; }
