@@ -126,7 +126,8 @@ describe("a due time added to an open request", () => {
 // The same hour it falls due (#1908): the agent is woken and whoever waits
 // on it is told by the requests check, not after the quiet time.
 describe("a promise past its due time", () => {
-  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+  // As before the grace window: raised the minute it falls due, no early wake.
+  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90, promises: { leadMinutes: 0, graceMinutes: 0 } }
   let told: Array<{ to: string; text: string }>
   let notices: string[]
 
@@ -245,7 +246,7 @@ describe("a promise past its due time", () => {
     const p = promise({ owedTo: "pm", wake: false })
     store.progress(p.id, clock + 2 * HOUR + 30_000)
     clock += 2 * HOUR + MIN
-    const result = await check({ promises: { duePush: false } })
+    const result = await check({ promises: { duePush: false, leadMinutes: 0, graceMinutes: 0 } })
     expect(result.duePushed).toBe(0)
     expect(result.quiet).toBe(0)
     expect(told).toEqual([])
@@ -254,7 +255,7 @@ describe("a promise past its due time", () => {
     expect(wake.tick().woken).toBe(0)
     expect((db.prepare("SELECT due_pushed_at FROM requests WHERE id = ?").get(p.id) as any).due_pushed_at).toBeNull()
     // Turned on again: pushed as on 0.229.0.
-    const on = await check({ promises: { duePush: true } })
+    const on = await check({ promises: { duePush: true, leadMinutes: 0, graceMinutes: 0 } })
     expect(on.duePushed).toBe(1)
     expect(told.map((t) => t.to)).toEqual(["pm"])
     expect(store.get(p.id)).toMatchObject({ state: "needs_attention" })
@@ -269,6 +270,97 @@ describe("a promise past its due time", () => {
     clock += 2 * HOUR + MIN
     expect((await check()).duePushed).toBe(0)
     expect(told).toEqual([])
+  })
+})
+
+// retro:01M7ZMDDWBC76VKP5NXF9CE9ZY: its agent is woken before the due time,
+// and it needs attention only once a grace window past it has run out.
+describe("a promise near and just past its due time", () => {
+  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+  let told: Array<{ to: string; text: string }>
+  let notes: Array<{ id: string; note: string }>
+
+  const check = (over: Partial<RequestSettings> = {}) => runRequestsSweep({
+    store, settings: { ...settings, ...over }, log: () => {}, now: clock,
+    hasAgent: (id) => ["sales", "pm"].includes(id),
+    wakeJob: (id, note) => { notes.push({ id, note }); return wake.wakeFor(id, note) },
+    tellRequester: (to, text) => { told.push({ to, text }); return true },
+    notify: async () => {},
+  })
+
+  beforeEach(() => {
+    told = []
+    notes = []
+  })
+
+  it("wakes its agent 15 min before the due time, once, and tells nobody else", async () => {
+    const p = promise({ owedTo: "pm" })
+    clock += 2 * HOUR - 16 * MIN
+    expect((await check()).leadWoken).toBe(0)
+    clock += 2 * MIN
+    const r = await check()
+    expect(r.leadWoken).toBe(1)
+    expect(r.quiet).toBe(0)
+    expect(notes[0].note).toContain("It is due in 14 min")
+    expect(notes[0].note).toContain(p.id)
+    expect(told).toEqual([])
+    expect(store.get(p.id)?.state).toBe("in_progress")
+    expect(wake.tick().woken).toBe(1)
+    await flush()
+    expect(started.map((s) => s.id)).toEqual([p.id])
+    clock += MIN
+    expect((await check()).leadWoken).toBe(0)
+  })
+
+  it("raises no stall before due + 30 min; one kept in the grace is never raised", async () => {
+    const late = promise({ owedTo: "pm" })
+    const kept = promise({ chatId: "chat-2" })
+    const signals = () => db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'improve_signals'").get()
+      ? (db.prepare("SELECT COUNT(*) AS n FROM improve_signals WHERE kind = 'request_stalled'").get() as any).n : 0
+    clock += 2 * HOUR + MIN
+    const due = await check()
+    expect(due.duePushed).toBe(2)
+    expect(due.quiet).toBe(0)
+    expect(told.map((t) => t.to)).toEqual(["pm"])
+    expect(store.get(late.id)?.state).toBe("in_progress")
+    store.close(kept.id, "done", "https://example.com/sent", clock + 10 * MIN)
+    clock += 28 * MIN
+    expect((await check()).quiet).toBe(0)
+    expect(signals()).toBe(0)
+    clock += 2 * MIN
+    expect((await check()).quiet).toBe(1)
+    expect(store.get(late.id)).toMatchObject({ state: "needs_attention" })
+    expect(store.get(late.id)!.attentionReason).toContain("still open 30 min later")
+    expect(store.get(kept.id)?.state).toBe("done")
+    expect(signals()).toBe(1)
+    clock += MIN
+    expect((await check()).quiet).toBe(0)
+  })
+
+  it("wakes and raises again for a new due time", async () => {
+    const p = promise()
+    clock += 2 * HOUR + 31 * MIN
+    await check()
+    await check()
+    expect(store.get(p.id)?.state).toBe("needs_attention")
+    store.setLoop(p.id, { dueAt: clock + HOUR }, clock)
+    db.prepare("UPDATE requests SET state = 'in_progress' WHERE id = ?").run(p.id)
+    notes = []
+    clock += 46 * MIN
+    await check()
+    expect(notes.map((n) => n.note).join("\n")).toContain("It is due in 14 min")
+    clock += 14 * MIN + MIN
+    expect((await check()).quiet).toBe(0)
+    clock += 30 * MIN
+    expect((await check()).quiet).toBe(1)
+    expect(store.get(p.id)?.state).toBe("needs_attention")
+  })
+
+  it("with leadMinutes 0 wakes nobody early", async () => {
+    promise()
+    clock += 2 * HOUR - 5 * MIN
+    expect((await check({ promises: { leadMinutes: 0 } })).leadWoken).toBe(0)
+    expect(notes).toEqual([])
   })
 })
 
@@ -313,7 +405,8 @@ describe("a due time an agent accepts on a request", () => {
 // with no PR linked, wakes its agent at once with the issue, and the lead
 // (pm-agent) 15 min later if there is still no PR. Each wake once.
 describe("a promised PR past its due time", () => {
-  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
+  // As before the grace window: raised the minute it falls due, no early wake.
+  const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90, promises: { leadMinutes: 0, graceMinutes: 0 } }
   const ISSUE = "https://github.com/acme/app/issues/12"
   let turns: Array<{ to: string; text: string }>
   let notes: Array<{ id: string; note: string }>

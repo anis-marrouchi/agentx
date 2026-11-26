@@ -131,9 +131,18 @@ export interface PromiseSettings {
   /** The agent woken 15 min after a promised PR fell due with no PR
    *  linked (#2279). Empty: only the agent that owes it is woken. */
   prLead: string
+  /** Minutes before a promise's due time its agent is woken, once per due
+   *  time, so it can keep it in time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY).
+   *  0: no wake before the due time. */
+  leadMinutes: number
+  /** Minutes past a promise's due time before it needs attention (the
+   *  owner's "Promise not kept", a `request_stalled` signal). Its agent is
+   *  still woken and its waiter told at the due time. 0: it needs
+   *  attention the same minute, as before (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). */
+  graceMinutes: number
 }
 
-export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent" }
+export const DEFAULT_PROMISE_SETTINGS: PromiseSettings = { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent", leadMinutes: 15, graceMinutes: 30 }
 
 export const promiseSettingsOf = (s: { promises?: Partial<PromiseSettings> } | undefined): PromiseSettings => ({ ...DEFAULT_PROMISE_SETTINGS, ...s?.promises })
 

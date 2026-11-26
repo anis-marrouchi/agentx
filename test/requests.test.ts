@@ -59,7 +59,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, settleOwnerWait: "warn", homeCloses: true, releaseOnOwnerTurn: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30, continue: { enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5 } }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {}, urlAllow: [] }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent" }, catchPromises: { enabled: true, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, jobs: { wake: { enabled: true, maxWakes: 20, maxCostUsd: 10, graceMinutes: 10, maxBackgroundMinutes: 180 } }, autoResend: { enabled: true, afterMinutes: 5, holdMaxHours: 12 }, ownerCheck: { enabled: false, provider: "claude-code", model: "claude-sonnet-5-5", perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2, beforeClose: "warn", beforeCloseSeconds: 20 }, closeProof: { mode: "off", perCheck: 2, askPerCheck: 3 }, proofCheck: { mode: "off", maxLinks: 10, totalTimeoutMs: 20_000, perSweep: 3 }, waitingStep: { mode: "warn" }, dueTimes: { mode: "off", capacity: 0, defaultEstimateMinutes: 30, factorDays: 30, factorMinRows: 3 }, flow: { timeZone: "Africa/Tunis", days: 7 } })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, settleOwnerWait: "warn", homeCloses: true, releaseOnOwnerTurn: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30, continue: { enabled: false, only: [], maxTurnsPerDay: 10, maxCostUsdPerDay: 5 } }, sprints: { enabled: true, idleMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {}, urlAllow: [] }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS, promises: { requireProof: true, facts: true, factTtlDays: 7, cards: false, duePush: true, acceptWake: true, prLead: "pm-agent", leadMinutes: 15, graceMinutes: 30 }, catchPromises: { enabled: true, dailyCap: 300, waitingOwner: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, jobs: { wake: { enabled: true, maxWakes: 20, maxCostUsd: 10, graceMinutes: 10, maxBackgroundMinutes: 180 } }, autoResend: { enabled: true, afterMinutes: 5, holdMaxHours: 12 }, ownerCheck: { enabled: false, provider: "claude-code", model: "claude-sonnet-5-5", perCheck: 2, maxAgeHours: 48, timeoutSeconds: 60, wakeOnPlanMismatch: true, wakeOnMismatch: true, maxReopens: 2, beforeClose: "warn", beforeCloseSeconds: 20 }, closeProof: { mode: "off", perCheck: 2, askPerCheck: 3 }, proofCheck: { mode: "off", maxLinks: 10, totalTimeoutMs: 20_000, perSweep: 3 }, waitingStep: { mode: "warn" }, dueTimes: { mode: "off", capacity: 0, defaultEstimateMinutes: 30, factorDays: 30, factorMinRows: 3 }, flow: { timeZone: "Africa/Tunis", days: 7 } })
   })
 
   it("records nothing while it is off", () => {
@@ -851,7 +851,7 @@ describe("the minute check", () => {
   it("does nothing while the feature is off", async () => {
     start("t1"); end("t1", { error: "a" })
     settings.enabled = false
-    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0 })
+    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0 })
   })
 })
 
@@ -863,7 +863,7 @@ describe("waiting on the owner", () => {
     expect(store.listOpen()[0]).toMatchObject({ state: "waiting_owner", question: "Deploy to the server now, or after the review?" })
     clock += 72 * HOUR
     const result = await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async () => {} })
-    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0 })
+    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0 })
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
   })
 

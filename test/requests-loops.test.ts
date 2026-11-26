@@ -275,7 +275,7 @@ describe("the requests check", () => {
     clock += 2 * HOUR
     const res = await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: (a) => AGENTS.has(a), notify: async (title, text) => { notices.push(`${title}\n${text}`) } })
     expect(res.quiet).toBe(1)
-    expect(store.get(id)).toMatchObject({ state: "needs_attention", attentionReason: "Past its due time (2030-03-01 14:00 UTC)" })
+    expect(store.get(id)).toMatchObject({ state: "needs_attention", attentionReason: "Past its due time (2030-03-01 14:00 UTC), still open 30 min later" })
     // Titled with what it is (#1126): no headline was written, so the start of its words.
     expect(notices[0]).toMatch(/^Promise not kept: Send the signed fil.*\nA promise coder made to client-a is not kept yet\./)
     expect(notices[0]).toMatch(/Waiting on: client-a \(outside person\)/)
