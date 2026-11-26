@@ -1458,7 +1458,25 @@ export class RequestStore {
     ).run("needs_attention", now, now, why, now, why, id, ...CLOSED_STATES).changes > 0
     // The count is in the signal (#2056): a loop shows as reopen 1, 2, ...
     if (reopened) this.signal("owner_check_mismatch", id, `reopen ${this.get(id)?.ownerReopens ?? 1}: ${why}`, now)
+    if (reopened) this.checkReopened(id)
     return reopened
+  }
+
+  private reopenedHooks = new Set<(r: RequestRecord) => void>()
+
+  /** Called after the owner-words check reopens a closed request (#2281),
+   *  with the request after the reopen (`ownerReopens` counts this one).
+   *  Not on the owner's own reopen: he knows. Returns the function that
+   *  removes it. */
+  onReopened(fn: (r: RequestRecord) => void): () => void {
+    this.reopenedHooks.add(fn)
+    return () => { this.reopenedHooks.delete(fn) }
+  }
+
+  private checkReopened(id: string): void {
+    if (!this.reopenedHooks.size) return
+    const r = this.get(id)
+    if (r) for (const fn of this.reopenedHooks) fn(r)
   }
 
   /** A close as superseded after the check already reopened it (#2082):
