@@ -45,7 +45,8 @@ import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { handleSituationsPanel } from "./situations-panel"
-import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
+import { hubMenuCatalog, renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
+import { handleHubMenu, hubMenuDeps, isHubMenuPath } from "./hub-menu-routes"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { hubReactOn } from "./ui/hub-react"
@@ -1069,6 +1070,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // and the Diff view's read and line comments (#2102). After the token
   // gate above; the proxy above sends a comment, a call, a diff read or
   // diff comments to the node that keeps the post.
+  // The Hub's menu (#2149): the owner's, read and written. Writes are past
+  // the Wall's owner guard above; the read is checked here.
+  if (isHubMenuPath(path)) {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
+    await handleHubMenu(req, res, path, method, hubMenuDeps(ctx.config, process.cwd(), hubMenuCatalog()))
+    return
+  }
   if (isWallActionPath(path)) {
     // A read takes its one argument from the query (run-on ?id=, #2104).
     const body = method === "POST" ? await readJson(req) : Object.fromEntries(url.searchParams)
