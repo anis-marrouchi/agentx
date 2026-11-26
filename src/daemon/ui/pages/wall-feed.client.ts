@@ -495,6 +495,14 @@ export const WALL_FEED_CSS = `
 /* The build line sits after the tools, so search, Filters and Chat stay one group on the right. */
 .ax-wall.is-posts .ax-wall__titlebar > .wbl { margin-left: 0; padding-left: 0; }
 .ax-wall.is-posts .ax-wall__titlebar > .wbl.is-wait { display: none; }
+/* Wide: the Feed row is 720 px. With the "as of" chip it is full, so the
+   search box gives up the room and Chat stays at the row's end (#2387 follow-up). */
+@media (min-width: 1181px) {
+  .ax-wall.is-posts .ax-wall__titlebar { flex-wrap: nowrap; }
+  .ax-wall.is-posts .ax-wall__titlebar > .fd-tools { min-width: 0; }
+  .ax-wall.is-posts .ax-wall__titlebar > :is(.wbl, .hc-btn) { flex: none; }
+  .ax-wall.is-posts .fd-q { min-width: 120px; }
+}
 
 /* Feed | List: a toggle group beside the title. */
 .fd-switch { display: inline-flex; gap: 2px; padding: 2px; margin-left: 4px; border-radius: var(--ax-radius-md); background: var(--ax-surface-3); }
