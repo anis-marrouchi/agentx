@@ -78,6 +78,11 @@ The work runs in its own launchd job (`<daemon label>.upgrade`), so it carries o
 
 If the new release doesn't answer within `--boot-timeout`, the command puts the old settings files back, starts the old release, and ends with `RESULT rolled-back`. The outcome is also written to `.agentx/upgrade/last.json`, and a copy of each settings file to `.agentx/upgrade/backup-<time>/`.
 
+Once the new release answers `/health`, two more checks run (#2227):
+
+- **Version check.** Every mesh peer in `agentx.json` is asked for its `/health`. A peer on another version or commit, or one that doesn't answer, is logged as `VERSION SKEW` and listed under `peerSkew` in `last.json` and on the `RESULT` line. The upgrade is still `ok`: the peer is upgraded on its own. Whoever ran the upgrade tells DevOps.
+- **Hub check.** The dashboard's real page (`/`) must answer 200 with an HTML page, and the chat route (`/api/app/conversations`) must answer JSON below 500 (a `401` for an unpaired device counts as answering). The result is under `hub` in `last.json`. If either fails while `/health` is fine, the upgrade ends with `RESULT degraded`. It is not rolled back: only a failed `/health` rolls back.
+
 Options:
 
 | Option | What it does |
@@ -373,6 +378,7 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`upgrade` says `Another upgrade is running`:** wait for it to end. Its log is the newest `.agentx/logs/upgrade-*.log`.
 - **`upgrade` ends with `RESULT refused`:** nothing was changed. The reason follows: tasks still running (raise `--timeout` or add `--force`), the wrong version, a settings file that doesn't run a release folder, or `better-sqlite3 does not load with the daemon's Node`. For that last one, run the `pnpm rebuild better-sqlite3` command it prints inside the release folder, then run `upgrade` again. If the reason is `daemon did not answer 24 checks in a row`, AgentX stopped answering for about 10 minutes while the upgrade waited for it to be idle: check `curl -s http://127.0.0.1:18800/health`, then run `upgrade` again. A daemon that is only slow for a minute or two no longer stops the upgrade.
 - **`upgrade` ends with `RESULT rolled-back`:** the new release didn't answer in time and the old one is running again. Read `agentx daemon logs` for why the new one failed to start.
+- **`upgrade` ends with `RESULT degraded`:** the new release runs and answers `/health`, but the Hub page or the chat route failed. Read `hub` in `.agentx/upgrade/last.json` and `.agentx/logs/dashboard*.log`. Nothing was rolled back.
 - **`upgrade` ends with `RESULT down`:** neither release answers. Run the `launchctl bootstrap …` command it printed. The old settings files are in `.agentx/upgrade/backup-<time>/`.
 - **`restart --abort-on-timeout` exited with `Not restarting`:** tasks were still running when the wait ran out. Try again later, or raise `--timeout`.
 - **The dashboard says `would not start AgentX again`:** set `KeepAlive` to `true` in the `.plist`, or `Restart=always` on the unit, as the message says. Or use `agentx daemon restart --when-idle` in a terminal.

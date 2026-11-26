@@ -165,15 +165,76 @@ export function runsToCut(running: ReadonlyArray<RunningRun>): CutRun[] {
   }))
 }
 
+/** A mesh peer whose `/health` differs from this node after the upgrade
+ *  (#2227 version check). `version`/`commit` are null when it did not answer. */
+export interface PeerSkew {
+  peer: string
+  url: string
+  version: string | null
+  commit: string | null
+}
+
+/** The peers that run another version or commit than this node. A peer that
+ *  does not answer counts as skewed: nobody can say it matches. */
+export function peerSkew(
+  self: { version: string | null; commit?: string | null },
+  peers: ReadonlyArray<{ peer: string; url: string; health: any }>,
+): PeerSkew[] {
+  const out: PeerSkew[] = []
+  for (const p of peers) {
+    const version = typeof p.health?.version === "string" ? p.health.version : null
+    const commit = typeof p.health?.commit === "string" ? p.health.commit : null
+    const sameCommit = !self.commit || !commit || self.commit === commit
+    if (version === null || version !== self.version || !sameCommit) out.push({ peer: p.peer, url: p.url, version, commit })
+  }
+  return out
+}
+
+/** One Hub probe: a real page load, not `/health`. */
+export interface HubProbe {
+  name: string
+  url: string
+  status: number | null
+  ok: boolean
+  detail?: string
+}
+
+/** The Hub page is ok when it answers 200 with an HTML page of real size. */
+export function hubPageOk(status: number | null, contentType: string, bytes: number): boolean {
+  return status === 200 && /text\/html/i.test(contentType) && bytes >= 1024
+}
+
+/** A chat route is ok when its handler answers in JSON below 500. A 401 for an
+ *  unpaired device still proves the route is served by a live handler. */
+export function chatRouteOk(status: number | null, contentType: string): boolean {
+  return status !== null && status < 500 && /json/i.test(contentType)
+}
+
+/** One-line summary of the post-upgrade checks for the RESULT line. */
+export function checksSummary(skew: ReadonlyArray<PeerSkew>, hub: ReadonlyArray<HubProbe>): string {
+  const parts: string[] = []
+  for (const s of skew) parts.push(`peer ${s.peer} runs ${s.version ?? "no answer"}${s.commit ? ` ${s.commit.slice(0, 8)}` : ""}`)
+  for (const h of hub.filter((p) => !p.ok)) parts.push(`${h.name} failed (${h.status ?? "no answer"}${h.detail ? `, ${h.detail}` : ""})`)
+  return parts.join("; ")
+}
+
 /** What `agentx daemon upgrade` writes to .agentx/upgrade/last.json. */
 export interface UpgradeOutcome {
-  result: "ok" | "rolled-back" | "down" | "refused"
+  /** "degraded": the daemon is up on the new version (`/health` ok) but the
+   *  Hub page or chat route fails. No rollback: only a failed `/health` rolls back. */
+  result: "ok" | "degraded" | "rolled-back" | "down" | "refused"
   from: { dir: string; version: string | null }
   to: { dir: string; version: string }
   jobs: string[]
   /** With `--people-only`: the fleet's own runs still going at the switch.
    *  They got the drain time; any that outlasted it were cut. */
   cut?: CutRun[]
+  /** This node's version and commit after the upgrade (#2227). */
+  self?: { version: string | null; commit: string | null }
+  /** Mesh peers on another version or commit; empty when all match. */
+  peerSkew?: PeerSkew[]
+  /** Hub page and chat route probes after the upgrade. */
+  hub?: HubProbe[]
   reason?: string
   startedAt: string
   endedAt: string
