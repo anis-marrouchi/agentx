@@ -87,10 +87,19 @@ export const HUB_NAV_CSS = `
 .ha__k span { flex: 1; }
 .ha__k kbd, .hk kbd { font: 500 11px/1 var(--ax-font-mono, ui-monospace, monospace); padding: 3px 5px; border: 1px solid var(--ax-border-2); border-radius: 4px; color: var(--ax-muted); background: var(--ax-bg); }
 .ha { margin: 0 0 6px; }
-/* The side menu itself never scrolls on a computer (#2101 R27): the agent
-   list takes the room left between the switcher and the foot row, and
-   scrolls inside it when the fleet is long. */
-@media (min-width: 1181px) { .ax-wall__nav > .ha { flex: 1 1 auto; min-height: 0; overflow-y: auto; } }
+/* One scroller on a computer (Anis 2026-11-26): the side menu scrolls as a
+   whole, so the wheel works anywhere on it and the last agent is always in
+   reach. The agent list was a box of its own between the switcher and the
+   foot row (#2101 R27): over the switcher or the foot the wheel did
+   nothing, and at a short window the box was a few rows tall. The
+   switcher stays pinned at the top and the foot row at the bottom, so the
+   menu looks as before. */
+@media (min-width: 1181px) {
+  .ax-wall__nav { overscroll-behavior: contain; }
+  .ax-wall__nav > .ha { flex: 1 0 auto; }
+  .ax-wall__nav > .ha__k { position: sticky; top: -4px; z-index: 2; box-shadow: 0 0 0 12px var(--ax-bg); }
+  .ax-wall__nav > .hf { position: sticky; bottom: 0; z-index: 2; background: var(--ax-bg); }
+}
 .ha__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .ha__chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); background: none; color: var(--ax-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .ha__chip b { font-weight: 600; color: var(--ax-text); font-variant-numeric: tabular-nums; }
@@ -104,8 +113,20 @@ export const HUB_NAV_CSS = `
 .ha__h span { font-weight: 500; letter-spacing: 0; }
 .ha__m { display: flex; justify-content: space-between; margin: 6px 0 2px; padding: 0 6px 0 12px; font-size: 11px; font-weight: 500; color: var(--ax-muted); }
 .ha__m span { font-variant-numeric: tabular-nums; }
-.ha__idle > summary { cursor: pointer; list-style: none; }
-.ha__idle > summary::-webkit-details-marker { display: none; }
+/* Needs you and Not working today fold (Anis 2026-11-26): closed on load,
+   the arrow leads the heading and turns down when open; the count stays. */
+.ha__fold > summary { cursor: pointer; list-style: none; justify-content: flex-start; align-items: center; gap: 6px; border-radius: var(--ax-radius-sm); }
+.ha__fold > summary::-webkit-details-marker { display: none; }
+.ha__fold > summary::before { content: "›"; flex: none; width: 10px; font-size: 15px; font-weight: 400; line-height: 1; letter-spacing: 0; text-align: center; transition: transform 180ms ease-out; }
+.ha__fold[open] > summary::before { transform: rotate(90deg); }
+.ha__fold > summary span { margin-left: auto; }
+.ha__fold > summary:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: 1px; }
+@media (hover: hover) { .ha__fold > summary:hover { color: var(--ax-text-2); } }
+@media (prefers-reduced-motion: reduce) { .ha__fold > summary::before { transition: none; } }
+/* Working shows 3 rows in the All view, then this (Anis 2026-11-26). */
+.ha__more { display: block; margin: 2px 0 4px; padding: 4px 8px 4px 46px; border: 0; border-radius: var(--ax-radius-sm); background: none; color: var(--ax-muted); font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; width: 100%; }
+.ha__more:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: 1px; }
+@media (hover: hover) { .ha__more:hover { background: var(--ax-surface-2); color: var(--ax-text); } }
 .ha__row, .hk__hit { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px; border-radius: var(--ax-radius-sm); color: var(--ax-text); text-decoration: none; }
 .ha__row:hover, .ha__row:focus-visible { background: var(--ax-surface-2); }
 .ha__row.is-cur { background: var(--ax-surface-3); box-shadow: inset 3px 0 0 var(--ax-accent); }

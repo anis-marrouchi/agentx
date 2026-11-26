@@ -162,13 +162,33 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
     '<span class="ax-sr"> (' + word + ")</span></a>"
 }
 
+/** What the reader opened in the side menu (Anis 2026-11-26): every part
+ *  starts closed on a fresh load. */
+export interface HaOpen {
+  /** Needs you shows its rows (collapsed by default, header shows the count). */
+  needs?: boolean
+  /** Working shows every row, not the first 3. */
+  working?: boolean
+  /** Not working today shows its rows. */
+  idle?: boolean
+}
+
 /**
  * The chips and the grouped list. `filter` is all | working | done. Needs
  * you is a group only, not a chip: what waits on the owner shows once in
  * the side menu, here and as Desk's count (#2101 R27). `runHref` links a
  * working row to its run (haRowHtml).
+ *
+ * So the menu stays short (Anis 2026-11-26): Needs you is a fold, closed
+ * unless `open.needs`; in the All view Working shows its first 3 rows and
+ * a "Show all (N)" button, unless `open.working`. The Working chip shows
+ * every working agent: it is the reader asking for them. A boolean `open`
+ * is the old idleOpen.
  */
-export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: boolean, esc: (s: unknown) => string, age: (ms: number) => string, runHref?: (r: HaRow) => string): string {
+export function haListHtml(m: HaModel, filter: string, cur: string, open: boolean | HaOpen, esc: (s: unknown) => string, age: (ms: number) => string, runHref?: (r: HaRow) => string): string {
+  const o: HaOpen = typeof open === "object" && open ? open : { idle: !!open }
+  // Working rows before Show all; here, as an injected function cannot read a module const.
+  const cap = 3
   const c = m.counts
   // A choice saved before R27 (needs) or unknown shows everything.
   if (filter !== "working" && filter !== "done") filter = "all"
@@ -180,22 +200,33 @@ export function haListHtml(m: HaModel, filter: string, cur: string, idleOpen: bo
   let body = ""
   for (const [k, label] of groups) {
     if (filter !== "all" && filter !== k) continue
-    const rows = m.rows.filter((r) => r.state === k)
-    if (!rows.length) continue
-    body += '<h3 class="ha__h">' + label + " <span>" + rows.length + "</span></h3>"
+    const all = m.rows.filter((r) => r.state === k)
+    if (!all.length) continue
+    // Working in the All view: the first rows, then Show all (N).
+    const capped = k === "working" && filter === "all" && !o.working && all.length > cap
+    const rows = capped ? all.slice(0, cap) : all
     // Working groups by machine, as the "At work now" tree does (#2258):
     // each agent once, on the machine it counts on (hubAgentRows).
     // Keyed by the machine's URL, so two machines with one name stay apart.
     const order: string[] = []
     const byNode: Record<string, HaRow[]> = {}
     for (const r of rows) { const key = r.nodeUrl || r.node; (byNode[key] || (order.push(key), byNode[key] = [])).push(r) }
-    body += k === "working" && order.length > 1
+    const list = k === "working" && order.length > 1
       ? order.map((n) => '<h4 class="ha__m">' + esc(byNode[n][0].node || "?") + " <span>" + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
       : rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
+    if (k === "needs") {
+      body += '<details class="ha__fold" data-ha-open="needs"' + (o.needs ? " open" : "") + '><summary class="ha__h">' + label + " <span>" + all.length + "</span></summary>" + list + "</details>"
+      continue
+    }
+    body += '<h3 class="ha__h">' + label + " <span>" + all.length + "</span></h3>" + list
+    if (k === "working" && filter === "all" && all.length > cap) {
+      body += '<button type="button" class="ha__more" data-ha-more="working" aria-expanded="' + !capped + '">' +
+        (capped ? "Show all (" + all.length + ")" : "Show fewer") + "</button>"
+    }
   }
   const idle = m.rows.filter((r) => r.state === "idle")
   if (filter === "all" && idle.length) {
-    body += '<details class="ha__idle" data-ha-idle' + (idleOpen ? " open" : "") + '><summary class="ha__h">Not working today <span>' + idle.length + "</span></summary>" +
+    body += '<details class="ha__idle ha__fold" data-ha-idle data-ha-open="idle"' + (o.idle ? " open" : "") + '><summary class="ha__h">Not working today <span>' + idle.length + "</span></summary>" +
       idle.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("") + "</details>"
   }
   if (!body) body = '<p class="ha__empty">' + (m.rows.length ? "No agent here right now." : "No agents yet.") + "</p>"

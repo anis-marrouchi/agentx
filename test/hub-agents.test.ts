@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { haFace, haHitCount, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
-import { hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
+import { HUB_NAV_CSS, hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
 import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { injectFns } from "../src/daemon/ui/inject"
@@ -122,6 +122,45 @@ describe("haListHtml", () => {
   })
 })
 
+// Anis 2026-11-26: the side menu was too long. Needs you starts folded,
+// Working shows 3 rows and Show all (N).
+describe("a short side menu", () => {
+  const many: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+    ...["a1", "a2", "a3", "a4", "a5"].map((id, i) => ({ id, name: id, runningTasks: [{ id: "t" + id, messagePreview: "Run " + id, lastActivity: ago((i + 1) * 10_000) }] })),
+    { id: "q1", name: "q1" }, { id: "q2", name: "q2" },
+  ] }]
+  const asks: HaNeed[] = [{ key: "c1", title: "Yes?", agent: "q1", at: NOW - 1000 }, { key: "c2", title: "Go?", agent: "q2", at: NOW - 2000 }]
+  const mm = hubAgentRows(many, asks, NOW, DAY, title, ltPlain, liveWorkCount(many))
+  const rowsOf = (h: string) => (h.match(/data-ha-agent="([^"]+)"/g) || []).map((x) => x.slice(15, -1))
+  it("folds Needs you on first load and keeps its count in the header", () => {
+    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
+    expect(h).toContain('<details class="ha__fold" data-ha-open="needs"><summary class="ha__h">Needs you <span>2</span></summary>')
+    expect(haListHtml(mm, "all", "", { needs: true }, ltEsc, ltAge)).toContain('data-ha-open="needs" open>')
+  })
+  it("shows 3 working agents, then Show all (N), and all of them once opened", () => {
+    const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
+    expect(rowsOf(h).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3"])
+    expect(h).toContain("Working <span>5</span>")
+    expect(h).toContain('data-ha-more="working" aria-expanded="false">Show all (5)</button>')
+    const all = haListHtml(mm, "all", "", { working: true }, ltEsc, ltAge)
+    expect(rowsOf(all).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3", "a4", "a5"])
+    expect(all).toContain('aria-expanded="true">Show fewer</button>')
+  })
+  it("shows every working agent under the Working chip, and no button at 3 or fewer", () => {
+    const h = haListHtml(mm, "working", "", {}, ltEsc, ltAge)
+    expect(rowsOf(h)).toEqual(["a1", "a2", "a3", "a4", "a5"])
+    expect(h).not.toContain("data-ha-more")
+    expect(haListHtml(m3(), "all", "", {}, ltEsc, ltAge)).not.toContain("data-ha-more")
+  })
+  it("still takes the old idleOpen boolean", () => {
+    expect(haListHtml(mm, "all", "", true, ltEsc, ltAge)).not.toContain('data-ha-open="needs" open')
+  })
+  function m3() {
+    const three: LtNode[] = [{ ...many[0], agents: many[0].agents!.slice(0, 3) }]
+    return hubAgentRows(three, [], NOW, DAY, title, ltPlain, liveWorkCount(three))
+  }
+})
+
 describe("the switcher", () => {
   const m = hubAgentRows(nodes, needs, NOW, DAY, title, ltPlain, liveWorkCount(nodes))
   const reqs = [{ id: "r1", title: "Restyle the phone app", sub: "coder" }, { id: "r2", title: "Client site" }]
@@ -186,6 +225,15 @@ describe("the Hub page's left column", () => {
     const desktop = nav.replace(/<a class="ax-wall__item ax-wall__shortcut[^]*?<\/a>/g, "")
     expect(desktop.match(/view=decide/g)).toHaveLength(1)
     expect(desktop).not.toContain(">Needs you<")
+  })
+  it("scrolls the side menu as one, with the switcher and the foot row pinned (Anis 2026-11-26)", () => {
+    const wide = HUB_NAV_CSS.slice(HUB_NAV_CSS.indexOf("@media (min-width: 1181px) {"))
+    const block = wide.slice(0, wide.indexOf("\n}") + 2)
+    // No scroll box of its own for the list: the wheel works anywhere on the menu.
+    expect(block).toContain(".ax-wall__nav > .ha { flex: 1 0 auto; }")
+    expect(HUB_NAV_CSS).not.toMatch(/\.ax-wall__nav > \.ha \{[^}]*overflow-y/)
+    expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
+    expect(block).toMatch(/\.ax-wall__nav > \.hf \{ position: sticky; bottom: 0;/)
   })
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
