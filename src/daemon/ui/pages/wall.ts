@@ -255,6 +255,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
     ${hubNavFoldHtml()}
 ${hubAgentsNavHtml()}
+    <details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">Machines <span id="wall-machines-n" title="Agents working now">0</span></summary>
+      <div id="wall-machines-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
+    </details>
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
 ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
@@ -402,6 +405,18 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__row.is-done .lt__title { color: var(--ax-text-2); }
 .lt__more { display: block; margin-left: 12px; padding: 2px 6px 4px 23px; font-size: 11px; color: var(--ax-muted); text-decoration: none; }
 .lt__more:hover { color: var(--ax-accent); }
+/* The Machines fold (#2101, wall-machines.ts): mesh › machine › run,
+   under the agent list; folded on load, one line tall. */
+.mt { margin: 0 0 6px; padding: 0 0 4px; }
+.mt > .ha__h { margin-top: 6px; }
+.lt__mesh > summary { padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--ax-text); }
+.lt__mesh > .lt__m { margin-left: 10px; }
+.lt__mesh .lt__n { flex: none; }
+/* One fold arrow in the side menu: the agent list's › (hub-nav.ts .ha__fold). */
+.mt details > summary::before { content: "›"; width: 10px; height: auto; border: 0; font-size: 15px; font-weight: 400; line-height: 1; text-align: center; transition: transform 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .mt details > summary::before { transition: none; } }
+.lt__m > .lt__row, .lt__m > .lt__idle { margin-left: 12px; }
+.lt__m > .lt__ws { margin-left: 31px; }
 /* R1: the tree is the one live list on a wide screen; Running now stays
    its "All" page (ops details) and the phone's bar button. */
 @media (min-width: 1181px) { .ax-wall__navgroup > .ax-wall__item[data-nav="running"] { display: none; } }

@@ -214,6 +214,18 @@ The top of the nav lists every agent of every connected machine once, by what it
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
 
+### See where the work runs: Machines
+
+The agent list shows *who* is working. **Machines**, under it, shows *where*: each machine and the runs going on it now.
+
+1. **Browser:** on a screen at least 1181 pixels wide, select **Machines** under the agent list. It starts folded, with the number of agents working on its heading. The Hub remembers whether you left it open.
+2. **Your mesh** comes first, with how many of its machines answer (for example **3/4**) and how many agents are working. Under it, every machine is listed, even when nothing runs on it.
+3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. Select a row to open that run live.
+4. A machine that is slow says **checking…** and keeps its last rows, with **as of** and the time. A machine that does not answer says **not checked**, and its runs are not shown.
+5. An agent is shown on one machine only, and the machines' numbers add up to **Working** in the agent list.
+
+Idle agents and the work that finished are not in **Machines**: they are in the agent list (**Done today**, **Not working today**) and on Activity.
+
 ### Jump to an agent or request
 
 1. Press **⌘K** (**Ctrl K** on Windows and Linux), or select **Jump to an agent or request** at the top of the nav. The box opens in the middle of the page, above everything on it, the side menu and the chat button included.
