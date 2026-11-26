@@ -43,13 +43,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart and no reload:
-
-   ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
-
-   *Interim Settings: this step and the recording show the current Settings page, which a new Settings replaces. Both are re-recorded on the new Settings when it is switched on.*
-
-   The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
