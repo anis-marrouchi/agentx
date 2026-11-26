@@ -157,7 +157,9 @@ describe("Settings › Layout", () => {
     expect(html).toContain("<h2>Layout</h2>")
     expect(html).toContain('aria-checked="true" data-hl-layout="simple"')
     expect(html).toContain('aria-checked="false" data-hl-layout="full"')
-    for (const id of ALL) expect(html).toContain(`role="switch" aria-checked="${id === "gates"}" data-hl-item="${id}"`)
+    for (const id of ALL.filter((i) => i !== "rules")) expect(html).toContain(`role="switch" aria-checked="${id === "gates"}" data-hl-item="${id}"`)
+    // Rules has no page in either Hub yet: no switch that does nothing (#2313 E6).
+    expect(html).not.toContain('data-hl-item="rules"')
     // One group of rows with switches: no native checkboxes, no cards in a card.
     expect(html).not.toMatch(/type="(checkbox|radio)"/)
     expect(html).not.toContain("whl__opt")

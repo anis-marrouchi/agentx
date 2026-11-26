@@ -14,7 +14,7 @@
 //     applies the answer at once: no reload, no restart.
 
 import { HUB_NAME } from "../hub-name"
-import { HUB_SHOW_ITEMS, hubHiddenItems, hubLayoutSetting, type HubLayoutView, type HubShowItem } from "../../../hub/layout"
+import { HUB_SHOW_ITEMS, HUB_SWITCH_ITEMS, hubHiddenItems, hubLayoutSetting, type HubLayoutView, type HubShowItem } from "../../../hub/layout"
 
 /** The nav keys (data-nav) each item hides, in the side menu, ⌘K and the
  *  phone's More sheet. `dash-*` are the classic pages' ⌘K entries. */
@@ -27,8 +27,10 @@ export const HUB_NAV_ITEM: Record<string, HubShowItem> = {
   cost: "usage",
 }
 
-/** What else each item hides, besides its nav keys. Wiki and Rules have no
- *  place in this Hub yet; the React app reads their switches. */
+/** What else each item hides, besides its nav keys. Wiki has no place in
+ *  this Hub; the React shell reads its switch (src/hub/shell.ts). Rules has
+ *  no page in either Hub, so Settings › Layout shows no switch for it
+ *  (noPlace in src/hub/layout.ts); it comes back with the Rules page. */
 const HUB_HIDE_EXTRA: Partial<Record<HubShowItem, string[]>> = {
   // A post's steps and its plan: the parts wall.client.ts marks with
   // data-hub-item="gates" (progressHtml, planHtml). Never the owner's
@@ -76,6 +78,7 @@ export function hubLayoutBoot(view: HubLayoutView): string {
 export const HUB_LAYOUT_SCRIPT = String.raw`
   // --- Simple and full layouts (#2226 S1, hub-layout.ts) ---
   var HL_ITEMS = ${scriptJson(HUB_SHOW_ITEMS)};
+  var HL_SWITCHES = ${scriptJson(HUB_SWITCH_ITEMS)};
   var HL_NAV = ${scriptJson(HUB_NAV_ITEM)};
   var HL = { view: window.AX_HUB_LAYOUT || null };
   /** Is this item hidden now? No view (an old page): nothing is. */
@@ -106,7 +109,7 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
       '<div class="wsa-list whl">' +
         row('Layout', 'Simple shows agents, chat, Waiting on you, Jobs and Settings. Full shows everything.',
           '<div class="whl__seg" role="radiogroup" aria-label="Layout">' + seg('simple', 'Simple') + seg('full', 'Full') + '</div>') +
-        HL_ITEMS.map(function (i) {
+        HL_SWITCHES.map(function (i) {
           var on = !!(v.show && v.show[i.id]);
           var mine = own.indexOf(i.id) >= 0;
           return row(esc(i.label), esc(i.hint),

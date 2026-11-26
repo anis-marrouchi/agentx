@@ -37,7 +37,8 @@ export const SHELL_MAIN: readonly ShellNavItem[] = [
 ]
 
 /** The items the simple layout hides that are a place to go, in Settings
- *  order. Rules has no page yet; gates and hosts are parts of a post and of
+ *  order. Rules has no page yet, and Settings › Layout shows no switch for
+ *  it until it has one (noPlace in layout.ts, #2313 E6); gates and hosts are parts of a post and of
  *  the status bar, not menu items, so the shell has nothing to show for them. */
 export const SHELL_MORE: Readonly<Partial<Record<HubShowItem, ShellNavItem>>> = {
   mobile: { id: "mobile", label: "Mobile app", icon: "smartphone", href: "#page=mobile" },

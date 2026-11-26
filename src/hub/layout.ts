@@ -28,6 +28,9 @@ export interface HubShowItemDef {
   label: string
   /** What turning it on shows. */
   hint: string
+  /** No place on screen in either Hub yet: the key stays (saved settings
+   *  still load) but Settings › Layout draws no switch for it. */
+  noPlace?: true
 }
 
 /** Every item the simple layout hides, in the order Settings lists them. */
@@ -35,7 +38,9 @@ export const HUB_SHOW_ITEMS = [
   { id: "mobile", label: "Mobile app page", hint: "The Mobile app link at the bottom of the side menu, with how to put the Hub on your phone." },
   { id: "workflows", label: "Workflows page", hint: "Workflows at the bottom of the side menu and in ⌘K. Workflows run either way." },
   { id: "wiki", label: "Wiki", hint: "The Wiki in the Hub's menus. The wiki and its schedules keep working either way." },
-  { id: "rules", label: "Rules", hint: "Rules in the Hub's menus. Rules apply either way." },
+  // No Rules page yet, so its switch did nothing (#2313 review, E6). The
+  // switch comes back with the Rules page: drop noPlace then.
+  { id: "rules", label: "Rules", hint: "Rules in the Hub's menus. Rules apply either way.", noPlace: true },
   { id: "gates", label: "Plan gates and request steps", hint: "A post's steps (Asked, Working, Waits, Done), its plan and its gates. Gates still run, and one waiting on you is still in Waiting on you." },
   { id: "hosts", label: "Hosts and ports in the status bar", hint: "The machines this Hub reads, at the left of the bottom bar." },
   { id: "activity", label: "Activity page", hint: "Activity in ⌘K and the phone's More: every run, newest first." },
@@ -46,6 +51,9 @@ export const HUB_SHOW_ITEMS = [
 
 export type HubShowItem = (typeof HUB_SHOW_ITEMS)[number]["id"]
 export const HUB_SHOW_IDS: readonly HubShowItem[] = HUB_SHOW_ITEMS.map((i) => i.id)
+/** The items Settings › Layout draws a switch for: every item with a place
+ *  on screen. */
+export const HUB_SWITCH_ITEMS: readonly HubShowItemDef[] = HUB_SHOW_ITEMS.filter((i: HubShowItemDef) => !i.noPlace)
 
 /** `dashboard.hub` as agentx.json may hold it: any of the keys, or none. */
 export interface HubLayoutSetting {
