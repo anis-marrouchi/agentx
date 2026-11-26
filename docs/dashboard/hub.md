@@ -137,7 +137,7 @@ Automations only shows. To add, change or turn off a schedule, use [Settings ›
 
 ### Waiting on you in the shell
 
-**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Needs you**, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
+**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Waiting on you** in the old Hub, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
 
 ![Waiting on you: each item with its kind, its question, who asked and how long ago](/screenshots/hub-automations/waiting.png)
 
@@ -149,18 +149,18 @@ Automations only shows. To add, change or turn off a schedule, use [Settings ›
 
    ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
 
-4. **Answer** opens **Needs you**, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
+4. **Answer** opens **Waiting on you** in the old Hub, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
 5. **Phone:** the list and the opened item fill the screen.
 
    ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
    ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
 
-What you put off with **Later** is not listed; the line under the list counts it and links to it in Needs you.
+What you put off with **Later** is not listed; the line under the list counts it and links to it in the old Hub's Waiting on you.
 
 ### Check Waiting on you worked
 
-- The number next to **Waiting on you** matches the **Needs you** count in the old Hub and the phone app's Desk.
-- Answer an item in Needs you, then come back: within 15 seconds it is gone from the list.
+- The number next to **Waiting on you** matches the **Waiting on you** count in the old Hub and the phone app's Desk.
+- Answer an item in the old Hub's Waiting on you, then come back: within 15 seconds it is gone from the list.
 
 ### If Waiting on you is wrong
 
