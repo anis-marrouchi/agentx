@@ -4,7 +4,8 @@
 // the card, rows split by hairlines, and the Advanced disclosure kept
 // mounted so search can open it. A row is drawn from its definition in
 // panes.ts (condition 1), so its label and help are the ones search shows.
-import { Fragment, createContext, useContext, useState, type ComponentProps, type ReactNode } from "react"
+import { Fragment, createContext, useContext, useEffect, useState, type ComponentProps, type FormEvent, type ReactNode } from "react"
+import { engineIcon } from "../../daemon/ui/pages/engine-icons"
 import {
   Button, Command, CommandItem, CommandList, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
   Popover, PopoverContent, PopoverTrigger, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn,
@@ -220,6 +221,96 @@ export function ConfirmDialog({ open, onOpenChange, title, text, yes, run }: {
           <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
           <Button variant="destructive" disabled={busy} onClick={go}>{yes}</Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** An engine's logo, the size of a line of text. */
+export function EngineLogo({ tier }: { tier?: string }) {
+  return <span aria-hidden="true" className="inline-flex size-3.5 shrink-0 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: engineIcon(tier || "claude-code") }} />
+}
+
+/** One of your agents in a line: its engine's logo and its id in mono. */
+export function AgentChip({ id, tier, at }: { id: string; tier?: string; at?: boolean }) {
+  return <span className="inline-flex items-center gap-1.5"><EngineLogo tier={tier} /><span className="font-mono text-xs text-foreground">{at ? "@" : ""}{id}</span></span>
+}
+
+/** The square before an item: two letters, or an icon. */
+export function Lead({ text, icon }: { text?: string; icon?: string }) {
+  return (
+    <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center self-start rounded-md border border-border bg-muted text-[11px] font-semibold text-muted-foreground">
+      {icon ? <Icon name={icon} className="size-3.5" /> : text}
+    </span>
+  )
+}
+
+/** Parts of a meta line, split by a quiet dot. */
+export function Dots({ items }: { items: ReactNode[] }) {
+  const parts = items.filter((c) => c !== null && c !== undefined && c !== false && c !== "")
+  return <>{parts.map((c, i) => <span key={i} className="inline-flex items-center gap-1.5">{i > 0 && <span aria-hidden="true">·</span>}{c}</span>)}</>
+}
+
+/** A quiet icon button with its tooltip and sr-only name (C14). */
+export function IconButton({ icon, label, onClick, disabled }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={label} onClick={onClick} disabled={disabled}><Icon name={icon} className="size-3.5" /></Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** What a form's submit says back: a field and its sentence, or nothing. */
+export type Invalid = { field?: string; text: string } | void
+
+/** A form in a dialog: the fields, a collapsed Advanced for rare ones, the
+ *  error under them, a quiet Cancel and the one primary button. `onSubmit`
+ *  returns a validation error, or throws the server's; it closes on success. */
+export function FormDialog({ open, onOpenChange, title, description, submit, onSubmit, advanced, footNote, children }: {
+  open: boolean; onOpenChange: (v: boolean) => void; title: string; description?: ReactNode; submit: string
+  onSubmit: () => Promise<Invalid> | Invalid; advanced?: ReactNode; footNote?: ReactNode; children: ReactNode
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<Invalid>(undefined)
+  const [more, setMore] = useState(false)
+  useEffect(() => { if (open) { setError(undefined); setBusy(false); setMore(false) } }, [open])
+  const go = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true); setError(undefined)
+    try {
+      const bad = await onSubmit()
+      if (bad) setError(bad)
+      else onOpenChange(false)
+    } catch (err) { setError({ text: "Not saved: " + (err as Error).message }) } finally { setBusy(false) }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
+        <form onSubmit={go} noValidate className="flex flex-col gap-3" data-invalid={error?.field}>
+          {children}
+          {advanced && (
+            <div className="border-t border-border pt-1">
+              <button type="button" aria-expanded={more} onClick={() => setMore(!more)} className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Icon name="chevron-right" className={cn("size-3.5 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none", more && "rotate-90")} />
+                Advanced
+              </button>
+              <div hidden={!more} className="flex flex-col gap-3 pb-1 pl-5">{advanced}</div>
+            </div>
+          )}
+          {error ? <p role="alert" className="text-xs text-destructive">{error.text}</p> : null}
+          <DialogFooter className="items-center">
+            {footNote && <span className="mr-auto text-xs text-muted-foreground">{footNote}</span>}
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Saving…" : submit}</Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

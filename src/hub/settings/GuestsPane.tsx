@@ -9,17 +9,18 @@
 // the owner guard (wall-actions.ts wallGuestsTarget). No new endpoint.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, type ReactNode } from "react"
-import { apiGet } from "../api"
-import { Badge, Button, Icon, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
-import { initials } from "./data"
+import { apiFetch, apiGet } from "../api"
+import { Badge, Button, Icon, cn } from "../ui"
+import { initials, type AdminState } from "./data"
+import { CopyButton, STATE_KEY, WriteNote, type Note } from "./fields"
 import {
-  AgentChip, ConfirmDialog, CopyButton, Dots, ErrorLine, IconButton, Lead, NoteLine, RowMenu, SkeletonRows, relTime, save, useAdminState,
-  type ConfirmSpec, type Note,
-} from "./pane-kit"
-import { Disclosure, PaneHeader, SettingsGroup, SettingsItem, SettingsRow } from "./parts"
+  Ago, AgentChip, ConfirmDialog, Disclosure, Dots, ErrorLine, IconButton, Lead, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows,
+} from "./parts"
 import { paneDef } from "./panes"
 
 const PANE = "guests"
+
+interface ConfirmSpec { title: string; text: ReactNode; yes: string; run: () => Promise<unknown> }
 
 export interface Grant {
   id: string
@@ -63,22 +64,10 @@ export function tokensShort(n = 0): string {
 const stamp = (iso?: string) => (iso ? iso.slice(0, 16).replace("T", " ") : "")
 const day = (iso?: string) => (iso ? iso.slice(0, 10) : "")
 
-function Ago({ iso }: { iso: string }) {
-  const ms = Date.parse(iso)
-  if (!Number.isFinite(ms)) return null
-  const r = relTime(ms)
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild><time dateTime={iso}>last {r === "now" ? "now" : r + " ago"}</time></TooltipTrigger>
-      <TooltipContent>{new Date(ms).toLocaleString()}</TooltipContent>
-    </Tooltip>
-  )
-}
-
 export default function GuestsPane() {
   const pane = paneDef(PANE)
   const client = useQueryClient()
-  const state = useAdminState()
+  const state = useQuery({ queryKey: STATE_KEY, queryFn: () => apiGet<AdminState>("/api/admin/state") })
   const guests = useQuery({ queryKey: ["settings", "guests"], queryFn: () => apiGet<{ grants?: Grant[] }>("/api/guests") })
   const [note, setNote] = useState<Note>(null)
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null)
@@ -90,7 +79,7 @@ export default function GuestsPane() {
 
   const act = useMutation({
     mutationFn: (v: { id: string; op: "pause" | "resume" | "end" }) =>
-      save<{ grant?: Grant; stopped?: number }>("POST", `/api/admin/wall/settings/guests/${encodeURIComponent(v.id)}/${v.op}`, {}),
+      apiFetch<{ grant?: Grant; stopped?: number }>(`/api/admin/wall/settings/guests/${encodeURIComponent(v.id)}/${v.op}`, { method: "POST", body: "{}", headers: { "Content-Type": "application/json" } }),
     onSuccess: (r, v) => {
       const name = r.grant?.name || grants.find((g) => g.id === v.id)?.name || v.id
       const stopped = r.stopped ? ` ${r.stopped} running ${r.stopped === 1 ? "turn" : "turns"} stopped.` : ""
@@ -124,13 +113,13 @@ export default function GuestsPane() {
               key={g.id} grant={g} tier={tiers.get(g.agentId)} open={open.has(g.id)} onToggle={() => toggle(g.id)}
               busy={act.isPending && act.variables?.id === g.id}
               onAct={(op) => act.mutate({ id: g.id, op })}
-              menu={<RowMenu name={g.name} items={[
+              menu={<RowMenu label={g.name} items={[
                 { label: "What happened", icon: "history", onSelect: () => toggle(g.id, true) },
                 { label: "End grant…", icon: "circle-x", destructive: true, onSelect: () => end(g) },
               ]} />}
             />
           ))}
-          <NoteLine note={note} />
+          <WriteNote note={note} />
         </SettingsGroup>
 
         {ended.length > 0 && (
@@ -155,7 +144,7 @@ export default function GuestsPane() {
           </Disclosure>
         </SettingsGroup>
       </div>
-      <ConfirmDialog spec={confirm} onClose={() => setConfirm(null)} />
+      {confirm && <ConfirmDialog open onOpenChange={(v) => { if (!v) setConfirm(null) }} title={confirm.title} text={confirm.text} yes={confirm.yes} run={confirm.run} />}
     </>
   )
 }
@@ -166,7 +155,7 @@ function GrantItem({ grant: g, tier, open, onToggle, busy, onAct, menu }: {
   const st = grantState(g)
   const u = g.usage ?? {}
   const ended = g.state === "ended"
-  const usage = u.turns ? <Dots items={[`${u.turns} ${u.turns === 1 ? "turn" : "turns"}`, `${tokensShort(u.tokens)} tokens`, u.lastAt && <Ago iso={u.lastAt} />]} /> : "No turns yet"
+  const usage = u.turns ? <Dots items={[`${u.turns} ${u.turns === 1 ? "turn" : "turns"}`, `${tokensShort(u.tokens)} tokens`, u.lastAt && <Ago iso={u.lastAt} prefix="last " />]} /> : "No turns yet"
   const level = LEVEL[g.level || ""] ?? [g.level || "", g.level || ""]
   const detailId = "gu-detail-" + g.id
   return (

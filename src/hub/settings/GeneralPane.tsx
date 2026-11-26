@@ -7,7 +7,6 @@
 // so there is no Save button on this pane.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, type FormEvent, type ReactNode } from "react"
-import { engineIcon } from "../../daemon/ui/pages/engine-icons"
 import { apiFetch, apiGet } from "../api"
 import {
   Badge, badgeVariants, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
@@ -18,7 +17,7 @@ import {
   AGENT_ID, ENGINE_CHOICES, activeTokens, channelSummary, engineName, initials, needsYou, nodeChecking, nodeDown, orgNode, restartWaiting,
   type AdminState, type LiveNode, type LiveReply, type OrgReply, type StateAgent, type TokenRow,
 } from "./data"
-import { Ago, Disclosure, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows, ToneDot } from "./parts"
+import { Ago, Disclosure, EngineLogo, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows, ToneDot } from "./parts"
 import { paneDef } from "./panes"
 
 const PANE = "general"
@@ -30,9 +29,7 @@ export async function save(method: string, path: string, body: unknown): Promise
   return apiFetch(path, { method, body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
 }
 
-export function EngineLogo({ tier }: { tier?: string }) {
-  return <span aria-hidden="true" className="inline-flex size-3.5 shrink-0 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: engineIcon(tier || "claude-code") }} />
-}
+export { EngineLogo }
 
 export function useGeneralData() {
   const state = useQuery({ queryKey: ["settings", "state"], queryFn: () => apiGet<AdminState>("/api/admin/state") })
