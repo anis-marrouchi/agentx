@@ -571,11 +571,11 @@ function renderWith(Pane: () => unknown, data: Record<string, unknown>): string 
 
 const grants = {
   grants: [
-    { id: "g1", name: "Site rebuild", guest: "Kairos Media", guestNode: { name: "kairos-mbp" }, agentId: "coder", level: "propose", state: "active", expiresAt: "2026-12-31T00:00:00Z",
-      folders: ["sites/kairos-web"], skills: ["nextjs"], commands: ["pnpm test"], usage: { turns: 142, tokens: 1_900_000, lastAt: "2026-11-25T14:02:00Z" },
+    { id: "g1", name: "Site rebuild", guest: "Example Studio", guestNode: { name: "example-mbp" }, agentId: "coder", level: "propose", state: "active", expiresAt: "2026-12-31T00:00:00Z",
+      folders: ["sites/example-web"], skills: ["nextjs"], commands: ["pnpm test"], usage: { turns: 142, tokens: 1_900_000, lastAt: "2026-11-25T14:02:00Z" },
       trail: [{ at: "2026-11-25T14:02:00Z", event: "task", detail: "opened MR !412" }] },
-    { id: "g2", name: "Server audit", guest: "Baraka Logistics", agentId: "dev-session", level: "report", state: "paused", expiresAt: "2026-12-15T00:00:00Z", usage: { turns: 38, tokens: 410_000 } },
-    { id: "g3", name: "Support handover", guest: "Nadia Ferchichi", agentId: "pm-agent", level: "propose", state: "pending", expiresAt: "2027-01-31T00:00:00Z", usage: { turns: 0, tokens: 0 } },
+    { id: "g2", name: "Server audit", guest: "Example Logistics", agentId: "dev-session", level: "report", state: "paused", expiresAt: "2026-12-15T00:00:00Z", usage: { turns: 38, tokens: 410_000 } },
+    { id: "g3", name: "Support handover", guest: "Sample Guest", agentId: "pm-agent", level: "propose", state: "pending", expiresAt: "2027-01-31T00:00:00Z", usage: { turns: 0, tokens: 0 } },
     { id: "g4", name: "Q3 pricing study", guest: "Atlas Conseil", agentId: "pm-agent", state: "ended", endedAt: "2026-10-02T00:00:00Z" },
   ],
 }
