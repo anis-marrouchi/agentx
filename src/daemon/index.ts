@@ -371,6 +371,7 @@ import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-pol
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 import { channelPushKind, isPushHeldBySetting } from "@/channels/push"
+import { startLoopWatch, type LoopWatch } from "@/daemon/loop-watch"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -1476,6 +1477,8 @@ export class AgentXDaemon {
     this.scheduleMidnightHook()
     this.startApprovalsSweep()
     this.startQualityReport()
+    // Log main-thread stalls so the next slow query names its window (loop-watch.ts).
+    this.loopWatch = startLoopWatch(this.log)
     this.startReminders()
     this.startRulesSync()
     // Messages received before the last stop but never handed to an agent.
@@ -1825,6 +1828,7 @@ export class AgentXDaemon {
     this.rulesSync?.stop()
     this.reach?.detach()
     if (this.qualityTimer) clearInterval(this.qualityTimer)
+    this.loopWatch?.stop()
     if (this.pushRosterTimer) clearInterval(this.pushRosterTimer)
     this.stopReminders?.()
     this.waTriage?.stop()
@@ -2946,6 +2950,7 @@ export class AgentXDaemon {
       return r.ok && data.ok === true
     }
   }
+  private loopWatch?: LoopWatch
   private qualityTimer?: ReturnType<typeof setInterval>
   private qualityPosting = false
 

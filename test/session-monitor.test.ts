@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd } from "../src/storage/traces"
-import { SessionMonitor, parseReview, commitmentKey, REVIEW_PROMPT } from "../src/daemon/session-monitor"
+import { SessionMonitor, parseReview, commitmentKey, REVIEW_PROMPT, SCAN_LAG_MS, BACKLOG_BATCH } from "../src/daemon/session-monitor"
 import { MONITOR_SCRIPT, renderMonitorPage } from "../src/daemon/ui/pages/monitor"
 
 let dir: string
@@ -91,6 +91,35 @@ describe("session monitor", () => {
     db.prepare("UPDATE task_traces SET finished_at=1 WHERE task_id='old'").run()
     await monitor.tick()
     expect(reviewer).not.toHaveBeenCalled()
+  })
+  it("moves the backlog scan's start up once the backlog is drained, and still sees new runs", async () => {
+    const { monitor, db, reviewer } = fixture()
+    const scanFrom = () => (db.prepare("SELECT value FROM session_monitor_meta WHERE key='scan_from'").get() as { value: number }).value
+    const installed = (db.prepare("SELECT value FROM session_monitor_meta WHERE key='started_at'").get() as { value: number }).value
+    expect(scanFrom()).toBe(installed)
+    // A fresh install never scans before itself, so the start only moves for an older one.
+    await monitor.tick()
+    expect(scanFrom()).toBe(installed)
+    db.prepare("UPDATE session_monitor_meta SET value = 1 WHERE key='scan_from'").run()
+    await monitor.tick()
+    expect(scanFrom()).toBeGreaterThanOrEqual(Date.now() - SCAN_LAG_MS - 1000)
+    expect(scanFrom()).toBeLessThanOrEqual(Date.now() - SCAN_LAG_MS + 1000)
+    recordTraceStart(db, { agentId: "dev", channel: "cli", chatId: "s" }, "fresh")
+    recordTraceEnd(db, "fresh", { status: "ok", finalResponse: "Done" })
+    await monitor.tick(); await monitor.tick()
+    expect(reviewer).toHaveBeenCalledTimes(1)
+  })
+  it("keeps the backlog scan's start while a full batch is still queued", async () => {
+    const { monitor, db } = fixture(vi.fn(() => new Promise<string>(() => {})))
+    const scanFrom = () => (db.prepare("SELECT value FROM session_monitor_meta WHERE key='scan_from'").get() as { value: number }).value
+    const before = scanFrom()
+    for (let i = 0; i < BACKLOG_BATCH + 5; i++) {
+      recordTraceStart(db, { agentId: "dev", channel: "cli", chatId: `c${i}` }, `t${i}`)
+      recordTraceEnd(db, `t${i}`, { status: "ok" })
+    }
+    void monitor.tick()
+    expect(scanFrom()).toBe(before)
+    monitor.stop()
   })
   it("returns the person who started each run for the timeline", () => {
     const { monitor, db } = fixture()

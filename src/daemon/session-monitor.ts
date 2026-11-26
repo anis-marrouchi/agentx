@@ -168,6 +168,11 @@ export const stopSchema = z.object({
   transcript: z.string().min(1).max(100000),
 })
 
+/** Runs the backlog scan queues per tick. */
+export const BACKLOG_BATCH = 25
+/** How far behind the clock the backlog scan's start stays. */
+export const SCAN_LAG_MS = 10 * 60_000
+
 type ReviewRow = { id: string; session_id: string; agent: string; status: string; source: string; updated_at: number; model: string; result: string | null; error: string | null }
 export class SessionMonitor {
   private timer?: ReturnType<typeof setInterval>
@@ -199,6 +204,9 @@ export class SessionMonitor {
       CREATE INDEX IF NOT EXISTS session_monitor_trace_scan ON task_traces(finished_at, agent_id, channel, status, chat_id, task_id);
       DROP INDEX IF EXISTS session_monitor_trace_end;`)
     db.prepare("INSERT OR IGNORE INTO session_monitor_meta VALUES ('started_at', ?)").run(Date.now())
+    // Where the backlog scan starts. It begins at install time and moves up
+    // once a scan comes back short of a full batch (see tick).
+    db.prepare("INSERT OR IGNORE INTO session_monitor_meta SELECT 'scan_from', value FROM session_monitor_meta WHERE key='started_at'").run()
     db.prepare("UPDATE session_reviews SET status='pending' WHERE status='reviewing'").run()
     // Workflow spans are never reviewed, so any row for one is dead history
     // that still feeds actions to the page. Clear it, queued or completed.
@@ -233,7 +241,12 @@ export class SessionMonitor {
       // a question asked in the dashboard drawer is the operator talking to
       // their own fleet — reviewing it turns "why is this stuck?" into a
       // to-do about having asked.
-      const missing = this.db.prepare(`SELECT task_id FROM task_traces WHERE finished_at >= (SELECT value FROM session_monitor_meta WHERE key='started_at') AND agent_id NOT LIKE 'workflow:%' AND NOT (channel = 'cron' AND status = 'ok') AND NOT (channel = 'dashboard' AND chat_id = 'assistant') AND task_id NOT IN (SELECT id FROM session_reviews) ORDER BY finished_at ASC LIMIT 25`).all() as { task_id: string }[]
+      //
+      // The scan starts at `scan_from`, not at install time. From install time
+      // it walked every run since then on each 5 s tick, already-reviewed ones
+      // included; on a node with months of traces that read took about a
+      // second of the main thread, and seconds under memory pressure.
+      const missing = this.db.prepare(`SELECT task_id FROM task_traces WHERE finished_at >= (SELECT value FROM session_monitor_meta WHERE key='scan_from') AND agent_id NOT LIKE 'workflow:%' AND NOT (channel = 'cron' AND status = 'ok') AND NOT (channel = 'dashboard' AND chat_id = 'assistant') AND task_id NOT IN (SELECT id FROM session_reviews) ORDER BY finished_at ASC LIMIT ${BACKLOG_BATCH}`).all() as { task_id: string }[]
       for (const { task_id } of missing) {
         const trace = getTrace(this.db, task_id)
         if (!trace) continue
@@ -241,6 +254,13 @@ export class SessionMonitor {
         const running = listTraces(this.db, { status: "in-flight", limit: 50 }).map(r => ({ taskId: r.taskId, agentId: r.agentId, chatId: r.chatId, messagePreview: r.messagePreview }))
         const evidence = { task: { ...t, originalMessage: t.originalMessage?.slice(0, 16000), finalResponse: t.finalResponse?.slice(-24000) }, steps: trace.steps.slice(-60).map(s => ({ ...s, inputSummary: s.inputSummary?.slice(0, 500), outputSummary: s.outputSummary?.slice(0, 1000) })), running, coverage: "Bounded prompt, final response and last 60 trace steps; not a complete native transcript." }
         this.enqueue(task_id, t.finalSessionId || t.resumeSessionId || `${t.agentId}:${t.channel}:${t.chatId}`, t.agentId, "trace", JSON.stringify(evidence))
+      }
+      // A short batch means everything up to now is queued. Move the start of
+      // the next scan up, keeping SCAN_LAG_MS behind the clock so a run whose
+      // end was stamped just before this tick but written after it is still
+      // seen. A full batch leaves it: the next tick takes the rest.
+      if (missing.length < BACKLOG_BATCH) {
+        this.db.prepare("UPDATE session_monitor_meta SET value = MAX(value, ?) WHERE key='scan_from'").run(Date.now() - SCAN_LAG_MS)
       }
       const next = this.db.prepare("SELECT * FROM session_reviews WHERE status='pending' ORDER BY updated_at ASC LIMIT 1").get() as (ReviewRow & { input: string }) | undefined
       if (!next) return
