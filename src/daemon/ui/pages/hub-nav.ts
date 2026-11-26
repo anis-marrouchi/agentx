@@ -70,7 +70,8 @@ export function hubSwitcherHtml(): string {
 /** Workspace: Waiting on you (the Desk, #2226) · Jobs · Workflows · Mobile
  *  app, then Settings pinned at the bottom (owner only). The simple layout
  *  hides Workflows and Mobile app (hub-layout.ts). On the rail each is its
- *  icon with a tooltip. */
+ *  icon with a tooltip. Light / dark shows on the phone only, where the
+ *  status bar that holds Theme is hidden (hub-status.ts). */
 export function hubNavFootHtml(owner: boolean, settingsHref: string): string {
   const a = (nav: string, href: string, icon: string, label: string, count = "") =>
     `<a class="hf__item" data-nav="${nav}" href="${href}" aria-label="${label}" data-tip="${label}" data-tip-side="right">${icon}<span>${label}</span>${count}</a>`
@@ -81,7 +82,7 @@ export function hubNavFootHtml(owner: boolean, settingsHref: string): string {
       ${a("workflows", "#page=workflows", ICON.workflows, "Workflows")}
       ${a("mobile", "#page=mobile", ICON.phone, "Mobile app")}
     </div>
-    ${owner ? `<div class="hf hf--set">${a("settings", settingsHref, ICON.settings, "Settings")}</div>` : ""}`
+    <div class="hf hf--set">${owner ? a("settings", settingsHref, ICON.settings, "Settings") : ""}<button type="button" class="hf__item hf__theme" data-wall-theme>${hubIcon("sun-moon")}<span>Light / dark</span></button></div>`
 }
 
 /** The X that closes the side menu when it is a Sheet (phone, or the rail
@@ -165,9 +166,12 @@ export const HUB_NAV_CSS = `
 .ha { margin: 0 0 6px; }
 /* One scroller on a computer (Anis 2026-11-26): the whole menu scrolls, the
    search stays at the top and Settings at the bottom. */
+/* The menu is a flex column: its parts keep their height and the menu
+   scrolls, at every width (the Sheet too). */
+.ax-wall__nav > .ha__k, .ax-wall__nav > .ha__lbl { flex: none; }
+.ax-wall__nav > .ha { flex: 1 0 auto; }
 @media (min-width: 1181px) {
   .ax-wall__nav { overscroll-behavior: contain; }
-  .ax-wall__nav > .ha { flex: 1 0 auto; }
   .ax-wall__nav > .ha__k { position: sticky; top: -4px; z-index: 2; box-shadow: 0 0 0 12px var(--ax-bg); }
 }
 /* Machines that do not answer: said once, with where to look (C15). */
@@ -253,6 +257,8 @@ a.ha__run:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: -2p
 .hf__item svg { width: 16px; height: 16px; flex: none; }
 .hf__item span { flex: 1; white-space: nowrap; }
 .hf__n[hidden] { display: none; }
+button.hf__item { width: 100%; border: 0; background: none; font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.hf__item.hf__theme { display: none; }
 .hf--set { margin: auto -16px -12px; padding: 8px 16px 12px; border-top: 1px solid var(--ax-border); background: var(--ax-bg); position: sticky; bottom: -12px; z-index: 2; }
 /* ⌘K: search agents and pages (V3). Opens with no animation (keyboard). */
 .hk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
@@ -260,7 +266,7 @@ a.ha__run:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: -2p
 .hk[hidden] { display: none; }
 .hk__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: var(--ax-overlay, rgb(0 0 0 / 40%)); cursor: default; }
 .hk__box { position: relative; width: min(640px, calc(100vw - 24px)); max-height: 72vh; display: flex; flex-direction: column; background: var(--ax-bg); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow-lg); overflow: hidden; }
-.hk__q { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--ax-border); }
+.hk__q { flex: none; display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--ax-border); }
 .hk__q svg { width: 16px; height: 16px; color: var(--ax-muted); }
 .hk__q input { flex: 1; border: 0; outline: 0; background: none; color: var(--ax-text); font: inherit; font-size: 16px; }
 /* The box is the whole dialog: no ring of its own on the input (Orca's palette). */
@@ -275,7 +281,7 @@ a.ha__run:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: -2p
 .hk__kbd { margin-left: auto; }
 .hk__ico { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; color: var(--ax-muted); }
 .hk__ico svg { width: 16px; height: 16px; }
-.hk__foot { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 8px 16px; border-top: 1px solid var(--ax-border); font-size: 12px; color: var(--ax-muted); }
+.hk__foot { flex: none; display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 8px 16px; border-top: 1px solid var(--ax-border); font-size: 12px; color: var(--ax-muted); }
 .hk__foot kbd { margin-right: 2px; }
 .hk__esc { margin-left: auto; }
 /* The one tooltip and the agent row menu (floating: the only shadows, C7). */
@@ -329,7 +335,10 @@ a.ha__run:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: -2p
   .axp-btn.hub-menu-btn, .axp-btn.hub-k-btn { display: inline-flex; min-width: 36px; height: 36px; }
   /* Search sits at the right, beside the chat button (the approved phone mock). */
   .axp-btn.hub-k-btn { margin-left: auto; }
+  .hf__item.hf__theme { display: flex; }
   .ax-wall.is-sheet .ax-wall__nav .ha__row { min-height: 48px; }
+  /* Stop and the menu always show on touch, so the counts give the name their room. */
+  .ax-wall.is-sheet .ax-wall__nav .ha__stats { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .ax-wall.is-sheet .ax-wall__nav { animation: none; } }
 /* The Mobile app page. */

@@ -254,10 +254,10 @@ describe("a short side menu", () => {
   const asks: HaNeed[] = [{ key: "c1", title: "Yes?", agent: "q1", at: NOW - 1000 }, { key: "c2", title: "Go?", agent: "q2", at: NOW - 2000 }]
   const mm = hubAgentRows(many, asks, NOW, DAY, title, ltPlain, liveWorkCount(many))
   const rowsOf = (h: string) => (h.match(/data-ha-agent="([^"]+)"/g) || []).map((x) => x.slice(15, -1))
-  it("folds Needs you on first load and keeps its count in the header", () => {
+  it("opens Needs you on first load (the approved mock), keeps the count in the header and the reader's fold", () => {
     const h = haListHtml(mm, "", {}, ltEsc, ltAge)
-    expect(h).toContain('<details class="ha__fold" data-key="g:needs" data-ha-open="needs"><summary class="ha__h"><span class="ha__ht">Needs you</span><span class="ha__hn" data-n="2">2</span></summary>')
-    expect(haListHtml(mm, "", { needs: true }, ltEsc, ltAge)).toContain('data-ha-open="needs" open>')
+    expect(h).toContain('<details class="ha__fold" data-key="g:needs" data-ha-open="needs" open><summary class="ha__h"><span class="ha__ht">Needs you</span><span class="ha__hn" data-n="2">2</span></summary>')
+    expect(haListHtml(mm, "", { needs: false }, ltEsc, ltAge)).toContain('data-ha-open="needs"><summary')
   })
   it("shows 3 working agents, then Show all (N), and all of them once opened", () => {
     const h = haListHtml(mm, "", {}, ltEsc, ltAge)
@@ -290,7 +290,8 @@ describe("a short side menu", () => {
     expect(rowsOf(haListHtml(m4, "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(4)
   })
   it("still takes the old idleOpen boolean", () => {
-    expect(haListHtml(mm, "", true, ltEsc, ltAge)).not.toContain('data-ha-open="needs" open')
+    expect(haListHtml(mm, "", true, ltEsc, ltAge)).toContain('data-ha-open="needs" open')
+    expect(haListHtml(mm, "", false, ltEsc, ltAge)).toContain('data-ha-open="needs" open')
   })
   function m3() {
     const three: LtNode[] = [{ ...many[0], agents: many[0].agents!.slice(0, 3) }]
@@ -357,7 +358,7 @@ describe("the Hub page's left column", () => {
     expect(k).toBeLessThan(agents)
     const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
     const shown = nav.slice(0, nav.indexOf('id="wall-pagelinks"'))
-    for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "Light / dark", "ax-wall__navfoot"]) {
+    for (const gone of ['data-nav="wall"', 'data-nav="cost"', 'data-nav="org"', "ax-wall__newpost", "New post", "ax-wall__navfoot"]) {
       expect(shown.replace(/<a class="ax-wall__item ax-wall__shortcut[^>]*>/g, "")).not.toContain(gone)
     }
     expect(nav).toMatch(/<div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>/)
@@ -383,7 +384,9 @@ describe("the Hub page's left column", () => {
     const wide = HUB_NAV_CSS.slice(HUB_NAV_CSS.indexOf("@media (min-width: 1181px) {"))
     const block = wide.slice(0, wide.indexOf("\n}") + 2)
     // No scroll box of its own for the list: the wheel works anywhere on the menu.
-    expect(block).toContain(".ax-wall__nav > .ha { flex: 1 0 auto; }")
+    expect(HUB_NAV_CSS).toContain(".ax-wall__nav > .ha { flex: 1 0 auto; }")
+    // The search keeps its height when the menu overflows (the phone Sheet too).
+    expect(HUB_NAV_CSS).toContain(".ax-wall__nav > .ha__k, .ax-wall__nav > .ha__lbl { flex: none; }")
     expect(HUB_NAV_CSS).not.toMatch(/\.ax-wall__nav > \.ha \{[^}]*overflow-y/)
     expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
     // Settings is pinned at the bottom.
@@ -408,7 +411,12 @@ describe("the Hub page's left column", () => {
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Waiting on you<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
-    expect(renderWallPage().includes('class="hf__item hf__set"')).toBe(false)
+    const guest = renderWallPage()
+    expect(guest.slice(guest.indexOf('id="hub-foot"'), guest.indexOf('id="wall-pagelinks"'))).not.toContain('data-nav="settings"')
+    // The phone has no status bar, so Light / dark sits at the foot of the Sheet there.
+    expect(foot).toContain('class="hf__item hf__theme" data-wall-theme>')
+    expect(HUB_NAV_CSS).toContain(".hf__item.hf__theme { display: none; }")
+    expect(HUB_NAV_CSS).toContain("  .hf__item.hf__theme { display: flex; }")
   })
   it("has the Mobile app setup page without an unpaired app preview link", () => {
     expect(page).toContain('id="wall-mobile"')

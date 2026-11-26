@@ -308,10 +308,10 @@ export function haRunsHtml(r: HaRow, esc: (s: unknown) => string, runHref?: (r: 
   return '<div class="ha__runs" role="group" data-key="rr:' + esc(r.id) + '" aria-label="' + esc(r.name) + ' runs">' + shown + rest + "</div>"
 }
 
-/** What the reader opened in the side menu (Anis 2026-11-26): every part
- *  starts closed on a fresh load. */
+/** What the reader opened or folded in the side menu, kept per browser.
+ *  Needs you and Working start open (the approved orca mock, #2101). */
 export interface HaOpen {
-  /** Needs you shows its rows (collapsed by default, header shows the count). */
+  /** Needs you shows its rows (open unless false: what waits on you). */
   needs?: boolean
   /** Working shows every row, not the first 3. */
   working?: boolean
@@ -340,7 +340,8 @@ export function haGroups(): Array<{ id: string; fold: string; more: string; labe
 /**
  * The grouped list (no chips: the approved mock dropped them). Every group
  * is a fold with its count, the chevron leading the title (orca-design
- * C22): Working open unless `open.work === false`, the others folded
+ * C22): Needs you and Working open unless `open.needs` / `open.work` is
+ * false, the others folded
  * unless opened. Needs you and Working show their first 3 rows and
  * "Show all (N)" unless `open.needsAll` / `open.working`. A boolean `open`
  * is the old idleOpen. Every part carries `data-key`, so the side menu
@@ -369,7 +370,8 @@ export function haListHtml(m: HaModel, cur: string, open: boolean | HaOpen, esc:
     const more = g.more && all.length > cap
       ? '<button type="button" class="ha__more" data-key="more:' + g.id + '" data-ha-more="' + g.id + '" aria-expanded="' + !capped + '">' + (capped ? "Show all (" + all.length + ")" : "Show fewer") + "</button>"
       : ""
-    const isOpen = g.id === "working" ? op.work !== false : !!op[g.fold as keyof HaOpen]
+    // Needs you and Working start open, as in the approved mock; the rest start folded.
+    const isOpen = g.id === "needs" || g.id === "working" ? op[g.fold as keyof HaOpen] !== false : !!op[g.fold as keyof HaOpen]
     body += '<details class="ha__fold" data-key="g:' + g.id + '" data-ha-open="' + g.fold + '"' + (isOpen ? " open" : "") + ">" +
       '<summary class="ha__h">' + (ic["chevron-right"] ? '<span class="ha__chev" aria-hidden="true">' + ic["chevron-right"] + "</span>" : "") +
       '<span class="ha__ht">' + g.label + '</span><span class="ha__hn" data-n="' + all.length + '">' + all.length + "</span></summary>" + list + more + "</details>"

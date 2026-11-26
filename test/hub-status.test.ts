@@ -61,7 +61,9 @@ describe("Hub bottom status", () => {
     expect(bar).toContain('id="hs-conn"')
     expect((bar.match(/<svg /g) || []).length).toBeGreaterThanOrEqual(6)
     const nav = html.slice(html.indexOf('class="ax-wall__nav"'), html.indexOf("</nav>"))
-    expect(nav).not.toContain("data-wall-theme")
+    // On a computer only the bar has it: the menu's Light / dark is for the phone, which hides the bar.
+    expect(nav.match(/data-wall-theme/g)).toHaveLength(1)
+    expect(nav).toContain('class="hf__item hf__theme" data-wall-theme>')
     expect(html).toContain('id="hs-cli-pop"')
   })
 

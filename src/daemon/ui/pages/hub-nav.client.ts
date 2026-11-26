@@ -36,8 +36,9 @@ export const HUB_NAV_SCRIPT = String.raw`
   function haMod(key) { return HA_MAC ? '⌘' + key : (key === 'K' ? 'Ctrl K' : 'Alt+' + key); }
   document.querySelectorAll('[data-mod-key]').forEach(function (k) { k.textContent = haMod(k.getAttribute('data-mod-key')); });
   // What the reader opened (Anis 2026-11-26, orca-design C21), saved:
-  // Working starts open, the other groups folded, live groups at 3 rows.
-  var HA = { open: { needs: false, working: false, idle: false, work: true, done: false, needsAll: false }, last: '', rail: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null }, menu: null };
+  // Needs you and Working start open (the approved mock), the other groups
+  // folded, live groups at 3 rows.
+  var HA = { open: { needs: true, working: false, idle: false, work: true, done: false, needsAll: false }, last: '', rail: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null }, menu: null };
   try {
     var haSaved = JSON.parse(localStorage.getItem('ax.hub.agentOpen') || '{}');
     for (var hk in HA.open) if (typeof haSaved[hk] === 'boolean') HA.open[hk] = haSaved[hk];
