@@ -58,7 +58,7 @@ export const HUB_LAYOUT_CSS = "\n/* Simple and full layouts (#2226 S1, hub-layou
 .whl__seg { display: inline-flex; flex: none; padding: 2px; gap: 2px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); }
 .whl__seg button { font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; color: var(--ax-muted); background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 4px 12px; cursor: pointer; }
 .whl__seg button[aria-checked="true"] { color: var(--ax-text); background: var(--ax-bg); box-shadow: 0 0 0 1px var(--ax-border); }
-.whl__seg button:focus-visible, .whl__own:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.whl__seg button[aria-checked="true"]:focus-visible { box-shadow: 0 0 0 1px var(--ax-border), var(--ax-focus-ring); }
 .whl__own { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); padding: 2px 8px; cursor: pointer; }
 .whl__own:hover { color: var(--ax-text); }
 `

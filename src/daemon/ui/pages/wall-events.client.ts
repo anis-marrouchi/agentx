@@ -130,7 +130,6 @@ export const WALL_EVENTS_CSS = `
 .wev__toggle { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-accent); cursor: pointer; padding: 2px 0; text-align: left; }
 .wev__toggle::before { content: '▸ '; }
 .wev__toggle[aria-expanded="true"]::before { content: '▾ '; }
-.wev__toggle:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wev__list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
 .wev__wake { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
 .wev__why { flex-basis: 100%; overflow-wrap: anywhere; }

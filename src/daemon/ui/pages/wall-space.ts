@@ -30,7 +30,6 @@ button, input, select { font-family: inherit; }
 /* The few shared components the Wall's script draws, in this space's look. */
 .ax-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-weight: 600; font-size: var(--ax-fs-sm);
   background: var(--ax-primary); color: var(--ax-primary-fg); border: 1px solid transparent; border-radius: var(--ax-radius-sm); padding: 6px 14px; cursor: pointer; text-decoration: none; }
-.ax-btn:focus-visible, .ax-wall__item:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: 1px; }
 .ax-btn--ghost { background: none; color: var(--ax-text); border-color: var(--ax-border-2); }
 .ax-btn--ghost:hover { background: var(--ax-surface); }
 .ax-badge { display: inline-block; font-size: 12px; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 9px; background: var(--ax-blue-t); color: var(--ax-accent); white-space: nowrap; }
@@ -50,6 +49,7 @@ button, input, select { font-family: inherit; }
 .ax-wall__item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font: inherit; font-size: 14px; text-decoration: none; background: none; border: 0; cursor: pointer; text-align: left; width: max-content; max-width: 100%; }
 .ax-wall__item:hover { background: var(--ax-surface-3); color: var(--ax-text); }
 .ax-wall__item.is-on { font-weight: 500; color: var(--ax-text); background: var(--ax-surface-3); box-shadow: inset 2px 0 0 var(--ax-accent); }
+.ax-wall__item.is-on:focus-visible { box-shadow: inset 2px 0 0 var(--ax-accent), var(--ax-focus-ring); }
 .ax-wall__item.is-on svg { color: var(--ax-accent); }
 .ax-wall__item svg { width: 18px; height: 18px; flex: none; }
 /* The nav's groups (#1451 frame 0): Work, Automation, Fleet, Owner. */
@@ -67,7 +67,7 @@ button, input, select { font-family: inherit; }
 .ax-wall__item { position: relative; }
 .ax-wall__n { font-size: var(--ax-fs-xs); font-weight: 700; min-width: 20px; padding: 0 6px; line-height: 20px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
 .ax-wall__n:empty { display: none; }
-.ax-wall__item.is-on .ax-wall__n { background: var(--ax-accent); color: var(--ax-accent-ink, #fff); }
+.ax-wall__item.is-on .ax-wall__n { background: var(--ax-accent); color: var(--ax-on-accent); }
 .ax-wall__main { grid-column: 2; grid-row: 1 / span 4; min-width: 0; min-height: 100vh; border-left: 1px solid var(--ax-border); border-right: 1px solid var(--ax-border); }
 /* The page's own reading width inside the full-width middle (#2101 R24). */
 .ax-wall__main > :is(.ax-wall__compose, .ax-wall__feed, .ax-wall__post, .ax-wall__profile, .ax-wall__goal) { max-width: 760px; margin-left: auto; margin-right: auto; }

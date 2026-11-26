@@ -512,10 +512,9 @@ export const WALL_WORKFLOWS_CSS = `
 .wwf { padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
 .wwf.is-open { background: var(--ax-surface); }
 .wwf__top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.wwf__name { font: inherit; font-weight: 700; font-size: 15px; color: var(--ax-text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.wwf__name { font: inherit; font-weight: 600; font-size: var(--ax-fs-group); color: var(--ax-text); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .wwf__name:hover { text-decoration: underline; }
 .wwf.is-off .wwf__name { color: var(--ax-text-2); }
-.wwf button:focus-visible, .wwf a:focus-visible, .wwf__dlg :focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wwf__meta { margin-top: 4px; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .wwf__meta .is-stale { color: var(--ax-amber-ink, var(--ax-warn)); }
 .wwf__sq .is-run { background: var(--ax-accent); } .wwf__sq .is-wait { background: var(--ax-amber); }
@@ -543,7 +542,7 @@ export const WALL_WORKFLOWS_CSS = `
 /* Run…: a dialog over the page. */
 #wall-wf-dialog { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; }
 .wwf__scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--ax-text) 35%, transparent); }
-.wwf__dlg { position: relative; width: min(480px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--ax-bg); color: var(--ax-text); border-radius: var(--ax-radius-lg); padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.25); display: flex; flex-direction: column; gap: 12px; }
+.wwf__dlg { position: relative; width: min(480px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--ax-bg); color: var(--ax-text); border-radius: var(--ax-radius-lg); padding: 20px; box-shadow: var(--ax-shadow-lg); display: flex; flex-direction: column; gap: 12px; }
 .wwf__dlg h2 { margin: 0; font-size: 20px; }
 .wwf__fld { display: flex; flex-direction: column; gap: 4px; font-size: var(--ax-fs-sm); }
 .wwf__fld label { color: var(--ax-text-2); }

@@ -55,6 +55,5 @@ export const FOLLOW_CSS = `
   border: 1px solid var(--ax-border, rgba(127,127,127,.35)); background: var(--ax-surface, #fff); color: var(--ax-text, inherit);
   box-shadow: 0 2px 10px rgba(0,0,0,.14); }
 .ax-jump:hover { background: var(--ax-surface-2, var(--ax-surface, #f4f4f5)); }
-.ax-jump:focus-visible { outline: 2px solid var(--ax-accent, #2563eb); outline-offset: 2px; }
 .ax-jump[hidden] { display: none; }
 `

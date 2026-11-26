@@ -78,7 +78,7 @@ window.AXDictate = (function () {
 export const APP_DICTATE_CSS = `
 .dc-mic { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .dc-mic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.dc-mic[data-state="listening"] { background: var(--ax-danger, #c62828); color: #fff; }
+.dc-mic[data-state="listening"] { background: var(--ax-err); color: #fff; }
 .dc-mic.dc-ready { outline: 3px solid var(--ax-accent, #2f6fed); outline-offset: 2px; animation: dc-pulse 1.2s ease-in-out infinite; }
 @keyframes dc-pulse { 50% { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { .dc-mic.dc-ready { animation: none; } }

@@ -171,7 +171,6 @@ export const WALL_NUMBERS_CSS = `
 .wnm > summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, auto) 96px 110px; gap: 4px 12px; align-items: center; padding: 10px 16px; cursor: pointer; list-style: none; }
 .wnm > summary::-webkit-details-marker { display: none; }
 .wnm > summary:hover { background: var(--ax-surface); }
-.wnm > summary:focus-visible, .wnm__chips button:focus-visible, .wnm__by select:focus-visible, .wnd__bad a:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wnm__n { display: flex; flex-direction: column; min-width: 0; }
 .wnm__n b { overflow-wrap: anywhere; }
 .wnm__n small, .wnm__v small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
@@ -206,7 +205,6 @@ export const WALL_NUMBERS_CSS = `
 .wnm__switch { display: flex; margin: 10px 16px 0; border-bottom: 1px solid var(--ax-border); }
 .wnm__switch button { font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; color: var(--ax-muted); padding: 8px 14px 7px; cursor: pointer; min-height: 40px; }
 .wnm__switch button.is-on { color: var(--ax-text); border-bottom-color: var(--ax-accent); }
-.wnm__switch button:focus-visible, .wfn__list a:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wnm__switch + .wnm__sum, .wnm__switch + .wnm__tools, .wnm__switch + .wnm__none { margin-top: 12px; }
 .wfn__list { display: grid; gap: 12px; margin: 0 16px; }
 .wfn { background: var(--ax-bg-elev); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 10px 14px; min-width: 0; }

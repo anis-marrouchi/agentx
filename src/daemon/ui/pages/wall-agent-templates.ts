@@ -96,6 +96,7 @@ export const AGENT_TEMPLATES_CSS = `
 .wat__t { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-surface); color: var(--ax-text); cursor: pointer; font: inherit; }
 .wat__t small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wat__t.is-on { border-color: var(--ax-accent); box-shadow: 0 0 0 1px var(--ax-accent); }
+.wat__t.is-on:focus-visible { box-shadow: 0 0 0 1px var(--ax-accent), var(--ax-focus-ring); }
 .wat__next { margin: 4px 0 10px; padding: 8px 12px; border-radius: var(--ax-radius); background: var(--ax-surface-2); font-size: var(--ax-fs-sm); }
 .wat__next h4 { margin: 0 0 4px; font-size: var(--ax-fs-sm); }
 .wat__next ul { margin: 0; padding-left: 18px; }

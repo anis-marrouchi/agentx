@@ -74,7 +74,7 @@ describe("design tokens", () => {
     expect(ratio(all("--ax-blue")[1], "#0a0a0a")).toBeGreaterThanOrEqual(4.5)
     // Ink on the accent (Hub nav count badge), light and dark (DevOps nit on #2127).
     const blue = all("--ax-blue")
-    const ink = all("--ax-accent-ink")
+    const ink = all("--ax-on-accent")
     expect(ink).toHaveLength(2)
     for (let i = 0; i < 2; i++) expect(ratio(blue[i], ink[i])).toBeGreaterThanOrEqual(4.5)
   })
@@ -86,5 +86,33 @@ describe("design tokens", () => {
       // ...and both themes must define them, or dark mode loses the text.
       expect([...AX_TOKENS_CSS.matchAll(new RegExp(t + "\\s*:", "g"))]).toHaveLength(2)
     }
+  })
+
+  it("keeps a focus ring on controls whose selected state sets its own box-shadow (Hakim B1 on #2378)", () => {
+    // :root :focus-visible draws the ring with box-shadow; a later state rule
+    // of equal specificity replaces it, so each needs a focused pair.
+    const pairs: [string, string][] = [
+      ["pages/wall-space.ts", ".ax-wall__item.is-on:focus-visible"],
+      ["pages/hub-layout.ts", '.whl__seg button[aria-checked="true"]:focus-visible'],
+      ["pages/wall-settings.client.ts", ".wsl__f.is-on:focus-visible"],
+      ["pages/wall-pages.client.ts", ".wcr__a.is-on:focus-visible"],
+      ["pages/wall-agent-templates.ts", ".wat__t.is-on:focus-visible"],
+      ["pages/mesh.css.ts", '.mx-run[aria-pressed="true"]:focus-visible'],
+    ]
+    for (const [file, sel] of pairs) {
+      const src = readFileSync(join(UI, file), "utf8")
+      const at = src.indexOf(sel)
+      expect(at, sel).toBeGreaterThan(-1)
+      const rule = src.slice(at, src.indexOf("}", at))
+      expect(rule, sel).toMatch(/box-shadow:[^;}]*(var\(--ax-focus-ring\)|var\(--ax-ring\))/)
+    }
+  })
+
+  it("keeps the phone app title sizes; no mock asked to shrink them (Hakim B1 v2 on #2378)", () => {
+    const app = readFileSync(join(UI, "pages/app-redesign.css.ts"), "utf8")
+    expect(app).toMatch(/\.bar h1 \{ font-size: 22px;/)
+    expect(app).toMatch(/main h2 \{ font-size: 28px;/)
+    const member = readFileSync(join(UI, "pages/member-styles.ts"), "utf8")
+    expect(member).toMatch(/\.bar h1 \{ font-size: 20px;/)
   })
 })

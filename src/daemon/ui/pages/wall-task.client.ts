@@ -974,7 +974,7 @@ export const WALL_TASK_CSS = `
 .wtask__who { flex: 1; min-width: 0; }
 .wtask__who .h { color: var(--ax-muted); }
 .wtask__meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wtask__h { font-size: var(--ax-fs); font-weight: 800; margin: 4px 0 0; }
+.wtask__h { font-size: var(--ax-fs); font-weight: 600; margin: 4px 0 0; }
 .wtask__open { font-size: var(--ax-fs-xs); font-weight: 400; margin-left: 6px; }
 .wtask__req { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px 14px; }
 .wtask__req .wtask__h { margin: 0 0 10px; }
