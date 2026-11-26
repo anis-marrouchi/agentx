@@ -209,6 +209,11 @@ export function reportStep(
     /** progress only: the step waits until then (#1764). A progress report
      *  without it ends an earlier wait. */
     waitUntil?: number | null
+    /** progress only: the report never resets the step's nudges. For a
+     *  report the daemon files for the agent (waiting-step.ts), which is
+     *  not the agent moving the step: a reset there on every run would
+     *  keep the step from ever being blocked (#2320 review C1). */
+    keepNudges?: boolean
   },
   now: number,
 ): string | null {
@@ -244,7 +249,7 @@ export function reportStep(
   let detail = `${input.agentId}: ${note || "under way"}`
   if (step.state === "blocked") restartStep(requests, plans, step, now, false)
   // A wait the owner of the step names is news even in the same words.
-  else if (step.nudges > 0 && (waitUntil !== null || isNewProgress(plans, step, detail))) {
+  else if (!input.keepNudges && step.nudges > 0 && (waitUntil !== null || isNewProgress(plans, step, detail))) {
     // Real progress: the step is moving, so the nudges so far no longer
     // count toward blocking it (#1568). A report that only
     // repeats the last one ("11 open" twice) keeps the count.

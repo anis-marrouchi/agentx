@@ -27,7 +27,9 @@ import type { RequestStore } from "./store"
 //   warn  (the default) one log line and one `waiting_step_unfiled`
 //         signal saying what it would file; the step is not changed
 //   on    the step gets a progress report with waitUntil = that time
-//         (at most 7 days ahead, like a step call), so no nudge before it
+//         (at most 7 days ahead, like a step call), so no nudge before it.
+//         The report keeps the step's nudge count (keepNudges): a run
+//         that only ever ends waiting still gets the step blocked
 //
 // No time, a time in the past, no linked step: a log line only. Never
 // throws. Runs inside the run's end (no poller of its own, noqta#609).
@@ -110,7 +112,7 @@ function ownedStep(deps: WaitingStepDeps, run: WaitingStepRun): PlanStep | null 
   return null
 }
 
-/** The run (or anyone, since it started) already reported on the step. */
+/** This agent already reported on the step since the run started. */
 function filedSince(plans: PlanStore, step: PlanStep, agentId: string, since: number): boolean {
   return plans.events(step.requestId, 50).some((e) =>
     e.step === step.idx && e.at >= since && ["progress", "done", "blocked"].includes(e.kind) && e.detail.startsWith(`${agentId}:`))
@@ -157,6 +159,9 @@ function decide(deps: WaitingStepDeps, run: WaitingStepRun): WaitingStepOutcome 
     requestId: step.requestId, step: step.idx, status: "progress", agentId: run.agentId,
     note: `State: waiting on ${state.on.slice(0, 200)} (filed by the daemon from the run's end)`,
     waitUntil: until,
+    // The daemon's report is not the agent's progress: the nudges so far
+    // still count toward blocking the step (#2320 review C1).
+    keepNudges: true,
   }, now)
   if (err) {
     deps.log(`[waiting-step] ${where}: step ${ref} not filed: ${err}`)

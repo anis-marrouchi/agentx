@@ -192,3 +192,60 @@ describe("replay: req-01M8A6FB3JZ4YKYS410K8S0VEQ step 3, run 01M8AG3BMA3VHPXWT8V
     expect((await sweepAt(Date.parse("2026-11-25T23:21:17Z"))).res.nudged).toBe(1)
   })
 })
+
+describe("nudges and a daemon-filed wait (#2320 review C1)", () => {
+  const sweepAt = async (at: number) => {
+    clock = at
+    return runPlansSweep({
+      requests, plans, settings: { ...DEFAULT_PLAN_SETTINGS },
+      tellAgent: async () => {},
+      send: async () => {}, notify: async () => {}, hasAgent: () => true,
+      fetch: (async () => new Response("down", { status: 503 })) as any,
+      log: () => {}, now: at,
+    } as any)
+  }
+  const iso = (ms: number) => new Date(ms).toISOString()
+
+  it("a daemon-filed wait keeps the nudge count, so the step is still blocked in the end", async () => {
+    const max = DEFAULT_PLAN_SETTINGS.maxNudges
+    // 31 min after pm-agent's last report.
+    let t = Date.parse("2026-11-25T23:21:17Z")
+    for (let n = 1; n <= max; n++) {
+      expect((await sweepAt(t)).nudged, `nudge ${n}`).toBe(1)
+      expect(plans.step("req-1", 3)!.nudges).toBe(n)
+      // The nudged run ends waiting, files nothing; the daemon files the wait.
+      clock = t + 2 * MIN
+      const reply = `Still on it.\n\nState: waiting — devops, until ${iso(t + 60 * MIN)}`
+      expect(fileWaitingStep(deps("on"), run(reply, { startedAt: t + MIN }))).toBe("filed")
+      expect(plans.step("req-1", 3)).toMatchObject({ nudges: n, waitUntil: t + 60 * MIN })
+      expect(plans.events("req-1").at(-1)!.detail).not.toContain("nudges reset")
+      // No nudge while it waits.
+      expect((await sweepAt(t + 59 * MIN)).nudged).toBe(0)
+      t += (60 + 31) * MIN
+    }
+    const res = await sweepAt(t)
+    expect(res).toMatchObject({ nudged: 0, blocked: 1 })
+    expect(plans.step("req-1", 3)).toMatchObject({ state: "blocked", note: `no progress after ${max} nudges` })
+  })
+
+  it("the agent's own progress report with waitUntil still resets the nudges", async () => {
+    expect((await sweepAt(Date.parse("2026-11-25T23:21:17Z"))).nudged).toBe(1)
+    expect(plans.step("req-1", 3)!.nudges).toBe(1)
+    clock += 2 * MIN
+    // Same words as the last report: only the wait it names is news.
+    expect(reportStep(requests, plans, {
+      requestId: "req-1", step: 3, status: "progress", agentId: "pm-agent", note: "PR sent to DevOps", waitUntil: MIDNIGHT,
+    }, clock)).toBeNull()
+    expect(plans.step("req-1", 3)).toMatchObject({ nudges: 0, lastNudgeAt: null, waitUntil: MIDNIGHT })
+    expect(plans.events("req-1").at(-1)!.detail).toContain("(nudges reset from 1)")
+  })
+
+  it("keepNudges keeps the count even for new words", async () => {
+    expect((await sweepAt(Date.parse("2026-11-25T23:21:17Z"))).nudged).toBe(1)
+    clock += 2 * MIN
+    expect(reportStep(requests, plans, {
+      requestId: "req-1", step: 3, status: "progress", agentId: "pm-agent", note: "new words", waitUntil: MIDNIGHT, keepNudges: true,
+    }, clock)).toBeNull()
+    expect(plans.step("req-1", 3)).toMatchObject({ nudges: 1, waitUntil: MIDNIGHT })
+  })
+})
