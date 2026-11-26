@@ -43,6 +43,14 @@ Simple by default; more on demand.
 - A new control or field does not go on the default view unless the PR says why it must be always visible.
 - A review fails when a change adds always-visible controls without that reason.
 
+## Orca Design Rule (Anis 2026-11-26)
+
+orca-design is the default skill for every Hub and app page, component and user flow.
+
+- Read `~/.claude/skills/orca-design/SKILL.md` before you design, mock, build, restyle or review any of them.
+- Every UI PR says in its description that it follows orca-design, and the reviewer checks it against the skill.
+- Settings: only the new Settings from the #2101 mocks (ST1–ST5) is accepted. A PR that shows, records or documents the old Settings page as finished work is not accepted. Where docs must still point at the old Settings, mark it as the interim Settings, to be re-recorded on the new one.
+
 ## Documentation Rule
 
 Applies to every change under `docs/` and to any code change that adds or renames a feature, setting or command. Full text and screenshot tooling: [CONTRIBUTING.md › Docs conventions](CONTRIBUTING.md#docs-conventions).

@@ -47,6 +47,8 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 
    ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
 
+   *Interim Settings: this step and the recording show the current Settings page, which a new Settings replaces. Both are re-recorded on the new Settings when it is switched on.*
+
    The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
