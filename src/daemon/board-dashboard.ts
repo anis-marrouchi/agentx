@@ -1372,7 +1372,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const nodeUrl = u.searchParams.get("node")
     const agentId = u.searchParams.get("agent")
     if (!nodeUrl || !agentId) { sendJson(res, 400, { error: "node and agent query params required" }); return }
-    await proxyNodeGet(res, ctx, nodeUrl, `/agents/${encodeURIComponent(agentId)}/workspace?path=${encodeURIComponent(u.searchParams.get("path") || "")}`)
+    // Always JSON: a file's text must never come back as a page the browser runs.
+    await proxyNodeGet(res, ctx, nodeUrl, `/agents/${encodeURIComponent(agentId)}/workspace?path=${encodeURIComponent(u.searchParams.get("path") || "")}`, "application/json; charset=utf-8")
     return
   }
 
@@ -2900,6 +2901,7 @@ async function proxyNodeGet(
   ctx: { config: DaemonConfig },
   nodeUrl: string,
   upstreamPath: string,
+  contentType?: string,
 ): Promise<void> {
   const target = nodeUrl.replace(/\/+$/, "")
   const allowed = new Set<string>()
@@ -2920,7 +2922,8 @@ async function proxyNodeGet(
     const r = await fetch(`${target}${upstreamPath}`, { headers })
     const body = await r.text()
     res.writeHead(r.status, {
-      "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
+      "Content-Type": contentType || r.headers.get("content-type") || "application/json; charset=utf-8",
+      ...(contentType ? { "X-Content-Type-Options": "nosniff" } : {}),
     })
     res.end(body)
   } catch (e: any) {

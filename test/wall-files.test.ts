@@ -193,6 +193,38 @@ describe("Workspace files: reading inside the workspace only (#2101 R17)", () =>
     for (const n of ["README.md", "env.ts", "token-store.ts", "src"]) expect(isHiddenName(n)).toBe(false)
   })
 
+  it("checks the real path's names as stored on disk: a link to a hidden folder, a folded spelling (B1, B2)", () => {
+    mkdirSync(join(ws, ".ssh"))
+    writeFileSync(join(ws, ".ssh", "id"), "key")
+    symlinkSync(join(ws, ".ssh"), join(ws, "notes"))
+    symlinkSync(join(ws, ".ssh", "id"), join(ws, "plain.txt"))
+    expect(readWorkspace(ws, "notes")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, "notes/id")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, "plain.txt")).toMatchObject({ ok: false, status: 403 })
+    const top = readWorkspace(ws, "")
+    expect(top.ok && top.kind === "dir" && top.entries.some((e) => e.name === "notes" || e.name === "plain.txt" || e.name === ".ssh")).toBe(false)
+    // On a case-insensitive file system (APFS by default) these reach .ssh.
+    for (const p of [".SSH/id", ".\u017f\u017fh/id", "NOTES/id"]) {
+      expect(readWorkspace(ws, p).ok).toBe(false)
+    }
+  })
+
+  it("never shows git, Claude, MCP, Python, Docker or Kubernetes logins", () => {
+    for (const n of [".git-credentials", ".credentials.json", ".mcp.json", ".pypirc"]) writeFileSync(join(ws, n), "x")
+    mkdirSync(join(ws, ".claude")); writeFileSync(join(ws, ".claude", "settings.local.json"), "{}"); writeFileSync(join(ws, ".claude", "settings.json"), "{}")
+    mkdirSync(join(ws, ".docker")); writeFileSync(join(ws, ".docker", "config.json"), "{}")
+    mkdirSync(join(ws, ".kube")); writeFileSync(join(ws, ".kube", "config"), "x")
+    for (const p of [".git-credentials", ".credentials.json", ".mcp.json", ".pypirc", ".claude/settings.local.json", ".docker/config.json", ".kube/config", ".docker", ".kube"]) {
+      expect(readWorkspace(ws, p)).toMatchObject({ ok: false, status: 403 })
+    }
+    expect(readWorkspace(ws, ".claude/settings.json")).toMatchObject({ ok: true, kind: "file" })
+    const top = readWorkspace(ws, "")
+    const names = top.ok && top.kind === "dir" ? top.entries.map((e) => e.name) : []
+    for (const n of [".git-credentials", ".credentials.json", ".mcp.json", ".pypirc", ".docker", ".kube"]) expect(names).not.toContain(n)
+    const cl = readWorkspace(ws, ".claude")
+    expect(cl.ok && cl.kind === "dir" && cl.entries.map((e) => e.name)).toEqual(["settings.json"])
+  })
+
   it("caps the size and refuses binary files", () => {
     expect(readWorkspace(ws, "big.txt")).toMatchObject({ ok: false, status: 413 })
     expect(readWorkspace(ws, "bin.dat")).toMatchObject({ ok: false, status: 415 })
