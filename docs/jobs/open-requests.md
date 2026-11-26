@@ -201,6 +201,27 @@ When the mode is not `off`, your words go to the model before any close, not onl
 "closeProof": { "mode": "warn" }
 ```
 
+### Proof links are opened
+
+A link given as proof is kept as text unless `requests.proofCheck.mode` is set. With it set, AgentX opens the links of a close once, at the close: the link an agent gives with its done, its links for each thing you asked for, and the link a delegate's answer carried when the settle pass closes the request.
+
+- A GitHub or GitLab issue, pull or merge request, or commit link is read through the connector, not as a page: it exists, it is merged or closed when the close says so, and a commit link is that commit.
+- Any other `http` or `https` link must answer with success and, when the close names a commit or an issue number, hold it. Only public addresses are opened, as for the `url` check below.
+- A page that answers 404 or 410 did not check out. A page that would not let AgentX read it (401, 403, 407, 429, or a server error) could not be checked; that never counts against the close.
+- Whether something is merged, closed, fixed or resolved is read only from the closer's own words: the agent's done evidence, or the delegate's answer. The request's headline is never read as that claim ("Review PR #5 before it is merged" does not claim #5 is merged); it may still name the commit or number a page should hold.
+- At most `maxLinks` links are opened per close, all at once, with one time limit on all of them (`totalTimeoutMs`).
+- The settle pass opens the links of at most `perSweep` hand-backs per requests check (default 3); the rest wait for the next check.
+
+| Mode | What happens |
+|---|---|
+| `off` (default) | Nothing is opened. |
+| `warn` | The close goes through. The request records what the links showed (`verified` only when every link checked out), and the agent's done answer says it. A promise's wiki fact says `daemon-check` checked it only when its link checked out; otherwise its source says the link was not checked. |
+| `block` | As `warn`, and a close is refused when a link shows it is false: a wrong state or commit on GitHub or GitLab, or a 404 or 410 page. A link whose page does not hold the named commit or number is only recorded, because many pages build their text in the browser. A settle refused this way is left open, and its agent is told once. |
+
+```json
+"proofCheck": { "mode": "warn" }
+```
+
 ## Promises an agent makes
 
 An agent often promises something to someone: "I will send the file by Friday", "I will deploy once the review is in". A **promise** is a request the agent opens itself, so the promise stays on your list until it is kept. It is the same kind of record as your own requests, and it shows in the same list.

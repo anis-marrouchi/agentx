@@ -8,6 +8,8 @@ import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
+import type { ProofChecker, ProofCheckOutcome } from "./proof-check"
+import type { ProofClaim } from "./proof-link"
 import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, issueCloseWhen, openPromise, parseProof, proofRefusal, setDueTime, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
@@ -112,6 +114,10 @@ export interface RequestsApiDeps {
   /** What the checker said about this request's closeWhen: the second
    *  pass of a done (handleRequestsCall). */
   verdict?: { requestId: string; result: CheckResult }
+  /** Opens a done's proof links (proof-check.ts, #2122). Unset: off. */
+  proofCheck?: ProofChecker
+  /** What the proof links showed: the second pass of a done. */
+  proofLinks?: { requestId: string; outcome: ProofCheckOutcome | null }
   /** Proof per deliverable and reopen once (close-proof.ts, #692).
    *  Unset: as before. */
   closeProof?: CloseProofCtx
@@ -188,6 +194,9 @@ export interface ApiReply {
    *  check runs before the close (#2047): judge `record`, then call again
    *  with the verdict. Nothing is closed yet. */
   judgeOwner?: { requestId: string; record: RequestRecord }
+  /** Set on a done that passed the proof gates while its proof links are
+   *  opened (#2122): check them, then call again with the outcome. */
+  checkLinks?: { requestId: string; links: string[]; claim: ProofClaim }
 }
 
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
@@ -409,6 +418,7 @@ export async function handleRequestsCall(
   let passDeps: RequestsApiDeps = deps
   const reply = await checkPass(method, path, body, deps, caller)
   if (reply.verdictGiven) passDeps = { ...deps, verdict: reply.verdictGiven }
+  if (reply.linksGiven) passDeps = { ...passDeps, proofLinks: reply.linksGiven }
   if (!reply.judgeOwner) return { status: reply.status, body: reply.body }
   const ctx = deps.ownerBeforeClose!
   const { requestId, record } = reply.judgeOwner
@@ -434,8 +444,18 @@ async function checkPass(
   body: Record<string, unknown> | undefined,
   deps: RequestsApiDeps & { check?: LoopChecker },
   caller: CallerProof,
-): Promise<ApiReply & { verdictGiven?: { requestId: string; result: CheckResult } }> {
+): Promise<ApiReply & { verdictGiven?: { requestId: string; result: CheckResult }; linksGiven?: RequestsApiDeps["proofLinks"] }> {
   const first = handleRequestsApi(method, path, body, deps, caller)
+  if (first.checkLinks && deps.proofCheck) {
+    const { requestId, links, claim } = first.checkLinks
+    const outcome = await deps.proofCheck(links, claim).catch((e: any) => {
+      deps.closeProof?.log?.(`[requests] ${requestId}: proof link check failed: ${e?.message ?? e}`)
+      return null
+    })
+    const linksGiven = { requestId, outcome }
+    const second = handleRequestsApi(method, path, body, { ...deps, proofLinks: linksGiven }, caller)
+    return { ...second, linksGiven }
+  }
   if (!first.verify) return first
   const request = deps.store.get(first.verify.requestId)!
   const result: CheckResult = deps.check
@@ -888,6 +908,24 @@ export function handleRequestsApi(
       if (gate) return gate
     }
 
+    // Its proof links are opened (#2122): the link proof and every
+    // per-deliverable link. Block mode refuses only on a firm failure.
+    let linkCheck: ProofCheckOutcome | null = null
+    if (action === "done" && !request.closeWhen && deps.proofCheck) {
+      const given = deps.proofLinks?.requestId === request.id ? deps.proofLinks : null
+      if (!given) {
+        const links = [
+          ...(proof?.kind === "link" ? [proof.value] : []),
+          ...(store.get(request.id)?.deliverableProofs ?? []).map((p) => p.link),
+        ]
+        if (links.length) return { status: 202, body: { checking: "proof links" }, checkLinks: { requestId: request.id, links, claim: { said: str(input.evidence), about: request.headline ?? request.text } } }
+      } else linkCheck = given.outcome
+      if (linkCheck?.refuse) {
+        store.markChecked(request.id, "failed", `Not closed: ${linkCheck.refuse}`, now)
+        return { status: 409, body: { error: `Not closed: the proof link shows otherwise (${linkCheck.refuse}). Give the right link, or say what is still left.`, proofFailed: true } }
+      }
+    }
+
     // A loop with a checker closes on evidence, not on the agent's word.
     if (action === "done" && request.closeWhen) {
       const v = deps.verdict?.requestId === request.id ? deps.verdict.result : null
@@ -1037,7 +1075,7 @@ export function handleRequestsApi(
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
       } else if (action === "done") {
-        if (store.close(request.id, "done", doneEvidence, now, proof, agentId)) said = keepOwnerVerdict(deps, request.id, owner.verdict, now)
+        if (store.close(request.id, "done", doneEvidence, now, proof, agentId, null, linkCheck?.verify)) said = keepOwnerVerdict(deps, request.id, owner.verdict, now)
       }
       else if (closeKind) {
         store.close(request.id, "declined", str(input.reason) || `superseded by ${closeKind.link}`, now, { kind: "link", value: closeKind.link, ranAt: now }, agentId, closeKind.kind)
@@ -1052,7 +1090,9 @@ export function handleRequestsApi(
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }
     const due = slotDone()
-    return { status: 200, body: { request: store.get(request.id), ...(due ? { due } : {}), ...said } }
+    // Warn mode tells the closing agent what its links showed (#2122).
+    const links = linkCheck ? { proofLinks: linkCheck.verify } : {}
+    return { status: 200, body: { request: store.get(request.id), ...(due ? { due } : {}), ...said, ...links } }
   }
 
   if (m !== "GET" && m !== "HEAD") return { status: 405, body: { error: "Method not allowed" } }

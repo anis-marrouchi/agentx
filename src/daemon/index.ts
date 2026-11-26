@@ -192,7 +192,8 @@ import { dbFacts } from "@/jobs/facts"
 import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wake"
 import { MAX_NOTICES } from "@/agents/notices"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
-import { forgeReader } from "@/requests/checkers/issue"
+import { forgeCommitReader, forgeReader } from "@/requests/checkers/issue"
+import { proofChecker, type ProofChecker } from "@/requests/proof-check"
 import { fetchAllowFromConfig, setFetchAllow } from "@/requests/checkers/fetch-guard"
 import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
@@ -3648,6 +3649,15 @@ export class AgentXDaemon {
     }
   }
 
+  /** Opens the proof links of a close (#2122) through the forge
+   *  connectors; undefined while requests.proofCheck.mode is off. */
+  private proofCheck(): ProofChecker | undefined {
+    return proofChecker(this.config.requests.proofCheck, () => {
+      const connectors = forgeConnectorsOf(this.config)
+      return { forge: forgeReader(connectors), commit: forgeCommitReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null }
+    })
+  }
+
   private headlines?: HeadlineWriter
   private ownerCheck?: OwnerWordsCheck
   private deliverables?: DeliverablesReader
@@ -3832,6 +3842,7 @@ export class AgentXDaemon {
         return { forge: forgeReader(connectors), gitlabUrl: connectors.gitlab?.url ?? null, github: !!connectors.github?.token }
       }),
       closeProof: this.closeProofDeps(requests),
+      proofCheck: this.proofCheck(),
       planLeft: (id) => requests.plans.get(id)?.state !== "active" ? []
         : requests.plans.steps(id).filter((s) => !FINISHED_STEP_STATES.includes(s.state)).map((s) => ({ step: `${s.idx}. ${s.name}`, agent: s.kind !== MESSAGE_KIND })),
       describe: (r) => headlines.ensure(r),
@@ -6463,6 +6474,7 @@ export class AgentXDaemon {
           defaultForge: defaultForgeOf(this.config),
           flow: this.config.requests.flow,
           check: loopChecker(() => this.requestCheckContext(requests)),
+          proofCheck: this.proofCheck(),
           closeProof: {
             mode: this.config.requests.closeProof?.mode ?? "off",
             ownerCheckOn: !!this.config.requests.ownerCheck?.enabled,

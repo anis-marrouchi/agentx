@@ -152,7 +152,7 @@ describe("checkProofLink: forge links read through the API (#2122)", () => {
 
   it("fails a pull request that is not merged when the claim says merged", async () => {
     const r = await checkProofLink("https://github.com/acme/app/pull/13", "merged the fix", ctx)
-    expect(r).toEqual({ state: "failed", detail: "https://github.com/acme/app/pull/13 is open" })
+    expect(r).toEqual({ state: "failed", detail: "https://github.com/acme/app/pull/13 is open", firm: true })
   })
 
   it("verifies an issue that exists when the claim names no state", async () => {
@@ -197,7 +197,7 @@ describe("checkProofLink: other links through the URL check (#2122)", () => {
       "https://docs.example.com/release": () => new Response("Released", { status: 200 }),
     })
     const fetch = guardedFetch({ fetch: s.fetch, lookup: PUBLIC })
-    expect(await checkProofLink("https://docs.example.com/gone", "done", { fetch })).toEqual({ state: "failed", detail: "https://docs.example.com/gone answered HTTP 404" })
+    expect(await checkProofLink("https://docs.example.com/gone", "done", { fetch })).toEqual({ state: "failed", detail: "https://docs.example.com/gone answered HTTP 404", firm: true })
     expect((await checkProofLink("https://docs.example.com/release", "shipped #42", { fetch })).state).toBe("failed")
   })
 

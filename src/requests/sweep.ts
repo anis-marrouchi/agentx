@@ -13,6 +13,7 @@ import { DEFAULT_RESEND, resendLine, resendVerdict, type ResendCause } from "./r
 import { HUB_NAME } from "@/daemon/ui/hub-name"
 import { JOB_NOTE_MAX } from "@/jobs/store"
 import { DEFAULT_PROMISE_SETTINGS } from "./promise"
+import { DEFAULT_PROOF_CHECK, type ProofChecker } from "./proof-check"
 import { missedPr, PR_LEAD_AFTER_MS, PR_LEAD_WINDOW_MS, prDueText, prLeadText } from "./pr-due"
 
 // --- The daemon's requests check, once a minute (#356) ---
@@ -102,6 +103,9 @@ export interface RequestSweepDeps {
    *  plan lookup and the reader. The mode, the telling and its cap come
    *  from the settings and the deps here. Unset: as before. */
   closeProof?: Pick<CloseProofCtx, "plan" | "read">
+  /** Opens a hand-back's proof link before it settles (proof-check.ts,
+   *  #2122). Unset: proofCheck is off, settled unverified as before. */
+  proofCheck?: ProofChecker
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
@@ -402,7 +406,15 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   // Moving it to waiting_owner (enforce) comes later.
   const asksOwner = (id: string) => settings.settleOwnerWait === "off" ? null : store.ownerWait(id)
 
+  // Hand-backs left for the next check by the cap below: the quiet check
+  // must not raise them meanwhile, or they would never settle.
+  const linkCheckNext = new Set<string>()
   if (settings.settleHandedBack !== false) {
+    // Each link check may take totalTimeoutMs and they run one after
+    // another, so only perSweep of them run per check (#2122 review C6);
+    // the rest settle on the next one. The daemon also never starts a
+    // check while the last is running (requestsSweeping).
+    let linkChecksLeft = settings.proofCheck?.perSweep ?? DEFAULT_PROOF_CHECK.perSweep
     try {
       for (const r of store.handedBack(now - settings.staleAfterHours * HOUR)) {
         // A tracked plan follows its own steps and tells the owner itself.
@@ -421,8 +433,29 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           log(`[requests] ${r.id} not settled: handed work came back with no proof; ${woken ? `${r.agentId} woken (${woken})` : `${r.agentId} could not be woken`}`)
           continue
         }
+        // Its link already failed firmly in block mode: left as it is
+        // until the work comes back with another link (#2122).
+        if (r.verifyState === "failed" && r.verifyDetail?.includes(back.proof)) continue
+        if (deps.proofCheck && linkChecksLeft <= 0) {
+          linkCheckNext.add(r.id)
+          continue
+        }
+        if (deps.proofCheck) linkChecksLeft--
+        // The state it claims comes from the hand-back's own words; the
+        // headline may only name the ref (review C5).
+        const links = deps.proofCheck ? await deps.proofCheck([back.proof], { said: back.answer ?? "", about: r.headline ?? r.text }) : null
+        if (links?.refuse) {
+          const why = `Not settled: its proof link ${back.proof} shows otherwise (${links.refuse}).`
+          store.markChecked(r.id, "failed", why, now)
+          log(`[requests] ${r.id} not settled (proofCheck block): ${links.refuse}`)
+          if (deps.tellAgent && deps.hasAgent?.(r.agentId) !== false) {
+            await deps.tellAgent(r.agentId, `${why} Give the right link, or say what is still left.`, r)
+              .catch((e: any) => log(`[requests] ${r.id}: could not tell ${r.agentId}: ${e?.message ?? e}`))
+          }
+          continue
+        }
         const detail = `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`
-        if (store.settle(r.id, back.proof, detail, now)) {
+        if (store.settle(r.id, back.proof, detail, now, links?.verify)) {
           result.settled++
           log(`[requests] ${r.id} settled: handed work came back with ${back.proof}`)
         }
@@ -486,6 +519,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   try {
     const hours = settings.staleAfterHours
     for (const r of store.quietSince(["candidate", "in_progress", "waiting_other"], now - hours * HOUR)) {
+      if (linkCheckNext.has(r.id)) continue
       const reason = r.state === "candidate"
         ? `The turn that received it never reported an end (${hours} h ago or more)`
         : `No activity for ${hours} h`

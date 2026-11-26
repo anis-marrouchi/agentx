@@ -9,6 +9,7 @@ import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import type { OwnerCheckSettings } from "./owner-check"
 import type { CloseProofSettings } from "./close-proof"
+import type { ProofCheckSettings } from "./proof-check"
 import type { JobWakeSettings } from "@/jobs/wake"
 import { queueOwnerSubjectSignal } from "@/improve/bayan"
 import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
@@ -76,6 +77,8 @@ export interface RequestSettings {
   /** Proof per deliverable before a close by check (close-proof.ts,
    *  #692). Unset: off. */
   closeProof?: Partial<CloseProofSettings>
+  /** Proof links opened on a close (proof-check.ts, #2122). Unset: off. */
+  proofCheck?: Partial<ProofCheckSettings>
   /** The job ledger (#1861): a job for every run that is not the owner's
    *  turn. Unset: on. */
   jobs?: { enabled?: boolean; wake?: JobWakeSettings }
@@ -331,7 +334,7 @@ export class RequestTracker {
       const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
       // Kept on the link: the requests check settles a request once all
       // its handed work came back done and nobody closed it (#1138).
-      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null, now)
+      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null, now, status === "done" ? text : null)
       if (status === "done") {
         // The answer is back with the asking agent. Still open: the agent
         // closes it, or the requests check settles it once it goes quiet.

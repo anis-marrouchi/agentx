@@ -348,12 +348,17 @@ export interface FactWriter {
 export function promiseFact(r: RequestRecord, proof: Proof, settings: PromiseSettings): FactInput {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
   const byOwner = r.owedBy === OWED_TO_OWNER
+  // A link the daemon opened (#2122): checked by it only when it showed
+  // the claim; otherwise the fact says the link was not checked. No check
+  // ran (proofCheck off): as before.
+  const linkChecked = !byOwner && proof.kind === "link" && r.verifyState === "verified"
+  const notChecked = !byOwner && proof.kind === "link" && r.verifyState === "unverified" ? "; link not checked" : ""
   return {
     subject: words.length > 120 ? `${words.slice(0, 119)}…` : words,
     attribute: byOwner ? "owner's answer" : "done",
     value: byOwner ? proof.value.slice(0, 200) : "yes",
-    source: `${describeProof(proof)} (${r.id})`.slice(0, 600),
-    verifiedBy: r.owedBy === OWED_TO_OWNER ? OWED_TO_OWNER : r.agentId,
+    source: `${describeProof(proof)} (${r.id}${notChecked})`.slice(0, 600),
+    verifiedBy: byOwner ? OWED_TO_OWNER : linkChecked ? "daemon-check" : r.agentId,
     verifiedAt: new Date(proof.ranAt).toISOString(),
     volatility: "work-state",
     ttlDays: settings.factTtlDays,
