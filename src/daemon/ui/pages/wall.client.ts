@@ -94,7 +94,7 @@ import { WALL_EDITOR_SCRIPT } from "./wall-editor.client"
 import { HUB_NAME } from "../hub-name"
 import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
-import { haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
+import { haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunsHtml } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
@@ -124,7 +124,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
-  ${injectFns({ haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
+  ${injectFns({ haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunsHtml })}
   ${injectFns({ engineIconKey, engineIcon })}
   ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount })}

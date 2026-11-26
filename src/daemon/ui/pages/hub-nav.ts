@@ -136,6 +136,12 @@ export const HUB_NAV_CSS = `
 .ha__node { font-size: 11px; padding: 0 5px; border: 1px solid var(--ax-border); border-radius: 4px; color: var(--ax-muted); white-space: nowrap; }
 .ha__top time { margin-left: auto; font-size: 11.5px; color: var(--ax-muted); white-space: nowrap; }
 .ha__line { font-size: 12.5px; color: var(--ax-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A working agent's other runs, under its row (#2328). */
+.ha__runs { display: flex; flex-direction: column; margin: -4px 0 4px 44px; }
+.ha__run { display: block; padding: 2px 8px; border-radius: var(--ax-radius-sm); font-size: 12px; color: var(--ax-text-2); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); color: var(--ax-text); }
+.ha__run.is-rest { color: var(--ax-muted); }
+.ha__rch { font-weight: 600; color: var(--ax-text); }
 /* A working agent (#2270): its dot breathes a soft ring and the run's line
    shimmers, in place of the old sliding stripe. Still under reduced motion. */
 .ha__row.is-working .ha__dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--ha-s); opacity: 0; animation: ha-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
