@@ -139,6 +139,9 @@ export interface RequestSweepResult {
   duePushed: number
   /** Missed PRs whose lead was woken 15 min after their agent (#2279). */
   prLeads: number
+  /** Promises whose agent was woken before their due time
+   *  (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). */
+  leadWoken: number
   /** Open items with no due time whose agent was asked for one (noqta#886). */
   dueAsked: number
 }
@@ -316,13 +319,22 @@ function wakeNoDue(deps: RequestSweepDeps, r: RequestRecord): string | null {
 export function duePromiseText(r: RequestRecord): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
   return `[Promise due] ${r.id}: ${r.agentId} promised you this by ${when(r.dueAt!)} and it is not kept yet: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}\n` +
-    `${r.agentId} was woken to keep it now, and the owner is told. Nothing is needed from you unless your own work waits on it.`
+    `${r.agentId} was woken to keep it now; the owner is told if it stays open. Nothing is needed from you unless your own work waits on it.`
+}
+
+/** What a promise's agent reads before its due time
+ *  (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): how long is left and how to close it. */
+export function leadText(r: RequestRecord, now: number): string {
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  const left = Math.max(1, Math.round((r.dueAt! - now) / 60_000))
+  return `It is due in ${left} min (${when(r.dueAt!)}), owed to ${r.owedTo ?? "the owner"}: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}. ` +
+    `Keep it and close it with agentx_request {action:"done", id:"${r.id}", evidence:"<link>"}, or give a new due time with {action:"accept", id:"${r.id}", due:"<ISO time>"} and the reason.`
 }
 
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, dueAsked: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0, dueAsked: 0 }
   if (!settings.enabled) return result
   // Who hears of a missed PR after its agent (#2279): never the agent itself.
   const prLead = settings.promises?.prLead ?? DEFAULT_PROMISE_SETTINGS.prLead
@@ -498,11 +510,29 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   // the quiet time. Its checker ran above: a promise it closed is gone.
   // Off (`promises.duePush`, #1912): nothing is read, woken or marked here;
   // the promise comes back through the quiet check below.
+  const duePush = settings.promises?.duePush !== false
+  const leadMinutes = settings.promises?.leadMinutes ?? DEFAULT_PROMISE_SETTINGS.leadMinutes
+  const graceMinutes = settings.promises?.graceMinutes ?? DEFAULT_PROMISE_SETTINGS.graceMinutes
+
+  // Before the due time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): its agent is
+  // woken `leadMinutes` ahead, once per due time, through its job's wake.
+  // Nobody else is told: it is not late yet.
+  try {
+    for (const r of duePush && leadMinutes > 0 ? store.leadPromises(now, leadMinutes * 60_000) : []) {
+      store.markLeadWoken(r.id)
+      const woken = deps.wakeJob?.(r.id, leadText(r, now)) ?? false
+      if (woken) result.leadWoken++
+      log(`[requests] retro:01M7ZMDDWBC76VKP5NXF9CE9ZY ${r.id} due ${when(r.dueAt!)}: ${r.agentId} ${woken ? "woken ahead" : "not woken ahead (a run is on it, or its job cannot be woken)"}`)
+    }
+  } catch (e: any) {
+    log(`[requests] promise lead wakes failed: ${e?.message ?? e}`)
+  }
+
   try {
     // No "came back, left to settle" skip here (#1912 item 2): the
     // hand-back settle reads non-promises only (CAME_BACK), so every due
     // promise is pushed once and then left out of this query by its mark.
-    for (const r of settings.promises?.duePush === false ? [] : store.duePromises(now)) {
+    for (const r of duePush ? store.duePromises(now) : []) {
       const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
       // A PR due with none linked (#2279): woken with the issue, by a turn
       // when the job's wake cannot take it.
@@ -512,14 +542,35 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
       const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
       store.markDuePushed(r.id, now)
-      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})${woken ? `.${wokenTail(r.agentId)}` : ""}`, now)) {
+      const line = `[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`
+      // With a grace window it needs attention only once that has run out
+      // (below); the agent and its waiter are still told now.
+      if (graceMinutes > 0) {
+        result.duePushed++
+        log(`${line}; needs attention after ${graceMinutes} min of grace`)
+      } else if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})${woken ? `.${wokenTail(r.agentId)}` : ""}`, now)) {
         result.quiet++
         result.duePushed++
-        log(`[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`)
+        log(line)
       }
     }
   } catch (e: any) {
     log(`[requests] due promises failed: ${e?.message ?? e}`)
+  }
+
+  // Grace run out (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): a promise pushed at
+  // its due time and still open `graceMinutes` later needs attention, once
+  // per due time. One kept within the grace is never raised.
+  try {
+    for (const r of duePush && graceMinutes > 0 ? store.graceDue(now - graceMinutes * 60_000) : []) {
+      store.markGraceRaised(r.id)
+      if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)}), still open ${graceMinutes} min later`, now)) {
+        result.quiet++
+        log(`[requests] retro:01M7ZMDDWBC76VKP5NXF9CE9ZY ${r.id} still open ${graceMinutes} min past its due time: needs attention`)
+      }
+    }
+  } catch (e: any) {
+    log(`[requests] promise grace check failed: ${e?.message ?? e}`)
   }
 
   // 15 min after a missed PR's agent was woken, still open with no PR
@@ -575,6 +626,9 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       // A promise is pushed above; with that push off (#1912) it keeps the
       // old rule: a touch after its due time holds it until quiet.
       if (r.promise) {
+        // Inside its grace window it is left to the grace check above, however
+        // long it was quiet before its due time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY).
+        if (duePush && graceMinutes > 0 && now < r.dueAt! + graceMinutes * 60_000) continue
         if (r.updatedAt > r.dueAt! && r.updatedAt >= now - hours * HOUR) continue
         if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
         continue

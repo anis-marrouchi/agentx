@@ -339,6 +339,11 @@ export function ensureRequestTables(db: Database.Database): void {
   // The due time the missed-PR follow-up ran for (#2279): the lead is
   // woken once per due time, 15 min after the agent was.
   ensureColumns(db, "requests", [["pr_lead_for", "INTEGER"]])
+  // The due time a promise's agent was woken ahead of, and the due time
+  // its grace ran out for (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): once each
+  // per due time, so a new due time is woken and raised again.
+  ensureColumns(db, "requests", [["lead_woken_for", "INTEGER"]])
+  ensureColumns(db, "requests", [["grace_raised_for", "INTEGER"]])
   // The hand-back a no-proof ask was for (noqta#884): the end time of the
   // newest delegation that came back done. Its agent is woken once per
   // hand-back, not at every check.
@@ -626,6 +631,35 @@ export class RequestStore {
   /** The missed-PR follow-up ran for the due time it has now (#2279). */
   markPrLead(id: string): void {
     this.db.prepare("UPDATE requests SET pr_lead_for = due_at WHERE id = ?").run(id)
+  }
+
+  /** Open promises an agent owes, due within `leadMs` of `now` and not
+   *  yet due, whose agent was not woken ahead of that due time
+   *  (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). Each is read once: `markLeadWoken`. */
+  leadPromises(now: number, leadMs: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN ('in_progress', 'waiting_other')
+         AND due_at IS NOT NULL AND due_at > ? AND due_at <= ? AND (lead_woken_for IS NULL OR lead_woken_for != due_at) ORDER BY due_at, rowid`,
+    ).all(OWED_TO_OWNER, now, now + leadMs).map(toRecord)
+  }
+
+  markLeadWoken(id: string): void {
+    this.db.prepare("UPDATE requests SET lead_woken_for = due_at WHERE id = ?").run(id)
+  }
+
+  /** Open promises an agent owes, pushed for the due time they have now,
+   *  that fell due at or before `before` and were not raised for it after
+   *  their grace (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): `markGraceRaised`. */
+  graceDue(before: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN ('in_progress', 'waiting_other')
+         AND due_at IS NOT NULL AND due_at <= ? AND due_pushed_for = due_at
+         AND (grace_raised_for IS NULL OR grace_raised_for != due_at) ORDER BY due_at, rowid`,
+    ).all(OWED_TO_OWNER, before).map(toRecord)
+  }
+
+  markGraceRaised(id: string): void {
+    this.db.prepare("UPDATE requests SET grace_raised_for = due_at WHERE id = ?").run(id)
   }
 
   /** Open items with no due time, made before `before`, whose agent was

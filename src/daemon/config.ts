@@ -1758,6 +1758,13 @@ export const requestsConfigSchema = z.object({
     /** The agent woken when a promised PR fell due, its agent was woken,
      *  and 15 min later no PR is linked (#2279). Empty: nobody else. */
     prLead: z.string().default("pm-agent"),
+    /** Minutes before a promise's due time its agent is woken, once per
+     *  due time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). 0: no early wake. */
+    leadMinutes: z.number().int().min(0).max(1440).default(15),
+    /** Minutes past a promise's due time before it needs attention; its
+     *  agent is still woken and its waiter told at the due time
+     *  (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). 0: the same minute, as before. */
+    graceMinutes: z.number().int().min(0).max(1440).default(30),
   }).default({}),
   /** Catch "I'll do X" (src/requests/catch.ts, #1138 E): at the end of an
    *  owner-facing turn whose reply could hold one, one small model call

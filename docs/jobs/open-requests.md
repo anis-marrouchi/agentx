@@ -333,20 +333,24 @@ To turn it on:
 Two more things now happen without the seat, wherever requests are on:
 
 - **A due time an agent accepts wakes it.** When an agent accepts your request with a due time (`agentx_request` with `action: "accept"` and `due`), AgentX starts a run of that agent at that time, as it already does for a promise.
-- **A promise that falls due is pushed the same minute.** The requests check wakes the agent that owes it, even when no wake-up was set for it, and tells whoever waits on it: you get **Promise not kept**, and an agent that waits on it reads a `[Promise due]` line at the start of its next run. It no longer waits for a day of silence first.
+- **A promise is woken before it falls due.** 15 minutes before a promise's due time (`requests.promises.leadMinutes`), the agent that owes it is woken once with how long is left, so it can keep it in time. Nobody else is told: it is not late yet.
+- **A promise that falls due is pushed the same minute.** The requests check wakes the agent that owes it, even when no wake-up was set for it, and an agent that waits on it reads a `[Promise due]` line at the start of its next run. It no longer waits for a day of silence first.
+- **You get Promise not kept only after a grace window.** A promise still open 30 minutes after its due time (`requests.promises.graceMinutes`) needs attention: you get **Promise not kept**. One kept within those 30 minutes is never raised. Set `graceMinutes` to `0` to be told the minute it falls due, as before.
 - **A promised pull request that is late wakes the agent, then the project manager.** When a promise's words say a PR is due (for example "Draft PR for issue 12 by 17:00") and the due time passes with no PR linked to it, the agent that owes it is woken at once with a link to the issue. If it cannot take a wake-up then, AgentX starts a run of its own for it. If 15 minutes later the promise is still open and still has no PR, the agent named in `requests.promises.prLead` is woken too (`pm-agent` by default). Each wake-up happens once per due time.
 
   A promise counts as having its PR when any of its own records names a pull request or merge request address (or a GitLab `group/project!12`): its home, a link, its check, its words, or the proof it was closed with. AgentX does not ask GitHub or GitLab for PRs here. So when an agent opens the PR, it closes the promise with the PR link as its proof.
 
 #### Turn one of these wake-ups off
 
-Each of the three wake-ups that came with the due-time check has its own switch. All three are on by default. You can turn one off without going back to an older version.
+Each wake-up that came with the due-time check has its own switch. All are on by default. You can turn one off without going back to an older version.
 
 | Setting in `agentx.json`, under `requests` | Default | When it is `false` |
 |---|---|---|
 | `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
 | `promises.acceptWake` | `true` | A due time an agent accepts on your request is stored and shown, but no run is started at that time. |
 | `promises.prLead` | `"pm-agent"` | An agent id, not `true` or `false`. Set it to `""` and only the agent that owes a late PR is woken; nobody else is woken 15 minutes later. |
+| `promises.leadMinutes` | `15` | Minutes, not `true` or `false`. `0`: the agent that owes a promise is not woken before its due time. |
+| `promises.graceMinutes` | `30` | Minutes, not `true` or `false`. `0`: a promise needs attention the same minute it falls due. |
 | `ownerCheck.wakeOnPlanMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request that a plan closed, you are told and no agent is woken. |
 | `ownerCheck.wakeOnMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request an agent, a check or a settle closed, you are told and no agent is woken. |
 

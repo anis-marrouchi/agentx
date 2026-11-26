@@ -357,7 +357,7 @@ describe("no behaviour change for the owner's requests", () => {
       notify: async (_title, message) => { told.push(message) },
     })
     expect(told).toEqual([])
-    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, dueAsked: 0 })
+    expect(result).toEqual({ checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0, dueAsked: 0 })
     expect(jobs.query({ limit: 10 }).total).toBe(2)
   })
 })
