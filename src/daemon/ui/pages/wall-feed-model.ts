@@ -122,7 +122,8 @@ export interface FdEl {
 /** Puts `items` (each a key and its markup, one element) into `box` in
  *  order, touching only what changed: a row whose markup is the same is
  *  kept as it is; a changed row is swapped, unless it has an open menu
- *  (aria-expanded="true" inside: it waits for the next refresh); the focus
+ *  (a menu button with aria-expanded="true" inside: it waits for the next
+ *  refresh; an open thread is not a menu, so its row still updates); the focus
  *  moves to the new row's control with the same data-fk; rows no longer
  *  listed go. `make` turns markup into one element. Says what it did. */
 export function fdPatch(box: FdEl, items: Array<{ key: string; html: string }>, make: (html: string) => FdEl, doc?: { activeElement?: unknown }): { added: number; changed: number; kept: number; removed: number } {
@@ -137,7 +138,7 @@ export function fdPatch(box: FdEl, items: Array<{ key: string; html: string }>, 
   items.forEach((it, i) => {
     want[it.key] = true
     let el = have[it.key]
-    if (el && (el._fdHtml === it.html || el.querySelector('[aria-expanded="true"]'))) n.kept++
+    if (el && (el._fdHtml === it.html || el.querySelector('[aria-haspopup="menu"][aria-expanded="true"]'))) n.kept++
     else {
       const next = make(it.html)
       next._fdHtml = it.html

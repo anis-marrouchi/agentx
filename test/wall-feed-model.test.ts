@@ -80,10 +80,11 @@ class El implements FdEl {
   _fdHtml?: string
   constructor(public html = "", key?: string) {
     if (key != null) this.attrs["data-key"] = key
-    for (const m of html.matchAll(/<button data-fk="([^"]+)"( aria-expanded="true")?>/g)) {
+    for (const m of html.matchAll(/<button data-fk="([^"]+)"( aria-haspopup="menu")?( aria-expanded="true")?>/g)) {
       const b = new El()
       b.attrs["data-fk"] = m[1]
-      if (m[2]) b.attrs["aria-expanded"] = "true"
+      if (m[2]) b.attrs["aria-haspopup"] = "menu"
+      if (m[3]) b.attrs["aria-expanded"] = "true"
       b.parent = this
       this.children.push(b)
     }
@@ -104,7 +105,7 @@ class El implements FdEl {
     const walk = (e: El) => { for (const c of e.children) { all.push(c); walk(c) } }
     walk(this)
     if (fk) return all.find((e) => e.attrs["data-fk"] === fk) ?? null
-    if (sel.includes("aria-expanded")) return all.find((e) => e.attrs["aria-expanded"] === "true") ?? null
+    if (sel.includes("aria-expanded")) return all.find((e) => e.attrs["aria-expanded"] === "true" && (!sel.includes("aria-haspopup") || e.attrs["aria-haspopup"] === "menu")) ?? null
     return null
   }
   focus() { this.focused = true }
@@ -148,10 +149,15 @@ describe("fdPatch: live lists patch rows by key (C28)", () => {
   })
   it("leaves a row with an open menu alone until the next refresh", () => {
     const box = new El()
-    fdPatch(box, [row("a", "A", '<button data-fk="more" aria-expanded="true">')], make)
+    fdPatch(box, [row("a", "A", '<button data-fk="more" aria-haspopup="menu" aria-expanded="true">')], make)
     const a = box.children[0]
     expect(fdPatch(box, [row("a", "A changed")], make).kept).toBe(1)
     expect(box.children[0]).toBe(a)
+  })
+  it("still updates a row whose thread is open: a thread is not a menu", () => {
+    const box = new El()
+    fdPatch(box, [row("a", "A", '<button data-fk="thread" aria-expanded="true">')], make)
+    expect(fdPatch(box, [row("a", "A changed")], make).changed).toBe(1)
   })
   it("runs as injected into the page script", () => {
     const src = injectFns({ fdState, fdInTab, fdCounts, fdAgo, fdPatch, fdSortBy })

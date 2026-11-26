@@ -70,8 +70,13 @@ export const WALL_FEED_SCRIPT = String.raw`
     var i = fdStates()[s];
     return '<span class="fd-st is-' + i.tone + '">' + fdIcon(i.icon, s === 'working' ? 'fd-spin' : '') + '<span>' + i.word + '</span></span>';
   }
-  /** Is the browser's DOM real (a test DOM has only innerHTML)? */
-  function fdReal(box) { return !!(box && box.querySelector && box.children && document.createElement); }
+  /** Is the browser's DOM real? A test DOM has no <template>, so it gets
+   *  the markup as one string instead of patched rows. */
+  function fdReal(box) {
+    if (!box || !box.children || !box.replaceChild || typeof document.createElement !== 'function') return false;
+    var t = document.createElement('template');
+    return !!(t && t.content);
+  }
   function fdMake(html) {
     var t = document.createElement('template');
     t.innerHTML = html.trim();
