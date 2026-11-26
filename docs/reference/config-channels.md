@@ -299,7 +299,8 @@ When `ci.reviewer` is set, a pull request whose latest commit has passed every w
 - After `ci.reviewOwnerMinutes` the owning agent is told that no review has come, once.
 - The wait ends on a submitted GitHub review, a comment on the pull request signed by the reviewer (`<!-- agentx:<reviewer> -->`) from an account AgentX posts with, or the pull request closing or merging. A comment signed by another agent does not end it.
 - A new push ends the wait. The next all-green commit starts a new one.
-- Release pull requests (release-please), pull requests from a fork and pull requests labelled with `noWakeLabel` never wait.
+- Draft pull requests, release pull requests (release-please), pull requests from a fork and pull requests labelled with `noWakeLabel` never wait. Turning a pull request back into a draft ends its wait.
+- The owner is told only `ci.reviewOwnerMinutes − ci.reviewWakeMinutes` after the reviewer was really woken, never in the same check, even after a daemon restart.
 - Waits are kept in `.agentx/state/review-wait-github.json` and checked once a minute, so a daemon restart neither loses a wait nor wakes twice.
 
 A review given only agent to agent, with no comment on the pull request, does not end the wait.

@@ -12,7 +12,9 @@ import { dirname } from "path"
 //   - a review, a comment signed by the reviewer agent, or the PR closing
 //     or merging ends the wait;
 //   - `wakeMinutes` after the start: the reviewer is woken, once;
-//   - `ownerMinutes` after the start: the PR's owner agent is told, once.
+//   - `ownerMinutes` after the start: the PR's owner agent is told, once,
+//     and only `ownerMinutes - wakeMinutes` after the reviewer was really
+//     woken, never in the same tick (after downtime, or owner <= wake).
 // The waits persist, and `due` works from the saved start time, so a
 // daemon restart neither loses a wait nor sends a wake twice.
 
@@ -31,6 +33,8 @@ export interface ReviewWaitEntry {
   title?: string
   /** The reviewer was woken. */
   woke?: boolean
+  /** When the reviewer was woken, ISO. */
+  wokeAt?: string
   /** The owner was told. */
   told?: boolean
 }
@@ -60,7 +64,7 @@ export class ReviewWait {
 
   /** The head commit `entry.sha` is all green. True when a wait started
    *  (a new PR or a new head); a repeat green of the same head keeps it. */
-  green(key: string, entry: Omit<ReviewWaitEntry, "woke" | "told">): boolean {
+  green(key: string, entry: Omit<ReviewWaitEntry, "woke" | "wokeAt" | "told">): boolean {
     if (this.entries[key]?.sha === entry.sha) return false
     this.entries[key] = { ...entry }
     this.save()
@@ -94,12 +98,22 @@ export class ReviewWait {
       if (!Number.isFinite(minutes)) continue
       if (!e.woke && wake > 0 && minutes >= wake) {
         e.woke = true
+        e.wokeAt = new Date(now).toISOString()
         out.push({ kind: "reviewer", key, entry: { ...e }, minutes: Math.floor(minutes) })
+        continue
       }
-      if (!e.told && owner > 0 && minutes >= owner) {
-        e.told = true
-        out.push({ kind: "owner", key, entry: { ...e }, minutes: Math.floor(minutes) })
+      // The owner is told only after the reviewer had its time: at least
+      // `owner - wake` minutes after the real wake, never in its tick.
+      // With the reviewer wake off (wake 0) the owner goes on its own time.
+      if (e.told || owner <= 0 || minutes < owner) continue
+      if (wake > 0) {
+        if (!e.woke) continue
+        // A wait saved before wokeAt existed: its wake was due at greenAt + wake.
+        const wokeAt = e.wokeAt ? Date.parse(e.wokeAt) : Date.parse(e.greenAt) + wake * 60_000
+        if (!Number.isFinite(wokeAt) || (now - wokeAt) / 60_000 < Math.max(0, owner - wake)) continue
       }
+      e.told = true
+      out.push({ kind: "owner", key, entry: { ...e }, minutes: Math.floor(minutes) })
     }
     if (out.length) this.save()
     return out

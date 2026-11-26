@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ReviewWait, isReleasePr, reviewOwnerText, reviewWakeText } from "../src/channels/review-wait"
-import { mkdtempSync } from "fs"
+import { mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -20,6 +20,26 @@ describe("green-PR review wait", () => {
     expect(w.due(min(20))).toEqual([])
     expect(w.due(min(30)).map((d) => d.kind)).toEqual(["owner"])
     expect(w.due(min(90))).toEqual([])
+  })
+  it("never tells the owner in the reviewer's tick, even after downtime (#2368)", () => {
+    const w = make()
+    w.green("k", entry())
+    // First tick 45 min after green: only the reviewer.
+    expect(w.due(min(45)).map((d) => d.kind)).toEqual(["reviewer"])
+    // The owner waits owner - wake = 15 min after the real wake.
+    expect(w.due(min(59))).toEqual([])
+    expect(w.due(min(60)).map((d) => d.kind)).toEqual(["owner"])
+  })
+  it("with owner minutes at or below wake minutes, the owner comes a tick later", () => {
+    const w = new ReviewWait({ wakeMinutes: () => 15, ownerMinutes: () => 10 })
+    w.green("k", entry())
+    expect(w.due(min(15)).map((d) => d.kind)).toEqual(["reviewer"])
+    expect(w.due(min(16)).map((d) => d.kind)).toEqual(["owner"])
+  })
+  it("a wait saved before wokeAt existed still tells the owner", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "rw-")), "w.json")
+    writeFileSync(file, JSON.stringify({ k: { ...entry(), woke: true } }))
+    expect(make(file).due(min(30)).map((d) => d.kind)).toEqual(["owner"])
   })
   it("keeps the first start on a repeat green of the same head", () => {
     const w = make()

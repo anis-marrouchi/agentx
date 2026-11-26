@@ -105,6 +105,29 @@ describe("GitHub: green PR with no review", () => {
     await at(gh, 20)
     expect(runs.filter((r) => r.text.includes("NO REVIEW"))).toHaveLength(0)
   })
+  it("never waits on a draft PR (#2368)", async () => {
+    prDetails = { ...prDetails, draft: true }
+    const { gh, runs } = github()
+    await hook(gh, "workflow_run", green())
+    expect((gh as any).reviewWait.has(`github:${REPO}:7`)).toBe(false)
+    await at(gh, 40)
+    expect(runs).toHaveLength(0)
+  })
+  it("converted_to_draft ends the wait (#2368)", async () => {
+    const { gh, runs } = github()
+    await hook(gh, "workflow_run", green())
+    expect((gh as any).reviewWait.has(`github:${REPO}:7`)).toBe(true)
+    await hook(gh, "pull_request", { action: "converted_to_draft", pull_request: { number: 7, draft: true, head: { sha: SHA, ref: "feat/y" }, user: { login: "bot[bot]" }, labels: [] }, repository: { full_name: REPO } })
+    expect((gh as any).reviewWait.has(`github:${REPO}:7`)).toBe(false)
+    await at(gh, 40)
+    expect(runs.filter((r) => r.text.includes("NO REVIEW"))).toHaveLength(0)
+  })
+  it("first tick at 45 min wakes only the reviewer", async () => {
+    const { gh, runs } = github()
+    await hook(gh, "workflow_run", green())
+    await at(gh, 45)
+    expect(runs.map((r) => r.resolvedAgent)).toEqual(["pm-agent"])
+  })
   it("never waits on a PR that already has a review, a release PR, or one no agent owns", async () => {
     reviews = [{ state: "COMMENTED" }]
     let { gh, runs } = github()

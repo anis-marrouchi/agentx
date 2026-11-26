@@ -870,6 +870,7 @@ export class GitHubAdapter implements ChannelAdapter {
     if (pr) {
       const key = ciFixKey("github", repo, pr.number)
       if (event.action === "closed" && this.reviewWait.end(key)) this.log(`[github] ${repo}#${pr.number} closed: review wait ended`)
+      else if (event.action === "converted_to_draft" && this.reviewWait.end(key)) this.log(`[github] ${repo}#${pr.number} back to draft: review wait ended`)
       else if (event.action === "synchronize" && pr.head?.sha && this.reviewWait.pushed(key, pr.head.sha)) {
         this.log(`[github] ${repo}#${pr.number} new head ${pr.head.sha}: review wait ended until it is green`)
       }
@@ -1329,6 +1330,8 @@ export class GitHubAdapter implements ChannelAdapter {
     const pr = await this.pullRequestInfo(repo, number)
     if (!pr || pr.headSha !== sha) return
     if (isReleasePr(pr.title, pr.headRef)) return
+    // A draft is not asking for a review yet (#2368).
+    if (pr.draft) return
     if (noWakeLabelIn(pr.labels, this.config.noWakeLabel)) return
     const fromFork = pr.headRepo === null || (typeof pr.headRepo === "string" && pr.headRepo.toLowerCase() !== repo.toLowerCase())
     if (fromFork) return
@@ -1408,11 +1411,11 @@ export class GitHubAdapter implements ChannelAdapter {
 
   /** A PR's body, head branch and commit, author and labels; the
    *  workflow_run payload carries only its number and head. */
-  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[]; headRepo?: string | null; title?: string; url?: string } | undefined> {
-    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string; repo?: { full_name?: string } | null }; user?: { login?: string }; labels?: unknown[]; title?: string; html_url?: string }>(repo, `pulls/${number}`)
+  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[]; headRepo?: string | null; title?: string; url?: string; draft?: boolean } | undefined> {
+    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string; repo?: { full_name?: string } | null }; user?: { login?: string }; labels?: unknown[]; title?: string; html_url?: string; draft?: boolean }>(repo, `pulls/${number}`)
     // head.repo is null when the fork was deleted: still a fork.
     const headRepo = data?.head?.repo === null ? null : data?.head?.repo?.full_name
-    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels, headRepo, title: data.title, url: data.html_url } : undefined
+    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels, headRepo, title: data.title, url: data.html_url, draft: data.draft === true } : undefined
   }
 
   /** Every workflow run of `sha` finished green (skipped and neutral count
