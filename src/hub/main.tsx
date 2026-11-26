@@ -13,15 +13,23 @@ import { readBoot } from "./boot"
 import "./extensions/core"
 import { LiveProvider } from "./live-react"
 import { LiveStream } from "./live"
+import { shellLandingHash } from "./shell"
 
 const el = document.getElementById("ax-hub-root")
 if (el) {
+  const boot = readBoot()
+  // The simple layout opens on the shell (#2226 S3), judged on the address
+  // as it came (the old script has already turned a bare /hub into its chat
+  // page). replace(): Back does not return to it; the old script follows
+  // the hashchange.
+  const landing = shellLandingHash(window.AX_HUB_HASH ?? location.hash, boot)
+  if (landing) location.replace(landing)
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: false, retry: 1 } } })
   const live = new LiveStream({ client })
   createRoot(el).render(
     <QueryClientProvider client={client}>
       <LiveProvider stream={live}>
-        <App boot={readBoot()} />
+        <App boot={boot} />
       </LiveProvider>
     </QueryClientProvider>,
   )

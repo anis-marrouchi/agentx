@@ -19,6 +19,8 @@ declare global {
   interface Window {
     AX_HUB?: Partial<Omit<HubBoot, "layout">> & { layout?: HubLayoutSetting }
     AX_LOCAL_TOKEN?: string
+    /** The hash /hub was opened with, before any script changed it (hub-react.ts). */
+    AX_HUB_HASH?: string
   }
 }
 

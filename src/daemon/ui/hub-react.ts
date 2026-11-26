@@ -77,7 +77,9 @@ export function hubReactHead(opts: { owner: boolean; legacyPages?: readonly stri
   walk(ENTRY, new Set())
   const boot = { pages: hubReactPageIds(opts.owner, opts.legacyPages ?? []), owner: opts.owner, ...(opts.layout ? { layout: hubLayoutSetting(opts.layout) } : {}) }
   return [
-    `<script>window.AX_HUB = ${scriptJson(boot)};</script>`,
+    // AX_HUB_HASH: the address as it came, before the old script changes
+    // it (bare /hub becomes #page=chat), so the app knows where /hub opened.
+    `<script>window.AX_HUB = ${scriptJson(boot)};window.AX_HUB_HASH = location.hash;</script>`,
     ...Array.from(css, (f) => `<link rel="stylesheet" href="${attr(HUB_ASSET_BASE + f)}">`),
     ...Array.from(preload, (f) => `<link rel="modulepreload" href="${attr(HUB_ASSET_BASE + f)}">`),
     `<script type="module" src="${attr(HUB_ASSET_BASE + entry.file)}"></script>`,
