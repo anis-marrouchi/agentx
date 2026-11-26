@@ -231,7 +231,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     .filter((item) => WALL_BAR_KEYS.includes(item.key)).map((item) => navItemHtml(item, true)).join("\n")
   const dashboard = `<a class="ax-wall__item" data-nav="dashboard" href="${WALL_DASHBOARD_HREF}" title="Dashboard">${NAV_ICON.dashboard}<span>Dashboard</span></a>`
   // The old page menu (#2101 R22): no longer shown in the side menu, which
-  // keeps the agents and Desk · Jobs · Workflows · Mobile app · Settings.
+  // keeps the agents and Waiting on you · Jobs · Settings, plus Workflows
+  // and Mobile app with the full layout or their switch on (#2226 S1).
   // Its links stay in the page, hidden, as the ⌘K switcher's Pages and as
   // the counts the phone's bar and the Desk badge copy (data-n-for).
   const classic = WALL_CLASSIC_LINKS.map(([label, href]) => `<a data-nav="dash-${label.toLowerCase()}" href="${href}">Dashboard · ${label}</a>`).join("")

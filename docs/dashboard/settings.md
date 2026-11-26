@@ -270,6 +270,10 @@ Hiding never turns anything off: schedules, gates and workflows keep running, a 
 
 The keys are `dashboard.hub.layout` and `dashboard.hub.show` in the [configuration reference](../reference/config-operations.md).
 
+> **Warning:** if you edit `dashboard.hub.show` by hand in `agentx.json`, use only the item names Settings lists (`mobile`, `workflows`, `wiki`, `rules`, `gates`, `hosts`, `activity`, `org`, `sessions`, `usage`) and only `true` or `false`. A misspelt name or another value makes the whole file invalid, and the daemon does not load any of it. Use **Settings › Layout**, which only writes valid values.
+
+**After an upgrade:** an install that had no layout set before gets the simple layout. Workflows, Mobile app, Activity, Org, Live and Cost leave the menus, and nothing stops running. To get them back, select **Full** in **Settings › Layout**.
+
 ## Check it worked
 
 1. **Browser:** after you save a change, reload **Settings**. Your change is still there.

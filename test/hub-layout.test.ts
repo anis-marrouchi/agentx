@@ -1,6 +1,12 @@
 // The Hub's simple and full layouts (#2226 S1): the keys, their defaults,
 // the hide logic of the current Hub, and Settings › Layout.
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { Readable } from "stream"
+import type { IncomingMessage, ServerResponse } from "http"
+import { handleAdminApi } from "../src/daemon/admin-panel"
 import { dashboardConfigSchema } from "../src/boards/config"
 import {
   HUB_SHOW_IDS, applyHubLayoutPatch, hubHiddenItems, hubLayoutSetting, parseHubLayoutPatch, resolveHubLayout,
@@ -91,10 +97,19 @@ describe("hide, never disable: the current Hub", () => {
     expect(hubHideSelectors("sessions")).toEqual(['[data-nav="live"]'])
     expect(hubHideSelectors("usage")).toEqual(['[data-nav="cost"]'])
     expect(hubHideSelectors("hosts")).toEqual(["#hs-node"])
-    expect(hubHideSelectors("gates")).toEqual([".wtk__prog", '.wtk__sec[aria-label="Plan"]', ".wtk .wc"])
+    expect(hubHideSelectors("gates")).toEqual([".wtk__prog", '.wtk__sec[aria-label="Plan"]'])
     // No selector reaches Waiting on you (#wall-decide) or the needs nav.
     for (const id of HUB_SHOW_IDS) for (const s of hubHideSelectors(id)) expect(s).not.toMatch(/decide|needs/)
     expect(Object.values(HUB_NAV_ITEM).every((i) => (HUB_SHOW_IDS as readonly string[]).includes(i))).toBe(true)
+  })
+  it("simple mode keeps the owner's decision card on a post, so it can be answered there", () => {
+    const simple = hubHiddenItems(resolveHubLayout({ layout: "simple" }))
+    expect(simple).toContain("gates")
+    // No hiding rule of any hidden item reaches the card (.wc, wall.client.ts cardHtml).
+    const rules = HUB_LAYOUT_CSS.split("\n").filter((l) => simple.some((id) => l.includes(`data-hub-hide~="${id}"`)))
+    expect(rules.length).toBeGreaterThan(0)
+    for (const l of rules) expect(l).not.toMatch(/\.wc\b/)
+    for (const id of simple) for (const s of hubHideSelectors(id)) expect(s).not.toMatch(/\.wc\b/)
   })
   it("hides with CSS on <html data-hub-hide>, so nothing leaves the page and nothing stops", () => {
     expect(HUB_LAYOUT_CSS).toContain('html[data-hub-hide~="workflows"] [data-nav="workflows"]')
@@ -186,5 +201,43 @@ describe("Settings › Layout", () => {
     const w = open()
     await w.settle()
     expect(settingsHtml(w)).toContain("Simple or full, and what the Hub shows")
+  })
+})
+
+describe("POST /api/admin/hub-layout is the owner's only", () => {
+  let dir: string
+  const prevCwd = process.cwd()
+  const base = () => ({ node: { id: "n", name: "n" }, agents: { a: { name: "A" } } })
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "agentx-hub-layout-"))
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify(base()))
+    process.chdir(dir)
+  })
+  afterEach(() => { process.chdir(prevCwd); rmSync(dir, { recursive: true, force: true }) })
+
+  async function call(body: unknown, owner?: boolean): Promise<{ status: number; json: any }> {
+    const req = Object.assign(Readable.from([JSON.stringify(body)]), { method: "POST" }) as unknown as IncomingMessage
+    let status = 200
+    let out = ""
+    const res = { writeHead: (s: number) => { status = s; return res }, end: (b: string) => { out = b } } as unknown as ServerResponse
+    await handleAdminApi(req, res, "/api/admin/hub-layout", owner === undefined ? undefined : { owner })
+    return { status, json: JSON.parse(out) }
+  }
+  const saved = () => JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
+
+  it("refuses a token that is not the owner's, and writes nothing", async () => {
+    for (const owner of [undefined, false]) {
+      expect(await call({ layout: "full" }, owner)).toMatchObject({ status: 403, json: { error: "Only the owner can change the Hub's layout." } })
+    }
+    expect(saved()).toEqual(base())
+  })
+  it("saves for the owner and answers the new view", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"))
+    try {
+      const r = await call({ layout: "full" }, true)
+      expect(r.status).toBe(200)
+      expect(r.json.layout.layout).toBe("full")
+      expect(saved().dashboard.hub.layout).toBe("full")
+    } finally { fetchMock.mockRestore() }
   })
 })

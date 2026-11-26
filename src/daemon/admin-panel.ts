@@ -152,7 +152,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // The Hub's layout (#2226 S1, src/hub/layout.ts): simple or full, and
       // each hidden item's switch. The Hub reads agentx.json as it is now,
       // so it shows the change at once: no restart.
-      "POST /api/admin/hub-layout":      () => updateHubLayout(body),
+      "POST /api/admin/hub-layout":      () => updateHubLayout(body, opts.owner === true),
       // Wiki notes inbox (#825) — mirrors `agentx wiki notes config`;
       // the note list is read from the daemon, which owns the inbox.
       "POST /api/admin/wiki-notes":      () => updateWikiNotes(body),
@@ -1797,7 +1797,10 @@ async function updateWikiNotes(body: any) {
 
 // The Hub's layout (#2226 S1). Answers the new view, which the Hub page
 // applies at once.
-async function updateHubLayout(body: any) {
+async function updateHubLayout(body: any, owner: boolean) {
+  // The owner's choice, as the org chart (#1420): a dashboard token alone is
+  // not enough, on this route and on the Hub's Settings route alike.
+  if (!owner) throw Object.assign(new Error("Only the owner can change the Hub's layout."), { status: 403 })
   const patch = parseHubLayoutPatch(body)
   let raw: unknown
   const { summary } = mutateAgentxConfig((cfg) => {

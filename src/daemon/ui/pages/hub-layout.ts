@@ -30,9 +30,10 @@ export const HUB_NAV_ITEM: Record<string, HubShowItem> = {
 /** What else each item hides, besides its nav keys. Wiki and Rules have no
  *  place in this Hub yet; the React app reads their switches. */
 const HUB_HIDE_EXTRA: Partial<Record<HubShowItem, string[]>> = {
-  // A post's steps, its plan and its gates (wall.client.ts progressHtml,
-  // planHtml, cardHtml); the Desk (#wall-decide) is not touched.
-  gates: [".wtk__prog", ".wtk__sec[aria-label=\"Plan\"]", ".wtk .wc"],
+  // A post's steps and its plan (wall.client.ts progressHtml, planHtml).
+  // Never the owner's decision card on a post (.wtk .wc, cardHtml) nor the
+  // Desk (#wall-decide): a gate that waits on the owner is answered there.
+  gates: [".wtk__prog", ".wtk__sec[aria-label=\"Plan\"]"],
   // The machines this Hub reads, in the status bar (hub-status.ts).
   hosts: ["#hs-node"],
 }
