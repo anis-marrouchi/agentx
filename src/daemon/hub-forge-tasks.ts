@@ -71,6 +71,16 @@ const when = (v: unknown) => { const t = Date.parse(String(v ?? "")); return Num
 const names = (list: unknown, key: string): string[] =>
   Array.isArray(list) ? list.map((x: any) => (typeof x === "string" ? x : x?.[key])).filter((x): x is string => typeof x === "string" && !!x) : []
 
+/** Issues and pull requests are read apart: one kind failing (say Issues
+ *  turned off) keeps the other. Only when both fail is the project unread. */
+function bothKinds(got: PromiseSettledResult<ForgeTask[]>[]): ForgeAnswer<ForgeTask[]> {
+  if (got.every((r) => r.status === "rejected")) {
+    const e: any = (got[0] as PromiseRejectedResult).reason
+    return { error: String(e?.message ?? e).slice(0, 160) }
+  }
+  return got.flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+}
+
 /** Runs `gh` with these arguments and gives its stdout; rejects on failure. */
 export type GhRun = (args: string[]) => Promise<string>
 
@@ -104,11 +114,7 @@ export function githubTasksReader(run: GhRun = ghRun): (project: string) => Prom
         }]
       })
     }
-    try {
-      return [...await list("issue"), ...await list("pr")]
-    } catch (e: any) {
-      return { error: String(e?.message ?? e).slice(0, 160) }
-    }
+    return bothKinds(await Promise.allSettled([list("issue"), list("pr")]))
   }
 }
 
@@ -142,11 +148,7 @@ export function gitlabTasksReader(gitlab: { url: string; token?: string }, doFet
         }]
       })
     }
-    try {
-      return [...await list("issues"), ...await list("merge_requests")]
-    } catch (e: any) {
-      return { error: String(e?.message ?? e).slice(0, 160) }
-    }
+    return bothKinds(await Promise.allSettled([list("issues"), list("merge_requests")]))
   }
 }
 
