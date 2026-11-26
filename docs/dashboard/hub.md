@@ -233,6 +233,8 @@ Idle agents and the work that finished are not in **Machines**: they are in the 
 3. Use **↑** and **↓**, then **Enter**, or select a row. A working agent opens its live run, any other agent its chat, with its history; a request opens its post. **Esc** closes it.
 4. **⌘1** to **⌘9** (or **Alt 1** to **Alt 9**) open the agents in the switcher's order, also with it closed. **Ctrl Tab** goes back to the last agent you had open; in a browser tab, the browser keeps that key, so use it in the AgentX app window.
 
+**If something is wrong:** the box shows only after you press **⌘K** or select **Jump to an agent or request**. If an empty box covers the page as soon as it opens, and nothing under it can be selected, the dashboard runs a version before 0.286.0, where the closed box still took every click. Upgrade AgentX, then reload the page.
+
 **Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a moving bar, and **Working**'s count goes up by one. Select its row: its run opens in the middle and its output streams in as it works. While it works, call it by voice: within a few seconds its row reads **Voice ·** and what you said, and its earlier run moves to a line under the row. Select either to open that run. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
 
 **If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Running now**, which says which machine fails. An agent on a machine that does not answer is left out until it answers. On a narrow window the list is hidden: widen it.
