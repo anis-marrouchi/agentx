@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.286.0](https://github.com/anis-marrouchi/agentx/compare/v0.285.0...v0.286.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** sections fold with counts, lists show 3 then Show all, Back keeps scroll, Reset layout ([#2352](https://github.com/anis-marrouchi/agentx/issues/2352)) ([#2381](https://github.com/anis-marrouchi/agentx/issues/2381)) ([cfd7bc4](https://github.com/anis-marrouchi/agentx/commit/cfd7bc40dfb6a31e7cb29b39aa5c842db682b38c))
+
+
+### Bug Fixes
+
+* **hub:** closed ⌘K box no longer blocks every page; phone Agents tab loads again ([#2380](https://github.com/anis-marrouchi/agentx/issues/2380)) ([24b827c](https://github.com/anis-marrouchi/agentx/commit/24b827ccb9414cd602f81e39475f649c2318fd2b))
+* **hub:** no Rules switch in Settings › Layout until a Rules page exists ([#2313](https://github.com/anis-marrouchi/agentx/issues/2313) E6) ([#2382](https://github.com/anis-marrouchi/agentx/issues/2382)) ([c7a9608](https://github.com/anis-marrouchi/agentx/commit/c7a9608c01ca8681a6e7aca2bfcae6aabb6a787c))
+
 ## [0.285.0](https://github.com/anis-marrouchi/agentx/compare/v0.284.0...v0.285.0) (2026-11-26)
 
 
