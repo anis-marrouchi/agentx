@@ -1,0 +1,122 @@
+// --- Settings: the parts every pane is built from (#2101 ST1) ---
+//
+// orca-design recipes §1: the pane header, groups with their title outside
+// the card, rows split by hairlines, and the Advanced disclosure kept
+// mounted so search can open it. A row is drawn from its definition in
+// panes.ts (condition 1), so its label and help are the ones search shows.
+import { createContext, useContext, type ReactNode } from "react"
+import { Icon, cn } from "../ui"
+import { rowDef, type SettingsPaneDef } from "./panes"
+
+export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
+  return (
+    <header data-slot="settings-pane-header" className="flex items-start justify-between gap-4 border-b border-border/60 pb-5">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <h2 className="text-2xl font-semibold leading-tight">{pane.label}</h2>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{pane.help}</p>
+      </div>
+      {action}
+    </header>
+  )
+}
+
+/** A group: title and one line outside the card, the rows inside it. With
+ *  `row`, the group is that row of the pane (search jumps to it). */
+export function SettingsGroup({ pane, row, title, help, action, children }: {
+  pane: string; row?: string; title?: string; help?: ReactNode; action?: ReactNode; children: ReactNode
+}) {
+  const def = row ? rowDef(pane, row) : undefined
+  return (
+    <section data-slot="settings-group" data-row={def?.id} aria-label={title ?? def?.label} className="flex scroll-mt-6 flex-col gap-2.5 rounded-xl">
+      {(title ?? def) && (
+        <div className="flex items-end justify-between gap-3 px-1">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h3 className="text-[15px] font-semibold">{title ?? def?.label}</h3>
+            {help !== undefined ? <p className="text-xs text-muted-foreground">{help}</p> : def?.help && <p className="text-xs text-muted-foreground">{def.help}</p>}
+          </div>
+          {action}
+        </div>
+      )}
+      <div data-slot="settings-card" className="overflow-hidden rounded-xl border border-border bg-card/50 px-5 shadow-xs [&>*+*]:border-t [&>*+*]:border-border">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+/** One row from its definition: label and help on the left, the control on
+ *  the right. `label` replaces the text only (a status dot, a mono name). */
+export function SettingsRow({ pane, row, label, help, control }: {
+  pane: string; row: string; label?: ReactNode; help?: ReactNode; control?: ReactNode
+}) {
+  const def = rowDef(pane, row)
+  return (
+    <div data-slot="settings-row" data-row={def.id} className="flex min-h-11 scroll-mt-6 items-center justify-between gap-4 py-[9px]">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm">{label ?? def.label}</span>
+        {(help ?? def.help) && <span className="text-[12.5px] text-muted-foreground">{help ?? def.help}</span>}
+      </div>
+      {control && <div className="flex shrink-0 items-center gap-2">{control}</div>}
+    </div>
+  )
+}
+
+/** A row in a list the pane reads from the server (an agent, a machine). It
+ *  is part of its group's row in search, so it carries `data-item`, not
+ *  `data-row`. Below 640 px the badge moves under the name (friction note 1);
+ *  the `…` menu shows on hover or focus with a pointer, always on touch
+ *  (friction note 2). */
+export function SettingsItem({ id, lead, name, meta, badge, control, menu, muted }: {
+  id: string; lead?: ReactNode; name: ReactNode; meta?: ReactNode; badge?: ReactNode; control?: ReactNode; menu?: ReactNode; muted?: boolean
+}) {
+  return (
+    <div data-slot="settings-item" data-item={id} className={cn("group flex min-h-11 items-center gap-3 py-3", muted && "opacity-70")}>
+      {lead}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">{name}</span>
+        {meta && <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] text-muted-foreground">{meta}</span>}
+        {badge && <span className="mt-1 flex sm:hidden">{badge}</span>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {badge && <span className="hidden sm:flex">{badge}</span>}
+        {control}
+        {menu && <span className="flex can-hover:opacity-0 can-hover:group-hover:opacity-100 can-hover:group-focus-within:opacity-100">{menu}</span>}
+      </div>
+    </div>
+  )
+}
+
+/** Which folds are open: the shell keeps it, so search can open one. */
+export const DisclosureContext = createContext<{ isOpen: (id: string) => boolean; setOpen: (id: string, open: boolean) => void }>({
+  isOpen: () => false, setOpen: () => {},
+})
+
+/** The Advanced fold (rule B): closed by default, kept mounted (`hidden`) so
+ *  search can open it and scroll to a row inside. */
+export function Disclosure({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  const { isOpen, setOpen } = useContext(DisclosureContext)
+  const open = isOpen(id)
+  const onOpenChange = (v: boolean) => setOpen(id, v)
+  return (
+    <div data-slot="settings-disclosure" data-disclosure={id} data-state={open ? "open" : "closed"}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={"st-dis-" + id}
+        onClick={() => onOpenChange(!open)}
+        className="flex min-h-11 w-full cursor-pointer items-center gap-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Icon name="chevron-right" className={cn("size-3.5 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-90")} />
+        {label}
+      </button>
+      <div id={"st-dis-" + id} hidden={!open} className="pl-5 [&>*+*]:border-t [&>*+*]:border-border">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** A state dot before a line: colour for state only, with the word in the text. */
+export function ToneDot({ tone }: { tone: "ok" | "warn" | "err" }) {
+  return <span aria-hidden="true" className={cn("mr-2 inline-block size-1.5 shrink-0 rounded-full align-middle", tone === "ok" ? "bg-ok" : tone === "warn" ? "bg-warn" : "bg-destructive")} />
+}

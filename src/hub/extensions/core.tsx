@@ -8,5 +8,6 @@ defineHubExtension({
   routes: [
     { page: "catalog", title: "Components", load: () => import("../pages/CatalogPage") },
     { page: "home", title: "Home", load: () => import("../pages/ShellPage") },
+    { page: "settings-preview", title: "Settings", load: () => import("../settings/SettingsPage") },
   ],
 })
