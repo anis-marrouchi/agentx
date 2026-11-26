@@ -487,8 +487,8 @@ export const WALL_FEED_SCRIPT = String.raw`
 export const WALL_FEED_CSS = `
 /* The feed and its List view (#2101, wall-feed.client.ts): the approved mock. */
 .fd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { max-width: 720px; margin-left: auto; margin-right: auto; }
-.ax-wall.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { max-width: 976px; margin-left: auto; margin-right: auto; }
+.ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { max-width: 720px; margin-left: auto; margin-right: auto; }
+.ax-wall.is-posts.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { max-width: 976px; margin-left: auto; margin-right: auto; }
 .ax-wall.is-posts .ax-wall__head { position: static; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 0; }
 .ax-wall.is-posts .ax-wall__titlebar { padding: 24px 0 16px; gap: 8px; flex-wrap: wrap; }
 .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: var(--ax-fs-pane); font-weight: var(--ax-fw-strong); letter-spacing: -.01em; }
@@ -575,9 +575,9 @@ button[data-tab="failed"] .fd-n:not(:empty) { color: var(--ax-red-ink); }
 .fd-sync .fd-ib { width: 24px; height: 24px; }
 .fd-sync .fd-ib svg { width: 14px; height: 14px; }
 .fd-sync.is-stale > svg { display: none; }
-.ax-wall__sub { padding: 0; }
-.ax-wall__sub .ax-wall__count:not(:has(.ax-wall__asker)) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.ax-wall__sub .ax-wall__count:has(.ax-wall__asker) { display: block; padding: 8px 0 0; }
+.ax-wall.is-posts .ax-wall__sub { padding: 0; }
+.ax-wall.is-posts .ax-wall__sub .ax-wall__count:not(:has(.ax-wall__asker)) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ax-wall.is-posts .ax-wall__sub .ax-wall__count:has(.ax-wall__asker) { display: block; padding: 8px 0 0; }
 
 /* Groups: chevron, title, count; a hairline under the header. */
 .ax-wall__feed { padding-bottom: 48px; }
@@ -707,21 +707,21 @@ button.fp__mi { cursor: pointer; }
 
 /* Mid width: the side menu is a rail; the search box is shorter. */
 @media (max-width: 1180px) {
-  .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { padding-left: 24px; padding-right: 24px; max-width: 768px; }
-  .ax-wall.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { padding-left: 24px; padding-right: 24px; max-width: none; }
-  .ax-wall__main > .fd-compose { margin-left: 24px; margin-right: 24px; padding-left: 16px; padding-right: 12px; }
-  @media (min-width: 769px) { .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
+  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { padding-left: 24px; padding-right: 24px; max-width: 768px; }
+  .ax-wall.is-posts.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { padding-left: 24px; padding-right: 24px; max-width: none; }
+  .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: 24px; margin-right: 24px; padding-left: 16px; padding-right: 12px; }
+  @media (min-width: 769px) { .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
   .fd-q { width: 160px; }
   .fd-hint { display: none; }
   .fd-compose__row .fd-send { margin-left: auto; }
   /* The tabs' hairline ends where the rows end. */
-  .ax-wall__main > .fd-bar { padding-left: 0; padding-right: 0; max-width: min(720px, calc(100% - 48px)); }
+  .ax-wall.is-posts .ax-wall__main > .fd-bar { padding-left: 0; padding-right: 0; max-width: min(720px, calc(100% - 48px)); }
 }
 /* Phone: the title row, then Feed | List full width; search is an icon. */
 @media (max-width: 640px) {
-  .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 16px; padding-right: 16px; }
-  .ax-wall__main > .fd-compose { margin: 0 16px 12px; }
-  .ax-wall__main > .fd-bar { max-width: none; }
+  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 16px; padding-right: 16px; }
+  .ax-wall.is-posts .ax-wall__main > .fd-compose { margin: 0 16px 12px; }
+  .ax-wall.is-posts .ax-wall__main > .fd-bar { max-width: none; }
   .ax-wall.is-posts .ax-wall__titlebar { padding: 12px 0; }
   .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: 20px; }
   .fd-switch { order: 10; flex: 1 0 100%; margin: 4px 0 0; }
