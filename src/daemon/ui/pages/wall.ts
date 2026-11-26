@@ -404,6 +404,9 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 .lt__mesh > summary { padding: 5px 8px; font-size: 13px; font-weight: 600; color: var(--ax-text); }
 .lt__mesh > .lt__m { margin-left: 10px; }
 .lt__mesh .lt__n { flex: none; }
+/* One fold arrow in the side menu: the agent list's › (hub-nav.ts .ha__fold). */
+.mt details > summary::before { content: "›"; width: 10px; height: auto; border: 0; font-size: 15px; font-weight: 400; line-height: 1; text-align: center; transition: transform 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .mt details > summary::before { transition: none; } }
 .lt__m > .lt__row, .lt__m > .lt__idle { margin-left: 12px; }
 .lt__m > .lt__ws { margin-left: 31px; }
 /* R1: the tree is the one live list on a wide screen; Running now stays
