@@ -1,0 +1,220 @@
+// --- Tasks in the simple shell (#2226 S4) ---
+//
+// The centre's Tasks pane: the requests the old Hub's feed lists, as a List
+// or a Kanban (columns by request state, tasks.ts). Opening a task shows its
+// timeline (runs, hand-offs, comments) in the same pane, from the same read
+// the old Hub's opened post makes. Read only: no state changes here.
+import { useQuery } from "@tanstack/react-query"
+import type { ReactNode } from "react"
+import { apiFetch, apiGet } from "../api"
+import { buildHash } from "../router"
+import {
+  TASKS_URL, shortAgo, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane,
+  type TaskEvent, type TaskLane, type TaskPost, type TaskThreadReply, type TasksReply, type TasksView,
+} from "../tasks"
+import { Badge, Button, EmptyState, Icon, Skeleton, StatusDot, cn } from "../ui"
+
+const taskHref = (id?: string) => buildHash({ page: "home", pane: "tasks", open: id })
+
+const LANE_TOP: Record<TaskLane["tone"], string> = {
+  work: "border-t-primary", warn: "border-t-warn", idle: "border-t-border", err: "border-t-destructive", ok: "border-t-ok",
+}
+
+
+/** List or Kanban: two pressed-state buttons, the choice kept by the caller. */
+export function TasksViewSwitch({ view, onView, className }: { view: TasksView; onView: (v: TasksView) => void; className?: string }) {
+  const item = (v: TasksView, label: string, icon: string) => (
+    <button
+      type="button" aria-pressed={view === v} data-tasks-view={v} onClick={() => onView(v)}
+      className={cn(
+        "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        view === v ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon name={icon} className="size-3.5" />{label}
+    </button>
+  )
+  return (
+    <div role="group" aria-label="Tasks view" data-shell="tasks-switch" className={cn("flex gap-0.5 rounded-md bg-muted p-0.5", className)}>
+      {item("list", "List", "list")}
+      {item("kanban", "Kanban", "kanban")}
+    </div>
+  )
+}
+
+function TaskMeta({ post }: { post: TaskPost }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+      {post.owner ? <span className="truncate">@{post.owner}</span> : null}
+      {post.project ? <span className="truncate font-mono text-[11px]">{post.project}</span> : null}
+      {post.updatedAt ? <span className="ml-auto shrink-0 tabular-nums">{shortAgo(post.updatedAt)}</span> : null}
+    </span>
+  )
+}
+
+/** One row per task, under its column's heading; empty columns left out. */
+export function TaskList({ posts }: { posts: TaskPost[] }) {
+  return (
+    <div data-tasks="list" className="flex flex-col gap-4">
+      {tasksByLane(posts).filter((g) => g.posts.length).map(({ lane, posts: rows }) => (
+        <section key={lane.id} aria-label={lane.label} data-lane={lane.id}>
+          <h2 className="flex items-center gap-2 px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {lane.label}<span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{rows.length}</span>
+          </h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {rows.map((p) => (
+              <li key={p.id}>
+                <a href={taskHref(p.id)} data-task={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                  <StatusDot state={taskTone(p.state)} label={taskStateLabel(p.state)} />
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{p.headline || p.id}</span>
+                  <span className="hidden w-[40%] max-w-[280px] sm:flex"><TaskMeta post={p} /></span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+/** One column per state, every column shown; a card per task. */
+export function TaskBoard({ posts }: { posts: TaskPost[] }) {
+  return (
+    <div data-tasks="kanban" className="flex min-h-0 gap-3 overflow-x-auto pb-2">
+      {tasksByLane(posts).map(({ lane, posts: cards }) => (
+        <section key={lane.id} aria-label={lane.label} data-lane={lane.id} className={cn("flex w-[260px] shrink-0 flex-col rounded-md border border-t-2 border-border", LANE_TOP[lane.tone])}>
+          <h2 className="flex h-9 shrink-0 items-center gap-2 border-b border-border/70 pl-3 pr-2 text-[12px] font-semibold">
+            {lane.label}<span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-normal tabular-nums text-muted-foreground">{cards.length}</span>
+          </h2>
+          <div className="flex flex-col gap-1.5 px-1.5 py-2">
+            {cards.length === 0 ? (
+              <p className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/70 text-[11px] text-muted-foreground">Empty</p>
+            ) : cards.map((p) => (
+              <a key={p.id} href={taskHref(p.id)} data-task={p.id} className="flex flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 shadow-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span className="line-clamp-2 text-[13px]">{p.headline || p.id}</span>
+                {lane.id === "closed" && p.state !== "done" ? <Badge variant="outline" className="self-start text-[11px]">{taskStateLabel(p.state)}</Badge> : null}
+                <TaskMeta post={p} />
+              </a>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+export interface TasksBodyProps {
+  view: TasksView
+  posts?: TaskPost[]
+  error?: string | null
+  onRetry?: () => void
+}
+
+/** Loading, error, empty, or the tasks in the chosen view. */
+export function TasksBody({ view, posts, error, onRetry }: TasksBodyProps) {
+  if (error) {
+    return (
+      <EmptyState title="Could not read the tasks" action={<Button size="sm" variant="outline" onClick={onRetry}>Try again</Button>}>
+        <span role="alert">{error}</span>
+      </EmptyState>
+    )
+  }
+  if (!posts) return <div className="flex flex-col gap-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-2/3" /></div>
+  if (posts.length === 0) {
+    return (
+      <EmptyState title="No tasks in the last 7 days" action={<a className="text-sm text-link hover:underline" href={buildHash({ page: "home" })}>Ask an agent</a>}>
+        A request you give an agent shows here until it is closed.
+      </EmptyState>
+    )
+  }
+  return view === "kanban" ? <TaskBoard posts={posts} /> : <TaskList posts={posts} />
+}
+
+const EVENT_WORD: Record<string, string> = {
+  asked: "Asked", run: "Run", handoff: "Hand-off", home: "Home", link: "Link", comment: "Comment",
+  plan: "Plan", waiting: "Waiting", attention: "Attention", closed: "Closed",
+}
+
+/** An opened task: its state, then its timeline, oldest first. */
+export function TaskThread({ post, events, error }: { post: TaskPost; events?: TaskEvent[]; error?: string | null }) {
+  return (
+    <article data-tasks="open" data-task={post.id} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-base font-medium">{post.headline || post.id}</h2>
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <StatusDot state={taskTone(post.state)} label={taskStateLabel(post.state)} />
+          <span>{taskStateLabel(post.state)}</span>
+          {post.owner ? <span>@{post.owner}</span> : null}
+          {post.project ? <span className="font-mono text-[11px]">{post.project}</span> : null}
+          {post.node?.name ? <span>{post.node.name}</span> : null}
+          <a href={"#post=" + encodeURIComponent(post.id)} className="ml-auto inline-flex items-center gap-1 text-link hover:underline">
+            Full record <Icon name="external-link" className="size-3" />
+          </a>
+        </p>
+      </div>
+      {error ? <p role="alert" className="text-sm text-err-ink">{error}</p>
+        : !events ? <Skeleton className="h-16 w-full" />
+        : events.length === 0 ? <p className="text-sm text-muted-foreground">Nothing recorded on this task yet.</p>
+        : (
+          <ol className="flex flex-col divide-y divide-border border-y border-border" data-tasks="timeline">
+            {events.map((e, i) => (
+              <li key={i} data-event={e.kind} className="flex flex-col gap-1 py-2.5">
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{EVENT_WORD[e.kind] || e.kind}</span>
+                  {e.who ? <span>@{e.who}</span> : null}
+                  {e.status ? <span className="font-mono text-[11px]">{e.status}</span> : null}
+                  <span className="ml-auto tabular-nums">{shortAgo(e.at)}</span>
+                </span>
+                {e.text ? <p className="text-[13px] whitespace-pre-wrap break-words">{e.text}</p> : null}
+              </li>
+            ))}
+          </ol>
+        )}
+    </article>
+  )
+}
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : "the computer did not answer")
+
+/** The pane: reads the tasks (again while a node is still checking) and
+ *  draws the list, the board, or the task opened from them. */
+export function TasksPane({ view, onView, open, phoneBar }: { view: TasksView; onView: (v: TasksView) => void; open: string | null; phoneBar?: ReactNode }) {
+  const list = useQuery({
+    queryKey: ["shell-tasks"],
+    queryFn: () => apiGet<TasksReply>(TASKS_URL),
+    refetchInterval: (q) => ((q.state.data as TasksReply | undefined)?.pending ? 2000 : 30_000),
+  })
+  const posts = list.data ? taskPosts(list.data) : undefined
+  const post = open ? posts?.find((p) => p.id === open) : undefined
+  const thread = useQuery({
+    queryKey: ["shell-task", open, post?.node?.peer],
+    queryFn: () => apiFetch<TaskThreadReply>(taskThreadUrl(open!), { headers: post?.node?.peer ? { "X-Agentx-Peer": post.node.peer } : {} }),
+    enabled: !!post,
+  })
+  return (
+    <section aria-label="Tasks" data-shell="tasks" className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+        {phoneBar}
+        {open ? (
+          <a href={taskHref()} aria-label="Back to the tasks" title="Back to the tasks" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+            <Icon name="arrow-left" />
+          </a>
+        ) : null}
+        <h1 className="truncate text-sm font-medium">Tasks</h1>
+        {!open && posts ? <span className="text-xs tabular-nums text-muted-foreground">{posts.length}</span> : null}
+        {!open ? <TasksViewSwitch view={view} onView={onView} className="ml-auto w-[150px] md:hidden" /> : null}
+      </header>
+      <div className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "kanban" && !open ? "" : "mx-auto w-full max-w-[784px]")}>
+        {open ? (
+          list.isError ? <TasksBody view={view} error={errText(list.error)} onRetry={() => void list.refetch()} />
+            : !posts ? <Skeleton className="h-16 w-full" />
+            : !post ? <EmptyState title="Task not found" action={<a className="text-sm text-link hover:underline" href={taskHref()}>All tasks</a>}>It is closed for more than 7 days, or on a computer that is not answering.</EmptyState>
+            : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post } : post} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} />
+        ) : (
+          <TasksBody view={view} posts={posts} error={list.isError ? errText(list.error) : null} onRetry={() => void list.refetch()} />
+        )}
+      </div>
+    </section>
+  )
+}

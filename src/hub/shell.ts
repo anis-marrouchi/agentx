@@ -6,7 +6,8 @@
 // pure functions, so the tests check every layout without a browser.
 //
 // The items open today's Hub pages by their hash (the old Hub draws them);
-// later steps move them into React one by one (S4: Tasks as List/Kanban).
+// later steps move them into React one by one. Tasks is the first (S4): it
+// opens in the shell's centre, as List or Kanban (tasks.ts).
 
 import type { HubBoot } from "./boot"
 import { resolveHubLayout, type HubLayoutView, type HubShowItem } from "./layout"
@@ -27,7 +28,7 @@ export interface ShellNavItem {
  *  Agents is a heading here: the shell lists the agents under it. */
 export const SHELL_MAIN: readonly ShellNavItem[] = [
   { id: "search", label: "Search", icon: "search" },
-  { id: "tasks", label: "Tasks", icon: "list-todo", href: "#status=open&view=feed" },
+  { id: "tasks", label: "Tasks", icon: "list-todo", href: "#page=home&pane=tasks" },
   { id: "automations", label: "Automations", icon: "clock", href: "#view=jobs" },
   { id: "agents", label: "Agents", icon: "bot", href: "#page=agents" },
   { id: "projects", label: "Projects", icon: "folder", href: "#view=projects" },

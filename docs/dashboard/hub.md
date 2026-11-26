@@ -40,7 +40,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 *Demo data; your agents will differ.*
 
 1. **Browser:** open `/hub?react=1` (once), or turn `dashboard.hub.react` on and open `/hub`. The shell's own address is `/hub#page=home`.
-2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (open posts), **Automations** (the schedules), **Agents** (select one to chat with it), **Projects** and **Waiting on you**. **Settings** is at the bottom.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (the schedules), **Agents** (select one to chat with it), **Projects** and **Waiting on you**. **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
 5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart. The full layout shows them all:
@@ -52,7 +52,44 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
 
-Every menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+**Tasks** opens in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+
+### Tasks: List or Kanban
+
+**Tasks** lists the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine. They are the posts of the old Hub's feed. Its address is `/hub#page=home&pane=tasks`.
+
+![Tasks as a list, grouped by state: In progress, Waiting on you, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
+
+*Demo data; your tasks will differ.*
+
+1. **Browser:** in the simple shell, select **Tasks** in the side menu.
+2. **List or Kanban:** the switch at the bottom of the side menu (on a phone, at the top of Tasks) changes the view. This browser remembers your choice.
+3. **The columns** are the request states: **In progress**, **Waiting on you**, **Waiting on others**, **Needs attention**, and **Closed** (done, declined or dropped in the last 7 days). Each task shows its agent, its project and how long ago it last moved.
+
+   ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
+
+4. **Open a task:** select it. Its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+
+   ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
+
+5. **Phone:** the list and the board fill the screen; the board scrolls sideways.
+
+   ![Tasks as a list on a phone](/screenshots/hub-tasks/list-phone.png)
+   ![Tasks as a Kanban on a phone](/screenshots/hub-tasks/kanban-phone.png)
+
+Tasks only shows: moving a card does not change a task's state. Close or hand over a task from its **Full record**.
+
+### Check Tasks worked
+
+- Ask an agent something that leaves work open (for example a task it hands to another agent). Within 30 seconds it is under **In progress** in Tasks.
+- Pick **Kanban**, reload the page: Tasks opens as a Kanban again.
+
+### If Tasks is wrong
+
+- **Could not read the tasks:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **No tasks in the last 7 days:** nothing was asked that left work behind. A question an agent answers at once is not a task.
+- **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
+- **Task not found** after opening a link: it was closed more than 7 days ago, or its machine is not answering.
 
 ### Check the simple shell worked
 
