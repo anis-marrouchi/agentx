@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.278.0](https://github.com/anis-marrouchi/agentx/compare/v0.277.1...v0.278.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** plan usage footer — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR D (R5, R28) ([#2314](https://github.com/anis-marrouchi/agentx/issues/2314)) ([daa12ef](https://github.com/anis-marrouchi/agentx/commit/daa12ef1c595bc5ffb34034afe06dd68f94e7bab))
+* **requests:** file a plan step's wait when a run ends waiting (retro:01M8AG6YTMQG790EQXF01DFG00) ([#2320](https://github.com/anis-marrouchi/agentx/issues/2320)) ([9b027fe](https://github.com/anis-marrouchi/agentx/commit/9b027fe2414e80e078f62c17b982257dd1e91f8c))
+
+
+### Bug Fixes
+
+* **daemon:** keep workspace file route inside the workspace, refuse secret files ([#2316](https://github.com/anis-marrouchi/agentx/issues/2316)) ([#2329](https://github.com/anis-marrouchi/agentx/issues/2329)) ([321fced](https://github.com/anis-marrouchi/agentx/commit/321fced84244435e0020f89a02ee7486ca95fe4e))
+* **hub:** show every run of a working agent, voice turns included ([#2331](https://github.com/anis-marrouchi/agentx/issues/2331)) ([1bd09b3](https://github.com/anis-marrouchi/agentx/commit/1bd09b39e8a7c104b122cc667d479dc67634b391))
+* **hub:** workflow editor shows its text, side menu folds to icons ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) W) ([#2325](https://github.com/anis-marrouchi/agentx/issues/2325)) ([d61df0e](https://github.com/anis-marrouchi/agentx/commit/d61df0e32e030cfbd01912371f8c4c75a99ac4fe))
+* **storage:** month cost sums on a covering index, budgets cached 60 s ([#2323](https://github.com/anis-marrouchi/agentx/issues/2323)) ([76b04b5](https://github.com/anis-marrouchi/agentx/commit/76b04b5c29d7ccf9292d21946b834c1d00cf973a)), closes [#2322](https://github.com/anis-marrouchi/agentx/issues/2322)
+
 ## [0.277.1](https://github.com/anis-marrouchi/agentx/compare/v0.277.0...v0.277.1) (2026-11-26)
 
 
