@@ -2441,11 +2441,36 @@ const contribute = wiki
   .option("--model <model>", "model (default: the agent's setting, else wiki.contributions.model, else sonnet)")
   .option("--db <path>", "trace database with the agents' task runs", ".agentx/db.sqlite")
   .option("--dry-run", "show the patches without queueing them or moving the cursor")
+  .option("--work <file>", "read these work items (a JSON array of {id, at, kind, title, text}) instead of the agent's chat and traces; keeps no cursor. Needs --agent")
+  .option("--hold", "with --work: hold each patch for a person (curator queue) instead of queueing it for the merge")
   .option("--json", "print the batches as JSON")
   .action(async (opts) => {
     const { runContribution } = await import("@/wiki/contributions")
     const hub = getHub(opts.dir)
     const dir = wikiDir(opts.dir)
+    // The curator's bundle (noqta#910): one agent, the caller's items, no cursor.
+    let work: import("@/wiki/contributions").WorkItem[] | undefined
+    if (opts.hold && !opts.work) {
+      console.log(chalk.red("  --hold needs --work <file>"))
+      process.exitCode = 1
+      return
+    }
+    if (opts.work) {
+      if (!opts.agent) {
+        console.log(chalk.red("  --work needs --agent <id>"))
+        process.exitCode = 1
+        return
+      }
+      try {
+        const parsed = JSON.parse(readFileSync(resolve(process.cwd(), opts.work), "utf-8"))
+        if (!Array.isArray(parsed) || parsed.some((w) => !w || typeof w.id !== "string" || typeof w.text !== "string")) throw new Error("expected a JSON array of {id, at, kind, title, text}")
+        work = parsed.map((w: any) => ({ id: w.id, at: String(w.at ?? ""), kind: w.kind === "task" ? "task" : "chat", title: String(w.title ?? ""), text: w.text }))
+      } catch (e: any) {
+        console.log(chalk.red(`  --work ${opts.work}: ${e.message}`))
+        process.exitCode = 1
+        return
+      }
+    }
     type Setting = { enabled?: boolean; maxPatches?: number; maxCostUsd?: number; model?: string }
     let settings: Record<string, Setting | undefined> = {}
     let defaults: { maxCostUsd?: number; model?: string } = {}
@@ -2507,11 +2532,18 @@ const contribute = wiki
         const model = opts.model || s?.model || defaults.model || process.env.AGENTX_WIKI_CONTRIBUTE_MODEL || "sonnet"
         try {
           const batch = await runContribution(hub, dir, id, {
-            model, call: callWith(model), db, since: opts.since, dryRun: !!opts.dryRun,
+            model, call: callWith(model), db, since: opts.since, dryRun: !!opts.dryRun || !!opts.hold, work,
             maxPatches: opts.maxPatches ? parseInt(opts.maxPatches) : s?.maxPatches,
             maxCostUsd: opts.maxCost ? parseFloat(opts.maxCost) : s?.maxCostUsd ?? defaults.maxCostUsd,
             maxItems: parseInt(opts.maxItems),
           })
+          if (opts.hold && !opts.dryRun) {
+            const { holdPatches } = await import("@/wiki/curator-queue")
+            const r = holdPatches(hub, dir, batch.patches)
+            batches.push({ ...batch, held: r.held.map((h) => h.id), skipped: r.skipped.map((x) => ({ id: x.patch.id, why: x.why })) })
+            if (!opts.json) console.log(`  ${chalk.cyan(id)}: ${r.held.length} change(s) held for the approver, ${r.skipped.length} skipped · $${batch.costUsd.toFixed(4)}`)
+            continue
+          }
           batches.push(batch)
           if (opts.json) continue
           const stop = batch.stoppedBy ? chalk.yellow(` · stopped at ${batch.stoppedBy}`) : ""
@@ -2529,7 +2561,7 @@ const contribute = wiki
       db?.close()
     }
     if (opts.json) console.log(JSON.stringify(batches, null, 2))
-    else if (!opts.dryRun && batches.some((b) => b.patches.length)) console.log(chalk.dim("  queued; `agentx wiki contributions merge` applies them."))
+    else if (!opts.dryRun && !opts.hold && batches.some((b) => b.patches.length)) console.log(chalk.dim("  queued; `agentx wiki contributions merge` applies them."))
   })
 
 for (const [name, on] of [["enable", true], ["disable", false]] as const) {
@@ -2654,13 +2686,53 @@ contributions
     console.log()
   })
 
+/** A curator change (reason "curator:") is answered on its popup-only card
+ *  (noqta#910): approve or reject needs `--card` naming a card the owner
+ *  decided in the popup. Returns who decided, or prints why not. */
+async function curatorCardDecider(id: string, dir: string, cardId: string | undefined): Promise<string | null | undefined> {
+  const { listHeld } = await import("@/wiki/contributions")
+  const { isCuratorHeld } = await import("@/wiki/curator-queue")
+  const h = listHeld(dir, { all: true }).find((x) => x.id === id)
+  if (!h || !isCuratorHeld(h)) return undefined
+  const refuse = (why: string) => { console.log(chalk.red(`  ${id}: ${why}`)); process.exitCode = 1; return null }
+  if (!cardId) return refuse("curator changes are answered on their card: pass --card <id> of the card the owner answered in the popup")
+  const { readCard, isValidCardId } = await import("@/approvals/cards")
+  const card = isValidCardId(cardId) ? readCard(process.cwd(), cardId) : null
+  if (!card) return refuse(`no card "${cardId}" here (run from the AgentX home)`)
+  if (card.status !== "decided" || card.decided_from !== "popup" || !card.popup_only) {
+    return refuse(`card "${cardId}" was not answered in the popup, so it applies nothing`)
+  }
+  return `${card.decided_by ?? "operator"} (popup, card ${card.id})`
+}
+
+contributions
+  .command("refresh")
+  .description("re-read the pages of waiting curator changes: save the new fingerprint and changed lines, drop changes that no longer apply")
+  .requiredOption("--reason <prefix>", "only held changes whose reason starts with this (the curator's: \"curator:\")")
+  .option("--dir <path>", "wiki directory")
+  .option("--json")
+  .action(async (opts) => {
+    const { refreshHeld } = await import("@/wiki/curator-queue")
+    const r = refreshHeld(getHub(opts.dir), wikiDir(opts.dir), { reasonPrefix: opts.reason })
+    if (opts.json) {
+      console.log(JSON.stringify(r, null, 2))
+      return
+    }
+    console.log(`  ${r.refreshed.length} waiting change(s) refreshed, ${r.dropped.length} dropped`)
+    for (const d of r.dropped) console.log(chalk.yellow(`    - ${d.id} · ${d.page}: ${d.why}`))
+  })
+
 contributions
   .command("approve <id>")
   .description("apply a held patch as it is")
   .option("--dir <path>", "wiki directory")
+  .option("--card <id>", "curator changes: the popup-only card the owner answered")
+  .option("--fingerprint <fp>", "write only onto the page as it was when shown (default: the fingerprint saved by the last refresh)")
   .action(async (id: string, opts) => {
     const { approveHeld } = await import("@/wiki/contributions")
-    const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: process.env.USER || "operator" })
+    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card)
+    if (decider === null) return
+    const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator"), expectedFingerprint: opts.fingerprint })
     if (!r.ok) {
       console.log(chalk.red(`  ${r.error}`))
       process.exitCode = 1
@@ -2673,9 +2745,12 @@ contributions
   .command("reject <id>")
   .description("drop a held patch")
   .option("--dir <path>", "wiki directory")
+  .option("--card <id>", "curator changes: the popup-only card the owner answered")
   .action(async (id: string, opts) => {
     const { rejectHeld } = await import("@/wiki/contributions")
-    const r = rejectHeld(wikiDir(opts.dir), id, { by: process.env.USER || "operator" })
+    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card)
+    if (decider === null) return
+    const r = rejectHeld(wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator") })
     if (!r.ok) {
       console.log(chalk.red(`  ${r.error}`))
       process.exitCode = 1

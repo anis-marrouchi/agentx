@@ -4,7 +4,9 @@ import { resolve } from "path"
 import type Database from "better-sqlite3"
 import { buildIndex, scoreAll } from "@/memory/bm25"
 import { getTrace, listTraces } from "@/storage/traces"
-import { FactLedger } from "./facts/ledger"
+import { FactLedger, factId } from "./facts/ledger"
+import { withLock } from "./facts/ledger-file"
+import { applyCuration } from "./curate"
 import { lostStructuredFacts } from "./fact-guard"
 import type { WikiHub } from "./hub"
 import type { WikiStore } from "./store"
@@ -153,10 +155,26 @@ export interface HeldPatch {
   status: "held" | "approved" | "rejected"
   decidedBy?: string
   decidedAt?: string
+  /** The page as it was when the change was last shown to a person
+   *  (curator-queue.ts). Approving writes only onto that same page. */
+  pageFingerprint?: string
+  /** The changed lines, as last shown: removed and added. */
+  before?: string
+  after?: string
 }
 
-function heldFile(wikiDir: string): string {
+export function heldFile(wikiDir: string): string {
   return resolve(contributionsDir(wikiDir), "held.json")
+}
+
+/** Every read-change-write of held.json goes through this lock, so two
+ *  writers (a merge, a curator run, a person approving) lose no entry. */
+export function withHeldLock<T>(wikiDir: string, fn: () => T): T {
+  return withLock(heldFile(wikiDir), fn, { what: "held wiki patches" })
+}
+
+export function saveHeld(wikiDir: string, list: HeldPatch[]): void {
+  writeJson(heldFile(wikiDir), list)
 }
 
 /** Held patches; only those still waiting unless `all`. */
@@ -251,6 +269,9 @@ export interface ContributeOptions extends Partial<ContributionLimits> {
   now?: number
   /** Compute the batch without saving it or moving the cursor. */
   dryRun?: boolean
+  /** Read these items instead of the agent's chat and traces, and keep
+   *  no cursor: the caller keeps its own (`wiki contribute --work`). */
+  work?: WorkItem[]
 }
 
 /**
@@ -265,7 +286,7 @@ export async function runContribution(hub: WikiHub, wikiDir: string, agentId: st
     maxItems: opts.maxItems ?? DEFAULT_CONTRIBUTION_LIMITS.maxItems,
   }
   const now = opts.now ?? Date.now()
-  const all = pendingWork(hub, wikiDir, agentId, { db: opts.db, since: opts.since, now })
+  const all = opts.work ?? pendingWork(hub, wikiDir, agentId, { db: opts.db, since: opts.since, now })
   const pages = all.length ? readablePages(hub, agentId) : []
   const batch: ContributionBatch = {
     id: `${new Date(now).toISOString().replace(/[:.]/g, "-")}-${agentId.replace(/[^\w-]+/g, "_")}`,
@@ -297,7 +318,7 @@ export async function runContribution(hub: WikiHub, wikiDir: string, agentId: st
 
   if (!opts.dryRun) {
     if (batch.patches.length) writeJson(resolve(contributionsDir(wikiDir), "pending", `${batch.id}.json`), batch)
-    saveCursor(wikiDir, agentId, read, all.slice(read.length), now)
+    if (!opts.work) saveCursor(wikiDir, agentId, read, all.slice(read.length), now)
   }
   return batch
 }
@@ -467,7 +488,7 @@ export interface MergeReport {
   dryRun?: boolean
 }
 
-interface PageTarget {
+export interface PageTarget {
   agentId: string
   store: WikiStore
   path: string
@@ -480,7 +501,7 @@ export function pageKey(title: string): string {
 }
 
 /** Every page by title and alias, across agents. Copied agents are read-only here. */
-function pageTargets(hub: WikiHub): Map<string, PageTarget[]> {
+export function pageTargets(hub: WikiHub): Map<string, PageTarget[]> {
   const targets = new Map<string, PageTarget[]>()
   for (const id of hub.listAgents()) {
     if (hub.syncedFrom(id)) continue
@@ -638,8 +659,10 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
     }
     const dir = contributionsDir(wikiDir)
     if (held.length) {
-      const known = listHeld(wikiDir, { all: true })
-      writeJson(heldFile(wikiDir), [...known, ...held.filter((h) => !known.some((k) => k.id === h.id))])
+      withHeldLock(wikiDir, () => {
+        const known = listHeld(wikiDir, { all: true })
+        saveHeld(wikiDir, [...known, ...held.filter((h) => !known.some((k) => k.id === h.id))])
+      })
     }
     mkdirSync(resolve(dir, "merged"), { recursive: true })
     for (const b of batches) renameSync(resolve(dir, "pending", `${b.id}.json`), resolve(dir, "merged", `${b.id}.json`))
@@ -786,7 +809,10 @@ export type HeldDecision = { ok: true; held: HeldPatch; page?: string } | { ok: 
  * looked at it. A removal deletes the attribute's fact line and the
  * exact text it names; the page's previous body stays in `_versions/`.
  */
-export function approveHeld(hub: WikiHub, wikiDir: string, id: string, opts: { by?: string; now?: number } = {}): HeldDecision {
+export function approveHeld(
+  hub: WikiHub, wikiDir: string, id: string,
+  opts: { by?: string; now?: number; expectedFingerprint?: string } = {},
+): HeldDecision {
   const all = listHeld(wikiDir, { all: true })
   const h = all.find((x) => x.id === id)
   if (!h) return { ok: false, error: `no held patch "${id}"` }
@@ -810,24 +836,75 @@ export function approveHeld(hub: WikiHub, wikiDir: string, id: string, opts: { b
     const draft: NewPage = { title: p.page, type: p.pageType, owner: p.agentId, summaries: p.summary ? [p.summary] : [], sources: [p.source], aliases: p.aliases ?? [], at: p.checkedAt }
     if (!createPage(store, path, draft, lines, today)) return { ok: false, error: `write denied for ${p.agentId}/${path}` }
     try { store.rebuildIndex() } catch { /* the page is written; the next rebuild indexes it */ }
-    return decide(wikiDir, all, h, "approved", opts.by, now, `${p.agentId}/${path}`)
+    return decide(wikiDir, h, "approved", opts.by, now, `${p.agentId}/${path}`)
   }
 
-  let r: { changed: boolean; denied?: boolean }
-  if (p.kind === "remove") {
-    r = updatePage(target, [], { guard: false, today, remove: { attribute: p.attribute, text: p.previous } })
-  } else {
-    if (!p.attribute || !p.value) return { ok: false, error: `"${id}" carries no fact to apply` }
-    const w = new FactLedger(wikiDir).write({ subject: target.article.meta.title, attribute: p.attribute, value: p.value, source: p.source, verifiedBy: p.agentId, verifiedAt: p.checkedAt }, { now })
+  // In this order (noqta#910, design #906 §5): check the ledger, write the
+  // page, write the ledger, mark the patch. A crash between any two steps
+  // is finished by the next approve, never refused for it.
+  if (p.kind !== "remove" && (!p.attribute || !p.value)) return { ok: false, error: `"${id}" carries no fact to apply` }
+  const subject = target.article.meta.title
+  const ledger = new FactLedger(wikiDir)
+  const fact = p.kind !== "remove" ? { subject, attribute: p.attribute!, value: p.value!, source: p.source, verifiedBy: p.agentId, verifiedAt: p.checkedAt } : undefined
+  // 1. A newer check, or a value a person confirmed, wins: no page write.
+  if (fact && ledgerRefuses(ledger, fact)) {
+    const w = ledger.write(fact, { now })
     if (w.status === "contradiction") return { ok: false, error: `the wiki has a newer check of ${p.attribute}; answer question ${w.questionId ?? "(see wiki questions)"} instead` }
-    const previous = p.kind === "correct" ? p.previous : undefined
-    r = updatePage(target, [{ line: { attribute: p.attribute, value: w.fact.value, source: p.source, checkedAt: p.checkedAt, by: p.agentId, previous }, previous, patch: p }], { guard: false, today })
   }
-  if (r.denied) return { ok: false, error: `write denied for ${target.agentId}/${target.path}` }
-  if (r.changed) {
+  // 2. The page, through the curator's write: as the page's owner, its
+  //    access kept, refused if the page changed since it was shown, and
+  //    undone if no version was saved. A page that already holds the
+  //    change (a crash after this step) counts as written.
+  const current = target.article.content
+  const next = heldChange(current, p)
+  if (next.trim() !== current.trim()) {
+    const written = applyCuration(target.store, target.path, { summary: "", sources: [contributionStamp(p.agentId, p.checkedAt)], content: next }, {
+      curator: opts.by ?? "operator",
+      expectedFingerprint: opts.expectedFingerprint ?? h.pageFingerprint,
+      // A removal may shrink a short page: it is what was approved.
+      instruction: p.kind === "remove" ? "remove fact" : undefined,
+      now: new Date(now),
+    })
+    if (!written.ok) return { ok: false, error: `${target.agentId}/${target.path}: ${written.error}` }
     try { target.store.rebuildIndex() } catch { /* the page is written; the next rebuild indexes it */ }
   }
-  return decide(wikiDir, all, h, "approved", opts.by, now, `${target.agentId}/${target.path}`)
+  // 3. The ledger, only once the page is written. The same value with the
+  //    same check is a no-op.
+  if (fact) ledger.write(fact, { now })
+  // 4. Mark it.
+  return decide(wikiDir, h, "approved", opts.by, now, `${target.agentId}/${target.path}`)
+}
+
+/** True when the ledger holds another value with a newer check than the
+ *  patch's, or one a person confirmed: writing the patch would lose it. */
+function ledgerRefuses(ledger: FactLedger, fact: { subject: string; attribute: string; value: string; verifiedAt: string }): boolean {
+  const existing = ledger.get(factId(fact.subject, fact.attribute))
+  if (!existing) return false
+  const same = (a: string) => a.trim().toLowerCase().replace(/\s+/g, " ")
+  if (same(existing.value) === same(fact.value)) return false
+  if (existing.confirmedBy) return true
+  const prior = Date.parse(existing.verifiedAt)
+  const mine = Date.parse(fact.verifiedAt)
+  return !existing.undated && Number.isFinite(prior) && (!Number.isFinite(mine) || mine <= prior)
+}
+
+/** The page body with one held patch applied, as approveHeld writes it.
+ *  Equal to `body` when the patch changes nothing there. */
+export function heldChange(body: string, p: ContributionPatch): string {
+  if (p.kind === "remove") return removeFact(body, { attribute: p.attribute, text: p.previous })
+  if (!p.attribute || !p.value) return body
+  const value = p.value.trim()
+  const previous = p.kind === "correct" ? p.previous : undefined
+  let out = applyFactLines(body, [{ attribute: p.attribute, value, source: p.source, checkedAt: p.checkedAt, by: p.agentId, previous }]).body
+  if (previous && previous !== value) out = replaceOnce(out, previous, value)
+  return out
+}
+
+/** The value of the page's checked-fact line for `attribute`, if any. */
+export function factLineValue(body: string, attribute: string): string | undefined {
+  const attr = attribute.toLowerCase()
+  const line = body.split("\n").find((l) => l.match(LINE_RE)?.[1].toLowerCase() === attr)
+  return line ? parseFactLine(line)?.value : undefined
 }
 
 export function rejectHeld(wikiDir: string, id: string, opts: { by?: string; now?: number } = {}): HeldDecision {
@@ -835,13 +912,20 @@ export function rejectHeld(wikiDir: string, id: string, opts: { by?: string; now
   const h = all.find((x) => x.id === id)
   if (!h) return { ok: false, error: `no held patch "${id}"` }
   if (h.status !== "held") return { ok: false, error: `"${id}" is already ${h.status}` }
-  return decide(wikiDir, all, h, "rejected", opts.by, opts.now ?? Date.now())
+  return decide(wikiDir, h, "rejected", opts.by, opts.now ?? Date.now())
 }
 
-function decide(wikiDir: string, all: HeldPatch[], h: HeldPatch, status: "approved" | "rejected", by: string | undefined, now: number, page?: string): HeldDecision {
-  const decided: HeldPatch = { ...h, status, decidedBy: by ?? "operator", decidedAt: new Date(now).toISOString() }
-  writeJson(heldFile(wikiDir), all.map((x) => (x.id === h.id ? decided : x)))
-  return { ok: true, held: decided, ...(page ? { page } : {}) }
+/** Mark one entry, re-reading the file under its lock so an entry another
+ *  writer added meanwhile is kept. */
+function decide(wikiDir: string, h: HeldPatch, status: "approved" | "rejected", by: string | undefined, now: number, page?: string): HeldDecision {
+  return withHeldLock(wikiDir, () => {
+    const all = listHeld(wikiDir, { all: true })
+    const cur = all.find((x) => x.id === h.id)
+    if (cur && cur.status !== "held") return { ok: false as const, error: `"${h.id}" is already ${cur.status}` }
+    const decided: HeldPatch = { ...(cur ?? h), status, decidedBy: by ?? "operator", decidedAt: new Date(now).toISOString() }
+    saveHeld(wikiDir, all.map((x) => (x.id === h.id ? decided : x)))
+    return { ok: true as const, held: decided, ...(page ? { page } : {}) }
+  })
 }
 
 // --- Page text -----------------------------------------------------------------
