@@ -11,7 +11,7 @@ You see your workflows in two places:
 ## See your workflows on the Hub
 
 1. **Browser:** open the dashboard. The Hub is the first page you see.
-2. Select **Workflows** in the nav on the left, under **Automation**. The number next to it is how many workflows this machine has. On a phone, select **More** in the bottom bar, then **Workflows**. The page's address is `/hub#page=workflows`. The simple layout, the default, hides **Workflows** from the nav while every workflow keeps running: open that address, or turn **Workflows page** on in [Settings › Layout](./settings.md#layout).
+2. Select **Workflows** in the nav on the left, under **Automation**. The number next to it is how many workflows this machine has. On a phone, select the menu button at the top left, then **Workflows**. The page's address is `/hub#page=workflows`. The simple layout, the default, hides **Workflows** from the nav while every workflow keeps running: open that address, or turn **Workflows page** on in [Settings › Layout](./settings.md#layout).
 3. Each workflow is one row. It shows:
    - its name, and its state: **Running**, **Last run failed**, **Done**, **Waiting** (a step waits for someone), **Never run**, **Off**, or **Held** (it would clash with another way the same events are handled, so it takes no runs until that is fixed);
    - what starts it, in words, such as **Started by hand**, **Fridays at 16:00** or **When a message arrives by email**;

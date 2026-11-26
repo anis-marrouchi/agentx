@@ -53,9 +53,9 @@ const shots = [
   // #1355: Projects as cards, Jobs per machine, the Creator, the phone dark.
   { name: "wall/projects", path: "/hub#status=open&view=projects", wait: ".wpc" },
   { name: "wall/jobs", path: "/hub#status=open&view=jobs", wait: ".wjb" },
-  // The Hub pages the docs link from every page (#1448): its nav groups on a
+  // The Hub pages the docs link from every page (#1448): its side menu on a
   // phone, the build line, and the Activity and Workflows pages.
-  { name: "wall/more-phone", path: "/hub", wait: ".wp", phone: true, steps: [{ click: "[data-more-nav]" }, { wait: "#wall-more:not([hidden])" }] },
+  { name: "hub-sidemenu/phone-sheet", path: "/hub", wait: ".wp", phone: true, steps: [{ click: "#wall-menu-btn" }, { wait: ".ax-wall.is-sheet" }] },
   { name: "wall/build-line", path: "/hub", wait: "#wall-build:not(.is-wait)", clipTo: ".ax-wall__head" },
   { name: "wall/activity", path: "/hub#page=activity", wait: "#wall-activity > *" },
   { name: "wall/workflows", path: "/hub#page=workflows", wait: "#wall-workflows .wwf__tabs" },
