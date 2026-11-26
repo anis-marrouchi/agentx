@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.275.0](https://github.com/anis-marrouchi/agentx/compare/v0.274.2...v0.275.0) (2026-11-26)
+
+
+### Features
+
+* **requests:** open proof links behind a private-address guard ([#2290](https://github.com/anis-marrouchi/agentx/issues/2290)) ([e3b2574](https://github.com/anis-marrouchi/agentx/commit/e3b2574f80db34e47d050c83b39fc9abf26119ff))
+
+
+### Bug Fixes
+
+* **hub:** keep tool folds open on Task page and phone across updates ([#2295](https://github.com/anis-marrouchi/agentx/issues/2295)) ([55ea52f](https://github.com/anis-marrouchi/agentx/commit/55ea52fe837824b7e7c8943963f82002f80a857b))
+* **requests:** drop a queued plan-step hand-off when the step is done ([#2280](https://github.com/anis-marrouchi/agentx/issues/2280)) ([#2286](https://github.com/anis-marrouchi/agentx/issues/2286)) ([7d3a791](https://github.com/anis-marrouchi/agentx/commit/7d3a7910b63680ce147921416841e8614376a7d4))
+* **requests:** owner_reopened fires on every owner send-back ([#2126](https://github.com/anis-marrouchi/agentx/issues/2126)) ([#2287](https://github.com/anis-marrouchi/agentx/issues/2287)) ([fb11cc9](https://github.com/anis-marrouchi/agentx/commit/fb11cc920a8370b3fd3fbbf876acb4ab555bcd4a))
+
 ## [0.274.2](https://github.com/anis-marrouchi/agentx/compare/v0.274.1...v0.274.2) (2026-11-25)
 
 
