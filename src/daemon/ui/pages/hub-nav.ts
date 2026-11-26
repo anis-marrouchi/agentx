@@ -166,6 +166,8 @@ a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); colo
 .hf__n[hidden] { display: none; }
 /* The ⌘K switcher (V3). */
 .hk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+/* display: flex above beats the hidden attribute: closed means gone (#2353). */
+.hk[hidden] { display: none; }
 .hk__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgb(5 8 14 / 55%); backdrop-filter: blur(3px); cursor: default; }
 .hk__box { position: relative; width: min(640px, calc(100vw - 24px)); max-height: 72vh; display: flex; flex-direction: column; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: 14px; box-shadow: 0 24px 64px rgb(0 0 0 / 40%); overflow: hidden; }
 .hk__q { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
