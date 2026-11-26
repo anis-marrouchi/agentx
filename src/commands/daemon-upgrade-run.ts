@@ -6,6 +6,8 @@ import { launchdDomain, launchdPlistPath } from "@/daemon/restart-host"
 import { jobPid, loadedJobsNaming, plistValid, readPlistJson, reloadJob, type LaunchdJob } from "@/native/macos/launchd"
 import { writeShutdownRequest } from "@/daemon/shutdown"
 import { ensureNativeModules } from "@/daemon/upgrade-native"
+import { MAX_HOLD_MINUTES } from "@/daemon/restart-api"
+import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
 import { loadDaemonConfig } from "@/daemon/config"
 import {
   chatRouteOk, checksSummary, daemonNodeFromArgs, healthIsUpgraded, hubPageOk, peerSkew, releaseDirFromArgs, retargetPlist, runsToCut,
@@ -180,17 +182,21 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
 
   // 1. Drain (#2360): hold new run starts, so the running count can reach 0
   // on a busy node. Queued runs stay queued. An older daemon cannot hold;
-  // then this is the plain wait for idle.
-  const hold = await postJson(`${base}/daemon/upgrade/hold`, { minutes: o.timeoutMin + HOLD_MARGIN_MIN, by: "agentx daemon upgrade" }, 10_000)
+  // then this is the plain wait for idle. The hold paths need the operator
+  // key; past MAX_HOLD_MINUTES the daemon reopens starts and the wait goes on.
+  const opKey = loadOperatorKey(cwd)
+  const opHeaders: Record<string, string> = opKey ? { [OPERATOR_HEADER]: opKey } : {}
+  const holdMin = Math.min(o.timeoutMin + HOLD_MARGIN_MIN, MAX_HOLD_MINUTES)
+  const hold = await postJson(`${base}/daemon/upgrade/hold`, { minutes: holdMin, by: "agentx daemon upgrade" }, 10_000, opHeaders)
   const drainT0 = Date.now()
   if (typeof hold?.waiting === "number") {
     outcome.drain = { startedAt: new Date(drainT0).toISOString(), heldAtStart: hold.waiting }
     log(`new run starts held until ${hold.until}; ${hold.waiting} queued run(s) kept, ${hold.running} running`)
-  } else log("this daemon cannot hold new run starts; waiting for idle as before")
+  } else log(`this daemon ${opKey ? "cannot" : "was not shown the operator key, so it does not"} hold new run starts; waiting for idle as before`)
   /** Reopens starts on this daemon; best effort, the hold also ends by itself. */
   const reopen = async () => {
     if (!outcome.drain) return
-    const r = await postJson(`${base}/daemon/upgrade/hold/release`, {}, 10_000)
+    const r = await postJson(`${base}/daemon/upgrade/hold/release`, {}, 10_000, opHeaders)
     if (typeof r?.waiting === "number") outcome.drain.heldAtEnd = r.waiting
     outcome.drain.reopenedAt = new Date().toISOString()
     log(`new run starts reopened${typeof r?.waiting === "number" ? `; ${r.waiting} queued run(s) can start` : ""}`)

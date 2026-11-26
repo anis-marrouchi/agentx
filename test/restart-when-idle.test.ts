@@ -316,6 +316,7 @@ describe("upgrade start hold API (#2360)", () => {
       pid: 4242,
       cwd: "/srv/agentx",
       now: () => 0,
+      operator: true,
       ...(withHold ? {
         hold: {
           start: (by: string, until: number) => { calls.push(`start ${by} ${until}`); on = { by, until }; return state()! },
@@ -341,5 +342,21 @@ describe("upgrade start hold API (#2360)", () => {
     expect(handleRestartApi("POST", "/daemon/upgrade/hold", {}, ctx()).status).toBe(400)
     expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 0 }, ctx()).status).toBe(400)
     expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 10 }, ctx(false)).status).toBe(501)
+  })
+
+  it("caps a hold at 2 hours", () => {
+    const c = ctx()
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 121 }, c).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 24 * 60 }, c).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 120 }, c).status).toBe(200)
+  })
+
+  it("refuses to hold or reopen starts without the operator key, though loopback let the caller in", () => {
+    const c = { ...ctx(), operator: false }
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 10 }, c).status).toBe(403)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold/release", {}, c).status).toBe(403)
+    expect(c.calls).toEqual([])
+    // Reading the hold stays open to loopback.
+    expect(handleRestartApi("GET", "/daemon/restart", {}, c).status).toBe(200)
   })
 })

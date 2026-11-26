@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { AdmissionQueue, contextWithAdmissionPriority, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
 import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/native/resources"
 import { formatQueue } from "../src/admission/format"
@@ -663,6 +663,40 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     await q.pump()
     expect(a.ticket).toBeTruthy()
     expect(q.startHold).toBeNull()
+  })
+
+  it("starts the waiting runs at the deadline with no other wake-up", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      // The queue samples every 60 s; the hold ends after 5 s.
+      const { q, advance } = setup()
+      q.holdStarts("agentx daemon upgrade", 1_000_000 + 5_000)
+      const a = ask(q, "a")
+      await vi.advanceTimersByTimeAsync(0)
+      expect(a.ticket).toBeUndefined()
+      advance(5_000)
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(a.ticket).toBeTruthy()
+      expect(q.startHold).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not move the deadline later on a repeat hold", async () => {
+    const { q, advance } = setup()
+    const first = q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
+    const again = q.holdStarts("someone else", 1_000_000 + 7_200_000)
+    expect(again.until).toBe(first.until)
+    expect(again).toMatchObject({ by: "agentx daemon upgrade", since: first.since })
+    // A nearer deadline is taken.
+    expect(q.holdStarts("agentx daemon upgrade", 1_000_000 + 30_000).until).toBe(new Date(1_000_000 + 30_000).toISOString())
+    const a = ask(q, "a")
+    await tick(); await tick()
+    expect(a.ticket).toBeUndefined()
+    advance(30_000)
+    await q.pump()
+    expect(a.ticket).toBeTruthy()
   })
 
   it("does not count the held time toward maxWaitMinutes", async () => {

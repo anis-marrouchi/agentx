@@ -8346,6 +8346,7 @@ export class AgentXDaemon {
           inflight: () => this.inflightCounts(),
           running: () => this.runningSummaries(),
           policy: this.config.shutdown?.restart,
+          operator: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
           hold: {
             start: (by, untilMs) => this.registry.admission.holdStarts(by, untilMs),
             release: () => this.registry.admission.releaseHold(),

@@ -14,10 +14,10 @@ export async function getJson(url: string, timeoutMs = 3000): Promise<any | null
 }
 
 /** POST a JSON body; the reply's JSON, or null when not ok or no answer. */
-export async function postJson(url: string, body: unknown, timeoutMs = 3000): Promise<any | null> {
+export async function postJson(url: string, body: unknown, timeoutMs = 3000, headers: Record<string, string> = {}): Promise<any | null> {
   try {
     const r = await fetch(url, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+      method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
     })
     return r.ok ? await r.json() : null
   } catch {

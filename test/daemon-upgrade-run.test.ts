@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   /** Runs that never finish. */
   stuck: false,
   posts: [] as string[],
+  /** What each POST sent: its operator key header and minutes. */
+  sent: [] as { key?: string; minutes?: number }[],
 }))
 
 vi.mock("child_process", async (orig) => ({
@@ -63,8 +65,9 @@ vi.mock("../src/commands/daemon-http", () => {
       if (h.held && !h.stuck) h.running = Math.max(0, h.running - 2)
       return h.running
     },
-    postJson: async (url: string) => {
+    postJson: async (url: string, body: any, _ms?: number, headers: Record<string, string> = {}) => {
       h.posts.push(url.replace("http://daemon.test", ""))
+      h.sent.push({ key: headers["x-agentx-operator"], minutes: body?.minutes })
       if (!h.canHold) return null
       if (url.endsWith("/daemon/upgrade/hold")) { h.held = true; return { by: "agentx daemon upgrade", until: "later", waiting: 40, running: h.running } }
       if (url.endsWith("/hold/release")) { h.held = false; return { waiting: 41 } }
@@ -83,10 +86,10 @@ vi.mock("../src/commands/daemon-http", () => {
 const html = () => new Response("<html>" + "x".repeat(4096) + "</html>", { status: 200, headers: { "content-type": "text/html" } })
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-async function run() {
+async function run(over: { timeoutMin?: number } = {}) {
   vi.resetModules()
   const { runUpgrade } = await import("../src/commands/daemon-upgrade-run")
-  const code = await runUpgrade({ dir: join(h.root, "new"), timeoutMin: 1, force: false, bootTimeoutMin: 1, hubWaitMs: 0 })
+  const code = await runUpgrade({ dir: join(h.root, "new"), timeoutMin: 1, force: false, bootTimeoutMin: 1, hubWaitMs: 0, ...over })
   const last = JSON.parse(readFileSync(join(h.root, ".agentx/upgrade/last.json"), "utf-8"))
   return { code, last }
 }
@@ -158,6 +161,9 @@ describe("daemon upgrade run: drain the queue instead of waiting for idle (#2360
     h.running = 6
     h.stuck = false
     h.posts = []
+    h.sent = []
+    mkdirSync(join(h.root, ".agentx"), { recursive: true })
+    writeFileSync(join(h.root, ".agentx/operator.key"), "op-key-1\n")
     vi.spyOn(console, "log").mockImplementation(() => {})
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })))
   })
@@ -186,6 +192,14 @@ describe("daemon upgrade run: drain the queue instead of waiting for idle (#2360
     expect(h.held).toBe(false)
     expect(last.drain).toMatchObject({ heldAtStart: 40, heldAtEnd: 41 })
     expect(last.drain.reopenedAt).toBeTruthy()
+    // Both calls show the operator key; loopback alone is refused.
+    expect(h.sent.map((x) => x.key)).toEqual(["op-key-1", "op-key-1"])
+  })
+
+  it("asks for at most the 2 hour cap, even with a longer --timeout", async () => {
+    h.running = 0
+    await run({ timeoutMin: 300 })
+    expect(h.sent[0]).toEqual({ key: "op-key-1", minutes: 120 })
   })
 
   it("waits for idle as before when the daemon cannot hold starts", async () => {

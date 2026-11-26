@@ -34,7 +34,8 @@
 // the held time does not count toward maxWaitMinutes. Owner and critical
 // runs are held too; only delegated helpers start, since their parent is
 // running and waits on them. The hold ends when released or at its own
-// deadline, so a dead upgrade job cannot leave the queue shut.
+// deadline, so a dead upgrade job cannot leave the queue shut. A repeat
+// hold never moves that deadline later, and the queue wakes at it.
 
 //
 // Idle sessions give their memory back (noqta/noqta#509): while a run waits
@@ -434,13 +435,16 @@ export class AdmissionQueue {
   }
 
   /** Holds new starts until `untilMs` or releaseHold() (#2360). A second
-   *  call moves the deadline and keeps the first start time. */
+   *  call while the hold is on keeps the first start time and may only
+   *  bring the deadline nearer, so repeating the call cannot keep the
+   *  queue shut. */
   holdStarts(by: string, untilMs: number): StartHold {
     const now = this.now()
     if (!this.holding(now)) {
       this.hold = { by, since: now, until: untilMs }
       this.log(`[admission] new starts held for ${by} until ${new Date(untilMs).toISOString()}; ${this.waiting.length} waiting, ${this.running.size} running`)
-    } else this.hold = { ...this.hold!, by, until: untilMs }
+    } else this.hold = { ...this.hold!, until: Math.min(this.hold!.until, untilMs) }
+    void this.pump()
     return this.startHold!
   }
 
@@ -699,6 +703,8 @@ export class AdmissionQueue {
       const pace = this.paceWait(e.priority, s, now)
       if (pace > 0) ms = Math.min(ms, pace + 50)
     }
+    // Wake at the start hold's deadline, so held runs start when it ends.
+    if (this.hold && this.hold.until > now) ms = Math.min(ms, this.hold.until - now + 50)
     this.timer = setTimeout(() => { this.timer = null; void this.pump() }, ms)
     this.timer.unref?.()
   }

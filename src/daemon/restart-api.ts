@@ -14,7 +14,13 @@ import { applyRestartPolicy, type IdleRestartScheduler, type OnTimeout, type Res
 //   POST /daemon/restart/cancel  drop a pending or deferred request
 //   POST /daemon/upgrade/hold    { minutes, by? } hold new run starts (#2360);
 //                                queued runs stay queued; ends by itself
+//                                within MAX_HOLD_MINUTES; a repeat call never
+//                                moves the end later
 //   POST /daemon/upgrade/hold/release  reopen starts
+//
+// Both hold paths need the operator key (x-agentx-operator): loopback alone
+// is not enough, since every agent on this node can reach loopback and a
+// hold stops owner and critical runs too.
 //
 // Pure request → reply mapping; index.ts supplies the context.
 
@@ -22,6 +28,8 @@ export const RESTART_API_PATHS = new Set(["/daemon/restart", "/daemon/restart/ca
 
 export const DEFAULT_IDLE_TIMEOUT_MINUTES = 30
 const MAX_IDLE_TIMEOUT_MINUTES = 24 * 60
+/** The longest start hold one call can ask for (#2360). */
+export const MAX_HOLD_MINUTES = 120
 
 /** A run a restart would cut off, for the deploy script asking. */
 export interface RunningSummary {
@@ -47,6 +55,8 @@ export interface RestartApiContext {
     release: () => StartHold | null
     state: () => StartHold | null
   }
+  /** The caller showed this node's operator key. */
+  operator?: boolean
   now?: () => number
   pid: number
   cwd: string
@@ -116,11 +126,14 @@ export function handleRestartApi(
       },
     }
   }
+  if ((path === "/daemon/upgrade/hold" || path === "/daemon/upgrade/hold/release") && m === "POST" && !ctx.operator) {
+    return { status: 403, body: { error: "holding run starts needs the operator key: run `agentx daemon upgrade` from the AgentX folder (it sends .agentx/operator.key)" } }
+  }
   if (path === "/daemon/upgrade/hold" && m === "POST") {
     if (!ctx.hold) return { status: 501, body: { error: "this daemon cannot hold run starts" } }
     const minutes = Number(body.minutes)
-    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_IDLE_TIMEOUT_MINUTES) {
-      return { status: 400, body: { error: `minutes must be above 0 and at most ${MAX_IDLE_TIMEOUT_MINUTES}` } }
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_HOLD_MINUTES) {
+      return { status: 400, body: { error: `minutes must be above 0 and at most ${MAX_HOLD_MINUTES}` } }
     }
     const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 80) : "a daemon upgrade"
     return { status: 200, body: ctx.hold.start(by, (ctx.now ?? Date.now)() + minutes * 60_000) }
