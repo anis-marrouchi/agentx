@@ -119,7 +119,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
     // The one place the version shows on a computer (R27); hover tells the rest.
     el.textContent = 'v' + buildLast.version;
     el.parentNode.hidden = false;
-    el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + '. ' + buildTitle(buildLast);
+    // An old answer (the dashboard or this page could not reach the daemon) says as of when (#2343 C1).
+    var asOf = typeof buildAsOf !== 'undefined' && buildAsOf ? ' · as of ' + buildAsOf.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + asOf + '. ' + buildTitle(buildLast);
   }
   // CLI accounts (#2101 P9b): owner only; a 403 leaves the button hidden.
   var hsAcct = null;
