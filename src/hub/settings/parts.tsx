@@ -5,7 +5,7 @@
 // mounted so search can open it. A row is drawn from its definition in
 // panes.ts (condition 1), so its label and help are the ones search shows.
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react"
-import { Icon, cn } from "../ui"
+import { Button, Icon, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import { rowDef, type SettingsPaneDef } from "./panes"
 
 export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
@@ -46,17 +46,19 @@ export function SettingsGroup({ pane, row, title, help, action, children }: {
 
 /** One row from its definition: label and help on the left, the control on
  *  the right. `label` replaces the text only (a status dot, a mono name). */
-export function SettingsRow({ pane, row, label, help, control }: {
+export function SettingsRow({ pane, row, label, help, control, layout = "inline" }: {
   pane: string; row: string; label?: ReactNode; help?: ReactNode; control?: ReactNode
+  /** `stack` puts the control under the label (a list of chips, checks). */
+  layout?: "inline" | "stack"
 }) {
   const def = rowDef(pane, row)
   return (
-    <div data-slot="settings-row" data-row={def.id} className="flex min-h-11 scroll-mt-6 items-center justify-between gap-4 py-[9px]">
+    <div data-slot="settings-row" data-row={def.id} data-layout={layout} className={cn("flex min-h-11 scroll-mt-6 gap-4 py-[9px]", layout === "stack" ? "flex-col gap-2" : "items-center justify-between")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm">{label ?? def.label}</span>
         {(help ?? def.help) && <span className="text-[12.5px] text-muted-foreground">{help ?? def.help}</span>}
       </div>
-      {control && <div className="flex shrink-0 items-center gap-2">{control}</div>}
+      {control && <div className={layout === "stack" ? "flex min-w-0 flex-wrap items-center gap-2" : "flex shrink-0 items-center gap-2"}>{control}</div>}
     </div>
   )
 }
@@ -120,4 +122,38 @@ export function Disclosure({ id, label, children }: { id: string; label: string;
 /** A state dot before a line: colour for state only, with the word in the text. */
 export function ToneDot({ tone }: { tone: "ok" | "warn" | "err" }) {
   return <span aria-hidden="true" className={cn("mr-2 inline-block size-1.5 shrink-0 rounded-full align-middle", tone === "ok" ? "bg-ok" : tone === "warn" ? "bg-warn" : "bg-destructive")} />
+}
+
+/** One relative time format (orca-design C17): `now`, `2m`, `1h`, `2d`, the
+ *  full stamp in its tooltip. */
+export function Ago({ iso, prefix = "" }: { iso: string; prefix?: string }) {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild><time dateTime={iso}>{prefix}{relTime(ms) === "now" ? "now" : relTime(ms) + " ago"}</time></TooltipTrigger>
+      <TooltipContent>{new Date(ms).toLocaleString()}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+export function relTime(ms: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ms) / 1000))
+  if (s < 60) return "now"
+  if (s < 3600) return Math.floor(s / 60) + "m"
+  if (s < 86400) return Math.floor(s / 3600) + "h"
+  return Math.floor(s / 86400) + "d"
+}
+
+export function SkeletonRows() {
+  return <div className="flex flex-col gap-3 py-4" aria-busy="true"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /><Skeleton className="h-5 w-3/5" /></div>
+}
+
+export function ErrorLine({ text, onRetry }: { text: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex items-center justify-between gap-4 py-3 text-sm">
+      <span className="text-destructive">{text}</span>
+      <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
+    </div>
+  )
 }

@@ -23,6 +23,9 @@ import { buildSettingsIndex, searchSettings, type SettingsHit } from "./search"
 /** The panes React draws; the rest open on a line to the old Settings. */
 const PANES: Record<string, ComponentType> = {
   general: lazy(() => import("./GeneralPane")),
+  jobs: lazy(() => import("./JobsPane")),
+  approvals: lazy(() => import("./ApprovalsPane")),
+  inbox: lazy(() => import("./InboxPane")),
   menu: lazy(() => import("./MenuPane")),
 }
 
