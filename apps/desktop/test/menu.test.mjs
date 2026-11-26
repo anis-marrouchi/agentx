@@ -11,13 +11,13 @@ const actions = {
   onDaemon: (a) => calls.push(a),
   onSetting: (c) => calls.push(c),
 }
-const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, ...over })
+const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, ...over })
 const items = (s) => menu.menuTemplate(s, actions).filter((i) => i.type !== "separator")
 const byLabel = (s, prefix) => items(s).find((i) => i.label.startsWith(prefix))
 
 test("all six controls are in the menu", () => {
   const labels = items(state()).map((i) => i.label)
-  assert.deepEqual(labels, ["Hide AgentX", "Daemon: running", "Start", "Stop", "Restart", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
+  assert.deepEqual(labels, ["Hide AgentX", "Daemon: running", "Start", "Stop", "Restart…", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
   assert.equal(byLabel(state({ windowVisible: false }), "Show").label, "Show AgentX")
 })
 
@@ -35,6 +35,13 @@ test("daemon buttons follow its status", () => {
   assert.equal(byLabel(far, "Stop").label, "Stop (on another machine)")
   assert.equal(byLabel(far, "Stop").enabled, false)
   assert.equal(byLabel(far, "Restart").enabled, true)
+  const managed = state({ daemon: { running: false }, startRefusal: "kept by launchd tn.noqta.agentx" })
+  assert.equal(byLabel(managed, "Start").label, "Start (kept by launchd tn.noqta.agentx)")
+  assert.deepEqual([byLabel(managed, "Start").enabled, byLabel(managed, "Restart").enabled], [false, false])
+  const noCfg = state({ daemon: { running: false }, startRefusal: "set AGENTX_CONFIG" })
+  assert.equal(byLabel(noCfg, "Start").enabled, false)
+  // Running: the plain label, whatever startRefusal says.
+  assert.equal(byLabel(state({ startRefusal: "already running" }), "Start").label, "Start")
   const busy = state({ busy: "restarting" })
   assert.equal(byLabel(busy, "Daemon").label, "Daemon: restarting…")
   assert.ok(["Start", "Stop", "Restart"].every((l) => byLabel(busy, l).enabled === false))

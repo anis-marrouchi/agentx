@@ -10,9 +10,9 @@ import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { allowsMedia, dashboardUrl, hubUrl, isDashboardOrigin, opensOutside } from "./hub.js"
 import { offlinePage } from "./offline.js"
-import { cliArgs, daemonTarget, readStatus, runCli, stopDaemon, type DaemonStatus } from "./daemon.js"
+import { cliArgs, daemonTarget, managedService, readStatus, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
 import type { TrayActions, TrayState } from "./menu.js"
-import { loadSettings, saveSettings, type AppSettings } from "./settings.js"
+import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
 
 const BASE = dashboardUrl()
@@ -28,6 +28,8 @@ const DAEMON = daemonTarget()
 const LOGIN_ITEM_SUPPORTED = process.platform === "darwin" || process.platform === "win32"
 let daemonStatus: DaemonStatus | null = null
 let daemonBusy: string | null = null
+// The launchd job / systemd unit that runs the daemon; checked while it is down.
+let daemonManaged: string | null = null
 
 function log(message: string, err?: unknown): void {
   process.stderr.write(`[agentx-desktop] ${message}${err ? `: ${String(err)}` : ""}\n`)
@@ -137,6 +139,7 @@ function trayState(): TrayState {
     busy: daemonBusy,
     settings,
     loginItemSupported: LOGIN_ITEM_SUPPORTED,
+    startRefusal: startRefusal(daemonStatus, DAEMON, daemonManaged),
   }
 }
 
@@ -176,14 +179,42 @@ function applyLoginItem(): boolean {
 async function pollDaemon(): Promise<void> {
   if (daemonBusy) return
   const next = await readStatus(DAEMON)
-  const changed = JSON.stringify(next) !== JSON.stringify(daemonStatus)
+  const managed = next.running ? daemonManaged : managedService()
+  const changed = JSON.stringify(next) !== JSON.stringify(daemonStatus) || managed !== daemonManaged
   daemonStatus = next
+  daemonManaged = managed
   if (changed) refreshTray()
 }
 
-const BUSY_LABEL = { start: "starting", stop: "stopping", restart: "restarting" } as const
+const BUSY_LABEL = { start: "starting", stop: "stopping", restart: "restarting when idle" } as const
+
+/** Restart waits for running tasks, but still restarts the daemon: ask first. */
+async function confirmRestart(): Promise<boolean> {
+  const opts = {
+    type: "question" as const,
+    buttons: ["Restart when idle", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Restart the AgentX daemon?",
+    detail:
+      "It waits until no task is running (up to 30 minutes), then restarts. If tasks are still running then, it does not restart.\n\nRuns: agentx daemon restart --when-idle --abort-on-timeout",
+  }
+  const r = win && !win.isDestroyed() && win.isVisible() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+  return r.response === 0
+}
 
 async function daemonAction(action: "start" | "stop" | "restart"): Promise<void> {
+  if (daemonBusy) return
+  if (action === "restart" && !(await confirmRestart())) return
+  if (action === "start") {
+    // Checked again now: launchd may have loaded the job since the last poll.
+    const refusal = startRefusal(await readStatus(DAEMON), DAEMON, managedService())
+    if (refusal) {
+      dialog.showErrorBox("Could not start the daemon", `Not started: ${refusal}.`)
+      await pollDaemon()
+      return
+    }
+  }
   if (daemonBusy) return
   daemonBusy = BUSY_LABEL[action]
   refreshTray()
@@ -276,7 +307,10 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(() => {
+      const firstRun = !existsSync(settingsPath(app.getPath("userData")))
       settings = loadSettings(app.getPath("userData"), (err) => log("settings unreadable, using the defaults", err))
+      // First run: keep the system's login item as it is, not the default.
+      if (firstRun && LOGIN_ITEM_SUPPORTED) settings.openAtLogin = app.getLoginItemSettings().openAtLogin
       // The menu shows what the system holds, even when it refused the saved choice.
       if (!applyLoginItem()) settings.openAtLogin = app.getLoginItemSettings().openAtLogin
       guardDevices()

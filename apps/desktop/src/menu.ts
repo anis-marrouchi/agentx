@@ -15,6 +15,9 @@ export interface TrayState {
   settings: AppSettings
   /** Open at login is not offered where Electron cannot set it (Linux). */
   loginItemSupported: boolean
+  /** Why Start is off while the daemon is down (startRefusal in daemon.ts), e.g.
+   *  "kept by launchd tn.noqta.agentx"; null when Start is allowed. */
+  startRefusal: string | null
 }
 
 export interface TrayActions {
@@ -47,11 +50,17 @@ export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorO
     { label: s.windowVisible ? "Hide AgentX" : "Show AgentX", click: a.onToggleWindow },
     { type: "separator" },
     { label: daemonLine(s), enabled: false },
-    { label: "Start", enabled: idle && !d?.running, click: () => a.onDaemon("start") },
+    // Never a second daemon next to one launchd/systemd runs, nor one started in a guessed folder.
+    {
+      label: d && !d.running && s.startRefusal ? `Start (${s.startRefusal})` : "Start",
+      enabled: idle && !d?.running && !s.startRefusal,
+      click: () => a.onDaemon("start"),
+    },
     // A daemon under launchd/systemd comes straight back from a stop; Restart covers it.
     // A daemon on another machine: its pid is not a process here.
     { label: stopHint, enabled: idle && !!d && canStop(d), click: () => a.onDaemon("stop") },
-    { label: "Restart", enabled: idle && !!d?.running, click: () => a.onDaemon("restart") },
+    // Asks first, then waits for running tasks (agentx daemon restart --when-idle).
+    { label: "Restart…", enabled: idle && !!d?.running, click: () => a.onDaemon("restart") },
     { type: "separator" },
     {
       label: "Open at login",
