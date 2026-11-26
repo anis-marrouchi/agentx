@@ -198,7 +198,9 @@ export class WorkLanes {
       if (opts.deadline !== undefined && this.now() >= opts.deadline) {
         leave()
         const waited = Math.round((this.now() - start) / 1000)
-        this.opts.log?.(`[${agentId}] ${home}: still held by ${name} after ${waited}s; refused (home_busy), not run`)
+        // Whether the run ahead was working or had not started yet (#2337).
+        const state = !h ? "ahead in line" : h.taskId ? "running" : "not started yet, waiting for a slot"
+        this.opts.log?.(`[${agentId}] ${home}: still held by ${name} (${state}) after ${waited}s; refused (home_busy), not run`)
         emitSignal({ kind: "home_busy", agentId, ref: home, detail: `${source} refused: ${name} held the home past the wait budget` })
         return { refused: "home_busy", ...blocker, waitedMs: this.now() - start }
       }
