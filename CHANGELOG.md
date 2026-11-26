@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.288.0](https://github.com/anis-marrouchi/agentx/compare/v0.287.2...v0.288.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** chat agent strip and Jobs/Desk filter chips fold ([#2352](https://github.com/anis-marrouchi/agentx/issues/2352)) ([#2404](https://github.com/anis-marrouchi/agentx/issues/2404)) ([41a88d7](https://github.com/anis-marrouchi/agentx/commit/41a88d7458eae151abb74464e5d90e2e312e732e))
+* **requests:** standing order shows its number, clearer refusals ([#2383](https://github.com/anis-marrouchi/agentx/issues/2383)) ([#2398](https://github.com/anis-marrouchi/agentx/issues/2398)) ([54e3e3a](https://github.com/anis-marrouchi/agentx/commit/54e3e3a1a59aa5f254cfbcf1980c0a6b08182c64))
+
+
+### Bug Fixes
+
+* **files:** hide .secrets, .tokens and .credentials in workspace Files ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2403](https://github.com/anis-marrouchi/agentx/issues/2403)) ([eeffb91](https://github.com/anis-marrouchi/agentx/commit/eeffb91e9870163c641a4d5e330bd1aea0f38e92))
+* **hub:** read forge issues and pull requests apart, so one failure keeps the other ([#2359](https://github.com/anis-marrouchi/agentx/issues/2359) follow-up) ([#2400](https://github.com/anis-marrouchi/agentx/issues/2400)) ([851b144](https://github.com/anis-marrouchi/agentx/commit/851b1449de725868b6d4f4128538fb8f189c7189))
+* **workflows:** held notice goes to the owner person when the owner agent is the held agent ([#2334](https://github.com/anis-marrouchi/agentx/issues/2334)) ([#2401](https://github.com/anis-marrouchi/agentx/issues/2401)) ([549a2b9](https://github.com/anis-marrouchi/agentx/commit/549a2b9c70c08cb71b3b3bae71c95282b9cb6fe6))
+
 ## [0.287.2](https://github.com/anis-marrouchi/agentx/compare/v0.287.1...v0.287.2) (2026-11-26)
 
 
