@@ -1,11 +1,11 @@
 # Fleet and Activity on your phone
 
-Two tabs of the [phone app](./mobile-app.md) let you watch and manage every computer that runs AgentX from your phone:
+Two pages of the [phone app](./mobile-app.md), under **More**, let you watch and manage every computer that runs AgentX from your phone:
 
 - **Fleet** shows each computer (a *node*): whether it is online, its agents, and its schedules (the jobs that run at set times, also called *crons*). You can reload a computer's settings, restart it, and turn schedules on or off.
 - **Activity** shows the decisions waiting for you and the tasks agents are working on right now. You can answer a decision, stop a task, or send a follow-up message to it.
 
-The app shows every computer the dashboard can see, including those it finds through your *mesh* (the private link between your AgentX computers). Both tabs refresh on their own every 15 seconds while they are open.
+The app shows every computer the dashboard can see, including those it finds through your *mesh* (the private link between your AgentX computers). Both pages refresh on their own every 15 seconds while they are open.
 
 ![The Fleet tab with an online computer and an offline computer](/screenshots/mobile-app/fleet.png)
 
@@ -16,7 +16,7 @@ The app shows every computer the dashboard can see, including those it finds thr
 
 ## Turn a schedule on or off
 
-1. **Phone:** open the app and tap **Fleet**.
+1. **Phone:** open the app, tap **More**, then **Fleet**.
 2. **Phone:** under the computer that owns the schedule, tap **Schedules**.
 3. **Phone:** tap the switch next to the schedule.
 4. **Phone:** read what will happen, then tap **Turn on** or **Turn off**. Tap **Cancel** to change nothing.
@@ -29,7 +29,7 @@ Each schedule shows the result of its last run today and a short excerpt of what
 
 ## Reload or restart a computer
 
-1. **Phone:** tap **Fleet**.
+1. **Phone:** tap **More**, then **Fleet**.
 2. **Phone:** open **Manage computer** under the computer.
 3. **Phone:** tap one of:
    - **Reload config** re-reads `agentx.json`. Running work continues.
@@ -42,7 +42,7 @@ While a restart is waiting, the computer shows **Restart pending** and a **Cance
 
 When an agent asks for your approval, it appears under **Waiting on you**.
 
-1. **Phone:** tap **Activity**.
+1. **Phone:** tap **More**, then **Activity**.
 2. **Phone:** read the question and the suggested answer.
 3. **Phone:** tap **Yes**, **No**, or **Later** (ask again later), then confirm.
 
@@ -69,7 +69,7 @@ Tasks agents are working on appear under **Running now**, newest first. Anyone w
    agentx app live tok_1a2b3c4d on
    ```
    `agentx app devices` now shows `live control on` next to that phone. To pair a new phone with live control already on, run `agentx app pair --live`. To take it away, run `agentx app live tok_1a2b3c4d off`.
-2. **Phone:** tap **Activity**.
+2. **Phone:** tap **More**, then **Activity**.
 3. **Phone:** on the task, tap one of:
    - **Watch** opens the Live sheet. It shows the step the agent is on (the tool's name, for example `Bash`) and the latest text, at most 160 characters, as it runs. When the task ends it shows **Done** or **Failed** and the start of the answer. The full answer is on the Hub. In the sheet you can also send a message or stop the task.
    - **Stop** ends the current task. The agent keeps the conversation. In the Live sheet, tap **Stop** and then **Tap again to stop** within 4 seconds.
@@ -83,13 +83,13 @@ The tabs show short excerpts only (at most 160 characters), never full prompts, 
 
 ## Check it worked
 
-1. **Phone:** tap **Fleet**. Every computer you expect is listed, and the ones that are running show **Online**.
+1. **Phone:** tap **More**, then **Fleet**. Every computer you expect is listed, and the ones that are running show **Online**.
 2. **Phone:** turn a schedule off, then check it in a terminal on that computer:
    ```sh
    agentx cron list
    ```
    The schedule shows as disabled. Turn it back on from the phone if you need it.
-3. **Phone:** tap **Activity**. The number next to **Waiting on you** matches `agentx approvals list` on the computer running the dashboard.
+3. **Phone:** tap **More**, then **Activity**. The number next to **Waiting on you** matches `agentx approvals list` on the computer running the dashboard.
 
 ## If something is wrong
 

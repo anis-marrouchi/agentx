@@ -9,6 +9,9 @@
 // the HTML, because the service worker caches it for offline use; live data
 // comes from /api/app/*, which is never cached.
 //
+// The bottom tabs are Agents · Chat · Desk · Alerts · More (#2101 C1a);
+// Agents is app-agents.client.ts, and Fleet and Activity open from More.
+//
 // Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
 // by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Desk by
 // app-desk.client.ts, Alerts
@@ -41,6 +44,9 @@ import { APP_CHAT_STRIP_SCRIPT } from "./app-chat-strip.client"
 import { APP_CHAT_STRIP_CSS } from "./app-chat-strip.css"
 import { APP_CHAT_HEAD_CSS, APP_CHAT_HEAD_SCRIPT } from "./app-chat-head.client"
 import { APP_CHANGES_CSS, APP_CHANGES_SCRIPT } from "./app-changes.client"
+import { APP_AGENTS_CSS, APP_AGENTS_SCRIPT } from "./app-agents.client"
+import { haListHtml, haRowHtml, haRunsHtml } from "./hub-agents"
+import { HUB_NAV_CSS } from "./hub-nav"
 import { nextSpeech, queueSpeech } from "./app-speech-queue"
 import { APP_CHAT_CSS } from "./app-chat.css"
 import { APP_ORB_SCRIPT } from "./app-orb.client"
@@ -83,6 +89,8 @@ ${THEME_BOOT}
 }
 
 const TAB_ICONS: Record<string, string> = {
+  agents: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
   chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z',
   fleet: 'M3 3h18v13H3zM8 21h8M12 16v5',
   activity: 'M3 12h4l3-8 4 16 3-8h4',
@@ -90,28 +98,43 @@ const TAB_ICONS: Record<string, string> = {
   desk: 'M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5',
 }
 
+// The bottom tabs (#2101 C1a): Agents · Chat · Desk · Alerts · More.
 const TABS = [
+  { id: "agents", label: "Agents", soon: "Loading your agents…" },
   { id: "chat", label: "Chat", soon: "Loading your conversations…" },
-  { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
-  { id: "activity", label: "Activity", soon: "Loading what your agents are doing…" },
-  { id: "alerts", label: "Alerts", soon: "Loading notifications…" },
   { id: "desk", label: "Desk", soon: "Loading what waits for you…" },
+  { id: "alerts", label: "Alerts", soon: "Loading notifications…" },
+  { id: "more", label: "More", soon: "" },
+] as const
+
+/** Pages opened from More: their panels belong to the More tab (#fleet, #activity). */
+const MORE_PAGES = [
+  { id: "fleet", label: "Fleet", soon: "Loading your machines…", hint: "Your machines, their health and updates" },
+  { id: "activity", label: "Activity", soon: "Loading what your agents are doing…", hint: "Runs going now and what waits for approval" },
 ] as const
 
 export function renderAppPage(): string {
   const tabs = TABS.map((t, i) =>
     `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TAB_ICONS[t.id]}"/></svg></span><span>${t.label}</span></button>`,
   ).join("")
+  const more = `<ul class="more-list">${MORE_PAGES.map((p) =>
+    `<li><a href="#${p.id}" data-more="${p.id}"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TAB_ICONS[p.id]}"/></svg></span><span><b>${p.label}</b><small>${p.hint}</small></span></a></li>`).join("")}</ul>`
   const panels = TABS.map((t, i) =>
     `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
       <h2>${t.label}</h2>
-      <p class="soon">${t.soon}</p>
+      ${t.id === "more" ? more : `<p class="soon">${t.soon}</p>`}
+    </section>`,
+  ).join("") + MORE_PAGES.map((p) =>
+    `<section role="tabpanel" id="panel-${p.id}" aria-labelledby="tab-more" tabindex="0" data-more-page hidden>
+      <a class="more-back" href="#more">‹ More</a>
+      <h2>${p.label}</h2>
+      <p class="soon">${p.soon}</p>
     </section>`,
   ).join("")
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_LIVE_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}${APP_CHAT_HEAD_CSS}${APP_CHANGES_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_LIVE_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${CALLS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}${APP_DICTATE_CSS}${APP_CHAT_HEAD_CSS}${APP_CHANGES_CSS}${HUB_NAV_CSS}${APP_AGENTS_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -142,6 +165,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ dictateLabel })}${APP_DICTATE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
 <script>${APP_CHANGES_SCRIPT}${APP_CHAT_HEAD_SCRIPT}</script>
+<script>${injectFns({ haRunsHtml, haRowHtml, haListHtml })}${APP_AGENTS_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>
 <script>${CALLS_SCRIPT}</script>
@@ -204,14 +228,17 @@ export function renderAppManifest(): string {
 const APP_SCRIPT = `
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
-  function select(tab, focus, keepHash) {
+  var panels = Array.prototype.slice.call(document.querySelectorAll('[role=tabpanel]'));
+  // page: a panel opened from More (#fleet, #activity), shown under the More tab.
+  function select(tab, focus, keepHash, page) {
     document.querySelector('.tabs').style.setProperty('--tab-position', String(tabs.indexOf(tab)));
+    var show = page || tab.getAttribute('aria-controls');
     tabs.forEach(function (t) {
       var on = t === tab;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
       t.tabIndex = on ? 0 : -1;
-      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
     });
+    panels.forEach(function (p) { p.hidden = p.id !== show; });
     document.dispatchEvent(new CustomEvent('ax-tab'));
     if (focus) tab.focus();
     if (keepHash) return;
@@ -233,7 +260,9 @@ const APP_SCRIPT = `
   function fromHash() {
     var name = location.hash.split('=')[0];
     var t = tabs.filter(function (t) { return '#' + t.dataset.tab === name; })[0];
-    if (t) select(t, false, true);
+    if (t) { select(t, false, true); return; }
+    var page = name && document.getElementById('panel-' + name.slice(1));
+    if (page && page.hasAttribute('data-more-page')) select(document.getElementById('tab-more'), false, true, page.id);
   }
   fromHash();
   window.addEventListener('hashchange', fromHash);
@@ -345,5 +374,12 @@ main h2 { font-size: 20px; margin: 4px 0 8px; }
   font: inherit; font-size: var(--ax-fs-sm); font-weight: 600; cursor: pointer;
 }
 .tabs [role=tab][aria-selected=true] { background: var(--ax-accent-t); color: var(--ax-accent-2); }
+.more-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.more-list a { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 8px; border-radius: var(--ax-radius-sm); color: var(--ax-text); text-decoration: none; }
+.more-list a:active { background: var(--ax-surface-2); }
+.more-list b { display: block; font-size: 15px; }
+.more-list small { display: block; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
+.more-list .tab-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.more-back { display: inline-block; min-height: 44px; line-height: 44px; color: var(--ax-accent-2); text-decoration: none; font-weight: 600; }
 [data-theme="dark"] .tabs [role=tab][aria-selected=true] { color: var(--ax-text); }
 `

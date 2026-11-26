@@ -33,7 +33,12 @@ export const APP_SWIPE_SCRIPT = `
   var sliding = false; // the landing slide is running
 
   function still() { return !!(reduce && reduce.matches); }
-  function panelOf(i) { return document.getElementById(tabs[i].getAttribute('aria-controls')); }
+  // The More tab's panel, or the page opened from More (#fleet, #activity) when it shows.
+  function panelOf(i) {
+    var p = document.getElementById(tabs[i].getAttribute('aria-controls'));
+    if (p && p.hidden && tabs[i].getAttribute('aria-selected') === 'true') return document.querySelector('[data-more-page]:not([hidden])') || p;
+    return p;
+  }
   function current() {
     for (var i = 0; i < tabs.length; i++) if (tabs[i].getAttribute('aria-selected') === 'true') return i;
     return 0;
