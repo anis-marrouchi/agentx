@@ -12,9 +12,9 @@ describe("Hub bottom status", () => {
     ], now)).toBe("5h 76% · resets in 31m · 7d 34% · resets in 7m")
   })
 
-  it("does not invent a percentage for a missing reading", () => {
-    expect(hubUsageText([], now)).toBe("5h not known · 7d not known")
-    expect(hubUsageText([{ window: "five_hour", utilization: 1.5 }], now)).toBe("5h 100% · 7d not known")
+  it("leaves out a missing reading instead of saying not known (Anis 11-25)", () => {
+    expect(hubUsageText([], now)).toBe("")
+    expect(hubUsageText([{ window: "five_hour", utilization: 1.5 }], now)).toBe("5h 100%")
   })
 
   it("shows the percentage and time left when the reset is in the future", () => {
@@ -28,7 +28,7 @@ describe("Hub bottom status", () => {
     expect(hubUsageText([
       { window: "five_hour", utilization: 0.92, resetsAt: now - 60_000 },
       { window: "seven_day", utilization: 0.4, resetsAt: now },
-    ], now)).toBe("5h not known (reset since last reading) · 7d not known (reset since last reading)")
+    ], now)).toBe("")
   })
 
   it("shows the percentage only when no reset time is reported", () => {
@@ -38,8 +38,8 @@ describe("Hub bottom status", () => {
     ], now)).toBe("5h 50% · 7d 25%")
   })
 
-  it("says not known for a missing window", () => {
-    expect(hubUsageText([{ window: "seven_day", utilization: 0.3 }], now)).toBe("5h not known · 7d 30%")
+  it("shows only the window that has a reading", () => {
+    expect(hubUsageText([{ window: "seven_day", utilization: 0.3 }], now)).toBe("7d 30%")
   })
 
   it("names the connection from the last live read (#2101 R25)", () => {
@@ -105,14 +105,25 @@ describe("Hub bottom status", () => {
 
   it("keeps the bar on one line down to the 900 px icon nav (#2101)", () => {
     const narrow = HUB_STATUS_CSS.slice(HUB_STATUS_CSS.indexOf("@media (max-width: 1180px)"))
-    expect(narrow).toContain(".hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }")
+    expect(narrow).toContain(".hs__btn[data-wall-theme] > span { display: none; }")
+    expect(HUB_STATUS_CSS).not.toContain(".hs__usage:not(.hs__i)")
     // Accounts is its one word there, never cut mid-word (#2101 C2).
     expect(narrow).toContain(".hs__acct-s { display: none; }")
     expect(HUB_STATUS_CSS).toContain(".hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px;")
   })
 
   it("adds the status strip without replacing the phone navigation", () => {
-    expect(HUB_STATUS_HTML).toContain("Codex: not known")
+    // No "not known" and no "Version —" placeholder (Anis 11-25, #2278 C2):
+    // the version item stays hidden until the build reading fills it.
+    expect(HUB_STATUS_HTML).not.toContain("not known")
+    expect(HUB_STATUS_HTML).not.toContain("Version —")
+    expect(HUB_STATUS_HTML).toContain('id="hs-version-i" hidden')
+    // Machine and Running agents too: hidden until a reading fills them.
+    expect(HUB_STATUS_HTML).not.toContain("Machine —")
+    expect(HUB_STATUS_HTML).not.toContain("Running agents —")
+    expect(HUB_STATUS_HTML).toContain('id="hs-running-i" hidden')
+    expect(HUB_STATUS_HTML).toMatch(/id="hs-node"[^>]* hidden>/)
+    expect(HUB_STATUS_CSS).toContain(".hs [hidden] { display: none !important; }")
     const html = renderWallPage({ owner: true })
     expect(html).toContain('id="hub-status"')
     expect(html).toContain('id="wall-more"')

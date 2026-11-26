@@ -16,6 +16,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     if (!t || !nodes.length) return;
     var up = nodes.filter(function (n) { return n.reachable !== false; }).length;
     t.textContent = nodes[0].name + (nodes.length > 1 ? ' +' + (nodes.length - 1) : '');
+    $('hs-node').hidden = false;
     $('hs-node').title = nodes.map(function (n) { return n.name + (n.reachable === false ? ' (not reachable)' : ''); }).join(', ') + ' · ' + up + ' of ' + nodes.length + ' reachable';
   }
   window.addEventListener('online', hsPaintConn);
@@ -102,7 +103,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
     hsPaintCli();
     var el = $('hs-running');
     if (!el) return;
-    if (!S.live) { el.textContent = 'Running agents —'; return; }
+    // No reading yet: the item stays hidden, as Version does (no "—").
+    if (!S.live) { el.parentNode.hidden = true; return; }
+    el.parentNode.hidden = false;
     // The Hub's Working count (liveWorkCount, #2258).
     var count = liveWorkCount(S.live.nodes || []).agents;
     el.textContent = count + (count === 1 ? ' agent running' : ' agents running');
@@ -112,16 +115,20 @@ export const HUB_STATUS_SCRIPT = String.raw`
     if (!el || !buildLast || !buildLast.version) return;
     // The one place the version shows on a computer (R27); hover tells the rest.
     el.textContent = 'v' + buildLast.version;
+    el.parentNode.hidden = false;
     el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + '. ' + buildTitle(buildLast);
   }
   function hsLoadUsage() {
     fetch('/api/admin/hub/usage', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); }).then(function (data) {
       var el = $('hs-claude');
       if (!el) return;
-      el.textContent = 'Claude: ' + hubUsageText(data.windows || [], Date.now());
+      var said = hubUsageText(data.windows || [], Date.now());
+      // No reading: the item goes, rather than saying "not known" (Anis 11-25).
+      el.parentNode.hidden = !said;
+      el.textContent = 'Claude: ' + said;
       el.title = data.readAt ? 'Last read ' + new Date(data.readAt).toLocaleString() : 'Based on the latest CLI report; no fresh plan reading';
     }).catch(function () {
-      var el = $('hs-claude'); if (el) el.textContent = 'Claude: usage not known';
+      var el = $('hs-claude'); if (el) el.parentNode.hidden = true;
     });
   }
   // CLI accounts (#2101 P9b): owner only; a 403 leaves the button hidden.
