@@ -78,7 +78,7 @@ The top of the nav lists every agent of every connected machine once, by what it
    - **Not working today**, folded at the end: every other agent.
 
    Each time the Hub opens, **Needs you** and **Not working today** are folded and **Working** shows 3 agents. What you open stays open until you reload the page.
-4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and a blue number when it has questions for you. The agent whose chat is open has a blue bar on its left.
+4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and an amber number when it has questions for you. The agent whose chat is open has a blue bar on its left.
 5. The whole side menu scrolls as one, so the last agent is always in reach; **Jump to an agent or request** stays at the top and **Desk**, **Jobs**, **Workflows** stay at the bottom.
 6. Select a row to open it:
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
@@ -94,6 +94,26 @@ The top of the nav lists every agent of every connected machine once, by what it
 **Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a moving bar, and **Working**'s count goes up by one. Select its row: its run opens in the middle and its output streams in as it works. While it works, call it by voice: within a few seconds its row reads **Voice ·** and what you said, and its earlier run moves to a line under the row. Select either to open that run. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
 
 **If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Running now**, which says which machine fails. An agent on a machine that does not answer is left out until it answers. On a narrow window the list is hidden: widen it.
+
+## Read states, counts and empty lists
+
+Every Hub page and the phone app show the same few things in the same way, so you read them once:
+
+- **State:** a small dot and a word at the end of a row. Blue **Running**, green **Done**, amber **Waiting**, red **Failed**. Grey means idle, off or not started. Workflow steps, workers, machines, agent cards and the phone's Desk and Fleet use it.
+- **Count:** a small grey number beside a heading or tab, amber when it is waiting on you. A count of 0 is not shown.
+- **Loading:** a turning eight-ray mark with what is loading, or grey bars shaped like the rows that are coming.
+- **Empty list:** a short title, one line, and the button that gets you going, such as **Open Jobs**, **New workflow**, **Set up an agent** or **Reload**.
+
+The look is adapted from the free [affectUI](https://github.com/flohoeller/affectui) items (MIT) and uses the AgentX colours in light and dark.
+
+### Check the look worked
+
+Open **Workflows** and open a run: each step is one line with its state word at the end. Open **Live** with nothing running: you see **No session or job is running** and **Open Jobs**.
+
+### If the look is wrong
+
+- **A page still shows its old spinner or a "Loading…" line:** the Hub page is cached by the browser. Reload it.
+- **Dots have no colour in dark mode:** the page was opened before the daemon was upgraded. Reload it.
 
 ## Put the app on your phone
 
