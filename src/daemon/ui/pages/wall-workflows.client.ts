@@ -414,7 +414,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     var agents = wfAgents(wf).map(nameOf);
     var what = (agents.length ? agents.join(', ') + (agents.length === 1 ? ' does' : ' do') + ' the steps' : 'The steps run in order') +
       (wfIsManual(wf) ? '.' : '. It is normally ' + wfStarts(wf).replace(/^Started /, 'started ').replace(/^When/, 'started when').replace(/^(Every|Weekdays|Mondays|Tuesdays|Wednesdays|Thursdays|Fridays|Saturdays|Sundays|On a)/, 'run $1').toLowerCase() + '; this run stands in for that.') +
-      (wf.approval ? ' A message to a person waits for your yes in Needs you.' : '');
+      (wf.approval ? ' A message to a person waits for your yes in Waiting on you.' : '');
     return '<div class="wwf__scrim" data-wf-close></div><section class="wwf__dlg" role="dialog" aria-modal="true" aria-labelledby="wf-dlg-h">' +
       '<h2 id="wf-dlg-h">Run "' + esc(wf.title || wf.id) + '"?</h2>' +
       (fields || '<p class="ax-wall__count">It takes no inputs.</p>') +

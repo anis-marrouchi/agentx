@@ -40,7 +40,7 @@ While a restart is waiting, the computer shows **Restart pending** and a **Cance
 
 ## Answer a decision
 
-When an agent asks for your approval, it appears under **Needs you**.
+When an agent asks for your approval, it appears under **Waiting on you**.
 
 1. **Phone:** tap **Activity**.
 2. **Phone:** read the question and the suggested answer.
@@ -57,7 +57,7 @@ Some cards offer choices, such as the fixes a [retro](../jobs/retro.md) proposes
 
 <img src="/screenshots/mobile-app/activity-choice-sheet.png" alt="Picking one of four fixes on the phone, with the message the agent gets below" width="320">
 
-This is the same inbox as **Needs you** on the Hub ([Approvals](./approvals.md)) and `agentx approvals`.
+This is the same inbox as **Waiting on you** on the Hub ([Approvals](./approvals.md)) and `agentx approvals`.
 
 ## Stop or steer a running task
 
@@ -89,7 +89,7 @@ The tabs show short excerpts only (at most 160 characters), never full prompts, 
    agentx cron list
    ```
    The schedule shows as disabled. Turn it back on from the phone if you need it.
-3. **Phone:** tap **Activity**. The number next to **Needs you** matches `agentx approvals list` on the computer running the dashboard.
+3. **Phone:** tap **Activity**. The number next to **Waiting on you** matches `agentx approvals list` on the computer running the dashboard.
 
 ## If something is wrong
 

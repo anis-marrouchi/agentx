@@ -52,7 +52,7 @@ export const WALL_SETTINGS_GUESTS_SCRIPT = String.raw`
       : '<ul class="wsj">' + grants.map(stGuRow).join('') + '</ul>';
     return '<header class="wst__h"><h2>Guests</h2><p>Other organisations let into part of this mesh. Each grant names one agent of yours, what it may touch for them, how much freedom it has and until when. Nothing is shared until you open it.</p></header>' +
       stNoteHtml('gu') + body +
-      '<p class="wsj__sub">Open a grant from a terminal: <code>agentx mesh guests invite --name "…" --guest "…" --agent &lt;id&gt;</code>. The guest joins with the code; its join arrives as a card in Needs you. Widen or narrow one with <code>agentx mesh guests set</code>.</p>' +
+      '<p class="wsj__sub">Open a grant from a terminal: <code>agentx mesh guests invite --name "…" --guest "…" --agent &lt;id&gt;</code>. The guest joins with the code; its join arrives as a card in Waiting on you. Widen or narrow one with <code>agentx mesh guests set</code>.</p>' +
       '<div class="wsf__foot"><button type="button" class="ax-btn ax-btn--ghost" data-st-act="gu-load">Refresh</button></div>';
   }
   async function stGuAct(id, op) {

@@ -2547,7 +2547,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(dlg.innerHTML).toMatch(/<label for="wfr-title">Page title <span aria-hidden="true">\*<\/span><\/label><input id="wfr-title" type="text"/)
     expect(dlg.innerHTML).toMatch(/<select id="wfr-source" data-wfr-key="source"><option value=""><\/option><option>Shipping notes<\/option>/)
     expect(dlg.innerHTML).toContain("<summary>Inputs as JSON</summary>")
-    expect(dlg.innerHTML).toContain("Customer Desk does the steps. A message to a person waits for your yes in Needs you.")
+    expect(dlg.innerHTML).toContain("Customer Desk does the steps. A message to a person waits for your yes in Waiting on you.")
     // A required input left empty is asked for; nothing is sent.
     w.click({ "data-wf-start": "" })
     expect(dlg.innerHTML).toContain("Fill in Page title.")

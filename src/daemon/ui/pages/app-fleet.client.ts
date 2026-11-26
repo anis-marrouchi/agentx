@@ -226,7 +226,7 @@ export const APP_FLEET_SCRIPT = `
       statusLine(activityPanel, act.ts);
     var items = [];
     appr.nodes.forEach(function (n) { n.items.forEach(function (it) { items.push({ node: n, it: it }); }); });
-    html += '<h3 class="fx-sub">Needs you (' + items.length + ')</h3>';
+    html += '<h3 class="fx-sub">Waiting on you (' + items.length + ')</h3>';
     if (!items.length) html += '<p class="fx-muted">Nothing is waiting for a decision.</p>';
     items.forEach(function (x, k) {
       html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(x.it.title) + '</h4><span class="fx-pill fx-warn">Ⅱ Waiting</span></div><p>' + esc(x.it.ask) + '</p>' +

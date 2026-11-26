@@ -109,7 +109,7 @@ export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, d
   if (nagLine) lines.push(nagLine)
   // Yesterday's number and its guards (#1936): only measured, one line.
   if (numberLine) lines.push(numberLine)
-  lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}${HUB_NEEDS_YOU}, or run: agentx approvals list` : `Open Needs you on the ${HUB_NAME}, or run: agentx approvals list`)
+  lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}${HUB_NEEDS_YOU}, or run: agentx approvals list` : `Open Waiting on you on the ${HUB_NAME}, or run: agentx approvals list`)
   return lines.join("\n")
 }
 

@@ -60,7 +60,7 @@ On a card under **With agents** or **No news** the same button is called **Write
 
 ## What the board shows
 
-- **Decisions** from every computer the dashboard can see, the same list as **Needs you** under [Activity](./mobile-fleet.md).
+- **Decisions** from every computer the dashboard can see, the same list as **Waiting on you** under [Activity](./mobile-fleet.md).
 - **Requests** of the computer that runs the dashboard. Requests kept on another computer show only when they need your word.
 - Cut text: a title of at most 120 characters, a question of at most 600 and at most 280 characters of what is known. A WhatsApp reply waiting for your yes is the exception inside that limit: its question carries the reply itself, because you approve exactly what is sent.
 - Work an agent handed to another agent counts as proof only while it changes the request. A request waiting on another agent for more than 3 hours shows under **No news** even if that agent is still working.
@@ -71,12 +71,12 @@ The Desk is for the owner. It is served only to a paired phone, never to members
 
 ## One list, one count
 
-What waits for you is one list. The **Your turn** column, the count next to **Needs you** on the dashboard's Hub and the daily digest read the same list on the same computer, so they show the same items with the same number:
+What waits for you is one list. The **Your turn** column, the count next to **Waiting on you** on the dashboard's Hub and the daily digest read the same list on the same computer, so they show the same items with the same number:
 
 - every decision waiting in [Approvals](./approvals.md);
-- every request where an agent asked you a question and has no decision card of its own waiting. **Needs you** lists it too, with a box to answer it in writing.
+- every request where an agent asked you a question and has no decision card of its own waiting. **Waiting on you** lists it too, with a box to answer it in writing.
 
-![Needs you on the Hub in the demo: the count next to Needs you is the same number as the Desk and the digest](/screenshots/wall/needs-you.png)
+![Waiting on you on the Hub in the demo: the count next to Waiting on you is the same number as the Desk and the digest](/screenshots/wall/needs-you.png)
 
 What you put off with **Later** is not counted as waiting. It is counted apart, everywhere in the same words: "1 put off for later". The digest says, for example, `3 waiting for you on the Desk (and 1 you put off for later).`
 

@@ -251,7 +251,7 @@ You can also ask an agent in chat, for example "CX reports to Sales now" or "add
 
 1. **Chat:** write the change to any agent, in your own words. Only you can ask this: a message from someone else, a schedule or another agent is answered with "Only the owner can change the org chart."
 2. The agent reads the chart, matches the names you used to its members, and checks the change. If the change would break the chart, the agent tells you why in one sentence, for example "Lead cannot report to CX: CX already reports up to Lead." No card is made and nothing changes.
-3. Otherwise the agent says the change is waiting for your yes. **Browser:** open **Needs you** on the Hub, or the Approvals page. The card is called **Change the org chart** (or **Add … to the org chart** for a new agent), and its question says what will change, for example "CX will report to Sales, not Lead. … Apply?" A new agent's card also names its role and its folder.
+3. Otherwise the agent says the change is waiting for your yes. **Browser:** open **Waiting on you** on the Hub, or the Approvals page. The card is called **Change the org chart** (or **Add … to the org chart** for a new agent), and its question says what will change, for example "CX will report to Sales, not Lead. … Apply?" A new agent's card also names its role and its folder.
 4. Select **Yes** to apply it, or **No** to drop it. If nobody answers before the card expires, nothing changes.
 5. Within a minute of your yes, AgentX applies every change on the card together, or none of them, saves `agentx.json` with a backup, and the chart uses it at once. The agent tells you it is done. A new agent starts after the next `agentx daemon restart`.
 
@@ -266,7 +266,7 @@ One card holds up to five changes. If the chart changed between the card and you
 5. As the owner, select **Edit org**, then add a **Reports to** line from an agent to a new boss. The box says it will report to the new boss, not the old one. Select **Cancel**: the line at the top says **Cancelled. Nothing changed.** and the chart is as it was. Do it again and select **Save the move**: the line ends with **Saved.** and the card moves under its new boss.
 6. Next to **Show**, select **People**, then **Agents**. Each time only that kind of card stays, and the address ends with `who=people` or `who=agents`. Select **Everyone** to see the whole org again.
 7. As the owner, in **Edit org**, change an agent's **End** time and select **Save hours**. The line at the top ends with **Saved.**, and after a reload of the page the new time is still there. In `agentx.json`, `business.orgChart.<agent>.schedule` has the new time, and a backup copy (`agentx.json.bak.…`) sits next to the file.
-8. **Chat:** ask an agent to put one agent under another. A card **Change the org chart** appears in **Needs you**, and `agentx.json` is unchanged. Select **Yes**. Within a minute the agent says it is done, and the Org page shows the agent under its new boss.
+8. **Chat:** ask an agent to put one agent under another. A card **Change the org chart** appears in **Waiting on you**, and `agentx.json` is unchanged. Select **Yes**. Within a minute the agent says it is done, and the Org page shows the agent under its new boss.
 9. **Browser:** on the Hub, open **Settings → Business**. Above the editor, the chart shows as a tree with each member under their boss.
 
 ## If something is wrong

@@ -2,7 +2,7 @@
 
 **Live** is a page of the [Hub](./hub.md), the dashboard's home. It shows what runs on every connected machine right now, the tasks you paused, and one card per machine where you restart it and connect your command-line sessions. Use it when you have just sent a task and want to see whether an agent picked it up.
 
-Live is a current view. For completed work and the route it took, use [Activity](./activity.md). For work that waits on you, use the Hub's [Needs you](./hub.md#see-what-waits-on-you) page.
+Live is a current view. For completed work and the route it took, use [Activity](./activity.md). For work that waits on you, use the Hub's [Waiting on you](./hub.md#see-what-waits-on-you) page.
 
 The page's address is `/hub#page=live`. Old links to the classic Live page open it too.
 
