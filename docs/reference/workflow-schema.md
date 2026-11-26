@@ -67,7 +67,7 @@ An agent step goes through the machine's queue like any other run, so it can wai
 
 - `priority: "critical"`: a person is waiting for this step, such as the answer to a chat message. It starts ahead of normal work and is not held by high swap or load. Low disk, low memory and the session limit still hold it. `critical` is the only value; leave it out for normal work.
 - `queueTimeoutMinutes`: how long the step may wait to start. It defaults to `timeoutMinutes`, so a 15-minute step no longer waits an hour. When it runs out, the step fails with the kind `queue_timeout`. A step that started in time is not cut by it.
-- `heldNoticeMinutes`: after this many minutes held (default 10, `0` = never), the run logs it and the workflow's `ownerAgent` gets one notice: which step, what holds it and its place in the queue.
+- `heldNoticeMinutes`: after this many minutes held (default 10, `0` = never), the run logs it and the workflow's `ownerAgent` gets one notice: which step, what holds it and its place in the queue. When the `ownerAgent` is the held step's own agent, that notice would wait behind the held run, so the owner is told on their channel instead.
 - `onError: "continue"`: a failed turn does not fail the run. The step ends with `reply` empty and `error` and `errorKind` set, and the next step routes it. A `branch` that sends an empty reply to your failure step catches a `queue_timeout` this way.
 
 ```json

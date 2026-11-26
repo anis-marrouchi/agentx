@@ -258,14 +258,28 @@ export class WorkflowDispatcher {
    *  Monitor runs live. */
   /** A step held long in the node queue (#2334): one log line, one run
    *  event, one notice to the workflow's owner agent (else the agent that
-   *  started the run). The queue calls it once per wait. */
+   *  started the run). When that agent is the held step's own agent, a
+   *  notice to it would wait behind the held run, so the owner person is
+   *  told instead (OwnerPort.notify); with no owner port it falls back to
+   *  the agent notice. The queue calls it once per wait. */
   private stepHeld(workflow: Workflow, run: WorkflowRun, nodeId: string, text: string): void {
     this.log(`[workflow:${workflow.id}] run ${run.id}: ${text}`)
     this.emitRunEvent({ runId: run.id, workflowId: workflow.id, nodeId, phase: "held", status: "running", note: text.slice(0, 200), rootId: run.eventRootId })
     const to = workflow.ownerAgent ?? run.meta?.startedBy
+    const notice = `${text} Run ${run.id}. It fails with queue_timeout when its queue time runs out.`
+    const node = workflow.nodes.find((n) => n.id === nodeId)
+    const heldAgent = node?.type === "agent" ? String((node.config as { agentId?: unknown }).agentId ?? "") : ""
+    if (to && heldAgent && to === heldAgent && this.owner) {
+      try {
+        this.owner.notify(notice, run).catch((e: any) => this.log(`[workflow:${workflow.id}] run ${run.id}: held notice to the owner failed: ${e?.message ?? e}`))
+      } catch (e: any) {
+        this.log(`[workflow:${workflow.id}] run ${run.id}: held notice to the owner failed: ${e?.message ?? e}`)
+      }
+      return
+    }
     if (!to || !this.noticeAgent) return
     try {
-      this.noticeAgent(to, `workflow ${workflow.id}`, `${text} Run ${run.id}. It fails with queue_timeout when its queue time runs out.`)
+      this.noticeAgent(to, `workflow ${workflow.id}`, notice)
     } catch (e: any) {
       this.log(`[workflow:${workflow.id}] run ${run.id}: held notice not left: ${e?.message ?? e}`)
     }
