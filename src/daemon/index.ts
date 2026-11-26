@@ -193,6 +193,7 @@ import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wa
 import { MAX_NOTICES } from "@/agents/notices"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
+import { fetchAllowFromConfig, setFetchAllow } from "@/requests/checkers/fetch-guard"
 import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
 import { defaultForgeOf, forgeConnectorsOf, liveReader } from "@/requests/drift/live"
@@ -608,6 +609,7 @@ export class AgentXDaemon {
     this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
     getAgentEventBus().configure({ node: this.config.node.name || this.config.node.id, ringSize: this.config.events.ringSize })
+    setFetchAllow(fetchAllowFromConfig(this.config))
 
     // Initialize the contact directory now that `this.log` is available.
     // Empty file (or missing file) is fine — operators populate it later.
@@ -2779,6 +2781,7 @@ export class AgentXDaemon {
     const remindersChanged = JSON.stringify(this.config.reminders) !== JSON.stringify(next.reminders)
     this.config = next
     getAgentEventBus().configure({ node: next.node.name || next.node.id, ringSize: next.events.ringSize })
+    setFetchAllow(fetchAllowFromConfig(next))
     this.router.updateConfig(next)
     if (screenChanged) {
       this.screenBuffer?.configure(screenSettings(next.screen))

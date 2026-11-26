@@ -1168,15 +1168,20 @@ export class RequestStore {
    *  checked the link. Without a link it is not closed (noqta#884): the
    *  sweep asks its agent for the proof instead. Only from in progress, or
    *  raised for being overdue (#1214) or for a hand-off that did not end
-   *  done (#1520): anything that moved since it was read is left. */
-  settle(id: string, proof: string | null, detail: string, now: number): boolean {
+   *  done (#1520): anything that moved since it was read is left.
+   *  `verify` is what opening the link found (#2122, proof-link.ts): a
+   *  link that checked out is recorded verified; without it, or when it
+   *  did not, the close stays unverified with the reason. */
+  settle(id: string, proof: string | null, detail: string, now: number, verify?: { state: "verified" | "unverified"; detail: string }): boolean {
     const evidence = (proof ?? "").trim().slice(0, REASON_MAX)
     if (!evidence) return false
+    const state = verify?.state ?? "unverified"
+    const text = verify?.detail ? `${detail} ${verify.detail}` : detail
     const settled = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
-         verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
+         verified_at = COALESCE(?, verified_at), verify_state = ?, verify_detail = ?, closed_by = 'settle', owner_check = 'pending', owner_check_at = NULL, owner_check_note = NULL
        WHERE id = ? AND (state = 'in_progress' OR (state = 'needs_attention' AND ${settleableAttention("attention_reason")})) AND ${NOT_STANDING}`,
-    ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
+    ).run(now, now, now, evidence, state === "verified" ? now : null, state, text.slice(0, REASON_MAX), id).changes > 0
     if (settled) {
       this.typeIfMissing(id)
       this.settledDone(id)
