@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.293.0](https://github.com/anis-marrouchi/agentx/compare/v0.292.0...v0.293.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** open the React simple shell by default ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226) box 1) ([#2430](https://github.com/anis-marrouchi/agentx/issues/2430)) ([8c59daa](https://github.com/anis-marrouchi/agentx/commit/8c59daaafb6ca17681c941fe606274658575dce5))
+
+
+### Performance Improvements
+
+* **workflows:** read only the new bytes of an open run's log ([#2319](https://github.com/anis-marrouchi/agentx/issues/2319)) ([#2428](https://github.com/anis-marrouchi/agentx/issues/2428)) ([e4bd0d4](https://github.com/anis-marrouchi/agentx/commit/e4bd0d4ef85adc902d38d7a1a983edb4f1fff72c))
+
 ## [0.292.0](https://github.com/anis-marrouchi/agentx/compare/v0.291.0...v0.292.0) (2026-11-26)
 
 
