@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.287.1](https://github.com/anis-marrouchi/agentx/compare/v0.287.0...v0.287.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **hub:** Task page and desktop follow-ups from [#2365](https://github.com/anis-marrouchi/agentx/issues/2365)/[#2357](https://github.com/anis-marrouchi/agentx/issues/2357) review (Refs [#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2376](https://github.com/anis-marrouchi/agentx/issues/2376)) ([238e52b](https://github.com/anis-marrouchi/agentx/commit/238e52b424f3dcd1a653399c4ba210e8c332e575))
+* **requests:** late-PR lead words and failed-turn name follow [#2291](https://github.com/anis-marrouchi/agentx/issues/2291) review (C1–C3) ([#2389](https://github.com/anis-marrouchi/agentx/issues/2389)) ([c97c6b2](https://github.com/anis-marrouchi/agentx/commit/c97c6b25f9b4b64a5a64775f298c9b77a3ff939b)), closes [#2279](https://github.com/anis-marrouchi/agentx/issues/2279)
+* **workflows:** agent step priority, queue time limit and held notice ([#2393](https://github.com/anis-marrouchi/agentx/issues/2393)) ([beb66af](https://github.com/anis-marrouchi/agentx/commit/beb66af46436e196350932ec70267d987f979f1c)), closes [#2334](https://github.com/anis-marrouchi/agentx/issues/2334)
+
 ## [0.287.0](https://github.com/anis-marrouchi/agentx/compare/v0.286.0...v0.287.0) (2026-11-26)
 
 
