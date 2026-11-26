@@ -432,6 +432,11 @@ export function resolveCard(
   if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
     return { ok: false, status: 409, error: `card "${id}" is answered by the operator only` }
   }
+  // A step-raised card is closed by a running step of a workflow, not by
+  // any running turn of its agent (noqta#910 C4).
+  if (card.origin?.kind === "step-raised" && opts.via?.kind !== "workflow-step") {
+    return { ok: false, status: 403, error: `card "${id}" was raised by a workflow step: only a running step of ${card.raised_by}'s workflow closes it (X-AgentX-Step)` }
+  }
   if (card.status !== "pending") return { ok: false, status: 409, error: `card "${id}" is already ${card.status}` }
   const reason = oneLine(opts.reason)
   if (!reason) return { ok: false, status: 400, error: "reason is required: say where the owner answered and what you did" }

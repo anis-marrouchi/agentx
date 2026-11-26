@@ -110,6 +110,16 @@ describe("a step-raised card after it is raised", () => {
     expect(readCard(root, id)).toMatchObject({ status: "resolved", closed_via: { kind: "workflow-step", runId: "run-8", nodeId: "ask" } })
   })
 
+  it("C4: a running turn of the same agent, not a workflow step, cannot close it", () => {
+    const proofs = new StepProofs()
+    const id = raised(proofs)
+    const turn = { ...deps(proofs, {}), provenAgent: () => "pm-agent" }
+    const r = handleApprovalsApi("POST", `/approvals/${id}/resolve`, { reason: "x" }, new URLSearchParams(), turn)
+    expect(r.status).toBe(403)
+    expect((r.body as any).error).toMatch(/workflow step/)
+    expect(readCard(root, id)?.status).toBe("pending")
+  })
+
   it("another agent's step still cannot close it", () => {
     const proofs = new StepProofs()
     const id = raised(proofs)

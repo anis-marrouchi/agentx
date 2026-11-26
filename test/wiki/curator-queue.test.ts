@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { WikiHub } from "../../src/wiki/hub"
@@ -15,20 +15,30 @@ import type { WikiArticleMeta } from "../../src/wiki/types"
 // Design tests covered here: 5, 6a, 6b, 12, 13, 15.
 
 const NOW = Date.parse("2026-11-26T09:00:00Z")
+// An AgentX home: agentx.json beside .agentx/, the wiki in .agentx/wiki.
+let home: string
 let dir: string
 let hub: WikiHub
 
+function makeHome(prefix: string): string {
+  const h = mkdtempSync(join(tmpdir(), prefix))
+  mkdirSync(join(h, ".agentx", "wiki"), { recursive: true })
+  writeFileSync(join(h, "agentx.json"), "{}")
+  return h
+}
+
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "curator-queue-"))
+  home = makeHome("curator-queue-")
+  dir = join(home, ".agentx", "wiki")
   hub = new WikiHub(dir, () => {})
   // Commander keeps option values between parseAsync calls on one program.
   const contributions = wiki.commands.find((c) => c.name() === "contributions")
-  for (const c of contributions?.commands ?? []) c.setOptionValue("card", undefined)
+  for (const c of contributions?.commands ?? []) { c.setOptionValue("card", undefined); c.setOptionValue("fingerprint", undefined) }
 })
 afterEach(() => {
   vi.restoreAllMocks()
   process.exitCode = undefined
-  rmSync(dir, { recursive: true, force: true })
+  rmSync(home, { recursive: true, force: true })
 })
 
 const BODY = "Acme buys olive oil in bulk.\n\nThey pay by bank transfer on net 30 terms, as agreed in the spring call with their buyer."
@@ -146,6 +156,27 @@ describe("approving a curator change (5)", () => {
     expect(new FactLedger(dir).get(factId("Acme", "main contact"))?.value).toBe("Karim")
   })
 
+  it("C3: an undated change against an undated fact with another value is refused, page untouched", () => {
+    page("sales-agent", "projects/acme.md", "Acme")
+    new FactLedger(dir).write({ subject: "Acme", attribute: "main contact", value: "Karim", source: "call", verifiedBy: "sales-agent" }, { now: NOW })
+    holdPatches(hub, dir, [patch({ id: "a1", checkedAt: "" })], { now: NOW })
+    const r = approveHeld(hub, dir, "h-a1", { by: "Anis (popup)", now: NOW })
+    expect(r.ok).toBe(false)
+    expect(read("sales-agent", "projects/acme.md").content).toBe(BODY)
+    expect(new FactLedger(dir).get(factId("Acme", "main contact"))?.value).toBe("Karim")
+    expect(listHeld(dir)[0].status).toBe("held")
+  })
+
+  it("C3: a ledger refusal after the page write fails the approve; the change stays held", () => {
+    page("sales-agent", "projects/acme.md", "Acme")
+    holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
+    vi.spyOn(FactLedger.prototype, "write").mockReturnValue({ status: "contradiction", fact: {} as never, questionId: "q-1" } as never)
+    const r = approveHeld(hub, dir, "h-a1", { by: "Anis (popup)", now: NOW })
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error).toMatch(/q-1/)
+    expect(listHeld(dir)[0].status).toBe("held")
+  })
+
   it("does not refuse a removal on a short page (shrink guard)", () => {
     const short = "Acme pays net 30, agreed on the spring call with the buyer there."
     page("sales-agent", "projects/acme.md", "Acme", `${short}\n\nOld line: they also buy capers.`)
@@ -202,66 +233,142 @@ describe("refresh at each ask (13)", () => {
 })
 
 describe("S1 and the lock (15)", () => {
-  const card = (popup: boolean, opts: { verdict?: "yes" | "no"; names?: string } = {}) => {
-    const c = createCard(dir, {
-      title: "Curator changes", ask: "Apply?", recommend: "See the note", if_silent: "keep", raised_by: "pm-agent",
-      context: `w1 ${opts.names ?? "h-a1"}: Acme contact`,
-    }, { popupOnly: true })
+  type CardOpts = { verdict?: "yes" | "no"; names?: string; fp?: string | null; root?: string; raisedBy?: string; stepRaised?: boolean }
+  /** A popup-only card a workflow step of pm-agent raised, naming the held
+   *  change as `<id>@<fingerprint>`, answered in the popup or not. */
+  const card = (popup: boolean, opts: CardOpts = {}) => {
+    const root = opts.root ?? home
+    const names = opts.names ?? "h-a1"
+    const fp = opts.fp === undefined ? listHeld(dir, { all: true }).find((h) => h.id === names)?.pageFingerprint : opts.fp
+    const c = createCard(root, {
+      title: "Curator changes", ask: "Apply?", recommend: "See the note", if_silent: "keep", raised_by: opts.raisedBy ?? "pm-agent",
+      context: `w1 ${names}${fp ? `@${fp}` : ""}: Acme contact`,
+    }, { popupOnly: true, ...(opts.stepRaised === false ? {} : { origin: { kind: "step-raised" as const, runId: "run-7", nodeId: "ask" } }) })
     if (!c.ok) throw new Error(c.error)
-    decideCard(dir, c.card.id, opts.verdict ?? (popup ? "yes" : "no"), { by: "anis", popup })
+    decideCard(root, c.card.id, opts.verdict ?? (popup ? "yes" : "no"), { by: "anis", popup })
     return c.card.id
   }
-
-  it("a no in the popup applies nothing, and still rejects", async () => {
-    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
+  const cli = (...args: string[]) => wiki.parseAsync(["contributions", ...args], { from: "user" })
+  const setup = () => {
     page("sales-agent", "projects/acme.md", "Acme")
     holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
-    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    return vi.spyOn(console, "log").mockImplementation(() => {})
+  }
+  const logged = (log: ReturnType<typeof setup>) => log.mock.calls.flat().join("\n")
+
+  it("a no in the popup applies nothing and rejects; a yes does not reject (C4)", async () => {
+    const log = setup()
     const no = card(true, { verdict: "no" })
-    await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", no], { from: "user" })
+    await cli("approve", "h-a1", "--dir", dir, "--card", no)
     expect(process.exitCode).toBe(1)
-    expect(log.mock.calls.flat().join("\n")).toMatch(/answered no/)
+    expect(logged(log)).toMatch(/answered no/)
     expect(listHeld(dir)[0].status).toBe("held")
     process.exitCode = undefined
-    await wiki.parseAsync(["contributions", "reject", "h-a1", "--dir", dir, "--card", no], { from: "user" })
+    await cli("reject", "h-a1", "--dir", dir, "--card", card(true))
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/answered yes, so h-a1 is not rejected/)
+    expect(listHeld(dir)[0].status).toBe("held")
+    process.exitCode = undefined
+    await cli("reject", "h-a1", "--dir", dir, "--card", no)
     expect(process.exitCode).toBeUndefined()
     expect(listHeld(dir, { all: true })[0].status).toBe("rejected")
-    cwd.mockRestore()
   })
 
   it("a yes card raised for another change cannot approve this one", async () => {
-    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
-    page("sales-agent", "projects/acme.md", "Acme")
-    holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
-    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    const log = setup()
     // h-a10 contains h-a1 but is another id.
     for (const names of ["h-a2", "h-a10"]) {
-      await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", card(true, { names })], { from: "user" })
+      await cli("approve", "h-a1", "--dir", dir, "--card", card(true, { names, fp: "0123456789abcdef" }))
       expect(process.exitCode).toBe(1)
       process.exitCode = undefined
     }
-    expect(log.mock.calls.flat().join("\n")).toMatch(/not raised for h-a1/)
+    expect(logged(log)).toMatch(/not raised for h-a1/)
     expect(listHeld(dir)[0].status).toBe("held")
-    cwd.mockRestore()
   })
 
-  it("the CLI refuses a curator entry without a card answered in the popup", async () => {
-    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
-    page("sales-agent", "projects/acme.md", "Acme")
-    holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
-    const log = vi.spyOn(console, "log").mockImplementation(() => {})
-    await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir], { from: "user" })
+  it("B1: a decided card in another folder is refused, whatever the current folder", async () => {
+    const log = setup()
+    const mine = makeHome("curator-forged-")
+    try {
+      // An agent writes its own yes card in its own folder and runs from there.
+      const forged = card(true, { root: mine })
+      vi.spyOn(process, "cwd").mockReturnValue(mine)
+      await cli("approve", "h-a1", "--dir", dir, "--card", forged)
+      expect(process.exitCode).toBe(1)
+      expect(logged(log)).toMatch(/no card .* in the cards of/)
+      expect(listHeld(dir)[0].status).toBe("held")
+      expect(read("sales-agent", "projects/acme.md").content).toBe(BODY)
+    } finally {
+      rmSync(mine, { recursive: true, force: true })
+    }
+  })
+
+  it("B1: a wiki outside an AgentX home takes no card", async () => {
+    const loose = mkdtempSync(join(tmpdir(), "curator-loose-"))
+    try {
+      const looseHub = new WikiHub(loose, () => {})
+      looseHub.getAgentWiki("sales-agent").writeArticle("projects/acme.md", { title: "Acme", tags: [], owner: "sales-agent", access: "public", created: "2026-09-01", lastUpdated: "2026-09-01", sources: [] }, BODY, "sales-agent")
+      holdPatches(looseHub, loose, [patch({ id: "a1" })], { now: NOW })
+      const log = vi.spyOn(console, "log").mockImplementation(() => {})
+      vi.spyOn(process, "cwd").mockReturnValue(loose)
+      await cli("approve", "h-a1", "--dir", loose, "--card", card(true, { root: loose, fp: listHeld(loose)[0].pageFingerprint }))
+      expect(process.exitCode).toBe(1)
+      expect(logged(log)).toMatch(/not the wiki of an AgentX home/)
+      expect(listHeld(loose)[0].status).toBe("held")
+    } finally {
+      rmSync(loose, { recursive: true, force: true })
+    }
+  })
+
+  it("C1: the card must be step-raised, by the agent that proposed the change", async () => {
+    const log = setup()
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(true, { stepRaised: false }))
     expect(process.exitCode).toBe(1)
-    expect(log.mock.calls.flat().join("\n")).toMatch(/answered on their card/)
     process.exitCode = undefined
-    await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", card(false)], { from: "user" })
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(true, { raisedBy: "cx-agent" }))
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/not raised by a workflow step of pm-agent/)
+    expect(listHeld(dir)[0].status).toBe("held")
+  })
+
+  it("C2: approve writes only onto the page the card showed", async () => {
+    const log = setup()
+    // No fingerprint on the card: refused.
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(true, { fp: null }))
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/does not show the page/)
+    process.exitCode = undefined
+    // The card is shown, then the page changes and a refresh saves the new
+    // fingerprint: the owner never saw that page, so nothing is applied.
+    const shown = card(true)
+    page("sales-agent", "projects/acme.md", "Acme", `${BODY}\n\nA person edited this.`)
+    refreshHeld(hub, dir, { reasonPrefix: "curator:" })
+    await cli("approve", "h-a1", "--dir", dir, "--card", shown)
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/changed/)
+    expect(listHeld(dir)[0].status).toBe("held")
+    process.exitCode = undefined
+    // A --fingerprint that is not the card's is refused.
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(true), "--fingerprint", "ffffffffffffffff")
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/not the page the card showed/)
+  })
+
+  it("the CLI applies a curator change only with its yes card from the popup", async () => {
+    const log = setup()
+    await cli("approve", "h-a1", "--dir", dir)
+    expect(process.exitCode).toBe(1)
+    expect(logged(log)).toMatch(/answered on their card/)
+    process.exitCode = undefined
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(false))
     expect(process.exitCode).toBe(1)
     expect(listHeld(dir)[0].status).toBe("held")
     process.exitCode = undefined
-    await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", card(true)], { from: "user" })
+    // Run from any folder: the card is read from the wiki's own home.
+    vi.spyOn(process, "cwd").mockReturnValue(tmpdir())
+    await cli("approve", "h-a1", "--dir", dir, "--card", card(true))
     expect(process.exitCode).toBeUndefined()
     expect(listHeld(dir, { all: true })[0]).toMatchObject({ status: "approved", decidedBy: expect.stringMatching(/^anis \(popup, card /) })
-    cwd.mockRestore()
   })
 
   it("a merge and a curator hold at once lose no entry", () => {

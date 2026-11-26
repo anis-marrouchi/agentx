@@ -869,8 +869,12 @@ export function approveHeld(
     try { target.store.rebuildIndex() } catch { /* the page is written; the next rebuild indexes it */ }
   }
   // 3. The ledger, only once the page is written. The same value with the
-  //    same check is a no-op.
-  if (fact) ledger.write(fact, { now })
+  //    same check is a no-op. A refusal here leaves the change held, so the
+  //    page and the ledger never both say approved while they disagree (C3).
+  if (fact) {
+    const w = ledger.write(fact, { now })
+    if (w.status === "contradiction") return { ok: false, error: `the page has ${p.attribute} but the wiki's facts keep another value; answer question ${w.questionId ?? "(see wiki questions)"}, then approve again` }
+  }
   // 4. Mark it.
   return decide(wikiDir, h, "approved", opts.by, now, `${target.agentId}/${target.path}`)
 }
@@ -883,9 +887,12 @@ function ledgerRefuses(ledger: FactLedger, fact: { subject: string; attribute: s
   const same = (a: string) => a.trim().toLowerCase().replace(/\s+/g, " ")
   if (same(existing.value) === same(fact.value)) return false
   if (existing.confirmedBy) return true
+  // The ledger's own rule (FactLedger.write): only a dated check newer than
+  // the kept one replaces it; any dated check beats an undated fact.
   const prior = Date.parse(existing.verifiedAt)
   const mine = Date.parse(fact.verifiedAt)
-  return !existing.undated && Number.isFinite(prior) && (!Number.isFinite(mine) || mine <= prior)
+  const newer = Number.isFinite(mine) && (!!existing.undated || !Number.isFinite(prior) || mine > prior)
+  return !newer
 }
 
 /** The page body with one held patch applied, as approveHeld writes it.

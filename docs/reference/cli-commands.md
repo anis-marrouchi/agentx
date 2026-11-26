@@ -1911,17 +1911,17 @@ Re-read the pages of waiting curator changes. Each one gets the page's new finge
 
 ### `agentx wiki contributions approve <id>`
 
-Apply a held patch as it is. The page's previous version is kept in its history. A curator change (reason `curator:`) is applied only with `--card` naming the popup-only card the owner answered yes in the popup, and that card must name the held id (in its ask, context, draft or source); the decider is recorded as `<who> (popup, card <id>)`.
+Apply a held patch as it is. The page's previous version is kept in its history. A curator change (reason `curator:`) is applied only with `--card` naming the popup-only card the owner answered yes in the popup. The card is read from the AgentX home that owns the wiki (`<home>/.agentx/wiki` beside `agentx.json`), never from the current folder. It must have been raised by a workflow step of the agent that proposed the change, and must show the change as `<held id>@<page fingerprint>` (in its ask, context, draft or source): the change is written only onto that page. The decider is recorded as `<who> (popup, card <id>)`.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 | `--card <id>` | — | Curator changes: the popup-only card the owner answered. |
-| `--fingerprint <fp>` | the fingerprint saved by the last `refresh` | Write only onto the page as it was when shown. |
+| `--fingerprint <fp>` | the fingerprint saved by the last `refresh`; for a curator change, the one its card shows | Write only onto the page as it was when shown. |
 
 ### `agentx wiki contributions reject <id>`
 
-Drop a held patch. A curator change needs `--card`, as for `approve`, but the answer may be yes or no.
+Drop a held patch. A curator change needs `--card`, as for `approve`, answered no.
 
 | Flag | Default | What it does |
 |---|---|---|

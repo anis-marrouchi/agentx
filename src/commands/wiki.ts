@@ -25,7 +25,7 @@ import { registerWikiEnrich } from "./wiki-enrich"
 import { registerWikiEvents } from "./wiki-events"
 import { registerWikiRules } from "./wiki-rules"
 import { registerWikiSummarize } from "./wiki-summarize"
-import { resolve, relative, dirname } from "path"
+import { resolve, relative, dirname, basename } from "path"
 import { exec, execSync } from "child_process"
 import { promisify } from "util"
 import { appendFileSync, statSync, writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
@@ -2693,27 +2693,64 @@ function cardNamesHeld(card: { ask?: string; context?: string; draft?: string; s
   return [card.ask, card.context, card.draft, card.source].some((t) => !!t && word.test(t))
 }
 
+/** The page fingerprint the card showed for held id `id`, written in the
+ *  card as `<id>@<fingerprint>` (noqta#910 C2). */
+function cardFingerprintFor(card: { ask?: string; context?: string; draft?: string; source?: string }, id: string): string | undefined {
+  const word = new RegExp(`(?:^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@([0-9a-f]{16})(?![\\w-])`)
+  for (const t of [card.ask, card.context, card.draft, card.source]) {
+    const m = t ? word.exec(t) : null
+    if (m) return m[1]
+  }
+  return undefined
+}
+
+/** The AgentX home that owns wiki directory `dir`: `<home>/.agentx/wiki`
+ *  with the home's agentx.json beside it. Null for any other folder. */
+function wikiHome(dir: string): string | null {
+  const abs = resolve(dir)
+  const agentxDir = dirname(abs)
+  if (basename(abs) !== "wiki" || basename(agentxDir) !== ".agentx") return null
+  const home = dirname(agentxDir)
+  return existsSync(resolve(home, "agentx.json")) ? home : null
+}
+
 /** A curator change (reason "curator:") is answered on its popup-only card
  *  (noqta#910): approve or reject needs `--card` naming a card the owner
- *  decided in the popup, raised for this change (the card names its held
- *  id). Approve also needs the answer yes. Returns who decided, or prints
+ *  decided in the popup, raised by a workflow step of the agent that
+ *  proposed the change, and naming its held id. The card is read from the
+ *  cards store of the AgentX home that owns this wiki, never from the
+ *  current folder, where any shell could write one (B1). Approve needs the
+ *  answer yes and the page fingerprint the card showed (C2); reject needs
+ *  the answer no (C4). Returns who decided and that fingerprint, or prints
  *  why not. */
-async function curatorCardDecider(id: string, dir: string, cardId: string | undefined, action: "approve" | "reject"): Promise<string | null | undefined> {
+async function curatorCardDecider(id: string, dir: string, cardId: string | undefined, action: "approve" | "reject"): Promise<{ by: string; fingerprint?: string } | null | undefined> {
   const { listHeld } = await import("@/wiki/contributions")
   const { isCuratorHeld } = await import("@/wiki/curator-queue")
   const h = listHeld(dir, { all: true }).find((x) => x.id === id)
   if (!h || !isCuratorHeld(h)) return undefined
   const refuse = (why: string) => { console.log(chalk.red(`  ${id}: ${why}`)); process.exitCode = 1; return null }
   if (!cardId) return refuse("curator changes are answered on their card: pass --card <id> of the card the owner answered in the popup")
+  const home = wikiHome(dir)
+  if (!home) return refuse(`${dir} is not the wiki of an AgentX home (<home>/.agentx/wiki beside agentx.json), so no card can answer it`)
   const { readCard, isValidCardId } = await import("@/approvals/cards")
-  const card = isValidCardId(cardId) ? readCard(process.cwd(), cardId) : null
-  if (!card) return refuse(`no card "${cardId}" here (run from the AgentX home)`)
+  const card = isValidCardId(cardId) ? readCard(home, cardId) : null
+  if (!card) return refuse(`no card "${cardId}" in the cards of ${home}`)
   if (card.status !== "decided" || card.decided_from !== "popup" || !card.popup_only) {
     return refuse(`card "${cardId}" was not answered in the popup, so it applies nothing`)
   }
+  if (card.origin?.kind !== "step-raised" || card.node || card.raised_by !== h.patch.agentId) {
+    return refuse(`card "${cardId}" was not raised by a workflow step of ${h.patch.agentId}, the agent that proposed ${id}`)
+  }
   if (!cardNamesHeld(card, id)) return refuse(`card "${cardId}" was not raised for ${id} (the card does not name it)`)
-  if (action === "approve" && card.verdict !== "yes") return refuse(`card "${cardId}" was answered no, so ${id} is not applied`)
-  return `${card.decided_by ?? "operator"} (popup, card ${card.id})`
+  const by = `${card.decided_by ?? "operator"} (popup, card ${card.id})`
+  if (action === "reject") {
+    return card.verdict === "no" ? { by } : refuse(`card "${cardId}" was answered yes, so ${id} is not rejected`)
+  }
+  if (card.verdict !== "yes") return refuse(`card "${cardId}" was answered no, so ${id} is not applied`)
+  if (!h.pageFingerprint) return { by }
+  const fingerprint = cardFingerprintFor(card, id)
+  if (!fingerprint) return refuse(`card "${cardId}" does not show the page it was asked on (${id}@<fingerprint>), so ${id} is not applied`)
+  return { by, fingerprint }
 }
 
 contributions
@@ -2738,12 +2775,17 @@ contributions
   .description("apply a held patch as it is")
   .option("--dir <path>", "wiki directory")
   .option("--card <id>", "curator changes: the popup-only card the owner answered")
-  .option("--fingerprint <fp>", "write only onto the page as it was when shown (default: the fingerprint saved by the last refresh)")
+  .option("--fingerprint <fp>", "write only onto the page as it was when shown (default: the fingerprint saved by the last refresh; for a curator change, the one its card shows)")
   .action(async (id: string, opts) => {
     const { approveHeld } = await import("@/wiki/contributions")
     const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card, "approve")
     if (decider === null) return
-    const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator"), expectedFingerprint: opts.fingerprint })
+    if (decider?.fingerprint && opts.fingerprint && opts.fingerprint !== decider.fingerprint) {
+      console.log(chalk.red(`  ${id}: --fingerprint ${opts.fingerprint} is not the page the card showed (${decider.fingerprint})`))
+      process.exitCode = 1
+      return
+    }
+    const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: decider?.by ?? (process.env.USER || "operator"), expectedFingerprint: decider?.fingerprint ?? opts.fingerprint })
     if (!r.ok) {
       console.log(chalk.red(`  ${r.error}`))
       process.exitCode = 1
@@ -2761,7 +2803,7 @@ contributions
     const { rejectHeld } = await import("@/wiki/contributions")
     const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card, "reject")
     if (decider === null) return
-    const r = rejectHeld(wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator") })
+    const r = rejectHeld(wikiDir(opts.dir), id, { by: decider?.by ?? (process.env.USER || "operator") })
     if (!r.ok) {
       console.log(chalk.red(`  ${r.error}`))
       process.exitCode = 1
