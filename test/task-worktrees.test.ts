@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSyn
 import { tmpdir } from "os"
 import { join } from "path"
 import {
-  TASK_WORKTREE_DEFAULTS, changeSourceOf, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, remotePath,
+  TASK_WORKTREE_DEFAULTS, badBranchName, changeSourceOf, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, remotePath,
   worktreeBranch, worktreeHolding, worktreeInstructions, worktreeRoot, worktreeTarget,
 } from "../src/agents/task-worktrees"
 import { execProcess } from "../src/agents/spec-tests"
@@ -276,6 +276,82 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
     expect(text).not.toContain("do not edit")
   })
 
+  // #2130: branch names checked, `--` before paths and refs.
+  const recording = () => {
+    const calls: string[][] = []
+    const exec: typeof execProcess = (cmd, args, opts) => { calls.push(args); return execProcess(cmd, args, opts) }
+    return { calls, exec }
+  }
+
+  it("refuses a branch name git would read as an option or not take (#2130)", async () => {
+    expect(await badBranchName("feat/login", checkout, execProcess)).toBeNull()
+    expect(await badBranchName("--upload-pack=touch x", checkout, execProcess)).toContain("starts with \"-\"")
+    expect(await badBranchName("a..b", checkout, execProcess)).toContain("refused the branch name")
+    expect(await badBranchName("@{-1}", checkout, execProcess)).toContain("refused the branch name")
+    const { calls, exec } = recording()
+    const wt = await prepareChangeWorktree({ source: "github", repo, id: "9", kind: "change" }, "-b", checkout, settings, { exec })
+    expect(wt).toEqual({ error: expect.stringContaining("refused the branch name \"-b\"") })
+    expect(calls.some((a) => a[0] === "fetch" || a[0] === "worktree")).toBe(false)
+  })
+
+  it("puts -- before the branch and the folder in fetch and worktree add (#2130)", async () => {
+    const { calls, exec } = recording()
+    const wt = await prepareChangeWorktree({ source: "github", repo, id: "9", kind: "change" }, "feat/login", checkout, settings, { exec })
+    if ("error" in wt) throw new Error(wt.error)
+    expect(calls).toContainEqual(["fetch", "origin", "--", "feat/login"])
+    expect(calls).toContainEqual(["worktree", "add", "--track", "-b", "feat/login", "--", wt.dir, "origin/feat/login"])
+    const issue = recording()
+    const iw = await prepareTaskWorktree({ source: "github", repo, id: "12" }, checkout, settings, { exec: issue.exec })
+    if ("error" in iw) throw new Error(iw.error)
+    expect(issue.calls).toContainEqual(["worktree", "add", "-b", "agentx/issue-12", "--", iw.dir, "origin/main"])
+  })
+
+  it("runs an issue task in the pull request worktree that has its branch, brought up to origin (#2130)", async () => {
+    // The issue branch pushed, then checked out only in a pr-<n> worktree.
+    git(checkout, "branch", "-q", "--no-track", "agentx/issue-12", "origin/main")
+    git(checkout, "push", "-q", "origin", "agentx/issue-12")
+    git(checkout, "branch", "-q", "-D", "agentx/issue-12")
+    const pr = await prepareChangeWorktree({ source: "github", repo, id: "40", kind: "change" }, "agentx/issue-12", checkout, settings, { exec: execProcess })
+    if ("error" in pr) throw new Error(pr.error)
+    expect(pr.dir).toBe(join(base, ".agentx-worktrees", "api", "pr-40"))
+    // Someone pushes to the branch from elsewhere.
+    const other = join(base, "other")
+    execFileSync("git", ["clone", "-q", "-b", "agentx/issue-12", origin, other])
+    writeFileSync(join(other, "theirs.txt"), "theirs\n")
+    git(other, "add", ".")
+    git(other, "commit", "-q", "-m", "theirs")
+    git(other, "push", "-q", "origin", "agentx/issue-12")
+    const issueTarget = { source: "github" as const, repo, id: "12" }
+    expect(await hasTargetWorktree(issueTarget, undefined, checkout, settings, execProcess)).toBe(true)
+    const wt = await prepareTaskWorktree(issueTarget, checkout, settings, { exec: execProcess })
+    if ("error" in wt) throw new Error(wt.error)
+    expect(wt).toMatchObject({ branch: "agentx/issue-12", reused: true, adopted: true })
+    expect(realpathSync(wt.dir)).toBe(realpathSync(pr.dir))
+    expect(existsSync(join(base, ".agentx-worktrees", "api", "issue-12"))).toBe(false)
+    expect(existsSync(join(wt.dir, "theirs.txt"))).toBe(true)
+  })
+
+  it("prunes an old pull request worktree and its pushed local branch, keeps a branch with unpushed work (#2130)", async () => {
+    const pushed = await prepareChangeWorktree({ source: "github", repo, id: "9", kind: "change" }, "feat/login", checkout, settings, { exec: execProcess })
+    git(checkout, "branch", "-q", "--no-track", "feat/wip", "origin/main")
+    git(checkout, "push", "-q", "origin", "feat/wip")
+    const wip = await prepareChangeWorktree({ source: "gitlab", repo, id: "3", kind: "change" }, "feat/wip", checkout, settings, { exec: execProcess })
+    if ("error" in pushed || "error" in wip) throw new Error("setup")
+    writeFileSync(join(wip.dir, "wip.txt"), "x\n")
+    git(wip.dir, "add", ".")
+    git(wip.dir, "commit", "-q", "-m", "not pushed")
+    const old = new Date(Date.now() - 30 * 86_400_000)
+    utimesSync(pushed.dir, old, old)
+    utimesSync(wip.dir, old, old)
+    const lines: string[] = []
+    const removed = await pruneTaskWorktrees(checkout, settings, { exec: execProcess, log: (l) => lines.push(l) })
+    expect(removed.sort()).toEqual([wip.dir, pushed.dir].sort())
+    expect(git(checkout, "branch", "--list", "feat/login")).toBe("")
+    expect(git(checkout, "branch", "--list", "feat/wip")).toContain("feat/wip")
+    expect(lines.join("\n")).toContain("kept the branch feat/wip")
+    expect(lines.join("\n")).toContain("1 commit(s) not on origin")
+  })
+
   describe("in the registry", () => {
     const run = async (chatId: string, context: Record<string, unknown>, worktrees: Record<string, unknown> = { enabled: true }, opts: { sessionKept?: boolean; openRequest?: (p: string, project: string, n: number) => boolean } = {}) => {
       const lines: string[] = []
@@ -287,6 +363,42 @@ describe("pull and merge request worktrees (real git, #2102)", () => {
       const out = await (r as any).inTaskWorktree(def, task, { sessionKept: opts.sessionKept })
       return { out, task, lines }
     }
+
+    // #2130: one pending worktree per branch, not per agent.
+    const twoAgents = () => {
+      const lines: string[] = []
+      const ws = { tier: "claude-code", workspace: checkout, worktrees: { enabled: true } }
+      const config = daemonConfigSchema.parse({ jobState: { enabled: false }, node: { id: "t", name: "t" }, agents: { coder: { name: "Coder", ...ws }, reviewer: { name: "Reviewer", ...ws } } })
+      const r = new AgentRegistry(config, (...a: unknown[]) => lines.push(a.join(" ")))
+      r.setOpenRequestOnIssue(() => false)
+      const go = (agentId: "coder" | "reviewer", chatId: string, context: Record<string, unknown> = {}) =>
+        (r as any).inTaskWorktree(config.agents[agentId], { agentId, message: "hi", context: { channel: "gitlab", chatId, ...context } }, {})
+      return { go, lines }
+    }
+
+    it("gives two agents on one issue at once the same worktree (#2130)", async () => {
+      const { go, lines } = twoAgents()
+      const [a, b] = await Promise.all([go("coder", `${repo}:issue:3`), go("reviewer", `${repo}:issue:3`)])
+      const dir = join(base, ".agentx-worktrees", "api", "issue-3")
+      expect(a.task.cwd).toBe(dir)
+      expect(b.task.cwd).toBe(dir)
+      expect(lines.join("\n")).not.toContain("running in the workspace")
+    })
+
+    it("lets an issue and its merge request on the same branch arrive together (#2130)", async () => {
+      git(checkout, "branch", "-q", "--no-track", "agentx/issue-3", "origin/main")
+      git(checkout, "push", "-q", "origin", "agentx/issue-3")
+      git(checkout, "branch", "-q", "-D", "agentx/issue-3")
+      const { go, lines } = twoAgents()
+      const [issue, mr] = await Promise.all([
+        go("coder", `${repo}:issue:3`),
+        go("reviewer", `${repo}:merge_request:8`, { sourceBranch: "agentx/issue-3", sourceFork: false }),
+      ])
+      expect(issue.task.cwd).toBe(join(base, ".agentx-worktrees", "api", "issue-3"))
+      expect(realpathSync(mr.task.cwd)).toBe(realpathSync(issue.task.cwd))
+      expect(mr.task.systemPromptAppend).toContain("merge request")
+      expect(lines.join("\n")).not.toContain("running in the workspace")
+    })
 
     // GitLab chat ids: a GitHub one needs an owner/name repository, and the
     // test origin is a local folder.

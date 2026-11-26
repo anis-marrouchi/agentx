@@ -238,12 +238,6 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
 ${hubAgentsNavHtml()}
-    <details class="lt ax-wall__navgroup lt--fold" id="wall-tree-fold"><summary>Machines and runs</summary>
-    <section class="lt" id="wall-tree" aria-labelledby="wall-tree-h">
-      <h2 class="lt__h" id="wall-tree-h">At work now <a href="#page=running" title="Running now, with ops details">All</a></h2>
-      <div id="wall-tree-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
-    </section>
-    </details>
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
 ${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
@@ -367,6 +361,7 @@ const WALL_PAGE_CSS = `
 .lt__mach { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lt__badge { flex: none; font-size: 11px; font-weight: 600; min-width: 20px; padding: 0 6px; line-height: 18px; text-align: center; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
 .lt__badge.is-live { background: color-mix(in srgb, var(--ax-accent) 16%, transparent); color: var(--ax-accent); }
+.lt__asof { flex: none; font-size: 11px; font-weight: 400; color: var(--ax-muted); font-variant-numeric: tabular-nums; }
 .lt__badge.is-silent { background: var(--ax-amber-t); color: var(--ax-amber-ink); font-weight: 500; }
 .lt__p { margin-left: 10px; }
 .lt__p > summary { padding: 3px 8px; font-size: 12px; color: var(--ax-text-2); }

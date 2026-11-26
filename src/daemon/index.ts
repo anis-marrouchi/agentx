@@ -68,7 +68,8 @@ import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter, gitlabErrorDetail } from "@/channels/gitlab"
 import { sendAnswer, type PostingIdentity } from "./send-answer"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
-import { issueHomeLinks } from "@/channels/ci-fix"
+import { issueHomeLinks, type CiStillRed } from "@/channels/ci-fix"
+import { recordCiStillRedStep } from "@/channels/ci-still-red"
 import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { WebRtcBot, nativeI420ToRgba } from "@/channels/webrtc-bot"
 import { CameraWatchManager } from "@/camera/watch"
@@ -192,6 +193,7 @@ import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wa
 import { MAX_NOTICES } from "@/agents/notices"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
+import { fetchAllowFromConfig, setFetchAllow } from "@/requests/checkers/fetch-guard"
 import { runDriftSweep } from "@/requests/drift/sweep"
 import { driftForge } from "@/requests/drift/forge"
 import { defaultForgeOf, forgeConnectorsOf, liveReader } from "@/requests/drift/live"
@@ -607,6 +609,7 @@ export class AgentXDaemon {
     this.configPath = configPath
     this.config = loadDaemonConfig(configPath)
     getAgentEventBus().configure({ node: this.config.node.name || this.config.node.id, ringSize: this.config.events.ringSize })
+    setFetchAllow(fetchAllowFromConfig(this.config))
 
     // Initialize the contact directory now that `this.log` is available.
     // Empty file (or missing file) is fine — operators populate it later.
@@ -2305,6 +2308,25 @@ export class AgentXDaemon {
    * reload cron jobs + in-memory config. Channels / agents / mesh changes
    * still require a restart — we log a warning so the operator knows.
    */
+  /** The still-red outcome of the CI fix loop as one step on the owning
+   *  agent's last run on that MR/PR, for the run timeline (#2212). */
+  private ciStillRedStep(r: CiStillRed): void {
+    try {
+      const db = openDb({ quiet: true })
+      if (!db) return
+      const taskId = recordCiStillRedStep(r, {
+        db,
+        lastRun: listTraces,
+        emit: (step) => getAgentEventBus().emit("task:step", step),
+      })
+      this.log(taskId
+        ? `[ci] ${r.repo} ${r.provider === "github" ? "#" : "!"}${r.number}: still red after ${r.tries} tries, step on run ${taskId}`
+        : `[ci] ${r.repo} ${r.provider === "github" ? "#" : "!"}${r.number}: still red after ${r.tries} tries, ${r.agentId} has no run there for the step`)
+    } catch (e: any) {
+      this.log(`[ci] still-red step on ${r.repo} ${r.number} failed: ${e?.message ?? e}`)
+    }
+  }
+
   /** Bring up the typed-decision seat: register in-tree backends, open the
    *  shadow store, and hand the runtime its config. Best-effort — a seat
    *  that cannot record still answers, and a seat that cannot answer
@@ -2760,6 +2782,7 @@ export class AgentXDaemon {
     const remindersChanged = JSON.stringify(this.config.reminders) !== JSON.stringify(next.reminders)
     this.config = next
     getAgentEventBus().configure({ node: next.node.name || next.node.id, ringSize: next.events.ringSize })
+    setFetchAllow(fetchAllowFromConfig(next))
     this.router.updateConfig(next)
     if (screenChanged) {
       this.screenBuffer?.configure(screenSettings(next.screen))
@@ -4310,6 +4333,7 @@ export class AgentXDaemon {
           ci: this.config.channels.gitlab.ci,
           issueCompleteMode: () => this.config.gates.issueComplete.adapter,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-gitlab.json"),
+          onCiStillRed: (r: CiStillRed) => this.ciStillRedStep(r),
           ciAgentForIssue: (project: string, n: number) => requestStoreFor({ root: process.cwd() })
             ?.newestOpenOnIssue(issueHomeLinks("gitlab", project, n, this.config.channels.gitlab.host))?.agentId,
           // An agent's token declared in its integrations[] (gitlab-user,
@@ -4418,6 +4442,7 @@ export class AgentXDaemon {
           noWakeLabel: githubConfig.noWakeLabel,
           ci: githubConfig.ci,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
+          onCiStillRed: (r: CiStillRed) => this.ciStillRedStep(r),
           knownAgentIds: Object.keys(this.config.agents),
           // The webhook lands on one node; a marked PR's agent may live on
           // a peer. The router forwards the wake there (#2227).
@@ -5469,7 +5494,7 @@ export class AgentXDaemon {
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
         target.callee,
-        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
+        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", ...(!named && label ? { senderVerified: false } : {}), chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
         target.message,
         named,
       )

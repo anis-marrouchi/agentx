@@ -24,8 +24,12 @@ export interface PresenceLook {
 
 export interface Rect { x: number; y: number; width: number; height: number }
 
-/** Distinct, readable on light and dark UIs, none of them system blue. */
-const PALETTE = ["#7C3AED", "#DB2777", "#EA580C", "#0D9488", "#2563EB", "#65A30D", "#C026D3", "#0891B2"]
+/**
+ * Distinct, readable on light and dark UIs, none of them system blue, and
+ * no purple or magenta (#2130): the two blue slots are AgentX blues.
+ * app-orb.client.ts and OrbMath.swift keep the same list and order.
+ */
+export const PRESENCE_PALETTE: readonly string[] = ["#1A56C4", "#DB2777", "#EA580C", "#0D9488", "#2563EB", "#65A30D", "#4D94FF", "#0891B2"]
 
 export function presenceLook(agentId: string, agent?: Partial<AgentConfig>): PresenceLook {
   const p = agent?.presence
@@ -35,7 +39,7 @@ export function presenceLook(agentId: string, agent?: Partial<AgentConfig>): Pre
   return {
     name,
     initial: (p?.initial || name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 1) || "?").toUpperCase(),
-    color: p?.color || PALETTE[h % PALETTE.length],
+    color: p?.color || PRESENCE_PALETTE[h % PRESENCE_PALETTE.length],
     allowActions: p?.allowActions === true,
   }
 }

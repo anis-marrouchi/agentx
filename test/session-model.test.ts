@@ -255,6 +255,26 @@ describe("modelFitsRuntime", () => {
     expect(modelFitsRuntime("codex-cli", "claude-opus-5-5")).toBe(false)
   })
 
+  it("Claude Code takes its other names too (#2245)", () => {
+    expect(modelFitsRuntime("claude-code", "opus[1m]")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "sonnet[1m]")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "opusplan")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "default")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "us.anthropic.claude-opus-5-5-v1:0")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "claude-opus-5-5[1m]")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "gpt-6.2-sol[1m]")).toBe(false)
+  })
+
+  it("Codex still refuses Claude names in any form (#2245)", () => {
+    expect(modelFitsRuntime("codex-cli", "opus[1m]")).toBe(false)
+    expect(modelFitsRuntime("codex-cli", "us.anthropic.claude-opus-5-5-v1:0")).toBe(false)
+  })
+
+  it("the agent's configured model always fits (#2245)", () => {
+    expect(modelFitsRuntime("claude-code", "my-proxy-model", "my-proxy-model")).toBe(true)
+    expect(modelFitsRuntime("claude-code", "my-proxy-model", "claude-opus-5-5")).toBe(false)
+  })
+
   it("leaves other runtimes and an unknown model alone", () => {
     expect(modelFitsRuntime("opencode", "anything/at-all")).toBe(true)
     expect(modelFitsRuntime("claude-code", undefined)).toBe(true)

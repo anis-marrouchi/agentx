@@ -17,7 +17,7 @@
 .axc-md ul, .axc-md ol { margin: 0 0 .6em; padding-left: 1.4em; }
 .axc-md li { margin: .15em 0; }
 .axc-md a { color: var(--ax-accent); text-decoration: underline; text-underline-offset: 2px; }
-.axc-md strong { font-weight: 600; color: var(--ax-text); }
+.axc-md strong, .axc-md [data-streamdown="strong"] { font-weight: 600; color: var(--ax-text); }
 .axc-md blockquote { margin: 0 0 .6em; padding: 2px 12px; border-left: 3px solid var(--ax-border-2); color: var(--ax-text-2); }
 .axc-md hr { border: 0; border-top: 1px solid var(--ax-border); margin: 1em 0; }
 .axc-md [data-streamdown="inline-code"] {

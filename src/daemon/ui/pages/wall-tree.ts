@@ -57,6 +57,9 @@ export interface LtNode {
   reachable?: boolean
   error?: string
   checking?: boolean
+  /** When the agents listed were last fresh: set on a node the Hub is still
+   *  asking, which carries its last good answer (board-dashboard.ts). */
+  staleSince?: string
   agents?: LtAgent[]
 }
 /** The few fields of a Hub post the tree reads. */
@@ -97,6 +100,9 @@ export interface LtMachine {
   /** up, checking (slow, asked again) or silent (does not answer: "not checked"). */
   state: "up" | "checking" | "silent"
   error: string
+  /** A checking machine's last good answer, ISO; "" otherwise. Its rows stay
+   *  on screen from that answer, so they do not blink out (#2292). */
+  asOf: string
   /** Agents working on it, by liveWorkCount (the Hub's Working rule, #2260). */
   working: number
   /** Their runs: one agent can have several. */
@@ -254,13 +260,18 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
   }
   const DONE_WINDOW = 3_600_000
   const work = liveWorkCount(nodes)
+  const shown: Record<string, boolean> = {}
   return (nodes || []).map((n) => {
     const m: LtMachine = {
       key: ltNodeKey(n), id: String(n.id || n.url || n.name), name: String(n.name || n.url || "?"), url: String(n.url || ""),
-      state: ltNodeState(n), error: String(n.error || ""),
+      state: ltNodeState(n), error: String(n.error || ""), asOf: "",
       working: 0, runs: 0, projects: [], done: [], idle: [],
     }
-    if (m.state !== "up") return m
+    // A machine still being asked keeps the rows of its last good answer,
+    // marked "as of" (#2292). Silent machines show none. Its badge stays
+    // "checking…": the Working count still takes up machines only (#2260).
+    if (m.state === "silent" || !(n.agents || []).length) return m
+    if (m.state === "checking") m.asOf = String(n.staleSince || "")
     // The badge counts as the Hub's Working list does (#2260).
     const c = work.byNode[m.key]
     if (c) { m.working = c.agents; m.runs = c.runs }
@@ -268,7 +279,9 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     for (const a of n.agents || []) {
       // Listed by an earlier machine too: it shows there only, so the rows
       // match the badge (#2260 C2).
-      if (!a || !a.id || work.home[a.id] !== m.key) continue
+      // A checking machine: only agents no up machine lists, once each.
+      if (!a || !a.id || (m.state === "up" ? work.home[a.id] !== m.key : !!work.home[a.id] || !!shown[a.id])) continue
+      shown[a.id] = true
       const base = {
         agentId: a.id, agentName: String(a.name || a.id), color: a.color || null,
         model: ltModel(a.model), provider: ltProvider(a.model),
@@ -350,8 +363,11 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
       : m.state === "checking" ? '<span class="lt__badge">checking…</span>'
       : '<span class="lt__badge' + (m.working ? " is-live" : "") + '" title="' + m.working + (m.working === 1 ? " agent" : " agents") + " working now" +
         (m.runs > m.working ? ", " + m.runs + " runs" : "") + '">' + m.working + "</span>"
-    const head = '<span class="lt__mach">' + ltEsc(m.name) + "</span>" + badge
-    if (m.state !== "up") {
+    const asOf = m.state === "checking" && m.asOf && Number.isFinite(Date.parse(m.asOf))
+      ? ' <time class="lt__asof" datetime="' + ltEsc(m.asOf) + '" title="Last answer at ' + ltEsc(m.asOf) + '">as of ' + ltEsc(m.asOf.slice(11, 16)) + "Z</time>" : ""
+    const head = '<span class="lt__mach">' + ltEsc(m.name) + "</span>" + badge + asOf
+    const listed = m.projects.length + m.done.length + m.idle.length
+    if (m.state === "silent" || (m.state === "checking" && !listed)) {
       return ltFold("m:" + m.key, "lt__m", head, '<p class="lt__idle">' + (m.state === "silent" ? "Does not answer, so its agents are not shown." : "Slow to answer; asking again.") + "</p>", closed)
     }
     const projects = m.projects.map((p) => ltFold("p:" + m.key + "|" + p.key, "lt__p", '<span class="lt__proj">' + ltEsc(p.label) + "</span>",

@@ -10,7 +10,7 @@ RUN npm install -g pnpm@10
 COPY package.json pnpm-lock.yaml .npmrc ./
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
   && pnpm install --frozen-lockfile --ignore-scripts
-COPY tsconfig.json tsup.config.ts tsup.web.config.ts ./
+COPY tsconfig.json tsup.config.ts tsup.web.config.ts vite.hub.config.ts ./
 COPY src/ ./src/
 COPY scripts/postinstall.mjs ./scripts/postinstall.mjs
 COPY agentx.example.json README.md LICENSE ./

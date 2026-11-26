@@ -157,11 +157,12 @@ describe("liveTreeHtml", () => {
 })
 
 describe("the Hub page", () => {
-  it("opens its nav with the live tree, before the pages", () => {
+  it("opens its nav with the agent list, not the tree, before the pages (#2101 R26)", () => {
     const page = renderWallPage()
-    const tree = page.indexOf('id="wall-tree"'), first = page.indexOf('data-nav="wall"')
-    expect(tree).toBeGreaterThan(0)
-    expect(tree).toBeLessThan(first)
+    const agents = page.indexOf('id="hub-agents"'), first = page.indexOf('data-nav="wall"')
+    expect(page).not.toContain('id="wall-tree"')
+    expect(agents).toBeGreaterThan(0)
+    expect(agents).toBeLessThan(first)
     expect(page).toContain("@keyframes lt-spin")
     expect(page).toContain("prefers-reduced-motion")
   })
@@ -232,6 +233,53 @@ describe("idle rows (Hakim post-merge review of #2138)", () => {
     const answered = liveTreeModel([idleNode], [], NOW)
     expect(asking[0].key).toBe(answered[0].key)
     expect(liveTreeHtml(answered, () => "#x", { "m:http://box": true })).toContain('data-lt-key="m:http://box">')
+  })
+})
+
+describe("a machine still being asked keeps its rows (#2292)", () => {
+  const since = ago(9_000)
+  const slow: LtNode = {
+    id: "mac", name: "MacBook-Local", url: "http://mac", reachable: true, checking: true, staleSince: since, error: "timed out",
+    agents: [
+      { id: "coder", name: "Coder", model: "claude-opus-5-5", runningTasks: [{ id: "tk1", channel: "a2a", chatId: "c1", startedAt: ago(60_000), lastActivity: ago(30_000), message: "Fix it" } as never] },
+      { id: "nadia", name: "Nadia", lastActive: ago(600_000) },
+      { id: "both", name: "Both", lastActive: ago(9_000_000) },
+    ],
+  }
+  const up: LtNode = { id: "clawd", name: "Clawd", url: "http://clawd", reachable: true, agents: [{ id: "both", name: "Both", runningTasks: [{ id: "tk2", startedAt: ago(1000) } as never] }] }
+  const silent: LtNode = { id: "gone", name: "Gone Box", url: "http://gone", reachable: false, error: "timed out", agents: [] }
+  const model = liveTreeModel([up, slow, silent], [], NOW)
+  const html = liveTreeHtml(model, () => "#x", {})
+  const macHtml = html.slice(html.indexOf("MacBook-Local"), html.indexOf("Gone Box"))
+
+  it("draws a checking machine's last good rows, with the badge and an as-of time", () => {
+    expect(model[1].state).toBe("checking")
+    expect(model[1].asOf).toBe(since)
+    expect(macHtml).toContain("checking…")
+    expect(macHtml).toContain("as of " + since.slice(11, 16) + "Z")
+    expect(macHtml).toContain('aria-label="working"')
+    expect(macHtml).toContain('title="Coder, working: ')
+    expect(macHtml).toContain('aria-label="done"')
+    expect(macHtml).not.toContain("Slow to answer")
+  })
+  it("shows an agent an up machine lists on that machine only", () => {
+    expect(model[1].idle.map((r) => r.agentId)).not.toContain("both")
+    expect(html.match(/title="Both, /g)).toHaveLength(1)
+  })
+  it("shows no rows for a silent machine, or a checking one with no good data", () => {
+    const gone = html.slice(html.indexOf("Gone Box"))
+    expect(gone).toContain("not checked")
+    expect(gone).not.toContain("lt__row")
+    const empty = liveTreeHtml(liveTreeModel([{ id: "http://e", name: "E", url: "http://e", reachable: false, checking: true, agents: [] }], [], NOW), () => "#x", {})
+    expect(empty).toContain("Slow to answer; asking again.")
+    expect(empty).not.toContain("as of")
+  })
+  it("keeps the Working count on up machines only, so the badges agree (#2260)", () => {
+    const work = tree.liveWorkCount([up, slow, silent])
+    expect(work.agents).toBe(1)
+    expect(work.byNode["http://mac"]).toBeUndefined()
+    expect(model[0].working).toBe(1)
+    expect(model[1].working).toBe(0)
   })
 })
 

@@ -2,6 +2,42 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.274.2](https://github.com/anis-marrouchi/agentx/compare/v0.274.1...v0.274.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **a2a:** mark a /send/agent sender that is not a local agent as unverified ([#2052](https://github.com/anis-marrouchi/agentx/issues/2052)) ([#2298](https://github.com/anis-marrouchi/agentx/issues/2298)) ([245e55c](https://github.com/anis-marrouchi/agentx/commit/245e55c64b9df4dbf3f1f0b09d332fe7af4488a9))
+* **agents:** Claude Code's other model names keep their session ([#2245](https://github.com/anis-marrouchi/agentx/issues/2245)) ([#2288](https://github.com/anis-marrouchi/agentx/issues/2288)) ([3aa43fe](https://github.com/anis-marrouchi/agentx/commit/3aa43feef0dc422462e534f9e9a73609db58a43b))
+* **docker:** use locally built image for daemon and dashboard ([#2277](https://github.com/anis-marrouchi/agentx/issues/2277)) ([32122ef](https://github.com/anis-marrouchi/agentx/commit/32122efe1b70f36293941fa7c54767b9c5d5619b)), closes [#2275](https://github.com/anis-marrouchi/agentx/issues/2275)
+* **orca:** [#2110](https://github.com/anis-marrouchi/agentx/issues/2110) + [#2112](https://github.com/anis-marrouchi/agentx/issues/2112) + [#2127](https://github.com/anis-marrouchi/agentx/issues/2127) post-merge follow-ups ([#2130](https://github.com/anis-marrouchi/agentx/issues/2130)) ([#2301](https://github.com/anis-marrouchi/agentx/issues/2301)) ([b7dfb2d](https://github.com/anis-marrouchi/agentx/commit/b7dfb2d6aa78c60aae3906e63f69e6754c59695e))
+
+## [0.274.1](https://github.com/anis-marrouchi/agentx/compare/v0.274.0...v0.274.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** count work with liveWorkCount on every page, group Working by machine ([#2294](https://github.com/anis-marrouchi/agentx/issues/2294)) ([371c284](https://github.com/anis-marrouchi/agentx/commit/371c28420b1c7eb3439cd8370265f1c126faf309))
+
+## [0.274.0](https://github.com/anis-marrouchi/agentx/compare/v0.273.2...v0.274.0) (2026-11-25)
+
+
+### Features
+
+* **ci:** show "CI still red after N tries" on Hub Needs you ([#2293](https://github.com/anis-marrouchi/agentx/issues/2293)) ([7754e78](https://github.com/anis-marrouchi/agentx/commit/7754e7813a04c4c7ae771ccc5624f532681ee907)), closes [#2212](https://github.com/anis-marrouchi/agentx/issues/2212)
+
+
+### Bug Fixes
+
+* **hub:** keep a checking machine's agents in the tree ([#2292](https://github.com/anis-marrouchi/agentx/issues/2292)) ([#2297](https://github.com/anis-marrouchi/agentx/issues/2297)) ([dc337c8](https://github.com/anis-marrouchi/agentx/commit/dc337c89e92ae50b6068292c3952d0dd2178aacc))
+
+## [0.273.2](https://github.com/anis-marrouchi/agentx/compare/v0.273.1...v0.273.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **hub:** one agent list in the side menu; Needs you once; fits 900 px ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R26, R27) ([#2278](https://github.com/anis-marrouchi/agentx/issues/2278)) ([d066f07](https://github.com/anis-marrouchi/agentx/commit/d066f07d5e9a89f1696cc81b39ebfd19cff14e0c))
+
 ## [0.273.1](https://github.com/anis-marrouchi/agentx/compare/v0.273.0...v0.273.1) (2026-11-25)
 
 

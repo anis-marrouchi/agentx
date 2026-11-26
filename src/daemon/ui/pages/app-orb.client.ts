@@ -9,7 +9,7 @@ export const APP_ORB_SCRIPT = `
 window.AXOrb = (function () {
   // Same list, order and hash as presenceLook (src/voice/presence.ts) and
   // OrbMath.colorHex, for an agent whose colour did not come with it.
-  var PALETTE = ['#7C3AED', '#DB2777', '#EA580C', '#0D9488', '#2563EB', '#65A30D', '#C026D3', '#0891B2'];
+  var PALETTE = ['#1A56C4', '#DB2777', '#EA580C', '#0D9488', '#2563EB', '#65A30D', '#4D94FF', '#0891B2'];
   var HEX = /^#[0-9a-fA-F]{6}$/;
   function colorFor(id, configured) {
     if (configured && HEX.test(configured)) return configured;

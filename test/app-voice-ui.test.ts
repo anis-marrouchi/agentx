@@ -4,7 +4,9 @@ import { APP_ORB_SCRIPT } from "../src/daemon/ui/pages/app-orb.client"
 import { APP_VOICE_AUDIO_SCRIPT } from "../src/daemon/ui/pages/app-voice-audio.client"
 import { APP_VOICE_SCRIPT } from "../src/daemon/ui/pages/app-voice.client"
 import { APP_CHAT_SCRIPT } from "../src/daemon/ui/pages/app-chat.client"
-import { presenceLook } from "../src/voice/presence"
+import { readFileSync } from "fs"
+import { join } from "path"
+import { PRESENCE_PALETTE, presenceLook } from "../src/voice/presence"
 
 // The phone's voice orb and bar: the inlined scripts parse, the orb uses the
 // Mac orb's numbers and colour fallback, and it holds still with Reduce Motion.
@@ -57,6 +59,25 @@ describe("the orb", () => {
     for (const id of ["alpha", "atlas", "devops-agent", "x", "Ünïcode-agent"]) expect(O.colorFor(id)).toBe(presenceLook(id).color)
     expect(O.colorFor("alpha", "#112233")).toBe("#112233")
     expect(O.colorFor("alpha", "red")).toBe(presenceLook("alpha").color)
+  })
+
+  // #2130: one palette in three places, and no purple or magenta in it.
+  it("keeps the same fallback palette as presenceLook and OrbMath, with no purple or magenta", () => {
+    const hexes = (s: string) => s.match(/#[0-9A-Fa-f]{6}/g)!.map((h) => h.toUpperCase())
+    const orb = hexes(APP_ORB_SCRIPT.match(/var PALETTE = \[([^\]]*)\]/)![1])
+    const swift = hexes(readFileSync(join(__dirname, "../apps/mac-voice/Sources/AgentXVoice/OrbMath.swift"), "utf8")
+      .match(/static let palette = \[([^\]]*)\]/)![1])
+    expect(orb).toEqual([...PRESENCE_PALETTE])
+    expect(swift).toEqual([...PRESENCE_PALETTE])
+    for (const hex of PRESENCE_PALETTE) {
+      expect(["#7C3AED", "#C026D3"]).not.toContain(hex)
+      const v = parseInt(hex.slice(1), 16), r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255
+      const max = Math.max(r, g, b), d = max - Math.min(r, g, b)
+      let h = 0
+      if (d) h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+      // 250°–320° is violet through magenta.
+      expect(h * 60 < 250 || h * 60 > 320, `${hex} is purple or magenta`).toBe(true)
+    }
   })
 
   it("maps microphone level and speech like OrbMath", () => {

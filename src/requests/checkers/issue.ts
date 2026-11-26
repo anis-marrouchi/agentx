@@ -187,17 +187,44 @@ export function forgeHeaders(provider: "github" | "gitlab", connectors: ForgeCon
 
 /** The reader over the REST APIs of GitHub and GitLab. One page of notes
  *  (the newest 100 on GitLab, the first 100 on GitHub). */
-export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch = fetch): ForgeReader {
-  const get = async (url: string, headers: Record<string, string>): Promise<{ ok: true; body: any } | { ok: false; error: string }> => {
-    let res: Response
-    try {
-      res = await doFetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) })
-    } catch (e: any) {
-      return { ok: false, error: `could not be reached: ${String(e?.message ?? e).slice(0, 200)}` }
-    }
-    if (!res.ok) return { ok: false, error: res.status === 404 ? "not found (or not visible to the connector)" : `HTTP ${res.status}` }
-    return { ok: true, body: await res.json().catch(() => null) }
+/** One GET of a forge API: its JSON, or why it could not be read. */
+async function forgeGet(doFetch: typeof fetch, url: string, headers: Record<string, string>): Promise<{ ok: true; body: any } | { ok: false; error: string }> {
+  let res: Response
+  try {
+    res = await doFetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) })
+  } catch (e: any) {
+    return { ok: false, error: `could not be reached: ${String(e?.message ?? e).slice(0, 200)}` }
   }
+  if (!res.ok) return { ok: false, error: res.status === 404 ? "not found (or not visible to the connector)" : `HTTP ${res.status}` }
+  return { ok: true, body: await res.json().catch(() => null) }
+}
+
+/** Reads one commit: its full sha and web address, or why it could not. */
+export type CommitReader = (provider: "github" | "gitlab", project: string, sha: string) => Promise<{ sha: string; url: string } | { error: string }>
+
+/** The commit reader over the same connectors (#2122: a proof link to a
+ *  commit is read through the API, not its page). */
+export function forgeCommitReader(connectors: ForgeConnectors, doFetch: typeof fetch = fetch): CommitReader {
+  return async (provider, project, sha) => {
+    if (!/^[0-9a-f]{7,40}$/i.test(sha) || project.split("/").some((p) => p === "." || p === "..")) return { error: `${project}@${sha} is not a commit reference` }
+    let res
+    if (provider === "github") {
+      const c = connectors.github
+      if (!c) return { error: "no github connector on this node (channels.github or requests.checkers.github)" }
+      res = await forgeGet(doFetch, `${c.apiUrl.replace(/\/$/, "")}/repos/${project}/commits/${sha}`, forgeHeaders("github", connectors))
+      if (!res.ok) return { error: res.error }
+      return { sha: String(res.body?.sha ?? ""), url: String(res.body?.html_url ?? `${project}@${sha}`) }
+    }
+    const c = connectors.gitlab
+    if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
+    res = await forgeGet(doFetch, `${c.url.replace(/\/$/, "")}/api/v4/projects/${encodeURIComponent(project)}/repository/commits/${sha}`, forgeHeaders("gitlab", connectors))
+    if (!res.ok) return { error: res.error }
+    return { sha: String(res.body?.id ?? ""), url: String(res.body?.web_url ?? `${project}@${sha}`) }
+  }
+}
+
+export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch = fetch): ForgeReader {
+  const get = (url: string, headers: Record<string, string>) => forgeGet(doFetch, url, headers)
 
   return async (provider, ref, opts) => {
     if (provider === "github") {

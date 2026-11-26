@@ -452,27 +452,28 @@ describe("Wall Live: machines (#1439)", () => {
   })
 })
 
-describe("The live tree in the nav (#2101 PR 1c)", () => {
-  it("on a wide screen follows the stream from the home page and paints the tree, not the feed", async () => {
+describe("The agent list in the nav (#2101 P4, R26)", () => {
+  it("on a wide screen follows the stream from the home page and paints the agents, not the feed", async () => {
     const w = openWall({ hash: "#status=open&view=feed", wide: true })
     await w.settle()
     const live = w.streams.find((s) => s.url === "/api/live/stream")!
     expect(live).toBeTruthy()
-    expect(w.el("wall-tree-body").innerHTML).toContain("node-a")
+    expect(w.el("hub-agents").innerHTML).toContain("Customer Desk")
     const feed = w.el("wall-feed").innerHTML
     live.on.snapshot({ data: JSON.stringify(LIVE) })
-    const tree = w.el("wall-tree-body").innerHTML
-    expect(tree.match(/class="lt__spin"/g)).toHaveLength(2)
-    expect(tree).toContain("Customer Desk")
-    expect(tree).toContain('title="2 agents working now">2</span>')
+    const agents = w.el("hub-agents").innerHTML
+    expect(agents.match(/class="ha__row is-working/g)).toHaveLength(2)
+    expect(agents).toContain("Working <span>2</span>")
     expect(w.el("wall-feed").innerHTML).toBe(feed)
-    // A snapshot that names the node by its URL keeps the name seen before.
-    live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...LIVE.nodes[0], name: "http://node-a" }] }) })
-    expect(w.el("wall-tree-body").innerHTML).toContain('<span class="lt__mach">node-a</span>')
-    // A silent node: "not checked", its runs gone from the tree.
+    // R26: a working agent's row opens its live run on the Task page, not its chat.
+    const row = /<a class="ha__row is-working[^"]*" href="([^"]*)" data-ha-agent="cx"/.exec(agents)
+    expect(row).toBeTruthy()
+    const href = row![1].replace(/&amp;/g, "&")
+    expect(href.startsWith("#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a")).toBe(true)
+    expect(href).toContain("trace=tr9")
+    // A silent node: its agents and runs are gone from the list.
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ name: "node-a", url: "http://node-a", reachable: false, error: "unreachable", agents: [] }] }) })
-    expect(w.el("wall-tree-body").innerHTML).toContain("not checked")
-    expect(w.el("wall-tree-body").innerHTML).not.toContain("lt__spin")
+    expect(w.el("hub-agents").innerHTML).not.toContain("ha__row is-working")
   })
 
   it("keeps the stream open on the server's snapshot error, and reopens a dropped one soon (Hakim post-merge review of #2138)", async () => {

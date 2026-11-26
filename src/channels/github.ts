@@ -89,6 +89,9 @@ export interface GitHubChannelConfig {
   /** The agent of the open request homed on issue `n` of `repo`, for a PR
    *  on branch `agentx/issue-<n>` (#2102). */
   ciAgentForIssue?: (repo: string, n: number) => string | undefined
+  /** Called once when the still-red note is posted (#2212): the daemon
+   *  writes the run step. Needs you reads the state file itself. */
+  onCiStillRed?: (r: import("./ci-fix").CiStillRed) => void
   /** The registered agent ids: a PR body marker naming another id wakes
    *  nobody (#2102). Unset: any marker id. */
   knownAgentIds?: string[]
@@ -828,10 +831,14 @@ export class GitHubAdapter implements ChannelAdapter {
   }
 
   private async handlePR(event: GitHubPREvent): Promise<void> {
-    if (!this.handler) return
-
     const pr = event.pull_request
     const repo = event.repository.full_name
+    // A closed or merged PR leaves the CI fix loop and Needs you (#2212),
+    // whoever closed it, before the bot and handler checks below.
+    if (event.action === "closed" && pr && this.ciFix.closed(ciFixKey("github", repo, pr.number))) {
+      this.log(`[github] ${repo}#${pr.number} closed: CI fix count dropped`)
+    }
+    if (!this.handler) return
 
     // Skip bot PRs
     if (this.isBotUser(pr.user.login)) return
@@ -1208,7 +1215,10 @@ export class GitHubAdapter implements ChannelAdapter {
     const branch = pr?.headRef ?? runBranch
     // A fork PR's body and branch are the fork author's to write: no agent
     // owns it. GitHub repository names compare case-insensitively.
-    const headRepo = pr ? pr.headRepo : event.workflow_run.head_repository?.full_name
+    // PR unreadable: the run's head_repository, where null (a deleted fork)
+    // is still a fork, as in pullRequestInfo (#2130).
+    const runHead = event.workflow_run.head_repository
+    const headRepo = pr ? pr.headRepo : runHead === null ? null : runHead?.full_name
     const fromFork = headRepo === null || (typeof headRepo === "string" && headRepo.toLowerCase() !== repo.toLowerCase())
     const owner = fromFork ? undefined : ciOwner({
       body: pr?.body,
@@ -1230,11 +1240,16 @@ export class GitHubAdapter implements ChannelAdapter {
     }
     const agentId = owner.agentId
     const cap = this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT
-    const decision = this.ciFix.claim(key)
+    const decision = this.ciFix.claim(key, {
+      provider: "github", repo, number, sha, agentId,
+      url: pr?.url ?? `https://github.com/${repo}/pull/${number}`,
+      ...(pr?.title ? { title: stripAgentxMarkers(pr.title) } : {}),
+    })
     if (decision.action === "note") {
       this.log(`[github] ${chatId}: CI still red after ${decision.count} tries, asking a person`)
       await this.send({ channel: "github", chatId, text: ciStillRedNote(decision.count, sha), agentId })
         .catch((e: Error) => this.log(`[github] CI still-red note on ${chatId} failed: ${e.message}`))
+      this.ciStillRedOut(key)
       return
     }
     if (decision.action === "silent") {
@@ -1264,13 +1279,20 @@ export class GitHubAdapter implements ChannelAdapter {
       .catch((e: Error) => this.log(`Error handling workflow run: ${e?.message ?? e}`))
   }
 
+  /** Hand the saved still-red details to the daemon (#2212). */
+  private ciStillRedOut(key: string): void {
+    const red = this.ciFix.stillRed(key)
+    if (!red || !this.config.onCiStillRed) return
+    try { this.config.onCiStillRed(red) } catch (e: any) { this.log(`[github] CI still-red step on ${key} failed: ${e?.message ?? e}`) }
+  }
+
   /** A PR's body, head branch and commit, author and labels; the
    *  workflow_run payload carries only its number and head. */
-  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[]; headRepo?: string | null } | undefined> {
-    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string; repo?: { full_name?: string } | null }; user?: { login?: string }; labels?: unknown[] }>(repo, `pulls/${number}`)
+  private async pullRequestInfo(repo: string, number: number): Promise<{ body?: string; headRef?: string; headSha?: string; author?: string; labels?: unknown[]; headRepo?: string | null; title?: string; url?: string } | undefined> {
+    const data = await this.ciRead<{ body?: string | null; head?: { ref?: string; sha?: string; repo?: { full_name?: string } | null }; user?: { login?: string }; labels?: unknown[]; title?: string; html_url?: string }>(repo, `pulls/${number}`)
     // head.repo is null when the fork was deleted: still a fork.
     const headRepo = data?.head?.repo === null ? null : data?.head?.repo?.full_name
-    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels, headRepo } : undefined
+    return data ? { body: data.body ?? undefined, headRef: data.head?.ref, headSha: data.head?.sha, author: data.user?.login, labels: data.labels, headRepo, title: data.title, url: data.html_url } : undefined
   }
 
   /** Every workflow run of `sha` finished green (skipped and neutral count

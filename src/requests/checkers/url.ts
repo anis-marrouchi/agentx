@@ -1,9 +1,13 @@
 import type { CheckContext, CheckResult, UrlSpec } from "./index"
+import { safeFetch } from "./fetch-guard"
 
 // --- url: the address answers 2xx, and holds the text when one is given ---
 //
 // The plan-step URL check of #788, shared with loops (#1039). Not
 // reachable is unverifiable: the address may simply not be up yet.
+// The daemon's own fetch goes through the fetch guard (#2122): a private,
+// loopback or link-local address, or a redirect to one, is refused and
+// so unverifiable. A caller that gives its own fetch (tests) owns that.
 
 export const CHECK_TIMEOUT_MS = 10_000
 export const CHECK_BODY_MAX = 1_000_000
@@ -22,7 +26,7 @@ export function parseUrlSpec(raw: Record<string, unknown>): UrlSpec | string {
 }
 
 export async function checkUrl(spec: UrlSpec, ctx: Pick<CheckContext, "fetch">): Promise<CheckResult> {
-  const doFetch = ctx.fetch ?? fetch
+  const doFetch = ctx.fetch ?? safeFetch
   let res: Response
   try {
     res = await doFetch(spec.url, { signal: AbortSignal.timeout(CHECK_TIMEOUT_MS), redirect: "follow" })

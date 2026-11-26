@@ -115,7 +115,7 @@ import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
-import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, requestMarkerInstruction, worktreeInstructions, worktreeTarget } from "./task-worktrees"
+import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, requestMarkerInstruction, worktreeBranch, worktreeInstructions, worktreeTarget } from "./task-worktrees"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -999,9 +999,12 @@ export class AgentRegistry {
   private cloudSessions?: CloudSessionStore
   /** Spec-test runs (#992), one per issue. Created on first use. */
   private specTests?: SpecTestStore
-  /** Worktrees being made (#1292), by agent and issue, so two tasks on
-   *  one issue arriving together share one `git worktree add`. */
-  private worktreesPending = new Map<string, ReturnType<typeof prepareTaskWorktree>>()
+  /** Worktrees being made (#1292), by checkout and branch (#2130), so two
+   *  tasks on one branch arriving together, from any agent, never race on
+   *  `git worktree add`: tasks for the same issue or change share one
+   *  promise, and a task for another target on that branch (an issue and
+   *  its pull request) waits for it, then finds its worktree. */
+  private worktreesPending = new Map<string, { label: string; promise: ReturnType<typeof prepareTaskWorktree> }>()
   /** When each checkout's old worktrees were last pruned. */
   private worktreesPrunedAt = new Map<string, number>()
   /** The context each running task was started with, by RunningTask id.
@@ -1899,15 +1902,24 @@ export class AgentRegistry {
       this.log(`[worktrees] ${task.agentId} ${label}: running in the workspace: in progress before worktrees (${before})`)
       return { def, task }
     }
-    const key = `${task.agentId}:${picked.dir}:${label}`
-    let pending = this.worktreesPending.get(key)
-    if (!pending) {
+    const wtBranch = target.kind === "change" && branch ? branch : worktreeBranch(target)
+    const key = `${picked.dir}\n${wtBranch}`
+    const held = this.worktreesPending.get(key)
+    let pending: ReturnType<typeof prepareTaskWorktree>
+    if (held && held.label === label) {
+      pending = held.promise
+    } else {
       const deps = { exec: execProcess, log: (l: string) => this.log(l) }
-      pending = target.kind === "change" && branch
+      const prepare = () => target.kind === "change" && branch
         ? prepareChangeWorktree(target, branch, picked.dir, settings, deps)
         : prepareTaskWorktree(target, picked.dir, settings, deps)
-      this.worktreesPending.set(key, pending)
-      void pending.finally(() => this.worktreesPending.delete(key)).catch(() => {})
+      // Another target on the branch is being set up: after it, this one
+      // finds the branch checked out and works there.
+      pending = held ? held.promise.then(prepare, prepare) : prepare()
+      const entry = { label, promise: pending }
+      this.worktreesPending.set(key, entry)
+      // Awaited and reported below; this only clears the entry.
+      void pending.finally(() => { if (this.worktreesPending.get(key) === entry) this.worktreesPending.delete(key) }).catch(() => undefined)
     }
     let wt: Awaited<typeof pending>
     try {
@@ -3760,7 +3772,7 @@ export class AgentRegistry {
       let target: string | undefined
       // The agent moved to another runtime since this session started:
       // its stored model can't run there, so it always starts anew.
-      const wrongRuntime = !modelFitsRuntime(state.def.tier, storedModel)
+      const wrongRuntime = !modelFitsRuntime(state.def.tier, storedModel, state.def.model)
       if (wrongRuntime) {
         target = task.model ?? state.def.model
       } else if (task.model) {
@@ -4323,6 +4335,7 @@ export class AgentRegistry {
       sender: senderName,
       senderId: task.context?.senderId,
       senderUsername: task.context?.senderUsername,
+      ...(task.context?.senderVerified === false ? { senderVerified: false } : {}),
       // Context Surgery — Fix 2: skip landscape for coding-tier agents in
       // github/gitlab contexts. The mesh-peer summary (~1-2K tokens of cross-
       // team agents) is irrelevant for focused code work on one issue/PR and

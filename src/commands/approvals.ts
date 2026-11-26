@@ -41,6 +41,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   email: "email",
   content: "post",
   request: "request",
+  ci: "CI still red",
 }
 
 function ctx() {

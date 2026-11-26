@@ -261,6 +261,16 @@ function mountTaskPage(root, opts) {
     s.addEventListener('error', function () { done(false); });
   }
   function closed() { return outputEl.isConnected === false; }
+  /** A start event carries the run's whole output; after a dropped stream
+   *  the browser reconnects and gets it again (tsCatchUp, #2175). */
+  function catchUp(all) {
+    var c = tsCatchUp(raw, all);
+    if ('add' in c) { append(c.add); return; }
+    if (conv) { raw = c.reset; conv.reset(c.reset); return; }
+    outputEl.innerHTML = '';
+    buffer = ''; lineBuf = ''; openText = null; openRaw = ''; raw = '';
+    append(c.reset);
+  }
   // A page where the bundle cannot even be asked for keeps the plain renderer.
   try { convLoad(); } catch (e) { convWaiting = false; window.AX_TASK_CONVERSATION_FAILED = true; }
 
@@ -392,7 +402,7 @@ function mountTaskPage(root, opts) {
       var d = JSON.parse(ev.data);
       if (d.message || d.sender) showAsk(d.message, d.sender, d.startedAt);
       if (d.startedAt) startedAt = Date.parse(d.startedAt) || startedAt;
-      if (d.initial) append(d.initial);
+      if (d.initial) catchUp(d.initial);
       if (d.done) { finished = true; setStatus('finished', 'done'); }
     } catch (e) {}
   });

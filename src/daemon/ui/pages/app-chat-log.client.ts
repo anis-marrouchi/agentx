@@ -29,9 +29,13 @@ window.AXChatLog = function (o) {
   }
   // A follow-up that waits for the agent to finish.
   function queuedMsg(text) { var q = userMsg(text); q.classList.add('cx-queued'); return { text: text, el: q }; }
+  // Each answer carries its place among the answers, so a fold the reader
+  // opened can be found again when the same conversation is drawn anew.
   function agentMsg() {
     V.retire(log);
+    var turn = log.querySelectorAll('[data-cx-turn]').length;
     var el = bubble('cx-agent');
+    el.setAttribute('data-cx-turn', String(turn));
     el.innerHTML = '<div class="md cx-typing">Thinking…</div><div class="cx-files"></div><div class="cx-ui"></div><p class="cx-note" hidden></p>';
     return el;
   }
@@ -42,14 +46,33 @@ window.AXChatLog = function (o) {
   }
   function renderUi(el, ui) { V.renderUi(el.querySelector('.cx-ui'), ui, o.send); }
   function renderFiles(el, files) { V.renderFiles(el.querySelector('.cx-files'), files); }
+  // A turn that ends, or a stream that comes back, draws the conversation
+  // again. A tools fold the reader opened stays open across that (#2175);
+  // another conversation starts with every fold shut.
+  var shownConv = null;
+  function openFolds() {
+    var keep = {};
+    Array.prototype.forEach.call(log.querySelectorAll('[data-cx-turn]'), function (b) {
+      var t = b.querySelector('.cx-tools');
+      if (t && t.open) keep[b.getAttribute('data-cx-turn')] = true;
+    });
+    return keep;
+  }
+  function reopen(el, keep) {
+    var t = el.querySelector('.cx-tools');
+    if (t && keep[el.getAttribute('data-cx-turn')]) t.open = true;
+  }
   // Returns the bubble a running turn streams into, or null.
   function renderConversation(conv) {
+    var keep = conv.id && conv.id === shownConv ? openFolds() : {};
+    shownConv = conv.id || null;
     clear();
     (conv.messages || []).forEach(function (m) {
       if (m.role === 'user') { userMsg(m.content); return; }
       var el = agentMsg();
       setBody(el, m.content || '');
       V.setTools(el, m.tools);
+      reopen(el, keep);
       renderFiles(el, m.files);
       renderUi(el, m.ui);
       if (m.status && m.status !== 'done') setNote(el, m.error || NOTES[m.status] || '', m.status === 'error');
@@ -60,6 +83,7 @@ window.AXChatLog = function (o) {
       live = agentMsg();
       if (conv.partial && conv.partial.text) setBody(live, V.preview(conv.partial.text, conv.partial.plain));
       V.setTools(live, conv.partial && conv.partial.tools);
+      reopen(live, keep);
       setNote(live, NOTES.running);
     }
     // Follow-ups typed while it answers stay below, waiting to be sent.

@@ -7,7 +7,8 @@
 // (Alt 1…9 too, as ⌘1 is the browser's own tab key); ⌃Tab goes back to the
 // last agent. Opening an agent is its chat link, #page=chat&agent=, which
 // opens its latest conversation (wall-chat.client.ts switchAgent); a
-// working agent's row in the list opens its live run instead (#2270).
+// working agent opens its live run instead, from the list (#2270) and from
+// ⌘K and ⌘1…9 (#2101 R26, wall-task.client.ts wallTaskHref).
 //
 // A fragment of WALL_PAGE_SCRIPT: it uses S, $, esc, decAll, decOwner,
 // isOpen and the injected hubAgentRows, haListHtml, haSwitchHits,
@@ -16,11 +17,17 @@
 export const HUB_NAV_SCRIPT = String.raw`
   var HA = { filter: 'all', idleOpen: false, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
   try { HA.filter = localStorage.getItem('ax.hub.agentFilter') || 'all'; } catch (e) { /* private mode */ }
+  // The agent in view: its chat, or the Task page of one of its runs (R26).
   function haChatAgent() {
-    var m = /(?:^#|&)page=chat(?:&|$)/.test(location.hash) && /(?:^#|&)agent=([^&]*)/.exec(location.hash);
+    var m = /(?:^#|&)page=(?:chat|task)(?:&|$)/.test(location.hash) && /(?:^#|&)agent=([^&]*)/.exec(location.hash);
     if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
     var hc = window.AXHubChat;
     return hc && document.querySelector('.ax-wall.hc-open') && typeof hc.agent === 'function' ? hc.agent() || '' : '';
+  }
+  /** Where a row goes (#2101 R26): a working agent's live run, streaming on
+   *  its Task page; any other agent, its chat. */
+  function haHref(r) {
+    return (r && r.state === 'working' && r.taskId && haRunHref(r)) || haChatHref(r);
   }
   function haDayStart() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
   function haModel() {
@@ -28,7 +35,7 @@ export const HUB_NAV_SCRIPT = String.raw`
     var needs = typeof decAll === 'function' ? decAll() : [];
     return hubAgentRows(nodes, needs, Date.now(), haDayStart(), function (t) { return ltTitle(t, null); }, ltPlain, liveWorkCount(nodes));
   }
-  /** A working row's run, on the Task page the live tree opens too
+  /** A working row's run, on its Task page
    *  (wall-task.client.ts wallTaskHref, #2270); '' when the run is gone. */
   function haRunHref(r) {
     var nodes = (S.live && S.live.nodes) || [];
@@ -45,7 +52,10 @@ export const HUB_NAV_SCRIPT = String.raw`
     hsPaintRunning();
     var el = $('hub-agents');
     if (!el) return;
-    if (!S.live) { if (S.liveError) el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; return; }
+    // No machine read yet, or the live read failed with none: say so (it
+    // is the side menu's only live list since #2101 R26).
+    var none = !S.live || (S.liveError && !(S.live.nodes || []).length);
+    if (none) { if (S.liveError) { HA.last = ''; el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; } return; }
     HA.model = haModel();
     HA.cur = haChatAgent();
     var html = haListHtml(HA.model, HA.filter, HA.cur, HA.idleOpen, esc, ltAge, haRunHref);
@@ -102,7 +112,7 @@ export const HUB_NAV_SCRIPT = String.raw`
     HA.k.hits = haSwitchHits(rows, haReqs(), HA.k.q, haPages());
     var n = haHitCount(HA.k.hits);
     if (HA.k.sel >= n) HA.k.sel = Math.max(0, n - 1);
-    $('hub-k-list').innerHTML = haSwitchHtml(HA.k.hits, HA.k.sel, esc);
+    $('hub-k-list').innerHTML = haSwitchHtml(HA.k.hits, HA.k.sel, esc, haHref);
     var on = $('hub-k-list').querySelector('.is-sel');
     if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
   }
@@ -158,7 +168,7 @@ export const HUB_NAV_SCRIPT = String.raw`
       var r = rows[Number(digit[1]) - 1];
       if (!r) return;
       ev.preventDefault(); haCloseK(true);
-      haGo('#page=chat&agent=' + encodeURIComponent(r.id));
+      haGo(haHref(r));
       return;
     }
     if (ev.ctrlKey && !ev.metaKey && ev.key === 'Tab' && HA.prev) {

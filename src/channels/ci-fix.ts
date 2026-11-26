@@ -34,6 +34,23 @@ interface Entry {
   noted?: boolean
   /** The "no agent owns this" note was posted. */
   ownerNoted?: boolean
+  /** The still-red note's details, for the Hub's Needs you list (#2212). */
+  red?: CiStillRed
+}
+
+/** One MR/PR whose CI stayed red past the cap (#2212). It is on Needs you
+ *  until a green run on its head resets the count or it closes. */
+export interface CiStillRed {
+  provider: "github" | "gitlab"
+  repo: string
+  number: number
+  url?: string
+  title?: string
+  sha: string
+  tries: number
+  agentId: string
+  /** When the note was posted, ISO. */
+  at: string
 }
 
 /** wake: run the agent. note: post the one "still red" note. silent: neither. */
@@ -137,20 +154,35 @@ export class CiFixLoop<F> {
   }
 
   /** Count one wake on `key`, saved before it returns. Past the cap: the
-   *  note once, then silent. */
-  claim(key: string): CiFixDecision {
+   *  note once, then silent. With `still`, the note's details are kept
+   *  beside the count for Needs you (#2212). */
+  claim(key: string, still?: Omit<CiStillRed, "tries" | "at">, now = Date.now()): CiFixDecision {
     const e = this.entries[key] ?? { count: 0 }
     const cap = this.opts.cap()
     if (cap <= 0) return { action: "silent", count: e.count }
     if (e.count >= cap) {
       if (e.noted) return { action: "silent", count: e.count }
-      this.entries[key] = { ...e, noted: true }
+      this.entries[key] = { ...e, noted: true, ...(still ? { red: { ...still, tries: e.count, at: new Date(now).toISOString() } } : {}) }
       this.save()
       return { action: "note", count: e.count }
     }
     this.entries[key] = { ...e, count: e.count + 1 }
     this.save()
     return { action: "wake", count: e.count + 1 }
+  }
+
+  /** The MR/PR closed or merged: its count, notes and held red go (#2212).
+   *  True when there was something to drop. */
+  closed(key: string): boolean {
+    const held = this.held.get(key)
+    if (held) {
+      clearTimeout(held.timer)
+      this.held.delete(key)
+    }
+    if (!this.entries[key]) return !!held
+    delete this.entries[key]
+    this.save()
+    return true
   }
 
   /** True the first time only: post the "no agent owns this" note. */
@@ -160,6 +192,12 @@ export class CiFixLoop<F> {
     this.entries[key] = { ...e, ownerNoted: true }
     this.save()
     return true
+  }
+
+  /** The still-red details saved with the note on `key`, if any (#2212). */
+  stillRed(key: string): CiStillRed | undefined {
+    const e = this.entries[key]
+    return e?.noted ? e.red : undefined
   }
 
   /** True when `key` has a count, a note or a held red. */

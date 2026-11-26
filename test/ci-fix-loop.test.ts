@@ -27,6 +27,8 @@ let mrList: unknown[]
 let prDetails: Record<string, unknown>
 let commitRuns: unknown[]
 let mrListFails: boolean
+let mrReadFails: boolean
+let prReadFails: boolean
 let dir: string
 
 beforeEach(() => {
@@ -37,11 +39,15 @@ beforeEach(() => {
   prDetails = { body: MARKED, head: { ref: "feat/y" }, user: { login: "anis" } }
   commitRuns = [{ status: "completed", conclusion: "success" }]
   mrListFails = false
+  mrReadFails = false
+  prReadFails = false
   dir = mkdtempSync(join(tmpdir(), "ci-fix-"))
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
     const u = String(url)
     calls.push({ url: u, method: init?.method ?? "GET", body: init?.body })
     if (mrListFails && u.includes("/merge_requests?")) return { ok: false, status: 500, json: async () => ({}), text: async () => "" }
+    if (mrReadFails && /\/merge_requests\/\d+$/.test(u)) return { ok: false, status: 500, json: async () => ({}), text: async () => "" }
+    if (prReadFails && /\/pulls\/\d+$/.test(u)) return { ok: false, status: 500, json: async () => ({}), text: async () => "" }
     const data = u.includes("/merge_requests?") ? mrList
       : /\/merge_requests\/\d+$/.test(u) ? mrDetails
       : /\/pulls\/\d+$/.test(u) ? prDetails
@@ -271,11 +277,54 @@ describe("GitLab: failed MR pipeline", () => {
     await settle(gl)
     expect(runs).toHaveLength(0)
     expect(lines.some((l) => l.includes("Pipeline 77") && l.includes("lookup failed"))).toBe(true)
-    // No token: the lookup cannot run, also nobody.
-    const noToken = gitlab({ token: undefined })
-    await pipe(noToken.gl, pipeline("failed", { mr: false }))
-    await settle(noToken.gl)
-    expect(noToken.runs).toHaveLength(0)
+  })
+
+  // #2130: no token means nothing to look up with, so "no MR", not "error".
+  it("with no GitLab token, a failed branch pipeline wakes the route agent as before", async () => {
+    const { gl, runs } = gitlab({ token: undefined })
+    await pipe(gl, pipeline("failed", { mr: false }))
+    await settle(gl)
+    expect(calls.some((c) => c.url.includes("/merge_requests?"))).toBe(false)
+    expect(runs.map((r) => r.resolvedAgent)).toEqual(["route-agent"])
+    expect(runs[0].sender.id).toBe(`${REPO}:pipeline:77`)
+  })
+
+  // #2130: a fork MR with the same branch name is not this branch's MR.
+  it("a branch pipeline ignores an open fork MR with the same branch name", async () => {
+    mrList = [
+      { iid: 30, title: "Fork x", source_project_id: 2, target_project_id: 1 },
+      { iid: 12, title: "Add x", source_project_id: 1, target_project_id: 1 },
+    ]
+    const { gl, runs } = gitlab()
+    await pipe(gl, pipeline("failed", { mr: false }))
+    await settle(gl)
+    expect(runs.map((r) => r.sender.id)).toEqual([`${REPO}:merge_request:12`])
+    // Only the fork MR: the branch has no MR of its own, the route agent wakes.
+    mrList = [{ iid: 30, title: "Fork x", source_project_id: 2, target_project_id: 1 }]
+    const only = gitlab()
+    await pipe(only.gl, pipeline("failed", { mr: false, id: 78 }))
+    await settle(only.gl)
+    expect(only.runs.map((r) => r.resolvedAgent)).toEqual(["route-agent"])
+  })
+
+  // #2130: MR unreadable, the payload's project ids still mark a fork.
+  it("an unreadable MR from a fork (by the payload's project ids) wakes nobody, even on an agentx/issue-<n> branch", async () => {
+    mrReadFails = true
+    const forkPipeline = (fork: boolean) => {
+      const p = pipeline("failed")
+      p.object_attributes.ref = "agentx/issue-12"
+      p.merge_request = { ...p.merge_request!, ...(fork ? { source_project_id: 2, target_project_id: 1 } : { source_project_id: 1, target_project_id: 1 }) } as any
+      return p
+    }
+    const fork = gitlab({ agentForIssue: () => "x-agent" })
+    await pipe(fork.gl, forkPipeline(true))
+    await settle(fork.gl)
+    expect(fork.runs).toHaveLength(0)
+    // The same MR from the project itself: the branch's request owns it.
+    const own = gitlab({ agentForIssue: () => "x-agent" })
+    await pipe(own.gl, forkPipeline(false))
+    await settle(own.gl)
+    expect(own.runs.map((r) => r.resolvedAgent)).toEqual(["x-agent"])
   })
 
   it("a branch pipeline with no MR delivered again wakes the route agent once", async () => {
@@ -494,6 +543,30 @@ describe("GitHub: failed workflow run", () => {
     expect(runs).toHaveLength(0)
     expect(notePosts()).toHaveLength(1)
     expect(notePosts()[0].body).toContain("no agent owns this")
+  })
+
+  // #2130: PR unreadable, the run's head_repository decides; null is a deleted fork.
+  it("an unreadable PR whose run head_repository is null or another repo wakes nobody", async () => {
+    prReadFails = true
+    const run = (headRepo: { full_name: string } | null, id: number) => {
+      const r = workflowRun("failure", { id, sha: `s${id}` }) as any
+      r.workflow_run.head_branch = "agentx/issue-12"
+      r.workflow_run.head_repository = headRepo
+      return r
+    }
+    const deleted = github({ agentForIssue: () => "x-agent" })
+    await hook(deleted.gh, "workflow_run", run(null, 1))
+    await settle(deleted.gh)
+    expect(deleted.runs).toHaveLength(0)
+    const fork = github({ agentForIssue: () => "x-agent" })
+    await hook(fork.gh, "workflow_run", run({ full_name: "Someone/API" }, 2))
+    await settle(fork.gh)
+    expect(fork.runs).toHaveLength(0)
+    // Its own repo (any case): the branch's request owns it.
+    const own = github({ agentForIssue: () => "x-agent" })
+    await hook(own.gh, "workflow_run", run({ full_name: "ACME/api" }, 3))
+    await settle(own.gh)
+    expect(own.runs.map((r) => r.resolvedAgent)).toEqual(["x-agent"])
   })
 
   it("a run with no PR and check_suite wake nothing", async () => {

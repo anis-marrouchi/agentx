@@ -1,6 +1,6 @@
 # Hub — every task as a post
 
-The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed by what it is doing: **Working**, **Needs you** and **Done today**, and **⌘K** jumps to any agent or request. Under them, **Machines and runs** shows what every machine runs at this moment. The page takes the rest of the width; there is no side column with Chat and Agents any more. The chat button at the top right of each page asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
+The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed once, by what it is doing: **Working**, **Needs you** and **Done today**. Select a working agent to watch its run live, and **⌘K** jumps to any agent or request. The page takes the rest of the width; there is no side column with Chat and Agents any more. The chat button at the top right of each page asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
 
 The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
 
@@ -11,7 +11,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in the row of agent names at the top of the chat to open its conversation, as in the phone app. Slide the row sideways when there are more agents than fit. Close Chat to see the feed. On a phone, use **Back to the page**. A link to a post or another Hub page opens that page directly.
-2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). What waits on you shows once: as the agent list's **Needs you** group, and as **Desk**'s count. Next comes **Machines and runs**, folded: select it to open **At work now**, a live tree of what every machine runs (see [See the fleet at work in the sidebar](#see-the-fleet-at-work-in-the-sidebar)).
+2. The nav on the left opens with **Jump to an agent or request** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Each agent is listed once, with its computer as a small label. What waits on you shows once: as the agent list's **Needs you** group, and as **Desk**'s count. For every run of every machine, with the ops details, press **⌘K** and pick **Running now**.
 
    At the bottom of the nav: **Desk** (what waits on you, to answer there, with its count), **Jobs**, **Workflows**, **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) and, for the owner, the gear for **Settings**.
 
@@ -36,25 +36,25 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 The top of the nav lists every agent of every connected machine once, by what it is doing. One click opens a working agent's live run, or any other agent's chat. It changes by itself every 2 seconds.
 
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
-2. The chips at the top filter the list: **All**, **Working**, **Needs you** and **Done**, each with its count. The Hub remembers your choice.
+2. The chips at the top filter the list: **All**, **Working** and **Done**, each with its count. The Hub remembers your choice. **Needs you** is a group in the list, not a chip, so it shows once.
 3. The agents are grouped:
-   - **Working**: a run is going. The row shows the run's title with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. Each agent is listed once. Only agents of machines that answer count as working, so **Working**'s count is the sum of the machine numbers under **At work now**. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**.
+   - **Working**: a run is going. The row shows the run's title with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. Each agent is listed once. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page.
    - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
    - **Done today**: its last run ended today. The row shows the first line of its last answer.
    - **Not working today**, folded at the end: every other agent.
 4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and a blue number when it has questions for you. The agent whose chat is open has a blue bar on its left.
 5. Select a row to open it:
-   - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. It is the same page as the run in the tree under **At work now**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
+   - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
 
 ### Jump to an agent or request
 
 1. Press **⌘K** (**Ctrl K** on Windows and Linux), or select **Jump to an agent or request** at the top of the nav.
 2. Type part of a name, or words of a request. Agents come first: those whose name starts with the words, then those whose name or line has them. Up to five open requests follow. With nothing typed, the agents that need you are first.
-3. Use **↑** and **↓**, then **Enter**, or select a row. An agent opens its chat, with its history; a request opens its post. **Esc** closes it.
+3. Use **↑** and **↓**, then **Enter**, or select a row. A working agent opens its live run, any other agent its chat, with its history; a request opens its post. **Esc** closes it.
 4. **⌘1** to **⌘9** (or **Alt 1** to **Alt 9**) open the agents in the switcher's order, also with it closed. **Ctrl Tab** goes back to the last agent you had open; in a browser tab, the browser keeps that key, so use it in the AgentX app window.
 
-**Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a moving bar, and **Working**'s count goes up by one. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
+**Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a moving bar, and **Working**'s count goes up by one. Select its row: its run opens in the middle and its output streams in as it works. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
 
 **If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Running now**, which says which machine fails. An agent on a machine that does not answer is left out until it answers. On a narrow window the list is hidden: widen it.
 
@@ -115,29 +115,6 @@ Pick a profile, then start a new task for a Claude Code agent and ask it to run 
 - **The new run asks to sign in, or uses the wrong plan:** that folder has no sign-in yet. Run step 1 for it.
 - **No Accounts button:** you are not signed in as the owner, or you are on a phone (the bar is hidden there).
 - **An agent ignores the switch:** its workspace `.env` sets the folder itself; remove that line to follow the switch.
-
-## See the fleet at work in the sidebar
-
-**At work now**, under **Machines and runs** in the nav, shows every agent on every connected machine, working or not, without opening a chat. It changes by itself every 2 seconds.
-
-1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen or a phone the tree is hidden; use **Running now** instead.
-2. The tree reads from the top down:
-   - **Machine**, with a number: how many agents are working on it now, counted as the **Working** list counts them, so the machine numbers add up to **Working**'s count. An agent with two runs counts once and has two rows; point at the number to see the runs. An agent that two machines list counts and shows on the first one only. A machine that does not answer says **not checked**, and its agents are not shown. **checking…** means it is slow, and it is asked again.
-   - **Project**: the project or repository of the work. Runs with no project are under **No project**, at the end.
-   - **Work item**: the issue, pull request or request the run works on. A run with no issue or request is grouped by where it came from: **Agent to agent**, **Workflows**, **App chat** and so on.
-   - **One row per agent run**: a turning ring while it works, the model maker's own logo in its own colours (Claude, OpenAI, Gemini; a plain circle for any other model), a short title of the task, then the agent's name, the model (for example `opus-5.5`) and how long ago it last moved (**now**, **4m**, **3h**).
-3. **Workers**, indented under a working row: the work that run started. That is the agents it handed work to (on this machine or another one, which is then named with **on** and the machine), the agents it called, and the workflows it started or that run under its workflow. Each worker shows a small mark (a turning ring while it works, green when done, red when it failed, amber when it waits), its title, its agent, its state and how long ago it started or ended. A worker that ended stays for an hour. Select a worker to open its run's Task page, with its conversation; a workflow opens on **Workflows**.
-4. **Done in the last hour**, under each machine, lists the agents that finished a run in the last hour and run nothing now, each with a green dot and the first line of its last answer.
-   - Every other agent on the machine has an **Idle** row with a green dot, grouped under a folded **N idle** line at the end of the machine. Select the line to unfold it. The order is: working, done in the last hour, idle. A machine with nothing working says **Nothing running.** and still shows its idle group; a machine with no agents at all says **No agents.**
-5. Select a working row to open that run's Task page, with its conversation and steer box. Select a done or idle row to open that agent's Activity.
-6. Select a machine or a project to fold it. It stays folded while the page is open, also when the machine's details arrive. **All**, next to **At work now**, opens **Running now** with the ops details.
-
-If your system asks for less motion, the ring does not turn; it stays as a still blue ring.
-
-**Check it worked:** start a task for an agent (for example from **New post**). Within a few seconds its row appears under its machine with a turning ring, and the machine's number goes up by one, as **Working**'s count does. Give the same agent a second task: a second row appears, and both numbers stay the same. When the run ends, the row moves to **Done in the last hour** with a green dot. To see workers, ask an agent to hand part of a task to another agent: within a few seconds the hand-off is listed under the first agent's row with a turning ring, and selecting it opens the other agent's run.
-
-**If something is wrong:** if the tree says **Loading the machines…** for more than a few seconds, or **Could not reach the machines just now**, the dashboard cannot read the live view: open **Running now**, which reads the same data and says which machine fails. If a machine says **not checked**, check that its daemon runs and that this dashboard can reach it (see [Check the machines' health](#check-the-machines-health)). If the connection drops, the tree keeps the last view and reconnects by itself after 2 seconds, then 5, then 10, then every 30 seconds until it is back; if it stays stale longer than that, reload the page. If the tree is missing, widen the window: it is hidden under 1181 pixels. If a hand-off does not show under its agent, the hand-off was started outside an agent's run (from the command line or a schedule), so it has no run to sit under; it still shows as its own row. A machine on an older version does not send its workers.
-
 
 ## Chat with an agent
 
@@ -687,7 +664,7 @@ The **Task** page is one run on its own, with its own link: what it was asked, i
 2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
 3. **A run in a chat is one turn of it.** When the run's chat has other turns (a follow-up, or the turns after it), the top says where it sits, such as **Follow-up · turn 3 of 5 in this chat**. **Earlier in this chat** shows the turns before it in order, each with what was asked, the agent's reply and **View log** to open that turn's own page. The first request always shows. When the chat has more than 10 earlier turns, select **Load earlier turns** to read the older ones. **Later in this chat** follows the conversation when turns came after it. The selected run is marked **turn 3 · selected** and keeps its own conversation, actions and live stream below. Only the same agent's runs in the same chat show, from its saved runs on that machine (kept 30 days).
 4. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
-5. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. A background run using the non-streaming Claude Code path shows its reply when it finishes. The reply shows as formatted text with highlighted code and tables. A spinner shows while the conversation waits for its first output. Each tool step shows its state on one line, such as **Read** `net/retry.ts` with **Running** while it works and **Completed** when a result arrives. Select a step to see its input and result. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom; scroll up to read and it stops following.
+5. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. A background run using the non-streaming Claude Code path shows its reply when it finishes. The reply shows as formatted text with highlighted code and tables. A spinner shows while the conversation waits for its first output. Each tool step shows its state on one line, such as **Read** `net/retry.ts` with **Running** while it works and **Completed** when a result arrives. Select a step to see its input and result. An open step stays open while the run goes on, and after the page reconnects to a run that was cut off, each step shows once. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom; scroll up to read and it stops following.
 6. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn. **Pause**, at the top, stops the task with a resume plan so it can go on later (select **Pause it?** to confirm). A paused run's page shows its plan with **Resume** and **Drop**, as on Live.
 7. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
 
@@ -1074,6 +1051,8 @@ Each connected machine has a card:
 When a machine does not answer, its card turns red and the Hub still shows everything else. A machine whose posts could not be read says **posts not shown**, with the reason.
 
 A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
+
+In the side menu's machine tree, a machine on **checking…** keeps the agents of its last answer, with **as of** and the time of that answer (UTC, hours and minutes) next to the badge. Its rows do not disappear while it is asked again. A machine that has not answered in five minutes says **not checked** and shows no agents. The **At work now** and **Working** counts take only machines that are up.
 
 ![Happening now on a phone: one machine answered, the other is still checking](/screenshots/wall/checking-phone.png)
 

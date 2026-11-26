@@ -253,6 +253,9 @@ export interface AgentTask {
   context?: {
     channel?: string
     sender?: string
+    /** false: `sender` is a name a caller gave, not an agent of this
+     *  machine (#2052). The prompt says so. */
+    senderVerified?: boolean
     /** Platform user ID (e.g. Telegram user ID) */
     senderId?: string
     /** Platform username (e.g. @username) */
@@ -414,7 +417,7 @@ function buildPrompt(agent: AgentDef, task: AgentTask, historyContext?: string):
 
     if (ctx.channel) envLines.push(`Channel: ${ctx.channel}`)
     if (ctx.group) envLines.push(`Group: ${ctx.group}`)
-    if (ctx.sender) envLines.push(`Message from: ${ctx.sender}`)
+    if (ctx.sender) envLines.push(`Message from: ${ctx.sender}${ctx.senderVerified === false ? " (not an agent of this machine; its name is not checked)" : ""}`)
     if (ctx.myHandle) envLines.push(`Your handle on this channel: ${ctx.myHandle}`)
 
     if (isGitLab) {
@@ -1817,8 +1820,11 @@ export async function executeSdk(
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const { query } = sdk
 
-    // Build prompt with full context (landscape, memory, patterns, etc.)
-    const prompt = buildPrompt(agent, task, historyContext)
+    // Build prompt with full context (landscape, memory, patterns, etc.).
+    // The daemon's per-turn system text (the PR/MR marker, a worktree)
+    // goes first, as on codex-cli: the SDK is optional and its system
+    // prompt option differs between versions.
+    const prompt = buildCodexPrompt(buildPrompt(agent, task, historyContext), task.systemPromptAppend)
 
     let content = ""
 
@@ -1955,6 +1961,9 @@ export async function executeOrchestrator(
       acmeContext,
       providerOpts,
       abortSignal: combined.signal,
+      // The PR/MR marker and a task worktree note (#2130), at the end of
+      // the system prompt as the CLI tiers' --append-system-prompt.
+      systemPromptAppend: task.systemPromptAppend,
       mcpServers: hasMcp ? mcpServers : undefined,
       // A write tool of a server with an allow list waits for one
       // Approvals card, as on the claude-code tier's guard hook (#1736).

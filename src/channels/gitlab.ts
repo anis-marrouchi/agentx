@@ -87,6 +87,9 @@ export interface GitLabChannelConfig {
   /** The agent of the open request homed on issue `n` of `project`, for an
    *  MR from branch `agentx/issue-<n>` (#2102). */
   ciAgentForIssue?: (project: string, n: number) => string | undefined
+  /** Called once when the still-red note is posted (#2212): the daemon
+   *  writes the run step. Needs you reads the state file itself. */
+  onCiStillRed?: (r: import("./ci-fix").CiStillRed) => void
   /** Rules Registry gates on this adapter (#2085). issueComplete.adapter:
    *  off | shadow | enforce, default shadow: the rollback is this one line. */
   gates?: { issueComplete?: { adapter?: GateMode } }
@@ -1393,6 +1396,12 @@ export class GitLabAdapter implements ChannelAdapter {
    * Handle merge request events.
    */
   private async handleMR(event: GitLabMREvent, res: ServerResponse): Promise<void> {
+    // A closed or merged MR leaves the CI fix loop and Needs you (#2212),
+    // whoever closed it, before the bot and handler checks below.
+    const mrAction = event.object_attributes?.action
+    if ((mrAction === "close" || mrAction === "merge") && this.ciFix.closed(ciFixKey("gitlab", event.project.path_with_namespace, event.object_attributes.iid))) {
+      this.log(`MR !${event.object_attributes.iid} on ${event.project.path_with_namespace} ${mrAction}d: CI fix count dropped`)
+    }
     this.labelActivity(event.project.path_with_namespace, "!", event.object_attributes.iid, event.changes?.labels, event.user.username)
     const info = this.mergeRequestListeners.length ? mergeRequestEventInfo(event) : null
     if (info) {
@@ -1778,11 +1787,20 @@ export class GitLabAdapter implements ChannelAdapter {
     }
     const agentId = owner.agentId
     const cap = this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT
-    const decision = this.ciFix.claim(key)
+    const mrTitle = info?.title ?? mr.title
+    const decision = this.ciFix.claim(key, {
+      provider: "gitlab", repo: project, number: mr.iid, sha, agentId,
+      ...(info?.webUrl ?? mr.url ? { url: info?.webUrl ?? mr.url } : {}),
+      ...(mrTitle ? { title: stripAgentxMarkers(mrTitle) } : {}),
+    })
     if (decision.action === "note") {
       this.log(`MR !${mr.iid}: CI still red after ${decision.count} tries, asking a person`)
       await this.send({ channel: "gitlab", chatId, text: ciStillRedNote(decision.count, sha), agentId })
         .catch((e: Error) => this.log(`CI still-red note on MR !${mr.iid} failed: ${e.message}`))
+      const red = this.ciFix.stillRed(key)
+      if (red && this.config.onCiStillRed) {
+        try { this.config.onCiStillRed(red) } catch (e: any) { this.log(`CI still-red step on MR !${mr.iid} failed: ${e?.message ?? e}`) }
+      }
       return
     }
     if (decision.action === "silent") {
@@ -1848,13 +1866,16 @@ export class GitLabAdapter implements ChannelAdapter {
 
   /** The open MR whose source branch is `ref`, for a branch pipeline:
    *  undefined when the read worked and there is none, "error" when it
-   *  could not be read (no token, API error). */
+   *  could not be read (API error). With no token there is nothing to read
+   *  with, so it is "no MR" and a failed branch pipeline wakes the route
+   *  agent, as before the CI fix loop (#2130). A fork MR with the same
+   *  branch name is not this branch's MR. */
   private async openMergeRequestForRef(project: string, ref: string): Promise<PipelineMR | undefined | "error"> {
-    if (!ref) return undefined
-    const list = await this.ciRead<Array<{ iid?: number; title?: string; web_url?: string }>>(project,
+    if (!ref || !this.config.token) return undefined
+    const list = await this.ciRead<Array<{ iid?: number; title?: string; web_url?: string; source_project_id?: number; target_project_id?: number }>>(project,
       `merge_requests?state=opened&source_branch=${encodeURIComponent(ref)}`)
     if (!Array.isArray(list)) return "error"
-    const first = list.find((m) => typeof m.iid === "number")
+    const first = list.find((m) => typeof m.iid === "number" && !mrFromFork(m))
     return first ? { iid: first.iid!, title: first.title, url: first.web_url } : undefined
   }
 

@@ -20,6 +20,9 @@ import { Reasoning } from "./elements/Reasoning"
 export interface Conv {
   /** More of the run's output. */
   append(text: string): void
+  /** The whole output again, after the stream came back (#2175). Parts
+   *  that read the same keep their place, so an opened step stays open. */
+  reset(text: string): void
   /** The run ended (or the record of a finished run was loaded). */
   end(): void
   unmount(): void
@@ -33,6 +36,9 @@ function injectStyles(id: string, text: string): void {
   document.head.appendChild(style)
 }
 
+// Parts are keyed by kind and place: the stream only ever adds at the end,
+// so a tool step the reader opened keeps its state while the run goes on
+// (#2175), and never hands it to a part of another kind.
 function Parts({ parts, live }: { parts: Part[]; live: boolean }) {
   const lastText = parts.map((p) => p.kind).lastIndexOf("text")
   return (
@@ -40,11 +46,11 @@ function Parts({ parts, live }: { parts: Part[]; live: boolean }) {
       {parts.map((p, i) => {
         const tail = i === parts.length - 1
         switch (p.kind) {
-          case "text": return <div key={i} className="axc-reply"><Response md={p.md} streaming={live && i === lastText && tail} /></div>
-          case "tool": return <Tool key={i} part={p} running={live && tail} />
-          case "thought": return <Reasoning key={i} text={p.text} />
-          case "error": return <div key={i} className="axc-error" role="alert"><strong>Error</strong> {p.text}</div>
-          case "system": return <div key={i} className="axc-system">{p.text}</div>
+          case "text": return <div key={p.kind + i} className="axc-reply"><Response md={p.md} streaming={live && i === lastText && tail} /></div>
+          case "tool": return <Tool key={p.kind + i} part={p} running={live && tail} />
+          case "thought": return <Reasoning key={p.kind + i} text={p.text} />
+          case "error": return <div key={p.kind + i} className="axc-error" role="alert"><strong>Error</strong> {p.text}</div>
+          case "system": return <div key={p.kind + i} className="axc-system">{p.text}</div>
         }
       })}
       {live && parts.length === 0 ? <ThinkingLoader /> : null}
@@ -73,6 +79,7 @@ function mount(el: HTMLElement, opts: { plain?: (s: string) => string } = {}): C
   paint()
   return {
     append(text: string) { if (!text) return; raw += text; schedule() },
+    reset(text: string) { raw = String(text || ""); schedule() },
     end() { live = false; if (raf) cancelAnimationFrame(raf); paint() },
     unmount() { if (raf) cancelAnimationFrame(raf); root.unmount(); host.remove() },
   }
