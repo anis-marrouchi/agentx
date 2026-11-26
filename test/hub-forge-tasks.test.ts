@@ -55,6 +55,26 @@ describe("GitHub through the gh login", () => {
     const got = await githubTasksReader(async () => { throw new Error("gh auth login required") })("acme/shop")
     expect(got).toEqual({ error: "gh auth login required" })
   })
+  it("issues failing (Issues turned off), PRs working: the PRs still show", async () => {
+    const run = async (args: string[]) => {
+      if (args[0] === "issue") throw new Error("the repo has disabled issues")
+      return JSON.stringify([{ number: 9, title: "Fix cart", url: "https://github.example/acme/shop/pull/9", updatedAt: iso(NOW) }])
+    }
+    const got = await githubTasksReader(run)("acme/shop") as ForgeTask[]
+    expect(got.map((t) => t.id)).toEqual(["github:acme/shop#9"])
+    expect(got[0]).toMatchObject({ kind: "pr" })
+  })
+  it("PRs failing, issues working: the issues still show", async () => {
+    const run = async (args: string[]) => {
+      if (args[0] === "pr") throw new Error("pr list failed")
+      return JSON.stringify([{ number: 7, title: "Cart total", url: "https://github.example/acme/shop/issues/7", updatedAt: iso(NOW) }])
+    }
+    expect((await githubTasksReader(run)("acme/shop") as ForgeTask[]).map((t) => t.id)).toEqual(["github:acme/shop#7"])
+  })
+  it("both failing: the first reason", async () => {
+    const run = async (args: string[]) => { throw new Error(`${args[0]} broke`) }
+    expect(await githubTasksReader(run)("acme/shop")).toEqual({ error: "issue broke" })
+  })
 })
 
 describe("GitLab with the channel's token", () => {
@@ -77,6 +97,18 @@ describe("GitLab with the channel's token", () => {
     expect(await read(async () => json({}, 404))).toEqual({ error: "not found (or not visible to the token)" })
     expect(await read(async () => json({}, 401))).toEqual({ error: "HTTP 401" })
     expect(await read(async () => { throw new Error("ECONNREFUSED") })).toEqual({ error: "could not be reached: ECONNREFUSED" })
+  })
+  it("issues 404 or 403 (Issues turned off), merge requests working: the MRs still show", async () => {
+    for (const status of [404, 403]) {
+      const doFetch = async (url: string) => url.includes("/issues?") ? json({}, status)
+        : json([{ iid: 4, title: "Login fix", web_url: "https://gitlab.example/grp/app/-/merge_requests/4", updated_at: iso(NOW) }])
+      const got = await gitlabTasksReader({ url: "https://gitlab.example" }, doFetch as any)("grp/app") as ForgeTask[]
+      expect(got.map((t) => t.id)).toEqual(["gitlab:grp/app!4"])
+    }
+  })
+  it("issues and merge requests both failing: the issues' reason", async () => {
+    const doFetch = async (url: string) => json({}, url.includes("/issues?") ? 403 : 500)
+    expect(await gitlabTasksReader({ url: "https://gitlab.example" }, doFetch as any)("grp/app")).toEqual({ error: "HTTP 403" })
   })
   it("no GitLab channel: GitLab projects say so", async () => {
     const reader = forgeTasksReader({ channels: {} } as any, async () => "[]")

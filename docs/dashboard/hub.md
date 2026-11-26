@@ -108,7 +108,7 @@ Tasks only shows: moving a card does not change a task's state. Close or hand ov
 
 - **Could not read the tasks:** nothing could be read yet: the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
 - **Could not refresh** above the tasks: the last read failed. The tasks shown are the ones read before; they are read again within 30 seconds, or select **Try again**.
-- **Not read: owner/repo (why)** above the tasks: that repository or project could not be read. For GitHub, check `gh auth status` as the user that runs AgentX, and that the login can see the repository. For GitLab, check the GitLab channel's token can read the project. The last issues read for it stay shown.
+- **Not read: owner/repo (why)** above the tasks: that repository or project could not be read. For GitHub, check `gh auth status` as the user that runs AgentX, and that the login can see the repository. For GitLab, check the GitLab channel's token can read the project. The last issues read for it stay shown. Issues and pull requests are read apart: a repository with Issues turned off still shows its pull requests, and is not named here.
 - **No issues or pull requests:** the repository is not in `channels.github.routes`, `channels.gitlab.routes` or a GitLab board (a `*` route is not listed), or it has none open.
 - **No tasks:** no open issue or pull request, and nothing asked that left work behind. A question an agent answers at once is not a task.
 - **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
