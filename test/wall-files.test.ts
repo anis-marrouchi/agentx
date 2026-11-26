@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "os"
 import { join } from "path"
 import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, WALL_FILES_CSS, workspaceFileHtml, workspaceHtml, workspaceRel } from "../src/daemon/ui/pages/wall-files"
-import { isHiddenName, readWorkspace, WORKSPACE_FILE_MAX, workspaceParts } from "../src/daemon/workspace-files-api"
+import { isGhHosts, isHiddenName, readWorkspace, WORKSPACE_FILE_MAX, workspaceParts } from "../src/daemon/workspace-files-api"
 
 // #2101 R17: the right panel's Files tab. What a run or a chat touched,
 // read from the run's record (its transcript's `→ Tool({json})` lines and
@@ -191,6 +191,41 @@ describe("Workspace files: reading inside the workspace only (#2101 R17)", () =>
     expect(readWorkspace(ws, "env-link")).toMatchObject({ ok: false, status: 403 })
     for (const n of [".env.local", "id_ed25519", "credentials.json", "secrets.yaml", "tokens.json", ".npmrc"]) expect(isHiddenName(n)).toBe(true)
     for (const n of ["README.md", "env.ts", "token-store.ts", "src"]) expect(isHiddenName(n)).toBe(false)
+  })
+
+  it("hides more secret names: .envrc, *.env, .env-*, .gnupg, *credentials.json, multi-extension secrets (#2315 C1)", () => {
+    for (const n of [".envrc", "prod.env", ".env-local", ".ENV-prod", ".gnupg", "application_default_credentials.json",
+      "secrets.prod.json", "credentials.yml.enc", "tokens.dev.yaml", "Secret.json", ".env", ".env.local"]) expect(isHiddenName(n), n).toBe(true)
+    for (const n of ["README.md", "token-utils.ts", "secretsauce.md", "env.ts", "environment.md", "hosts.yml", "gh"]) expect(isHiddenName(n), n).toBe(false)
+    expect(isGhHosts("hosts.yml", "gh")).toBe(true)
+    expect(isGhHosts("hosts.yml", "config")).toBe(false)
+    expect(workspaceParts("gh/hosts.yml")).toMatchObject({ status: 403 })
+    expect(workspaceParts(".config/gh/hosts.yml")).toMatchObject({ status: 403 })
+    expect(workspaceParts("deploy/hosts.yml")).toEqual(["deploy", "hosts.yml"])
+  })
+
+  it("hides gh/hosts.yml in a list, by path and through a link, and keeps other hosts.yml (#2315 C1)", () => {
+    mkdirSync(join(ws, "gh"))
+    writeFileSync(join(ws, "gh", "hosts.yml"), "oauth_token: x")
+    writeFileSync(join(ws, "gh", "config.yml"), "editor: vim")
+    mkdirSync(join(ws, "deploy"))
+    writeFileSync(join(ws, "deploy", "hosts.yml"), "web: 1")
+    symlinkSync(join(ws, "gh", "hosts.yml"), join(ws, "gh-login.txt"))
+    for (const n of [".envrc", "prod.env", ".env-local", "secrets.prod.json"]) writeFileSync(join(ws, n), "s")
+    mkdirSync(join(ws, ".gnupg"))
+    const gh = readWorkspace(ws, "gh")
+    expect(gh).toMatchObject({ ok: true, kind: "dir" })
+    if (gh.ok && gh.kind === "dir") expect(gh.entries.map((e) => e.name)).toEqual(["config.yml"])
+    expect(readWorkspace(ws, "gh/hosts.yml")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, "gh-login.txt")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, "deploy/hosts.yml")).toMatchObject({ ok: true, kind: "file", content: "web: 1" })
+    const top = readWorkspace(ws, "")
+    if (top.ok && top.kind === "dir") {
+      const names = top.entries.map((e) => e.name)
+      for (const n of [".envrc", "prod.env", ".env-local", "secrets.prod.json", ".gnupg", "gh-login.txt"]) expect(names, n).not.toContain(n)
+      expect(names).toContain("gh")
+    } else throw new Error("expected a folder")
+    expect(readWorkspace(ws, ".gnupg")).toMatchObject({ ok: false, status: 403 })
   })
 
   it("checks the real path's names as stored on disk: a link to a hidden folder, a folded spelling (B1, B2)", () => {

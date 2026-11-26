@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from "fs"
-import { join, relative, resolve, sep } from "path"
+import { basename, dirname, join, relative, resolve, sep } from "path"
 
 // --- GET /agents/:id/workspace?path=<rel>: an agent's workspace, read only (#2101 R17) ---
 //
@@ -22,6 +22,13 @@ import { join, relative, resolve, sep } from "path"
 //     the names as stored on disk, so a case-insensitive or Unicode-folding
 //     file system (".SSH", ".ſſh" on APFS) or a link to a hidden folder
 //     ("notes -> .ssh") cannot reach a hidden name under another spelling.
+//   - the gh CLI's login file (gh/hosts.yml) is hidden by its parent folder's
+//     name, so a hosts.yml elsewhere stays visible.
+//
+// Not caught: a hard link. It has no target to follow, so a hard link inside
+// the workspace to a secret file elsewhere (or to a hidden name under another
+// name) is read as an ordinary file. Only symlinks and the real path's names
+// are checked.
 
 export const WORKSPACE_FILE_MAX = 256 * 1024
 const DIR_MAX = 500
@@ -40,13 +47,27 @@ export type WorkspaceRead =
 export function isHiddenName(name: string): boolean {
   const n = name.toLowerCase()
   return n === ".git" || n === "node_modules" ||
-    n === ".env" || n.startsWith(".env.") || n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
+    // .env, .env.local, .env-local, prod.env, and direnv's .envrc.
+    n === ".env" || /^\.env[-.]/.test(n) || /\.env$/.test(n) || n === ".envrc" ||
+    n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
     /\.(pem|key|p12|pfx|keystore|jks)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)/.test(n) ||
-    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)?$/.test(n) || n === "tokens.json" || n === "auth.json" ||
+    // secrets.yaml, secrets.prod.json, credentials.yml.enc; any *credentials.json
+    // (gcloud's application_default_credentials.json).
+    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)*$/.test(n) || /credentials\.json$/.test(n) || n === "auth.json" ||
     // Logins of git, Claude, MCP servers, Python packages; whole folders of
     // SSH, Docker and Kubernetes logins (.docker/config.json, .kube/config).
     n === ".git-credentials" || n === ".credentials.json" || n === ".mcp.json" || n === "settings.local.json" ||
-    n === ".pypirc" || n === ".ssh" || n === ".docker" || n === ".kube"
+    n === ".pypirc" || n === ".ssh" || n === ".gnupg" || n === ".docker" || n === ".kube"
+}
+
+/** The gh CLI's login file: hosts.yml directly inside a folder named gh. */
+export function isGhHosts(name: string, parent: string): boolean {
+  return name.toLowerCase() === "hosts.yml" && parent.toLowerCase() === "gh"
+}
+
+/** Whether a real (absolute) path is the gh CLI's login file. */
+function isGhHostsPath(real: string): boolean {
+  return isGhHosts(basename(real), basename(dirname(real)))
 }
 
 /** Whether any part of a path relative to the workspace is a hidden name. */
@@ -61,7 +82,7 @@ export function workspaceParts(path: string): string[] | { status: number; error
   if (p.startsWith("/") || p.startsWith("\\") || /^[a-zA-Z]:/.test(p) || p.startsWith("~")) return { status: 400, error: "the path must be relative to the workspace" }
   const parts = p.split(/[\\/]+/).filter((s) => s && s !== ".")
   if (parts.includes("..")) return { status: 403, error: "the path leaves the workspace" }
-  if (parts.some(isHiddenName)) return { status: 403, error: "this file is not shown" }
+  if (parts.some(isHiddenName) || parts.some((s, i) => i > 0 && isGhHosts(s, parts[i - 1]))) return { status: 403, error: "this file is not shown" }
   return parts
 }
 
@@ -78,7 +99,7 @@ export function readWorkspace(workspace: string, path: string, cwd = process.cwd
   if (!inside(real)) return { ok: false, status: 403, error: "the path leads out of the workspace" }
   // The real path, names as stored on disk: a link inside the workspace, or a
   // spelling the file system folds, may still lead to a name never read.
-  if (hasHiddenPart(relative(root, real))) return { ok: false, status: 403, error: "this file is not shown" }
+  if (hasHiddenPart(relative(root, real)) || isGhHostsPath(real)) return { ok: false, status: 403, error: "this file is not shown" }
   const rel = parts.join("/")
   let st: ReturnType<typeof statSync>
   try { st = statSync(real) } catch { return { ok: false, status: 404, error: "not found" } }
@@ -88,13 +109,13 @@ export function readWorkspace(workspace: string, path: string, cwd = process.cwd
     try { names = readdirSync(real) } catch { return { ok: false, status: 403, error: "the folder cannot be read" } }
     const scanned = names.length > DIR_SCAN_MAX
     for (const name of names.slice(0, DIR_SCAN_MAX)) {
-      if (isHiddenName(name)) continue
+      if (isHiddenName(name) || isGhHosts(name, basename(real))) continue
       const abs = join(real, name)
       try {
         let s = lstatSync(abs)
         if (s.isSymbolicLink()) {
           const to = realpathSync.native(abs)
-          if (!inside(to) || hasHiddenPart(relative(root, to))) continue
+          if (!inside(to) || hasHiddenPart(relative(root, to)) || isGhHostsPath(to)) continue
           s = statSync(to)
         }
         if (s.isDirectory()) entries.push({ name, kind: "dir", size: 0 })
