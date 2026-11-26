@@ -573,13 +573,17 @@ export function traceToolCalls(
   return rows.map((s) => ({ action: s.action ?? null, inputSummary: s.input_summary ?? null }))
 }
 
+// The three month sums below force the covering index (#2322): the planner
+// otherwise walks idx_traces_agent_started and reads every row, 25–52 s on
+// a 2.4 GB db, even after ANALYZE.
+
 /**
  * Recorded run cost per agent since `sinceMs` (a month start, for the
  * monthly budget, #1162). Rows without a cost add nothing.
  */
 export function spendByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
   const rows = db.prepare(`
-    SELECT agent_id, SUM(cost_usd) AS usd FROM task_traces
+    SELECT agent_id, SUM(cost_usd) AS usd FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NOT NULL
     GROUP BY agent_id
   `).all(sinceMs) as Array<{ agent_id: string; usd: number | null }>
@@ -592,7 +596,7 @@ export function spendByAgentSince(db: Database.Database, sinceMs: number): Recor
  *  per project is mapped (#1290). */
 export function spendByChatSince(db: Database.Database, sinceMs: number): Array<{ agentId: string; chatId: string | null; usd: number }> {
   const rows = db.prepare(`
-    SELECT agent_id, chat_id, SUM(cost_usd) AS usd FROM task_traces
+    SELECT agent_id, chat_id, SUM(cost_usd) AS usd FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NOT NULL
     GROUP BY agent_id, chat_id
   `).all(sinceMs) as Array<{ agent_id: string; chat_id: string | null; usd: number | null }>
@@ -603,7 +607,7 @@ export function spendByChatSince(db: Database.Database, sinceMs: number): Array<
  *  (local models, #1290): a budget does not see them. */
 export function unpricedRunsByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
   const rows = db.prepare(`
-    SELECT agent_id, COUNT(*) AS n FROM task_traces
+    SELECT agent_id, COUNT(*) AS n FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NULL
       AND COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) > 0
     GROUP BY agent_id

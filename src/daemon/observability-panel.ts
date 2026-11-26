@@ -88,6 +88,38 @@ function openReadOnly(): OpenedDb | null {
   }
 }
 
+// The budgets card's month sums, kept 60 s (#2322). The Wall and peers'
+// cost pages poll this; each fresh sum walks the whole month of runs.
+// Only the sums are kept: caps are still read fresh on each request (#1295).
+export const BUDGET_SUMS_TTL_MS = 60_000
+
+interface MonthSums {
+  since: number
+  at: number
+  byAgent: Record<string, number>
+  byChat: ReturnType<typeof spendByChatSince>
+  unpriced: Record<string, number>
+}
+
+let budgetSums: MonthSums | null = null
+
+export function monthSums(db: Database.Database, since: number, now: number): MonthSums {
+  if (budgetSums && budgetSums.since === since && now - budgetSums.at < BUDGET_SUMS_TTL_MS) return budgetSums
+  budgetSums = {
+    since,
+    at: now,
+    byAgent: spendByAgentSince(db, since),
+    byChat: spendByChatSince(db, since),
+    unpriced: unpricedRunsByAgentSince(db, since),
+  }
+  return budgetSums
+}
+
+/** Tests only. */
+export function resetBudgetSumsCache(): void {
+  budgetSums = null
+}
+
 export function handleObservabilityGet(_req: IncomingMessage, res: ServerResponse, peers: TopbarPeer[] = [], localToken?: string): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
   res.end(renderObservabilityPage({ peers, localToken }))
@@ -211,9 +243,10 @@ export async function handleObservabilityApi(req: IncomingMessage, res: ServerRe
       const source = currentBudgetSource(config)
       const since = monthStart(now)
       const cfg = source ? budgetConfigFrom(source) : {}
-      const byProject = source ? spendByProject(spendByChatSince(opened.db, since), budgetProjectResolver(source)) : {}
+      const sums = monthSums(opened.db, since, now)
+      const byProject = source ? spendByProject(sums.byChat, budgetProjectResolver(source)) : {}
       sendJson(res, 200, {
-        ...buildBudgetView(cfg, spendByAgentSince(opened.db, since), monthKey(now), byProject, unpricedRunsByAgentSince(opened.db, since)),
+        ...buildBudgetView(cfg, sums.byAgent, monthKey(now), byProject, sums.unpriced),
         agentIds: Object.keys(source?.agents ?? {}).sort(),
       })
       return true
