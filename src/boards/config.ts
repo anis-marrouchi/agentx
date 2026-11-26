@@ -154,11 +154,12 @@ export const dashboardConfigSchema = z.object({
     }).optional(),
   }).default({}),
   /** The Hub's move to React (#2218). `react` loads the React app on /hub;
-   *  off by default until the first page has moved. `legacyPages` sends a
+   *  on by default since #2226 (a fresh install opens the simple shell),
+   *  `false` is the way back to the old Hub. `legacyPages` sends a
    *  moved page back to the old code without a release (page ids as in
    *  `#page=`). */
   hub: z.object({
-    react: z.boolean().default(false),
+    react: z.boolean().default(true),
     legacyPages: z.array(z.string().min(1).max(40)).max(50).default([]),
     /** Simple by default, full as an option (#2226 S1, src/hub/layout.ts).
      *  `layout` sets every item's default (simple hides them, full shows
