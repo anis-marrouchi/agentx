@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto"
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs"
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { currentRoot } from "@/events/envelope"
 import { stripSecrets } from "./strip-secrets"
@@ -59,6 +59,45 @@ type RunEventLine =
       context?: Record<string, Record<string, unknown>>;
       joinCounters?: Record<string, string[]>;
     }
+
+/** Open runs kept replayed in memory (#2319). */
+const READ_CACHE_MAX = 500
+
+function readBytes(p: string, from: number, length: number): Buffer {
+  const fd = openSync(p, "r")
+  try {
+    const buf = Buffer.alloc(length)
+    const n = readSync(fd, buf, 0, length, from)
+    return buf.subarray(0, n)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function parseLine(line: string): RunEventLine | null {
+  if (!line.trim()) return null
+  try { return JSON.parse(line) as RunEventLine } catch { return null }
+}
+
+/** Folds log lines onto a run. `run` is the store's own copy and is changed
+ *  in place, so a long log is not copied once per line. */
+function replay(run: WorkflowRun | null, text: string): WorkflowRun | null {
+  for (const line of text.split("\n")) {
+    const evt = parseLine(line)
+    if (!evt || evt.v !== 2) continue
+    if (evt.kind === "snapshot") run = evt.run
+    else if (evt.kind === "exec" && run && run.id === evt.runId) {
+      run.history.push(evt.entry)
+      run.pending = evt.pending
+      run.status = evt.status ?? run.status
+      run.pausedAt = evt.pausedAt === null ? undefined : (evt.pausedAt ?? run.pausedAt)
+      run.context = evt.context ?? run.context
+      run.joinCounters = evt.joinCounters ?? run.joinCounters
+      run.updatedAt = evt.entry.at
+    }
+  }
+  return run
+}
 
 function sanitize(s: string): string {
   // Keep the set narrow so the result is always a safe single filename
@@ -163,31 +202,41 @@ export class RunStore {
     return this.readRun(this.runPath(runId))
   }
 
+  /** Open runs already replayed, by file (#2319). A run file only grows
+   *  (lines are appended whole), so a repeat read of an unchanged file is a
+   *  stat, and a grown one parses only the bytes added since. Open runs are
+   *  re-read every few seconds (GET /agents, the timer sweep) and some logs
+   *  are 10-20 MB: reading them whole each time froze the event loop. */
+  private readCache = new Map<string, { size: number; mtimeMs: number; run: WorkflowRun | null }>()
+
   private readRun(p: string): WorkflowRun | null {
-    let raw: string
-    try { raw = readFileSync(p, "utf-8").trim() } catch { return null }
-    if (!raw) return null
-    let run: WorkflowRun | null = null
-    for (const line of raw.split("\n")) {
-      let evt: RunEventLine
-      try { evt = JSON.parse(line) as RunEventLine } catch { continue }
-      if (evt.v !== 2) continue
-      if (evt.kind === "snapshot") run = evt.run
-      else if (evt.kind === "exec" && run && run.id === evt.runId) {
-        const current: WorkflowRun = run
-        run = {
-          ...current,
-          history: [...current.history, evt.entry],
-          pending: evt.pending,
-          status: evt.status ?? current.status,
-          pausedAt: evt.pausedAt === null ? undefined : (evt.pausedAt ?? current.pausedAt),
-          context: evt.context ?? current.context,
-          joinCounters: evt.joinCounters ?? current.joinCounters,
-          updatedAt: evt.entry.at,
-        }
-      }
+    let size: number, mtimeMs: number
+    try { ({ size, mtimeMs } = statSync(p)) } catch { this.readCache.delete(p); return null }
+    let entry = this.readCache.get(p)
+    // Shrunk, or rewritten in place: read it again from the start.
+    if (entry && (size < entry.size || (size === entry.size && mtimeMs !== entry.mtimeMs))) entry = undefined
+    entry ??= { size: 0, mtimeMs, run: null }
+    if (size > entry.size) {
+      let buf: Buffer
+      try { buf = readBytes(p, entry.size, size - entry.size) } catch { return null }
+      // Whole lines only: a line still being written is read next time. A
+      // last line that is already whole JSON (no newline yet) counts.
+      let end = buf.lastIndexOf(0x0a) + 1
+      if (end < buf.length && parseLine(buf.subarray(end).toString("utf-8"))) end = buf.length
+      entry.run = replay(entry.run, buf.subarray(0, end).toString("utf-8"))
+      entry.size += end
     }
-    // A file written by an older version may still hold a credential.
+    entry.mtimeMs = mtimeMs
+    const run = entry.run
+    if (run && (run.status === "running" || run.status === "paused")) {
+      this.readCache.delete(p)
+      this.readCache.set(p, entry)
+      if (this.readCache.size > READ_CACHE_MAX) this.readCache.delete(this.readCache.keys().next().value!)
+    } else {
+      this.readCache.delete(p)
+    }
+    // A file written by an older version may still hold a credential. The
+    // copy also keeps callers from changing the cached run.
     return run && stripSecrets(run)
   }
 
