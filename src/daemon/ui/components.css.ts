@@ -96,6 +96,19 @@ export const AX_COMPONENTS_CSS = `${ICONS_CSS}
   }
 }
 
+/* Sizes (orca-design C24): sm h-8, xs h-6, square icon buttons size-9/8/7/6. */
+.ax-btn--sm, .ax-btn--xs, .ax-btn--icon-9, .ax-btn--icon-8, .ax-btn--icon-7, .ax-btn--icon-6 {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-sizing: border-box; padding-top: 0; padding-bottom: 0;
+}
+.ax-btn--sm { height: 32px; padding-left: 12px; padding-right: 12px; }
+.ax-btn--xs { height: 24px; padding-left: 8px; padding-right: 8px; gap: 4px; font-size: var(--ax-fs-xs); }
+.ax-btn--icon-9 { width: 36px; height: 36px; padding: 0; }
+.ax-btn--icon-8 { width: 32px; height: 32px; padding: 0; }
+.ax-btn--icon-7 { width: 28px; height: 28px; padding: 0; }
+.ax-btn--icon-6 { width: 24px; height: 24px; padding: 0; }
+.ax-btn svg { flex: none; }
+
 /* --- Chips (read-only labels used in kanban filters, etc.) --- */
 .ax-chip {
   display: inline-block; padding: 0 6px; font-family: var(--ax-mono);
@@ -370,13 +383,14 @@ export const AX_COMPONENTS_CSS = `${ICONS_CSS}
   color: var(--ax-text);
 }
 
-/* --- Avatars (coloured initial square) --- */
+/* --- Avatars: one 28px muted square with initials (orca-design recipe 2).
+   The tinted variants below are still drawn by mesh and monitor pages. --- */
 .ax-avatar {
-  width: 36px; height: 36px; border-radius: var(--ax-radius); flex-shrink: 0;
-  background: var(--ax-surface-2); border: var(--ax-border-w) solid var(--ax-border-2);
-  display: grid; place-items: center;
-  font-weight: 600; font-size: 14px; letter-spacing: -0.01em;
-  color: var(--ax-text);
+  width: 28px; height: 28px; border-radius: var(--ax-radius-md); flex-shrink: 0;
+  background: var(--ax-surface-3);
+  display: inline-grid; place-items: center;
+  font-weight: 600; font-size: 11px;
+  color: var(--ax-text-2);
 }
 .ax-avatar--teal {
   background: color-mix(in oklch, var(--ax-accent) 18%, var(--ax-surface));
@@ -1467,6 +1481,97 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--ax-muted);
   margin: 0; font-family: var(--ax-mono);
+}
+
+/* --- Shared primitives (Hub review S3; components.ts, components.client.ts) --- */
+.ax-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Tooltip (C14): names a control, above it, after 600ms. */
+.ax-tip {
+  position: fixed; z-index: 90; max-width: 300px; padding: 4px 8px;
+  border-radius: var(--ax-radius-sm); background: var(--ax-text); color: var(--ax-bg);
+  font-size: var(--ax-fs-xs); line-height: 1.35; pointer-events: none;
+  transform-origin: bottom center; animation: ax-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ax-tip[data-side="bottom"] { transform-origin: top center; }
+.ax-tip[hidden] { display: none; }
+.ax-tip kbd { margin-left: 6px; font: 500 11px/1 var(--ax-mono); opacity: 0.7; }
+
+/* Error line (C15): what failed, then Retry. */
+.ax-error {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  color: var(--ax-red-ink); font-size: var(--ax-fs-sm);
+}
+
+/* Skeleton (P8): shown only if the load takes more than 400ms. */
+.ax-skel { display: grid; gap: 8px; animation: ax-fade 150ms ease-out 400ms both; }
+.ax-skel--cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--ax-gap); }
+.ax-skel__row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.ax-skel__card {
+  display: grid; gap: 8px; padding: var(--ax-pad);
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-lg);
+}
+.ax-skel__av, .ax-skel__line { display: block; background: var(--ax-surface-3); border-radius: var(--ax-radius-sm); }
+.ax-skel__av { flex: none; width: 28px; height: 28px; border-radius: var(--ax-radius-md); }
+.ax-skel__lines { flex: 1; display: grid; gap: 6px; }
+.ax-skel__line { height: 10px; width: 60%; }
+.ax-skel__line--short { width: 35%; }
+
+/* Row ... menu (C12): opens from its trigger, destructive last. */
+.ax-menu { display: inline-flex; }
+.ax-menu__content {
+  position: fixed; z-index: 80; min-width: 11rem; padding: 4px;
+  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
+  border-radius: var(--ax-radius-md); box-shadow: var(--ax-shadow-lg);
+  animation: ax-menu-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ax-menu__content[hidden] { display: none; }
+.ax-menu__item {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px;
+  border: 0; border-radius: var(--ax-radius-sm); background: none; color: var(--ax-text);
+  font: inherit; font-size: var(--ax-fs-sm); text-align: left; cursor: pointer;
+}
+.ax-menu__item:focus-visible { box-shadow: none; background: var(--ax-surface-3); }
+@media (hover: hover) { .ax-menu__item:hover { background: var(--ax-surface-3); } }
+.ax-menu__item--danger { color: var(--ax-red-ink); }
+.ax-menu__sep { height: 1px; margin: 4px -4px; background: var(--ax-border); }
+
+/* Confirm dialog (C13, C11): ghost Cancel, destructive action, Esc closes. */
+.ax-dialog {
+  width: min(28rem, calc(100vw - 32px)); padding: 24px;
+  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-lg);
+  background: var(--ax-surface); color: var(--ax-text); box-shadow: var(--ax-shadow-lg);
+}
+.ax-dialog[open] { animation: ax-pop 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+.ax-dialog::backdrop { background: var(--ax-overlay); }
+.ax-dialog__t { margin: 0 0 8px; font-size: var(--ax-fs-group); font-weight: var(--ax-fw-strong); }
+.ax-dialog__d { margin: 0; color: var(--ax-text-2); font-size: var(--ax-fs-sm); line-height: 1.5; }
+.ax-dialog__f { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* Tabs / segmented control (E2, C16). */
+.ax-tabs {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+  border-radius: var(--ax-radius); background: var(--ax-surface-3);
+}
+.ax-tabs__tab {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 0; border-radius: calc(var(--ax-radius) - 3px); background: none; color: var(--ax-text-2);
+  font: inherit; font-size: var(--ax-fs-sm); font-weight: 500; cursor: pointer;
+}
+.ax-tabs__tab[aria-selected="true"] { background: var(--ax-surface); color: var(--ax-text); box-shadow: var(--ax-shadow-xs); }
+.ax-tabs__tab:focus-visible { box-shadow: var(--ax-focus-ring); }
+@media (hover: hover) { .ax-tabs__tab:hover { color: var(--ax-text); } }
+.ax-tabs__n { color: var(--ax-muted); font-variant-numeric: tabular-nums; }
+
+@keyframes ax-pop { from { opacity: 0; transform: scale(0.95); } }
+@keyframes ax-menu-in { from { opacity: 0; transform: scale(0.98); } }
+@keyframes ax-fade { from { opacity: 0; } }
+/* Reduced motion: no movement, the short fades stay. */
+@media (prefers-reduced-motion: reduce) {
+  .ax-tip, .ax-menu__content, .ax-dialog[open] { animation-name: ax-fade; }
 }
 
 /* --- Responsive collapses for the settings primitives --- */
