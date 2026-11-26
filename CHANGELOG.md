@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.277.1](https://github.com/anis-marrouchi/agentx/compare/v0.277.0...v0.277.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **hub:** shorter side menu that scrolls to the end ([#2312](https://github.com/anis-marrouchi/agentx/issues/2312)) ([291093e](https://github.com/anis-marrouchi/agentx/commit/291093ea2823fef0a7304746940d5c2545ea0b35))
+
 ## [0.277.0](https://github.com/anis-marrouchi/agentx/compare/v0.276.1...v0.277.0) (2026-11-26)
 
 
