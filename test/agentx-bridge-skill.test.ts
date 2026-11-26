@@ -31,12 +31,12 @@ async function stub(reply: (seen: Seen) => [number, unknown]): Promise<{ url: st
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen }
 }
 
-function run(env: Record<string, string>): Promise<{ code: number; out: string }> {
+function run(env: Record<string, string>): Promise<{ code: number; out: string; err: string }> {
   // Keep the caller's AGENTX_* out: the test decides whether it is an agent run.
   const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("AGENTX_")))
   return new Promise((resolve) => {
-    execFile("bash", [SCRIPT, "hello"], { env: { ...base, ...env } }, (err, stdout) => {
-      resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, out: stdout })
+    execFile("bash", [SCRIPT, "hello"], { env: { ...base, ...env } }, (err, stdout, stderr) => {
+      resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, out: stdout, err: stderr })
     })
   })
 }
@@ -70,10 +70,39 @@ describe("agentx-bridge skill (#2007 receipt flow)", () => {
     expect(out.trim()).toBe("pong")
   })
 
+  it("a none receipt says the answer is read by its id, not in this chat", async () => {
+    const { url } = await stub(() => [202, { accepted: true, mode: "none", taskId: "dlg-9" }])
+    const { code, out } = await run({ AGENTX_BRIDGE_URL: url, AGENTX_LOCAL: "true", AGENTX_AGENT: "devops-agent", AGENTX_AGENT_ID: "coder-agent" })
+    expect(code).toBe(0)
+    expect(out).toContain('agentx_lookup (handoff: "dlg-9")')
+    expect(out).toContain("/a2a/delegations/dlg-9?as=coder-agent")
+    expect(out).not.toMatch(/comes back to this chat/)
+  })
+
+  it("has no default agent or peer", async () => {
+    const noAgent = await run({ AGENTX_BRIDGE_URL: "http://127.0.0.1:1", AGENTX_LOCAL: "true" })
+    expect(noAgent.code).toBe(1)
+    expect(noAgent.err).toContain("set AGENTX_AGENT")
+    const noPeer = await run({ AGENTX_BRIDGE_URL: "http://127.0.0.1:1", AGENTX_AGENT: "devops-agent" })
+    expect(noPeer.code).toBe(1)
+    expect(noPeer.err).toMatch(/set AGENTX_PEER.*AGENTX_LOCAL=true/)
+  })
+
+  it("a mesh send escapes the message and names the peer", async () => {
+    const { url, seen } = await stub(() => [200, { content: "pong" }])
+    const { code } = await run({ AGENTX_BRIDGE_URL: url, AGENTX_AGENT: "devops-agent", AGENTX_PEER: "box", AGENTX_CHANNEL: "a2a", AGENTX_CHAT_ID: 'a"b' })
+    expect(code).toBe(0)
+    expect(seen.path).toBe("/mesh/task")
+    expect(seen.body).toEqual({ peer: "box", agent: "devops-agent", message: "hello", async: true, context: { channel: "a2a", chatId: 'a"b' } })
+  })
+
   it("teaches the receipt flow", () => {
     const skill = readFileSync(join(__dirname, "../skills/agentx-bridge/SKILL.md"), "utf-8")
     expect(skill).toMatch(/receipt/)
     expect(skill).toContain("Do not wait or poll")
     expect(skill).toContain("AGENTX_AGENT_ID")
+    expect(skill).toContain('mode: "none"')
+    expect(skill).toContain("agentx_send_agent")
+    expect(skill).not.toMatch(/atlas|clawd-server/)
   })
 })

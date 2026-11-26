@@ -18,28 +18,10 @@ MAX_SPEAK_CHARS=300
 CURL_MAX_TIME="${AGENTX_CURL_MAX_TIME:-1800}"
 ASYNC="${AGENTX_ASYNC:-true}"
 
-# Default agent and peer
-AGENT="${AGENTX_AGENT:-atlas}"
-PEER="${AGENTX_PEER:-clawd-server}"
+# No default agent or peer (Anis 11-25: AgentX bare minimum by default).
+AGENT="${AGENTX_AGENT:-}"
+PEER="${AGENTX_PEER:-}"
 LOCAL="${AGENTX_LOCAL:-false}"
-
-# #2007 piece 5 (receipt flow, AgentX >= 0.248.0). Inside an agent run
-# (AGENTX_AGENT_ID is set by the daemon), the send names its caller, so the
-# daemon answers with a 202 receipt at once and the answer comes back to the
-# agent's chat as a new message. The agent never waits. Outside an agent (a
-# person, Claude Code, a script) nothing changes: the send waits as before.
-CALLER="${AGENTX_AGENT_ID:-}"
-CALLER_FIELDS=""
-CALLER_HEADER=()
-if [ -n "$CALLER" ]; then
-  CURL_MAX_TIME=10
-  CALLER_FIELDS=", \"senderAgentId\": \"${CALLER}\""
-  if [ -n "${AGENTX_CHANNEL}" ] && [ -n "${AGENTX_CHAT_ID}" ]; then
-    CALLER_FIELDS="${CALLER_FIELDS}, \"callerChannel\": \"${AGENTX_CHANNEL}\", \"callerChatId\": \"${AGENTX_CHAT_ID}\""
-  fi
-  # A warm process has no task id; the agent plus its chat names the turn.
-  if [ -n "${AGENTX_TASK_ID}" ]; then CALLER_HEADER=(-H "X-AgentX-Task: ${AGENTX_TASK_ID}"); fi
-fi
 
 MESSAGE="$*"
 
@@ -57,18 +39,40 @@ fail() {
   exit "${2:-1}"
 }
 
+command -v jq >/dev/null 2>&1 || fail "jq is needed (install jq)." 1
+[ -n "$AGENT" ] || fail "set AGENTX_AGENT to the agent to send to." 1
+if [ "$LOCAL" != "true" ] && [ -z "$PEER" ]; then
+  fail "set AGENTX_PEER to a mesh peer, or AGENTX_LOCAL=true for an agent on this machine." 1
+fi
 if [ -z "$MESSAGE" ]; then
   fail "no message given" 1
 fi
 
-# Escape message for JSON
-JSON_MESSAGE=$(echo "$MESSAGE" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+# #2007 piece 5 (receipt flow, AgentX >= 0.248.0). Inside an agent run
+# (AGENTX_AGENT_ID is set by the daemon), the send names its caller, so the
+# daemon answers with a 202 receipt at once. The agent never waits. Outside
+# an agent (a person, Claude Code, a script) nothing changes: the send waits.
+CALLER="${AGENTX_AGENT_ID:-}"
+CALLER_HEADER=()
+if [ -n "$CALLER" ]; then
+  CURL_MAX_TIME=10
+  # A warm process has no task id; the agent plus its chat names the turn.
+  if [ -n "${AGENTX_TASK_ID}" ]; then CALLER_HEADER=(-H "X-AgentX-Task: ${AGENTX_TASK_ID}"); fi
+fi
+
+# The JSON body, built by jq so every value is escaped.
+BODY=$(jq -n \
+  --arg agent "$AGENT" --arg message "$MESSAGE" \
+  --arg caller "$CALLER" --arg channel "${AGENTX_CHANNEL:-}" --arg chat "${AGENTX_CHAT_ID:-}" \
+  '{agent: $agent, message: $message}
+   + (if $caller != "" then {senderAgentId: $caller} else {} end)
+   + (if $caller != "" and $channel != "" and $chat != "" then {callerChannel: $channel, callerChatId: $chat} else {} end)') \
+  || fail "could not build the request body." 1
 
 if [ "$LOCAL" = "true" ]; then
   # Send to local agent
   RESPONSE=$(curl -sS --max-time "${CURL_MAX_TIME}" "${AGENTX_URL}/task" \
-    -H "Content-Type: application/json" "${CALLER_HEADER[@]}" \
-    -d "{\"agent\": \"${AGENT}\", \"message\": ${JSON_MESSAGE}${CALLER_FIELDS}}")
+    -H "Content-Type: application/json" "${CALLER_HEADER[@]}" -d "$BODY")
   CURL_RC=$?
 else
   # Send to remote agent via mesh
@@ -76,18 +80,20 @@ else
   # is delivered. AGENTX_CHANNEL/AGENTX_CHAT_ID carry the originating
   # conversation; without them the daemon refuses async rather than
   # accepting a task whose answer it could never deliver.
-  CTX=""
-  if [ -n "${AGENTX_CHANNEL}" ] && [ -n "${AGENTX_CHAT_ID}" ]; then
-    CTX=", \"context\": {\"channel\": \"${AGENTX_CHANNEL}\", \"chatId\": \"${AGENTX_CHAT_ID}\"}"
-  fi
+  USE_CTX="false"
+  if [ -n "${AGENTX_CHANNEL}" ] && [ -n "${AGENTX_CHAT_ID}" ]; then USE_CTX="true"; fi
   USE_ASYNC="${ASYNC}"
-  if [ -z "$CTX" ]; then USE_ASYNC="false"; fi
-
+  if [ "$USE_CTX" = "false" ]; then USE_ASYNC="false"; fi
   # An agent caller's own chat is the way home (receipt flow): no context.
-  if [ -n "$CALLER" ]; then CTX=""; USE_ASYNC="true"; fi
+  if [ -n "$CALLER" ]; then USE_CTX="false"; USE_ASYNC="true"; fi
+  BODY=$(printf '%s' "$BODY" | jq \
+    --arg peer "$PEER" --argjson async "$USE_ASYNC" --argjson ctx "$USE_CTX" \
+    --arg channel "${AGENTX_CHANNEL:-}" --arg chat "${AGENTX_CHAT_ID:-}" \
+    '{peer: $peer} + . + {async: $async}
+     + (if $ctx then {context: {channel: $channel, chatId: $chat}} else {} end)') \
+    || fail "could not build the request body." 1
   RESPONSE=$(curl -sS --max-time "${CURL_MAX_TIME}" "${AGENTX_URL}/mesh/task" \
-    -H "Content-Type: application/json" "${CALLER_HEADER[@]}" \
-    -d "{\"peer\": \"${PEER}\", \"agent\": \"${AGENT}\", \"message\": ${JSON_MESSAGE}, \"async\": ${USE_ASYNC}${CTX}${CALLER_FIELDS}}")
+    -H "Content-Type: application/json" "${CALLER_HEADER[@]}" -d "$BODY")
   CURL_RC=$?
 fi
 
@@ -96,7 +102,7 @@ fi
 if [ "$CURL_RC" -ne 0 ]; then
   if [ "$CURL_RC" -eq 28 ] && [ -n "$CALLER" ]; then
     # R5: never "failed" for an agent. The send may have been taken.
-    echo "Sent to ${AGENT}; it is running and no receipt came back within ${CURL_MAX_TIME}s, so there is no handle. Do not send it again. Its answer comes to this chat as a new message; if nothing comes, ask again later."
+    echo "Sent to ${AGENT}; no receipt came back within ${CURL_MAX_TIME}s, so there is no handle. Do not send it again: the send may still have been taken. If no answer comes to this chat, find the hand-off with GET ${AGENTX_URL}/a2a/delegations and read it by its dlg- id."
     exit 0
   fi
   if [ "$CURL_RC" -eq 28 ]; then
@@ -111,8 +117,16 @@ fi
 # A receipt (202): say where the answer goes, with its handle. Never wait.
 if [ -n "$CALLER" ] && [ "$(printf '%s' "$RESPONSE" | jq -r '.accepted // empty' 2>/dev/null)" = "true" ]; then
   TASK=$(printf '%s' "$RESPONSE" | jq -r '.taskId // empty')
+  MODE=$(printf '%s' "$RESPONSE" | jq -r '.mode // empty')
   NOTE=$(printf '%s' "$RESPONSE" | jq -r '.note // empty')
-  echo "${NOTE:-Sent to ${AGENT} (task ${TASK}). Its answer comes back to this chat as a new message. Do not wait or poll for it.}"
+  # Only a callback (or deliver) receipt brings the answer to a chat. With
+  # mode "none" no turn could be named: the answer is read by its id.
+  if [ "$MODE" = "none" ]; then
+    DEFAULT="Sent to ${AGENT} (task ${TASK}). The answer does not come back to this chat: read it by its id with agentx_lookup (handoff: \"${TASK}\") or GET ${AGENTX_URL}/a2a/delegations/${TASK}?as=${CALLER}. Do not wait or poll for it."
+  else
+    DEFAULT="Sent to ${AGENT} (task ${TASK}). Its answer comes back to this chat as a new message. Do not wait or poll for it."
+  fi
+  echo "${NOTE:-$DEFAULT}"
   exit 0
 fi
 
