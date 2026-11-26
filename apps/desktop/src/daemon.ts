@@ -22,7 +22,7 @@
 
 import { execFile, execFileSync } from "child_process"
 import { existsSync, readFileSync } from "fs"
-import { dirname } from "path"
+import { dirname, isAbsolute, resolve } from "path"
 
 export const DEFAULT_DAEMON_URL = "http://127.0.0.1:18800"
 
@@ -136,11 +136,18 @@ export function startRefusal(s: DaemonStatus | null, target: DaemonTarget, manag
 }
 
 /** The target Restart runs in: AGENTX_CONFIG's folder, else the folder and config the
- *  running daemon reports. Null when neither is known: never a guessed folder such as $HOME. */
+ *  running daemon reports. The daemon's own folder (s.cwd) wins over its config's
+ *  folder, and a relative config (`daemon start -c agentx.json`) is read from that
+ *  folder, never from the app's own. Null when neither is known: never a guessed
+ *  folder such as $HOME. */
 export function restartTarget(target: DaemonTarget, s: DaemonStatus): DaemonTarget | null {
   if (target.cwd) return target
-  if (s.configPath) return { ...target, config: s.configPath, cwd: dirname(s.configPath) }
-  return s.cwd ? { ...target, cwd: s.cwd } : null
+  const config = !s.configPath ? undefined
+    : isAbsolute(s.configPath) ? s.configPath
+    : s.cwd ? resolve(s.cwd, s.configPath) : undefined
+  const cwd = s.cwd || (config ? dirname(config) : undefined)
+  if (!cwd) return null
+  return config ? { ...target, config, cwd } : { ...target, cwd }
 }
 
 /** Single-quote for a POSIX shell. */
@@ -148,11 +155,13 @@ export function shellQuote(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
 }
 
-/** True when the URL's host is this machine (127.0.0.1, ::1 or localhost). */
+/** True when the URL's host is this machine: 127.0.0.0/8, [::1] or localhost.
+ *  0.0.0.0 is a listen address, not a loopback one: it counts as another machine,
+ *  as does anything that is not a URL (a bare "::1"). */
 export function isLoopbackUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase()
-    return host === "127.0.0.1" || host === "[::1]" || host === "::1" || host === "localhost"
+    return /^127(\.\d{1,3}){3}$/.test(host) || host === "[::1]" || host === "localhost"
   } catch {
     return false
   }

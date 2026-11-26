@@ -3,7 +3,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import daemon from "../dist/daemon.js"
 
 const { daemonTarget, cliArgs, shellQuote, readStatus, canStop, stopDaemon, isLoopbackUrl, isAgentxProcess, managedService, startRefusal, DEFAULT_DAEMON_URL } = daemon
@@ -55,8 +55,8 @@ test("Stop only signals a shell-started daemon's own pid", () => {
 })
 
 test("Stop is off for a daemon on another machine (its pid is not ours)", async () => {
-  assert.ok(["http://127.0.0.1:1", "http://localhost:1", "http://[::1]:1"].every(isLoopbackUrl))
-  assert.ok(!["http://10.0.0.5:18800", "http://box.example:18800", "not a url"].some(isLoopbackUrl))
+  assert.ok(["http://127.0.0.1:1", "http://127.0.1.1:1", "http://127.255.255.254:1", "http://localhost:1", "http://[::1]:1"].every(isLoopbackUrl))
+  assert.ok(!["http://10.0.0.5:18800", "http://box.example:18800", "not a url", "::1", "http://0.0.0.0:18800", "http://128.0.0.1:1", "http://127.0.0.1.example:1"].some(isLoopbackUrl))
   const shell = (url) => (url.endsWith("/health") ? reply(true, {}) : reply(true, { pid: 7, service: { kind: "none" } }))
   const far = await readStatus({ ...T, url: "http://10.0.0.5:18800" }, shell)
   assert.deepEqual(far, { running: true, pid: 7, service: "none", remote: true })
@@ -102,7 +102,14 @@ test("Restart runs in the daemon's own folder, never a guessed one", async () =>
   const T0 = { url: "http://127.0.0.1:1", cli: "agentx" }
   assert.equal(restartTarget(T0, { running: true }), null)
   assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax" }), { ...T0, cwd: "/srv/ax" })
-  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/etc/ax" })
+  // The daemon's own folder wins over its config's folder.
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/srv/ax" })
+  assert.deepEqual(restartTarget(T0, { running: true, configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/etc/ax" })
+  // `daemon start -c agentx.json`: a relative config is read from the daemon's folder, not the app's ".".
+  // resolve() gives the platform's own form (a drive letter on Windows).
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "agentx.json" }), { ...T0, config: resolve("/srv/ax", "agentx.json"), cwd: "/srv/ax" })
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "conf/agentx.json" }), { ...T0, config: resolve("/srv/ax", "conf/agentx.json"), cwd: "/srv/ax" })
+  assert.equal(restartTarget(T0, { running: true, configPath: "agentx.json" }), null)
   const pinned = { ...T0, config: "/a/agentx.json", cwd: "/a" }
   assert.equal(restartTarget(pinned, { running: true, cwd: "/b" }), pinned)
   await assert.rejects(runCli(T0, ["daemon", "restart"]), /AGENTX_CONFIG/)
