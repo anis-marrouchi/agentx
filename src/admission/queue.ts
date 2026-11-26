@@ -28,6 +28,13 @@
 // A helper run started by a running session (a delegation) may go
 // delegationHeadroom over the cap: its parent holds a place while it
 // waits for the helper, so without headroom a full node deadlocks.
+//
+// Start hold (#2360): `agentx daemon upgrade` holds every new start while
+// it waits for the running count to reach 0. Waiting runs stay queued and
+// the held time does not count toward maxWaitMinutes. Owner and critical
+// runs are held too; only delegated helpers start, since their parent is
+// running and waits on them. The hold ends when released or at its own
+// deadline, so a dead upgrade job cannot leave the queue shut.
 
 //
 // Idle sessions give their memory back (noqta/noqta#509): while a run waits
@@ -173,6 +180,17 @@ export interface AdmissionRequest {
    *  waits is what sees the time pass. */
   longWait?: { afterMs: number; notify: (w: HeldWait) => void }
   signal?: AbortSignal
+}
+
+/** A start hold (#2360) as GET /daemon/restart and /api/queue show it. */
+export interface StartHold {
+  by: string
+  since: string
+  until: string
+  /** Runs waiting in the queue right now. */
+  waiting: number
+  /** Runs going right now. */
+  running: number
 }
 
 /** What a long-waiting run is told: how long, what holds it, and where it
@@ -336,6 +354,7 @@ export class AdmissionQueue {
   private lastReasons: string[] = []
   private lastCloseRoundAt: number | null = null
   private saidNothingToClose = false
+  private hold: { by: string; since: number; until: number } | null = null
   private readonly bootAt: number
 
   constructor(
@@ -412,6 +431,51 @@ export class AdmissionQueue {
 
   get waitingCount(): number {
     return this.waiting.length
+  }
+
+  /** Holds new starts until `untilMs` or releaseHold() (#2360). A second
+   *  call moves the deadline and keeps the first start time. */
+  holdStarts(by: string, untilMs: number): StartHold {
+    const now = this.now()
+    if (!this.holding(now)) {
+      this.hold = { by, since: now, until: untilMs }
+      this.log(`[admission] new starts held for ${by} until ${new Date(untilMs).toISOString()}; ${this.waiting.length} waiting, ${this.running.size} running`)
+    } else this.hold = { ...this.hold!, by, until: untilMs }
+    return this.startHold!
+  }
+
+  /** Ends the hold and starts what may start; null when none was on. */
+  releaseHold(): StartHold | null {
+    const state = this.startHold
+    if (!state) return null
+    this.endHold(this.now(), "released")
+    void this.pump()
+    return state
+  }
+
+  get startHold(): StartHold | null {
+    if (!this.holding(this.now())) return null
+    const h = this.hold!
+    return { by: h.by, since: new Date(h.since).toISOString(), until: new Date(h.until).toISOString(), waiting: this.waiting.length, running: this.running.size }
+  }
+
+  /** The hold is on; one past its deadline ends here. */
+  private holding(now: number): boolean {
+    if (!this.hold) return false
+    if (now < this.hold.until) return true
+    this.endHold(now, "expired")
+    return false
+  }
+
+  /** The held time does not count toward maxWaitMinutes: each run's node
+   *  clock moves forward by it. */
+  private endHold(now: number, how: "released" | "expired"): void {
+    const h = this.hold
+    if (!h) return
+    this.hold = null
+    const heldMs = Math.max(0, Math.min(now, h.until) - h.since)
+    for (const e of this.waiting) if (e.nodeHeldSince !== null) e.nodeHeldSince = Math.min(now, e.nodeHeldSince + heldMs)
+    this.log(`[admission] start hold for ${h.by} ${how} after ${Math.round(heldMs / 1000)}s; ${this.waiting.length} waiting`)
   }
 
   private drop(e: Entry): void {
@@ -501,8 +565,15 @@ export class AdmissionQueue {
     // held it, which a critical run behind it is not held by (#1807).
     let holdAll = "none" as "none" | "soft" | "all"
     let heldByResources = false
+    const hold = this.holding(now) ? this.hold : null
     for (const e of this.ordered()) {
       const waitedMs = now - e.enqueuedAt
+      // Start hold (#2360): kept in the queue, its node clock stopped.
+      if (hold && !e.delegated) {
+        e.blockedBy = [`start hold: ${hold.by}`]
+        this.noticeLongWait(e, waitedMs)
+        continue
+      }
       // Only time the node held it counts: waiting for its own busy agent
       // is the agent's queue, which never gives up.
       if (s.maxWaitMinutes > 0 && e.nodeHeldSince !== null && now - e.nodeHeldSince >= s.maxWaitMinutes * 60_000) {
@@ -662,6 +733,7 @@ export class AdmissionQueue {
       })),
       waiting,
       next: waiting[0] ?? null,
+      hold: this.startHold,
     }
   }
 
@@ -684,4 +756,6 @@ export interface AdmissionSnapshot {
   running: Array<{ id: string; agentId: string; channel: string; chatId: string | null; priority: AdmissionPriority; class: string | null; label: string; startedAt: string; waitedSeconds: number }>
   waiting: Array<{ position: number; id: string; agentId: string; channel: string; chatId: string | null; priority: AdmissionPriority; class: string | null; label: string; waitingSeconds: number; blockedBy: string[] }>
   next: AdmissionSnapshot["waiting"][number] | null
+  /** New starts held for a daemon upgrade (#2360); null when not. */
+  hold?: StartHold | null
 }

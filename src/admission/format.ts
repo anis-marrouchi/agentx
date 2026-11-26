@@ -27,6 +27,7 @@ export function formatQueue(s: AdmissionSnapshot, now = Date.now()): string {
   }
   out.push("")
   out.push(s.gate.open ? "Gate: open" : `Gate: closed — ${s.gate.reasons.join("; ")}`)
+  if (s.hold) out.push(`Starts held: ${s.hold.by}, since ${s.hold.since}, until ${s.hold.until} (waiting runs stay queued)`)
   const classes = Object.entries(s.caps.classes).map(([n, c]) => `${n} ${c.running}/${c.max}`)
   out.push(`Caps: ${s.running.length}/${s.caps.maxSessions ?? "?"} sessions (owner +${s.caps.ownerExtraSessions}, helpers +${s.caps.delegationHeadroom})${classes.length ? `; ${classes.join(", ")}` : ""}`)
   if (s.warmUp.active) {

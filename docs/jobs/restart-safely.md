@@ -69,7 +69,9 @@ A release folder is a built copy of AgentX: a folder that holds `dist/cli.js`. W
    ```
 4. Read what it prints. It starts a one-time background job, then shows that job's log:
    - `better-sqlite3 with /usr/local/bin/node: loaded (modules 127)` first. The upgrade loads the release's database module with the same Node that launchd runs the daemon with. If it doesn't load (the folder was built with another Node), it rebuilds the module for that Node and says `rebuilt`. If that fails too, it ends with `RESULT refused` and changes nothing.
+   - `new run starts held until …; 12 queued run(s) kept, 2 running` once it begins to wait. From here no new run starts on this node, so the running ones can finish even when the queue is full. Runs that arrive meanwhile wait in the queue; none is dropped, and the time held does not count toward `admission.maxWaitMinutes`. Only helper runs that a running task started itself still start, since that task waits on them. `agentx queue` shows `Starts held` while this is on.
    - `waiting: 2 task(s) running` while agents are still busy.
+   - `switching with 12 queued run(s) held` once no task is running.
    - `… 1 path(s) → /opt/agentx/releases/2.4.0` for the daemon and for every other running job that uses the same release folder, such as the dashboard.
    - `daemon answers: 2.4.0 PID … after 95s` once the new daemon answers.
    - `RESULT ok` at the end.
@@ -77,6 +79,8 @@ A release folder is a built copy of AgentX: a folder that holds `dist/cli.js`. W
 The work runs in its own launchd job (`<daemon label>.upgrade`), so it carries on even when the command was typed by an agent that stops along with the daemon. That job runs once. It is never started again, and it doesn't run at login.
 
 If the new release doesn't answer within `--boot-timeout`, the command puts the old settings files back, starts the old release, and ends with `RESULT rolled-back`. The outcome is also written to `.agentx/upgrade/last.json`, and a copy of each settings file to `.agentx/upgrade/backup-<time>/`.
+
+If the upgrade is refused or rolled back, it reopens new run starts (`new run starts reopened` in the log) and the queued runs start as usual. If the upgrade job itself dies, the daemon reopens them on its own `--timeout` plus 10 minutes after the hold began. `drain` in `last.json` records when the hold began (`startedAt`), how many runs were queued then and at the end (`heldAtStart`, `heldAtEnd`), how long it took to reach no running task (`idleAfterSeconds`) and, when starts were reopened, when (`reopenedAt`). An older daemon that cannot hold starts logs `this daemon cannot hold new run starts` and the upgrade waits for idle as before.
 
 Once the new release answers `/health`, two more checks run (#2227):
 
@@ -88,7 +92,7 @@ Options:
 | Option | What it does |
 |---|---|
 | `--expect-version <version>` | Refuse to start unless the release folder reports this version. |
-| `--timeout <minutes>` | How long to wait for running tasks to finish. The default is 60. When the wait runs out, nothing is changed. |
+| `--timeout <minutes>` | How long to wait for running tasks to finish, with new run starts held. The default is 60. When the wait runs out, nothing is changed and new runs start again. |
 | `--force` | When `--timeout` runs out, upgrade anyway. Running tasks still get the usual time to finish. |
 | `--people-only` | Wait only for runs a person is waiting on, such as a chat, an email or a call. Runs that are the agents' own work (one agent asking another, schedules, workflow steps, GitHub and GitLab events) are not waited for. They get the usual time to finish, then they are stopped. The log names each one, and so does `cut` in `.agentx/upgrade/last.json`. |
 | `--boot-timeout <minutes>` | How long the new daemon may take to answer before rolling back. The default is 5. |
@@ -364,7 +368,7 @@ To check that work past its time limit is picked up:
 To check an upgrade on a Mac:
 
 1. **Terminal:** run `agentx daemon upgrade <release-folder> --dry-run`. It names the release folder in use now and the new one.
-2. **Terminal:** run it again without `--dry-run`. It ends with `RESULT ok`.
+2. **Terminal:** run it again without `--dry-run`. It logs `new run starts held` and ends with `RESULT ok`, also on a busy node with runs waiting in the queue.
 3. **Terminal:** `curl -s http://127.0.0.1:18800/health` shows the new `version`.
 4. **Terminal:** `launchctl list | grep upgrade` lists no running upgrade job, and `ls ~/Library/LaunchAgents | grep upgrade` lists nothing.
 
@@ -376,6 +380,7 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **`restart` stops and prints a `sudo systemctl restart …` command:** `sudo` needed a password and no terminal was attached. AgentX is still running. Run the printed command yourself, or allow that one command in `sudoers`.
 - **`restart` says `The daemon did not come back within 5 min`:** the new daemon didn't start, or starts slowly. Check `curl -s http://127.0.0.1:18800/health` once more. If it still doesn't answer, run the `Start it with:` command it printed, then read `agentx daemon logs`.
 - **`upgrade` says `Another upgrade is running`:** wait for it to end. Its log is the newest `.agentx/logs/upgrade-*.log`.
+- **New runs do not start after an upgrade ended:** run `agentx queue`. If it shows `Starts held`, the hold ends by itself at the time it shows; to end it now, run `curl -s -X POST http://127.0.0.1:18800/daemon/upgrade/hold/release`.
 - **`upgrade` ends with `RESULT refused`:** nothing was changed. The reason follows: tasks still running (raise `--timeout` or add `--force`), the wrong version, a settings file that doesn't run a release folder, or `better-sqlite3 does not load with the daemon's Node`. For that last one, run the `pnpm rebuild better-sqlite3` command it prints inside the release folder, then run `upgrade` again. If the reason is `daemon did not answer 24 checks in a row`, AgentX stopped answering for about 10 minutes while the upgrade waited for it to be idle: check `curl -s http://127.0.0.1:18800/health`, then run `upgrade` again. A daemon that is only slow for a minute or two no longer stops the upgrade.
 - **`upgrade` ends with `RESULT rolled-back`:** the new release didn't answer in time and the old one is running again. Read `agentx daemon logs` for why the new one failed to start.
 - **`upgrade` ends with `RESULT degraded`:** the new release runs and answers `/health`, but the Hub page or the chat route failed. Read `hub` in `.agentx/upgrade/last.json`: its `detail` says why each check failed, such as `fetch failed: connect ECONNREFUSED 127.0.0.1:4202`. Then read the dashboard logs, `~/.agentx/logs/dashboard-stdout.log` and `~/.agentx/logs/dashboard-stderr.log`. Nothing was rolled back.

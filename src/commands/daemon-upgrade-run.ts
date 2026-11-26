@@ -12,7 +12,7 @@ import {
   upgradeJobLabel, type HubProbe, type PeerSkew, type UpgradeOutcome,
 } from "@/daemon/upgrade"
 import { dashboardBaseUrl } from "./start-plan"
-import { daemonBase, drainLimitMs, getJson, readHolding, readInflight, readRunning } from "./daemon-http"
+import { daemonBase, drainLimitMs, getJson, postJson, readHolding, readInflight, readRunning } from "./daemon-http"
 
 // The upgrade itself, run inside the one-shot launchd job that
 // `agentx daemon upgrade` starts. Everything goes to stdout, which launchd
@@ -45,6 +45,10 @@ export function releaseVersion(dir: string): string | null {
  *  was refused after six 3 s misses (about a minute) on a busy node. */
 export const IDLE_READ_TIMEOUT_MS = 15_000
 export const IDLE_MAX_MISSES = 24
+
+/** The start hold outlasts the idle wait by this much, so it covers the
+ *  switch; past it the daemon reopens starts by itself (#2360). */
+export const HOLD_MARGIN_MIN = 10
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const log = (s: string) => console.log(`${new Date().toISOString()} ${s}`)
@@ -174,7 +178,26 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   if (!native.ok) return finish("refused", `${native.detail}; nothing changed`)
   log(`better-sqlite3 with ${daemonNode}: ${native.detail}`)
 
-  // 1. Idle. With --people-only, only runs a person is waiting on count.
+  // 1. Drain (#2360): hold new run starts, so the running count can reach 0
+  // on a busy node. Queued runs stay queued. An older daemon cannot hold;
+  // then this is the plain wait for idle.
+  const hold = await postJson(`${base}/daemon/upgrade/hold`, { minutes: o.timeoutMin + HOLD_MARGIN_MIN, by: "agentx daemon upgrade" }, 10_000)
+  const drainT0 = Date.now()
+  if (typeof hold?.waiting === "number") {
+    outcome.drain = { startedAt: new Date(drainT0).toISOString(), heldAtStart: hold.waiting }
+    log(`new run starts held until ${hold.until}; ${hold.waiting} queued run(s) kept, ${hold.running} running`)
+  } else log("this daemon cannot hold new run starts; waiting for idle as before")
+  /** Reopens starts on this daemon; best effort, the hold also ends by itself. */
+  const reopen = async () => {
+    if (!outcome.drain) return
+    const r = await postJson(`${base}/daemon/upgrade/hold/release`, {}, 10_000)
+    if (typeof r?.waiting === "number") outcome.drain.heldAtEnd = r.waiting
+    outcome.drain.reopenedAt = new Date().toISOString()
+    log(`new run starts reopened${typeof r?.waiting === "number" ? `; ${r.waiting} queued run(s) can start` : ""}`)
+  }
+  const refuse = async (reason: string) => { await reopen(); return finish("refused", reason) }
+
+  // With --people-only, only runs a person is waiting on count.
   const what = o.peopleOnly ? "run(s) with a person waiting" : "task(s) running"
   const idle = await waitForIdle({
     // A busy daemon can take well over 3 s to answer, or miss a few checks in
@@ -183,11 +206,19 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
     intervalMs: 10_000, timeoutMs: o.timeoutMin * 60_000, maxUnreachable: IDLE_MAX_MISSES,
     onCheck: (n) => { if (n) log(`waiting: ${n} ${what}`) },
   })
-  if (idle.outcome === "unreachable") return finish("refused", `daemon did not answer ${IDLE_MAX_MISSES} checks in a row (about ${Math.round(IDLE_MAX_MISSES * (10_000 + IDLE_READ_TIMEOUT_MS) / 60_000)} min) while waiting for idle; nothing changed`)
+  if (idle.outcome === "unreachable") return refuse(`daemon did not answer ${IDLE_MAX_MISSES} checks in a row (about ${Math.round(IDLE_MAX_MISSES * (10_000 + IDLE_READ_TIMEOUT_MS) / 60_000)} min) while waiting for idle; nothing changed`)
   if (idle.outcome === "timeout") {
-    if (!o.force) return finish("refused", `still ${idle.inflight ?? "some"} ${what} after ${o.timeoutMin} min; nothing changed (use --force)`)
+    if (!o.force) return refuse(`still ${idle.inflight ?? "some"} ${what} after ${o.timeoutMin} min; nothing changed (use --force)`)
     log(`still ${idle.inflight ?? "some"} ${what}; restarting anyway (--force), they get the usual drain time`)
-  } else log(o.peopleOnly ? "no person is waiting on a run" : "no tasks running")
+  } else {
+    log(o.peopleOnly ? "no person is waiting on a run" : "no tasks running")
+    if (outcome.drain) outcome.drain.idleAfterSeconds = Math.round((Date.now() - drainT0) / 1000)
+  }
+  if (outcome.drain) {
+    const held = (await getJson(`${base}/daemon/restart`, IDLE_READ_TIMEOUT_MS))?.startHold?.waiting
+    if (typeof held === "number") outcome.drain.heldAtEnd = held
+    log(`switching with ${outcome.drain.heldAtEnd ?? "?"} queued run(s) held`)
+  }
   if (o.peopleOnly) {
     const cut = runsToCut((await readRunning(base)) ?? [])
     outcome.cut = cut
@@ -206,7 +237,7 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   for (const j of jobs) {
     const r = retargetPlist(readFileSync(j.plist, "utf-8"), oldDir, o.dir)
     writeFileSync(j.plist, r.text)
-    if (!plistValid(j.plist)) { restore(); return finish("refused", `${j.plist} invalid after the switch; restored, nothing restarted`) }
+    if (!plistValid(j.plist)) { restore(); return refuse(`${j.plist} invalid after the switch; restored, nothing restarted`) }
     log(`${j.label}: ${r.count} path(s) → ${o.dir}`)
   }
   log(`backups in ${bak}`)
@@ -239,6 +270,8 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   restore()
   await reloadJob(daemon, daemonPlist, { drainLimitMs: drain, log })
   const back = await waitHealth(base, bootMs, (h) => !!h && (!outcome.from.version || h.version === outcome.from.version))
+  // A restarted daemon starts without a hold; one that never stopped still has it.
+  if (back) await reopen()
   // The other jobs were never reloaded; their restored files are enough.
   return back
     ? finish("rolled-back", `${version} did not come up; back on ${outcome.from.version ?? oldDir}`)

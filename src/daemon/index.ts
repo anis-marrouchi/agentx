@@ -8346,12 +8346,17 @@ export class AgentXDaemon {
           inflight: () => this.inflightCounts(),
           running: () => this.runningSummaries(),
           policy: this.config.shutdown?.restart,
+          hold: {
+            start: (by, untilMs) => this.registry.admission.holdStarts(by, untilMs),
+            release: () => this.registry.admission.releaseHold(),
+            state: () => this.registry.admission.startHold,
+          },
           service: () => this.restartService(),
           pid: process.pid,
           cwd: process.cwd(),
           configPath: this.configPath,
         })
-        if (req.method === "POST" && reply.status < 300) {
+        if (req.method === "POST" && reply.status < 300 && path.startsWith("/daemon/restart")) {
           const st = this.idleRestart.state()
           this.log(`  Restart when idle: ${path.endsWith("/cancel") ? "cancelled" : `${st.state} (requested by ${st.requestedBy}, until ${st.state === "deferred" ? st.until : st.deadline}, then ${st.onTimeout})`}`)
         }
