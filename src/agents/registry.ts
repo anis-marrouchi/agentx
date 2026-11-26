@@ -862,11 +862,13 @@ interface AgentState {
 }
 
 /** The answer to an awaited caller refused on a home (#2084): another run
- *  of the agent held it past the caller's wait budget. Never run. */
-function homeBusy(agentId: string, home: string, holder: string, waitedMs: number): AgentResponse {
+ *  of the agent held it past the caller's wait budget. Not run now; when
+ *  `kept`, the message waits as a notice for the agent's next run (#2337). */
+function homeBusy(agentId: string, home: string, holder: string, waitedMs: number, kept = false): AgentResponse {
+  const outcome = kept ? "not run now; kept as a notice for its next run, do not send it again" : "not run"
   return {
     content: "",
-    error: `home_busy: agent "${agentId}" is already working on ${home} (${holder}); waited ${Math.round(waitedMs / 60_000)} min, not run`,
+    error: `home_busy: agent "${agentId}" is already working on ${home} (${holder}); waited ${Math.round(waitedMs / 60_000)} min, ${outcome}`,
     errorKind: "agent_busy",
   }
 }
@@ -2169,6 +2171,17 @@ export class AgentRegistry {
     if (notAdmitted) return notAdmitted
     const awaited = channel !== "gitlab" && channel !== "github" && !wokenJobId(task.context)
     const deadline = awaited ? start + (task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS) : undefined
+    // Wait for a slot before taking the lease (#2337), so holding it means
+    // running on the home now: a run still in the slot queue no longer
+    // spends the budget of the runs behind it. A forge comment queues at
+    // once when the slots are full, so it never waits here. Checked first
+    // without an await, so a run with a free slot joins the line in the
+    // order it came.
+    const agentState = this.agents.get(task.agentId)
+    if (channel !== "gitlab" && channel !== "github" && agentState && this.slotFull(agentState)) {
+      const noSlot = await this.waitForFreeSlot(task, deadline ?? start + (task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS), `${channel}:${chatId}`)
+      if (noSlot) return noSlot
+    }
     const entry = await this.workLanes.enterHome(task.agentId, home, {
       deadline,
       signal: task.callerSignal,
@@ -2180,7 +2193,8 @@ export class AgentRegistry {
     })
     if (isHomeRefusal(entry)) {
       if (entry.refused === "caller_gone") return this.callerGone(task, `the wait for ${home}`)
-      return homeBusy(task.agentId, home, entry.taskId ?? entry.holderId, entry.waitedMs)
+      const kept = this.keepRefused(task, home, channel, chatId)
+      return homeBusy(task.agentId, home, entry.taskId ?? entry.holderId, entry.waitedMs, kept)
     }
     // Let the run ahead finish its own wrap-up (a hand-off frees its
     // session there) before this one reads which session to continue.
@@ -2211,7 +2225,8 @@ export class AgentRegistry {
       // The lane wait used the budget up and the slot wait ran out after it.
       if (entry.waitedMs > 0 && response.errorKind === "agent_busy" && /slot wait timed out/.test(response.error ?? "")) {
         emitSignal({ kind: "home_busy", agentId: task.agentId, ref: home, detail: `${channel} refused: no slot within the wait budget left after the lane` })
-        response = homeBusy(task.agentId, home, "a busy slot", Date.now() - start)
+        const kept = this.keepRefused(task, home, channel, chatId)
+        response = homeBusy(task.agentId, home, "a busy slot", Date.now() - start, kept)
       }
     } finally {
       const queued = !!response.error && isQueued(response.error)
@@ -2223,6 +2238,39 @@ export class AgentRegistry {
       else release()
     }
     return response
+  }
+
+  /** Wait until the agent has a free slot, up to `by` (epoch ms). The slot
+   *  is not taken here: the run takes it in executeInternal, so another
+   *  run can still take it first, and the run then waits there as before.
+   *  Null: a slot is free. */
+  private async waitForFreeSlot(task: AgentTask, by: number, chat: string): Promise<AgentResponse | null> {
+    const state = this.agents.get(task.agentId)
+    if (!state || !this.slotFull(state)) return null
+    const waitMs = Math.max(0, by - Date.now())
+    const waitLabel = waitMs < 60_000 ? `${Math.max(1, Math.ceil(waitMs / 1000))}s` : `${Math.round(waitMs / 60_000)}m`
+    this.log(`[${task.agentId}] busy, waiting for a slot before its home (up to ${waitLabel}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${chat}`)
+    while (this.slotFull(state)) {
+      if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
+      if (Date.now() >= by) {
+        this.log(`[${task.agentId}] slot wait timed out after ${waitLabel} chat=${chat} — message not run`)
+        return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${waitLabel}`, errorKind: "agent_busy" }
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    return null
+  }
+
+  /** A message refused on a busy home is not lost (#2337): it waits as a
+   *  notice for the agent's next run of agent work (notices.ts), or runs on
+   *  its own within the notice hold. An event wake is left out: its waker
+   *  holds the wake and sends it again. True: kept. */
+  private keepRefused(task: AgentTask, home: string, channel: string, chatId: string): boolean {
+    if (channel === "events") return false
+    const sender = typeof task.context?.sender === "string" ? task.context.sender : `${channel}:${chatId}`
+    this.notices.add(task.agentId, sender, `Refused on ${home} while another run of yours held it (home_busy); kept so it is not lost. Message:\n${task.message}`)
+    this.log(`[${task.agentId}] ${home}: refused message from ${channel}:${chatId} kept as a notice for the next run`)
+    return true
   }
 
   /** A run still going 5 min past its time limit on a home (#2084): stop
