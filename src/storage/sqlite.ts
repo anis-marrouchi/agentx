@@ -436,6 +436,10 @@ function runMigrations(db: Database.Database): void {
   // Without it that read walks every run on record. Partial: most runs
   // carry no person, and those rows stay out of the index.
   db.exec("CREATE INDEX IF NOT EXISTS idx_traces_person_started ON task_traces(person, started_at) WHERE person IS NOT NULL")
+  // The month's cost sums for the budgets card and the daemon's budget
+  // seed (#2322). Covering: the three sums in traces.ts read only these
+  // columns, so they walk the index and never touch the ~1 KB rows.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_traces_started_cost ON task_traces(started_at, agent_id, chat_id, cost_usd, input_tokens, output_tokens)")
   // Messages waiting behind a busy agent, with who sent them (#443). By
   // name, not by version number, for the same reason as the columns above.
   ensureQueuedMessagesTable(db)
