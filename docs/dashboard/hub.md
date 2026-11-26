@@ -392,6 +392,14 @@ Long pages start short, and you choose what to open. The Hub remembers your choi
 1. **Browser:** open **Settings** › **Layout** and select **Reset layout**.
 2. The page reloads with the side menu and the right panel at their first widths and expanded, and every section and list folded as the first time. Only this browser is changed.
 
+### Check the folds worked
+
+Fold a section, for example **Fleet** in Settings, and reload the page: it stays folded. Select **Reset layout**: after the reload it is open again.
+
+### If the folds are wrong
+
+A section that will not stay folded means the browser keeps nothing for the page (a private window, or site data blocked); the Hub then starts each page as the first time. Allow site data for the Hub, or use a normal window.
+
 ### See a run's files
 
 **Files** shows what a run, or every run of a chat, did to files, and the agent's workspace (the folder it works in). Its tab is always the first one in the panel.
