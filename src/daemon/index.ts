@@ -258,6 +258,7 @@ import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
+import { readAccountsPlanUsage } from "@/agents/plan-usage-accounts"
 import { activeCliDir } from "@/agents/cli-accounts"
 import { NodeEnvironment } from "@/node-env"
 import { formatNode } from "@/node-env/format"
@@ -8333,10 +8334,11 @@ export class AgentXDaemon {
         // Codex's limits as its last run on this machine wrote them, for the
         // account new runs use (#2101 R28b). Read only on the GET, at most
         // once a minute (codex-plan-usage.ts CODEX_USAGE_CACHE_MS).
-        const codex = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
-          ? await readCodexPlanUsageCached(activeCliDir("codex"))
-          : undefined
-        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex })
+        const isGet = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
+        const codex = isGet ? await readCodexPlanUsageCached(activeCliDir("codex")) : undefined
+        // Each added CLI account's own reading (#2101 R28d, plan-usage-accounts.ts).
+        const accounts = isGet ? await readAccountsPlanUsage().catch(() => undefined) : undefined
+        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex, accounts })
         const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted
         if (lifted) this.log(`  Claude plan holds lifted by operator: ${lifted.map((s) => s.window).join(", ") || "none active"}`)
         this.json(res, reply.status, reply.body)
