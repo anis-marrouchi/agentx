@@ -1,4 +1,4 @@
-// The React Settings (#2101 ST1): one search index made from the panes' row
+// The React Settings (#2101 ST1, ST2a): one search index made from the panes' row
 // definitions (Hakim's condition 1), the review id owner only (condition 2),
 // and the General pane drawn from its data with every row in search.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -21,6 +21,14 @@ import { cronHuman, hookState, hookUrl, inboxBody, inboxChanged, inboxForm, valu
 import { SETTINGS_GROUPS, SETTINGS_PANES, paneDef, rowDef } from "../src/hub/settings/panes"
 import { buildSettingsIndex, searchSettings } from "../src/hub/settings/search"
 import { TooltipProvider } from "../src/hub/ui"
+import ActionsPane from "../src/hub/settings/ActionsPane"
+import AgentPane from "../src/hub/settings/AgentPane"
+import { FilesTab } from "../src/hub/settings/AgentFiles"
+import { ChannelsTab, HandoversTab, integrationBadge } from "../src/hub/settings/AgentLinks"
+import {
+  type AgentConfig, type AgentState, type CronRow, actionUsers, agentPatch, alsoLines, changedFields, inputsText, modelTier, parseInputs, restartWords, savedValue, showValue,
+} from "../src/hub/settings/agent-data"
+import { engineName } from "../src/hub/settings/data"
 
 const state = {
   exists: true,
@@ -71,6 +79,14 @@ describe("Settings search: made from the row definitions (condition 1)", () => {
     for (const p of SETTINGS_PANES) {
       expect(index.some((e) => e.pane === p.id && e.row === "")).toBe(true)
       for (const r of p.rows) expect(index.some((e) => e.pane === p.id && e.row === r.id)).toBe(true)
+    }
+  })
+  it("every row of every pane is found by its own label (Hakim's review)", () => {
+    for (const p of SETTINGS_PANES) {
+      for (const r of p.rows) {
+        const hits = searchSettings(index, r.label)
+        expect(hits.some((h) => h.pane === p.id && h.row === r.id), `${p.id} › ${r.label} is not found by its label`).toBe(true)
+      }
     }
   })
   it("every row the General pane draws is in search", () => {
@@ -390,5 +406,137 @@ describe("Settings › Inbox: a draft with one Save", () => {
     expect(inboxBody(saved, { ...saved, topic: "tk_secret-value!" })).toHaveProperty("error")
     expect(inboxBody(saved, { ...saved, chat: "" })).toHaveProperty("error")
     expect(inboxBody(saved, { ...saved, volume: "2" })).toHaveProperty("error")
+  })
+})
+
+// --- ST2a: Agent and Actions (#2101) ---
+
+const agentState = {
+  ...state,
+  agents: [
+    { ...state.agents[0], mentions: ["@dev", "@dev-session"], systemPrompt: "You are the lead developer.", maxConcurrent: 2, maxExecutionMinutes: 45, permissionMode: "default", wikiAbsorb: true,
+      integrations: [{ kind: "gitlab-user", label: "GitLab", credentials: { tokenEnv: "GITLAB_DEV_TOKEN" }, credStatus: { tokenEnv: "set" }, metadata: { host: "gitlab.example.com" } },
+        { kind: "sentry", label: "Sentry", credentials: { tokenEnv: "SENTRY_AUTH_TOKEN" }, credStatus: { tokenEnv: "unset" } }] },
+    ...state.agents.slice(1),
+  ],
+  telegram: { enabled: true, accounts: [{ id: "dev", botUsername: "example_dev_bot", agentBinding: "dev-session" }] },
+  crons: [{ id: "nightly", agent: "dev-session", model: "" }, { id: "weekly", agent: "dev-session", model: "claude-haiku-5-5" }],
+  actions: [
+    { id: "deploy-staging", title: "Deploy staging", kind: "shell", command: "make deploy VERSION={{version}}", inputs: [{ name: "version", type: "string", required: true }, { name: "dryRun", type: "boolean" }] },
+    { id: "notify-release", title: "Post release to Slack", kind: "http", method: "POST", url: "https://hooks.example.com/$HOOK", inputs: [] },
+  ],
+} as unknown as AgentState & { agents: AgentConfig[]; crons: CronRow[] }
+const workflows = { workflows: [{ id: "release-train", nodes: [{ type: "action.run", config: { actionId: "deploy-staging" } }, { type: "action.run", config: { actionId: "notify-release" } }] }, { id: "ci-watch", nodes: [{ type: "trigger.poll", config: { actionId: "deploy-staging" } }] }] }
+
+function render(el: ReturnType<typeof createElement>, data: [unknown[], unknown][] = []): string {
+  const client = new QueryClient()
+  client.setQueryData(["settings", "state"], agentState)
+  client.setQueryData(["settings", "org"], org)
+  client.setQueryData(["settings", "live"], live)
+  client.setQueryData(["settings", "tokens"], tokens)
+  for (const [k, v] of data) client.setQueryData(k, v)
+  ;(globalThis as { location?: unknown }).location ??= { hash: "#page=settings-preview&section=agent&agent=dev-session" }
+  return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, el)))
+}
+const rowsIn = (html: string) => [...html.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1])
+
+describe("Settings › Agent (#2101 ST2a)", () => {
+  const agent = agentState.agents[0]
+  const tabs = () => [
+    render(createElement(AgentPane)),
+    render(createElement(FilesTab, { agent, part: "identity" }), [[["settings", "files", "dev-session"], { identity: [{ path: "AGENTS.md", title: "How it works", size: 6300, exists: true }, { path: "MEMORY.md", title: "MEMORY.md", size: 0, exists: false }], skills: [{ slug: "release-notes", title: "Write release notes", size: 900, path: ".claude/skills/release-notes/SKILL.md" }] }]]),
+    render(createElement(FilesTab, { agent, part: "skills" }), [[["settings", "files", "dev-session"], { skills: [{ slug: "release-notes", title: "Write release notes", size: 900, path: ".claude/skills/release-notes/SKILL.md" }] }]]),
+    render(createElement(ChannelsTab, { agent, state: agentState })),
+    render(createElement(HandoversTab, { agent, agents: agentState.agents }), [[["settings", "handovers", "dev-session"], { outgoing: [{ channel: "telegram", chatId: "-100123", toAgent: "pm-agent", expiresAt: "2026-12-01T00:00:00Z", summary: "x", summaryConsumedAt: "y" }], incoming: [] }]]),
+  ]
+  it("is built, and every row of every tab is drawn and in search (condition 1)", () => {
+    expect(paneDef("agent").built).toBe(true)
+    const drawn = new Set(tabs().flatMap(rowsIn))
+    const index = buildSettingsIndex()
+    for (const id of drawn) expect(index.some((e) => e.pane === "agent" && e.row === id), `row "${id}" drawn but not in search`).toBe(true)
+    for (const r of paneDef("agent").rows) expect(drawn, `row "${r.id}" in panes.ts but never drawn`).toContain(r.id)
+  })
+  it("draws the header, the engine with its logo, the model picker and the folded Advanced", () => {
+    const html = tabs()[0]
+    expect(html).toContain("Dev Session")
+    expect(html).toContain("Lead developer")
+    expect(html).toContain("runs on <span class=\"font-mono text-xs\">studio</span>")
+    expect(html).toContain("claude-opus-5-5")
+    expect(html).toMatch(/data-disclosure="agent-advanced" data-state="closed"/)
+    expect(html).toContain("27 of 4,000 characters")
+  })
+  it("search opens the tab a row sits on, and Advanced inside it", () => {
+    const index = buildSettingsIndex()
+    expect(searchSettings(index, "skills")[0]).toMatchObject({ pane: "agent", row: "skills", open: "agent-tab:skills" })
+    expect(searchSettings(index, "longest task")[0]).toMatchObject({ pane: "agent", row: "longest", open: "agent-tab:overview,agent-advanced" })
+    expect(searchSettings(index, "sonnet")[0]).toMatchObject({ pane: "agent", row: "model" })
+  })
+  it("tabs: files, skills with their … menu, integrations, bots, handovers", () => {
+    const [, files, skills, channels, handovers] = tabs()
+    expect(files).toContain("AGENTS.md")
+    expect(files).toContain("not made yet")
+    expect(skills).toContain("release-notes")
+    expect(skills).toContain("More for release-notes")
+    expect(channels).toContain("GITLAB_DEV_TOKEN")
+    expect(channels).toContain("Not set")
+    expect(channels).toContain("@example_dev_bot")
+    expect(handovers).toContain("until 2026-12-01")
+    expect(handovers).toContain("No chat is routed to Dev Session.")
+  })
+  it("a draft: changes, the restart they need, the one PATCH, and what else moves", () => {
+    const a = agentState.agents[0]
+    const d = { model: "claude-sonnet-5-5", name: "Dev Session " }
+    expect(changedFields(a, d)).toEqual(["model"])
+    expect(restartWords(["model", "permissionMode"])).toBe("model and tool permissions")
+    expect(savedValue(a, "triggerWords")).toBe("@dev, @dev-session")
+    expect(agentPatch(a, d)).toMatchObject({ model: "claude-sonnet-5-5", name: "Dev Session", maxConcurrent: 2, access: "private", wikiAbsorb: true })
+    expect(alsoLines(a, ["model"], agentState.crons, { spentUsd: 41.2, capUsd: 120 })).toEqual([
+      "1 of its recurring jobs follow the agent's model and change too; 1 keep their own.",
+      "It has spent $41.20 of its $120 cap this month.",
+      "The new model applies after a daemon restart.",
+    ])
+    expect(showValue("tier", "codex-cli", engineName)).toBe("Codex")
+    expect(showValue("model", "", engineName)).toBe("the engine's default")
+    expect(modelTier("gpt-5.1-codex")).toBe("codex-cli")
+    expect(modelTier("claude-fable-5-2")).toBe("claude-code")
+    expect(modelTier("my-own")).toBeUndefined()
+  })
+  it("an integration's state in one word", () => {
+    expect(integrationBadge({ kind: "x", label: "x", credStatus: { t: "set" } }).text).toBe("Set")
+    expect(integrationBadge({ kind: "x", label: "x", oauth: { title: "Google", connected: true } }).text).toBe("Connected")
+    expect(integrationBadge({ kind: "x", label: "x", enabled: false }).text).toBe("Off")
+  })
+})
+
+describe("Settings › Actions (#2101 ST2a)", () => {
+  const html = () => render(createElement(ActionsPane), [[["settings", "workflows"], workflows]])
+  it("is built, and every row it draws is in search (condition 1)", () => {
+    expect(paneDef("actions").built).toBe(true)
+    const drawn = new Set(rowsIn(html()))
+    for (const r of paneDef("actions").rows) expect(drawn, `row "${r.id}" in panes.ts but never drawn`).toContain(r.id)
+    const index = buildSettingsIndex()
+    for (const id of drawn) expect(index.some((e) => e.pane === "actions" && e.row === id), `row "${id}" drawn but not in search`).toBe(true)
+  })
+  it("lists each action with its target, inputs, the workflows that run it, Run and its … menu", () => {
+    const out = html()
+    expect(out).toContain("2 actions")
+    expect(out).toContain("deploy-staging")
+    expect(out).toContain("make deploy VERSION={{version}}")
+    expect(out).toContain("POST https://hooks.example.com/$HOOK")
+    expect(out).toContain("version*: string")
+    expect(out).toContain("release-train, ci-watch")
+    expect(out).toContain("More for Deploy staging")
+    expect(out).toContain(">Run<")
+  })
+  it("reads which workflows run an action, and the inputs as the old form wrote them", () => {
+    expect(actionUsers(workflows.workflows).get("deploy-staging")).toEqual(["release-train", "ci-watch"])
+    expect(actionUsers(undefined).size).toBe(0)
+    const inputs = parseInputs("version:string!, dryRun:boolean, note")
+    expect(inputs).toEqual([
+      { name: "version", type: "string", required: true },
+      { name: "dryRun", type: "boolean", required: false },
+      { name: "note", type: "string", required: false },
+    ])
+    expect(inputsText(inputs)).toBe("version:string!, dryRun:boolean, note:string")
   })
 })

@@ -13,7 +13,7 @@ import {
   Badge, badgeVariants, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch, Tooltip, TooltipContent, TooltipTrigger,
 } from "../ui"
-import { settingsHash } from "./address"
+import { agentHash, settingsHash } from "./address"
 import {
   AGENT_ID, ENGINE_CHOICES, activeTokens, channelSummary, engineName, initials, needsYou, nodeChecking, nodeDown, orgNode, restartWaiting,
   type AdminState, type LiveNode, type LiveReply, type OrgReply, type StateAgent, type TokenRow,
@@ -26,7 +26,7 @@ const RESTART = "agentx daemon restart --when-idle"
 const OWNER_AGENT = "__owner"
 
 /** A write; apiFetch throws with the server's error text when it fails. */
-async function save(method: string, path: string, body: unknown): Promise<{ summary?: string }> {
+export async function save(method: string, path: string, body: unknown): Promise<{ summary?: string }> {
   return apiFetch(path, { method, body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
 }
 
@@ -113,7 +113,7 @@ function AgentItem({ agent: a, org, busy, onHold }: { agent: StateAgent; org?: O
   const name = a.name || a.id
   const waiting = node?.status === "waiting"
   const isOn = node?.status !== "paused"
-  const open = settingsHash("agent", a.id)
+  const open = agentHash(a.id)
   return (
     <SettingsItem
       id={"agent-" + a.id}
@@ -316,7 +316,7 @@ function AddAgentDialog({ open, onOpenChange, taken }: { open: boolean; onOpenCh
 }
 
 /** The dialog's own Advanced fold (not a pane row, so not in search). */
-function Disclosed({ open, onOpenChange, children }: { open: boolean; onOpenChange: (v: boolean) => void; children: ReactNode }) {
+export function Disclosed({ open, onOpenChange, children }: { open: boolean; onOpenChange: (v: boolean) => void; children: ReactNode }) {
   return (
     <div className="border-t border-border pt-1">
       <button type="button" aria-expanded={open} onClick={() => onOpenChange(!open)} className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

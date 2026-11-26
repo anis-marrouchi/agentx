@@ -12,7 +12,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent } from "react"
 import { readBoot } from "../boot"
 import type { HubPageProps } from "../registry"
-import { buildHash } from "../router"
+import { buildHash, parseHash } from "../router"
 import { SHELL_PAGE } from "../shell"
 import { Button, EmptyState, Icon, Kbd, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import { SETTINGS_PAGE, oldSettingsHash } from "./address"
@@ -26,15 +26,25 @@ const PANES: Record<string, ComponentType> = {
   jobs: lazy(() => import("./JobsPane")),
   approvals: lazy(() => import("./ApprovalsPane")),
   inbox: lazy(() => import("./InboxPane")),
+  agent: lazy(() => import("./AgentPane")),
+  actions: lazy(() => import("./ActionsPane")),
   menu: lazy(() => import("./MenuPane")),
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 const MOD = isMac ? "⌘" : "Ctrl+"
 
+/** Open a pane and row. A pane's own keys (the Agent pane's `agent`) stay
+ *  while the pane does. */
 function go(section: string | null, row?: string) {
-  location.replace(buildHash({ page: SETTINGS_PAGE, section, row }))
+  const now = parseHash(location.hash)
+  const keep: Record<string, string> = {}
+  if (now.get("section") === section) now.forEach((v, k) => { if (k !== "page" && k !== "section" && k !== "row") keep[k] = v })
+  location.replace(buildHash({ page: SETTINGS_PAGE, section, ...keep, row }))
 }
+
+/** A row's `open` is one fold id or a comma list (a tab, then its Advanced). */
+const openAll = (open: string, setOpen: (id: string, v: boolean) => void) => open.split(",").forEach((id) => setOpen(id.trim(), true))
 
 function leave() {
   if (history.length > 1) { history.back(); return }
@@ -63,7 +73,7 @@ export default function SettingsPage({ params }: HubPageProps) {
   }), [open])
 
   const pick = useCallback((h: SettingsHit) => {
-    if (h.open) disclosure.setOpen(h.open, true)
+    if (h.open) openAll(h.open, disclosure.setOpen)
     setQuery("")
     go(h.pane, h.row || undefined)
   }, [disclosure])
@@ -86,7 +96,7 @@ export default function SettingsPage({ params }: HubPageProps) {
   useEffect(() => {
     if (!row) { scroll.current?.scrollTo({ top: 0 }); return }
     const def = pane.rows.find((r) => r.id === row)
-    if (def?.open) disclosure.setOpen(def.open, true)
+    if (def?.open) openAll(def.open, disclosure.setOpen)
     let tries = 0
     const t = window.setInterval(() => {
       const el = scroll.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(row)}"]`)

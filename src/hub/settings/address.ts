@@ -17,3 +17,8 @@ export function settingsHash(section?: string, row?: string): string {
 export function oldSettingsHash(section: string): string {
   return buildHash({ page: "settings", section })
 }
+
+/** One agent on the Agent pane: `#page=settings-preview&section=agent&agent=<id>`. */
+export function agentHash(id: string, row?: string): string {
+  return buildHash({ page: SETTINGS_PAGE, section: "agent", agent: id, row })
+}
