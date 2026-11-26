@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from "vitest"
 import {
-  PER_KIND, forgeTaskSources, forgeTasks, forgeTasksReader, githubTasksReader, gitlabTasksReader,
+  PER_KIND, forgeTaskSources, forgeTasks, forgeTasksReader, ghEnv, githubTasksReader, gitlabTasksReader,
   type ForgeTask, type ForgeTasksReader,
 } from "../src/daemon/hub-forge-tasks"
+
+describe("gh under launchd (#2226 box 2)", () => {
+  it("adds the folders gh installs to, keeping the daemon's own PATH", () => {
+    const base = { HOME: "/Users/someone", PATH: "/usr/bin:/bin" }
+    const path = ghEnv(base).PATH!.split(":")
+    expect(path.slice(0, 2)).toEqual(["/usr/bin", "/bin"])
+    expect(path).toContain("/opt/homebrew/bin")
+    expect(path).toContain("/usr/local/bin")
+    expect(base.PATH).toBe("/usr/bin:/bin")
+  })
+})
 
 // The Hub's Tasks from the forges (#2226): which projects, GitHub through a
 // mocked `gh`, GitLab through a mocked fetch, and the minute's cache.
