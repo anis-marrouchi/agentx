@@ -4,9 +4,10 @@ import { resolve } from "path";
 export const CRON_RESPONSE_SUMMARY_LIMIT = 500;
 export const CRON_ERROR_SUMMARY_LIMIT = 300;
 
-/** `held`: the run did not start (plan or usage limit, full machine) and a
+/** `skipped`: the job's precheck found nothing to do, so no model was
+ *  called (#2115). `held`: the run did not start (plan or usage limit, full machine) and a
  *  retry waits; `missed`: no retry fitted the job's window (#2247). */
-export type CronRunHistoryStatus = "success" | "failed" | "timeout" | "held" | "missed";
+export type CronRunHistoryStatus = "success" | "failed" | "timeout" | "held" | "missed" | "skipped";
 
 export interface CronRunHistoryItem {
   jobId: string;
@@ -223,7 +224,9 @@ function parseRun(
     startedAt: new Date(value.startedAt).toISOString(),
     completedAt: new Date(value.completedAt).toISOString(),
     duration: value.duration,
-    status: value.success !== true && value.missed === true
+    status: value.skipped === "precheck"
+      ? "skipped"
+      : value.success !== true && value.missed === true
       ? "missed"
       : value.success !== true && value.held === true
         ? "held"

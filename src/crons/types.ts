@@ -2,6 +2,7 @@ import type { CronValue } from "./value-line"
 import type { AutonomyLevel } from "@/guard/autonomy"
 import type { AutonomyBlock } from "@/guard/autonomy-enforce"
 import type { CronReportMode } from "./quiet"
+import type { CronPrecheck } from "./precheck"
 
 // --- Cron system types ---
 
@@ -15,6 +16,8 @@ export interface CronJobState {
   /** Run this shell command instead of dispatching the agent. See the
    *  cron schema in daemon/config.ts for why this exists. */
   command?: string
+  /** A cheap check before a prompt job wakes its agent (#2115). */
+  precheck?: CronPrecheck
   timeout: number
   model?: string
   /** Soft output-length cap appended to the prompt at invocation time.
@@ -128,4 +131,7 @@ export interface CronRunResult {
   /** No retry fitted the job's window: the scheduled run was missed and
    *  its owner was told (#2247). */
   missed?: boolean
+  /** The run did not start: its precheck found nothing to do (#2115). Not
+   *  a run and not a failure; no model was called. */
+  skipped?: "precheck"
 }

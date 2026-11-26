@@ -16,6 +16,7 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 | `agent` | string | required | The agent that runs the prompt. For a command job, the agent told when it fails. |
 | `prompt` | string | `""` | What the agent is asked to do. A job needs a `prompt` or a `command`. |
 | `command` | string | — | A shell command run directly instead of an agent: no model, no tokens. |
+| `precheck` | object | — | A cheap check before a prompt job wakes its agent: `{"command": "…"}` or `{"url": "…"}` (exactly one), with `timeoutSec` (1 to 60, default 15) and, for a `url` on this machine or its network, `allowPrivate: true`. When it finds nothing to do the run is skipped and no model is called. Not allowed on command jobs. See [skip a run with nothing to do](#skip-a-run-with-nothing-to-do). |
 | `timeout` | number | `600` | Time limit in seconds. Agent jobs get at least 2 hours; see [time limits](./config.md#time-limits-and-cancel). |
 | `model` | string | — | Model for this job only, instead of the agent's model. |
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
@@ -86,6 +87,43 @@ A run that ends with `EXIT=1`, or with no `EXIT=` line at all, is recorded as fa
 On a run that worked, the `EXIT=0` line is removed before the answer is sent to `notify`, so the reader never sees it. The run history keeps the answer as the agent wrote it. With `requireSources`, the `EXIT=0` line is not checked for a source.
 
 A run the daemon makes up after a restart, for a time it missed while it was off, counts the same way: a failure adds to the failures in a row, sends the failure message, and can turn the job off under `onError`. It is not retried; the next regular run follows the schedule.
+
+### Skip a run with nothing to do
+
+A prompt job wakes its agent on every run, even when there is nothing for it to do. A `precheck` asks first, without a model. It only decides whether to wake the agent: it must be read-only and must not do the job itself.
+
+1. **Editor:** add a `precheck` to the job, with a `command` or a `url`:
+
+```json
+{
+  "crons": {
+    "mail-triage": {
+      "schedule": "*/15 * * * *",
+      "agent": "ops",
+      "prompt": "Triage the new mail.",
+      "precheck": { "command": "scripts/has-new-mail.sh", "timeoutSec": 15 }
+    }
+  }
+}
+```
+
+A `command` runs in the agent's workspace with the agent's environment. It is not run through a shell: it is split on spaces (quotes group words), with no variables, pipes or `;`. Put anything more in a script.
+
+| The check answers | What happens |
+| --- | --- |
+| `command` exits 0 | The job runs. |
+| `command` exits 1 | The run is skipped. |
+| `url` answers 2xx with a body | The job runs. |
+| `url` answers 204, or 2xx with an empty body | The run is skipped. |
+| any other exit code or HTTP status, a timeout, a fetch error | The job runs anyway, and the daemon log says the precheck failed. |
+
+When the job runs, what the check printed (or the URL's body), trimmed and cut at 2 KB, is put at the top of the prompt as `Precheck found: …`.
+
+A skipped run calls no model. It is recorded in the ledger as `halted` with the reason `precheck: nothing to do`, and in the run history as `Skipped, nothing to do`; it does not count as a run or as a failure. The next run follows the schedule.
+
+A `url` may not point at this machine or a private network, the same rule as [request proof links](/jobs/open-requests). The daemon's own address and its mesh peers are allowed; set `"allowPrivate": true` to reach another private address.
+
+The precheck runs after the job's goal check, so a job whose goal is closed is skipped before its precheck. It also runs for a run made up after a restart. A run fired on demand (`POST /routines/<id>/fire`) and a retry skip the precheck: the run was asked for.
 
 ### A run that could not start
 

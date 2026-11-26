@@ -21,6 +21,8 @@ import { goalCheckAtFire, goalCheckTick, type FireGate, type GoalCheckDeps } fro
 import { goalWallLines, readCronGoalState } from "./goal-state"
 import { endByUntil, lateLine, pastUntil, withLateFirst, type UntilDeps } from "./job-end"
 import { holdRetryAt, MAX_HOLD_RETRIES, missedRunText, runHold, type RunHold } from "./hold-retry"
+import { PRECHECK_SKIP_REASON, runPrecheck, withPrecheckFirst, type PrecheckOutcome } from "./precheck"
+import { buildAgentEnv } from "@/utils/workspace-env"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -221,6 +223,8 @@ export class CronScheduler {
   private goalSource?: CronGoalSource
   private goalCheck?: GoalCheckDeps
   private goalTimer?: ReturnType<typeof setInterval>
+  /** The precheck's fetch (#2115). Tests set their own. */
+  private precheckFetch?: typeof fetch
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -249,6 +253,7 @@ export class CronScheduler {
         agent: def.agent,
         prompt: def.prompt,
         command: def.command,
+        precheck: def.precheck,
         timeout: def.timeout,
         model: def.model,
         maxOutputTokens: def.maxOutputTokens,
@@ -624,6 +629,54 @@ export class CronScheduler {
     }
   }
 
+  /**
+   * The job's precheck (#2115), when it has one. Returns `skip: true` when
+   * the check found nothing to do; the skip is already recorded (ledger
+   * row `halted`, run record `skipped: "precheck"`). Otherwise `found` is
+   * what the check printed, for the prompt. A check that fails is logged
+   * and the job runs (fail open).
+   */
+  private async precheckGate(job: CronJobState, firedAt: Date): Promise<{ skip: boolean; found?: string }> {
+    if (!job.precheck || job.command?.trim()) return { skip: false }
+    const def = this.registry.getAgent?.(job.agent)
+    let outcome: PrecheckOutcome
+    try {
+      const workspace = def?.workspace
+      outcome = await runPrecheck(job.precheck, {
+        cwd: workspace,
+        env: workspace ? buildAgentEnv(workspace) : process.env,
+        fetch: this.precheckFetch,
+      })
+    } catch (e: any) {
+      outcome = { verdict: "error", detail: String(e?.message ?? e) }
+    }
+    if (outcome.verdict === "run") return { skip: false, found: outcome.found || undefined }
+    if (outcome.verdict === "error") {
+      this.log(`Job "${job.id}" precheck failed (${outcome.detail}); running the job anyway`)
+      return { skip: false }
+    }
+    this.log(`Job "${job.id}" skipped: ${PRECHECK_SKIP_REASON} (${outcome.detail})`)
+    this.recordCronDecisionInLedger(job.id, job.agent, firedAt, {
+      agentId: null, outcome: "halted", reason: PRECHECK_SKIP_REASON,
+    })
+    this.logRun({
+      jobId: job.id,
+      startedAt: firedAt,
+      completedAt: new Date(),
+      success: true,
+      duration: Date.now() - firedAt.getTime(),
+      isRetry: false,
+      retryAttempt: 0,
+      skipped: "precheck",
+    })
+    // A one-time job's slot is spent: it retires rather than firing again.
+    if (job.runAt) {
+      job.lastRun = firedAt
+      this.saveLastRuns()
+    }
+    return { skip: true }
+  }
+
   /** The ledger row for a run skipped because its goal is closed (#1568)
    *  or the job is held by its goal check (#863). */
   private recordGoalHalt(job: CronJobState, firedAt: Date, why?: string): void {
@@ -785,6 +838,20 @@ export class CronScheduler {
     // Paused, retired or past its until while the goal check awaited.
     if (!(await this.stillDue(job))) return
 
+    // The precheck (#2115): nothing to do, no wake. A fired run, a retry
+    // and a hold retry skip it: someone or something already asked for
+    // this run.
+    let precheckFound: string | undefined
+    if (!fire && !isRetry && !job.holdRetryPending && job.precheck && !job.command?.trim()) {
+      const pc = await this.precheckGate(job, firedAt)
+      if (pc.skip) {
+        this.scheduleNext(jobId)
+        return
+      }
+      precheckFound = pc.found
+      if (!(await this.stillDue(job))) return
+    }
+
     // Named after what will actually happen. A command job saying
     // `-> agent "coo-agent"` sends a reader looking for a dispatch that
     // never occurs.
@@ -829,7 +896,7 @@ export class CronScheduler {
       const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : withLateFirst(late, job.prompt))), job.report), job.expectExitZero),
+          withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, fire ? withEventPayload(job.prompt, fire.payload) : withLateFirst(late, withPrecheckFirst(precheckFound, job.prompt)))), job.report), job.expectExitZero),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -993,6 +1060,14 @@ export class CronScheduler {
       // The goal check awaits (a forge read, an answer write): the job may
       // have been paused, retired or passed its until meanwhile.
       if (!(await this.stillDue(job))) continue
+      // The precheck (#2115), as on a live run.
+      let precheckFound: string | undefined
+      if (job.precheck && !job.command?.trim()) {
+        const pc = await this.precheckGate(job, missedAt)
+        if (pc.skip) continue
+        precheckFound = pc.found
+        if (!(await this.stillDue(job))) continue
+      }
 
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
@@ -1002,7 +1077,7 @@ export class CronScheduler {
         const inbox = this.wikiNotesInbox(job, startedAt)
         const task: AgentTask = {
           message: withOutputCap(
-            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, job.prompt)), job.report), job.expectExitZero)}`,
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withExitRule(withQuietRule(withNotesFirst(inbox.block, withGoalFirst(goal.brief, withPrecheckFirst(precheckFound, job.prompt))), job.report), job.expectExitZero)}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,

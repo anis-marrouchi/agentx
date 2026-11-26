@@ -193,6 +193,7 @@ export function runWord(status: string): string {
     case "timeout": return "Timed out"
     case "missed": return "Missed"
     case "held": return "Held, retry waiting"
+    case "skipped": return "Skipped, nothing to do"
     case "canceled": return "Canceled"
     case "running": return "Running"
     case "paused": return "Paused"
