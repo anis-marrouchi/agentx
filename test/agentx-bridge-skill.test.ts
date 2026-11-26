@@ -96,6 +96,28 @@ describe("agentx-bridge skill (#2007 receipt flow)", () => {
     expect(seen.body).toEqual({ peer: "box", agent: "devops-agent", message: "hello", async: true, context: { channel: "a2a", chatId: 'a"b' } })
   })
 
+  it("an agent caller's mesh send keeps its context and names itself", async () => {
+    const { url, seen } = await stub(() => [202, { accepted: true, mode: "callback", taskId: "dlg-7" }])
+    const { code, out } = await run({
+      AGENTX_BRIDGE_URL: url,
+      AGENTX_AGENT: "devops-agent",
+      AGENTX_PEER: "box",
+      AGENTX_AGENT_ID: "coder-agent",
+      AGENTX_CHANNEL: "a2a",
+      AGENTX_CHAT_ID: "a2a:x:y",
+    })
+    expect(code).toBe(0)
+    expect(seen.path).toBe("/mesh/task")
+    // #709: the peer keys the callee's session by context. No async flag:
+    // async:true with a chat would deliver there instead of a callback.
+    expect(seen.body).toEqual({
+      peer: "box", agent: "devops-agent", message: "hello",
+      senderAgentId: "coder-agent", callerChannel: "a2a", callerChatId: "a2a:x:y",
+      context: { channel: "a2a", chatId: "a2a:x:y" },
+    })
+    expect(out).toContain("dlg-7")
+  })
+
   it("teaches the receipt flow", () => {
     const skill = readFileSync(join(__dirname, "../skills/agentx-bridge/SKILL.md"), "utf-8")
     expect(skill).toMatch(/receipt/)
@@ -104,5 +126,7 @@ describe("agentx-bridge skill (#2007 receipt flow)", () => {
     expect(skill).toContain('mode: "none"')
     expect(skill).toContain("agentx_send_agent")
     expect(skill).not.toMatch(/atlas|clawd-server/)
+    expect(skill).toContain("~/.claude/skills/agentx-bridge/agentx-bridge.sh")
+    expect(skill).not.toMatch(/^\S*\s*skills\/agentx-bridge\/agentx-bridge\.sh/m)
   })
 })

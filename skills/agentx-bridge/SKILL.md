@@ -17,15 +17,15 @@ There is no default agent or peer: name both, or the script stops with "set AGEN
 
 ```bash
 # Send to an agent on a mesh peer
-AGENTX_AGENT=devops-agent AGENTX_PEER=my-server skills/agentx-bridge/agentx-bridge.sh "check server status"
+AGENTX_AGENT=devops-agent AGENTX_PEER=my-server ~/.claude/skills/agentx-bridge/agentx-bridge.sh "check server status"
 
 # Send to an agent on this machine
-AGENTX_LOCAL=true AGENTX_AGENT=marketing-agent skills/agentx-bridge/agentx-bridge.sh "draft a LinkedIn post"
+AGENTX_LOCAL=true AGENTX_AGENT=marketing-agent ~/.claude/skills/agentx-bridge/agentx-bridge.sh "draft a LinkedIn post"
 ```
 
 ## Where the answer goes
 
-**From an agent run (receipt flow).** When the daemon runs an agent it sets `AGENTX_AGENT_ID` (and `AGENTX_CHANNEL`, `AGENTX_CHAT_ID`, `AGENTX_TASK_ID`). The script then names the caller in the send (`senderAgentId`, `callerChannel`, `callerChatId`, header `X-AgentX-Task`). The daemon answers at once with a receipt (`202`, `accepted: true`, a `dlg-` `taskId`, a `mode`):
+**From an agent run (receipt flow).** When the daemon runs an agent it sets `AGENTX_AGENT_ID` (and `AGENTX_CHANNEL`, `AGENTX_CHAT_ID`, `AGENTX_TASK_ID`). The script then names the caller in the send (`senderAgentId`, `callerChannel`, `callerChatId`, header `X-AgentX-Task`). A mesh send also keeps `context` {channel, chatId}, so the remote agent gives each caller its own session, and sends no `async` flag. The daemon answers at once with a receipt (`202`, `accepted: true`, a `dlg-` `taskId`, a `mode`):
 
 - `mode: "callback"`: the answer arrives later in the caller's chat as a new message.
 - `mode: "none"`: no running turn could be named, so the answer does **not** come back to the chat. Read it by its id: `agentx_lookup` with `handoff: "dlg-…"`, or `GET /a2a/delegations/<id>?as=<you>`.

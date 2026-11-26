@@ -84,12 +84,18 @@ else
   if [ -n "${AGENTX_CHANNEL}" ] && [ -n "${AGENTX_CHAT_ID}" ]; then USE_CTX="true"; fi
   USE_ASYNC="${ASYNC}"
   if [ "$USE_CTX" = "false" ]; then USE_ASYNC="false"; fi
-  # An agent caller's own chat is the way home (receipt flow): no context.
-  if [ -n "$CALLER" ]; then USE_CTX="false"; USE_ASYNC="true"; fi
+  # An agent caller gets a receipt and its answer comes back to its turn
+  # (callback), so it sends no async flag: async:true with a chat would
+  # deliver the raw answer there instead. Its context still goes to the
+  # peer, which keys the callee's session by it (#709): without it, two
+  # agents handing work to the same remote agent share one session.
+  OMIT_ASYNC="false"
+  if [ -n "$CALLER" ]; then OMIT_ASYNC="true"; fi
   BODY=$(printf '%s' "$BODY" | jq \
-    --arg peer "$PEER" --argjson async "$USE_ASYNC" --argjson ctx "$USE_CTX" \
+    --arg peer "$PEER" --argjson async "$USE_ASYNC" --argjson ctx "$USE_CTX" --argjson omit "$OMIT_ASYNC" \
     --arg channel "${AGENTX_CHANNEL:-}" --arg chat "${AGENTX_CHAT_ID:-}" \
-    '{peer: $peer} + . + {async: $async}
+    '{peer: $peer} + .
+     + (if $omit then {} else {async: $async} end)
      + (if $ctx then {context: {channel: $channel, chatId: $chat}} else {} end)') \
     || fail "could not build the request body." 1
   RESPONSE=$(curl -sS --max-time "${CURL_MAX_TIME}" "${AGENTX_URL}/mesh/task" \
