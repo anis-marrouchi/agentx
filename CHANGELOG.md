@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.280.0](https://github.com/anis-marrouchi/agentx/compare/v0.279.0...v0.280.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** React simple shell — [#2226](https://github.com/anis-marrouchi/agentx/issues/2226) S3 ([#2321](https://github.com/anis-marrouchi/agentx/issues/2321)) ([7a14ca5](https://github.com/anis-marrouchi/agentx/commit/7a14ca5813dcb3cbd1920dd5877bc8169649138a))
+* **hub:** task context panel with workspace files and changes — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR B (R17) ([#2315](https://github.com/anis-marrouchi/agentx/issues/2315)) ([3cf7204](https://github.com/anis-marrouchi/agentx/commit/3cf7204eb141254e92a06a678d216983fcc0c5cc))
+
+
+### Bug Fixes
+
+* **agents:** wait for a slot before taking a home lease ([#2340](https://github.com/anis-marrouchi/agentx/issues/2340)) ([55abf42](https://github.com/anis-marrouchi/agentx/commit/55abf4268cb7008c889cd46c8f29f51a13aa6e31)), closes [#2337](https://github.com/anis-marrouchi/agentx/issues/2337)
+* **hub:** keep the daemon's build so the bar always shows the version ([#2343](https://github.com/anis-marrouchi/agentx/issues/2343)) ([f86550d](https://github.com/anis-marrouchi/agentx/commit/f86550d72d57fb401a621073dd07f1f47779d5dc))
+
 ## [0.279.0](https://github.com/anis-marrouchi/agentx/compare/v0.278.0...v0.279.0) (2026-11-26)
 
 
