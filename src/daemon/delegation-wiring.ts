@@ -250,7 +250,8 @@ export function chainRootOf(caller: CallerTurn, waits: SyncWaits): RootInitiator
  * People permissions (#379) for an agent-to-agent request: the note when
  * the person the calling turn works for may not reach `callee`, or null.
  * Asked before any hop starts, synchronous or callback, on this node or to
- * a peer. A caller the daemon cannot name is not checked.
+ * a peer, and the callee's `askers` (#2116). A caller the daemon cannot
+ * name is not checked here; the callee's run checks its own context.
  */
 export function hopRefusal(
   callee: string,
@@ -258,7 +259,9 @@ export function hopRefusal(
   registry: Pick<AgentRegistry, "refusalFor">,
   waits: SyncWaits,
 ): string | null {
-  return caller ? registry.refusalFor(callee, { initiator: chainRootOf(caller, waits) }) : null
+  // The calling agent rides along for the callee's `askers` (#2116): a
+  // resolved turn names a running agent of this machine.
+  return caller ? registry.refusalFor(callee, { initiator: chainRootOf(caller, waits), sender: `agent:${caller.agentId}` }) : null
 }
 
 /**

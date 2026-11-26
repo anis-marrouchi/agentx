@@ -111,7 +111,7 @@ import {
 } from "@/gates/status-claim"
 import type { SeatMode } from "@/decisions/store"
 import { dueAtOf, taskTypeOf } from "@/agents/task-context"
-import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
+import { askerRefusal, personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
@@ -1465,7 +1465,15 @@ export class AgentRegistry {
    *  per-person trail. */
   refusalFor(agentId: string, ctx: unknown): string | null {
     const refused = refusedPerson(this.config.people, agentId, ctx as any)
-    if (!refused) return null
+    if (!refused) {
+      // Who may ask this agent (#2116), after the person's own limit.
+      const asker = askerRefusal(this.config.people, agentId, this.config.agents[agentId]?.askers, ctx as any, (id) => !!this.config.agents[id])
+      if (!asker) return null
+      this.log(`[${agentId}] refused: ${asker.sender} may not ask this agent (${asker.reason}; agents.${agentId}.askers)`)
+      const person = this.config.people.find((p) => p.id === asker.sender)
+      if (person) this.memberTrail().log({ person: person.id, event: "agent-refused", detail: agentId })
+      return asker.note
+    }
     this.log(`[${agentId}] refused: ${refused.person.id} may not reach this agent (people[].agents)`)
     this.memberTrail().log({ person: refused.person.id, event: "agent-refused", detail: agentId })
     return refused.note

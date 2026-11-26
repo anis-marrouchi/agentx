@@ -172,6 +172,53 @@ export function refusedPerson(people: Person[], agentId: string, ctx: InitiatorC
   return { person, note: `${person.name}, you can reach ${list} here, not ${agentId}. Ask the owner if you need ${agentId}.` }
 }
 
+// ── Who may ask an agent (#2116) ─────────────────────────────────────────
+//
+// The agent's side of the same gate: `agents.<id>.askers` lists the people
+// and agents it takes work from. Unset keeps the default above (open). Set:
+//   - the owner always passes (their own surfaces must reach every agent);
+//   - an agent caller (`sender: "agent:<id>"`) must be a local agent whose
+//     name was checked (#2052: not `senderVerified: false`) and be listed in
+//     `askers.agents`; any other agent-shaped sender is unknown, refused;
+//   - a turn a person started, directly or at the root of a chain, needs a
+//     listed person; a sender who is not in people[] is refused;
+//   - anything else (cron, workflows, heartbeats) is the agent's own work.
+
+export interface Askers {
+  people?: string[]
+  agents?: string[]
+}
+
+/** Why `agentId` will not take this turn, or null. `isAgent` names the
+ *  agents of this machine: only those are matched by id. */
+export function askerRefusal(
+  people: Person[],
+  agentId: string,
+  askers: Askers | undefined,
+  ctx: InitiatorContext | undefined | null,
+  isAgent: (id: string) => boolean,
+): { sender: string; reason: string; note: string } | null {
+  if (!askers) return null
+  const ref = personOfTurn(people, ctx)
+  const person = ref ? people.find((p) => p.id === ref.id) : undefined
+  const owner = ref?.role === "owner" || person?.role === "owner" || (!!ref && ref.id === IMPLICIT_OWNER && !people.some((p) => p.role === "owner"))
+  if (owner) return null
+  const note = `${agentId} takes requests only from the people and agents it lists. Ask the owner if you need ${agentId}.`
+  const sender = typeof ctx?.sender === "string" ? ctx.sender.trim() : ""
+  if (sender === "agent" || sender.toLowerCase().startsWith("agent:")) {
+    const id = sender.slice(6).trim()
+    const verified = !!id && ctx?.senderVerified !== false && isAgent(id)
+    if (!verified) return { sender: sender || "agent", reason: "unverified agent", note }
+    const list = askers.agents ?? []
+    return list.includes("*") || list.includes(id) ? null : { sender: `agent:${id}`, reason: "agent not in askers.agents", note }
+  }
+  if (classifyInitiator(ctx) !== "human") return null
+  if (!person) return { sender: ref?.id ?? (sender || "unknown"), reason: "sender not in people[]", note }
+  const list = (askers.people ?? []).map((s) => s.trim().toLowerCase())
+  const listed = list.includes("*") || list.includes(person.id.toLowerCase()) || list.includes(person.name.trim().toLowerCase())
+  return listed ? null : { sender: person.id, reason: "person not in askers.people", note }
+}
+
 /** The note alone. */
 export function personRefusal(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): string | null {
   return refusedPerson(people, agentId, ctx)?.note ?? null
