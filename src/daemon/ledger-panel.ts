@@ -256,8 +256,8 @@ export function renderLedgerPage(opts: LedgerPageOpts = {}): string {
     .ax-led__tab.is-active{color:var(--ax-text);border-bottom-color:var(--ax-accent,#3a7bd5)}
     .ax-led__filters{display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap}
     .ax-led__filters label{font-size:11px;color:var(--ax-muted);display:inline-flex;align-items:center;gap:6px}
-    .ax-led__filters input,.ax-led__filters select{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:4px 8px;background:var(--ax-bg-elev);border:1px solid var(--ax-border);border-radius:4px;color:var(--ax-fg)}
-    .ax-led__filters button{font-size:11px;padding:5px 11px;border-radius:4px;border:1px solid var(--ax-border);background:var(--ax-bg);color:var(--ax-fg);cursor:pointer}
+    .ax-led__filters input,.ax-led__filters select{font-family:'IBM Plex Mono',monospace;font-size:12px;padding:4px 8px;background:var(--ax-bg-elev);border:1px solid var(--ax-border);border-radius:4px;color:var(--ax-text)}
+    .ax-led__filters button{font-size:11px;padding:5px 11px;border-radius:4px;border:1px solid var(--ax-border);background:var(--ax-bg);color:var(--ax-text);cursor:pointer}
     .ax-led__filters button:hover{background:var(--ax-surface)}
     .ax-led__pane{display:none}
     .ax-led__pane.is-active{display:block}
@@ -267,7 +267,7 @@ export function renderLedgerPage(opts: LedgerPageOpts = {}): string {
     .ax-led__kpi-value{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600}
     .ax-led__split{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
     .ax-led__card{background:var(--ax-bg-elev);border:1px solid var(--ax-border);border-radius:6px;padding:12px 14px}
-    .ax-led__card h3{font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:600;margin:0 0 8px;color:var(--ax-fg);text-transform:uppercase;letter-spacing:0.04em}
+    .ax-led__card h3{font-family:'IBM Plex Sans',sans-serif;font-size:12px;font-weight:600;margin:0 0 8px;color:var(--ax-text);text-transform:uppercase;letter-spacing:0.04em}
     .ax-led__table{width:100%;border-collapse:collapse;font-size:11px;font-family:'IBM Plex Mono',monospace}
     .ax-led__table thead th{text-align:left;padding:5px 7px;border-bottom:1px solid var(--ax-border);font-weight:500;color:var(--ax-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.04em}
     .ax-led__table tbody td{padding:5px 7px;border-bottom:1px solid var(--ax-border);vertical-align:top}

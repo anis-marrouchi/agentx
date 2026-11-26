@@ -282,7 +282,7 @@ export const WALL_ACTIVITY_CSS = `
 .wac__tabs { border-bottom: 1px solid var(--ax-border); }
 .wac__n { margin-left: 4px; font-size: var(--ax-fs-xs); font-weight: 700; padding: 0 6px; line-height: 20px; border-radius: var(--ax-radius-pill); background: var(--ax-amber-t); color: var(--ax-amber-ink); font-variant-numeric: tabular-nums; }
 .wac__bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--ax-border); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wac__sel { font: inherit; font-size: var(--ax-fs-xs); background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 4px 10px; max-width: 170px; min-height: 30px; }
+.wac__sel { font: inherit; font-size: var(--ax-fs-xs); background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-md); padding: 4px 10px; max-width: 170px; min-height: 30px; }
 .wac__chip { font: inherit; font-size: var(--ax-fs-xs); background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 4px 12px; min-height: 30px; cursor: pointer; }
 .wac__chip.is-on { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
 .wac__seg { margin-left: auto; display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
@@ -306,7 +306,6 @@ export const WALL_ACTIVITY_CSS = `
 .wac__tb { font-weight: 700; min-width: 0; color: var(--ax-text); }
 .wac__t { color: inherit; text-decoration: none; }
 .wac__t:hover { text-decoration: underline; }
-.wac__t:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; border-radius: 2px; }
 .wac .wp__meta span { white-space: nowrap; }
 .wac__open { margin-top: 8px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); background: var(--ax-bg); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; cursor: default; }
 .wac__kv { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: var(--ax-fs-sm); }

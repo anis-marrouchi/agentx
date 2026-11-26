@@ -18,7 +18,7 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .ax-wall.hc-open .ax-wall__main > :not(#hc) { display: none !important; }
 .hc__head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--ax-border); }
 .hc__title { flex: 1; min-width: 0; }
-.hc__title b { display: block; font-size: 17px; font-weight: 800; }
+.hc__title b { display: block; font-size: 17px; font-weight: 600; }
 .hc__title small { display: block; color: var(--ax-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The header (#2101 P5, mock V1/V2): face, name, "computer · engine", state
    pill, Chat · Plan · Proofs, Stop, ↗ Request. */
@@ -30,7 +30,7 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__face[data-state="wait"]::after { display: block; background: var(--ax-amber, #F59E0B); }
 .hc__face[data-state="done"]::after { display: block; background: var(--ax-green); }
 .hc__title { flex: 0 1 auto; }
-.hc__title b { font-size: 15.5px; font-weight: 700; }
+.hc__title b { font-size: var(--ax-fs-group); font-weight: 600; }
 .hc__title small span:empty { display: none; }
 .hc__title small span + span:not(:empty)::before { content: " · "; }
 #hc-where + #hc-sub { opacity: .8; }
@@ -111,7 +111,6 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__chip { flex: none; min-height: 32px; padding: 0 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ax-text); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); cursor: pointer; white-space: nowrap; }
 .hc__chip:hover { border-color: var(--ax-border-2); }
 .hc__chip[aria-pressed="true"] { border-color: var(--ax-accent); background: var(--ax-accent-t); }
-.hc__chip:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
 /* A dropped live stream (#2101 R21): said while it reconnects. */
 .hc__conn { margin: 0; padding: 6px 16px; font-size: var(--ax-fs-sm); color: var(--ax-warn, var(--ax-muted)); background: var(--ax-surface); border-bottom: 1px solid var(--ax-border); }
 .hc__conn[hidden] { display: none; }
@@ -224,7 +223,6 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__tool--mic[hidden] ~ .hc__send { margin-left: auto; }
 .hc__tool--check[aria-pressed="true"] { background: var(--ax-blue-t); color: var(--ax-blue-d); border-color: transparent; }
 .hc__tool:hover { background: var(--ax-surface); }
-.hc__tool:focus-visible, .hc__stopb:focus-visible, .hc__resume:focus-visible, .hc__send:focus-visible { outline: 2px solid var(--ax-blue-d); outline-offset: 2px; }
 /* The Task page's run controls by the send arrow (#2306): Pause, Stop; Resume when paused. */
 .hc__acts { display: inline-flex; align-items: center; gap: 8px; }
 .hc__acts:empty { display: none; }

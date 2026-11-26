@@ -412,7 +412,7 @@ export const WALL_LIVE_CSS = `
 .wls.is-space { background: linear-gradient(120deg, color-mix(in srgb, var(--ax-accent) 14%, var(--ax-bg)), var(--ax-bg)); border-color: color-mix(in srgb, var(--ax-accent) 40%, var(--ax-border)); }
 .wls__h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .wls__k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
-.wls__t { margin: 6px 0 8px; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
+.wls__t { margin: 6px 0 8px; font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
 .wls.is-work { display: block; color: inherit; text-decoration: none; }
 .wls.is-work:hover { border-color: var(--ax-accent); text-decoration: none; }
 .wls.is-work .wls__t { font-weight: 500; font-size: var(--ax-fs); margin: 4px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

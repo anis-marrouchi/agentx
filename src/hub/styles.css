@@ -14,6 +14,13 @@
 @source "./";
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* A pointer that hovers (orca-design C20). Tailwind's hover: is gated the
+   same way already; can-hover is for controls hidden until hover, so touch
+   still sees them: `can-hover:opacity-0 group-hover:opacity-100`. */
+@custom-variant can-hover (@media (hover: hover));
+/* Reduced effects: the system's reduced-motion setting, the one name for
+   "drop the shine, keep the state" (`reduce-effects:animate-none`). */
+@custom-variant reduce-effects (@media (prefers-reduced-motion: reduce));
 
 @theme inline {
   --color-background: var(--ax-bg);
@@ -26,7 +33,7 @@
   --color-primary-foreground: var(--ax-primary-fg);
   --color-secondary: var(--ax-surface-3);
   --color-secondary-foreground: var(--ax-text);
-  --color-muted: var(--ax-surface-2);
+  --color-muted: var(--ax-surface-3);
   --color-muted-foreground: var(--ax-muted);
   --color-accent: var(--ax-surface-3);
   --color-accent-foreground: var(--ax-text);
@@ -42,7 +49,7 @@
   --color-err-ink: var(--ax-red-ink);
 
   --radius-sm: var(--ax-radius-sm);
-  --radius-md: calc(var(--ax-radius) - 2px);
+  --radius-md: var(--ax-radius-md);
   --radius-lg: var(--ax-radius);
   --radius-xl: var(--ax-radius-lg);
 
@@ -51,6 +58,7 @@
   --default-font-family: var(--ax-font);
   --default-mono-font-family: var(--ax-mono);
 
+  --shadow-xs: var(--ax-shadow-xs);
   --shadow-float: var(--ax-shadow-lg);
 }
 

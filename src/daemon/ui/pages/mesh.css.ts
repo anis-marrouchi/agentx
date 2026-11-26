@@ -38,7 +38,7 @@ export const MESH_CSS = `
 .mx-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 22px}
 .mx-tabs{display:flex;gap:0;border:var(--ax-border-w) solid var(--ax-border-2);border-radius:var(--ax-radius-pill);padding:3px;background:var(--ax-surface)}
 .mx-tab{border:0;background:transparent;color:var(--ax-text-2);font:600 12px var(--ax-font);padding:6px 14px;border-radius:var(--ax-radius-pill);cursor:pointer}
-.mx-tab[aria-selected="true"]{background:var(--ax-accent);color:var(--ax-accent-ink)}
+.mx-tab[aria-selected="true"]{background:var(--ax-accent);color:var(--ax-on-accent)}
 .mx-tab:focus-visible{outline:2px solid var(--ax-accent);outline-offset:2px}
 .mx-range{display:flex;gap:6px;margin-left:auto}
 .mx-range button{border:var(--ax-border-w) solid var(--ax-border-2);background:var(--ax-surface);color:var(--ax-text-2);font:600 11px var(--ax-mono);padding:5px 10px;border-radius:var(--ax-radius-sm);cursor:pointer}
@@ -153,7 +153,7 @@ export const MESH_CSS = `
 .mx-run-links li span:first-child{font-family:var(--ax-mono);color:var(--ax-muted);min-width:84px}
 .mx-run-links .mx-link{margin:0 0 0 auto}
 .mx-scrim{position:fixed;inset:0;background:color-mix(in oklch,var(--ax-bg) 55%,black);z-index:29}
-.mx-drawer{position:fixed;z-index:30;top:0;right:0;width:min(520px,calc(100vw - 20px));height:100vh;box-sizing:border-box;background:var(--ax-surface);border-left:var(--ax-border-w) solid var(--ax-border-2);transform:translateX(102%);transition:transform 180ms ease;overflow:auto;box-shadow:-12px 0 36px rgba(0,0,0,.2)}
+.mx-drawer{position:fixed;z-index:30;top:0;right:0;width:min(520px,calc(100vw - 20px));height:100vh;box-sizing:border-box;background:var(--ax-surface);border-left:var(--ax-border-w) solid var(--ax-border-2);transform:translateX(102%);transition:transform 180ms ease;overflow:auto;box-shadow:var(--ax-shadow-lg)}
 .mx-drawer.is-open{transform:translateX(0)}
 .mx-drawer__head{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;background:var(--ax-surface);border-bottom:var(--ax-border-w) solid var(--ax-border);z-index:1}
 .mx-drawer__head .ax-kicker{font:10px var(--ax-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ax-muted);margin-bottom:4px}

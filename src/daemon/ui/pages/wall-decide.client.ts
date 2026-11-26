@@ -468,13 +468,13 @@ export const WALL_DECIDE_CSS = `
 .wdc.is-soon { box-shadow: inset 3px 0 0 var(--ax-red); }
 .wdc__b { flex: 1 1 auto; min-width: 0; }
 .wdc__meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; color: var(--ax-muted); }
-.wdc__meta b { color: var(--ax-text); font-weight: 700; }
+.wdc__meta b { color: var(--ax-text); font-weight: 600; }
 .wdc__badge { display: inline-block; padding: 1px 8px; border-radius: var(--ax-radius-pill); font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-accent-t, var(--ax-surface-2)); color: var(--ax-accent); }
 .wdc__badge.is-card, .wdc__badge.is-warn { background: var(--ax-amber-t, var(--ax-surface-2)); color: var(--ax-amber-ink, var(--ax-warn)); }
 .wdc__exp { margin-left: auto; font-size: var(--ax-fs-xs); }
 .wdc__exp.is-soon { color: var(--ax-red-ink, var(--ax-err)); }
 .wdc__title { margin: 4px 0 0; font-size: var(--ax-fs); font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
-.wdc__title.is-q { font-weight: 700; }
+.wdc__title.is-q { font-weight: 600; }
 .wdc__ask { margin: 4px 0 0; overflow-wrap: anywhere; }
 .wdc__sub { margin: 6px 0 0; color: var(--ax-muted); overflow-wrap: anywhere; }
 .wdc__sub span { color: var(--ax-text); }
@@ -494,14 +494,14 @@ export const WALL_DECIDE_CSS = `
 .wdc__unb p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .wdc__unb a, .wdc__sub a { color: var(--ax-accent); }
 .wdc__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
-.wdc__acts .ax-btn { min-height: 40px; min-width: 72px; border-radius: var(--ax-radius-pill); }
+.wdc__acts .ax-btn { min-height: 40px; min-width: 72px; border-radius: var(--ax-radius-md); }
 .wdc__acts .ax-btn.is-on { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
 .wdc__alt { margin-left: auto; white-space: nowrap; }
-.wdc__hand { font: inherit; min-height: 40px; padding: 0 12px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
+.wdc__hand { font: inherit; min-height: 40px; padding: 0 12px; border-radius: var(--ax-radius-md); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); }
 .wdc__confirm { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; padding: 10px 14px; border: 1px solid var(--ax-accent); border-radius: var(--ax-radius-lg); background: var(--ax-accent-t, var(--ax-surface)); }
 .wdc__confirm p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }
 .wdc__cbtns { display: flex; gap: 8px; }
-.wdc__cbtns .ax-btn { min-height: 40px; border-radius: var(--ax-radius-pill); }
+.wdc__cbtns .ax-btn { min-height: 40px; border-radius: var(--ax-radius-md); }
 .wdc__note { margin: 0; padding: 8px 16px 0; font-size: var(--ax-fs-sm); color: var(--ax-green); }
 .wdc__note:empty { display: none; }
 .wdc__note.is-err { color: var(--ax-red-ink, var(--ax-err)); }

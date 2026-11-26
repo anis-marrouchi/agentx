@@ -84,10 +84,18 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-primary-fg: #ffffff;
   --ax-ring: #2979FF;
 
+  /* The one focus ring (orca-design C16): 3px of the ring colour at 50%.
+     Drawn by the global :focus-visible rule below; a row that clips its
+     outside uses "inset var(--ax-focus-ring)". */
+  --ax-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ax-ring) 50%, transparent);
+
   /* Phone chat bubble + online green (were the phone-only palette). */
   --phone-bubble: #f5f5f5;
   --phone-green: #16a34a;
-  --ax-accent-ink: #ffffff;
+  /* Ink on an --ax-accent fill (count badges, the selected tab). */
+  --ax-on-accent: #ffffff;
+  /* Scrim behind a sheet or dialog (Orca: bg-black/55). */
+  --ax-overlay: rgb(0 0 0 / 0.55);
 
   /* --- Semantic ------------------------------------------------------ */
   --ax-accent: var(--ax-blue);
@@ -104,8 +112,14 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-radius: 10px;
   --ax-radius-lg: 14px;
   --ax-radius-sm: 6px;
+  /* Buttons, selects, inputs and toggles. Pill corners are only for send,
+     scroll-to-bottom and suggestion pills (orca-design C25). */
+  --ax-radius-md: 8px;
   --ax-radius-pill: 999px;
   --ax-shadow: none;
+  /* Embedded: outline buttons and cards that sit in the page. */
+  --ax-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  /* Floating: menus, popovers, dialogs, toasts and drawers. */
   --ax-shadow-lg: 0 10px 30px -10px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
   --ax-shadow-accent: none;
   --ax-shadow-ok: none;
@@ -126,6 +140,14 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-fs: 14px;
   --ax-fs-sm: 13px;
   --ax-fs-xs: 12px;
+  /* Type roles (orca-design principle 6). Row text is --ax-fs (14) and
+     --ax-fs-sm (13). No weight above --ax-fw-strong. */
+  --ax-fs-pane: 24px;
+  --ax-fs-group: 15px;
+  --ax-fs-help: 12.5px;
+  --ax-fs-label: 11px;
+  --ax-fs-phone-title: 20px;
+  --ax-fw-strong: 600;
 
   /* Legacy aliases so older CSS blocks keep rendering until they're ported. */
   --bg: var(--ax-bg);
@@ -176,7 +198,7 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-ring: #4d94ff;
   /* Ink on --ax-accent (the Hub nav count badge): white on #4d94ff is
      about 3.0:1, near-black is about 6.9:1 (DevOps nit on #2127). */
-  --ax-accent-ink: #0a0a0a;
+  --ax-on-accent: #0a0a0a;
 
   --phone-bubble: #262626;
   --phone-green: #4ade80;
@@ -202,5 +224,16 @@ pre, code, .ax-mono {
 }
 a { color: var(--ax-accent); text-decoration: none; font-weight: 600; }
 a:hover { color: var(--ax-accent-2); text-decoration: underline; }
+/* One focus ring on every page (orca-design C16). ":root" lifts it over a
+   plain class that sets its own shadow, such as .ax-btn's shadow-xs. */
+:root :focus-visible { outline: none; box-shadow: var(--ax-focus-ring); }
+/* Reduced motion (C20): animations and transitions end at once. A spinner
+   stops; the word next to it still says it is working. */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+}
 .ax-muted { color: var(--ax-muted); }
 .ax-accent { color: var(--ax-accent); }`

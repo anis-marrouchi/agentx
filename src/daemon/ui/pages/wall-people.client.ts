@@ -221,7 +221,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
 export const WALL_PEOPLE_CSS = `
 .wpp { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
 .wpp__b { flex: 1; min-width: 0; }
-.wpp .wp__by .name { font: inherit; font-weight: 700; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.wpp .wp__by .name { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .wpp .wp__by .name:hover { text-decoration: underline; }
 .wpp__ids span { overflow-wrap: anywhere; }
 .wpp .wp__meta button { font: inherit; color: var(--ax-accent); background: none; border: 0; padding: 0; cursor: pointer; }
@@ -229,7 +229,6 @@ export const WALL_PEOPLE_CSS = `
 .wpp .wpf__stats a { color: inherit; }
 .wpp__toggle { margin-top: 6px; font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-accent); background: none; border: 0; padding: 4px 0; cursor: pointer; }
 .wpp__toggle[aria-expanded="true"]::before { content: "▾ "; } .wpp__toggle[aria-expanded="false"]::before { content: "▸ "; }
-.wpp button:focus-visible, .wpp a:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wpp__body h3 { margin: 12px 0 6px; font-size: var(--ax-fs-sm); }
 .wpp__quiet { margin: 0; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
 .wpp code, .wpp__none code { font-family: var(--ax-mono); font-size: 11.5px; background: var(--ax-surface-2); padding: 1px 6px; border-radius: var(--ax-radius-sm); overflow-wrap: anywhere; }
