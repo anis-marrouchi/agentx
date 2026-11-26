@@ -722,6 +722,8 @@ button.fp__mi { cursor: pointer; }
   .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 16px; padding-right: 16px; }
   .ax-wall.is-posts .ax-wall__main > .fd-compose { margin: 0 16px 12px; }
   .ax-wall.is-posts .ax-wall__main > .fd-bar { max-width: none; }
+  /* The feed has its own search icon; agents and pages stay one tap away in the menu (#2388). */
+  .ax-wall.is-posts .axp-btn.hub-k-btn { display: none; }
   .ax-wall.is-posts .ax-wall__titlebar { padding: 12px 0; }
   .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: 20px; }
   .fd-switch { order: 10; flex: 1 0 100%; margin: 4px 0 0; }
