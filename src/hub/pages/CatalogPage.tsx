@@ -11,7 +11,7 @@ import type { HubPageProps } from "../registry"
 import {
   Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-  EmptyState, Kbd, Skeleton, StatusDot, Tabs, TabsContent, TabsList, TabsTrigger,
+  EmptyState, ICON_NAMES, Icon, Kbd, Skeleton, StatusDot, Tabs, TabsContent, TabsList, TabsTrigger,
   Tooltip, TooltipContent, TooltipTrigger,
 } from "../ui"
 
@@ -105,6 +105,9 @@ export default function CatalogPage(_: HubPageProps) {
         <span className="inline-flex items-center gap-1 text-sm">Open the switcher <Kbd>⌘</Kbd><Kbd>K</Kbd></span>
       </Section>
 
+      <Section title="Icons">
+        {ICON_NAMES.map((n) => <span key={n} title={n} className="text-muted-foreground"><Icon name={n} /></span>)}
+      </Section>
       <Section title="Tabs">
         <Tabs defaultValue="changes" className="w-full max-w-md">
           <TabsList>
