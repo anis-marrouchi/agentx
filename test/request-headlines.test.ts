@@ -177,10 +177,11 @@ describe("the agentx_request actions", () => {
     expect(store.get("req-t1")).toMatchObject({ state: "in_progress", headline: "Check the invoices batch" })
     expect(api({ action: "wait", question: "Today or Monday?", need: "Pick a day." }).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ state: "waiting_owner", need: "Pick a day." })
-    // In the request's own turn a promise updates that request (#2079).
+    // In the request's own turn a promise updates that request (#2079),
+    // and keeps the headline it already has (review C1).
     const p = api({ action: "promise", owedTo: "owner", text: "send the summary by Friday", headline: "Weekly summary" })
     expect(p.status).toBe(200)
-    expect((p.body as any)).toMatchObject({ reused: true, request: { id: "req-t1", promise: false, headline: "Weekly summary", headlineBy: "agent" } })
+    expect((p.body as any)).toMatchObject({ reused: true, request: { id: "req-t1", promise: false, headline: "Check the invoices batch", headlineBy: "agent" } })
   })
 })
 

@@ -207,6 +207,16 @@ export class RequestTracker {
     return p.person?.role === "owner" && !OPERATOR_CHANNELS.has(ch)
   }
 
+  /** A recorded request's `owedTo` names the owner (#2079 review B1): "owner"
+   *  itself, a sender the `from` setting names on that channel, or anyone on
+   *  this node's own surfaces, where only the owner's turns are recorded.
+   *  People with the owner role are checked by the caller. */
+  isOwnerSender(channel: string, who: string): boolean {
+    if (who === OWED_TO_OWNER) return true
+    if (OPERATOR_CHANNELS.has(base(channel))) return true
+    return isOwnerTurn({ channels: [], from: this.settings().from }, channel, { id: who, username: who })
+  }
+
   /** The request of the turn this agent is running in this chat, if any. */
   liveRequestId(agentId: string, channel: string, chatId: string): string | null {
     return this.live.get(chatKey(agentId, channel, chatId))?.requestId ?? null

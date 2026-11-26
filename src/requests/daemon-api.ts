@@ -85,6 +85,8 @@ export interface RequestsApiDeps {
   tracker: RequestTracker
   enabled: boolean
   hasAgent: (agentId: string) => boolean
+  /** Ids of the people with the owner role (#2079 review B1). */
+  ownerPeople?: () => string[]
   /** The channel and chat of the running turn of `agentId` that `proof`
    *  names, or null when it names none. A write is refused without one:
    *  the agent id in the body alone proves nothing. */
@@ -301,6 +303,20 @@ function followedLoop(deps: RequestsApiDeps, agentId: string, turn: { channel: s
   return open(turn.chatId) ?? open(deps.tracker.liveRequestId(agentId, turn.channel, turn.chatId))
 }
 
+/** The owner asked request `r` (#2079 review B1): not a promise, and owed
+ *  to the owner, not to a contact whose turn was also recorded. */
+function askedByOwner(deps: RequestsApiDeps, r: RequestRecord): boolean {
+  if (r.promise || !r.owedTo) return false
+  return !!deps.ownerPeople?.().includes(r.owedTo) || deps.tracker.isOwnerSender(r.channel, r.owedTo)
+}
+
+/** A promise to `owedTo` is the next step of loop `own` (#2079): owed to the
+ *  same party. "owner" is the same party only for a request the owner asked. */
+function samePartyLoop(deps: RequestsApiDeps, own: RequestRecord, owedTo: string): boolean {
+  if (own.owedTo === owedTo) return true
+  return !own.promise && owedTo === "owner" && askedByOwner(deps, own)
+}
+
 /** A promise call from a run that follows open loop `r` (#2079): the loop
  *  takes the new due time, closeWhen, words and headline, under the same
  *  due-time rules as a new promise, and keeps its id. The owner's words of
@@ -326,7 +342,10 @@ function updateLoop(
   if ("refuse" in slot) return slot.refuse
   if (slot.plan.kind === "set") loop.dueAt = slot.plan.dueAt
   if (r.promise) store.setText(r.id, p.text, now)
-  store.setHeadline(r.id, fromOwner && !p.described.headline ? { ...p.described, headline: p.text } : p.described, "agent")
+  // A headline is set only on a loop that has none yet: a follow-up never
+  // overwrites it (review C1). The need still moves.
+  const headline = r.headline ? undefined : p.described.headline ?? (fromOwner ? p.text : undefined)
+  store.setHeadline(r.id, { need: p.described.need, headline }, "agent")
   if (loop.closeWhen) store.setLoop(r.id, { closeWhen: loop.closeWhen }, now)
   else if (!r.closeWhen) {
     const cw = issueCloseWhen(p.text, r.id, now, { channel: r.channel, chatId: r.chatId, forge: deps.defaultForge ?? null })
@@ -690,7 +709,7 @@ export function handleRequestsApi(
       // owed to the same party: a promise to someone else made in that run
       // is new work, not this loop's next check.
       const own = followedLoop(deps, agentId, turn)
-      if (own && (own.promise ? own.owedTo === owedTo : owedTo === "owner" || owedTo === own.owedTo)) return updateLoop(deps, own, { input, text, loop, home: home ?? null, described, needsQa }, now)
+      if (own && samePartyLoop(deps, own, owedTo)) return updateLoop(deps, own, { input, text, loop, home: home ?? null, described, needsQa }, now)
       // The same promise again (#2078, #2079): a retry of a call that timed
       // out on the agent's side, or the same words while the first is still
       // open. Give that one back, unchanged.

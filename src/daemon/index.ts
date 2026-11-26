@@ -6414,6 +6414,7 @@ export class AgentXDaemon {
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => this.provenTurn(id, p),
+          ownerPeople: () => (this.config.people ?? []).filter((x) => x.role === "owner").map((x) => x.id),
           plans: requests.plans,
           goals: requests.goals,
           planSettings: this.config.requests.plans,

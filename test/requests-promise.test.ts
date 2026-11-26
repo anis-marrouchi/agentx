@@ -336,4 +336,44 @@ describe("a follow-up run updates the open promise instead of opening another (#
     expect((after.body as any).request.id).not.toBe(p.request.id)
     expect(store.openPromises("coder")).toBe(2)
   })
+
+  /** An open request owed to `who`, recorded as if its turn had been captured. */
+  const requestOwedTo = (id: string, channel: string, who: string, due: number) => {
+    store.addCandidate({ id, runId: `run-${id}`, channel, chatId: "chat-c", sender: who, agentId: "coder", text: "fix my site", now: clock })
+    store.progress(id, clock)
+    store.setLoop(id, { dueAt: due }, clock)
+  }
+
+  it("review B1: a client-turn promise to the owner opens a new row and leaves the client request unchanged", async () => {
+    requestOwedTo("req-client", "whatsapp", "21699000000", clock + 5 * HOUR)
+    const before = store.get("req-client")!
+    const res = await post(
+      { ...body, owedTo: "owner", text: "Tell Anis the client site is down", due: new Date(clock + HOUR).toISOString() },
+      { ...inRunOf("req-client"), now: clock + MIN },
+    )
+    expect(res.status).toBe(200)
+    expect((res.body as any).reused).toBeUndefined()
+    expect((res.body as any).request).toMatchObject({ promise: true, owedTo: "owner" })
+    expect(store.get("req-client")).toMatchObject({ dueAt: before.dueAt, closeWhen: before.closeWhen, text: "fix my site", headline: null })
+    expect(store.openPromises("coder")).toBe(1)
+    // The same call to the client is that request's next step.
+    const toClient = await post({ ...body, owedTo: "21699000000", due: new Date(clock + 2 * HOUR).toISOString() }, { ...inRunOf("req-client"), now: clock + MIN })
+    expect(toClient.body).toMatchObject({ reused: true, request: { id: "req-client", dueAt: clock + 2 * HOUR } })
+  })
+
+  it("review B1: a request owed to a person with the owner role takes a promise to the owner", async () => {
+    requestOwedTo("req-anis", "whatsapp", "anis", clock + 5 * HOUR)
+    const res = await post(
+      { ...body, owedTo: "owner", due: new Date(clock + 2 * HOUR).toISOString() },
+      { ...inRunOf("req-anis"), ownerPeople: () => ["anis"], now: clock + MIN },
+    )
+    expect(res.body).toMatchObject({ reused: true, request: { id: "req-anis", dueAt: clock + 2 * HOUR } })
+    expect(store.openPromises("coder")).toBe(0)
+  })
+
+  it("review C1: a follow-up keeps the loop's headline", async () => {
+    const p = (await post({ ...body, headline: "Login fix deploy" })).body as any
+    const res = await post({ ...body, text: "Deploy once CI is green", headline: "Something else" }, { ...inRunOf(p.request.id), now: clock + MIN })
+    expect(res.body).toMatchObject({ reused: true, request: { id: p.request.id, headline: "Login fix deploy", text: "Deploy once CI is green" } })
+  })
 })
