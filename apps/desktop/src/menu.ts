@@ -18,6 +18,8 @@ export interface TrayState {
   /** Why Start is off while the daemon is down (startRefusal in daemon.ts), e.g.
    *  "kept by launchd tn.noqta.agentx"; null when Start is allowed. */
   startRefusal: string | null
+  /** The daemon URL is not this machine: Start, Stop and Restart would act on the local daemon. */
+  remote: boolean
 }
 
 export interface TrayActions {
@@ -38,8 +40,9 @@ function daemonLine(s: TrayState): string {
 /** The menu, as plain data (no Electron calls), so its shape is easy to check. */
 export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorOptions[] {
   const d = s.daemon
-  const idle = !s.busy && d !== null
-  const stopHint = !d?.running ? "Stop" : d.remote ? "Stop (on another machine)" : d.service && d.service !== "none" ? `Stop (kept running by ${d.service})` : "Stop"
+  const idle = !s.busy && d !== null && !s.remote
+  const far = s.remote ? " (on another machine)" : ""
+  const stopHint = s.remote || !d?.running ? `Stop${far}` : d.service && d.service !== "none" ? `Stop (kept running by ${d.service})` : "Stop"
   const close = (value: CloseAction): MenuItemConstructorOptions => ({
     label: value === "hide" ? "Hide to the tray" : "Quit the app",
     type: "radio",
@@ -51,16 +54,17 @@ export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorO
     { type: "separator" },
     { label: daemonLine(s), enabled: false },
     // Never a second daemon next to one launchd/systemd runs, nor one started in a guessed folder.
+    // A daemon on another machine (judged from its URL, so also when it is down):
+    // the CLI would start or restart this machine's daemon, and its pid is not a process here.
     {
-      label: d && !d.running && s.startRefusal ? `Start (${s.startRefusal})` : "Start",
+      label: s.remote ? `Start${far}` : d && !d.running && s.startRefusal ? `Start (${s.startRefusal})` : "Start",
       enabled: idle && !d?.running && !s.startRefusal,
       click: () => a.onDaemon("start"),
     },
     // A daemon under launchd/systemd comes straight back from a stop; Restart covers it.
-    // A daemon on another machine: its pid is not a process here.
     { label: stopHint, enabled: idle && !!d && canStop(d), click: () => a.onDaemon("stop") },
     // Asks first, then waits for running tasks (agentx daemon restart --when-idle).
-    { label: "Restart…", enabled: idle && !!d?.running, click: () => a.onDaemon("restart") },
+    { label: s.remote ? `Restart${far}` : "Restart…", enabled: idle && !!d?.running, click: () => a.onDaemon("restart") },
     { type: "separator" },
     {
       label: "Open at login",

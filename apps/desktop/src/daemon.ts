@@ -22,7 +22,6 @@
 
 import { execFile, execFileSync } from "child_process"
 import { existsSync, readFileSync } from "fs"
-import { homedir } from "os"
 import { dirname } from "path"
 
 export const DEFAULT_DAEMON_URL = "http://127.0.0.1:18800"
@@ -37,6 +36,9 @@ export interface DaemonStatus {
   service?: ServiceKind
   /** Set when the daemon's URL is not on this machine: its pid is not ours to signal. */
   remote?: true
+  /** The daemon's own folder and agentx.json, as it reports them. */
+  cwd?: string
+  configPath?: string
 }
 
 export interface DaemonTarget {
@@ -133,6 +135,14 @@ export function startRefusal(s: DaemonStatus | null, target: DaemonTarget, manag
   return null
 }
 
+/** The target Restart runs in: AGENTX_CONFIG's folder, else the folder and config the
+ *  running daemon reports. Null when neither is known: never a guessed folder such as $HOME. */
+export function restartTarget(target: DaemonTarget, s: DaemonStatus): DaemonTarget | null {
+  if (target.cwd) return target
+  if (s.configPath) return { ...target, config: s.configPath, cwd: dirname(s.configPath) }
+  return s.cwd ? { ...target, cwd: s.cwd } : null
+}
+
 /** Single-quote for a POSIX shell. */
 export function shellQuote(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
@@ -166,13 +176,16 @@ async function probe(target: DaemonTarget, fetchFn: Fetch): Promise<DaemonStatus
   try {
     const r = await fetchFn(`${target.url}/daemon/restart`, { signal: AbortSignal.timeout(2000) })
     if (!r.ok) return { running: true }
-    const d = (await r.json()) as { pid?: unknown; service?: { kind?: unknown } }
+    const d = (await r.json()) as { pid?: unknown; service?: { kind?: unknown }; cwd?: unknown; configPath?: unknown }
     const kind = d?.service?.kind
-    return {
+    const s: DaemonStatus = {
       running: true,
       pid: typeof d?.pid === "number" ? d.pid : undefined,
       service: kind === "launchd" || kind === "systemd" || kind === "none" ? kind : undefined,
     }
+    if (typeof d?.cwd === "string" && d.cwd) s.cwd = d.cwd
+    if (typeof d?.configPath === "string" && d.configPath) s.configPath = d.configPath
+    return s
   } catch {
     return { running: true }
   }
@@ -224,7 +237,8 @@ export function runCli(target: DaemonTarget, args: string[], platform: NodeJS.Pl
     const done = (err: Error | null, stdout: string, stderr: string) =>
       err ? reject(new Error((stderr || stdout || err.message).trim().split("\n").slice(-3).join("\n"))) : resolve(stdout)
     // --when-idle may wait up to its 30 min for running tasks, then for the new daemon.
-    const opts = { cwd: target.cwd ?? homedir(), timeout: 40 * 60_000, windowsHide: true }
+    if (!target.cwd) return reject(new Error("the daemon's folder is not known; set AGENTX_CONFIG to its agentx.json"))
+    const opts = { cwd: target.cwd, timeout: 40 * 60_000, windowsHide: true }
     if (platform === "win32") {
       // cmd.exe splits on spaces: quote paths such as C:\Users\Jane Doe\agentx.json.
       const q = (s: string) => (/\s/.test(s) ? `"${s}"` : s)
