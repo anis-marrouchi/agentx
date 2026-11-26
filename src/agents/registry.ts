@@ -3233,9 +3233,21 @@ export class AgentRegistry {
       // What this run never took mid-turn goes on its usual way.
       this.midTurn.endChat(midTurnKey(task.agentId, qChannel, qChatId))
       // Flush queued messages that arrived while this run was in progress
+      const waited = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
       this.messageQueue.markDone(task.agentId, qChannel, qChatId)
         .then((queued) => {
-          if (queued.length === 0) return
+          if (queued.length === 0) {
+            // Every waiting message was dropped at the flush (taken
+            // mid-turn, or out of date, #2280): the line is still empty,
+            // so its rows on the member page go too.
+            if (waited > 0) {
+              const flushedAt = Date.now()
+              getEventBus().emit("task:queue-flushed", {
+                agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, count: 0, at: new Date(flushedAt).toISOString(),
+              })
+            }
+            return
+          }
           this.log(`[${task.agentId}] flushing ${queued.length} queued message(s) after task=${runningTask.id} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           // Re-execute each queued message as a new task. The original
           // inbound message (the one that triggered this run) was posted
