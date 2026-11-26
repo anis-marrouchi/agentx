@@ -901,7 +901,7 @@ The Hub reads with this machine's own GitHub or GitLab connection, the same one 
 5. Select a row to open the last run's short summary and a **Full log** link. The full output stays on the log page.
 6. **Pause** and **Archive** are shown but greyed out: they come in a later phase.
 
-A machine that does not answer keeps its jobs from its last answer, marked **as of** that time.
+A machine that does not answer keeps its jobs from its last answer, marked **as of** that time. A machine that has not answered yet says **This machine does not answer, so its jobs are not shown.**
 
 Settings › Schedules shows the same line under each job.
 
@@ -1012,7 +1012,7 @@ The page reads the machines listed under `dashboard.daemons` in `agentx.json`; t
 The **Org** page draws your org chart from the top down: whoever reports to no one sits at the top, usually you, and each member sits one row under their boss. Members are people and agents. To set the chart up, see [Org](./org.md#draw-your-org-chart).
 
 1. Select **Org** in the nav. The number next to it counts the people and agents in the chart.
-2. Read the cards. An agent's card shows its picture, name, @handle and role, with a dot for what it is doing: green when it works on something, grey when it is idle, amber when it is paused or waits for your approval, and an empty ring when the dashboard cannot tell. A person's card has a dashed blue border and a **person** chip, with no dot.
+2. Read the cards. An agent's card shows its picture, name, @handle and role, with a dot for what it is doing: green when it works on something, grey when it is idle, and amber when it is paused or waits for your approval. When the dashboard cannot tell, the card has no dot, and a line above the chart says **The daemon did not answer, so working and idle are not shown.** A person's card has a dashed blue border and a **person** chip, with no dot.
 3. Read the lines. A solid line joins each member to their boss (**reports to**).
 4. Two other links show as words on the card:
    - **acts for** *name*: the agent works on behalf of that person.

@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { JobStore } from "../src/jobs/store"
 import { JOBS_HUB_PATH, isJobsHubPath, jobsHubReply } from "../src/jobs/hub-api"
-import { jlHomeHtml, jlRowHtml, jlSpan, jlTitle, jlTone, jobLedgerPageHtml, type HubJob } from "../src/daemon/ui/pages/wall-jobledger"
+import { jlDetailHtml, jlHomeHtml, jlRowHtml, jlSpan, jlTitle, jlTone, jobLedgerPageHtml, type HubJob } from "../src/daemon/ui/pages/wall-jobledger"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
@@ -75,6 +75,16 @@ describe("GET /api/admin/job-ledger", () => {
 
 describe("the rows", () => {
   const opts = { open: false, detail: null, detailErr: "", multi: false, now: NOW }
+
+  it("never writes \"not known\": no requester names only the assignee, no run status stays empty (Anis 11-25, #2101 C1)", () => {
+    const row = jlRowHtml(job({ requester: "" }), opts)
+    expect(row).not.toContain("not known")
+    expect(row).toContain("<span>@coder</span>")
+    expect(jlRowHtml(job({}), opts)).toContain("<span>pm → @coder</span>")
+    const detail = jlDetailHtml({ job: job({}), runs: [{ runId: "run-1" } as any], parent: null, children: [] }, "", "", NOW)
+    expect(detail).toContain("<code>run-1</code></td><td></td>")
+    expect(detail).not.toContain("not known")
+  })
 
   it("titles a job by its headline, else the start of its text", () => {
     expect(jlTitle(job({ headline: "Ship the report" }))).toBe("Ship the report")

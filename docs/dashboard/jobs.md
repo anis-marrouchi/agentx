@@ -94,7 +94,7 @@ The list shows the 100 most recently active jobs that match. A line under the li
 ## Open a job and follow its tree
 
 1. Select a row. It opens in place.
-2. The details show the full text of what was asked, and every run of the job: its status, when it started, how long it took and what it cost.
+2. The details show the full text of what was asked, and every run of the job: its status, when it started, how long it took and what it cost. A run with no status leaves that cell empty. In the list, a job with no requester shows only its agent's @handle.
 3. **Part of** names the job this one came from, when an agent handed it out while working on another job. Select it to open that job.
 4. **Handed out from this job** lists the jobs this one started. Select one to open it.
 5. Select the row again to close it.

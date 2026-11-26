@@ -130,6 +130,14 @@ describe("the Projects view (shared by /org and the Hub)", () => {
     expect(out).toMatch(/Not in a project · 1<\/h3><ul class="opj-team"><li class="opj-card is-agent" data-member="agent:sales">/)
   })
 
+  it("leaves out the state of a member with no reading, never \"not known\" (Anis 11-25, #2101 C1)", () => {
+    const out = html(buildOrgView(config, {}, null), esc)
+    expect(out).not.toContain("not known")
+    const sales = /<li class="opj-card is-agent" data-member="agent:sales">[\s\S]*?<\/li>/.exec(out)?.[0] ?? ""
+    expect(sales).toContain("opj-name")
+    expect(sales).not.toContain("opj-state")
+  })
+
   it("shows a project with only a PM, with an empty team", () => {
     const out = html(buildOrgView(config, {}, null), esc)
     const box = /<section class="opj" data-project="acme\/app"[\s\S]*?<\/section>/.exec(out)?.[0] ?? ""

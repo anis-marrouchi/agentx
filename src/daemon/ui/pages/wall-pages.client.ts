@@ -206,7 +206,7 @@ export const WALL_PAGES_SCRIPT = String.raw`
       jobs = jobs.concat(sensorRows(n), hostJobRows(n));
       return '<section class="wjm"><h3>' + esc(n.name) + ' <small>' + jobs.length + (jobs.length === 1 ? ' job' : ' jobs') +
         (n.stale ? ', as of ' + esc(stamp(Date.parse(n.staleSince))) : nodeChecking(n) ? ', checking…' : down ? ', does not answer' : '') + '</small></h3>' +
-        (jobs.length ? wsHeadHtml() + jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'Its jobs are not known.' : 'No recurring jobs.') + '</p>') + '</section>';
+        (jobs.length ? wsHeadHtml() + jobs.join('') : '<p class="ax-wall__empty">' + (nodeChecking(n) && !n.stale ? 'Checking this machine…' : down && !n.stale ? 'This machine does not answer, so its jobs are not shown.' : 'No recurring jobs.') + '</p>') + '</section>';
     });
     var totals = [['ran', tot.ran], ['worked', tot.worked], ['failed', tot.failed], ['quiet', tot.quiet], ['look stale', tot.stale], ['last run failed', tot.lastFailed]];
     return '<dl class="wjt">' + totals.map(function (t) { return '<div><dt>' + t[0] + '</dt><dd>' + t[1] + '</dd></div>'; }).join('') + '</dl>' +
