@@ -200,7 +200,7 @@ The top of the nav lists every agent of every connected machine once, by what it
 
 ### Jump to an agent or request
 
-1. Press **⌘K** (**Ctrl K** on Windows and Linux), or select **Jump to an agent or request** at the top of the nav.
+1. Press **⌘K** (**Ctrl K** on Windows and Linux), or select **Jump to an agent or request** at the top of the nav. The box opens in the middle of the page, above everything on it, the side menu and the chat button included.
 2. Type part of a name, or words of a request. Agents come first: those whose name starts with the words, then those whose name or line has them. Up to five open requests follow. With nothing typed, the agents that need you are first.
 3. Use **↑** and **↓**, then **Enter**, or select a row. A working agent opens its live run, any other agent its chat, with its history; a request opens its post. **Esc** closes it.
 4. **⌘1** to **⌘9** (or **Alt 1** to **Alt 9**) open the agents in the switcher's order, also with it closed. **Ctrl Tab** goes back to the last agent you had open; in a browser tab, the browser keeps that key, so use it in the AgentX app window.
