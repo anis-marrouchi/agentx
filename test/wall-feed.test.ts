@@ -396,6 +396,18 @@ describe("The agents in the left column (#2101 P4, V1)", () => {
   })
 })
 
+describe("Feed title row keeps Chat on its line (#2387 follow-up)", () => {
+  it("on a wide screen the row does not wrap; the search box shrinks instead", () => {
+    const page = renderWallPage()
+    const wide = page.slice(page.indexOf("@media (min-width: 1181px) {\n  .ax-wall.is-posts .ax-wall__titlebar { flex-wrap: nowrap; }"))
+    expect(wide.length).toBeLessThan(page.length)
+    const block = wide.slice(0, wide.indexOf("\n}\n"))
+    expect(block).toContain(".ax-wall.is-posts .ax-wall__titlebar > .fd-tools { min-width: 0; }")
+    expect(block).toContain(".ax-wall.is-posts .ax-wall__titlebar > :is(.wbl, .hc-btn) { flex: none; }")
+    expect(block).toContain(".ax-wall.is-posts .fd-q { min-width: 120px; }")
+  })
+})
+
 // #1188: the QA verdict line and the "Awaiting QA only" filter, run through
 // the page's real match() rather than read from the source.
 describe("Running now does not wait on the feed (#1252)", () => {
