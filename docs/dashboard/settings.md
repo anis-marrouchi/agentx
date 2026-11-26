@@ -256,7 +256,7 @@ Text that is not valid JSON is refused and nothing is saved. A value that is val
 
 **Layout** sets how much the Hub shows. **Simple**, the default, keeps the bare minimum: agents, chat, **Waiting on you**, **Jobs** and **Settings**. **Full** also shows the Workflows and Mobile app pages, plan gates and request steps on a post, the hosts in the status bar, and every page in ⌘K.
 
-**Layout** is the first row: **Simple** or **Full**. Under it, each item has its own switch, which wins over the layout. **Reset** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default. If a change is not saved, the message says why; select **Retry** to send it again.
+**Layout** is the first row: **Simple** or **Full**. Under it, each item has its own switch, which wins over the layout. Rules has no switch yet: it comes with the Rules page. **Reset** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default. If a change is not saved, the message says why; select **Retry** to send it again.
 
 Hiding never turns anything off: schedules, gates and workflows keep running, a hidden page still opens from a link, and a gate that waits on you still shows in **Waiting on you**.
 
@@ -274,7 +274,7 @@ Hiding never turns anything off: schedules, gates and workflows keep running, a 
 
 The keys are `dashboard.hub.layout` and `dashboard.hub.show` in the [configuration reference](../reference/config-operations.md).
 
-> **Warning:** if you edit `dashboard.hub.show` by hand in `agentx.json`, use only the item names Settings lists (`mobile`, `workflows`, `wiki`, `rules`, `gates`, `hosts`, `activity`, `org`, `sessions`, `usage`) and only `true` or `false`. A misspelt name or another value makes the whole file invalid, and the daemon does not load any of it. Use **Settings › Layout**, which only writes valid values.
+> **Warning:** if you edit `dashboard.hub.show` by hand in `agentx.json`, use only these item names (`mobile`, `workflows`, `wiki`, `rules`, `gates`, `hosts`, `activity`, `org`, `sessions`, `usage`) and only `true` or `false`. A misspelt name or another value makes the whole file invalid, and the daemon does not load any of it. Use **Settings › Layout**, which only writes valid values.
 
 **After an upgrade:** an install that had no layout set before gets the simple layout. Workflows, Mobile app, Activity, Org, Live and Cost leave the menus, and nothing stops running. To get them back, select **Full** in **Settings › Layout**.
 
