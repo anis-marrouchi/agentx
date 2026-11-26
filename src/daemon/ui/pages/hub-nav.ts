@@ -21,8 +21,14 @@ const ICON = {
 /** The switcher button and the agent list, at the top of the nav. */
 export function hubAgentsNavHtml(): string {
   return `<button type="button" class="ha__k" id="hub-k" aria-haspopup="dialog" aria-controls="hub-k-dlg" title="Jump to an agent or request (⌘K)">${ICON.search}<span>Jump to an agent or request</span><kbd>⌘K</kbd></button>
-    <section class="lt ha" id="hub-agents" aria-label="Agents, by what they are doing"><p class="ha__empty">Loading the agents…</p></section>
-    <div class="hk" id="hub-k-dlg" role="dialog" aria-modal="true" aria-label="Jump to an agent or request" hidden>
+    <section class="lt ha" id="hub-agents" aria-label="Agents, by what they are doing"><p class="ha__empty">Loading the agents…</p></section>`
+}
+
+/** The ⌘K switcher dialog. Mounted as a direct child of <body>, never in
+ *  the sticky side menu, whose stacking context hid it behind the page
+ *  (#2353). */
+export function hubSwitcherHtml(): string {
+  return `<div class="hk" id="hub-k-dlg" role="dialog" aria-modal="true" aria-label="Jump to an agent or request" hidden>
       <button type="button" class="hk__scrim" data-hk-close aria-label="Close"></button>
       <div class="hk__box">
         <label class="hk__q">${ICON.search}<input id="hub-k-q" type="search" autocomplete="off" spellcheck="false" placeholder="Jump to an agent or request" aria-controls="hub-k-list" aria-label="Agent or request"><kbd>esc</kbd></label>
@@ -162,7 +168,7 @@ a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); colo
 .hf__set { margin-left: auto; }
 .hf__n { min-width: 16px; padding: 0 4px; line-height: 16px; border-radius: var(--ax-radius-pill); background: var(--ax-amber, #f5a524); color: #111; font-size: 10.5px; font-weight: 700; text-align: center; }
 /* The ⌘K switcher (V3). */
-.hk { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.hk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
 .hk__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgb(5 8 14 / 55%); backdrop-filter: blur(3px); cursor: default; }
 .hk__box { position: relative; width: min(640px, calc(100vw - 24px)); max-height: 72vh; display: flex; flex-direction: column; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: 14px; box-shadow: 0 24px 64px rgb(0 0 0 / 40%); overflow: hidden; }
 .hk__q { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
