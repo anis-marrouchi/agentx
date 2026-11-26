@@ -251,8 +251,65 @@ describe("the Hub page's left column", () => {
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
-    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml })
+    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunsHtml: ha.haRunsHtml })
     const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
     expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
+  })
+})
+
+// #2328: a voice turn beside an older job did not show. The row named one
+// run, picked by lastActivity, which is the run's last output line, not a
+// time: every run that had written something tied and the oldest won.
+describe("an agent with more than one run (#2328)", () => {
+  const two: LtNode[] = [{ name: "MacBook-Local", url: "http://mac", reachable: true, agents: [
+    { id: "devops", name: "DevOps", runningTasks: [
+      { id: "job", channel: "a2a", sender: "agent:coder-agent", messagePreview: "[Job state] Before you end this run", startedAt: ago(1_200_000), lastActivity: "→ Bash({\"command\":\"ls\"})" },
+      { id: "call", channel: "voice", chatId: "voice:devops", messagePreview: "What is the deploy status?", startedAt: ago(20_000), lastActivity: "· Checking" },
+      { id: "gl", channel: "gitlab", messagePreview: "Review MR !12", startedAt: ago(600_000), lastActivity: "← ok" },
+    ] },
+  ] }]
+  const m = hubAgentRows(two, [], NOW, DAY, title, ltPlain, liveWorkCount(two))
+  const row = m.rows[0]
+
+  it("names the newest run, by its start, whatever its last line says", () => {
+    expect(row.taskId).toBe("call")
+    expect(row.line).toBe("Voice · What is the deploy status?")
+    expect(row.ageMs).toBe(20_000)
+    expect(row.runs).toBe(3)
+  })
+  it("keeps the other runs, newest first, with their channel", () => {
+    expect(row.more).toEqual([
+      { taskId: "gl", channel: "GitLab", line: "Review MR !12" },
+      { taskId: "job", channel: "Agent to agent", line: "Job for coder-agent" },
+    ])
+  })
+  it("still orders by lastActivity when it is a time", () => {
+    expect(ha.haRunAt({ id: "x", lastActivity: ago(5_000), startedAt: ago(90_000) })).toBe(NOW - 5_000)
+    expect(ha.haRunAt({ id: "x", lastActivity: "→ Read(a)", startedAt: ago(90_000) })).toBe(NOW - 90_000)
+    expect(ha.haRunAt({ id: "x" })).toBe(0)
+  })
+  it("lists each other run under the row, each opening its own run", () => {
+    const runHref = (r: { id: string; taskId: string }) => "#page=task&task=" + r.taskId + "&agent=" + r.id
+    const h = haListHtml(m, "all", "", false, ltEsc, ltAge, runHref)
+    expect(h).toContain('href="#page=task&amp;task=call&amp;agent=devops" data-ha-agent="devops" data-ha-run')
+    expect(h).toContain('<a class="ha__run" href="#page=task&amp;task=gl&amp;agent=devops" data-ha-run')
+    expect(h).toContain('<b class="ha__rch">Agent to agent</b> Job for coder-agent')
+    expect(h.indexOf("task=call")).toBeLessThan(h.indexOf("task=gl"))
+  })
+  it("shows 3 other runs, then how many more; no list for one run", () => {
+    const five = { ...row, more: [1, 2, 3, 4, 5].map((i) => ({ taskId: "r" + i, channel: "Voice", line: "turn " + i })) }
+    const h = ha.haRunsHtml(five, ltEsc)
+    expect((h.match(/class="ha__run"/g) || []).length).toBe(3)
+    expect(h).toContain("+2 more runs")
+    expect(ha.haRunsHtml({ ...row, more: [] }, ltEsc)).toBe("")
+  })
+  it("a single voice turn says Voice and lists nothing under it", () => {
+    const one: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+      { id: "secretary", name: "secretary", runningTasks: [{ id: "v", channel: "voice", messagePreview: "Read me my day", startedAt: ago(3_000) }] },
+    ] }]
+    const r = hubAgentRows(one, [], NOW, DAY, title, ltPlain, liveWorkCount(one)).rows[0]
+    expect(r.state).toBe("working")
+    expect(r.line).toBe("Voice · Read me my day")
+    expect(r.more).toBeUndefined()
   })
 })

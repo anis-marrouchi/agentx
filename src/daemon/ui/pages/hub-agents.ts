@@ -54,6 +54,33 @@ export interface HaRow {
   taskId: string
   /** How many runs it has going. */
   runs: number
+  /** Its other runs going, newest first, each shown under the row (#2328). */
+  more?: HaRun[]
+}
+
+/** A run of a working agent besides the one its row names (#2328). */
+export interface HaRun {
+  taskId: string
+  /** Where it came from: "Voice", "Agent to agent", … */
+  channel: string
+  line: string
+}
+
+/** A channel, said plainly (as wall-tree.ts ltPlace names them). */
+export function haChannelLabel(ch: unknown): string {
+  const c = String(ch || "")
+  const names: Record<string, string> = { a2a: "Agent to agent", workflow: "Workflow", cron: "Schedule", app: "App chat", requests: "Request", telegram: "Telegram", whatsapp: "WhatsApp", gitlab: "GitLab", github: "GitHub", discord: "Discord", voice: "Voice" }
+  return names[c] || c
+}
+
+/** When a run last moved, ms: `lastActivity` is the run's last output line
+ *  on the daemon, not a time, so it counts only when it parses as one;
+ *  else its start (#2328). 0 when neither is known. */
+export function haRunAt(t: LtTask): number {
+  const moved = Date.parse(t.lastActivity || "")
+  if (Number.isFinite(moved)) return moved
+  const started = Date.parse(t.startedAt || "")
+  return Number.isFinite(started) ? started : 0
 }
 
 export interface HaModel {
@@ -105,13 +132,17 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
       // A machine that is checking or answered with an error still lists its
       // agents, but its runs are not counted: they show as not working.
       const runs = (home === key ? (a.runningTasks || []).filter(Boolean) : []) as LtTask[]
-      const t = runs.slice().sort((x, y) => (Date.parse(y.lastActivity || y.startedAt || "") || 0) - (Date.parse(x.lastActivity || x.startedAt || "") || 0))[0]
+      // Newest first; the row names the newest, the others are listed under
+      // it, so a voice turn beside an older job still shows (#2328).
+      const sorted = runs.slice().sort((x, y) => haRunAt(y) - haRunAt(x))
+      const t = sorted[0]
       const q = asked[a.id]
       const sumAt = a.lastSummary ? Date.parse(a.lastSummary.at) || 0 : 0
-      const lastAt = t ? (Date.parse(t.lastActivity || t.startedAt || "") || 0) : Math.max(sumAt, Date.parse(a.lastActive || "") || 0, q && q.at || 0)
+      const lastAt = t ? haRunAt(t) : Math.max(sumAt, Date.parse(a.lastActive || "") || 0, q && q.at || 0)
       let state: HaState = "idle"
       let line = ""
-      if (t) { state = "working"; line = title(t) }
+      // A voice turn says so: it is a live call (#2328).
+      if (t) { state = "working"; line = (t.channel === "voice" ? "Voice · " : "") + title(t) }
       else if (q) { state = "needs"; line = q.title }
       else if (sumAt && sumAt >= dayStart) { state = "done"; line = plain(a.lastSummary && a.lastSummary.text) }
       else line = a.lastSummary ? plain(a.lastSummary.text) : ""
@@ -120,6 +151,7 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
         color: a.color || null, face: haFace(a.name || a.id), state, line: line.slice(0, 140),
         ageMs: lastAt ? Math.max(0, now - lastAt) : -1, unread: q ? q.n : 0,
         taskId: t ? t.id : "", runs: runs.length,
+        ...(sorted.length > 1 ? { more: sorted.slice(1).map((r) => ({ taskId: r.id, channel: haChannelLabel(r.channel), line: title(r).slice(0, 140) })) } : {}),
       })
     }
   }
@@ -159,7 +191,22 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
     '<span class="ha__face"' + bg + ' aria-hidden="true">' + esc(r.face) + '<i class="ha__dot"></i></span>' +
     '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + (r.node ? '<span class="ha__node">' + esc(r.node) + "</span>" : "") + when + "</span>" +
     '<span class="ha__line">' + esc(r.line || (r.state === "idle" ? "Nothing going" : "")) + "</span></span>" + unread +
-    '<span class="ax-sr"> (' + word + ")</span></a>"
+    '<span class="ax-sr"> (' + word + ")</span></a>" + (r.state === "working" ? haRunsHtml(r, esc, runHref) : "")
+}
+
+/** A working agent's other runs, one line each under its row: the channel
+ *  and the run, opening that run (#2328). The first 3, then how many more. */
+export function haRunsHtml(r: HaRow, esc: (s: unknown) => string, runHref?: (r: HaRow) => string): string {
+  const more = r.more || []
+  if (!more.length) return ""
+  const shown = more.slice(0, 3).map((x) => {
+    const href = runHref ? runHref({ ...r, taskId: x.taskId }) : ""
+    const inner = '<b class="ha__rch">' + esc(x.channel || "Run") + "</b> " + esc(x.line || "A run")
+    const tip = ' title="' + esc(r.name + ", " + (x.channel || "run") + ": " + x.line + (href ? ". Opens this run" : "")) + '"'
+    return href ? '<a class="ha__run" href="' + esc(href) + '" data-ha-run' + tip + ">" + inner + "</a>" : '<span class="ha__run"' + tip + ">" + inner + "</span>"
+  }).join("")
+  const rest = more.length > 3 ? '<span class="ha__run is-rest">+' + (more.length - 3) + " more " + (more.length - 3 === 1 ? "run" : "runs") + "</span>" : ""
+  return '<div class="ha__runs" role="group" aria-label="' + esc(r.name) + ' runs">' + shown + rest + "</div>"
 }
 
 /** What the reader opened in the side menu (Anis 2026-11-26): every part
