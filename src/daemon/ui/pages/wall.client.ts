@@ -105,7 +105,9 @@ import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
 import { HUB_USAGE_SCRIPT } from "./hub-status-usage.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
-import { ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount } from "./wall-tree"
+import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml } from "./wall-tree"
+import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
+import { mtModel, mtCountWords, mtRowTitle, mtTreeHtml } from "./wall-machines"
 import { engineIconKey, engineIcon } from "./engine-icons"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -135,7 +137,9 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ engineIconKey, engineIcon })}
   ${injectFns({ hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml })}
   ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
-  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount })}
+  ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml })}
+  ${injectFns({ ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
+  ${injectFns({ mtModel, mtCountWords, mtRowTitle, mtTreeHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_KEEP_SCRIPT}
@@ -1346,7 +1350,60 @@ ${HUB_NAV_SCRIPT}
   }
   function renderTree() {
     renderHubAgents();
+    renderMachines();
   }
+  // --- The Machines fold under the agent list (#2101, wall-machines.ts) ---
+  // Where the work runs: mesh › machine › one row per run. Folded on load
+  // (the reader's choice is kept); drawn only while open, and only when
+  // the drawing changed, so a fold, a hover or the focus is not lost.
+  var mtClosed = {}, mtLast = '', mtNames = {}, MT_KEY = 'ax.hub.machines.open';
+  (function () {
+    var d = $('wall-machines');
+    if (!d) return;
+    try { if (localStorage.getItem(MT_KEY) === '1') d.open = true; } catch (e) { /* private mode: folded */ }
+    d.addEventListener('toggle', function () {
+      try { localStorage.setItem(MT_KEY, d.open ? '1' : '0'); } catch (e) { /* private mode: not kept */ }
+      if (d.open) renderMachines();
+    });
+  })();
+  function renderMachines() {
+    var d = $('wall-machines'), el = $('wall-machines-body'), n = $('wall-machines-n');
+    if (!d || !el) return;
+    // A snapshot can name a node by its URL while its name is still on the
+    // way: keep the last real name seen for that URL.
+    var live = ((S.live && S.live.nodes) || []).map(function (x) {
+      if (x.url && x.name && x.name !== x.url) mtNames[x.url] = x.name;
+      return x.url && (!x.name || x.name === x.url) && mtNames[x.url] ? Object.assign({}, x, { name: mtNames[x.url] }) : x;
+    });
+    // The count is the Hub's Working count (one rule, #2260).
+    if (n) n.textContent = String(liveWorkCount(live).agents);
+    if (!d.open) return;
+    var now = Date.now();
+    var html = !live.length && S.liveError ? '<p class="lt__empty">Could not reach the machines just now; trying again.</p>'
+      : mtTreeHtml(mtModel(ltAddWorkers(liveTreeModel(live, (S.data && S.data.posts) || [], now), live, now, runTitle)), function (r, m) {
+        return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
+      }, mtClosed, {
+        esc: ltEsc, fold: ltFold, row: ltRowHtml,
+        // The hand-offs and workflows the run started (#2145), each opening its chat.
+        under: function (r, m) { return ltWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge); },
+        icon: function (p) { return engineIcon(p, 'lt__prov'); },
+      });
+    if (html === mtLast) return;
+    mtLast = html;
+    el.innerHTML = html;
+  }
+  /** A worker's link (#2145): its run's Task page when its run is known,
+   *  else its workflow, else its agent's activity. */
+  function workerHref(w, m) {
+    if (w.task && w.agentId) return wallTaskHref(w.task, w.agentId, w.nodeUrl || m.url, w.state !== 'working');
+    if (w.workflowId) return '#page=workflows&w-open=' + encodeURIComponent(w.workflowId);
+    return w.agentId ? activityHref(w.agentId) : '';
+  }
+  document.addEventListener('toggle', function (ev) {
+    var t = ev.target;
+    if (!t || !t.matches || !t.matches('#wall-machines details[data-lt-key]')) return;
+    mtClosed[t.getAttribute('data-lt-key')] = !t.open;
+  }, true);
   // Back on the tab or wide again: follow the stream again (or let it go).
   document.addEventListener('visibilitychange', function () { followLive(S.post ? 'post' : S.page); });
   if (treeWide && treeWide.addEventListener) treeWide.addEventListener('change', function () { followLive(S.post ? 'post' : S.page); });
