@@ -121,7 +121,7 @@ import { traceToolCalls } from "@/storage/traces"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
-import { closeForwardedCard, handleApprovalsApi } from "@/approvals/daemon-api"
+import { closeForwardedCard, handleApprovalsApi, POPUP_ONLY_NEEDS_STEP } from "@/approvals/daemon-api"
 import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
@@ -220,7 +220,7 @@ import {
 } from "@/daemon/mesh-inbox"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
 import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
-import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload } from "./assistant-upload"
+import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload, withAttachedFiles } from "./assistant-upload"
 import { assistantModel } from "./assistant-model"
 import { assistantRuns } from "./assistant-runs"
 import { ProcessRegistry } from "@/agents/process-registry"
@@ -258,6 +258,7 @@ import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
+import { readAccountsPlanUsage } from "@/agents/plan-usage-accounts"
 import { activeCliDir } from "@/agents/cli-accounts"
 import { NodeEnvironment } from "@/node-env"
 import { formatNode } from "@/node-env/format"
@@ -4467,6 +4468,7 @@ export class AgentXDaemon {
           noWakeLabel: githubConfig.noWakeLabel,
           ci: githubConfig.ci,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
+          reviewWaitFile: resolve(process.cwd(), ".agentx/state/review-wait-github.json"),
           onCiStillRed: (r: CiStillRed) => this.ciStillRedStep(r),
           knownAgentIds: Object.keys(this.config.agents),
           // The webhook lands on one node; a marked PR's agent may live on
@@ -5657,7 +5659,7 @@ export class AgentXDaemon {
     }
     // Heartbeat so proxies don't kill idle SSE connections.
     const heartbeat = setInterval(() => { if (!closed) try { res.write(": ping\n\n") } catch { /* */ } }, 15000)
-    let sub: { initial: string; done: boolean; unsubscribe: () => void } | null = null
+    let sub: ReturnType<AgentRegistry["subscribeToTaskOutput"]> = null
     const finish = (reason: string) => {
       if (closed) return
       send("end", { reason })
@@ -5666,8 +5668,11 @@ export class AgentXDaemon {
       try { sub?.unsubscribe() } catch { /* */ }
       try { res.end() } catch { /* */ }
     }
+    // Each chunk carries the time it came in, and the start event the times
+    // of the lines so far (output-stamps.ts, #2306): the Task page shows
+    // when each step happened.
     sub = this.registry.subscribeToTaskOutput(taskId, (chunk) => {
-      send("chunk", { text: chunk })
+      send("chunk", { text: chunk, at: Date.now() })
       if (chunk === "\n[task finished]\n") finish("completed")
     })
     if (!sub) {
@@ -5680,7 +5685,9 @@ export class AgentXDaemon {
     // show a request cut off mid-sentence.
     const live = this.registry.list().flatMap(a => a.runningTasks).find(t => t.id === taskId)
     send("start", {
-      taskId, initial: sub.initial, done: sub.done,
+      taskId, initial: sub.initial, stamps: sub.stamps, done: sub.done,
+      // A run that already ended: when, so the page's clock shows the time it took (#2306).
+      ...(sub.endedAt ? { endedAt: sub.endedAt } : {}),
       ...(live ? { message: live.message, sender: live.sender, startedAt: live.startedAt } : {}),
     })
     if (sub.done) {
@@ -6389,6 +6396,12 @@ export class AgentXDaemon {
             this.json(res, 400, { error: `unknown agent "${raisedBy}": raised_by must be an agent on this node` })
             return
           }
+          // A forwarded card is never popup-only: the other node's popup
+          // cannot prove this node's step (noqta#910).
+          if (input.popup_only !== undefined && input.popup_only !== false) {
+            this.json(res, 400, { error: POPUP_ONLY_NEEDS_STEP })
+            return
+          }
           const reply = await forwardCard(input, forward)
           if (reply.status === 201) this.log(`[approvals] ${(reply.body as { card: DecisionCard }).card.id} from ${raisedBy} forwarded to ${forward.peer.name}`)
           raised(reply)
@@ -6414,6 +6427,8 @@ export class AgentXDaemon {
             return !!peer && this.approvalsPeer(node)?.name === peer
           },
           fromMeshPeer: () => !isLoopback(req.socket?.remoteAddress || "") && this.carriesMeshToken(req),
+          // The same test popNext makes before it shows a card.
+          popupEnabled: () => !!this.config.approvals.popup?.enabled && process.platform === "darwin",
           ...(this.native.tasks ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
@@ -8260,7 +8275,7 @@ export class AgentXDaemon {
       // Operator follow-up: enqueue a correction/update message for an in-flight
       // task. With replace=true the current run is aborted so the new message
       // runs immediately; otherwise it waits for the current run to finish.
-      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent? }
+      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent?, attachments? }
       // 200 → { ok, agentId, channel, chatId, replaced, pending }
       // 200 → { ok, resumed: true, taskId: <new run>|undefined, queued }  (finished cron run, `agent` given)
       // 404 → task not running (and no stored record when `agent` given)
@@ -8270,8 +8285,14 @@ export class AgentXDaemon {
         const taskId = decodeURIComponent(followupMatch[1])
         try {
           const body = await readJsonBody(req)
-          const message = typeof (body as any)?.message === "string" ? (body as any).message.trim() : ""
-          if (!message) { this.json(res, 400, { error: "message required" }); return }
+          const typed = typeof (body as any)?.message === "string" ? (body as any).message.trim() : ""
+          if (!typed) { this.json(res, 400, { error: "message required" }); return }
+          // Files from the Task page's ask box (#2306), uploaded for this
+          // run's agent (POST /api/assistant/upload); anything else is dropped.
+          const runAgent = this.registry.list().find(a => (a.runningTasks || []).some(t => t.id === taskId))?.id
+            || (typeof (body as any)?.agent === "string" ? (body as any).agent : "")
+          const runDef = runAgent ? this.registry.list().find(a => a.id === runAgent) : undefined
+          const message = withAttachedFiles(typed, acceptAttachments(runDef?.workspace || null, (body as any)?.attachments))
           const replace = (body as any)?.replace === true
           const sender = typeof (body as any)?.sender === "string" && (body as any).sender.trim()
             ? (body as any).sender.trim()
@@ -8333,10 +8354,16 @@ export class AgentXDaemon {
         // Codex's limits as its last run on this machine wrote them, for the
         // account new runs use (#2101 R28b). Read only on the GET, at most
         // once a minute (codex-plan-usage.ts CODEX_USAGE_CACHE_MS).
-        const codex = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
-          ? await readCodexPlanUsageCached(activeCliDir("codex"))
+        const isGet = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
+        const codex = isGet ? await readCodexPlanUsageCached(activeCliDir("codex")) : undefined
+        // Each added CLI account's own reading (#2101 R28d, plan-usage-accounts.ts).
+        // They follow session.planUsage.enabled, read from the live config
+        // like the main reader (reloaded without a restart).
+        const accounts = isGet
+          ? await readAccountsPlanUsage({ enabled: planUsageSettings(this.config).enabled, log: (m) => this.log(m) })
+            .catch((e: any) => { this.log(`[plan-usage] account readings failed: ${e?.message ?? e}`); return undefined })
           : undefined
-        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex })
+        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex, accounts })
         const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted
         if (lifted) this.log(`  Claude plan holds lifted by operator: ${lifted.map((s) => s.window).join(", ") || "none active"}`)
         this.json(res, reply.status, reply.body)

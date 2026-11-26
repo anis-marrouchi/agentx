@@ -56,7 +56,7 @@ The workflow runs every Monday at 04:00 UTC. It appears on the **Workflows** pag
 
 ## Answer the weekly card
 
-When a week has new drafts, AgentX raises one decision card for you. It shows in **Needs you** on the dashboard's Hub, in your daily digest, and, on a Mac with the popup on, as a popup.
+When a week has new drafts, AgentX raises one decision card for you. It shows in **Waiting on you** on the dashboard's Hub, in your daily digest, and, on a Mac with the popup on, as a popup.
 
 ![The weekly card with two learned drafts: their sentences, and the choices Use both, Only: Interview with a candidate, and Only: Call with a supplier.](/screenshots/learned-templates/weekly-card.png)
 
@@ -110,7 +110,7 @@ Only you can answer, resume or take one back: these commands send your operator 
 
 1. **Terminal:** `agentx situation learned`. Right after you switch it on, it says `No learned templates yet.` (and no "is off" line).
 2. **Browser:** open the **Workflows** page of the dashboard. `situation-learn` is listed. After a Monday, it has a run with the steps `draft` and `card`, and `tell_owner` only when learning paused or a template was retired with no card that week.
-3. **Browser:** after a run with new drafts, **Needs you** on the Hub holds one card titled "Learned templates to approve" ("Learned template to approve" when there is one draft).
+3. **Browser:** after a run with new drafts, **Waiting on you** on the Hub holds one card titled "Learned templates to approve" ("Learned template to approve" when there is one draft).
 4. **Terminal:** after you answer, `agentx situation learned` shows each draft as **approved** (and **in use** once templates are on) or **turned down**.
 5. **Terminal:** on a talk where you named an approved template, `agentx situation list` shows that template, and the agent's `[Situation]` line carries its sentence in quotes.
 

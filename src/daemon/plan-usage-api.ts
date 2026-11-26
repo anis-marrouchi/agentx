@@ -2,6 +2,7 @@ import { activeProviderHolds, getClaudeCodeUsage, liftProviderHolds, planWindowU
 import { planUsageReader } from "@/agents/claude-plan-usage"
 import { RUN_PRIORITIES, getPlanPriority, planPriorityHold } from "@/agents/plan-priority"
 import type { CodexPlanUsage } from "@/agents/codex-plan-usage"
+import type { AccountsPlanUsage } from "@/agents/plan-usage-accounts"
 import type { Reply } from "./restart-api"
 
 // --- HTTP surface for the Claude plan dispatch gate (operator-only; the
@@ -13,7 +14,8 @@ import type { Reply } from "./restart-api"
 //                          usage reader's last reading (#2161), which run
 //                          classes it holds, and Codex's last plan reading
 //                          from its session files (#2101 R28b), when the
-//                          daemon passes one
+//                          daemon passes one, and each added CLI
+//                          account's reading (#2101 R28d), when it has any
 //   POST /usage/plan/lift  drop the active holds; the next cold dispatch
 //                          asks Claude again
 //
@@ -21,7 +23,7 @@ import type { Reply } from "./restart-api"
 
 export const PLAN_USAGE_API_PATHS = new Set(["/usage/plan", "/usage/plan/lift"])
 
-export function handlePlanUsageApi(method: string, path: string, now: number = Date.now(), extra: { codex?: CodexPlanUsage | null } = {}): Reply {
+export function handlePlanUsageApi(method: string, path: string, now: number = Date.now(), extra: { codex?: CodexPlanUsage | null; accounts?: AccountsPlanUsage } = {}): Reply {
   const m = method.toUpperCase()
   if (path === "/usage/plan" && m === "GET") {
     const windows = planWindowUse(now)
@@ -34,6 +36,7 @@ export function handlePlanUsageApi(method: string, path: string, now: number = D
         holds: activeProviderHolds(now),
         reader: planUsageReader.getState(),
         ...(extra.codex !== undefined && { codex: extra.codex }),
+        ...(extra.accounts !== undefined && { accounts: extra.accounts }),
         priority: {
           config,
           windows,

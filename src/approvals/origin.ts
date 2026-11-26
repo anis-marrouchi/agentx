@@ -59,6 +59,16 @@ export interface WorkflowOrigin {
   nodeId: string
 }
 
+/** A popup-only card a running workflow step raised for its own agent
+ *  (POST /approvals with popup_only and X-AgentX-Step, noqta#910). A later
+ *  step of that workflow reads the answer itself, so the sweep sends the
+ *  agent no result turn; the agent's steps may close it (resolveCard). */
+export interface StepRaisedOrigin {
+  kind: "step-raised"
+  runId: string
+  nodeId: string
+}
+
 /** An agent proposed a reusable workflow (#788). Yes turns it on. */
 export interface WorkflowProposalOrigin {
   kind: "workflow-proposal"
@@ -214,7 +224,7 @@ export function cronGoalLines(origin: CronGoalOrigin, card: { verdict?: string; 
   return [head, "The daemon has retired the job: it never runs again. Write one note on the goal's issue saying why it ended."]
 }
 
-export type CardOrigin = CronGoalOrigin | LearnedDraftsOrigin | SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
+export type CardOrigin = StepRaisedOrigin | CronGoalOrigin |LearnedDraftsOrigin | SourceConsentOrigin | NumberOrigin | McpWriteOrigin | ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin | OrgProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

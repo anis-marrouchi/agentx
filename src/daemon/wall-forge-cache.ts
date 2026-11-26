@@ -31,7 +31,11 @@ export type ForgeRead<T> =
   | { kind: "late" }
   | { kind: "skipped" }
 
-export interface ForgeCacheOptions { budgetMs?: number; maxReads?: number; clock?: () => number }
+export interface ForgeCacheOptions {
+  budgetMs?: number; maxReads?: number; clock?: () => number
+  /** How long an answer is kept (default 5 minutes); an error is kept at most a minute. */
+  okTtlMs?: number
+}
 
 export interface ForgeCache<R, T> {
   /** Reads every ref (keyed, in order) inside one time box; a quick read
@@ -73,7 +77,8 @@ export function forgeCache<R, T>(read: (ref: R) => Promise<ForgeAnswer<T>>, opts
   const fresh = (key: string) => {
     const c = cache.get(key)
     if (!c) return null
-    const ttl = typeof c.answer === "object" && c.answer !== null && "error" in c.answer ? ERROR_TTL_MS : OK_TTL_MS
+    const okTtl = opts.okTtlMs ?? OK_TTL_MS
+    const ttl = typeof c.answer === "object" && c.answer !== null && "error" in c.answer ? Math.min(ERROR_TTL_MS, okTtl) : okTtl
     return clock() - c.at < ttl ? c : null
   }
 

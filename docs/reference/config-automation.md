@@ -530,6 +530,7 @@ To turn it on by hand:
 | `requests.dueTimes.defaultEstimateMinutes` | number | `30` | Minutes counted for work with no estimate and no usual time for its kind. |
 | `requests.dueTimes.factorDays` | whole number (1 to 365) | `30` | Days of finished work the correction factor is read from. |
 | `requests.dueTimes.factorMinRows` | whole number (1 to 100) | `3` | Fewer finished pieces of work with an estimate than this: the factor is 1. |
+| `requests.dueTimes.fillMissing` | boolean | `false` | No open request or promise without a due time: a promise or an accept with no `due` gets the time AgentX computes, in `"shadow"` too, or is refused when it has no estimate and no usual time. The requests check wakes the agent of each open item with no due time once to give its own. See [Due times the daemon gives](/jobs/open-requests#due-times-the-daemon-gives-the-queue). |
 | `requests.catchPromises` | object | `{}` | Catch "I'll do X": at the end of each of your turns, one short model call reads the agent's reply. A firm promise becomes a promise of that agent; a reply that asks you leaves the request waiting on you. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply). |
 | `requests.catchPromises.enabled` | boolean | `true` | Reads the replies. On by default wherever requests are on; it spends one model call on most of your turns, bounded by `dailyCap`. Also `agentx requests settings --catch on\|off`. |
 | `requests.catchPromises.dailyCap` | number (1 to 10000) | `300` | Model calls a day (UTC), across all agents. Past it, replies are not read until the next day. Also `agentx requests settings --catch-cap <n>`. |
@@ -723,7 +724,7 @@ How AgentX uses the apps that come with the operating system, such as Reminders 
 | `native.mirror.list` | string | `"AgentX Desk"` | The Reminders list. Must not start with `-`, and must not be one of `reminders.lists` or `approvals.checkin.lists`. |
 | `native.mirror.dueAfterMinutes` | number (0–1440) | `5` | How long after a card is raised its reminder falls due. Never later than the card expires. |
 | `native.mirror.include` | list of `"card"`, `"request"` | `["card", "request"]` | What is mirrored: decision cards, requests waiting on you, or both. |
-| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/hub#status=open&view=decide` (**Needs you** on the Hub). |
+| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/hub#status=open&view=decide` (**Waiting on you** on the Hub). |
 | `native.forwardTo` | string | — | The mesh peer with the owner's notes app, for a machine without one. Unset: `approvals.forwardTo`. |
 | `native.notes.enabled` | boolean | `false` | Lets agents put ideas in Apple Notes with `agentx_note`. See [Get agents' ideas in Apple Notes](/jobs/ideas-to-notes). |
 | `native.notes.folder` | string | `"AgentX"` | The Notes folder. Created the first time. |

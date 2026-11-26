@@ -76,7 +76,7 @@ interface OpenedDb {
   close: () => void
 }
 
-function openReadOnly(): OpenedDb | null {
+export function openReadOnly(): OpenedDb | null {
   const path = resolve(process.cwd(), ".agentx/db.sqlite")
   if (!existsSync(path)) return null
   try {

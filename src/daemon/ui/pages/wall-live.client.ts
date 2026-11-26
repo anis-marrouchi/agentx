@@ -198,7 +198,8 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var plan = t.plan
       ? '<details class="wls__plan" data-lv-plan="' + esc(planKey) + '"' + (lvState().open[planKey] ? ' open' : '') + '><summary>Resume plan, by ' + (t.plan.author === 'agent' ? esc(nameOf(t.agentId)) : 'AgentX' + (t.plan.note ? ' (' + esc(t.plan.note) + ')' : '')) + '</summary><pre>' + esc(t.plan.text) + '</pre></details>'
       : '<div class="wls__k">' + (winding ? esc(nameOf(t.agentId)) + ' is writing its resume plan…' : 'No resume plan was saved.') + '</div>';
-    var acts = (t.state === 'stopped' && t.resumable
+    // On its Task page, Resume sits in the ask box (#2306).
+    var acts = (t.state === 'stopped' && t.resumable && !onTask
         ? lvBtn('resume', n.url, t.id, 'Resume', '', wf ? 'Resume this step from its plan: the workflow run goes on from it' : 'Resume this task from its plan, in the same chat')
         : '') +
       (!winding ? lvBtn('drop', n.url, t.id, 'Drop', 'Drop it for good?', 'Forget this paused task and its plan: it can no longer be resumed', true) : '');

@@ -2,14 +2,14 @@
 // gives each icon as an SVG string; Icon draws it at size-4 by default and
 // hides it from screen readers (the control around it carries the name).
 import {
-  Activity, BookOpen, Bot, Clock, Files, Folder, Gauge, GitBranch, Inbox, ListTodo, Menu, Monitor,
+  Activity, ArrowLeft, BookOpen, Bot, ChevronRight, CircleAlert, CircleDot, Clock, ExternalLink, Files, Folder, Gauge, GitBranch, GitPullRequest, Inbox, Kanban, List, ListTodo, Menu, Monitor,
   Network, PanelRight, Radio, Search, Send, Settings, Smartphone, Workflow,
 } from "lucide-static"
 import { cn } from "./cn"
 
 const ICONS: Record<string, string> = {
-  "activity": Activity, "book-open": BookOpen, "bot": Bot, "clock": Clock, "files": Files, "folder": Folder,
-  "gauge": Gauge, "git-branch": GitBranch, "inbox": Inbox, "list-todo": ListTodo, "menu": Menu, "monitor": Monitor,
+  "activity": Activity, "arrow-left": ArrowLeft, "book-open": BookOpen, "bot": Bot, "chevron-right": ChevronRight, "circle-alert": CircleAlert, "circle-dot": CircleDot, "clock": Clock, "external-link": ExternalLink, "files": Files, "folder": Folder,
+  "gauge": Gauge, "git-branch": GitBranch, "git-pull-request": GitPullRequest, "inbox": Inbox, "kanban": Kanban, "list": List, "list-todo": ListTodo, "menu": Menu, "monitor": Monitor,
   "network": Network, "panel-right": PanelRight, "radio": Radio, "search": Search, "send": Send,
   "settings": Settings, "smartphone": Smartphone, "workflow": Workflow,
 }

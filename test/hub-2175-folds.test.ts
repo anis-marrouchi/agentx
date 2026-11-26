@@ -71,7 +71,8 @@ describe("Task view: an opened tool step stays open while the run goes on (#2175
 
   it("keys parts by kind and place in the bundle, and can take the whole output again", () => {
     const main = readFileSync("src/web/task-conversation/main.tsx", "utf8")
-    expect(main).toContain("<Tool key={p.kind + i}")
+    // Each part's row carries the key (#2306 put parts in rows with a time column).
+    expect(main).toContain("<div key={p.kind + i} className={`axc-row")
     expect(main).toMatch(/reset\(text: string\) \{ raw = String\(text \|\| ""\); schedule\(\) \}/)
   })
 })

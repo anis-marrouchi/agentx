@@ -57,7 +57,11 @@ export function daemonBaseUrl(cfg: { node?: { bind?: string } }): string {
 }
 
 export function dashboardBaseUrl(cfg: { dashboard?: { bind?: string; port?: number } }): string {
-  return localUrl(`${cfg.dashboard?.bind || "127.0.0.1"}:${cfg.dashboard?.port || 4202}`)
+  // dashboard.bind is a bare host. "::" (every address) is opened on
+  // 127.0.0.1 like "0.0.0.0"; any other IPv6 host needs brackets in a URL.
+  const bind = cfg.dashboard?.bind || "127.0.0.1"
+  const host = bind === "::" || bind === "[::]" ? "127.0.0.1" : bind.includes(":") && !bind.startsWith("[") ? `[${bind}]` : bind
+  return localUrl(`${host}:${cfg.dashboard?.port || 4202}`)
 }
 
 /** The agent page with its chat open (agent.ts opens it on #chat). */

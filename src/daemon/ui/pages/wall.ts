@@ -52,6 +52,7 @@ import { WALL_DIFF_CSS } from "./wall-diff.client"
 import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
 import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { WALL_AGENTS_CSS } from "./wall-agents.client"
+import { injectFns } from "../inject"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_FILES_CSS } from "./wall-files"
@@ -59,6 +60,7 @@ import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml 
 import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
+import { HUB_PANELS_CSS, HUB_PANELS_FNS, HUB_PANELS_SCRIPT, hubHistoryHtml, hubNavFoldHtml, hubPanelGripHtml, hubPanelReopenHtml } from "./hub-panels"
 import { HUB_USAGE_CSS } from "./hub-status-usage"
 import { HUB_LAYOUT_CSS, hubLayoutBoot } from "./hub-layout"
 import { resolveHubLayout, type HubLayoutView } from "../../../hub/layout"
@@ -139,7 +141,7 @@ interface NavItem { key: string; label: string; href: string; icon: NavIcon; cou
 export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "", items: [
     { key: "wall", label: HUB_NAME, href: "#status=open&amp;view=feed", icon: "wall", count: "nav-n-wall" },
-    { key: "needs", label: "Needs you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
+    { key: "needs", label: "Waiting on you", href: "#status=open&amp;view=decide", icon: "needs", count: "nav-n-needs" },
   ] },
   { label: "Work", items: [
     { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },
@@ -168,6 +170,13 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     { key: "settings", label: "Settings", href: "#page=settings", icon: "settings" },
   ] },
 ]
+
+/** The built-in pages the Hub's menu picks from (#2149): every nav page
+ *  but Settings, which is always reached from the nav foot. */
+export function hubMenuCatalog(): Array<{ label: string; items: Array<{ key: string; label: string; icon: string }> }> {
+  return WALL_NAV_GROUPS.filter((g) => g.label !== "Owner")
+    .map((g) => ({ label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) }))
+}
 
 /** Where the owner's Settings links go (#1428, #1449). */
 const WALL_SETTINGS_HREF = "#page=settings"
@@ -244,6 +253,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const body = `<div class="ax-wall">
   <nav class="ax-wall__nav" aria-label="${HUB_NAME}">
     <a class="ax-wall__logo" href="${HUB_PATH}">AX<small>${HUB_NAME.toLowerCase()}</small></a>
+    ${hubNavFoldHtml()}
 ${hubAgentsNavHtml()}
 ${shortcuts}
     <button type="button" class="ax-wall__item ax-wall__morebtn" data-more-nav aria-label="More pages" aria-expanded="false" aria-controls="wall-more">${NAV_ICON.more}<span>More</span></button>
@@ -255,14 +265,15 @@ ${dashboard}
       ${classic}
     </div>
   </nav>
+  ${hubPanelGripHtml("nav")}
   ${moreSheetHtml(groups, owner)}
   <div class="ax-wall__main">${hubHead ? "\n    " + HUB_REACT_ROOT : ""}
     <header class="ax-wall__head">
-      <div class="ax-wall__titlebar"><button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
+      <div class="ax-wall__titlebar">${hubHistoryHtml()}<button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
         <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="#page=editor&amp;e-new=1" hidden>New workflow</a>
-        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${wallChatButtonHtml()}</div>
+        <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${hubPanelReopenHtml()}${wallChatButtonHtml()}</div>
       <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
       <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
         ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
@@ -337,9 +348,9 @@ ${HUB_STATUS_HTML}`
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS,
     head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
+    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns(HUB_PANELS_FNS)}\n${HUB_PANELS_SCRIPT}</script>`,
   })
 }
 

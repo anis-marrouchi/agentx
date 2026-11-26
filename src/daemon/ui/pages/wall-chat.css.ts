@@ -12,7 +12,7 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc-btn .hc__dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--ax-bg); }
 
 .hc { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ax-bg); }
-.ax-wall.hc-open { grid-template-columns: 280px minmax(0, 1fr); }
+.ax-wall.hc-open { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr); }
 .ax-wall.hc-open .ax-wall__main { grid-row: 1; margin-top: 0; border-top: 0; }
 .ax-wall.hc-open .ax-wall__aside,
 .ax-wall.hc-open .ax-wall__main > :not(#hc) { display: none !important; }
@@ -224,6 +224,23 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc__tool--mic[hidden] ~ .hc__send { margin-left: auto; }
 .hc__tool--check[aria-pressed="true"] { background: var(--ax-blue-t); color: var(--ax-blue-d); border-color: transparent; }
 .hc__tool:hover { background: var(--ax-surface); }
+.hc__tool:focus-visible, .hc__stopb:focus-visible, .hc__resume:focus-visible, .hc__send:focus-visible { outline: 2px solid var(--ax-blue-d); outline-offset: 2px; }
+/* The Task page's run controls by the send arrow (#2306): Pause, Stop; Resume when paused. */
+.hc__acts { display: inline-flex; align-items: center; gap: 8px; }
+.hc__acts:empty { display: none; }
+.hc__tool--mic[hidden] ~ .hc__acts { margin-left: auto; }
+.hc__tool--mic[hidden] ~ .hc__acts:not(:empty) ~ .hc__send { margin-left: 0; }
+.hc__stopb { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--ax-border-2); background: var(--ax-surface); color: var(--ax-red-ink); cursor: pointer; }
+.hc__stopb:hover { background: var(--ax-red-t); border-color: transparent; }
+.hc__acts svg { width: 15px; height: 15px; }
+.hc__resume { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 10px; border: 0; background: var(--ax-blue-d); color: #fff; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.hc__resume:hover { background: var(--ax-blue); }
+.hc__resume svg { width: 13px; height: 13px; }
+.hc__busy { font-size: 12.5px; color: var(--ax-muted); white-space: nowrap; }
+.hc__comp textarea[disabled] { cursor: not-allowed; }
+/* A paused or read-only run's box only says where it stands, with Resume: no files, no mic. */
+[data-ro] .hc__files, [data-ro] [id$="-attach"], [data-ro] .hc__tool--mic, [data-ro] .hc__tool--check, [data-ro] [id$="-mic-play"] { display: none !important; }
+[data-ro] .hc__acts { margin-left: auto; }
 .hc__tool.is-on { background: var(--ax-red-t); color: var(--ax-red-ink); border-color: transparent; }
 .hc__voice { margin: 0; font-size: 12.5px; color: var(--ax-muted); }
 .hc__voice.is-err { color: var(--ax-red-ink); }

@@ -69,7 +69,10 @@ import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
-import { tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml } from "./wall-task-session"
+import { tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml } from "./wall-task-session"
+import { tcCtlHtml } from "./wall-task-ctl"
+import { cfClock, cfDuration } from "./wall-chat-fold"
+import { outStamp } from "@/agents/output-stamps"
 import { followAttach } from "./wall-follow"
 import { WALL_SETTINGS_SCRIPT } from "./wall-settings.client"
 import { WALL_ACTIVITY_SCRIPT } from "./wall-activity.client"
@@ -99,7 +102,7 @@ import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { HUB_LAYOUT_SCRIPT } from "./hub-layout"
 import { hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
-import { hubPlanEngines, hubEngineShort, hubEnginesInUse, hubUsageRows, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
+import { hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
 import { HUB_USAGE_SCRIPT } from "./hub-status-usage.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount } from "./wall-tree"
@@ -123,13 +126,14 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
-  ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, followAttach })}
+  ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml, followAttach })}
+  ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunsHtml })}
   ${injectFns({ engineIconKey, engineIcon })}
-  ${injectFns({ hubPlanEngines, hubEngineShort, hubEnginesInUse, hubUsageRows, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubEnginePopHtml, hubAgentsPopHtml })}
+  ${injectFns({ hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml })}
   ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
@@ -649,7 +653,7 @@ ${HUB_NAV_SCRIPT}
     ];
     if (waits) steps.push({ name: 'Waits', at: 'on ' + waitsOn(p, plan) + (p.blocked ? ' for ' + esc(ago(p.blocked.since).replace(' ago', '')) : ''), on: 'is-wait' });
     steps.push({ name: end, at: p.closedAt ? esc(ago(p.closedAt)) : p.estimateMinutes ? 'estimate ' + hm(p.estimateMinutes) : '', on: open ? '' : p.state === 'done' ? 'is-done' : 'is-end' });
-    return '<ol class="wtk__prog" aria-label="Where it stands">' + steps.map(function (s) {
+    return '<ol class="wtk__prog" data-hub-item="gates" aria-label="Where it stands">' + steps.map(function (s) {
       return '<li class="' + s.on + '"' + (s.on === 'is-now' || s.on === 'is-wait' ? ' aria-current="step"' : '') + '><b>' + esc(s.name) + '</b><span>' + s.at + '</span></li>';
     }).join('') + '</ol>';
   }
@@ -664,7 +668,7 @@ ${HUB_NAV_SCRIPT}
   /** The plan, when the post has one: each step, who owns it, its proof. */
   function planHtml(plan) {
     var done = plan.filter(function (s) { return s.state === 'done' || s.state === 'skipped'; }).length;
-    return '<section class="wtk__sec" aria-label="Plan"><h2>Plan <span class="k">' + done + ' of ' + plan.length + ' done</span></h2><ol class="wtk__plan">' +
+    return '<section class="wtk__sec" data-hub-item="gates" aria-label="Plan"><h2>Plan <span class="k">' + done + ' of ' + plan.length + ' done</span></h2><ol class="wtk__plan">' +
       plan.map(function (s) {
         var proof = s.evidence ? (/^https?:\/\//.test(s.evidence) ? '<a href="' + esc(s.evidence) + '" target="_blank" rel="noopener">Proof</a>' : esc(s.evidence)) : '';
         return '<li class="is-' + esc(s.state) + '"><span class="wtk__mark" aria-hidden="true">' + (STEP_MARK[s.state] || '') + '</span><div>' +
@@ -1128,7 +1132,7 @@ ${HUB_NAV_SCRIPT}
       el.classList.toggle('is-zero', !n);
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
-    var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Needs you' };
+    var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Waiting on you' };
     $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'operations' ? 'Operations' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 

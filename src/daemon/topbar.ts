@@ -493,7 +493,7 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "live", label: "Live", href: `${HUB_PATH}#page=live` },
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Monitor", href: "/monitor" },
-        { id: "approvals", label: "Needs you", href: HUB_NEEDS_YOU },
+        { id: "approvals", label: "Waiting on you", href: HUB_NEEDS_YOU },
         { id: "people", label: "People", href: `${HUB_PATH}#page=people` },
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },

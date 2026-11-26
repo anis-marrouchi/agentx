@@ -5,12 +5,15 @@
 // token. The Hub's own voice controls work here because the window may use
 // the microphone, for the dashboard's pages only.
 
-import { app, BrowserWindow, Menu, session, shell, systemPreferences, type Rectangle } from "electron"
+import { app, BrowserWindow, dialog, Menu, session, shell, systemPreferences, type Rectangle } from "electron"
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { allowsMedia, dashboardUrl, hubUrl, isDashboardOrigin, opensOutside } from "./hub.js"
 import { offlinePage } from "./offline.js"
-import { createTray } from "./tray.js"
+import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, restartTarget, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
+import type { TrayActions, TrayState } from "./menu.js"
+import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
+import { createTray, updateTray } from "./tray.js"
 
 const BASE = dashboardUrl()
 const HUB = hubUrl(BASE)
@@ -19,6 +22,18 @@ const RESOURCES = app.isPackaged ? join(process.resourcesPath, "resources") : jo
 
 let win: BrowserWindow | null = null
 let quitting = false
+let settings: AppSettings
+const DAEMON = daemonTarget()
+const DAEMON_REMOTE = !isLoopbackUrl(DAEMON.url)
+// Open at login: Electron sets it on macOS and Windows only.
+const LOGIN_ITEM_SUPPORTED = process.platform === "darwin" || process.platform === "win32"
+let daemonStatus: DaemonStatus | null = null
+let daemonBusy: string | null = null
+// The launchd job / systemd unit that runs the daemon; checked while it is down.
+let daemonManaged: string | null = null
+// launchd/systemd seen running the daemon this session. Kept while it is down: during
+// `daemon upgrade` the job is booted out for a moment, and Start must stay off then too.
+let managedSeen: string | null = null
 
 function log(message: string, err?: unknown): void {
   process.stderr.write(`[agentx-desktop] ${message}${err ? `: ${String(err)}` : ""}\n`)
@@ -62,7 +77,8 @@ function createWindow(): BrowserWindow {
     icon: process.platform === "linux" ? join(RESOURCES, "tray.png") : undefined,
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   })
-  w.once("ready-to-show", () => w.show())
+  w.on("show", refreshTray)
+  w.on("hide", refreshTray)
 
   // Other sites open in the browser; the window stays on the dashboard.
   w.webContents.setWindowOpenHandler(({ url }) => {
@@ -83,10 +99,14 @@ function createWindow(): BrowserWindow {
     void w.loadURL(offlinePage(HUB))
   })
 
-  // Closing hides the window; the app stays in the top bar until Quit.
+  // Closing hides the window to the tray, or quits, as the tray menu says.
   w.on("close", (event) => {
     saveBounds(w)
     if (quitting) return
+    if (settings.closeAction === "quit") {
+      app.quit()
+      return
+    }
     event.preventDefault()
     w.hide()
   })
@@ -100,6 +120,141 @@ function showWindow(): void {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+function toggleWindow(): void {
+  if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()) win.hide()
+  else showWindow()
+}
+
+// --- Tray: window, daemon and settings ---
+
+const trayActions: TrayActions = {
+  onToggleWindow: toggleWindow,
+  onQuit: () => app.quit(),
+  onDaemon: (action) => void daemonAction(action),
+  onSetting: changeSetting,
+}
+
+function trayState(): TrayState {
+  return {
+    windowVisible: !!win && !win.isDestroyed() && win.isVisible(),
+    daemon: daemonStatus,
+    busy: daemonBusy,
+    settings,
+    loginItemSupported: LOGIN_ITEM_SUPPORTED,
+    startRefusal: startRefusal(daemonStatus, DAEMON, daemonManaged),
+    remote: DAEMON_REMOTE,
+  }
+}
+
+function refreshTray(): void {
+  updateTray(trayActions, trayState())
+}
+
+function changeSetting(change: Partial<AppSettings>): void {
+  settings = { ...settings, ...change }
+  if ("openAtLogin" in change && !applyLoginItem()) {
+    // The system kept its own value: show that, not the wish.
+    settings.openAtLogin = !settings.openAtLogin
+    dialog.showErrorBox("Open at login was not changed", "The system refused it. On macOS this needs a signed copy of the app.")
+  }
+  try {
+    saveSettings(app.getPath("userData"), settings)
+  } catch (err) {
+    log("could not save the settings", err)
+  }
+  refreshTray()
+}
+
+/** Sets the system's login item to the saved choice; false when the system refused. */
+function applyLoginItem(): boolean {
+  if (!LOGIN_ITEM_SUPPORTED) return true
+  try {
+    if (app.getLoginItemSettings().openAtLogin === settings.openAtLogin) return true
+    app.setLoginItemSettings({ openAtLogin: settings.openAtLogin })
+    if (app.getLoginItemSettings().openAtLogin === settings.openAtLogin) return true
+    log(`Open at login: the system kept ${!settings.openAtLogin}`)
+  } catch (err) {
+    log("could not change Open at login", err)
+  }
+  return false
+}
+
+async function pollDaemon(): Promise<void> {
+  if (daemonBusy) return
+  const next = await readStatus(DAEMON)
+  if (next.running && (next.service === "launchd" || next.service === "systemd")) managedSeen = next.service
+  const managed = next.running ? daemonManaged : managedService() ?? managedSeen
+  const changed = JSON.stringify(next) !== JSON.stringify(daemonStatus) || managed !== daemonManaged
+  daemonStatus = next
+  daemonManaged = managed
+  if (changed) refreshTray()
+}
+
+const BUSY_LABEL = { start: "starting", stop: "stopping", restart: "restarting when idle" } as const
+
+/** Restart waits for running tasks, but still restarts the daemon: ask first. */
+async function confirmRestart(): Promise<boolean> {
+  const opts = {
+    type: "question" as const,
+    buttons: ["Restart when idle", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Restart the AgentX daemon?",
+    detail:
+      "It waits until no task is running (up to 30 minutes), then restarts. If tasks are still running then, it does not restart.\n\nRuns: agentx daemon restart --when-idle --abort-on-timeout",
+  }
+  const r = win && !win.isDestroyed() && win.isVisible() ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+  return r.response === 0
+}
+
+async function daemonAction(action: "start" | "stop" | "restart"): Promise<void> {
+  if (daemonBusy || DAEMON_REMOTE) return // the CLI acts on this machine's daemon, not the remote one
+  if (action === "restart" && !(await confirmRestart())) return
+  if (action === "start") {
+    // Checked again now: launchd may have loaded the job since the last poll.
+    const refusal = startRefusal(await readStatus(DAEMON), DAEMON, managedService() ?? managedSeen)
+    if (refusal) {
+      dialog.showErrorBox("Could not start the daemon", `Not started: ${refusal}.`)
+      await pollDaemon()
+      return
+    }
+  }
+  if (daemonBusy) return
+  daemonBusy = BUSY_LABEL[action]
+  refreshTray()
+  log(`daemon ${action} (${DAEMON.url})`)
+  try {
+    if (action === "stop") {
+      stopDaemon(await readStatus(DAEMON)) // throws with the reason when Stop is not allowed
+      await waitFor(async () => !(await readStatus(DAEMON)).running)
+    } else {
+      // Restart runs in the daemon's own folder (AGENTX_CONFIG, else what it reports); Start only with AGENTX_CONFIG.
+      const target = action === "restart" ? restartTarget(DAEMON, await readStatus(DAEMON)) : DAEMON
+      if (!target) throw new Error("the daemon did not say which folder it runs in; set AGENTX_CONFIG to its agentx.json")
+      await runCli(target, cliArgs(action, target.config))
+      await waitFor(async () => (await readStatus(DAEMON)).running)
+    }
+  } catch (err) {
+    log(`daemon ${action} failed`, err)
+    dialog.showErrorBox(`Could not ${action} the daemon`, err instanceof Error ? err.message : String(err))
+  } finally {
+    daemonBusy = null
+    daemonStatus = null
+    await pollDaemon()
+    if (action !== "stop" && win && !win.isDestroyed()) void win.loadURL(HUB)
+  }
+}
+
+/** Waits up to 6 min (the daemon finishes running tasks before it stops). */
+async function waitFor(ok: () => Promise<boolean>, limitMs = 6 * 60_000): Promise<void> {
+  const t0 = Date.now()
+  while (Date.now() - t0 < limitMs) {
+    if (await ok()) return
+    await new Promise((r) => setTimeout(r, 1000))
+  }
+  throw new Error("the daemon did not answer as expected in time; check it with: agentx daemon status")
 }
 
 // --- Microphone: dashboard pages only, audio only ---
@@ -150,7 +305,7 @@ function appMenu(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on("second-instance", showWindow)
+  app.on("second-instance", () => showWindow())
   app.on("activate", showWindow) // macOS: Dock click
   app.on("before-quit", () => {
     quitting = true
@@ -161,14 +316,19 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(() => {
+      const firstRun = !existsSync(settingsPath(app.getPath("userData")))
+      settings = loadSettings(app.getPath("userData"), (err) => log("settings unreadable, using the defaults", err))
+      // First run: keep the system's login item as it is, not the default.
+      if (firstRun && LOGIN_ITEM_SUPPORTED) settings.openAtLogin = app.getLoginItemSettings().openAtLogin
+      // The menu shows what the system holds, even when it refused the saved choice.
+      if (!applyLoginItem()) settings.openAtLogin = app.getLoginItemSettings().openAtLogin
       guardDevices()
       appMenu()
-      createTray(RESOURCES, {
-        onOpen: showWindow,
-        onReload: () => (showWindow(), void win?.loadURL(HUB)),
-        onQuit: () => app.quit(),
-      })
-      showWindow()
+      createTray(RESOURCES, trayActions, trayState())
+      void pollDaemon()
+      setInterval(() => void pollDaemon(), 5000)
+      // Off: the app starts in the tray only; the window loads on first Show.
+      if (settings.showOnLaunch) showWindow()
     })
     .catch((err) => {
       log("start failed", err)

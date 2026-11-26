@@ -117,6 +117,8 @@ describe("agentx start: reuse (#1163)", () => {
     expect(daemonBaseUrl({ node: { bind: "0.0.0.0:18800" } })).toBe("http://127.0.0.1:18800")
     expect(dashboardBaseUrl({ dashboard: { bind: "0.0.0.0", port: 4300 } })).toBe("http://127.0.0.1:4300")
     expect(dashboardBaseUrl({})).toBe("http://127.0.0.1:4202")
+    expect(dashboardBaseUrl({ dashboard: { bind: "::", port: 4202 } })).toBe("http://127.0.0.1:4202")
+    expect(dashboardBaseUrl({ dashboard: { bind: "::1", port: 4202 } })).toBe("http://[::1]:4202")
   })
 
   it("does not take another AgentX on the same port for this install", () => {

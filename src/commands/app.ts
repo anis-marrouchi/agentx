@@ -11,6 +11,7 @@ import { isRemoteDevice } from "@/channels/push"
 import { PushStore } from "@/channels/push-store"
 import { pushOrigin } from "@/daemon/push-bridge"
 import { openDb } from "@/storage/sqlite"
+import { menuFile } from "@/daemon/hub-menu"
 import { DEFAULT_PINS_FILE, DEFAULT_PINS_MAX, PinStore, parsePinInput, pinsDeps, pinsFile, type PinsDeps } from "@/daemon/app-pins"
 
 // --- agentx app: pair phones with the /app PWA ---
@@ -189,7 +190,7 @@ appCmd
 // edits, so a page can be pinned before the phone is at hand.
 function pinStore(): PinsDeps {
   try { return pinsDeps(loadDaemonConfig(), process.cwd()) } catch { /* no agentx.json here: the defaults */ }
-  return { store: new PinStore(pinsFile(process.cwd(), DEFAULT_PINS_FILE)), max: DEFAULT_PINS_MAX }
+  return { store: new PinStore(pinsFile(process.cwd(), DEFAULT_PINS_FILE), Date.now, [], menuFile(process.cwd())), max: DEFAULT_PINS_MAX }
 }
 
 appCmd

@@ -2,7 +2,7 @@
 
 The Hub is the dashboard's home page, in a space of its own, as the wiki is: its own layout, close to X, with no dashboard top bar. Its colours and type are the same as every other dashboard page and the phone app. It reads like a social feed. Each task a person gave an agent is a **post** by that agent, with its avatar, name and @handle. Under it, the **thread** lists what happened, in order: the runs that worked on it, hand-offs to other agents, plan steps, the questions it asked and how it closed. On the left, every agent is listed once, by what it is doing: **Working**, **Needs you** and **Done today**. Select a working agent to watch its run live, and **⌘K** jumps to any agent or request. The page takes the rest of the width; there is no side column with Chat and Agents any more. The chat button at the top right of each page asks an agent about what you see (see [Chat on the Hub](./chat.md#chat-on-the-hub)).
 
-The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Needs you** (see [See what waits on you](#see-what-waits-on-you)).
+The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Waiting on you** (see [See what waits on you](#see-what-waits-on-you)).
 
 ![The Hub in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
 
@@ -15,14 +15,14 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
    At the bottom of the nav: **Waiting on you** (what waits on you, to answer there, with its count), **Jobs** and, for the owner, the gear for **Settings**. **Upgrading:** Workflows, Mobile app and some ⌘K pages are hidden after this upgrade; [Settings › Layout](./settings.md#layout) › **Full** brings them back. With the full layout, or their switches on there, **Workflows** and **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) show there too.
 
-   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Needs you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
-3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute; if an ask fails, it asks again after 5, 10, 20 and 40 seconds. The dashboard keeps the daemon's last answer, so when the daemon is slow to answer, that answer still shows, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
+   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Waiting on you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
+3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute; if an ask fails, it asks again after 5, 10, 20 and 40 seconds. The dashboard keeps the daemon's last answer, so when the daemon is slow to answer, that answer still shows, marked **as of** its time; on a computer, point at the version in the bottom bar to read the same **as of**. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
 4. The Hub never pings you on its own. The classic pages that still hold something the Hub does not have yet, **Monitor**, **Org**, **Activity** and **Workflows**, are in the **⌘K** switcher as **Dashboard ·** *page*. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Theme**, in the bottom status bar (see [Read the bottom status bar](#read-the-bottom-status-bar)), switches between light and dark. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
-6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Needs you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
+6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Waiting on you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
 
    ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
 
@@ -40,10 +40,14 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 *Demo data; your agents will differ.*
 
 1. **Browser:** open `/hub?react=1` (once), or turn `dashboard.hub.react` on and open `/hub`. The shell's own address is `/hub#page=home`.
-2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (open posts), **Automations** (the schedules), **Agents** (select one to chat with it), **Projects** and **Waiting on you**. **Settings** is at the bottom.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart. The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart and no reload:
+
+   ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
+
+   The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
@@ -52,7 +56,133 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
 
-Every menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+**Tasks**, **Automations** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+
+### Tasks: List or Kanban
+
+**Tasks** lists two things together. Its address is `/hub#page=home&pane=tasks`.
+
+- **Issues and pull requests:** the open issues and open pull (merge) requests of your GitHub repositories and GitLab projects. The repositories are the ones in your settings: `channels.github.routes` (each `repo`), `channels.gitlab.routes` (each `project`) and your GitLab boards. GitHub is read with the `gh` login of the user that runs AgentX, GitLab with the GitLab channel's token. No new sign-in. Each one opens on GitHub or GitLab, in a new tab. Jira is not listed yet.
+- **Requests:** the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine (the posts of the old Hub's feed). A request whose home is one of those issues or pull requests stands for it, so it shows once.
+
+An icon says which is which: a dot in a circle for an issue, the pull request icon for a pull request, the robot for a request. The issues and pull requests are read again at most once a minute.
+
+![Tasks as a list, grouped by state: To do, In progress, In review, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
+
+*Demo data; your tasks will differ.*
+
+1. **Browser:** in the simple shell, select **Tasks** in the side menu.
+2. **List or Kanban:** the switch at the bottom of the side menu (on a phone, at the top of Tasks) changes the view. This browser remembers your choice.
+3. **Project:** the box at the top of Tasks shows one project's tasks only; **All projects** shows them all again. The project is in the address (`&project=<name>`), so Back and a shared link keep it.
+
+   ![Tasks for one project, picked in the box at the top](/screenshots/hub-automations/tasks-project.png)
+
+4. **The columns:**
+   - **To do:** an open issue nobody is assigned to.
+   - **In progress:** a request being worked on, an issue someone is assigned to, a draft pull request, or one sent back with changes asked.
+   - **In review:** a request that waits for your answer or approval, and an open pull request waiting for its review.
+   - **Waiting on others**, **Needs attention:** the request states of the same name.
+   - **Closed:** requests done, declined or dropped in the last 7 days.
+
+   A GitLab board label decides first: `Status::Doing` is In progress, `Status::Review` In review, `Status::On Hold` Waiting on others. Each task shows who has it (for an issue with nobody assigned, who opened it), its project (with the issue or pull request number) and how long ago it last moved.
+
+   ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
+
+5. **Open a task:** select it. An issue or pull request opens on its forge. For a request, its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+
+   ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
+
+6. **Phone:** the list and the board fill the screen; the board scrolls sideways. The List and Kanban buttons are icons only, next to the project box.
+
+   ![Tasks as a list on a phone](/screenshots/hub-tasks/list-phone.png)
+   ![Tasks as a Kanban on a phone](/screenshots/hub-tasks/kanban-phone.png)
+   ![Tasks for one project on a phone](/screenshots/hub-automations/tasks-project-phone.png)
+
+Tasks only shows: moving a card does not change a task's state. Close or hand over a task from its **Full record**.
+
+### Check Tasks worked
+
+- Ask an agent something that leaves work open (for example a task it hands to another agent). Within 30 seconds it is under **In progress** in Tasks.
+- Open an issue on one of your GitHub repositories. Within about a minute it is under **To do**, with the issue icon.
+- Pick **Kanban**, reload the page: Tasks opens as a Kanban again.
+
+### If Tasks is wrong
+
+- **Could not read the tasks:** nothing could be read yet: the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **Could not refresh** above the tasks: the last read failed. The tasks shown are the ones read before; they are read again within 30 seconds, or select **Try again**.
+- **Not read: owner/repo (why)** above the tasks: that repository or project could not be read. For GitHub, check `gh auth status` as the user that runs AgentX, and that the login can see the repository. For GitLab, check the GitLab channel's token can read the project. The last issues read for it stay shown.
+- **No issues or pull requests:** the repository is not in `channels.github.routes`, `channels.gitlab.routes` or a GitLab board (a `*` route is not listed), or it has none open.
+- **No tasks:** no open issue or pull request, and nothing asked that left work behind. A question an agent answers at once is not a task.
+- **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
+- **Task not found** after opening a link: it was closed more than 7 days ago, or its machine is not answering.
+- **No tasks in a project:** none of that project's tasks moved in the last 7 days. Select **All projects**. A task with no project shows under **All projects** only.
+
+### Automations
+
+**Automations** lists what runs on its own on every connected machine: the scheduled jobs, and the workflows a schedule or an event starts. It reads what the old Hub's **Schedules** page reads. Its address is `/hub#page=home&pane=automations`.
+
+![Automations: per machine, each job and workflow with its next run, its last result and its last seven runs](/screenshots/hub-automations/automations.png)
+
+*Demo data; your schedules will differ.*
+
+1. **Browser:** in the simple shell, select **Automations** in the side menu.
+2. **The figures** at the top: how many are on, how many are failing (last run failed, or several failures in a row), how many look stale.
+3. **Each machine** has its own table. A row shows the name and its agent, what it is for (or the first line of its last failure, in red), **Next run** (`off` for one that is off, `on event` for a workflow an event starts), **Last result** and **Last 7**: one square per run, oldest first, green for worked, red for failed or timed out, grey for an empty slot.
+4. **The badge** at the end, first match wins: **Off** (or **Quarantined**) for one that is off, whatever else it shows; **Last run failed**; **Failing** (failed several times in a row); **Looks stale** (overdue: no run since its schedule should have fired, or dormant: ran the week before, silent the last one); **Not run yet** for a new job with no run so far; else **On**. The reason is under the name, and under **Notes** when you open the row.
+5. **Select a row** to open it: its schedule and time zone (or the event that starts it), whether it is a job or a workflow, its project, and what its last run said.
+
+   ![A job opened: its schedule, kind and last run](/screenshots/hub-automations/automations-open.png)
+
+6. **Phone:** the name and the badge only; open a row for the rest, its last seven runs included.
+
+   ![Automations on a phone](/screenshots/hub-automations/automations-phone.png)
+
+Automations only shows. To add, change or turn off a schedule, use [Settings › Schedules](#add-or-remove-a-schedule). Sensors, host jobs and the day's totals stay on the old **Schedules** page; the link is at the bottom of Automations.
+
+### Check Automations worked
+
+- Every schedule in Settings › Schedules is in Automations, under its machine.
+- After a job runs, its **Last result** and its last square change within 30 seconds.
+
+### If Automations is wrong
+
+- **Could not read the automations:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **Nothing runs on its own yet:** no machine has a schedule, and no workflow starts on a schedule or an event.
+- **A machine says "does not answer":** it is off or out of reach. Its automations show again when it answers. **checking…** means it is slow; the page asks again every 2 seconds.
+- **No Last 7 squares:** the machine runs an older AgentX that does not report its runs this way. Update it.
+
+### Waiting on you in the shell
+
+**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Waiting on you** in the old Hub, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
+
+![Waiting on you: each item with its kind, its question, who asked and how long ago](/screenshots/hub-automations/waiting.png)
+
+*Demo data; your items will differ.*
+
+1. **Browser:** in the simple shell, select **Waiting on you** in the side menu.
+2. **Each row** shows the kind (Decision, Request, Schedule, Memory and so on), the title, the question, the agent and how long ago it asked. **Answer today** marks one that expires within a day: after that its default applies without you.
+3. **Select an item** to open it: the question, the choices, what is known, what the agent suggests, what **Yes** and **No** do, and when to answer by.
+
+   ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
+
+4. **Answer** opens **Waiting on you** in the old Hub, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
+5. **Phone:** the list and the opened item fill the screen.
+
+   ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
+   ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
+
+What you put off with **Later** is not listed; the line under the list counts it and links to it in the old Hub's Waiting on you.
+
+### Check Waiting on you worked
+
+- The number next to **Waiting on you** matches the **Waiting on you** count in the old Hub and the phone app's Desk.
+- Answer an item in the old Hub's Waiting on you, then come back: within 15 seconds it is gone from the list.
+
+### If Waiting on you is wrong
+
+- **Could not read what waits on you:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**.
+- **A yellow line above the list:** one source could not be read (for example the requests). The list may be short until it can; the line says which.
+- **No longer waiting** after opening a link: it was answered, put off, or it expired.
 
 ### Check the simple shell worked
 
@@ -123,20 +253,20 @@ Select **Mobile app** at the bottom of the nav (with the simple layout, turn **M
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each plan engine your agents use now (**Claude** and **Codex**), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it, usually at once and at most a few seconds after the page opens. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
+On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each engine your agents use now (**Claude**, **Codex**, and **API**, **Orchestrator** or **OpenCode** for agents billed per token), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it, usually at once and at most a few seconds after the page opens. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
 
 ### See plan usage and the agents from the status bar
 
-An engine gets an item only while at least one agent runs on it. Its item shows a small bar and the percent used for the five-hour window (**5h**) and the week (**wk**). Claude's numbers come from the daemon's own reading, the same one as `/usage/plan`; Codex's come from the limits Codex wrote after its last run on this machine. The bar refreshes them once a minute.
+An engine gets an item only while at least one agent runs on it. A plan engine's item (**Claude**, **Codex**) shows a small bar and the percent used for the five-hour window (**5h**) and the week (**wk**) of the account new runs use. Claude's numbers come from the daemon's own reading, the same one as `/usage/plan`; Codex's come from the limits Codex wrote after its last run on this machine. An engine billed per token (**API**, **Orchestrator**, **OpenCode**) has no plan limit: its item shows what its agents' runs on this machine cost today (since 00:00 UTC), the same numbers as the **Cost** page. The bar refreshes them once a minute, and not while the Hub's tab is hidden.
 
-1. Point at **Claude** or **Codex** in the bottom bar (or select it, on a touch screen or with the keyboard). A drop-down opens with one bar per limit window, its reset time, when it was read, and the agents that use the engine.
-2. Select **Add account** at the bottom of the drop-down to add another account for that engine (owner only). It opens the **Accounts** form at that engine's row.
+1. Point at an engine in the bottom bar (or select it, on a touch screen or with the keyboard). A drop-down opens with one bar per limit window, its reset time, when it was read, and the agents that use the engine. When you added more accounts for that engine under **Accounts**, the drop-down has a section for each account with its own bars; the one new runs use comes first, marked **In use**. For an engine billed per token, the drop-down says **No plan limit**, gives **Spent today** and each agent's share, and links to **Cost**.
+2. Select **Add account** at the bottom of a Claude or Codex drop-down to add another account for that engine (owner only). It opens the **Accounts** form at that engine's row.
 3. Point at **agents running**. A drop-down lists every agent with its state (**Working**, **Needs you**, **Done today**, **Idle** or **Paused**), its engine's logo and its quick actions: **Chat**, **Open run** (while it runs a task), **Pause** or **Resume** new work (owner only) and **Stop run**, which asks first.
 4. Press **Escape**, or select anywhere else, to close a drop-down.
 
-**Check it worked:** the engine item shows its bars, and its drop-down says when it was read, for example **Read 2 min ago** or **As of the last Codex run on this machine, 1 h ago**.
+**Check it worked:** the engine item shows its bars, and its drop-down says when it was read, for example **Read 2 min ago** or **As of the last Codex run on this machine, 1 h ago**. When the account in use is near a limit (70% or more) the item turns amber, and red at 90% or when a run reported the limit reached.
 
-**If something is wrong:** a window with no number, or one that has reset since it was read, is left out until a new reading arrives; the bar never guesses. When a run reported only that a limit was reached or is near, the drop-down says **Limit reached** or **Near the limit** with the reset time, and the item shows a red or amber dot instead of a bar. No Codex bars: no Codex run has finished on this machine yet, or Codex is signed in with an API key, which has no plan limit. No Claude bars for long: the daemon's Claude sign-in may have lapsed; open `claude` in a terminal and run `/login`.
+**If something is wrong:** a window with no number, or one that has reset since it was read, is left out until a new reading arrives; the bar never guesses. When a run reported only that a limit was reached or is near, the drop-down says **Limit reached** or **Near the limit** with the reset time, and the item shows a red or amber dot instead of a bar. No Codex bars: no Codex run has finished on this machine yet, or Codex is signed in with an API key, which has no plan limit. No Claude bars for long: the daemon's Claude sign-in may have lapsed; open `claude` in a terminal and run `/login`. An added account that says **Signed out** needs its own sign-in: `CLAUDE_CONFIG_DIR=<its folder> claude`, then `/login`. Another account's Claude reading is taken at most every 5 minutes, so its bars can take that long to appear. An engine billed per token shows only its name when its agents run on another machine (their spend is kept there) or only on a model with no price, such as a local model.
 
 ### Switch the CLI an agent runs on
 
@@ -218,6 +348,21 @@ The top of the chat shows the agent's letter, the computer it runs on and its en
 3. Select **Chat** to go back to the conversation.
 
 When the agent asks you something, the question shows at the end of the chat as a card. Select **Accept** (or one of the answers it offers), **Ask for changes** to write what to change, or **Later** to put it off. The answer is the same as on the Desk: an answered question leaves the Desk too.
+
+### Resize, collapse and expand the side menu and the panel
+
+On a window wider than 1,180 px you can size both side columns, and the Hub remembers what you set in this browser, also after a reload.
+
+1. **Browser:** drag the edge between the side menu and the page, or between the page and the right panel. The menu goes from 200 to 420 px wide. The panel goes from 320 px up to 70% of the window. The page in the middle always keeps at least 480 px: when the window is too narrow for the widths you set, the panel and then the menu are made narrower, and they get their widths back when the window is wide enough again.
+2. To collapse the side menu to a column of icons, select the button at its top right. Select it again to expand the menu to its last width.
+3. To collapse the right panel, double-click its edge. Its tabs stay open; select the panel button at the top right of the page to bring it back. Opening something new in the panel also brings it back.
+4. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it. On a Mac, **⌘B** collapses or expands the side menu and **⌘J** the right panel while it has tabs. Windows and Linux have no shortcut for this, because Ctrl+B and Ctrl+J belong to the browser.
+
+Narrower windows keep the icon menu and the sliding panel, as above.
+
+### Go back to the previous page
+
+Select **‹** at the top left of the page to go back to the page you were on before, and **›** to go forward again. They follow your browser's history in this tab. A post opened from a link, with nothing before it, goes back to the feed. On a phone these buttons are hidden and the post's own **←** goes back to the feed.
 
 ### See a run's files
 
@@ -312,12 +457,12 @@ A card on the Hub shows:
 
 Only the owner answers on the Hub: the dashboard asks for its key. To answer:
 
-1. **Browser:** select **Needs you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
+1. **Browser:** select **Waiting on you** in the nav. It lists what waits on you, with the same count as the phone app's Desk and the daily digest. **Waiting**, **Put off** and **Answered** are the tabs, and the chips narrow the list to one kind: Decisions, Schedules, Memory, Wiki, Drafts, Requests and Reviews.
 2. On a card with choices, the one the agent advised is already picked. Pick another if you want. The draft and what Yes and No do are folded under the card.
 3. Select **Yes**, **No** or **Later** (**Keep** or **Drop** for a memory fact). A line opens that says exactly what is sent; select **Confirm**. The card leaves the list, and its post updates without a reload.
 4. A card raised while working on a task is also on that task's post, with the same buttons and confirm.
 
-Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub). The old Approvals page's address, `/approvals`, opens **Needs you**, so old links and bookmarks still work.
+Each card says what answering it unblocks: the post it was raised on and the runs paused on it. Anyone without the dashboard key sees the same cards read only, under **Needs the owner**. The full steps, with screenshots, are in [Approvals › Answer on the Hub](./approvals.md#answer-on-the-hub). The old Approvals page's address, `/approvals`, opens **Waiting on you**, so old links and bookmarks still work.
 
 To see the waiting tasks in the feed instead:
 
@@ -402,7 +547,7 @@ Every open post is a request you gave an agent. As the owner, you can close it o
 
 *Scripted demo data; your team's names and machines will differ.*
 
-These are the same calls as **Needs you** makes for a request that waits on you, and the same as `agentx requests done` and `agentx requests drop` in a terminal.
+These are the same calls as **Waiting on you** makes for a request that waits on you, and the same as `agentx requests done` and `agentx requests drop` in a terminal.
 
 ### Comment on the lines of a pull or merge request
 
@@ -502,7 +647,7 @@ Each agent on the **Agents** page has a status next to its @handle: **Working** 
 On an agent this machine runs:
 
 - **Edit** opens the same form with what is saved. **Save** changes only what you changed. Channels, skills and files are under **Settings**.
-- **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Needs you** instead.
+- **Pause** stops it from starting new runs until you select **Resume**. An agent waiting for your approval shows **Approve in Waiting on you** instead.
 - **Remove** asks first, then takes the agent out of `agentx.json` and out of the org chart (with its lines and departments), and unbinds the Telegram, Slack and Discord bots that answered as it. You can then create an agent with the same id and a role. An agent that manages a project is not removed: give the project another manager first. Its workspace folder stays on disk. Select **Restart when idle** to stop it.
 
 ## Change settings
@@ -526,7 +671,7 @@ It saves to `agentx.json`, the AgentX settings file on the machine that serves t
 
    ![Settings on a phone: the Agents section with one agent card and its on/off switch](/screenshots/wall/settings-phone-agents.png)
 
-Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in **Needs you**: select it to answer there.
+Each agent card shows the agent's name, @handle, its role in the org chart when it has one, its AI engine and model, and an **On** / **Off** switch. **Waits for approval** instead of the switch means the agent waits for you in **Waiting on you**: select it to answer there.
 
 ### Turn an agent off or on
 
@@ -622,7 +767,7 @@ Health only reads. It refreshes with the Hub, without losing what you are typing
 1. **Browser:** in **Settings**, select **Channels**, under **Fleet**. Pick one along the top: **Telegram**, **WhatsApp**, **Email**, **Slack**, **Discord**, **GitLab**, **GitHub** or **Calls**. Each says **on**, **off** or **not set up**.
 2. Put the secret (a bot token or a password) in the `.env` file next to `agentx.json` first. The forms take only the *name* of that variable, such as `TG_SUPPORT_BOT_TOKEN`, and never show a secret.
 3. **Telegram:** under **Add a Telegram account**, type a name, pick the agent that answers, and type the token's variable name, then **Add account**. **Edit** changes an account in place; **Delete** asks you first.
-4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Needs you** unless you tick **Send replies at once**.
+4. **Email:** under **Add a mailbox**, type the address, the IMAP and SMTP servers, the password's variable name and who may write. Replies wait in **Waiting on you** unless you tick **Send replies at once**.
 5. **Slack**, **Discord**, **GitLab:** fill the form and select **Connect** (or **Save** once connected). A switch turns each one on or off.
 6. **GitHub** lists its webhooks; add one on **Webhooks** with source GitHub. **Calls** lists active and recent calls, and only reads.
 
@@ -683,7 +828,7 @@ Each card says **receiving**, **off**, or **signing secret missing**. **Turn off
 
 ### Choose approvals and requests
 
-**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings the old Approvals page had, with the same saves. That page's address, `/approvals`, now opens **Needs you**.
+**Inbox** also has **Approvals**, and **Requests** is its own section under **Fleet**. These are the settings the old Approvals page had, with the same saves. That page's address, `/approvals`, now opens **Waiting on you**.
 
 1. **Browser:** in **Settings** › **Inbox**, under **Approvals**, pick what is sent to your phone and shown on this computer at once, how long cards wait, how long **Later** hides an item, and the daily digest. Select **Save**.
 2. In **Settings** › **Requests**, choose whether your requests are recorded and followed, what counts as you on shared channels, when a quiet request comes back, the plan rules and the loop checks. Select **Save**. See [Open requests](../jobs/open-requests.md).
@@ -744,16 +889,16 @@ Here and everywhere else on the Hub (cards, a run's Task page, a post's thread, 
 The **Task** page is one run on its own, with its own link: what it was asked, its conversation as it happens, and a box to steer it. It replaces the classic task page: an old task address (`/tasks/<task-id>?agent=…`, from a chat message, a voice reply or a classic page) opens this page. On another device that has not signed in yet, the address asks for the dashboard token first and then opens the same run.
 
 1. **Browser:** open it from a card under **Running now** on the **Live** page, or select **● Join live** on an open post or an agent's page. Every other run link on the Hub opens it too: **Task record and trace**, **run …** next to an answer, a run in a post's thread, **last run** and **full log** on Failures and Jobs, and the runs listed on a machine's card.
-2. At the top: the agent, the channel, **live** while it runs, and how long it has run.
+2. At the top: the agent, the channel, **live** while it runs, and its clock: **Working · 2m 14s**, counting every second while it runs, then the time it took once it ends.
 3. **A run in a chat is one turn of it.** When the run's chat has other turns (a follow-up, or the turns after it), the top says where it sits, such as **Follow-up · turn 3 of 5 in this chat**. **Earlier in this chat** shows the turns before it in order. Each one is folded to a line with its number and what was asked; select the line to open it and see the agent's reply and **View log**, which opens that turn's own page. A turn you open stays open while the page updates. The newest turn of the chat stays open. The first request always shows. When the chat has more than 10 earlier turns, select **Load earlier turns** to read the older ones. **Later in this chat** follows the conversation when turns came after it. The selected run is marked **turn 3 · selected** and keeps its own conversation, actions and live stream below. Only the same agent's runs in the same chat show, from its saved runs on that machine (kept 30 days).
 4. **request** shows what the run was asked. When the run belongs to a tracked request, its box follows: the status strip (**Asked**, **Working**, **Waits**, **Done**), the **Plan** if it has one, and the facts. **Open the post** opens the post.
-5. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. This holds for every Claude Code agent, including one that is not a persistent process: its runs stream their steps too, whatever started them. The reply shows as formatted text with highlighted code and tables. A spinner shows while the conversation waits for its first output. Each tool step shows its state on one line, such as **Read** `net/retry.ts` with **Running** while it works and **Completed** when a result arrives. Select a step to see its input and result. An open step stays open while the run goes on, and after the page reconnects to a run that was cut off, each step shows once. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom. Scroll up to read and it stops following; a round **↓** button (**Jump to latest**) shows at the bottom of the pane. Select it to go back to the newest text and follow the stream again.
-6. To steer it, write in the box under the conversation and select **Send** (or press ⌘/Ctrl+Enter). The current turn keeps running; your message goes in as the next turn. **Stop** ends the current turn. **Pause**, at the top, stops the task with a resume plan so it can go on later (select **Pause it?** to confirm). A paused run's page shows its plan with **Resume** and **Drop**, as on Live.
+5. **Conversation** streams what the agent does while it works, whatever started the run (the Hub, Telegram, an agent, GitLab or a schedule). Claude Code replies can appear a few words at a time while the run is active. This holds for every Claude Code agent, including one that is not a persistent process: its runs stream their steps too, whatever started them. The reply shows as formatted text with highlighted code and tables. A spinner shows while the conversation waits for its first output. Each tool step shows its state on one line, such as **Read** `net/retry.ts` with **Running** while it works and **Completed** when a result arrives. Select a step to see its input and result. An open step stays open while the run goes on, and after the page reconnects to a run that was cut off, each step shows once. An edit opens as a diff, with removed lines in red, added lines in green and the counts (+3 −2) on its line. **Thought** folds the agent's thinking to one line. While a reply streams, the pane stays at the bottom. Scroll up to read and it stops following; a round **↓** button (**Jump to latest**) shows at the bottom of the pane. Select it to go back to the newest text and follow the stream again. Each message and step shows the time it happened, such as **14:05**; point at it to see the full date.
+6. To steer it, use the box under the conversation. It is the same box as in the Hub chat: type, select **+** to attach files, or record a voice message with the microphone, then select the blue arrow (or press Enter; Shift+Enter starts a new line). The current turn keeps running; your message and its files go in as the next turn, and the agent can open the files. The box has no model picker: the run keeps the model it started on. Next to the arrow, while the run goes on: **Pause** stops the task at the next point it can and has the agent write a resume plan, so it can go on later; **Stop** ends the current turn now, with no plan. While the agent writes its plan the box says **Writing its plan…**, then shows **Resume**, which goes on from the plan in the same chat. The plan and **Drop** show under the top of the page, as on Live.
 7. A finished run shows its stored record. A finished scheduled job can be continued: **Send** starts a new turn in the same job session, and the page moves to it. A finished run from any other channel only reads: its chat goes on where it came from.
 
-![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box with Stop and Send](/screenshots/wall/run.png)
+![A run's Task page: the request, the tracked request's status strip, plan and facts, the conversation, and the steer box](/screenshots/wall/run.png)
 
-![A demo conversation waiting for output and the Needs you count](/screenshots/wall/run-waiting.png)
+![A demo conversation waiting for output and the count of what waits on you](/screenshots/wall/run-waiting.png)
 
 ![Demo tool steps on a narrow screen, showing an edit diff and the Completed, Failed and Running states](/screenshots/wall/run-tool-states.png)
 
@@ -1055,7 +1200,7 @@ The **People** page lists everyone who talks to your agents: you, your teammates
 
 The **Cost** page shows what your agents spent, in total and per agent, on every machine the Hub reads. It also holds everything the old Cost page had: the token mix, cache use, every day's figures, the CSV export and the monthly budgets. Old links to the classic Cost page open this page. For what the dollar figures mean, see [Costs](../help/costs.md).
 
-1. **Browser:** select **Cost** in the nav (under **More** on a phone). With the simple layout, the default, Cost is not in the menus: turn **Usage page** on in [Settings › Layout](./settings.md#layout), or open `/hub#status=open&view=cost`, which always works. The amount next to it is what every machine spent this month.
+1. **Browser:** select **Cost** in the nav (under **More** on a phone). With the simple layout, the default, Cost is not in the menus: turn **Cost page** on in [Settings › Layout](./settings.md#layout), or open `/hub#status=open&view=cost`, which always works. The amount next to it is what every machine spent this month.
 2. The top line shows this month's total, against the budget for all agents when one is set, with **near cap** or **fleet cap reached** when that applies. Under it: today, the last 7 days and the change against the 7 days before. The small line on the right is the spend per day over the last 30 days.
 3. Pick a range: **7 days**, **14 days**, **30 days**, **90 days** or **All**. The range is kept in the page's address, so you can share the view. The line under the tabs gives the total, the runs, the cost per run and, with more than one machine, how many were read.
 4. The chart stacks each day's spend by agent: the five agents that spent most each have their own shade, and the rest are **others**. Point at a bar to read its agent and amount.
@@ -1218,13 +1363,13 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 36. People page: select **People** in the nav. It lists the same people as `agentx people list`. Select **open requests on the Hub** on a person: the feed shows only their open posts, and **everyone** shows all posts again.
 37. If your org chart has a person as a boss or a **dotted-line** or **acts-for** relation: open that agent's profile. Its org line shows the same relations as the **Org** page, for example **reports to The Owner**.
 38. Org page: select **Org** in the nav. The top card is whoever reports to no one, and every member of `business.orgChart` sits under their boss. The number next to **Org** matches the cards. Select an agent's card: its profile opens, with its role and **reports to** its boss. **Org chart** on that line opens the Org page again.
-39. Needs you: with a decision card pending, select **Needs you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
+39. Waiting on you: with a decision card pending, select **Waiting on you**. Its count matches the phone app's Desk. Select **Later**, then **Confirm**: the card moves to **Put off**. In a private window without the dashboard key, the page reads **Needs the owner**, the card has no buttons, and an answer sent to `/api/admin/wall/decide` is refused with 401; the card stays.
 40. Settings: select **Settings** in the nav, then an agent. Change its wake words: the field turns blue and the bar says **1 change not saved. It applies without a restart.** Select **Save…**, check the old and new words, then **Save changes**: the bar says **Saved**, and **Advanced** in classic Settings shows the new words in `agentx.json`. Turn its switch **Off**: the [Org](./org.md) page shows it paused. Turn it back **On**. On a phone 390 px wide, the sections fill the screen and **← All settings** brings them back. Select **Health**: **agents online** matches the agents on [Live](#live-sessions), and a machine you stop turns red within a minute. Open an agent's **Handovers** tab and hand a test chat to another agent: it is listed under **Routed away from**, and under **Routed to** on the other agent's tab. Select **Release**, then **Release** again: it leaves both lists.
 41. Workflows page: select **Workflows** in the nav. It lists the same workflows as `agentx workflow list` in a terminal, and the number next to **Workflows** matches. Select a workflow's name: its last run opens with one line per step. Select **Failures**, then a workflow's name under **Workflow runs**: the Workflows page opens on that workflow.
 42. One agent's runs: select an agent's name, then **Activity** under its profile. **Activity** is underlined and the list shows only that agent's runs.
 43. Schedules and Webhooks: in **Settings** › **Schedules**, select the preset **Every hour**: the line under **When** says when it runs and the next three times. Add a schedule named `check-test`, then open the classic `/admin#tab=crons`: `check-test` is listed. Delete it on the Hub. In **Settings** › **Webhooks**, add one named `check-test`, select **Turn off**: its card says **off**. Delete it.
 44. Channels: in **Settings** › **Channels**, the Telegram account you use is listed with its agent and its token's variable name, never the token. Select **Email**, then **GitLab**: each matches the classic `/admin#tab=channels`.
-46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Needs you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
+46. Approvals moved: open `<dashboard>/approvals` in the browser. It opens **Waiting on you** on the Hub, and its count matches `agentx approvals list`. Open a post that is in progress: under the comment box there are **Hand to…**, **Done** and **Drop**. Select **Drop**: a line asks you to confirm, and **Back** closes it without sending anything. In a private window without the dashboard key, the post has no such buttons.
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 47. Events: give an agent a subscription such as `{ "kinds": ["test:ping"], "delivery": "wake", "prompt": "Reply with agentx events emit test:pong" }`. **Terminal:** run `agentx events emit test:ping --summary "hello"`. **Browser:** select **Events**, then **Refresh** after a minute. The `test:ping` card says **1 wake: 1 ran**, and `test:pong` is under it, marked **in reply to test:ping**.
 48. Right panel: open the chat of an agent that works on an open request on a GitHub or GitLab issue. The **Working on** line names it. Select **Changes**: the panel opens on the right with its diff, and the chat narrows. Select **File** next to a file: a second tab shows the whole file with its new lines in green. Close both tabs: the chat takes the whole width again.
@@ -1286,8 +1431,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **"Couldn't read …" under Reported issues:** this machine could not list that project's issues. "not found" usually means the token cannot see the project or the `project` path is wrong; "did not answer in time" clears on the next refresh.
 - **An agent's profile has no org line, or no dotted-line or acts-for relation:** the Hub could not read the org chart, or the agent has no entry or relation there. Open **Org** to check; relations are set up there, not on the Hub.
 - **No Reported issues list on Failures:** `wall.reportedIssues` is not set on any machine, or the dashboard was not restarted after you set it.
-- **A card is on Needs you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Needs you**.
-- **Needs you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
+- **A card is on Waiting on you but not on a post:** it was raised outside a task. Only pending cards that belong to a task show on a post; every pending card is on **Waiting on you**.
+- **Waiting on you reads Needs the owner and has no buttons:** the browser has no dashboard key. Sign in with the key; the buttons come back.
 - **Answering unblocks names no run:** runs show there only when they were paused on that card by a workflow's owner-decision step, on a machine that answered within five seconds.
 - **The portfolio says "That key does not open the portfolio":** the key was revoked, expired, mistyped, or made without `--scope wall:portfolio`. Check it with `agentx token list`; make a new one if needed.
 - **The portfolio says "The portfolio is not switched on yet":** this dashboard has no token. Set `dashboard.token` in `agentx.json` and restart the dashboard.

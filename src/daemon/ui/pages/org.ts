@@ -435,7 +435,7 @@ const ORG_SCRIPT = `
     if (n.status === 'paused' && n.heldBy) state += ' by ' + n.heldBy;
     if (n.status === 'waiting' && n.heldBy) state += ' (created by ' + n.heldBy + ')';
     var acts = '<a href="${HUB_PATH}#page=activity&a-agent=' + id + '&a-period=30d">Activity</a><a href="/admin/agents/' + id + '">Agent page</a>';
-    if (n.status === 'waiting') acts += '<a href="${HUB_NEEDS_YOU}">Decide in Needs you</a>';
+    if (n.status === 'waiting') acts += '<a href="${HUB_NEEDS_YOU}">Decide in Waiting on you</a>';
     else if (n.status === 'paused') acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="0">Resume</button>';
     else acts += '<button type="button" data-hold="' + esc(n.id) + '" data-paused="1">Pause</button>';
     return '<div class="org-card is-' + esc(n.status) + '" data-agent="' + esc(n.id) + '">' + kind(false)

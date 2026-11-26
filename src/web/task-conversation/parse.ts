@@ -15,14 +15,20 @@
 // multi-line result or thought over several lines; its later lines read as
 // reply text, as on the old page: they cannot be told from the reply.
 //
+// Each part carries `at`, when its first line came in, read from the
+// stream's stamps (output-stamps.ts, #2306); none when no stamp covers it.
+//
 // Pure: no DOM, so the tests run it in Node.
 
-export type Part =
+import { outStampAt, type OutStamp } from "../../agents/output-stamps"
+
+export type Part = (
   | { kind: "text"; md: string }
   | { kind: "tool"; name: string; input: string; result?: string; error?: boolean; done: boolean }
   | { kind: "thought"; text: string }
   | { kind: "error"; text: string }
   | { kind: "system"; text: string }
+) & { at?: number }
 
 const LS = "\u2028"
 
@@ -34,7 +40,7 @@ export function splitToolLine(s: string): { name: string; input: string } {
   return { name: s.slice(0, o).trim(), input: c > o ? s.slice(o + 1, c) : s.slice(o + 1) }
 }
 
-export function parseStream(raw: string, opts: { plain?: (s: string) => string; final?: boolean } = {}): Part[] {
+export function parseStream(raw: string, opts: { plain?: (s: string) => string; final?: boolean; stamps?: OutStamp[] | null } = {}): Part[] {
   const plain = opts.plain || ((s: string) => s)
   const parts: Part[] = []
   // While the run goes, the last line may be half written: a marker line is
@@ -99,19 +105,29 @@ export function parseStream(raw: string, opts: { plain?: (s: string) => string; 
     }
     return false
   }
-  for (const line of lines) {
-    if (marker(line)) continue
-    // A blank line between events is not a reply.
-    if (line === "" && mode !== "text") continue
-    text(line)
+  // Parts a line starts take the time that line came in.
+  let off = 0
+  const timed = (from: number, at: number) => {
+    if (at) for (let k = from; k < parts.length; k++) parts[k].at = at
   }
-  if (tail && !/^(→ |← |💭 |· |\. |> codex |< codex |\[error\] |\[task finished\])/.test(tail)) text(tail)
+  for (const line of lines) {
+    const from = parts.length, at = opts.stamps ? outStampAt(opts.stamps, off) : 0
+    off += line.length + 1
+    // A blank line between events is not a reply.
+    if (!marker(line) && !(line === "" && mode !== "text")) text(line)
+    timed(from, at)
+  }
+  if (tail && !/^(→ |← |💭 |· |\. |> codex |< codex |\[error\] |\[task finished\])/.test(tail)) {
+    const from = parts.length
+    text(tail)
+    timed(from, opts.stamps ? outStampAt(opts.stamps, off) : 0)
+  }
   // Trim and clean reply parts; drop the empty ones.
   const out: Part[] = []
   for (const p of parts) {
     if (p.kind === "text") {
       const md = plain(p.md).replace(/^\n+|\s+$/g, "")
-      if (md) out.push({ kind: "text", md })
+      if (md) out.push(p.at ? { kind: "text", md, at: p.at } : { kind: "text", md })
     } else out.push(p)
   }
   return out

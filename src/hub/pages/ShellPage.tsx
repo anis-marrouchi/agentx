@@ -6,15 +6,23 @@
 // the issue leaves the other tabs for a follow-up). On a phone the chat
 // takes the screen and the menu and the tabs open as sheets from its bar.
 //
-// The shell covers the old Hub's frame while it is open; every menu item is
-// a link to today's page, which the old Hub draws as before.
+// The shell covers the old Hub's frame while it is open. Tasks (S4) opens
+// in the centre, as List or Kanban (ShellTasks.tsx), with the switch at the
+// foot of the side menu, as the issue places it. Automations and Waiting on
+// you (S5) open in the centre too (ShellAutomations.tsx, ShellWaiting.tsx).
+// Every other item is a link to today's page, which the old Hub draws.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
 import { apiGet, apiPost } from "../api"
 import { readBoot } from "../boot"
 import type { HubLayoutView } from "../layout"
 import type { HubPageProps } from "../registry"
-import { currentLayout, shellNav, type ShellNavItem } from "../shell"
+import { navigate } from "../router"
+import { SHELL_PAGE, currentLayout, shellNav, type ShellNavItem } from "../shell"
+import { readTasksView, saveTasksView, shellPane, type ShellPane, type TasksView } from "../tasks"
+import { TasksPane, TasksViewSwitch } from "./ShellTasks"
+import { AutomationsPane } from "./ShellAutomations"
+import { WaitingPane } from "./ShellWaiting"
 import {
   AfCount, AfSkeletonRows, AfStateLabel, Button, Dialog, DialogContent, DialogTitle, EmptyState, Icon, Kbd,
   Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, TooltipContent, TooltipTrigger, cn,
@@ -35,13 +43,17 @@ export function shellAgents(reply: RawAgent[] | AgentsReply | null | undefined):
 
 // --- Side menu ---
 
-function MenuLink({ item, onOpen }: { item: ShellNavItem; onOpen?: () => void }) {
+function MenuLink({ item, onOpen, active }: { item: ShellNavItem; onOpen?: () => void; active?: boolean }) {
   return (
     <a
       href={item.href}
       data-shell-item={item.id}
       onClick={onOpen}
-      className="flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
     >
       <Icon name={item.icon} />
       <span className="truncate">{item.label}</span>
@@ -53,6 +65,9 @@ function GroupLabel({ children }: { children: ReactNode }) {
   return <p className="flex items-center gap-1.5 px-2 pt-4 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
 }
 
+/** The menu item each centre pane belongs to. */
+const PANE_OF: Record<string, ShellPane> = { tasks: "tasks", automations: "automations", needs: "waiting" }
+
 export interface SideMenuProps {
   view: HubLayoutView
   owner: boolean
@@ -61,11 +76,16 @@ export interface SideMenuProps {
   onAgent?: (id: string) => void
   /** Called after a pick, so the phone sheet closes. */
   onDone?: () => void
+  /** What the centre shows; its item is marked in the menu when open. */
+  pane?: ShellPane
+  /** List or Kanban, switched at the foot of the menu while Tasks is open. */
+  tasksView?: TasksView
+  onTasksView?: (v: TasksView) => void
 }
 
 /** The left column: search, the default items, the agents, the items
  *  switched on in Settings › Layout, and Settings. */
-export function SideMenu({ view, owner, agents, agent, onAgent, onDone }: SideMenuProps) {
+export function SideMenu({ view, owner, agents, agent, onAgent, onDone, pane = "chat", tasksView = "list", onTasksView }: SideMenuProps) {
   const [q, setQ] = useState("")
   const nav = useMemo(() => shellNav(view, { owner }), [view, owner])
   const needle = q.trim().toLowerCase()
@@ -102,11 +122,11 @@ export function SideMenu({ view, owner, agents, agent, onAgent, onDone }: SideMe
               <p className="px-2 py-1 text-xs text-muted-foreground">{needle ? "No agent matches." : "No agents on this computer."}</p>
             ) : shownAgents.map((a) => (
               <button
-                key={a.id} type="button" data-shell-agent={a.id} aria-pressed={a.id === agent}
+                key={a.id} type="button" data-shell-agent={a.id} aria-pressed={pane === "chat" && a.id === agent}
                 onClick={() => { onAgent?.(a.id); onDone?.() }}
                 className={cn(
                   "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer",
-                  a.id === agent ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  pane === "chat" && a.id === agent ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon name="bot" />
@@ -114,7 +134,7 @@ export function SideMenu({ view, owner, agents, agent, onAgent, onDone }: SideMe
               </button>
             ))}
           </section>
-        ) : <MenuLink key={item.id} item={item} onOpen={onDone} />)}
+        ) : <MenuLink key={item.id} item={item} onOpen={onDone} active={PANE_OF[item.id] !== undefined && PANE_OF[item.id] === pane} />)}
         {more.length ? (
           <section aria-label="More" data-shell-group="more">
             <GroupLabel>More</GroupLabel>
@@ -122,6 +142,11 @@ export function SideMenu({ view, owner, agents, agent, onAgent, onDone }: SideMe
           </section>
         ) : null}
       </div>
+      {pane === "tasks" && onTasksView ? (
+        <div className="border-t border-border px-1 py-2">
+          <TasksViewSwitch view={tasksView} onView={onTasksView} />
+        </div>
+      ) : null}
       {nav.foot.length ? (
         <div className="border-t border-border pt-2">
           {nav.foot.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} />)}
@@ -256,12 +281,27 @@ export function RightTabs() {
 
 // --- The shell ---
 
-export interface SimpleShellProps extends SideMenuProps {}
+export interface SimpleShellProps extends SideMenuProps {
+  /** The task opened in the Tasks pane, or the item in Waiting on you (`open=` in the hash). */
+  openTask?: string | null
+  /** The project picked in Tasks (`project=` in the hash). */
+  project?: string | null
+}
+
+/** The centre for this pane. */
+function Centre({ props, bar }: { props: SimpleShellProps; bar: ReactNode }) {
+  const current = props.agents?.find((a) => a.id === props.agent)
+  switch (props.pane) {
+    case "tasks": return <TasksPane view={props.tasksView ?? "list"} onView={(v) => props.onTasksView?.(v)} open={props.openTask ?? null} project={props.project ?? null} phoneBar={bar} />
+    case "automations": return <AutomationsPane phoneBar={bar} />
+    case "waiting": return <WaitingPane open={props.openTask ?? null} phoneBar={bar} />
+    default: return <ShellChat agent={current} phoneBar={bar} />
+  }
+}
 
 /** The three columns, laid out for a computer and for a phone. */
 export function SimpleShell(props: SimpleShellProps) {
   const [sheet, setSheet] = useState<"menu" | "tabs" | null>(null)
-  const current = props.agents?.find((a) => a.id === props.agent)
   const bar = (
     <>
       <PhoneButton label="Menu" icon="menu" className="md:hidden" onClick={() => setSheet("menu")} />
@@ -277,7 +317,7 @@ export function SimpleShell(props: SimpleShellProps) {
         <SideMenu {...props} />
       </aside>
       <main className="min-h-0">
-        <ShellChat agent={current} phoneBar={bar} />
+        <Centre props={props} bar={bar} />
       </main>
       <aside aria-label="Right column" className="hidden min-h-0 border-l border-border lg:block">
         <RightTabs />
@@ -305,8 +345,10 @@ function PhoneButton({ label, icon, className, onClick }: { label: string; icon:
   )
 }
 
-/** The route: the boot's viewer, the layout now, the agents of this Hub. */
-export default function ShellPage(_: HubPageProps) {
+/** The route: the boot's viewer, the layout now, the agents of this Hub,
+ *  and what the hash puts in the centre (the chat, Tasks, Automations or
+ *  Waiting on you). */
+export default function ShellPage({ params }: HubPageProps) {
   const boot = useMemo(() => readBoot(), [])
   // Re-read on each draw: coming back from Settings › Layout redraws the page.
   const view = currentLayout(boot)
@@ -314,5 +356,15 @@ export default function ShellPage(_: HubPageProps) {
   const list = agents.data ? shellAgents(agents.data) : agents.isError ? [] : undefined
   const [agent, setAgent] = useState<string | undefined>()
   useEffect(() => { if (!agent && list?.length) setAgent(list[0].id) }, [agent, list])
-  return <SimpleShell view={view} owner={boot.owner} agents={list} agent={agent} onAgent={setAgent} />
+  const { pane, open, project } = shellPane(params)
+  const [tasksView, setTasksView] = useState<TasksView>(() => readTasksView())
+  const onTasksView = (v: TasksView) => { setTasksView(v); saveTasksView(v) }
+  // Picking an agent while another pane is open goes back to the chat with it.
+  const onAgent = (id: string) => { setAgent(id); if (pane !== "chat") navigate({ page: SHELL_PAGE }) }
+  return (
+    <SimpleShell
+      view={view} owner={boot.owner} agents={list} agent={agent} onAgent={onAgent}
+      pane={pane} openTask={open} project={project} tasksView={tasksView} onTasksView={onTasksView}
+    />
+  )
 }

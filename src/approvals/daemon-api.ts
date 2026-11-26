@@ -6,8 +6,11 @@ import { listInbox, type InboxContext } from "./inbox"
 //
 // This surface is reachable by agents (they curl the daemon on loopback, and
 // the agentx_approval MCP tool posts here), so it only lets them:
-//   POST /approvals        raise a decision card
-//   GET  /approvals        read the inbox, in bounded summary form
+//   POST /approvals        raise a decision card. `popup_only: true` only
+//                          from a running workflow step of the raising
+//                          agent while the popup is on (noqta#910)
+//   GET  /approvals        read the inbox, in bounded summary form, and
+//                          whether the popup is on
 //   GET  /approvals/:id    read one of the cards (to check its result)
 //   POST /approvals/checkin start a check-in now ({"daily": true} for the
 //                          full pass). It only asks agents to write cards.
@@ -33,7 +36,7 @@ import { listInbox, type InboxContext } from "./inbox"
 export const LIST_LIMIT = 100
 
 export const OPERATOR_ONLY =
-  "Decisions are made by the operator only: `agentx approvals approve|reject <key>`, or Needs you on the dashboard's Hub."
+  "Decisions are made by the operator only: `agentx approvals approve|reject <key>`, or Waiting on you on the dashboard's Hub."
 
 export interface ApprovalsApiDeps {
   ctx: InboxContext
@@ -59,6 +62,9 @@ export interface ApprovalsApiDeps {
    *  hop from a peer on a mesh that shares one MESH_TOKEN (#1405). Unset:
    *  never. */
   fromMeshPeer?: () => boolean
+  /** True when the daemon's popup can show a card now: the popup switch
+   *  is on and this is macOS, the same test popNext makes. Unset: off. */
+  popupEnabled?: () => boolean
   /** Start a check-in pass in the background (checkin.ts). */
   runCheckin?: (kind: "daily" | "check") => void
 }
@@ -88,6 +94,9 @@ export function handleApprovalsApi(
           truncated: listing.items.length > LIST_LIMIT,
           errors: listing.errors,
           backlog: listing.backlog,
+          // Read-only: lets a workflow step see that a popup-only card
+          // could be answered before it raises one (noqta#910).
+          popup: { enabled: !!deps.popupEnabled?.() },
         },
       }
     }
@@ -108,7 +117,12 @@ export function handleApprovalsApi(
             : `unknown agent "${raisedBy}": raised_by must be an agent on this node` },
         }
       }
-      const r = createCard(deps.ctx.root, input, { now: deps.ctx.now, settings: deps.settings, node })
+      const popupOnly = popupOnlyRaise(input, raisedBy, node, deps)
+      if (!popupOnly.ok) return { status: popupOnly.status, body: { error: popupOnly.error } }
+      const r = createCard(deps.ctx.root, input, {
+        now: deps.ctx.now, settings: deps.settings, node,
+        ...(popupOnly.step ? { popupOnly: true, origin: { kind: "step-raised" as const, runId: popupOnly.step.runId, nodeId: popupOnly.step.nodeId } } : {}),
+      })
       if (!r.ok) return { status: 400, body: { error: r.error } }
       return { status: 201, body: { card: r.card } }
     }
@@ -169,7 +183,28 @@ export function handleApprovalsApi(
   return { status: 404, body: { error: "Not found" } }
 }
 
-/** Who closes a card on this node's say-so: a running workflow step of the
+export const POPUP_ONLY_NEEDS_STEP =
+  "popup_only needs a running workflow step of the raising agent (X-AgentX-Step, from this machine): no chat turn, shell or peer may raise one"
+export const POPUP_IS_OFF = "popup is off: a popup-only card could not be answered, so it is not stored"
+
+/** `popup_only: true` on a raise (noqta#910). Only a running workflow step
+ *  of the raising agent, on this machine, may ask for it, and only while
+ *  the popup can show it. Without the flag nothing changes. */
+export function popupOnlyRaise(
+  input: Record<string, unknown>,
+  raisedBy: string,
+  node: string | undefined,
+  deps: Pick<ApprovalsApiDeps, "provenStep" | "popupEnabled">,
+): { ok: true; step?: { runId: string; nodeId: string } } | { ok: false; status: 400 | 409; error: string } {
+  if (input.popup_only === undefined || input.popup_only === false) return { ok: true }
+  if (input.popup_only !== true) return { ok: false, status: 400, error: "popup_only must be true or left out" }
+  const step = node ? null : deps.provenStep?.() ?? null
+  if (!step || !raisedBy || step.agentId !== raisedBy) return { ok: false, status: 400, error: POPUP_ONLY_NEEDS_STEP }
+  if (!deps.popupEnabled?.()) return { ok: false, status: 409, error: POPUP_IS_OFF }
+  return { ok: true, step: { runId: step.runId, nodeId: step.nodeId } }
+}
+
+/** Who closes a card on this node's say-so:a running workflow step of the
  *  agent (X-AgentX-Step, #1849), else one of the agent's running turns.
  *  A body `raised_by` must match; it never proves anything by itself.
  *  Local closes and forwarded closes use this one rule. */
