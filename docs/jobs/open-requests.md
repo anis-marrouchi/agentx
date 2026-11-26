@@ -440,6 +440,7 @@ Other settings, under `requests.dueTimes`:
 | `defaultEstimateMinutes` | `30` | Minutes counted for work with no estimate and no usual time. |
 | `factorDays` | `30` | Days of finished work the correction factor is read from. |
 | `factorMinRows` | `3` | Fewer finished pieces of work with an estimate than this: the factor is 1. |
+| `fillMissing` | `false` | No open request or promise without a due time. A promise or an accept with no `due`, on one that has none, gets the time AgentX computes, in `"shadow"` too. With no `estimateMinutes` and no usual time for that work it is refused, never given `defaultEstimateMinutes`. The requests check also wakes the agent of each open item with no due time once, three a minute, oldest first, to give its own. |
 
 What it does not do yet, to weigh before you switch to `on`:
 
