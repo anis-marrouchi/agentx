@@ -4,9 +4,15 @@
 // the card, rows split by hairlines, and the Advanced disclosure kept
 // mounted so search can open it. A row is drawn from its definition in
 // panes.ts (condition 1), so its label and help are the ones search shows.
-import { createContext, useContext, type ComponentProps, type ReactNode } from "react"
-import { Button, Icon, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
+import { Fragment, createContext, useContext, useState, type ComponentProps, type ReactNode } from "react"
+import {
+  Button, Command, CommandItem, CommandList, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
+  Popover, PopoverContent, PopoverTrigger, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn,
+} from "../ui"
 import { rowDef, type SettingsPaneDef } from "./panes"
+
+/** A text field in a row or a dialog; `text-base` on phones so they do not zoom. */
+export const INPUT = "h-8 rounded-md border border-input bg-background px-2.5 text-base shadow-xs md:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 
 export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
   return (
@@ -45,7 +51,8 @@ export function SettingsGroup({ pane, row, title, help, action, children }: {
 }
 
 /** One row from its definition: label and help on the left, the control on
- *  the right. `label` replaces the text only (a status dot, a mono name). */
+ *  the right, or under them, still right-aligned, when both do not fit (a
+ *  phone). `label` replaces the text only (a status dot, a mono name). */
 export function SettingsRow({ pane, row, label, help, control, layout = "inline" }: {
   pane: string; row: string; label?: ReactNode; help?: ReactNode; control?: ReactNode
   /** `stack` puts the control under the label (a list of chips, checks). */
@@ -53,13 +60,47 @@ export function SettingsRow({ pane, row, label, help, control, layout = "inline"
 }) {
   const def = rowDef(pane, row)
   return (
-    <div data-slot="settings-row" data-row={def.id} data-layout={layout} className={cn("flex min-h-11 scroll-mt-6 gap-4 py-[9px]", layout === "stack" ? "flex-col gap-2" : "items-center justify-between")}>
+    <div data-slot="settings-row" data-row={def.id} data-layout={layout} className={cn("flex min-h-11 scroll-mt-6 py-[9px]", layout === "stack" ? "flex-col gap-2" : "flex-wrap items-center justify-between gap-x-4 gap-y-2")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm">{label ?? def.label}</span>
         {(help ?? def.help) && <span className="text-[12.5px] text-muted-foreground">{help ?? def.help}</span>}
       </div>
-      {control && <div className={layout === "stack" ? "flex min-w-0 flex-wrap items-center gap-2" : "flex shrink-0 items-center gap-2"}>{control}</div>}
+      {control && <div className={layout === "stack" ? "flex min-w-0 flex-wrap items-center gap-2" : "ml-auto flex shrink-0 items-center gap-2"}>{control}</div>}
     </div>
+  )
+}
+
+export interface RowMenuItem { label: string; icon: string; onSelect: () => void; destructive?: boolean }
+
+/** A row's `…` menu (rare actions, principle 3): a Command list in a
+ *  Popover, so arrows and Enter work. Put it in SettingsItem's `menu`. */
+export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-7" aria-label={"More for " + label}><Icon name="ellipsis" className="size-3.5" /></Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>More</TooltipContent>
+      </Tooltip>
+      <PopoverContent align="end" className="w-44 p-1">
+        <Command>
+          <CommandList>
+            {items.map((it, i) => (
+              <Fragment key={it.label}>
+                {it.destructive && i > 0 && <div role="separator" className="-mx-1 my-1 h-px bg-border" />}
+                <CommandItem onSelect={() => { setOpen(false); it.onSelect() }} className={it.destructive ? "text-destructive data-[selected=true]:text-destructive" : undefined}>
+                  <Icon name={it.icon} className="size-3.5" />{it.label}
+                </CommandItem>
+              </Fragment>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -155,5 +196,31 @@ export function ErrorLine({ text, onRetry }: { text: string; onRetry: () => void
       <span className="text-destructive">{text}</span>
       <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
     </div>
+  )
+}
+
+/** Yes or no before a destructive step: Cancel quiet, the step named on
+ *  the button. `run` throws to keep the dialog open with its error. */
+export function ConfirmDialog({ open, onOpenChange, title, text, yes, run }: {
+  open: boolean; onOpenChange: (v: boolean) => void; title: string; text: ReactNode; yes: string; run: () => Promise<unknown>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const close = (v: boolean) => { onOpenChange(v); if (!v) setError("") }
+  const go = async () => {
+    setBusy(true)
+    try { await run(); close(false) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{text}</DialogDescription></DialogHeader>
+        {error && <p role="alert" className="text-xs text-destructive">Not done: {error}</p>}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
+          <Button variant="destructive" disabled={busy} onClick={go}>{yes}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

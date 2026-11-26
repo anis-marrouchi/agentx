@@ -20,7 +20,8 @@ export interface SettingsRowDef {
   help?: string
   /** More words search should find it by. */
   words?: string
-  /** The disclosure (Advanced) the row sits in; search opens it. */
+  /** What search opens to show the row: a disclosure (Advanced) id, or a
+   *  comma list when it sits in more than one (a tab, then its Advanced). */
   open?: string
 }
 
@@ -125,13 +126,41 @@ const INBOX_ROWS = [
   { id: "ntfy-token", label: "Access token", help: "Optional, for a protected topic. A .env variable name.", words: "ntfy phone push token", open: "ntfy-adv" },
 ] as const satisfies readonly SettingsRowDef[]
 
+// The Agent pane's tabs are folds too: search opens `agent-tab:<tab>` and
+// the pane switches to it (AgentPane.tsx).
+const OVERVIEW = "agent-tab:overview"
+const AGENT_ROWS = [
+  { id: "name", label: "Display name", help: "Shown on the Hub, the org chart and in chats", words: "agent rename title", open: OVERVIEW },
+  { id: "wake", label: "Wake words", help: "The words that call it in a shared chat", words: "trigger mentions agent", open: OVERVIEW },
+  { id: "engine", label: "AI engine", help: "Its recurring jobs follow it unless they name their own", words: "tier claude codex opencode agent", open: OVERVIEW },
+  { id: "model", label: "Model", help: "Empty uses the engine's default", words: "opus sonnet haiku fable gpt codex agent", open: OVERVIEW },
+  { id: "permissions", label: "Tool permissions", help: "Default asks before tools that change files", words: "permission mode bypass plan agent", open: OVERVIEW },
+  { id: "concurrent", label: "Conversations at once", help: "More runs in parallel, each with its own session", words: "parallel concurrent agent", open: OVERVIEW + ",agent-advanced" },
+  { id: "longest", label: "Longest task", help: "A run that goes longer is stopped", words: "timeout minutes agent", open: OVERVIEW + ",agent-advanced" },
+  { id: "public", label: "Answers on the public API", help: "A token with agent:<id> scope can reach it", words: "access public private agent", open: OVERVIEW + ",agent-advanced" },
+  { id: "absorb", label: "In the wiki absorb", help: "Off: agentx wiki absorb skips it; its conversations are still kept", words: "wiki absorb agent", open: OVERVIEW + ",agent-advanced" },
+  { id: "instructions", label: "Instructions", help: "Its system prompt; the longer files it reads are under Personality", words: "system prompt personality agent", open: OVERVIEW },
+  { id: "test-drive", label: "Test drive", help: "Send it a message and read the answer here", words: "try test message agent", open: OVERVIEW },
+  { id: "delete", label: "Delete agent", help: "Removes it from agentx.json; its workspace folder stays", words: "remove agent", open: OVERVIEW },
+  { id: "files", label: "Instruction files", help: "The files that tell it who it is, in its workspace", words: "personality agents.md soul.md memory agent", open: "agent-tab:personality" },
+  { id: "skills", label: "Skills", help: "What it knows how to do: one folder with a SKILL.md each", words: "skill.md agent", open: "agent-tab:skills" },
+  { id: "integrations", label: "Integrations", help: "Credentials for outside services; secrets stay in the environment", words: "credentials token gitlab gmail agent", open: "agent-tab:channels" },
+  { id: "bots", label: "Chats and bots", help: "The Telegram bots that answer as this agent", words: "telegram bot channel agent", open: "agent-tab:channels" },
+  { id: "handovers", label: "Handovers", help: "Chats routed to another agent until you release them", words: "route hand over chat agent", open: "agent-tab:handovers" },
+] as const satisfies readonly SettingsRowDef[]
+
+const ACTIONS_ROWS = [
+  { id: "actions", label: "Actions", help: "Run one to try it; edit, duplicate or remove it in its menu", words: "shell command http web call webhook run inputs workflow" },
+  { id: "add-action", label: "Add action", help: "A shell command or a web call that workflows call by its id", words: "new create shell command http web call webhook" },
+] as const satisfies readonly SettingsRowDef[]
+
 export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
   {
     id: "general", label: "General", icon: "settings-2", group: "general", oldSection: "agents", built: true,
     help: "Your agents and the machines they run on. Only you see Settings; changes save to this machine's agentx.json.",
     rows: GENERAL_ROWS,
   },
-  { id: "agent", label: "Agent", icon: "bot", group: "general", oldSection: "agents", help: "One agent's engine, model, files and access.", rows: [] },
+  { id: "agent", label: "Agent", icon: "bot", group: "general", oldSection: "agents", built: true, help: "One agent's engine, model, files and access.", rows: AGENT_ROWS },
   {
     id: "menu", label: "Menu", icon: "panel-left", group: "general", oldSection: "layout", built: true,
     help: "The Hub's side menu and the phone bar. A page you hide stays in More and in ⌘K.",
@@ -147,7 +176,11 @@ export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
     help: "Work that starts by itself: schedules run an agent on a timer, webhooks run one when another service calls.",
     rows: JOBS_ROWS,
   },
-  { id: "actions", label: "Actions", icon: "zap", group: "work", oldSection: "actions", help: "Commands and web calls workflows run.", rows: [] },
+  {
+    id: "actions", label: "Actions", icon: "zap", group: "work", oldSection: "actions", built: true,
+    help: "Shell commands and web calls that workflows run by id. Run one here to try it. Same as agentx actions.",
+    rows: ACTIONS_ROWS,
+  },
   {
     id: "approvals", label: "Approvals", icon: "shield-check", group: "work", oldSection: "inbox", built: true,
     help: "Where approval cards reach you and how long they wait, and how agents follow what you ask them for. Changes save at once.",
