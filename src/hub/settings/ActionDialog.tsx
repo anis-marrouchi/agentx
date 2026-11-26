@@ -13,7 +13,7 @@ import {
 import { inputsText, parseInputs, type ActionDef } from "./agent-data"
 import { AGENT_ID } from "./data"
 import { Disclosed, save } from "./GeneralPane"
-import { INPUT } from "./parts"
+import { inputClass } from "./fields"
 
 const METHODS = ["POST", "GET", "PUT", "PATCH", "DELETE"]
 interface Form { kind: "shell" | "http"; id: string; title: string; description: string; command: string; method: string; url: string; inputs: string; cwd: string; headers: string; body: string; timeout: string }
@@ -64,8 +64,8 @@ export function ActionDialog({ open, onOpenChange, action, isNew, taken }: { ope
   const field = (k: keyof Form, label: string, o: { mono?: boolean; ph?: string; help?: ReactNode; area?: boolean } = {}) => (
     <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">{label}
       {o.area
-        ? <textarea rows={3} className={cn(INPUT, "h-auto w-full py-2", o.mono && "font-mono")} value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={o.ph} aria-invalid={error?.field === k} />
-        : <input className={cn(INPUT, "h-9 w-full", o.mono && "font-mono")} value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={o.ph} autoComplete="off" aria-invalid={error?.field === k} autoFocus={k === "id" && isNew} />}
+        ? <textarea rows={3} className={cn(inputClass, "h-auto w-full py-2", o.mono && "font-mono")} value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={o.ph} aria-invalid={error?.field === k} />
+        : <input className={cn(inputClass, "h-9 w-full", o.mono && "font-mono")} value={f[k]} onChange={(e) => set(k, e.target.value)} placeholder={o.ph} autoComplete="off" aria-invalid={error?.field === k} autoFocus={k === "id" && isNew} />}
       {o.help && <span className="text-xs text-muted-foreground">{o.help}</span>}
     </label>
   )

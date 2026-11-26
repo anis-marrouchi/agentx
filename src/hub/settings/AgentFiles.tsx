@@ -10,7 +10,8 @@ import { apiGet } from "../api"
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon, cn } from "../ui"
 import type { AgentConfig } from "./agent-data"
 import { save } from "./GeneralPane"
-import { ConfirmDialog, ErrorLine, INPUT, RowMenu, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
+import { ConfirmDialog, RowMenu, inputClass } from "./fields"
+import { ErrorLine, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
 
 const PANE = "agent"
 interface FileList {
@@ -40,7 +41,7 @@ export function FilesTab({ agent: a, part }: { agent: AgentConfig; part: "identi
         name={<span className="font-mono text-[13px] font-normal">{s.slug}</span>}
         meta={s.title !== s.slug ? s.title : fmtBytes(s.size)}
         control={<Button variant="ghost" size="sm" onClick={() => setEditing(s.path)}>Edit</Button>}
-        menu={<RowMenu label={s.slug} items={[{ label: "Delete", icon: "trash-2", destructive: true, onSelect: () => setRemoving(s.slug) }]} />}
+        menu={<RowMenu name={s.slug} items={[{ label: "Delete", icon: "trash-2", destructive: true, onSelect: () => setRemoving(s.slug) }]} />}
       />
     )) : <Empty text="No skills yet." action={<Button variant="outline" size="sm" onClick={() => setAdding(true)}>Add skill</Button>} />
   ) : (
@@ -66,7 +67,7 @@ export function FilesTab({ agent: a, part }: { agent: AgentConfig; part: "identi
       {skills && <AddSkillDialog open={adding} onOpenChange={setAdding} agent={a.id} onAdded={(p) => { refresh(); setEditing(p) }} />}
       <ConfirmDialog
         open={!!removing} onOpenChange={(v) => { if (!v) setRemoving("") }}
-        title={`Delete the skill ${removing}?`} text="Its folder and SKILL.md are removed from the agent's workspace." yes="Delete skill"
+        title={`Delete the skill ${removing}?`} body="Its folder and SKILL.md are removed from the agent's workspace." action="Delete skill"
         run={async () => { await save("DELETE", "/api/admin/wall/settings/files/skill", { agent: a.id, slug: removing }); await refresh() }}
       />
     </>
@@ -100,7 +101,7 @@ function FileDialog({ agent, path, onClose, onSaved }: { agent: string; path: st
         {file.isPending ? <SkeletonRows /> : file.isError ? <p role="alert" className="text-sm text-destructive">Could not open it: {(file.error as Error).message}</p> : (
           <textarea
             aria-label={path} rows={16} spellCheck={false} value={value} onChange={(e) => setText(e.target.value)}
-            className={cn(INPUT, "h-auto w-full resize-y py-2 font-mono text-xs leading-5 md:text-xs")}
+            className={cn(inputClass, "h-auto w-full resize-y py-2 font-mono text-xs leading-5 md:text-xs")}
           />
         )}
         {put.isError && <p role="alert" className="text-xs text-destructive">Not saved: {(put.error as Error).message}</p>}
@@ -131,11 +132,11 @@ function AddSkillDialog({ open, onOpenChange, agent, onAdded }: { open: boolean;
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
           <label className="flex flex-col gap-1 text-sm">Slug
-            <input autoFocus className={cn(INPUT, "h-9 w-full font-mono")} value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="weekly-report" autoComplete="off" />
+            <input autoFocus className={cn(inputClass, "h-9 w-full font-mono")} value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="weekly-report" autoComplete="off" />
             <span className="text-xs text-muted-foreground">Lowercase letters, digits and -</span>
           </label>
           <label className="flex flex-col gap-1 text-sm">Title
-            <input className={cn(INPUT, "h-9 w-full")} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Write the weekly report" />
+            <input className={cn(inputClass, "h-9 w-full")} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Write the weekly report" />
           </label>
           {add.isError && <p role="alert" className="text-xs text-destructive">Not added: {(add.error as Error).message}</p>}
           <DialogFooter>

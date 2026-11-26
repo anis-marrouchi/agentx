@@ -164,17 +164,29 @@ export function RowMenu({ name, items }: { name: string; items: MenuItem[] }) {
   )
 }
 
-/** Ask before a destructive step: Cancel quiet, the action red. */
-export function ConfirmDialog({ open, onOpenChange, title, body, action, busy, onConfirm }: {
-  open: boolean; onOpenChange: (v: boolean) => void; title: string; body: ReactNode; action: string; busy?: boolean; onConfirm: () => void
-}) {
+/** Ask before a destructive step: Cancel quiet, the action red. Give
+ *  `onConfirm` (with `busy`) to run the step yourself, or `run`: the dialog
+ *  then waits for it, closes when it is done, and stays open with
+ *  "Not done: …" when it throws. */
+export function ConfirmDialog({ open, onOpenChange, title, body, action, busy, onConfirm, run }: {
+  open: boolean; onOpenChange: (v: boolean) => void; title: string; body: ReactNode; action: string; busy?: boolean
+} & ({ onConfirm: () => void; run?: never } | { run: () => Promise<unknown>; onConfirm?: never })) {
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState("")
+  const close = (v: boolean) => { onOpenChange(v); if (!v) setError("") }
+  const go = async () => {
+    if (!run) { onConfirm?.(); return }
+    setRunning(true)
+    try { await run(); close(false) } catch (e) { setError((e as Error).message) } finally { setRunning(false) }
+  }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{body}</DialogDescription></DialogHeader>
+        {error && <p role="alert" className="text-xs text-destructive">Not done: {error}</p>}
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" disabled={busy} onClick={onConfirm}>{action}</Button>
+          <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
+          <Button variant="destructive" disabled={busy || running} onClick={go}>{action}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

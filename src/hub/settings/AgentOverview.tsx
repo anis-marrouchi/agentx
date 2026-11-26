@@ -19,7 +19,8 @@ import {
 import { ENGINE_CHOICES, engineName } from "./data"
 import { EngineLogo, save } from "./GeneralPane"
 import { ModelPicker } from "./ModelPicker"
-import { ConfirmDialog, Disclosure, INPUT, SettingsGroup, SettingsRow } from "./parts"
+import { ConfirmDialog, inputClass } from "./fields"
+import { Disclosure, SettingsGroup, SettingsRow } from "./parts"
 import { TestDrive } from "./TestDrive"
 
 const PANE = "agent"
@@ -40,11 +41,11 @@ export function AgentOverview({ agent: a, state, draft, setDraft }: Props) {
   const was = (k: AgentField) => changed(k) ? <span className="text-link">Changed from {showValue(k, savedValue(a, k), engineName)}</span> : undefined
   const label = (k: AgentField, text: string) => changed(k) ? <span className="flex items-center gap-1.5">{text}<span aria-label="changed" className="size-1.5 rounded-full bg-link" /></span> : undefined
   const text = (k: AgentField, aria: string, mono?: boolean) => (
-    <input aria-label={aria} value={v(k)} onChange={(e) => set(k, e.target.value)} className={cn(INPUT, "w-[220px]", mono && "font-mono", changed(k) && CHANGED)} />
+    <input aria-label={aria} value={v(k)} onChange={(e) => set(k, e.target.value)} className={cn(inputClass, "w-[220px]", mono && "font-mono", changed(k) && CHANGED)} />
   )
   const num = (k: AgentField, aria: string, max: number, unit?: string) => (
     <span className="flex items-center gap-2 text-xs text-muted-foreground">
-      <input type="number" min={1} max={max} aria-label={aria} value={v(k)} onChange={(e) => set(k, e.target.value)} className={cn(INPUT, "w-20 tabular-nums", changed(k) && CHANGED)} />{unit}
+      <input type="number" min={1} max={max} aria-label={aria} value={v(k)} onChange={(e) => set(k, e.target.value)} className={cn(inputClass, "w-20 tabular-nums", changed(k) && CHANGED)} />{unit}
     </span>
   )
   const sw = (k: AgentField, aria: string) => <Switch checked={v(k) === "on"} onCheckedChange={(on) => set(k, on ? "on" : "off")} aria-label={aria} />
@@ -83,7 +84,7 @@ export function AgentOverview({ agent: a, state, draft, setDraft }: Props) {
         <div className="flex flex-col gap-1.5 py-4">
           <textarea
             rows={5} maxLength={INSTRUCTIONS_MAX} aria-label="Instructions" value={v("systemPrompt")} onChange={(e) => set("systemPrompt", e.target.value)}
-            className={cn(INPUT, "h-auto w-full resize-y py-2 leading-6", changed("systemPrompt") && CHANGED)}
+            className={cn(inputClass, "h-auto w-full resize-y py-2 leading-6", changed("systemPrompt") && CHANGED)}
           />
           <span className={cn("text-xs", changed("systemPrompt") ? "text-link" : "text-muted-foreground")}>
             {changed("systemPrompt") && "Changed · "}{v("systemPrompt").length.toLocaleString("en")} of {INSTRUCTIONS_MAX.toLocaleString("en")} characters
@@ -177,8 +178,8 @@ function DeleteDialog({ open, onOpenChange, agent: a }: { open: boolean; onOpenC
   const client = useQueryClient()
   return (
     <ConfirmDialog
-      open={open} onOpenChange={onOpenChange} title={`Delete @${a.id}?`} yes={`Delete @${a.id}`}
-      text={`It is removed from agentx.json and its Telegram bots are unbound. Its workspace folder stays on disk. The daemon stops it after a restart: ${RESTART_CMD}.`}
+      open={open} onOpenChange={onOpenChange} title={`Delete @${a.id}?`} action={`Delete @${a.id}`}
+      body={`It is removed from agentx.json and its Telegram bots are unbound. Its workspace folder stays on disk. The daemon stops it after a restart: ${RESTART_CMD}.`}
       run={async () => {
         await save("DELETE", "/api/admin/wall/settings/agents", { id: a.id })
         location.replace(settingsHash("general"))

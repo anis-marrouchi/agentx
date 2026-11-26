@@ -14,7 +14,8 @@ import { Badge, Button, Icon, Switch, cn } from "../ui"
 import { ActionDialog } from "./ActionDialog"
 import { actionUsers, type ActionDef, type AgentState } from "./agent-data"
 import { save, useGeneralData } from "./GeneralPane"
-import { ConfirmDialog, ErrorLine, INPUT, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
+import { ConfirmDialog, RowMenu, inputClass } from "./fields"
+import { ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
 import { paneDef } from "./panes"
 
 const PANE = "actions"
@@ -57,7 +58,7 @@ export default function ActionsPane() {
                 {open && <RunPanel action={a} />}
               </>}
               control={<Button variant={open ? "ghost" : "outline"} size="sm" aria-expanded={open} onClick={() => setRunning(open ? "" : a.id)}>{!open && <Icon name="play" className="size-3.5" />}{open ? "Close" : "Run"}</Button>}
-              menu={<RowMenu label={a.title} items={[
+              menu={<RowMenu name={a.title} items={[
                 { label: "Edit", icon: "pencil", onSelect: () => setEditing({ action: a }) },
                 { label: "Duplicate", icon: "copy", onSelect: () => setEditing({ action: { ...a, id: a.id + "-copy", title: a.title + " copy" }, copy: true }) },
                 { label: "Remove", icon: "trash-2", destructive: true, onSelect: () => setRemoving(a) },
@@ -72,8 +73,8 @@ export default function ActionsPane() {
       />
       <ConfirmDialog
         open={!!removing} onOpenChange={(v) => { if (!v) setRemoving(null) }}
-        title={`Remove ${removing?.title ?? ""}?`} yes={"Remove " + (removing?.id ?? "")}
-        text={removing && usedBy(removing.id).length ? `${usedBy(removing.id).join(", ")} call${usedBy(removing.id).length === 1 ? "s" : ""} ${removing.id} and fail${usedBy(removing.id).length === 1 ? "s" : ""} until it is back.` : "No workflow calls it."}
+        title={`Remove ${removing?.title ?? ""}?`} action={"Remove " + (removing?.id ?? "")}
+        body={removing && usedBy(removing.id).length ? `${usedBy(removing.id).join(", ")} call${usedBy(removing.id).length === 1 ? "s" : ""} ${removing.id} and fail${usedBy(removing.id).length === 1 ? "s" : ""} until it is back.` : "No workflow calls it."}
         run={async () => { await save("DELETE", "/api/admin/wall/settings/actions", { id: removing!.id }); await client.invalidateQueries({ queryKey: ["settings", "state"] }) }}
       />
     </>
@@ -102,7 +103,7 @@ function RunPanel({ action: a }: { action: ActionDef }) {
           {i.type === "boolean"
             ? <Switch checked={!!values[i.name]} onCheckedChange={(v) => setValues((x) => ({ ...x, [i.name]: v }))} aria-label={i.name} />
             : <input aria-label={i.name} type={i.type === "number" ? "number" : "text"} placeholder={i.description || i.name} value={String(values[i.name] ?? "")}
-                onChange={(e) => setValues((x) => ({ ...x, [i.name]: e.target.value }))} className={cn(INPUT, "w-40 font-mono")} />}
+                onChange={(e) => setValues((x) => ({ ...x, [i.name]: e.target.value }))} className={cn(inputClass, "w-40 font-mono")} />}
         </span>
       ))}
       {!a.inputs?.length && <span className="text-xs text-muted-foreground">No inputs: it runs as written.</span>}

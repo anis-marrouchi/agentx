@@ -8,7 +8,8 @@ import { useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { Button, Kbd, cn } from "../ui"
 import type { AgentConfig } from "./agent-data"
 import { save } from "./GeneralPane"
-import { INPUT, SettingsGroup } from "./parts"
+import { inputClass } from "./fields"
+import { SettingsGroup } from "./parts"
 
 interface Msg { kind: "you" | "agent" | "err"; text: string }
 const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl+"
@@ -47,7 +48,7 @@ export function TestDrive({ agent: a }: { agent: AgentConfig }) {
         <form onSubmit={submit} className="flex items-center gap-2">
           <input
             aria-label="Test drive message" placeholder={"Message " + (a.name || a.id)} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
-            maxLength={4000} className={cn(INPUT, "h-9 min-w-0 flex-1")}
+            maxLength={4000} className={cn(inputClass, "h-9 min-w-0 flex-1")}
           />
           <Button type="submit" variant="outline" disabled={!text.trim() || send.isPending}>Send</Button>
           <Kbd className="max-sm:hidden">{MOD}↵</Kbd>

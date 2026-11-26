@@ -15,7 +15,8 @@ import {
 import { settingsHash } from "./address"
 import type { AgentConfig, AgentState, Integration } from "./agent-data"
 import { save } from "./GeneralPane"
-import { ConfirmDialog, ErrorLine, INPUT, RowMenu, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows } from "./parts"
+import { ConfirmDialog, RowMenu, inputClass } from "./fields"
+import { ErrorLine, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows } from "./parts"
 
 const PANE = "agent"
 const INT_KINDS = ["gitlab-user", "github-user", "gmail", "hotmail", "smtp", "telegram-bot", "whatsapp", "slack-bot", "discord-bot", "hubspot", "salesforce",
@@ -77,7 +78,7 @@ export function ChannelsTab({ agent: a, state }: { agent: AgentConfig; state: Ag
               name={<>{i.label}<Badge variant="outline" className="ml-1.5 rounded-sm px-1 py-0 font-mono text-[11px] font-normal text-muted-foreground">{i.kind}</Badge></>}
               meta={integrationMeta(i)}
               badge={<Badge variant={b.variant}>{b.text}</Badge>}
-              menu={<RowMenu label={i.label} items={[{ label: "Remove", icon: "trash-2", destructive: true, onSelect: () => setRemoving(i) }]} />}
+              menu={<RowMenu name={i.label} items={[{ label: "Remove", icon: "trash-2", destructive: true, onSelect: () => setRemoving(i) }]} />}
             />
           )
         }) : <div className="flex items-center justify-between gap-4 py-4 text-sm text-muted-foreground">None yet.<Button variant="outline" size="sm" onClick={() => setAdding(true)}>Add integration</Button></div>}
@@ -92,7 +93,7 @@ export function ChannelsTab({ agent: a, state }: { agent: AgentConfig; state: Ag
       <AddIntegrationDialog open={adding} onOpenChange={setAdding} agent={a.id} />
       <ConfirmDialog
         open={!!removing} onOpenChange={(v) => { if (!v) setRemoving(null) }}
-        title={`Remove ${removing?.label ?? ""}?`} text={`${removing?.kind} is removed from @${a.id}. The secret stays in the environment.`} yes="Remove"
+        title={`Remove ${removing?.label ?? ""}?`} body={`${removing?.kind} is removed from @${a.id}. The secret stays in the environment.`} action="Remove"
         run={async () => {
           await save("DELETE", "/api/admin/wall/settings/agents/integrations", { agentId: a.id, kind: removing!.kind, label: removing!.label })
           await client.invalidateQueries({ queryKey: ["settings", "state"] })
@@ -140,14 +141,14 @@ function AddIntegrationDialog({ open, onOpenChange, agent }: { open: boolean; on
               </Select>
             </div>
             <label className="flex flex-col gap-1 text-sm">Label
-              <input className={cn(INPUT, "h-9 w-full")} maxLength={80} value={f.label} onChange={(e) => set("label", e.target.value)} placeholder="Team CRM" />
+              <input className={cn(inputClass, "h-9 w-full")} maxLength={80} value={f.label} onChange={(e) => set("label", e.target.value)} placeholder="Team CRM" />
             </label>
           </div>
           <label className="flex flex-col gap-1 text-sm">Token environment variable
-            <input className={cn(INPUT, "h-9 w-full font-mono")} value={f.env} onChange={(e) => set("env", e.target.value)} placeholder="CRM_TOKEN" autoComplete="off" />
+            <input className={cn(inputClass, "h-9 w-full font-mono")} value={f.env} onChange={(e) => set("env", e.target.value)} placeholder="CRM_TOKEN" autoComplete="off" />
           </label>
           <label className="flex flex-col gap-1 text-sm">Details
-            <input className={cn(INPUT, "h-9 w-full font-mono")} value={f.meta} onChange={(e) => set("meta", e.target.value)} placeholder="host=gitlab.com" />
+            <input className={cn(inputClass, "h-9 w-full font-mono")} value={f.meta} onChange={(e) => set("meta", e.target.value)} placeholder="host=gitlab.com" />
             <span className="text-xs text-muted-foreground">Optional. key=value, comma separated.</span>
           </label>
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
@@ -198,7 +199,7 @@ export function HandoversTab({ agent: a, agents }: { agent: AgentConfig; agents:
       <SettingsGroup pane={PANE} title={`Routed to ${name}`}>{rows(ho.data.incoming, false)}</SettingsGroup>
       <ConfirmDialog
         open={!!releasing} onOpenChange={(v) => { if (!v) setReleasing(null) }}
-        title={`Release ${releasing?.channel} ${releasing?.chatId}?`} text="Its next message goes where agentx.json routes it." yes="Release"
+        title={`Release ${releasing?.channel} ${releasing?.chatId}?`} body="Its next message goes where agentx.json routes it." action="Release"
         run={async () => { await save("DELETE", "/api/admin/wall/settings/agent/" + encodeURIComponent(a.id) + "/handovers", { channel: releasing!.channel, chatId: releasing!.chatId, accountId: releasing!.accountId || undefined }); await client.invalidateQueries({ queryKey: key }) }}
       />
       <HandOverDialog open={adding} onOpenChange={setAdding} agent={a} others={agents.filter((x) => x.id !== a.id)} onDone={() => client.invalidateQueries({ queryKey: key })} />
@@ -236,7 +237,7 @@ function HandOverDialog({ open, onOpenChange, agent: a, others, onDone }: { open
                 <SelectContent><SelectItem value="telegram">Telegram</SelectItem><SelectItem value="whatsapp">WhatsApp</SelectItem></SelectContent>
               </Select>
             </div>
-            <label className={field}>Chat id<input className={cn(INPUT, "h-9 w-full font-mono")} value={f.chatId} onChange={(e) => set("chatId", e.target.value)} autoComplete="off" /></label>
+            <label className={field}>Chat id<input className={cn(inputClass, "h-9 w-full font-mono")} value={f.chatId} onChange={(e) => set("chatId", e.target.value)} autoComplete="off" /></label>
           </div>
           <div className={field}>Hand to
             <Select value={f.toAgent} onValueChange={(v) => set("toAgent", v)}>
@@ -245,12 +246,12 @@ function HandOverDialog({ open, onOpenChange, agent: a, others, onDone }: { open
             </Select>
           </div>
           <label className={field}>A note for the agent that takes it
-            <textarea rows={3} className={cn(INPUT, "h-auto w-full py-2")} value={f.summary} onChange={(e) => set("summary", e.target.value)} />
+            <textarea rows={3} className={cn(inputClass, "h-auto w-full py-2")} value={f.summary} onChange={(e) => set("summary", e.target.value)} />
             <span className="text-xs text-muted-foreground">Optional. Read once, with the next message.</span>
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className={field}>Until<input className={cn(INPUT, "h-9 w-full font-mono")} value={f.expiresAt} onChange={(e) => set("expiresAt", e.target.value)} placeholder="2026-12-01" /></label>
-            <label className={field}>Bot account<input className={cn(INPUT, "h-9 w-full font-mono")} value={f.accountId} onChange={(e) => set("accountId", e.target.value)} placeholder="default" /></label>
+            <label className={field}>Until<input className={cn(inputClass, "h-9 w-full font-mono")} value={f.expiresAt} onChange={(e) => set("expiresAt", e.target.value)} placeholder="2026-12-01" /></label>
+            <label className={field}>Bot account<input className={cn(inputClass, "h-9 w-full font-mono")} value={f.accountId} onChange={(e) => set("accountId", e.target.value)} placeholder="default" /></label>
           </div>
           {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
           <DialogFooter>

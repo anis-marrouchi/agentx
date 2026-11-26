@@ -477,7 +477,7 @@ describe("Settings › Agent (#2101 ST2a)", () => {
     expect(files).toContain("AGENTS.md")
     expect(files).toContain("not made yet")
     expect(skills).toContain("release-notes")
-    expect(skills).toContain("More for release-notes")
+    expect(skills).toContain("More actions for release-notes")
     expect(channels).toContain("GITLAB_DEV_TOKEN")
     expect(channels).toContain("Not set")
     expect(channels).toContain("@example_dev_bot")
@@ -534,7 +534,7 @@ describe("Settings › Actions (#2101 ST2a)", () => {
     expect(out).toContain("POST https://hooks.example.com/$HOOK")
     expect(out).toContain("version*: string")
     expect(out).toContain("release-train, ci-watch")
-    expect(out).toContain("More for Deploy staging")
+    expect(out).toContain("More actions for Deploy staging")
     expect(out).toContain(">Run<")
   })
   it("reads which workflows run an action, and the inputs as the old form wrote them", () => {
@@ -606,3 +606,26 @@ describe("Settings › Guests", () => {
     expect(tokensShort(12)).toBe("12")
   })
 })
+
+describe("Settings kit after the ST2a review (#2101)", () => {
+  it("an inline row wraps its control only on a phone (B1)", async () => {
+    const { SettingsRow } = await import("../src/hub/settings/parts")
+    const html = renderToStaticMarkup(createElement(SettingsRow, { pane: "general", row: GENERAL_FIRST_ROW, control: createElement("button", null, "x") }))
+    expect(html).toContain("max-sm:flex-wrap")
+    expect(html).toContain("max-sm:ml-auto")
+    expect(html).not.toMatch(/class="[^"]*(?<![\w:-])flex-wrap/)
+    expect(html).not.toMatch(/class="[^"]*(?<![\w:-])ml-auto/)
+  })
+  it("keeps one copy of the row menu, confirm dialog and input class, in fields.tsx (B2)", async () => {
+    const parts = await import("../src/hub/settings/parts")
+    const fields = await import("../src/hub/settings/fields")
+    expect(Object.keys(parts)).not.toContain("RowMenu")
+    expect(Object.keys(parts)).not.toContain("ConfirmDialog")
+    expect(Object.keys(parts)).not.toContain("INPUT")
+    expect(typeof fields.RowMenu).toBe("function")
+    expect(typeof fields.ConfirmDialog).toBe("function")
+    expect(fields.inputClass).toContain("aria-[invalid=true]:border-destructive")
+  })
+})
+
+const GENERAL_FIRST_ROW = paneDef("general").rows[0].id
