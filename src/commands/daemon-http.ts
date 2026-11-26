@@ -25,7 +25,7 @@ export async function postJson(url: string, body: unknown, timeoutMs = 3000, hea
   }
 }
 
-/** In-flight count:the restart endpoint, else /health (older daemons only
+/** In-flight count: the restart endpoint, else /health (older daemons only
  *  report per-agent active counts there). Null when the daemon is silent. */
 export async function readInflight(base: string, timeoutMs = 3000): Promise<number | null> {
   const info = await getJson(`${base}/daemon/restart`, timeoutMs)

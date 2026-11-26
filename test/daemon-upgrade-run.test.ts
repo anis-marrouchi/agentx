@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
   posts: [] as string[],
   /** What each POST sent: its operator key header and minutes. */
   sent: [] as { key?: string; minutes?: number }[],
+  /** Runs when the daemon job is reloaded: the old daemon's shutdown. */
+  onReload: null as null | (() => void),
 }))
 
 vi.mock("child_process", async (orig) => ({
@@ -53,7 +55,7 @@ vi.mock("../src/native/macos/launchd", () => ({
   loadedJobsNaming: () => [],
   plistValid: () => true,
   readPlistJson: () => ({ ProgramArguments: ["/usr/bin/node", join(h.root, "old/dist/cli.js"), "daemon", "start"] }),
-  reloadJob: async () => true,
+  reloadJob: async () => { h.onReload?.(); h.onReload = null; return true },
 }))
 vi.mock("../src/daemon/shutdown", () => ({ writeShutdownRequest: () => {} }))
 vi.mock("../src/daemon/upgrade-native", () => ({ ensureNativeModules: () => ({ ok: true, detail: "loads" }) }))
@@ -160,6 +162,7 @@ describe("daemon upgrade run: drain the queue instead of waiting for idle (#2360
     h.held = false
     h.running = 6
     h.stuck = false
+    h.onReload = null
     h.posts = []
     h.sent = []
     mkdirSync(join(h.root, ".agentx"), { recursive: true })
@@ -194,6 +197,24 @@ describe("daemon upgrade run: drain the queue instead of waiting for idle (#2360
     expect(last.drain.reopenedAt).toBeTruthy()
     // Both calls show the operator key; loopback alone is refused.
     expect(h.sent.map((x) => x.key)).toEqual(["op-key-1", "op-key-1"])
+  })
+
+  it("records what the old daemon's queue kept and refused at the switch", async () => {
+    // The old daemon closes its queue on the way down (index.ts stop()).
+    h.onReload = () => {
+      mkdirSync(join(h.root, ".agentx/upgrade"), { recursive: true })
+      writeFileSync(join(h.root, ".agentx/upgrade/queue-at-close.json"), JSON.stringify({ at: new Date().toISOString(), kept: 40, refused: 0 }))
+    }
+    const { code, last } = await run()
+    expect(code).toBe(0)
+    expect(last.drain).toMatchObject({ keptAtSwitch: 40, refusedAtSwitch: 0 })
+  })
+
+  it("ignores a queue record from an earlier stop", async () => {
+    mkdirSync(join(h.root, ".agentx/upgrade"), { recursive: true })
+    writeFileSync(join(h.root, ".agentx/upgrade/queue-at-close.json"), JSON.stringify({ at: "2020-01-01T00:00:00.000Z", kept: 9, refused: 9 }))
+    const { last } = await run()
+    expect(last.drain.refusedAtSwitch).toBeUndefined()
   })
 
   it("asks for at most the 2 hour cap, even with a longer --timeout", async () => {

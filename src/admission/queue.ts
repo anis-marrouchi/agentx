@@ -29,11 +29,13 @@
 // delegationHeadroom over the cap: its parent holds a place while it
 // waits for the helper, so without headroom a full node deadlocks.
 //
-// Start hold (#2360): `agentx daemon upgrade` holds every new start while
-// it waits for the running count to reach 0. Waiting runs stay queued and
-// the held time does not count toward maxWaitMinutes. Owner and critical
-// runs are held too; only delegated helpers start, since their parent is
-// running and waits on them. The hold ends when released or at its own
+// Start hold (#2360): `agentx daemon upgrade` holds new chat message starts
+// while it waits for the running count to reach 0. Those stay queued, the
+// held time does not count toward maxWaitMinutes, and at the switch they
+// are kept for replay on boot (keepOnClose). Owner and critical chat runs
+// are held too. Every other run (agent-to-agent, schedules, workflow
+// steps, delegated helpers) is not held: close() would answer it
+// "restarting" and drop it, so it starts as it would without a hold. The hold ends when released or at its own
 // deadline, so a dead upgrade job cannot leave the queue shut. A repeat
 // hold never moves that deadline later, and the queue wakes at it.
 
@@ -572,8 +574,9 @@ export class AdmissionQueue {
     const hold = this.holding(now) ? this.hold : null
     for (const e of this.ordered()) {
       const waitedMs = now - e.enqueuedAt
-      // Start hold (#2360): kept in the queue, its node clock stopped.
-      if (hold && !e.delegated) {
+      // Start hold (#2360): a chat message, replayed on boot if the switch
+      // comes first, stays in the queue with its node clock stopped.
+      if (hold && e.req.keepOnClose && !e.delegated) {
         e.blockedBy = [`start hold: ${hold.by}`]
         this.noticeLongWait(e, waitedMs)
         continue

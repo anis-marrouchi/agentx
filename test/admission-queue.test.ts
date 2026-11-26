@@ -616,7 +616,8 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     expect(running.ticket).toBeTruthy()
     const hold = q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
     expect(hold).toMatchObject({ by: "agentx daemon upgrade", waiting: 0, running: 1 })
-    const normal = ask(q, "normal"), owner = ask(q, "owner", { channel: "voice" }), crit = ask(q, "crit")
+    const chat = { keepOnClose: true }
+    const normal = ask(q, "normal", chat), owner = ask(q, "owner", { channel: "voice", ...chat }), crit = ask(q, "crit", chat)
     await tick(); await tick()
     expect([normal.ticket, owner.ticket, crit.ticket]).toEqual([undefined, undefined, undefined])
     const snap = q.snapshot()
@@ -631,6 +632,19 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     expect(q.waitingCount).toBe(3)
   })
 
+  it("does not hold a run the switch would drop: agent-to-agent, schedule, workflow step", async () => {
+    const { q } = setup()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
+    const a2a = ask(q, "a2a", { channel: "a2a" }), sched = ask(q, "sched", { channel: "schedule" })
+    const chat = ask(q, "chat", { keepOnClose: true })
+    await tick(); await tick()
+    expect(a2a.ticket).toBeTruthy()
+    expect(sched.ticket).toBeTruthy()
+    expect(chat.ticket).toBeUndefined()
+    // At the switch only the chat message is waiting, and it is kept for replay.
+    expect(q.close()).toEqual({ kept: 1, refused: 0 })
+  })
+
   it("still starts a delegated helper, whose parent waits on it", async () => {
     const { q } = setup()
     q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
@@ -642,7 +656,7 @@ describe("start hold for a daemon upgrade (#2360)", () => {
   it("reopens on release and starts what waited", async () => {
     const { q, logs } = setup()
     q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
-    const a = ask(q, "a")
+    const a = ask(q, "a", { keepOnClose: true })
     await tick(); await tick()
     expect(a.ticket).toBeUndefined()
     expect(q.releaseHold()).toMatchObject({ waiting: 1 })
@@ -656,7 +670,7 @@ describe("start hold for a daemon upgrade (#2360)", () => {
   it("ends by itself at its deadline, so a dead upgrade job cannot keep the queue shut", async () => {
     const { q, advance } = setup()
     q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
-    const a = ask(q, "a")
+    const a = ask(q, "a", { keepOnClose: true })
     await tick(); await tick()
     expect(a.ticket).toBeUndefined()
     advance(60_000)
@@ -671,7 +685,7 @@ describe("start hold for a daemon upgrade (#2360)", () => {
       // The queue samples every 60 s; the hold ends after 5 s.
       const { q, advance } = setup()
       q.holdStarts("agentx daemon upgrade", 1_000_000 + 5_000)
-      const a = ask(q, "a")
+      const a = ask(q, "a", { keepOnClose: true })
       await vi.advanceTimersByTimeAsync(0)
       expect(a.ticket).toBeUndefined()
       advance(5_000)
@@ -691,7 +705,7 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     expect(again).toMatchObject({ by: "agentx daemon upgrade", since: first.since })
     // A nearer deadline is taken.
     expect(q.holdStarts("agentx daemon upgrade", 1_000_000 + 30_000).until).toBe(new Date(1_000_000 + 30_000).toISOString())
-    const a = ask(q, "a")
+    const a = ask(q, "a", { keepOnClose: true })
     await tick(); await tick()
     expect(a.ticket).toBeUndefined()
     advance(30_000)
@@ -704,7 +718,7 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     const a = ask(q, "a")
     await tick(); await tick()
     let out: any
-    void q.admit({ agentId: "b", channel: "api" }).then((o) => { out = o })
+    void q.admit({ agentId: "b", channel: "api", keepOnClose: true }).then((o) => { out = o })
     await tick(); await tick()
     // 30 s held by the session cap, then 2 h held for the upgrade.
     advance(30_000)

@@ -248,6 +248,11 @@ export interface UpgradeOutcome {
     idleAfterSeconds?: number
     /** When starts were reopened on this daemon (refused or rolled back). */
     reopenedAt?: string
+    /** What the old daemon's queue did at the switch: chat messages kept
+     *  for replay, other waiting runs refused. Only chat messages are held,
+     *  so refused counts runs other limits (memory, cap) held. */
+    keptAtSwitch?: number
+    refusedAtSwitch?: number
   }
   reason?: string
   startedAt: string
