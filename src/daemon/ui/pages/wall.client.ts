@@ -705,6 +705,7 @@ ${HUB_NAV_SCRIPT}
       ['Promised to', p.loop && p.loop.promise && p.loop.owedTo ? esc(p.loop.owedTo === 'owner' ? 'you' : nameOf(p.loop.owedTo)) : ''],
       ['Due', p.loop && p.loop.dueAt ? when(p.loop.dueAt) : ''],
       ['Closes when', p.loop && p.loop.check ? esc(p.loop.check) + (p.loop.verifyState ? ' <span' + (p.loop.verifyState === 'verified' ? '' : ' class="is-warn"') + '>(' + esc(LOOP_CHECK[p.loop.verifyState] || p.loop.verifyState) + (p.loop.verifyDetail ? ': ' + esc(p.loop.verifyDetail) : '') + ')</span>' : '') : ''],
+      ['Standing order', p.standing ? esc(p.standing) : ''],
       ['Opened', when(p.createdAt)],
       ['Last move', when(p.lastMoveAt)],
       ['Closed', p.closedAt ? when(p.closedAt) : ''],

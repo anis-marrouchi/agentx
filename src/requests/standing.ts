@@ -1,4 +1,4 @@
-import { RHYTHMS, type Rhythm } from "@/numbers/model"
+import { meets, RHYTHMS, type NumberTarget, type Reading, type Rhythm } from "@/numbers/model"
 
 // --- Standing orders (noqta#807, fleet rule R5) ---
 //
@@ -32,7 +32,48 @@ const NUMBER_ID_RE = /^[\w.:-]{1,80}$/
 /** The refusal an agent gets when it tries to end a standing order. */
 export function standingRefusal(s: StandingOrder): string {
   return `Not closed: this is a standing order (${s.rhythm}), and only the owner ends it. ` +
-    `Report this period's number instead (agentx_numbers record, number "${s.numberId}"), and keep it open.`
+    `Report this period's number instead (agentx_numbers record, number "${s.numberId}"), and keep it open. ` +
+    `The owner ends it from the Hub's requests panel, or with agentx requests drop run in their own shell.`
+}
+
+/** What the card, the Hub and `agentx requests show` read of a standing
+ *  order (#2383): its number and the latest reading against the target. */
+export interface StandingView {
+  rhythm: Rhythm
+  numberId: string
+  cronId: string | null
+  /** The newest reading with a value. Null: none yet, or the number is gone. */
+  latest: { value: number; periodEnd: number } | null
+  target: NumberTarget | null
+  status: "on_target" | "missed" | "no_reading" | "no_target"
+}
+
+/** What a standing view reads of the numbers. */
+export interface StandingReadings {
+  get(id: string): { target: NumberTarget | null } | null
+  latestValue(id: string): Reading | null
+}
+
+export function standingView(s: StandingOrder, numbers: StandingReadings | null): StandingView {
+  const n = numbers?.get(s.numberId) ?? null
+  const r = n ? numbers!.latestValue(s.numberId) : null
+  const latest = r && r.value !== null ? { value: r.value, periodEnd: r.periodEnd } : null
+  const target = n?.target ?? null
+  const status = !latest ? "no_reading" : !target ? "no_target" : meets(latest.value, target) ? "on_target" : "missed"
+  return { rhythm: s.rhythm, numberId: s.numberId, cronId: s.cronId, latest, target, status }
+}
+
+const STANDING_STATUS: Record<StandingView["status"], string> = {
+  on_target: "on target", missed: "missed", no_reading: "no reading yet", no_target: "no target set",
+}
+
+/** One line for any surface: "Standing order, daily: number posts-per-day,
+ *  latest 4 (period to 2026-11-26) against at least 5: missed". */
+export function standingLine(v: StandingView): string {
+  const latest = v.latest ? `latest ${v.latest.value} (period to ${new Date(v.latest.periodEnd).toISOString().slice(0, 10)})` : "no reading yet"
+  const target = v.target ? ` against ${v.target.direction === "down" ? "at most" : "at least"} ${v.target.value}` : ""
+  const status = v.latest ? `: ${STANDING_STATUS[v.status]}` : ""
+  return `Standing order, ${v.rhythm}: number ${v.numberId}, ${latest}${target}${status}`
 }
 
 /** The order from the tool's input, or why not. With `numbers`, the number

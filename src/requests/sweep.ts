@@ -90,6 +90,8 @@ export interface RequestSweepDeps {
    *  or its pick-up then starts as the job's next run. False: not taken,
    *  the pick-up turn goes as before. Unset: always the pick-up turn. */
   wakeJob?: (requestId: string, note: string) => boolean
+  /** A run is on the request's job now, so a wake waits for it (#2383). */
+  jobBusy?: (requestId: string) => boolean
   /** Gives an agent that waits on a promise the line that says it fell
    *  due, without a run of its own (#1908). False: it could not take it
    *  now. Unset: only the owner is told. */
@@ -316,11 +318,28 @@ function wakeNoDue(deps: RequestSweepDeps, r: RequestRecord): string | null {
   return "turn"
 }
 
+/** Whether a promise's agent was woken, a run is on its job already (the
+ *  job wake does not arm behind a live run, jobs/wake.ts wakeFor), or
+ *  nothing could wake it (#2383). */
+export type DueWakeResult = "woken" | "busy" | "none"
+
+/** The sweep's log words for each (#2383). */
+export const DUE_WAKE_LOG: Record<DueWakeResult, string> = {
+  woken: "woken",
+  busy: "not woken again: a run is on its job now",
+  none: "cannot be woken (its job is closed, held, at its cap, or not on this node)",
+}
+
+/** How a wake that did not arm reads: busy when a run is on its job. */
+function notWoken(deps: RequestSweepDeps, r: RequestRecord): DueWakeResult {
+  return deps.jobBusy?.(r.id) ? "busy" : "none"
+}
+
 /** What an agent that waits on a promise reads when it falls due (#1908). */
-export function duePromiseText(r: RequestRecord): string {
+export function duePromiseText(r: RequestRecord, wake: DueWakeResult = "woken"): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
   return `[Promise due] ${r.id}: ${r.agentId} promised you this by ${when(r.dueAt!)} and it is not kept yet: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}\n` +
-    `${r.agentId} was woken to keep it now; the owner is told if it stays open. Nothing is needed from you unless your own work waits on it.`
+    `${wake === "woken" ? `${r.agentId} was woken to keep it now` : wake === "busy" ? `${r.agentId} is in a run on it now` : `${r.agentId} could not be woken`}; the owner is told if it stays open. Nothing is needed from you unless your own work waits on it.`
 }
 
 /** What a promise's agent reads before its due time
@@ -523,7 +542,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       store.markLeadWoken(r.id)
       const woken = deps.wakeJob?.(r.id, leadText(r, now)) ?? false
       if (woken) result.leadWoken++
-      log(`[requests] retro:01M7ZMDDWBC76VKP5NXF9CE9ZY ${r.id} due ${when(r.dueAt!)}: ${r.agentId} ${woken ? "woken ahead" : "not woken ahead (a run is on it, or its job cannot be woken)"}`)
+      log(`[requests] retro:01M7ZMDDWBC76VKP5NXF9CE9ZY ${r.id} due ${when(r.dueAt!)}: ${r.agentId} ${woken ? "woken ahead" : `not woken ahead: ${DUE_WAKE_LOG[notWoken(deps, r)]}`}`)
     }
   } catch (e: any) {
     log(`[requests] promise lead wakes failed: ${e?.message ?? e}`)
@@ -541,9 +560,10 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       const woken = pr !== undefined ? !!pr
         : deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
-      const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
+      const wake: DueWakeResult = woken ? "woken" : notWoken(deps, r)
+      const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r, wake), r) ?? false : false
       store.markDuePushed(r.id, now, woken)
-      const line = `[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`
+      const line = `[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : DUE_WAKE_LOG[wake]}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`
       // With a grace window it needs attention only once that has run out
       // (below); the agent and its waiter are still told now.
       if (graceMinutes > 0) {
