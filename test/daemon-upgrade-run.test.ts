@@ -213,8 +213,12 @@ describe("daemon upgrade run: drain the queue instead of waiting for idle (#2360
   it("ignores a queue record from an earlier stop", async () => {
     mkdirSync(join(h.root, ".agentx/upgrade"), { recursive: true })
     writeFileSync(join(h.root, ".agentx/upgrade/queue-at-close.json"), JSON.stringify({ at: "2020-01-01T00:00:00.000Z", kept: 9, refused: 9 }))
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {})
     const { last } = await run()
     expect(last.drain.refusedAtSwitch).toBeUndefined()
+    // A missing record is said, not silent.
+    expect(logs.mock.calls.flat().join("\n")).toMatch(/no record of the old daemon's queue at the switch in .*queue-at-close\.json/)
+    logs.mockRestore()
   })
 
   it("asks for at most the 2 hour cap, even with a longer --timeout", async () => {

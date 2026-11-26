@@ -8,7 +8,7 @@ import { writeShutdownRequest } from "@/daemon/shutdown"
 import { ensureNativeModules } from "@/daemon/upgrade-native"
 import { MAX_HOLD_MINUTES } from "@/daemon/restart-api"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
-import { readQueueAtClose } from "@/daemon/upgrade-queue-record"
+import { QUEUE_AT_CLOSE_FILE, readQueueAtClose } from "@/daemon/upgrade-queue-record"
 import { loadDaemonConfig } from "@/daemon/config"
 import {
   chatRouteOk, checksSummary, daemonNodeFromArgs, healthIsUpgraded, hubPageOk, peerSkew, releaseDirFromArgs, retargetPlist, runsToCut,
@@ -258,11 +258,17 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
   const up = loaded ? await waitHealth(base, bootMs, (h) => healthIsUpgraded(h, { version, oldPid })) : null
   if (up) {
     log(`daemon answers: ${version} PID ${up.pid ?? "?"} after ${Math.round((Date.now() - t0) / 1000)}s`)
-    const atClose = outcome.drain ? readQueueAtClose(resolve(cwd, ".agentx"), outcome.drain.startedAt) : null
-    if (atClose && outcome.drain) {
-      outcome.drain.keptAtSwitch = atClose.kept
-      outcome.drain.refusedAtSwitch = atClose.refused
-      log(`old daemon's queue at the switch: ${atClose.kept} chat message(s) kept for replay, ${atClose.refused} other run(s) refused`)
+    // The old daemon wrote this under its own process.cwd(), which `cwd`
+    // is: GET /daemon/restart reported it (a daemon that did not answer
+    // was refused above).
+    if (outcome.drain) {
+      const agentxDir = resolve(cwd, ".agentx")
+      const atClose = readQueueAtClose(agentxDir, outcome.drain.startedAt)
+      if (atClose) {
+        outcome.drain.keptAtSwitch = atClose.kept
+        outcome.drain.refusedAtSwitch = atClose.refused
+        log(`old daemon's queue at the switch: ${atClose.kept} chat message(s) kept for replay, ${atClose.refused} other run(s) refused`)
+      } else log(`no record of the old daemon's queue at the switch in ${resolve(agentxDir, "upgrade", QUEUE_AT_CLOSE_FILE)}; keptAtSwitch/refusedAtSwitch not recorded`)
     }
     const failed: string[] = []
     for (const j of others) if (!(await reloadJob(j, j.plist, { drainLimitMs: 60_000, log }))) failed.push(j.label)
