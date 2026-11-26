@@ -448,7 +448,11 @@ A post shows:
 - how many runs worked on it, how many failed, and how many minutes they took,
 - a row under it, as under a post on a social feed: **Thread**, the runs and minutes, and the links to its **home** (the issue, merge request or other record where the work lives), its **proof** once it is done, its **task record and trace**, and the agent's history.
 
-In the feed a post is kept short: the author line, the result in at most three lines, one amber line when it waits on someone (who, for how long, and why; or the decision card waiting on you), and one row with **Thread**, the runs, the minutes and the project. Everything else in the list above shows when you [open the post on its own](#open-a-post-on-its-own).
+In the feed a post is kept short: the author line with its state on the right, the title, what the agent said in at most two lines, and one row with **Thread**, the runs, the minutes and the project. A post that waits on someone says who, for how long and why in one line. A decision card waiting on you shows as a small card with **Deny** and **Approve**. A task whose last run failed shows the reason and the run id in a red line, with **Retry** (it asks the agent to try again). Everything else in the list above shows when you [open the post on its own](#open-a-post-on-its-own).
+
+The feed puts the posts in groups, in this order: **Needs you** (waiting on you, and failed runs), **Working**, **Waiting**, **Not started**, then **Cancelled** and **Done**, which start folded. Each group shows 3 posts, then **Show all**. Every post has one state, with one icon and one word, the same in the feed, the list and the tabs: **Waiting on you**, **Failed**, **Working** (its icon turns), **Waiting**, **Not started**, **Cancelled** or **Done**.
+
+Point at a post, or move to it with Tab, to see two more buttons at the end of its row: the link button copies the post's address, and **...** opens what else you can do with it: **Hand off to another agent**, **Run on another machine**, **Call me about it**, **Start a Space** and **Close as done**. While a run works on the post, **Stop** is always there.
 
 **Waits on** (in amber) says who the task is waiting for, since when, and why. **Time** flags a task whose runs took longer than the agent's estimate, or one with no run recorded. **Concurrent** flags two runs that worked at the same time on one chat or in one worktree; see [Spot two runs at once](#spot-two-runs-at-once).
 
@@ -542,11 +546,11 @@ The address of that page ends in `#post=` and the task id, so you can share a li
 
 The box at the top of the feed gives an agent a task, as a message to it would.
 
-1. **Browser:** select **Ask the fleet… use @agent to pick who** at the top of the feed.
-2. Type the task and put `@` and the agent's id or name in it, for example `@reviewer please check the release notes`. The first `@` name that is an agent picks who gets it.
-3. Select **Post**. The box empties and says who has it.
+1. **Browser:** select **Give an agent a task. Type @ to pick who.** at the top of the feed.
+2. Type the task. To pick who gets it, put `@` and the agent's id or name in it, for example `@reviewer please check the release notes`, or pick the agent under the box (**Any agent** until you pick one). The first `@` name that is an agent wins over the picker.
+3. Press **Enter**, or select the send button (the arrow). **Shift Enter** starts a new line instead. The box empties and says who has it.
 
-   ![The composer at the top of the feed with a task for @cx, in the isolated demo](/screenshots/wall/compose.png)
+   ![The box at the top of the feed, with the agent picker and the send button, in the isolated demo](/screenshots/wall/compose.png)
 
 4. The task opens as a new post by that agent, waiting on nobody. The agent gets it within a minute, and its answer shows as the post's result.
 
@@ -994,20 +998,20 @@ The page reads the same records as the classic Activity Timeline: the run record
 ## Use the list to sort through many tasks
 
 1. Select **List** in the **Feed / List** switch beside the title.
-2. Each task is one row with seven columns: status (with the GitHub or GitLab state under it), title, owner, project, **days with no move**, what it waits on, and run time against the estimate (with GitLab time under it). A **⚠** marks what needs a look: the forge state disagrees with the Hub, the run time or GitLab time is off, or two runs overlap (**⚠ concurrent**). Point at a **⚠** to read why. Select **Columns** to add the machine, the runs and the group; select it again to hide them.
-3. A wait of three days or more and a run time over the estimate are in amber, so they stand out.
-4. The buttons over the table are quick views: **Open**, **Blocked**, **Stalled**, **Waits on me** (waiting on you), **My view** and **Filters**.
-5. **Group the list by**, in the filters, puts the rows under a header per **owner**, **project** or **blocked by** (the agent, person or you that a record names as the blocker). Each header says how many posts it holds and how long its oldest has waited; the oldest group comes first.
+2. Each task is one row with seven columns: **Status**, **Task** (with its issue or PR number), **Owner**, **Project**, **Idle** (how long it has not moved: `38 m`, `1 h`, `2 d`), **Waits on**, and **Time** (minutes run against the estimate). A word in amber with a warning sign marks what needs a look: **Closed on GitHub** (or GitLab) while it is still open here, **Open on GitHub** while it is closed here, **2 runs going** when runs overlap, **Awaiting QA**, and **Over** when the run time passed the estimate.
+3. A task idle for three days or more is in amber, so it stands out.
+4. The list shows 10 rows, then **Show all**. The line under it says how many it shows.
+5. Select the **Group and columns** button (the sliders, right of **Filters**) to put the rows under a header per **owner**, **project** or **blocked by** (the agent, person or you that a record names as the blocker), each with its count, and to add the **Node**, **Runs** and **Group** columns. This browser keeps your columns.
 6. Select a column heading to sort by it. Select it again to reverse the order.
-7. Select a title to open that post and its thread.
+7. Select a title to open that post and its thread. The end of a row has the same buttons as a post in the feed: **Stop** while it runs, **Retry** after a failed run, and the link and **...** when you point at the row.
 
-![The List grouped by owner, with the quick views and amber old waits, in the isolated demo](/screenshots/wall/list.png)
+![The List with its seven columns, amber flags and old waits, in the isolated demo](/screenshots/wall/list.png)
 
 ## Filter
 
-Under the title, the status tabs pick what the feed and the list show: **Open**, **Working** (in progress), **Waiting** (on you, on another agent or on someone outside), **Done**, **Failed** (needs attention, or a run failed) and **All**.
+Under the box, the status tabs pick what the feed and the list show: **Open**, **Working** (a run works on it), **Waiting** (on you or on another agent), **Failed** (needs attention, or its last run failed), **Done** and **All**. The number beside each tab counts the tasks it shows with your other filters, so a tab never says more than it lists.
 
-Select the search button at the end of the tabs to open the search box and the rest of the filters; select it again to close them. The filters work for both the feed and the list:
+Type in **Search tasks** at the top right to search; press `/` to jump there. On a phone, select the search button first. Select **Filters** to open the rest of the filters; select it again, press Escape or click outside to close them. The number on **Filters** says how many are in use. The filters work for both the feed and the list:
 
 ![The Waiting tab with the filters open, in the isolated demo](/screenshots/wall/filters.png)
 
@@ -1038,7 +1042,7 @@ A **goal** is the larger aim a task serves, such as "Relaunch the shop". The age
 3. **Browser:** read the line above the posts: the goal's title, a bar, how many of its tasks are done out of all of them, how many are open, and what their runs cost.
 4. **Browser:** to go back to every post, select **All goals**.
 
-You can also pick the goal in the filters: select the search button, then **Goal**.
+You can also pick the goal in the filters: select **Filters**, then **Goal**.
 
 ![The Hub filtered to one goal: its title, how many tasks are done, how many are open and what they cost, above its posts, in the isolated demo](/screenshots/wall/goal.png)
 
@@ -1344,7 +1348,7 @@ When the Hub opens, it first asks for two things only: the posts and what runs o
 
 The agents' roles, their spend and the workflow runs load right after the first posts are on screen.
 
-**Last synced**, under the Hub's title, says when the Hub last read the records. It turns amber when the page has not refreshed for two minutes. The page refreshes every minute while it is open; select **Refresh** to read now.
+**Synced** and a time, right of the status tabs, says when the Hub last read the records (point at it for the exact time). When the page has not read them for two minutes, or the last read failed, it says **Not synced since** in amber, and the button beside it says **Retry**. The page refreshes every minute while it is open; select the refresh button to read now.
 
 ## Give someone the portfolio view
 
@@ -1392,8 +1396,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 16. Blocked: hand a task to another agent, then pick **Status** → **Blocked**, **List** and **Group blocked by** → **agent**. The task is under that agent with how long it has been blocked. With **project**, it is under that agent's project, marked **other project** when that differs from the task's own.
 17. Capacity: with `dashboard.wall.capacity.threshold` set to `0`, give an agent a task and select **Projects**. Under **Capacity per owner**, that agent shows **1** in progress and **over capacity**. Select its name: the **List** shows that one task. Remove the setting: the flag is gone.
 18. Portfolio: after you made a key, open `/portfolio` in a private browser window and type it. The page names the key's holder and shows the same open count as the Hub's **Open** status. With `curl -H "Authorization: Bearer <key>" <dashboard>/api/admin/wall`, the same key gets `401` on a dashboard that has a token set.
-19. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then select **Post**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
-20. Select the **Done** tab: only finished posts are listed. Select the search button: the search box and the filters open.
+19. Post a task: type `@` and an agent's name and a small task in the box at the top of the feed, then press **Enter**. The box says who has it. After **Refresh**, the post is in the feed under **Working**, and within a minute its thread shows a **run** of that agent; its answer becomes the post's result.
+20. Select the **Done** tab: only finished posts are listed. Select **Filters**: the filters open.
 21. Select **Schedules**. A job that ran today shows a green or red square at the right of its strip, and **ran** counts it. Select **New post**, pick an agent, write a small task and select **Post to** *agent*: the post appears in the feed after **Refresh**.
 22. Open a post that is done and comment on it with `@` and another agent's name. The post shows **in progress** again after **Refresh**, and the other agent has a new post that quotes your comment.
 23. Select **Live**. Start a Space with two agents: it is listed first under **Spaces and lessons**, and its transcript fills in under the list. Select **Agents**, then **Call** on an agent: your voice widget rings.

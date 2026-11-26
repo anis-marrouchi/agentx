@@ -6,9 +6,8 @@
 // taskHref(), act() and load(). From the round-1 designs
 // (notes/design/wall-v2-round-1.md):
 //
-//   List      quick views, group by (f-grp in the filters, so in the link:
-//             blocked by, project, owner) with a
-//             header row per group, seven columns and a Columns button.
+//   List      drawn by wall-feed.client.ts (#2101); OLD_WAIT_DAYS and
+//             overEstimate() stay here for it.
 //   Projects  one card per project: a bar of its open work, the four
 //             counts, closed per week as four bars, its agents, and its
 //             worst state in the corner.
@@ -23,78 +22,10 @@
 import { HUB_NAME } from "../hub-name"
 
 export const WALL_PAGES_SCRIPT = String.raw`
-  // --- List (#1355): quick views, group by, columns ---
+  // --- List (#1355): what the List view (wall-feed.client.ts) shares ---
   /** Days with no move that make the cell amber. */
   var OLD_WAIT_DAYS = 3;
-  var LIST_COLS = [
-    ['state', 'Status'], ['post', 'Post'], ['owner', 'Owner'], ['project', 'Project'],
-    ['idle', 'Days, no move'], ['blocked', 'Waits on'], ['time', 'Time / estimate'],
-  ];
-  var MORE_COLS = [['node', 'Node'], ['runs', 'Runs'], ['group', 'Group']];
-  var QUICK = [['open', 'Open'], ['blocked', 'Blocked'], ['stalled', 'Stalled'], ['waiting_owner', 'Waits on me']];
-  function concurrentText(p) { return p.concurrent.map(function (o) { return o.runs.join(' + '); }).join(', '); }
   function overEstimate(p) { return !!p.estimateMinutes && mins(p.runMs) > p.estimateMinutes; }
-  function listBarHtml(f) {
-    return '<div class="wlb">' + QUICK.map(function (q) {
-      return '<button type="button" class="wlb__q' + (f.status === q[0] ? ' is-on' : '') + '" data-tab="' + q[0] + '">' + q[1] + '</button>';
-    }).join('') +
-      '<button type="button" class="wlb__q" data-quick="mine">My view</button>' +
-      '<button type="button" class="wlb__q" data-quick="filters">Filters</button>' +
-      '<button type="button" class="wlb__q" data-quick="cols" aria-pressed="' + (S.allCols ? 'true' : 'false') + '">Columns' + (S.allCols ? ': all' : '') + '</button>' +
-    '</div>';
-  }
-  function listCell(p, k) {
-    if (k === 'state') return '<td>' + stateBadge(p.state) +
-      (p.forgeState ? '<br><small' + (p.forgeState.unknown ? ' title="' + esc(p.forgeState.unknown) + '">' + esc(forgeName(p.forgeState)) + ' unknown' : '>' + esc(forgeName(p.forgeState)) + ' ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '')) + '</small>' +
-        (forgeClosedOpen(p) ? ' <small title="Closed on the forge, still open here">⚠</small>' : '') +
-        (forgeOpenClosed(p) ? ' <small title="Open on the forge, closed here">⚠</small>' : '') : '') +
-      (qaText(p, true) ? '<br><small' + (p.qa ? ' title="' + esc(qaText(p)) + '"' : '') + '>' + esc(p.awaitingQa ? 'Awaiting QA' : qaText(p, true)) + '</small>' : '') + '</td>';
-    if (k === 'post') return '<td><a href="#" data-open="' + esc(p.id) + '">' + esc(p.headline) + '</a></td>';
-    if (k === 'owner') return '<td>' + esc(p.owner) + '</td>';
-    if (k === 'project') return '<td>' + esc(p.project || '—') + '</td>';
-    if (k === 'idle') return '<td class="num' + (isOpen(p) && idleDays(p) >= OLD_WAIT_DAYS ? ' is-amber' : '') + '">' + idleDays(p) + '</td>';
-    if (k === 'blocked') return '<td' + (p.blocked && Date.now() - p.blocked.since >= OLD_WAIT_DAYS * DAY ? ' class="is-amber"' : '') + '>' +
-      (p.blocked ? esc(p.blocked.who) + ' <small>(' + ago(p.blocked.since) + ')</small>' : cardsOf(p).length ? 'owner' : '—') +
-      (cardsOf(p).length ? ' <small>card expires ' + until(cardsOf(p)[0].expiresAt) + '</small>' : '') + '</td>';
-    if (k === 'time') return '<td' + (overEstimate(p) ? ' class="is-amber"' : '') + '>' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + ' min' + (p.timeFlag ? ' <small title="' + esc(p.timeFlag) + '">⚠</small>' : '') +
-      (p.forgeTime ? '<br><small' + (p.forgeTime.unknown ? ' title="' + esc(p.forgeTime.unknown) + '"' : '') + '>GitLab ' + esc(forgeTimeText(p.forgeTime)) + '</small>' +
-        (forgeFlags(p).length ? ' <small title="' + esc(forgeFlags(p).join('; ')) + '">⚠</small>' : '') : '') +
-      // Runs is behind Columns: all, so the concurrent warning rides here too.
-      (p.concurrent && p.concurrent.length ? ' <small title="Concurrent runs: ' + esc(concurrentText(p)) + '">⚠ concurrent</small>' : '') + '</td>';
-    if (k === 'node') return '<td>' + esc(p.node.name) + '</td>';
-    if (k === 'runs') return '<td class="num">' + p.runs + (p.failedRuns ? ' <small>(' + p.failedRuns + ' failed)</small>' : '') + '</td>';
-    return '<td>' + esc(groupKey(p)) + '</td>';
-  }
-  function listGroupOf(p, by) {
-    if (by === 'blocked') return blockKey(p, 'agent');
-    if (by === 'project') return p.project ? { key: p.project, label: p.project } : { key: '~', label: 'Other' };
-    return { key: p.owner, label: '@' + p.owner };
-  }
-  function listHtml(posts) {
-    var k = S.sort.key, dir = S.sort.dir;
-    var cols = LIST_COLS.concat(S.allCols ? MORE_COLS : []);
-    posts = posts.slice().sort(function (a, b) { var x = sortVal(a, k), y = sortVal(b, k); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
-    var head = '<thead><tr>' + cols.map(function (c) {
-      return '<th data-sort="' + c[0] + '" aria-sort="' + (k === c[0] ? (dir > 0 ? 'ascending' : 'descending') : 'none') + '">' + c[1] + (k === c[0] ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
-    }).join('') + '</tr></thead>';
-    function row(p) { return '<tr>' + cols.map(function (c) { return listCell(p, c[0]); }).join('') + '</tr>'; }
-    var by = $('f-grp').value;
-    if (!by) return '<table class="wl">' + head + '<tbody>' + posts.map(row).join('') + '</tbody></table>';
-    var groups = {}, order = [];
-    posts.forEach(function (p) {
-      var g = listGroupOf(p, by);
-      if (!groups[g.key]) { groups[g.key] = { label: g.label, posts: [] }; order.push(g.key); }
-      groups[g.key].posts.push(p);
-    });
-    function oldest(g) { return Math.min.apply(null, g.posts.map(function (p) { return p.blocked ? p.blocked.since : p.lastMoveAt; })); }
-    order.sort(function (a, b) { return oldest(groups[a]) - oldest(groups[b]); });
-    return '<table class="wl">' + head + order.map(function (key) {
-      var g = groups[key];
-      return '<tbody><tr class="wl__g"><th colspan="' + cols.length + '">' + esc(g.label) + ' <small>' + g.posts.length + (g.posts.length === 1 ? ' post' : ' posts') +
-        ' · oldest wait ' + esc(ago(oldest(g)).replace(' ago', '')) + '</small></th></tr>' + g.posts.map(row).join('') + '</tbody>';
-    }).join('') + '</table>';
-  }
-
   // --- Projects (#1355): one card per project ---
   function projectState(r) { return r.stalled ? 'stalled' : r.blocked ? 'blocked' : 'moving'; }
   function projectCardsHtml() {
@@ -281,24 +212,15 @@ export const WALL_PAGES_SCRIPT = String.raw`
     new MutationObserver(copy).observe(src, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   });
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest('[data-creator-agent],[data-creator-post],[data-quick]');
+    var t = ev.target.closest('[data-creator-agent],[data-creator-post]');
     if (!t) return;
     if (t.hasAttribute('data-creator-agent')) { if (S.creator.posting) return; creatorRead(); S.creator.agent = t.getAttribute('data-creator-agent'); S.creator.note = ''; render(); }
     else if (t.hasAttribute('data-creator-post')) creatorPost();
-    else {
-      var q = t.getAttribute('data-quick');
-      if (q === 'cols') { S.allCols = !S.allCols; render(); }
-      else if (q === 'filters') $('wall-search').click();
-      else if (q === 'mine') $('v-mine').click();
-    }
   });
 `
 
 export const WALL_PAGES_CSS = `
 /* List (#1355) */
-.wlb { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--ax-border); font-size: var(--ax-fs-xs); }
-.wlb__q { font: inherit; font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 12px; cursor: pointer; }
-.wlb__q.is-on, .wlb__q[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
 .wl .is-amber { color: var(--ax-amber-ink, var(--ax-warn)); font-weight: 600; }
 .wl__g th { background: var(--ax-surface); color: var(--ax-text); font-size: var(--ax-fs-sm); font-weight: 700; cursor: default; }
 .wl__g small { color: var(--ax-muted); font-weight: 400; margin-left: 6px; }

@@ -180,16 +180,17 @@ describe("Wall as a social feed (#1207)", () => {
     const feed = w.el("wall-feed").innerHTML
     expect(feed).toContain('<button type="button" class="av is-live" style="--av-h:')
     expect(feed).toContain('data-agent="cx" title="Customer Desk: profile and posts">CD</button>')
-    expect(feed).toContain('<button type="button" class="name" data-agent="cx">Customer Desk</button><span class="h">@cx</span>')
+    expect(feed).toContain('<button type="button" class="fp__name" data-agent="cx">Customer Desk</button><span class="fp__h">cx</span>')
     expect(feed).toMatch(/<time datetime="[^"]+" title="[^"]+UTC[^"]+">10m<\/time>/)
-    expect(feed).toContain('<span class="chip state ">in progress</span>')
+    // The state in the one set (#2101): icon and word.
+    expect(feed).toMatch(/<span class="fd-st is-text"><svg[^>]*class="lucide fd-spin [^"]*"[^>]*>.*?<\/svg><span>Working<\/span><\/span>/)
   })
 
   it("puts thread, runs and minutes in a compact action row; the links in the opened post (#1355)", async () => {
     const w = openWall()
     await w.settle()
     const feed = w.el("wall-feed").innerHTML
-    const row = /<div class="wp__acts">(.*?)<\/div>/.exec(feed)![1]
+    const row = /<div class="fp__m">(.*?)<\/div>/.exec(feed.split('id="post-r1"')[1])![1]
     expect(row).toContain('data-thread="r1"')
     expect(row).toContain("1 run</span>")
     expect(row).toContain("2 min</span>")
@@ -222,23 +223,24 @@ describe("Wall as a social feed (#1207)", () => {
     expect(w.el("wall-profile").hidden).toBe(true)
   })
 
-  it("leads with the result and opens the request under it with one tap (#1242)", async () => {
+  it("shows the title, then what the agent said in two plain lines; the task holds the rest (#2101)", async () => {
     const w = openWall({ data: { ...WALL, posts: [
-      post("r1", "cx", "in_progress", { result: { text: "Refund <sent>: order 47", at: NOW - 300e3, from: "reply", taskId: "t-r1", agentId: "cx" } }),
+      post("r1", "cx", "in_progress", { result: { text: "**Refund** <sent>: [order 47](https://example.com/o/47)", at: NOW - 300e3, from: "reply", taskId: "t-r1", agentId: "cx" } }),
       post("r2", "cx", "in_progress", { result: null }),
     ] } })
     await w.settle()
     const feed = w.el("wall-feed").innerHTML
     const r1 = feed.split('id="post-r1"')[1].split('id="post-r2"')[0]
-    expect(r1.indexOf('<div class="wp__result ax-md"><p>Refund &lt;sent&gt;: order 47</p></div>')).toBeGreaterThan(-1)
-    expect(r1.indexOf("wp__result")).toBeLessThan(r1.indexOf('<details class="wp__ask"><summary><span class="k">Request</span> Post r1</summary>'))
-    // A run link opens the Wall's Task page (#1381).
-    expect(r1).toContain('href="#page=task&amp;task=t-r1&amp;agent=cx">run t-r1</a>')
-    expect(r1).not.toContain('<p class="wp__title">')
-    // No result recorded: the request alone, said plainly.
+    expect(r1).toContain('<h3 class="fp__t">Post r1</h3>')
+    expect(r1).toContain('<p class="fp__x">Refund &lt;sent&gt;: order 47</p>')
+    // No result recorded: the title alone.
     const r2 = feed.split('id="post-r2"')[1]
-    expect(r2).toContain('<p class="wp__title">Post r2 <span class="chip chip--ghost">No result yet</span></p>')
-    expect(r2).not.toContain("wp__ask")
+    expect(r2).toContain('<h3 class="fp__t">Post r2</h3>')
+    expect(r2).not.toContain("fp__x")
+    // Opened, the task leads with the result as Markdown (#1242).
+    const open = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text: "Refund sent", at: NOW, from: "reply", taskId: "t-r1", agentId: "cx" } })] }, hash: "#post=r1" })
+    await open.settle()
+    expect(open.el("wall-post").innerHTML).toContain('<div class="wp__result ax-md"><p>Refund sent</p></div>')
   })
 
   it("only reads: every request is a plain GET", async () => {
@@ -261,7 +263,7 @@ describe("Wall v2 pages (#1316)", () => {
     expect(w.loc.hash).toContain("post=r1")
     expect(w.el("wall-post").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
-    expect(w.el("wall-filters").hidden).toBe(true)
+    expect(w.el("wall-tools").hidden).toBe(true)
     expect(w.el("wall-back").hidden).toBe(false)
     expect(w.el("wall-title").textContent).toBe("Post")
     const page = w.el("wall-post").innerHTML
@@ -292,8 +294,8 @@ describe("Wall v2 pages (#1316)", () => {
     const w = openWall()
     await w.settle()
     const feed = w.el("wall-feed").innerHTML
-    expect(feed).toContain('<article class="wp" id="post-r1" data-post="r1" tabindex="0">')
-    expect(feed).toMatch(/<a class="wp__link" href="#status=open&amp;post=r1" data-open="r1"[^>]*><time /)
+    expect(feed).toContain('<article class="fp" data-key="p:r1" id="post-r1" data-post="r1" tabindex="0" aria-label="Post r1">')
+    expect(feed).toMatch(/<a class="fp__time" href="#status=open&amp;post=r1" data-open="r1"[^>]*><time /)
   })
 
   it("applies an opened post's hash once, not again on the hashchange that follows", async () => {
@@ -325,9 +327,9 @@ describe("Wall v2 pages (#1316)", () => {
 
   it("renders a result's Markdown, with links to web addresses only", async () => {
     const text = "**Done**: see [the issue](https://example.com/demo/1) and [this](javascript:alert(1)), [here](/tasks/1), [there](//evil.example/x), [back](/\\evil.example/y)\n\n- one\n- two\n\n<b>raw</b>"
-    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text, at: NOW, from: "reply" } })] } })
+    const w = openWall({ data: { ...WALL, posts: [post("r1", "cx", "in_progress", { result: { text, at: NOW, from: "reply" } })] }, hash: "#post=r1" })
     await w.settle()
-    const res = /<div class="wp__result ax-md">(.*?)<\/div>/s.exec(w.el("wall-feed").innerHTML)![1]
+    const res = /<div class="wp__result ax-md">(.*?)<\/div>/s.exec(w.el("wall-post").innerHTML)![1]
     expect(res).toContain("<strong>Done</strong>")
     expect(res).toContain('<a href="https://example.com/demo/1" target="_blank" rel="noopener noreferrer">the issue</a>')
     expect(res).not.toContain("javascript:")
@@ -847,7 +849,7 @@ describe("Wall v2 feed (#1355)", () => {
       post("a", "cx", "in_progress", { project: "shop" }),
       post("b", "cx", "waiting_other", { blocked: { who: "reviewer", since: NOW - 3 * 3600e3, why: "needs a review" } }),
       post("c", "reviewer", "waiting_owner", { ownerCards: [{ title: "Ship it?", ask: "Ship it?", expiresAt: NOW + 3600e3, recommend: "yes", silence: "wait", ifSilent: "discard", raisedBy: "reviewer", createdAt: NOW - 600e3 }] }),
-      post("d", "cx", "in_progress", { failedRuns: 2, runs: 3 }),
+      post("d", "cx", "in_progress", { failedRuns: 2, runs: 3, lastFailure: { taskId: "t-d3", agentId: "cx", error: "timed out", at: NOW - 600e3 } }),
       post("e", "reviewer", "done"),
     ],
     projects: [{ project: "shop", open: 1, inProgress: 1, blocked: 0, stalled: 0 }],
@@ -864,12 +866,13 @@ describe("Wall v2 feed (#1355)", () => {
       await w.settle()
       return ids(w.el("wall-feed").innerHTML)
     }
-    expect(await tab("open")).toEqual(["a", "b", "c", "d"])
-    expect(await tab("in_progress")).toEqual(["a", "d"])
-    expect(await tab("waiting")).toEqual(["b", "c"])
+    // In the state order (#2101): Needs you (on you, then a failed run), Working, Waiting, Done.
+    expect(await tab("open")).toEqual(["c", "d", "a", "b"])
+    expect(await tab("in_progress")).toEqual(["a"])
+    expect(await tab("waiting")).toEqual(["c", "b"])
     expect(await tab("done")).toEqual(["e"])
     expect(await tab("failed")).toEqual(["d"])
-    expect(await tab("")).toEqual(["a", "b", "c", "d", "e"])
+    expect(await tab("")).toEqual(["c", "d", "a", "b", "e"])
   })
 
   it("a tab click sets the status filter in the link", async () => {
@@ -878,7 +881,7 @@ describe("Wall v2 feed (#1355)", () => {
     w.click({ "data-tab": "waiting" })
     expect(w.el("f-status").value).toBe("waiting")
     expect(w.loc.hash).toContain("status=waiting")
-    expect(ids(w.el("wall-feed").innerHTML)).toEqual(["b", "c"])
+    expect(ids(w.el("wall-feed").innerHTML)).toEqual(["c", "b"])
   })
 
   it("keeps a compact post to one amber line on who it waits on", async () => {
@@ -886,11 +889,15 @@ describe("Wall v2 feed (#1355)", () => {
     await w.settle()
     const feed = w.el("wall-feed").innerHTML
     const of = (id: string) => feed.split(`id="post-${id}"`)[1].split('id="post-')[0]
-    expect(of("b")).toMatch(/<div class="wp__block">Waits on <b>reviewer<\/b> for 3 h — needs a review<\/div>/)
-    expect(of("c")).toContain('<div class="wp__block">Waits on you: <b>Ship it?</b>, card expires in 60 min</div>')
-    expect(of("c")).not.toContain('class="wc"')
-    expect(of("a")).not.toContain("wp__block")
+    expect(of("b")).toContain('<p class="fp__wait">Waits on <b>reviewer</b> for 3 h — needs a review</p>')
+    // A card that waits on you is the card itself, with Deny and Approve (#2101).
+    expect(of("c")).toContain('<p class="fd-card__t">Ship it?</p>')
+    expect(of("c")).not.toContain("fp__wait")
+    expect(of("a")).not.toContain("fp__wait")
     expect(of("a")).toContain("shop</span>")
+    // A failed run says why, with Retry.
+    expect(of("d")).toContain("Run failed: timed out, run <code>t-d3</code>")
+    expect(of("d")).toContain('data-fd-retry="d"')
   })
 
   it("counts Projects and Schedules in the nav, and opens them from it", async () => {
@@ -899,7 +906,7 @@ describe("Wall v2 feed (#1355)", () => {
     expect(w.el("nav-n-projects").textContent).toBe("1")
     expect(w.el("nav-n-jobs").textContent).toBe("1")
     expect(w.el("wall-title").textContent).toBe("Schedules")
-    expect(w.el("wall-views").hidden).toBe(true)
+    expect(w.el("wall-bar").hidden).toBe(true)
     expect(w.el("wall-compose").hidden).toBe(true)
     expect(w.el("wall-jobs").hidden).toBe(false)
   })
@@ -937,6 +944,33 @@ describe("Wall v2 feed (#1355)", () => {
     expect(w.el("wc-text").value).toBe("")
   })
 
+  it("posts to the agent the picker names, and sends on Enter but not on Shift+Enter (#2101 A2)", async () => {
+    const w = openWall({ data: V2, live: LIVE2 })
+    await w.settle()
+    expect(w.el("wc-agent").innerHTML).toBe('<option value="">Any agent</option><option value="cx">Customer Desk</option><option value="reviewer">Reviewer</option><option value="far">Far Agent</option>')
+    w.el("wc-text").value = "check the deploy log"
+    w.el("wc-text").on.input({})
+    expect(w.el("wc-post").disabled).toBe(false)
+    w.el("wc-agent").value = "far"
+    w.el("wc-text").on.keydown({ key: "Enter", shiftKey: true, preventDefault: () => {} })
+    expect(w.calls.filter((c) => c.url === "/api/admin/wall/post")).toHaveLength(0)
+    w.el("wc-text").on.keydown({ key: "Enter", shiftKey: false, preventDefault: () => {} })
+    await w.settle()
+    const posted = w.calls.filter((c) => c.url === "/api/admin/wall/post")
+    expect(posted.map((c) => JSON.parse(c.init.body))).toEqual([{ agent: "far", text: "check the deploy log" }])
+    expect(posted[0].init.headers["X-Agentx-Peer"]).toBe("http://node-b")
+  })
+
+  it("draws the feed's tools and the task menu from one icon set, with names for screen readers (#2101)", () => {
+    const page = renderWallPage()
+    expect(page).toMatch(/<span class="fd-switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on"><svg[^>]*lucide-rows-3/)
+    expect(page).toContain('<button type="button" class="fd-ib" id="wall-cols-btn" data-fd-pop aria-controls="fd-cols" aria-expanded="false" aria-label="Group and columns" title="Group and columns" hidden>')
+    expect(page).toContain('<div class="fd-menu" id="fd-menu" role="menu" aria-label="Task actions" hidden>')
+    for (const kind of ["hand", "runon", "call", "space", "done"]) expect(page).toContain(`role="menuitem" data-fd-do="${kind}"`)
+    expect(page).toMatch(/data-tab="failed">Failed <span class="fd-n" data-tab-n><\/span><\/button><button type="button" role="tab" data-tab="done">/)
+    expect(page).toContain('<button type="submit" class="fd-send" id="wc-post" aria-label="Send" title="Send" disabled>')
+  })
+
   it("sends a post once when Post is pressed twice while it is in flight", async () => {
     const w = openWall({ data: V2, live: LIVE2 })
     await w.settle()
@@ -946,7 +980,9 @@ describe("Wall v2 feed (#1355)", () => {
     w.el("wall-compose").on.submit({ preventDefault: () => {} })
     await w.settle()
     expect(w.calls.filter((c) => c.url === "/api/admin/wall/post")).toHaveLength(1)
-    expect(w.el("wc-post").disabled).toBe(false)
+    // Sent: the box is empty again, so Send waits for words (A3).
+    expect(w.el("wc-text").value).toBe("")
+    expect(w.el("wc-post").disabled).toBe(true)
   })
 })
 
@@ -979,30 +1015,32 @@ describe("Wall v2 pages (#1355)", () => {
     ],
   }] }
 
-  it("draws the List with seven columns, quick views and amber old waits; Columns adds the rest", async () => {
+  it("draws the List with seven columns and amber old waits; Group and columns adds the rest", async () => {
     const w = openWall({ data: PAGES, hash: "#status=open&view=list" })
     await w.settle()
     const html = w.el("wall-list").innerHTML
-    expect(html).toContain('data-tab="blocked">Blocked</button>')
-    expect(html).toContain('data-quick="cols"')
-    expect(html.match(/<th data-sort=/g)).toHaveLength(7)
-    expect(html).toContain('<td class="num is-amber">4</td>')
-    expect(html).toMatch(/<td class="is-amber">5 \/ 1 min/)
-    w.click({ "data-quick": "cols" })
-    expect(w.el("wall-list").innerHTML.match(/<th data-sort=/g)).toHaveLength(10)
+    expect(html.match(/<button type="button" data-sort=/g)).toHaveLength(7)
+    expect(html).toContain('<td class="num is-amber">4 d</td>')
+    expect(html).toMatch(/<td class="num">5 \/ 1<span class="fd-flag"><svg[^>]*>.*?<\/svg>Over<\/span><\/td>/)
+    expect(html).toContain("3 of 3 open tasks. Time in minutes, spent / estimate.")
+    // Group and columns adds the rest, kept in this browser.
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "node" })
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "runs" })
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "group" })
+    expect(w.el("wall-list").innerHTML.match(/<button type="button" data-sort=/g)).toHaveLength(10)
   })
 
-  it("groups the List by owner, project or blocker, each group with its count and oldest wait", async () => {
+  it("groups the List by owner, project or blocker, each group with its count", async () => {
     const w = openWall({ data: PAGES, hash: "#status=open&grp=owner&view=list" })
     await w.settle()
     let html = w.el("wall-list").innerHTML
-    expect(html).toMatch(/<tr class="wl__g"><th colspan="7">@cx <small>2 posts · oldest wait 5 d<\/small>/)
-    expect(html).toContain("@reviewer <small>1 post")
+    expect(html).toContain('<tr class="wl__g" data-key="g:cx"><th colspan="8" scope="rowgroup">Customer Desk <small>2</small></th></tr>')
+    expect(html).toContain("Reviewer <small>1</small>")
     const b = openWall({ data: PAGES, hash: "#status=open&grp=blocked&view=list" })
     await b.settle()
     html = b.el("wall-list").innerHTML
-    expect(html).toContain("@reviewer <small>1 post")
-    expect(html).toContain("No blocker recorded <small>2 posts")
+    expect(html).toContain("@reviewer <small>1</small>")
+    expect(html).toContain("No blocker recorded <small>2</small>")
   })
 
   it("lists jobs per machine with today's totals, seven squares and look stale", async () => {
@@ -1055,7 +1093,7 @@ describe("Wall v2 pages (#1355)", () => {
     expect(html).toContain("Post to Reviewer")
   })
 
-  it("keeps the List's warnings in its cells: forge, card, time and concurrent", async () => {
+  it("keeps the List's warnings in its cells as words: forge, card, time and concurrent", async () => {
     const data = { ...WALL, posts: [
       post("w1", "cx", "in_progress", {
         forgeState: { provider: "gitlab", state: "closed", closedBy: "a-person", mismatch: "forge-closed" },
@@ -1069,16 +1107,17 @@ describe("Wall v2 pages (#1355)", () => {
     ] }
     const w = openWall({ data, hash: "#status=&view=list" })
     await w.settle()
-    const rows = w.el("wall-list").innerHTML.split("<tr>").slice(2)
+    const rows = w.el("wall-list").innerHTML.split('<tr class="fl__r"').slice(1)
     const row = (id: string) => rows.find((r: string) => r.includes(`data-open="${id}"`)) ?? ""
-    expect(row("w1")).toContain("GitLab closed by a-person")
-    expect(row("w1")).toContain('title="Closed on the forge, still open here">⚠')
-    expect(row("w1")).toContain('title="Ran past its estimate">⚠')
-    expect(row("w1")).toContain('title="Logged less than it ran">⚠')
-    expect(row("w1")).toContain('title="Concurrent runs: t1 + t2">⚠ concurrent')
-    expect(row("w2")).toContain('title="token expired">GitHub unknown')
-    expect(row("w2")).toContain("card expires")
-    expect(row("w3")).toContain('title="Open on the forge, closed here">⚠')
+    // Flags are words with one icon (#2101 mock), no glyphs.
+    const flag = (text: string) => new RegExp(`<span class="fd-flag"><svg[^>]*lucide-triangle-alert[^>]*>.*?</svg>${text}</span>`)
+    expect(row("w1")).toMatch(flag("Closed on GitLab"))
+    expect(row("w1")).toMatch(flag("2 runs going"))
+    expect(row("w1")).toMatch(flag("Over"))
+    expect(row("w2")).toContain("<span>Waiting on you</span>")
+    expect(row("w2")).toContain("<td>You</td>")
+    expect(row("w3")).toMatch(flag("Open on GitHub"))
+    expect(rows.join("")).not.toContain("⚠")
   })
 
   it("empties the Creator after a post, so a second click sends nothing", async () => {
@@ -1147,30 +1186,32 @@ describe("Wall v2 pages (#1355)", () => {
     ],
   }] }
 
-  it("draws the List with seven columns, quick views and amber old waits; Columns adds the rest", async () => {
+  it("draws the List with seven columns and amber old waits; Group and columns adds the rest", async () => {
     const w = openWall({ data: PAGES, hash: "#status=open&view=list" })
     await w.settle()
     const html = w.el("wall-list").innerHTML
-    expect(html).toContain('data-tab="blocked">Blocked</button>')
-    expect(html).toContain('data-quick="cols"')
-    expect(html.match(/<th data-sort=/g)).toHaveLength(7)
-    expect(html).toContain('<td class="num is-amber">4</td>')
-    expect(html).toMatch(/<td class="is-amber">5 \/ 1 min/)
-    w.click({ "data-quick": "cols" })
-    expect(w.el("wall-list").innerHTML.match(/<th data-sort=/g)).toHaveLength(10)
+    expect(html.match(/<button type="button" data-sort=/g)).toHaveLength(7)
+    expect(html).toContain('<td class="num is-amber">4 d</td>')
+    expect(html).toMatch(/<td class="num">5 \/ 1<span class="fd-flag"><svg[^>]*>.*?<\/svg>Over<\/span><\/td>/)
+    expect(html).toContain("3 of 3 open tasks. Time in minutes, spent / estimate.")
+    // Group and columns adds the rest, kept in this browser.
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "node" })
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "runs" })
+    w.field("change", { checked: true, hasAttribute: (k: string) => k === "data-fd-col" }, { "data-fd-col": "group" })
+    expect(w.el("wall-list").innerHTML.match(/<button type="button" data-sort=/g)).toHaveLength(10)
   })
 
-  it("groups the List by owner, project or blocker, each group with its count and oldest wait", async () => {
+  it("groups the List by owner, project or blocker, each group with its count", async () => {
     const w = openWall({ data: PAGES, hash: "#status=open&grp=owner&view=list" })
     await w.settle()
     let html = w.el("wall-list").innerHTML
-    expect(html).toMatch(/<tr class="wl__g"><th colspan="7">@cx <small>2 posts · oldest wait 5 d<\/small>/)
-    expect(html).toContain("@reviewer <small>1 post")
+    expect(html).toContain('<tr class="wl__g" data-key="g:cx"><th colspan="8" scope="rowgroup">Customer Desk <small>2</small></th></tr>')
+    expect(html).toContain("Reviewer <small>1</small>")
     const b = openWall({ data: PAGES, hash: "#status=open&grp=blocked&view=list" })
     await b.settle()
     html = b.el("wall-list").innerHTML
-    expect(html).toContain("@reviewer <small>1 post")
-    expect(html).toContain("No blocker recorded <small>2 posts")
+    expect(html).toContain("@reviewer <small>1</small>")
+    expect(html).toContain("No blocker recorded <small>2</small>")
   })
 
   it("lists jobs per machine with today's totals, seven squares and look stale", async () => {
@@ -1215,7 +1256,7 @@ describe("Wall v2 pages (#1355)", () => {
     expect(html).toContain("Post to Reviewer")
   })
 
-  it("keeps the List's warnings in its cells: forge, card, time and concurrent", async () => {
+  it("keeps the List's warnings in its cells as words: forge, card, time and concurrent", async () => {
     const data = { ...WALL, posts: [
       post("w1", "cx", "in_progress", {
         forgeState: { provider: "gitlab", state: "closed", closedBy: "a-person", mismatch: "forge-closed" },
@@ -1229,16 +1270,17 @@ describe("Wall v2 pages (#1355)", () => {
     ] }
     const w = openWall({ data, hash: "#status=&view=list" })
     await w.settle()
-    const rows = w.el("wall-list").innerHTML.split("<tr>").slice(2)
+    const rows = w.el("wall-list").innerHTML.split('<tr class="fl__r"').slice(1)
     const row = (id: string) => rows.find((r: string) => r.includes(`data-open="${id}"`)) ?? ""
-    expect(row("w1")).toContain("GitLab closed by a-person")
-    expect(row("w1")).toContain('title="Closed on the forge, still open here">⚠')
-    expect(row("w1")).toContain('title="Ran past its estimate">⚠')
-    expect(row("w1")).toContain('title="Logged less than it ran">⚠')
-    expect(row("w1")).toContain('title="Concurrent runs: t1 + t2">⚠ concurrent')
-    expect(row("w2")).toContain('title="token expired">GitHub unknown')
-    expect(row("w2")).toContain("card expires")
-    expect(row("w3")).toContain('title="Open on the forge, closed here">⚠')
+    // Flags are words with one icon (#2101 mock), no glyphs.
+    const flag = (text: string) => new RegExp(`<span class="fd-flag"><svg[^>]*lucide-triangle-alert[^>]*>.*?</svg>${text}</span>`)
+    expect(row("w1")).toMatch(flag("Closed on GitLab"))
+    expect(row("w1")).toMatch(flag("2 runs going"))
+    expect(row("w1")).toMatch(flag("Over"))
+    expect(row("w2")).toContain("<span>Waiting on you</span>")
+    expect(row("w2")).toContain("<td>You</td>")
+    expect(row("w3")).toMatch(flag("Open on GitHub"))
+    expect(rows.join("")).not.toContain("⚠")
   })
 
   it("empties the Creator after a post, so a second click sends nothing", async () => {

@@ -66,6 +66,8 @@ import { WALL_DIFF_SCRIPT } from "./wall-diff.client"
 import { WALL_CONTEXT_SCRIPT } from "./wall-context.client"
 import { WALL_RUN_ON_SCRIPT } from "./wall-run-on.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
+import { WALL_FEED_SCRIPT } from "./wall-feed.client"
+import { fdStates, fdState, fdGroupOf, fdGroupTitle, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch } from "./wall-feed-model"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
@@ -132,6 +134,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
+  ${injectFns({ fdStates, fdState, fdGroupOf, fdGroupTitle, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haStateIcon, haStateWord, haRowHref, haGroups, haRowHtml, haListHtml, haRailHtml, haDownHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunStart, haRunsHtml, haRunsToday })}
   ${injectFns({ engineIconKey, engineIcon })}
@@ -157,6 +160,7 @@ ${WALL_WORKFLOWS_SCRIPT}
 ${WALL_EDITOR_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
+${WALL_FEED_SCRIPT}
 ${HUB_OPERATIONS_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_PICTURES_SCRIPT}
@@ -217,7 +221,6 @@ ${HUB_NAV_SCRIPT}
   // The status tabs (#1355): Waiting is on the owner or on anyone else;
   // Failed is a post that needs attention or has a failed run.
   function waitsOnSomeone(p) { return isOpen(p) && (waitsOnOwner(p) || p.state === 'waiting_other' || !!p.blocked); }
-  function isFailed(p) { return p.state === 'needs_attention' || p.failedRuns > 0; }
   function groupKey(p) { return p.group.channel + ' · ' + p.group.chatId; }
   function idleDays(p) { return Math.floor((Date.now() - p.lastMoveAt) / DAY); }
   function stateBadge(state) {
@@ -465,9 +468,10 @@ ${HUB_NAV_SCRIPT}
     if (f.status === 'blocked' && !p.blocked) return false;
     if (f.status === 'waiting_owner' && !waitsOnOwner(p)) return false;
     if (f.status === 'stalled' && !p.stalled) return false;
-    if (f.status === 'waiting' && !waitsOnSomeone(p)) return false;
-    if (f.status === 'failed' && !isFailed(p)) return false;
-    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled', 'waiting', 'failed'].indexOf(f.status) < 0 && p.state !== f.status) return false;
+    // The status tabs go by the one state set the rows show (#2101,
+    // wall-feed-model.ts), so a tab, its count and its rows agree.
+    if ((f.status === 'in_progress' || f.status === 'waiting' || f.status === 'failed') && !fdInTab(fdStateOf(p), f.status)) return false;
+    if (f.status && ['open', 'closed', 'blocked', 'waiting_owner', 'stalled', 'waiting', 'failed', 'in_progress'].indexOf(f.status) < 0 && p.state !== f.status) return false;
     if (+f.idle && idleDays(p) < +f.idle) return false;
     if (f.project && (f.project === OTHER ? p.project : p.project !== f.project)) return false;
     if (f.goal && !(p.goal && p.goal.id === f.goal)) return false;
@@ -1024,19 +1028,29 @@ ${HUB_NAV_SCRIPT}
     }
     return null;
   }
+  /** The composer's agent picker: every agent the nodes report, by name. */
+  function fillAgentPick() {
+    var el = $('wc-agent'), keep = el.value, seen = {}, opts = [];
+    ((S.live && S.live.nodes) || []).forEach(function (n) {
+      (n.agents || []).forEach(function (a) { if (!seen[a.id]) { seen[a.id] = true; opts.push(a); } });
+    });
+    el.innerHTML = '<option value="">Any agent</option>' + opts.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name || a.id) + '</option>'; }).join('');
+    el.value = keep && seen[keep] ? keep : '';
+  }
   async function compose() {
     // One post at a time: a double click or a second Enter would send it twice.
     if (S.posting) return;
     var text = ($('wc-text').value || '').trim();
     if (!text) { composeNote('Write the post first.'); return; }
-    var to = composeTarget(text);
-    if (!to) { composeNote(S.live ? 'Pick who it is for: put @ and an agent\'s name in the post.' : 'Still loading the agents…'); return; }
+    var to = composeTarget(text) || composeTarget('@' + $('wc-agent').value);
+    if (!to) { composeNote(S.live ? 'Pick who it is for: an agent below, or @ and its name.' : 'Still loading the agents…'); return; }
     composeNote('Posting to ' + to.name + '…');
     S.posting = true; $('wc-post').disabled = true;
     var r = await act('POST', '/api/admin/wall/post', { agent: to.id, text: text }, to.peer);
-    S.posting = false; $('wc-post').disabled = false;
+    S.posting = false; $('wc-post').disabled = !($('wc-text').value || '').trim();
     if (!r.ok) { composeNote('Not posted: ' + r.error); return; }
     $('wc-text').value = '';
+    $('wc-post').disabled = true;
     composeNote(r.body.message || 'Posted.');
     load();
   }
@@ -1443,9 +1457,11 @@ ${HUB_NAV_SCRIPT}
     navHtml(page, f);
     $('wall-back').hidden = page !== 'post';
     // Status tabs, search and the Feed / List switch belong to the posts (#1355).
-    $('wall-views').hidden = !posts_;
+    $('wall-bar').hidden = !posts_;
     $('wall-switch').hidden = !posts_;
-    $('wall-filters').hidden = !posts_;
+    $('wall-tools').hidden = !posts_;
+    $('wall-cols-btn').hidden = !(posts_ && S.view === 'list');
+    document.querySelector('.ax-wall').classList.toggle('is-posts', posts_);
     // The "Filters" fold says how many are in use (#2352); the status tab and the search box show themselves.
     var fn = FILTERS.filter(function (k) { return k !== 'status' && k !== 'q' && f[k]; }).length;
     $('wall-fn').textContent = fn ? String(fn) : '';
@@ -1518,10 +1534,7 @@ ${HUB_NAV_SCRIPT}
     var n = failCount();
     $('wall-fail-n').textContent = n ? String(n) : '';
     $('wall-fail-n').classList.toggle('is-zero', !n);
-    var synced = S.data.syncedAt;
-    $('wall-synced').textContent = stamp(synced);
-    $('wall-synced').setAttribute('datetime', new Date(synced).toISOString());
-    $('wall-synced').parentNode.classList.toggle('is-stale', Date.now() - synced > 120000);
+    fdPaintSync(S.data.syncedAt, !!S.loadFailed);
     if (!onWall) { renderReviews(''); renderEvents(''); renderDecide(''); renderCost(''); return; }
     var side = S.view === 'failures' || S.view === 'projects' || S.view === 'jobs' || S.view === 'decide';
     $('wall-profile').hidden = !f.owner || side;
@@ -1534,9 +1547,13 @@ ${HUB_NAV_SCRIPT}
     $('wall-projects').hidden = S.view !== 'projects';
     $('wall-jobs').hidden = S.view !== 'jobs';
     $('wall-count').hidden = side;
-    if (S.view === 'feed') $('wall-feed').innerHTML = posts.length ? posts.map(function (p) { return postHtml(p); }).join('') : '<p class="ax-wall__empty">No posts match these filters.</p>';
-    if (S.view === 'list') $('wall-list').innerHTML = listBarHtml(f) + (!posts.length ? '<p class="ax-wall__empty">No posts match these filters.</p>'
-      : f.status === 'blocked' && f.by ? blocksHtml(posts, f.by) : listHtml(posts));
+    // The feed and the List view (#2101 mock, wall-feed.client.ts): rows patched by key.
+    fdPaintTabs(f);
+    if (S.view === 'feed') fdPaintFeed(posts);
+    if (S.view === 'list') {
+      if (f.status === 'blocked' && f.by && posts.length) { $('wall-list').innerHTML = blocksHtml(posts, f.by); $('wall-list')._fdEmpty = true; }
+      else { fdPaintColMenu(); fdPaintList(posts, f); }
+    }
     if (S.view === 'failures') $('wall-failures').innerHTML = failuresHtml();
     if (S.view === 'projects') $('wall-projects').innerHTML = projectsHtml();
     // Recurring jobs with their value line (#1183): cron-value.ts.
@@ -1574,7 +1591,7 @@ ${HUB_NAV_SCRIPT}
   }
   function loadLive() {
     return getJson('/api/live?quick=1').then(function (d) {
-      S.live = d; S.liveError = false; render();
+      S.live = d; S.liveError = false; fillAgentPick(); render();
       askAgain('live', (d.nodes || []).some(nodeChecking), loadLive);
     }).catch(function () {
       S.liveError = true;
@@ -1625,8 +1642,13 @@ ${HUB_NAV_SCRIPT}
     loadLive();
     try {
       await loadWall();
+      S.loadFailed = false;
     } catch (e) {
-      $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the ${HUB_NAME}: ' + esc(e.message) + '. The classic pages above still work.</p>';
+      // With posts on screen the sync line turns to "Not synced since" and
+      // Retry (principle 8); with none, the feed says why.
+      S.loadFailed = true;
+      if (S.data) render();
+      else { $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the ${HUB_NAME}: ' + esc(e.message) + '. Refresh to try again.</p>'; $('wall-feed')._fdEmpty = true; }
     }
     loadRest();
   }
@@ -1676,13 +1698,13 @@ ${HUB_NAV_SCRIPT}
     $('f-' + k).addEventListener(k === 'q' ? 'input' : 'change', function () { writeHash(); render(); });
   });
   $('wall-refresh').addEventListener('click', load);
-  // The search button opens the filters, with the search box first (#1355).
-  $('wall-search').addEventListener('click', function () {
-    var open = $('wall-filters').classList.toggle('is-open');
-    $('wall-search').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open && $('f-q').focus) $('f-q').focus();
-  });
   $('wall-compose').addEventListener('submit', function (ev) { ev.preventDefault(); compose(); });
+  // Enter sends, Shift+Enter is a new line, nothing while an IME composes (A2);
+  // Send waits for words (A3).
+  $('wc-text').addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); compose(); }
+  });
+  $('wc-text').addEventListener('input', function () { $('wc-post').disabled = !!S.posting || !($('wc-text').value || '').trim(); });
   $('v-save').addEventListener('click', function () {
     writeHash();
     try { localStorage.setItem(SAVED_KEY, location.hash); $('v-save').textContent = 'Saved'; setTimeout(function () { $('v-save').textContent = 'Save as my view'; }, 1500); } catch (e) { /* private mode: nothing kept */ }
