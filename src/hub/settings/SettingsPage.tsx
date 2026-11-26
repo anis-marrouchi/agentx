@@ -23,6 +23,7 @@ import { buildSettingsIndex, searchSettings, type SettingsHit } from "./search"
 /** The panes React draws; the rest open on a line to the old Settings. */
 const PANES: Record<string, ComponentType> = {
   general: lazy(() => import("./GeneralPane")),
+  menu: lazy(() => import("./MenuPane")),
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)

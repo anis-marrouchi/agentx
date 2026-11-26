@@ -4,13 +4,13 @@
 // the card, rows split by hairlines, and the Advanced disclosure kept
 // mounted so search can open it. A row is drawn from its definition in
 // panes.ts (condition 1), so its label and help are the ones search shows.
-import { createContext, useContext, type ReactNode } from "react"
+import { createContext, useContext, type ComponentProps, type ReactNode } from "react"
 import { Icon, cn } from "../ui"
 import { rowDef, type SettingsPaneDef } from "./panes"
 
 export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
   return (
-    <header data-slot="settings-pane-header" className="flex items-start justify-between gap-4 border-b border-border/60 pb-5">
+    <header data-slot="settings-pane-header" className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 max-sm:flex-col max-sm:gap-3">
       <div className="flex min-w-0 flex-col gap-1.5">
         <h2 className="text-2xl font-semibold leading-tight">{pane.label}</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{pane.help}</p>
@@ -65,12 +65,13 @@ export function SettingsRow({ pane, row, label, help, control }: {
  *  is part of its group's row in search, so it carries `data-item`, not
  *  `data-row`. Below 640 px the badge moves under the name (friction note 1);
  *  the `…` menu shows on hover or focus with a pointer, always on touch
- *  (friction note 2). */
-export function SettingsItem({ id, lead, name, meta, badge, control, menu, muted }: {
+ *  (friction note 2). Other props go to the row (a list that reorders sets
+ *  its keys and drag on it). */
+export function SettingsItem({ id, lead, name, meta, badge, control, menu, muted, className, ...props }: {
   id: string; lead?: ReactNode; name: ReactNode; meta?: ReactNode; badge?: ReactNode; control?: ReactNode; menu?: ReactNode; muted?: boolean
-}) {
+} & Omit<ComponentProps<"div">, "id">) {
   return (
-    <div data-slot="settings-item" data-item={id} className={cn("group flex min-h-11 items-center gap-3 py-3", muted && "opacity-70")}>
+    <div data-slot="settings-item" data-item={id} className={cn("group flex min-h-11 items-center gap-3 py-3", muted && "opacity-70", className)} {...props}>
       {lead}
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm font-medium">{name}</span>
