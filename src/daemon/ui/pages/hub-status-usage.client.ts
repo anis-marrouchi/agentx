@@ -12,11 +12,13 @@
 // One drop-down (#hsu-pop) serves every item. It opens on hover or focus
 // and closes a moment after the pointer leaves both the item and the
 // drop-down; a click pins it open (touch, keyboard), Escape or a click
-// outside closes it.
+// outside closes it. A hidden tab does not poll.
 export const HUB_USAGE_SCRIPT = String.raw`
   var HSU = { use: null, open: '', pinned: false, closeT: 0, last: '', chips: null, note: '', noteAt: 0, orgAsked: false };
   function hsuIcon(k) { return engineIcon(k, 'ax-eng'); }
   function hsuLoad() {
+    // A hidden tab reads nothing; it reads again when it shows (#2314 review).
+    if (document.hidden) return;
     fetch('/api/admin/hub/usage', { headers: headers() })
       .then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); })
       .then(function (d) { HSU.use = d; hsuPaint(); })
@@ -27,14 +29,19 @@ export const HUB_USAGE_SCRIPT = String.raw`
     return ((HSU.use && HSU.use.engines) || []).filter(function (e) { return e.engine === engine; })[0] || null;
   }
   function hsuNodes() { return (S.live && S.live.nodes) || []; }
+  /** An API engine's spend today (R28e); null for a plan engine or when not read. */
+  function hsuSpend(e) {
+    return hubApiEngines().indexOf(e.engine) >= 0 ? hubSpendView(e.agents, HSU.use && HSU.use.spend) : null;
+  }
   function hsuPaint() {
     var box = $('hs-engines');
     if (!box) return;
     var now = Date.now();
     var html = hubEnginesInUse(hsuNodes()).map(function (e) {
-      var u = hsuUse(e.engine);
-      return '<button type="button" class="hs__btn hsu__eng" data-hsu-pop="' + esc(e.engine) + '" aria-haspopup="true" aria-controls="hsu-pop" aria-expanded="false">' +
-        hubEngineChipHtml(e.engine, hubUsageRows(u && u.rows, now), esc, hsuIcon) + '</button>';
+      var u = hsuUse(e.engine), rows = hubUsageRows(u && u.rows, now), tone = hubEngineTone(rows);
+      // R28i: an engine at or near its limit is marked on the bar itself.
+      return '<button type="button" class="hs__btn hsu__eng" data-hsu-pop="' + esc(e.engine) + '"' + (tone ? ' data-tone="' + tone + '"' : '') + ' aria-haspopup="true" aria-controls="hsu-pop" aria-expanded="false">' +
+        hubEngineChipHtml(e.engine, rows, esc, hsuIcon, hsuSpend(e)) + '</button>';
     }).join('');
     // Repainted only on a change, so a hover or focus on an item survives.
     if (html !== HSU.chips) { box.innerHTML = HSU.chips = html; }
@@ -66,7 +73,7 @@ export const HUB_USAGE_SCRIPT = String.raw`
       if (!e) { hsuOpen(''); return; }
       var u = hsuUse(e.engine);
       // Add account opens the accounts form (#2206), which is the owner's.
-      html = hubEnginePopHtml(e.engine, u, hubUsageRows(u && u.rows, now), e.agents, now, esc, hsuIcon, !!window.AX_WALL_SETTINGS);
+      html = hubEnginePopHtml(e.engine, u, hubUsageRows(u && u.rows, now), e.agents, now, esc, hsuIcon, !!window.AX_WALL_SETTINGS, hsuSpend(e));
     }
     pop.classList.toggle('is-agents', HSU.open === 'agents');
     if (html !== HSU.last) { pop.innerHTML = HSU.last = html; }
@@ -163,6 +170,7 @@ export const HUB_USAGE_SCRIPT = String.raw`
     if (f.elements.name) f.elements.name.focus();
   }
   window.addEventListener('resize', function () { if (HSU.open) hsuPlace(document.querySelector('[data-hsu-pop="' + HSU.open + '"]')); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) hsuLoad(); });
   hsuLoad();
   setInterval(hsuLoad, 60e3);
 `

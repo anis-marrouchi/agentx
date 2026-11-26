@@ -15,7 +15,7 @@ const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;
 const icon = (k: string) => '<i data-e="' + k + '"></i>'
 
 describe("engines in use (R28a)", () => {
-  it("lists only the plan engines an agent runs on, each agent once, by name", () => {
+  it("lists only the engines an agent runs on, plan engines first, each agent once, by name", () => {
     const nodes = [
       { name: "Mac", agents: [{ id: "b", name: "Beta", tier: "claude-code" }, { id: "a", name: "Alpha" }, { id: "o", name: "Ops", tier: "orchestrator" }] },
       { name: "box", agents: [{ id: "a", name: "Alpha", tier: "codex-cli" }, { id: "c", name: "Coder", tier: "codex-cli" }] },
@@ -23,6 +23,8 @@ describe("engines in use (R28a)", () => {
     expect(hubEnginesInUse(nodes)).toEqual([
       { engine: "claude-code", agents: [{ id: "a", name: "Alpha", node: "Mac" }, { id: "b", name: "Beta", node: "Mac" }] },
       { engine: "codex-cli", agents: [{ id: "c", name: "Coder", node: "box" }] },
+      // An API engine has an item too, for its spend (R28e).
+      { engine: "orchestrator", agents: [{ id: "o", name: "Ops", node: "Mac" }] },
     ])
   })
 

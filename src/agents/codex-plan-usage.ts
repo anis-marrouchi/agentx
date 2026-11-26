@@ -126,13 +126,15 @@ async function tail(file: string): Promise<{ text: string; mtime: number }> {
  */
 export async function readCodexPlanUsage(codexHome: string, maxFiles = MAX_FILES, maxDays = MAX_DAYS): Promise<CodexPlanUsage | null> {
   const files = await newestSessionFiles(join(codexHome, "sessions"), maxFiles, maxDays)
-  // Newest file first: the first one with a reading is the newest reading.
+  // The newest reading wins, not the first file that has one: a long
+  // session filed under an older day can have written after today's files.
+  let best: CodexPlanUsage | null = null
   for (const f of files) {
     const t = await tail(f).catch(() => null)
     const r = t && codexRateLimitsFromText(t.text, t.mtime)
-    if (r) return r
+    if (r && (!best || r.readAt > best.readAt)) best = r
   }
-  return null
+  return best
 }
 
 const cache = new Map<string, { at: number; value: Promise<CodexPlanUsage | null> }>()

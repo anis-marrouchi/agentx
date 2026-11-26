@@ -15,8 +15,17 @@
 // R28g: a number that cannot be read hides its row; "not known" is never
 //   written. A window a run reported without a percentage shows its status
 //   and reset time, without a bar.
-// R28h: Claude and Codex both get the drop-down; it lists the agents that
+// R28h: every engine in use gets the drop-down; it lists the agents that
 //   use the engine.
+// R28d: an engine with added accounts (#2206) shows a section per account
+//   in its drop-down, each with its own bars; the item keeps the bars of
+//   the account new runs use.
+// R28e: an API engine (Anthropic API, Orchestrator, OpenCode) has no plan
+//   limit: its item shows what its agents' runs cost today, from the run
+//   costs this machine records (the Cost page's numbers). An engine whose
+//   agents run elsewhere, or only on unpriced (local) models, shows its
+//   name only: no guessed sum.
+// R28i: an item whose account in use is at or near a limit is marked.
 //
 // Functions, not consts, so they ship to the browser with injectFns. The
 // numbers come from GET /api/admin/hub/usage (daemon/hub-usage-api.ts).
@@ -24,8 +33,19 @@
 /** One window of an engine's usage, as /api/admin/hub/usage gives it. */
 export interface HubUseRow { window: string; utilization?: number; resetsAt?: number; status?: string; at: number }
 
+/** One CLI account's usage (R28d), as /api/admin/hub/usage gives it. */
+export interface HubAccountUse { name: string; active: boolean; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string; signedOut?: boolean }
+
 /** One engine's usage, as /api/admin/hub/usage gives it. */
-export interface HubEngineUse { engine: string; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string }
+export interface HubEngineUse { engine: string; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string; accounts?: HubAccountUse[] }
+
+/** Today's run cost on this machine (R28e), as /api/admin/hub/usage gives it. */
+export interface HubSpendUse { since: number; byAgent: Record<string, number>; unpriced: Record<string, number>; agentIds: string[] }
+
+/** An API engine's spend today: the sum over its agents that run here
+ *  (none when no agent of it runs here), unpriced runs, and how many of its
+ *  agents run on another machine. */
+export interface HubSpendView { usd?: number; unpriced: number; byAgent: Record<string, number>; elsewhere: number }
 
 /** An agent that runs on an engine. */
 export interface HubUseAgent { id: string; name: string; node?: string }
@@ -38,17 +58,24 @@ export function hubPlanEngines(): string[] {
   return ["claude-code", "codex-cli"]
 }
 
+/** The engines billed per token, with no plan limit (R28e), in bar order. */
+export function hubApiEngines(): string[] {
+  return ["sdk", "orchestrator", "opencode"]
+}
+
 /** The engine's short name on the bar. */
 export function hubEngineShort(engine: string): string {
-  return engine === "codex-cli" ? "Codex" : engine === "claude-code" ? "Claude" : engine
+  const n: Record<string, string> = { "claude-code": "Claude", "codex-cli": "Codex", sdk: "API", orchestrator: "Orchestrator", opencode: "OpenCode" }
+  return n[engine] || engine
 }
 
 /**
- * R28a: the plan engines the agents run on now, each with its agents, from
- * the live snapshot's nodes. An agent listed by two machines counts once.
+ * R28a: the engines the agents run on now, plan engines first, each with its
+ * agents, from the live snapshot's nodes. An agent listed by two machines
+ * counts once.
  */
 export function hubEnginesInUse(nodes: Array<{ name?: string; agents?: Array<{ id?: string; name?: string; tier?: string }> }>): Array<{ engine: string; agents: HubUseAgent[] }> {
-  const plan = hubPlanEngines()
+  const plan = hubPlanEngines().concat(hubApiEngines())
   const by: Record<string, HubUseAgent[]> = {}
   const seen: Record<string, boolean> = {}
   for (const n of nodes || []) {
@@ -90,6 +117,38 @@ export function hubUsageRows(rows: HubUseRow[] | null | undefined, now: number):
   return out.sort((a, b) => order(a.key) - order(b.key) || a.key.localeCompare(b.key))
 }
 
+/** R28i: the worst tone of an engine's rows: "high" at the limit, "warn" near it, else "". */
+export function hubEngineTone(rows: HubUseView[]): string {
+  return rows.some((r) => r.tone === "high") ? "high" : rows.some((r) => r.tone === "warn") ? "warn" : ""
+}
+
+/** R28e: an API engine's spend today, from its agents; null when not read. */
+export function hubSpendView(agents: HubUseAgent[], spend: HubSpendUse | null | undefined): HubSpendView | null {
+  if (!spend) return null
+  const out: HubSpendView = { unpriced: 0, byAgent: {}, elsewhere: 0 }
+  let usd = 0, here = false
+  for (const a of agents) {
+    // Spend is kept on the machine an agent runs on: one not listed here is not summed.
+    if ((spend.agentIds || []).indexOf(a.id) < 0) { out.elsewhere++; continue }
+    here = true
+    const v = Number((spend.byAgent || {})[a.id]) || 0
+    out.byAgent[a.id] = v
+    usd += v
+    out.unpriced += Number((spend.unpriced || {})[a.id]) || 0
+  }
+  if (here) out.usd = usd
+  return out
+}
+
+/** Money as the Cost page writes it (cost.ts fmtCost, wall-spend.ts). */
+export function hubUsd(v: number): string {
+  const n = isFinite(v) ? v : 0
+  if (Math.abs(n) >= 10000) return "$" + (n / 1000).toFixed(1) + "K"
+  if (n === 0) return "$0"
+  if (Math.abs(n) < 0.01) return "$" + n.toFixed(4)
+  return "$" + n.toFixed(2)
+}
+
 /** A window's length in words: "1 hour", "5 hours", "2 days". */
 export function hubSpan(minutes: number): string {
   const n = minutes >= 1440 ? Math.round(minutes / 1440) : Math.max(1, Math.round(minutes / 60))
@@ -126,23 +185,34 @@ export function hubClock(ms: number, now: number): string {
 }
 
 /** The bar item's inside: the engine's logo, its name, and a small bar per
- *  5-hour and week window that has a percentage. */
-export function hubEngineChipHtml(engine: string, rows: HubUseView[], esc: (s: unknown) => string, icon: (tier: string) => string): string {
+ *  5-hour and week window that has a percentage; for an API engine, its
+ *  spend today in place of a bar (R28e). */
+export function hubEngineChipHtml(engine: string, rows: HubUseView[], esc: (s: unknown) => string, icon: (tier: string) => string, spend?: HubSpendView | null): string {
   const bars = rows.filter((r) => r.short && r.pct !== undefined).map((r) =>
     '<span class="hsu__w" data-tone="' + r.tone + '"><span class="hsu__k">' + r.short + '</span><span class="hsu__m" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="width:' + r.pct + '%"></i></span><b>' + r.pct + "%</b></span>").join("")
   // No percentage, but a run said the limit is reached or near: a dot says so.
-  const flag = !bars && rows.some((r) => r.tone !== "ok") ? '<i class="hsu__flag" data-tone="' + (rows.some((r) => r.tone === "high") ? "high" : "warn") + '" aria-hidden="true"></i>' : ""
-  return icon(engine) + '<span class="hsu__n">' + esc(hubEngineShort(engine)) + "</span>" + bars + flag
+  const tone = hubEngineTone(rows)
+  const flag = !bars && tone ? '<i class="hsu__flag" data-tone="' + tone + '" aria-hidden="true"></i>' : ""
+  // R28i: the item's colour says it; a screen reader hears it.
+  const said = tone ? '<span class="hsu__sr">' + hubStatusWord(tone === "high" ? "rejected" : "allowed_warning") + "</span>" : ""
+  // $0 with only unpriced runs would mislead: a local engine shows its name only.
+  const usd = spend && spend.usd !== undefined && !(spend.usd === 0 && spend.unpriced > 0)
+    ? '<b class="hsu__usd">' + hubUsd(spend.usd) + '</b><span class="hs__long"> today</span>' : ""
+  return icon(engine) + '<span class="hsu__n">' + esc(hubEngineShort(engine)) + "</span>" + bars + flag + usd + said
 }
 
-/** The engine's hover drop-down (R28b, c, g, h). */
-export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows: HubUseView[], agents: HubUseAgent[], now: number,
-  esc: (s: unknown) => string, icon: (tier: string) => string, canAdd: boolean): string {
-  const name = engine === "codex-cli" ? "Codex" : engine === "claude-code" ? "Claude Code" : engine
+/** The engine's full name in its drop-down. */
+export function hubEngineFull(engine: string): string {
+  const n: Record<string, string> = { "claude-code": "Claude Code", "codex-cli": "Codex", sdk: "Anthropic API", orchestrator: "Orchestrator", opencode: "OpenCode" }
+  return n[engine] || engine
+}
+
+/** A list of usage rows with their bars and resets, and when they were read. */
+export function hubRowsHtml(rows: HubUseView[], source: string, now: number, esc: (s: unknown) => string): string {
   const newest = rows.length ? Math.max(...rows.map((r) => r.at)) : 0
   const read = !newest ? ""
-    : use && use.source === "session" ? "As of the last Codex run on this machine, " + hubAgo(now - newest)
-    : use && use.source === "runs" ? "As the last run reported it, " + hubAgo(now - newest)
+    : source === "session" ? "As of the last Codex run on this machine, " + hubAgo(now - newest)
+    : source === "runs" ? "As the last run reported it, " + hubAgo(now - newest)
     : "Read " + hubAgo(now - newest)
   const list = rows.map((r) => {
     const reset = r.resetsAt ? '<span class="hsu__reset" title="Resets ' + esc(new Date(r.resetsAt).toLocaleString()) + '">resets ' + esc(hubClock(r.resetsAt, now)) + " · " + hubIn(r.resetsAt - now) + "</span>" : ""
@@ -152,15 +222,41 @@ export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows:
         : '<span class="hsu__st">' + esc(hubStatusWord(r.status)) + "</span>") +
       reset + "</li>"
   }).join("")
+  return (list ? '<ul class="hsu__rows">' + list + "</ul>" : "") + (read ? '<p class="hsu__read">' + esc(read) + "</p>" : "")
+}
+
+/** The engine's hover drop-down (R28b, c, d, e, g, h). `spend` is for an API engine. */
+export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows: HubUseView[], agents: HubUseAgent[], now: number,
+  esc: (s: unknown) => string, icon: (tier: string) => string, canAdd: boolean, spend?: HubSpendView | null): string {
+  const api = hubApiEngines().indexOf(engine) >= 0
+  const plan = api ? "No plan limit" : use && use.plan ? use.plan.charAt(0).toUpperCase() + use.plan.slice(1) : ""
+  let body = ""
+  if (api) {
+    // R28e: what its runs cost today, here; nothing summed that is not known.
+    const n = spend ? spend.unpriced : 0, away = spend ? spend.elsewhere : 0
+    body = (spend && spend.usd !== undefined ? '<p class="hsu__spend" title="Since 00:00 UTC, from each run\'s recorded cost">Spent today <b>' + hubUsd(spend.usd) + "</b></p>" : "") +
+      (n ? '<p class="hsu__read">' + n + (n === 1 ? " run" : " runs") + " on a model with no price, such as a local model</p>" : "") +
+      (away ? '<p class="hsu__read">' + (away === 1 ? "1 agent runs on another machine; its" : away + " agents run on other machines; their") + " spend is kept there</p>" : "")
+  } else if (use && use.accounts && use.accounts.length > 1) {
+    // R28d: a section per account, the one new runs use first.
+    const accts = use.accounts.filter((a) => a.active).concat(use.accounts.filter((a) => !a.active))
+    body = accts.map((a) => '<p class="hsu__acct"><b>' + esc(a.name) + "</b>" + (a.active ? '<span class="hsu__in">In use</span>' : "") + "</p>" +
+      (a.signedOut ? '<p class="hsu__read">Signed out</p>' : hubRowsHtml(a.active ? rows : hubUsageRows(a.rows, now), a.source, now, esc))).join("")
+  } else {
+    body = hubRowsHtml(rows, use ? use.source : "plan", now, esc)
+  }
   const who = agents.length
     ? '<p class="hsu__h">Used by ' + agents.length + (agents.length === 1 ? " agent" : " agents") + '</p><ul class="hsu__who">' +
-      agents.map((a) => '<li><a href="#page=chat&amp;agent=' + esc(encodeURIComponent(a.id)) + '" title="Open ' + esc(a.name) + '\'s chat">' + esc(a.name) + "</a></li>").join("") + "</ul>"
+      agents.map((a) => {
+        const usd = spend && spend.byAgent[a.id] ? " · " + hubUsd(spend.byAgent[a.id]) : ""
+        return '<li><a href="#page=chat&amp;agent=' + esc(encodeURIComponent(a.id)) + '" title="Open ' + esc(a.name) + '\'s chat">' + esc(a.name) + usd + "</a></li>"
+      }).join("") + "</ul>"
     : ""
-  return '<header class="hsu__hd">' + icon(engine) + "<b>" + esc(name) + "</b>" + (use && use.plan ? '<span class="hsu__plan">' + esc(use.plan.charAt(0).toUpperCase() + use.plan.slice(1)) + "</span>" : "") + "</header>" +
-    (list ? '<ul class="hsu__rows">' + list + "</ul>" : "") +
-    (read ? '<p class="hsu__read">' + esc(read) + "</p>" : "") +
-    who +
-    (canAdd ? '<div class="hsu__foot"><button type="button" class="ax-btn ax-btn--ghost hsu__add" data-hsu-add="' + (engine === "codex-cli" ? "codex" : "claude") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add account</button></div>' : "")
+  const foot = api
+    ? '<div class="hsu__foot"><a class="ax-btn ax-btn--ghost hsu__add" href="#status=open&amp;view=cost" title="Spend and caps for every agent">Cost</a></div>'
+    : canAdd ? '<div class="hsu__foot"><button type="button" class="ax-btn ax-btn--ghost hsu__add" data-hsu-add="' + (engine === "codex-cli" ? "codex" : "claude") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add account</button></div>' : ""
+  return '<header class="hsu__hd">' + icon(engine) + "<b>" + esc(hubEngineFull(engine)) + "</b>" + (plan ? '<span class="hsu__plan">' + esc(plan) + "</span>" : "") + "</header>" +
+    body + who + foot
 }
 
 /** One agent in the agents drop-down (R28f), as the bar's script builds it. */
@@ -211,6 +307,15 @@ export const HUB_USAGE_CSS = `
 [data-tone="warn"] { --hsu-c: var(--ax-amber, #f59e0b); }
 [data-tone="high"] { --hsu-c: var(--ax-red, #e40014); }
 .hsu__flag { width: 7px; height: 7px; border-radius: 50%; background: var(--hsu-c); }
+/* R28i: an engine at or near its limit: the item takes the state colour. */
+.hsu__eng[data-tone="warn"], .hsu__eng[data-tone="high"] { border-color: color-mix(in oklch, var(--hsu-c) 45%, transparent); background: color-mix(in oklch, var(--hsu-c) 10%, transparent); }
+.hsu__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.hsu__usd { font-weight: 600; color: var(--ax-text-2); font-variant-numeric: tabular-nums; }
+.hsu__spend { margin: 0 0 4px; color: var(--ax-text-2); }
+.hsu__spend b { color: var(--ax-text); font-variant-numeric: tabular-nums; }
+.hsu__acct { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12px; }
+.hsu__acct ~ .hsu__acct { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ax-border); }
+.hsu__in { color: var(--ax-muted); font-size: 11px; padding: 0 6px; border: 1px solid var(--ax-border); border-radius: 999px; }
 .hsu-pop { position: fixed; z-index: 11; bottom: 36px; left: 8px; width: 300px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow: auto; padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); color: var(--ax-text); box-shadow: 0 12px 32px rgba(0,0,0,.18); font-size: 12.5px; transform-origin: bottom left; animation: hsu-in .14s cubic-bezier(.2, .8, .2, 1); }
 .hsu-pop.is-agents { width: 440px; }
 @keyframes hsu-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }

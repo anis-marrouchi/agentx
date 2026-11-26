@@ -32,12 +32,12 @@ import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
 import { hubAgentsFor } from "./hub-agents-api"
 import { liftProviderHolds } from "@/agents/claude-code-quota"
-import { fetchHubUsage } from "./hub-usage-api"
+import { fetchHubUsage, hubSpendToday, type HubSpend } from "./hub-usage-api"
 import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
-import { handleObservabilityApi } from "./observability-panel"
+import { currentBudgetSource, handleObservabilityApi, openReadOnly } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
@@ -1128,10 +1128,22 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Read-only status for the Hub's status bar (#2101 P9a, R28): each plan
   // engine's windows, from the daemon's /usage/plan (hub-usage-api.ts). This
   // process has no reading of its own (R28g). The admin gate above protects
-  // this route; only percentages, statuses and times leave it.
+  // this route; only percentages, statuses and times leave it. The API
+  // engines' spend today (R28e) is this machine's recorded run cost, the
+  // same sum the Cost page reads; with the daemon down it still shows.
   if (method === "GET" && path === "/api/admin/hub/usage") {
-    try { sendJson(res, 200, await fetchHubUsage(ctx.config)) }
-    catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
+    let spend: HubSpend | null = null
+    const opened = openReadOnly()
+    if (opened) {
+      try { spend = hubSpendToday(opened.db, Object.keys(currentBudgetSource(ctx.config)?.agents ?? {})) }
+      catch (e: any) { console.warn(`[hub] spend today not read: ${e?.message ?? e}`); spend = null }
+      finally { opened.close() }
+    }
+    try { sendJson(res, 200, { ...(await fetchHubUsage(ctx.config)), spend }) }
+    catch (e: any) {
+      if (spend) sendJson(res, 200, { engines: [], windows: [], readAt: null, spend })
+      else sendJson(res, 502, { error: e.message || "daemon not reachable" })
+    }
     return
   }
   // CLI account profiles (#2101 P9b, agents/cli-accounts.ts): which Claude
