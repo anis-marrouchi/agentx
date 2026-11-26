@@ -127,8 +127,8 @@ const HS_ICON = {
 
 export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="Hub status">
   <span class="hs__conn" id="hs-conn" data-state="wait" role="status"><i class="hs__dot" aria-hidden="true"></i><span id="hs-conn-t">Connecting…</span></span>
-  <span class="hs__i" id="hs-node" title="The machines this Hub reads">${HS_ICON.node}<span id="hs-node-t">Machine —</span></span>
-  <span class="hs__i">${HS_ICON.agents}<span id="hs-running">Running agents —</span></span>
+  <span class="hs__i" id="hs-node" title="The machines this Hub reads" hidden>${HS_ICON.node}<span id="hs-node-t"></span></span>
+  <span class="hs__i" id="hs-running-i" hidden>${HS_ICON.agents}<span id="hs-running"></span></span>
   <span class="hs__i hs__usage">${HS_ICON.gauge}<span id="hs-claude">Claude: checking usage…</span></span>
   <span class="hs__gap"></span>
   <button type="button" class="hs__btn hs__acct" id="hs-acct" aria-expanded="false" aria-controls="hs-acct-pop" hidden>Accounts</button>
@@ -188,7 +188,7 @@ export const HUB_STATUS_CSS = `
 #hs-claude, #hs-cli-t { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1180px) {
   .hs { gap: 12px; padding: 0 10px; overflow-x: hidden; }
-  .hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }
+  .hs__btn[data-wall-theme] > span { display: none; }
   .hs__acct-s { display: none; }
   #hs-cli-t { max-width: 120px; }
 }

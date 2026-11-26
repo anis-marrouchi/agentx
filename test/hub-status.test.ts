@@ -105,7 +105,8 @@ describe("Hub bottom status", () => {
 
   it("keeps the bar on one line down to the 900 px icon nav (#2101)", () => {
     const narrow = HUB_STATUS_CSS.slice(HUB_STATUS_CSS.indexOf("@media (max-width: 1180px)"))
-    expect(narrow).toContain(".hs > .hs__usage:not(.hs__i), .hs__btn[data-wall-theme] > span { display: none; }")
+    expect(narrow).toContain(".hs__btn[data-wall-theme] > span { display: none; }")
+    expect(HUB_STATUS_CSS).not.toContain(".hs__usage:not(.hs__i)")
     // Accounts is its one word there, never cut mid-word (#2101 C2).
     expect(narrow).toContain(".hs__acct-s { display: none; }")
     expect(HUB_STATUS_CSS).toContain(".hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px;")
@@ -117,6 +118,11 @@ describe("Hub bottom status", () => {
     expect(HUB_STATUS_HTML).not.toContain("not known")
     expect(HUB_STATUS_HTML).not.toContain("Version —")
     expect(HUB_STATUS_HTML).toContain('id="hs-version-i" hidden')
+    // Machine and Running agents too: hidden until a reading fills them.
+    expect(HUB_STATUS_HTML).not.toContain("Machine —")
+    expect(HUB_STATUS_HTML).not.toContain("Running agents —")
+    expect(HUB_STATUS_HTML).toContain('id="hs-running-i" hidden')
+    expect(HUB_STATUS_HTML).toMatch(/id="hs-node"[^>]* hidden>/)
     expect(HUB_STATUS_CSS).toContain(".hs [hidden] { display: none !important; }")
     const html = renderWallPage({ owner: true })
     expect(html).toContain('id="hub-status"')

@@ -1384,6 +1384,18 @@ export async function executeClaudeCodeStreaming(
       // "exited with code undefined" into the user's chat. Mirrors the
       // non-streaming path's exit-143 handling.
       const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; failed?: boolean; code?: string; shortMessage?: string }
+      // A SIGTERM from outside (a daemon shutdown), before our own time
+      // limit: the same "interrupted" label as the json path, which the
+      // mesh resumer and the router act on.
+      const ranMs = Date.now() - start
+      if (!r.timedOut && (r.signal === "SIGTERM" || r.exitCode === 143) && ranMs < streamTimeoutMs - SIGTERM_TIMEOUT_SLACK_MS) {
+        return {
+          content: "",
+          error: `Claude Code was stopped (SIGTERM) after ${Math.round(ranMs / 1000)}s, before its ${Math.round(streamTimeoutMs / 60_000)}m time limit`,
+          errorKind: "interrupted",
+          duration: ranMs,
+        }
+      }
       let errMsg: string
       if (r.timedOut) {
         errMsg = `Claude Code timed out after ${Math.round(streamTimeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
@@ -2439,8 +2451,10 @@ async function executeRestrictedTask(
   process.stderr.write(`[claude-guarded] agent=${task.agentId} ${why} task=${taskId} via=spawn (persistent process bypassed)\n`)
   if (task.personLimits) registerPersonLimits(taskId, task.personLimits)
   try {
-    const response = onDelta
-      ? await executeClaudeCodeStreaming(agent, restricted, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+    // Same rule as executeTask: a caller that listens to events gets them,
+    // with or without onDelta (#2101 R26 B1). Guarded runs always spawn.
+    const response = onDelta || onEvent
+      ? await executeClaudeCodeStreaming(agent, restricted, onDelta ?? (() => {}), historyContext, resumeSessionId, onEvent, abortSignal)
       : await executeClaudeCode(agent, restricted, historyContext, resumeSessionId, abortSignal)
     if (!level) return response
     const blocks = takeAutonomyBlocks(taskId)

@@ -4,6 +4,7 @@ import { join } from "path"
 import { tmpdir } from "os"
 import { executeTask, type AgentTask } from "../src/agents/runtime"
 import type { AgentDef } from "../src/daemon/config"
+import { setAutonomyHookPort } from "../src/guard/autonomy-enforce"
 
 // #2101 R26 B1: a click on a working agent opened its Task page, and the
 // conversation stayed at "Waiting for the first words…". The agent was a
@@ -36,6 +37,8 @@ const FAKE = `#!/usr/bin/env node
 const fs = require("fs")
 const args = process.argv.slice(2)
 fs.writeFileSync(process.env.FAKE_CLAUDE_ARGS, JSON.stringify(args))
+// A daemon shutdown: something outside sends SIGTERM before any output.
+if (process.env.FAKE_CLAUDE_SIGTERM) process.kill(process.pid, "SIGTERM")
 const fmt = args[args.indexOf("--output-format") + 1]
 if (fmt === "stream-json") {
   const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n")
@@ -62,6 +65,7 @@ describe("a one-shot claude-code run streams its events (#2101 R26 B1)", () => {
   })
 
   afterEach(() => {
+    setAutonomyHookPort(null)
     process.env = { ...oldEnv }
     rmSync(tmp, { recursive: true, force: true })
   })
@@ -81,5 +85,32 @@ describe("a one-shot claude-code run streams its events (#2101 R26 B1)", () => {
     const res = await executeTask(agent(tmp), task, {})
     expect(args()[args().indexOf("--output-format") + 1]).toBe("json")
     expect(res.content).toBe("It exports a = 1.")
+  })
+
+  it("streams a guarded run too (restricted autonomy, no onDelta)", async () => {
+    setAutonomyHookPort(1)
+    const events: any[] = []
+    const guarded: AgentTask = { ...task, autonomy: "report" }
+    const res = await executeTask(agent(tmp), guarded, {}, undefined, undefined, undefined, (e) => events.push(e))
+    expect(args()).toContain("stream-json")
+    expect(events.map((e) => e.type)).toEqual(["system", "assistant", "user", "assistant", "result"])
+    expect(res.error).toBeUndefined()
+    expect(res.content).toBe("It exports a = 1.")
+    expect(res.autonomy).toBe("report")
+  })
+
+  it("keeps json mode for a guarded run that listens to nothing", async () => {
+    setAutonomyHookPort(1)
+    const res = await executeTask(agent(tmp), { ...task, autonomy: "report" }, {})
+    expect(args()[args().indexOf("--output-format") + 1]).toBe("json")
+    expect(res.content).toBe("It exports a = 1.")
+  })
+
+  it("labels an outside SIGTERM \"interrupted\" on the streaming path, as on the json path (B2)", async () => {
+    process.env.FAKE_CLAUDE_SIGTERM = "1"
+    const streamed = await executeTask(agent(tmp), task, {}, undefined, undefined, undefined, () => {})
+    expect(args()).toContain("stream-json")
+    expect(streamed.errorKind).toBe("interrupted")
+    expect(streamed.error).toMatch(/stopped \(SIGTERM\)/)
   })
 })

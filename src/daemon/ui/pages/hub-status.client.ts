@@ -16,6 +16,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     if (!t || !nodes.length) return;
     var up = nodes.filter(function (n) { return n.reachable !== false; }).length;
     t.textContent = nodes[0].name + (nodes.length > 1 ? ' +' + (nodes.length - 1) : '');
+    $('hs-node').hidden = false;
     $('hs-node').title = nodes.map(function (n) { return n.name + (n.reachable === false ? ' (not reachable)' : ''); }).join(', ') + ' · ' + up + ' of ' + nodes.length + ' reachable';
   }
   window.addEventListener('online', hsPaintConn);
@@ -102,7 +103,9 @@ export const HUB_STATUS_SCRIPT = String.raw`
     hsPaintCli();
     var el = $('hs-running');
     if (!el) return;
-    if (!S.live) { el.textContent = 'Running agents —'; return; }
+    // No reading yet: the item stays hidden, as Version does (no "—").
+    if (!S.live) { el.parentNode.hidden = true; return; }
+    el.parentNode.hidden = false;
     // The Hub's Working count (liveWorkCount, #2258).
     var count = liveWorkCount(S.live.nodes || []).agents;
     el.textContent = count + (count === 1 ? ' agent running' : ' agents running');
