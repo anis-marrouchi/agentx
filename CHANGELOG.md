@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.291.0](https://github.com/anis-marrouchi/agentx/compare/v0.290.0...v0.291.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** Settings Menu pane edits the side menu ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST5, [#2149](https://github.com/anis-marrouchi/agentx/issues/2149)) ([#2416](https://github.com/anis-marrouchi/agentx/issues/2416)) ([07e5cdf](https://github.com/anis-marrouchi/agentx/commit/07e5cdfca9d4c05dfa3ec41ef4c104155672d825))
+
+
+### Bug Fixes
+
+* **hub:** keep Chat in the Feed title row with the "as of" chip ([#2421](https://github.com/anis-marrouchi/agentx/issues/2421)) ([d087384](https://github.com/anis-marrouchi/agentx/commit/d08738474316eace9f5f6b41127bca71444894b5))
+
 ## [0.290.0](https://github.com/anis-marrouchi/agentx/compare/v0.289.0...v0.290.0) (2026-11-26)
 
 
