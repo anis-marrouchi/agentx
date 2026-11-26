@@ -462,7 +462,13 @@ describe("Wall home first load (#1442)", () => {
     const w = openWall({ liveFails: true, timers })
     await w.settle()
     expect(w.el("hub-agents").innerHTML).toContain("Could not reach the machines just now; trying again.")
-    expect(timers.length).toBe(1)
+    // One timer asks the machines again (the other one here is the build
+    // line's own retry, #2101).
+    const lives = () => w.calls.filter((c) => c.url === "/api/live?quick=1").length
+    expect(lives()).toBe(1)
+    timers.splice(0).forEach((f) => f())
+    await w.settle()
+    expect(lives()).toBe(2)
   })
 })
 

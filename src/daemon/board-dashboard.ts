@@ -108,7 +108,8 @@ import { createWallForge, type WallDiffDeps } from "./wall-diff"
 import { chatKey, findOverlaps, worktreeKey, type RunOverlap, type RunSpan } from "./concurrent-runs"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
-import { getTopbarFeatures, headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { getTopbarFeatures, setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { nodeBuildCacheFor } from "./node-build-cache"
 import { handleModelSetupApi, MODEL_KEY_PATH, MODEL_READY_PATH } from "./model-setup-api"
 import { handleAgentChatApi } from "./agent-chat-api"
 import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
@@ -193,6 +194,10 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // Opened before the first page is served: every later reader in this
   // process shares this handle, so its slow queries are logged too.
   dashboardDb()
+
+  // Read the daemon's build once now, so the first page already has a
+  // version to show even if the dashboard is busy when it asks.
+  void nodeBuildCacheFor(config).get()
 
   // Compact primary nav. Every other surface stays routable by URL.
   setTopbarFeatures({
@@ -1459,14 +1464,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Only headerBuild's five fields leave here, which the daemon's own
   // /health already gives without a token.
   //   GET /api/node/build
+  // The dashboard keeps the last good answer (node-build-cache.ts), so a
+  // busy moment here no longer leaves the version off the page.
   if (method === "GET" && path === "/api/node/build") {
-    try {
-      const headers: Record<string, string> = {}
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/health", { headers, signal: AbortSignal.timeout(3000) })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      sendJson(res, 200, headerBuild(await r.json()))
-    } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
+    const answer = await nodeBuildCacheFor(ctx.config).get()
+    sendJson(res, answer.status, answer.body)
     return
   }
 
