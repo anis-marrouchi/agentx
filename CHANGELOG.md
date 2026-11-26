@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.290.0](https://github.com/anis-marrouchi/agentx/compare/v0.289.0...v0.290.0) (2026-11-26)
+
+
+### Features
+
+* **agents:** per-agent allowlist of who can ask ([#2116](https://github.com/anis-marrouchi/agentx/issues/2116)) ([#2411](https://github.com/anis-marrouchi/agentx/issues/2411)) ([eb4c6f3](https://github.com/anis-marrouchi/agentx/commit/eb4c6f34154dd7fac72f608213880802de6942b5))
+* **crons:** cheap precheck skips a scheduled run with no model call ([#2115](https://github.com/anis-marrouchi/agentx/issues/2115)) ([#2412](https://github.com/anis-marrouchi/agentx/issues/2412)) ([d2cded3](https://github.com/anis-marrouchi/agentx/commit/d2cded3b33c72737babb384c9e02f05c1b144a2a))
+* **hub:** new Settings shell, kit parts and General pane ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST1) ([#2409](https://github.com/anis-marrouchi/agentx/issues/2409)) ([75eeb97](https://github.com/anis-marrouchi/agentx/commit/75eeb97f35df7d2c2e7630920c3b59a9a0ce8179))
+
+
+### Bug Fixes
+
+* **daemon:** stop the session monitor rescanning every run, and log main-thread stalls ([#2415](https://github.com/anis-marrouchi/agentx/issues/2415)) ([ae56ba8](https://github.com/anis-marrouchi/agentx/commit/ae56ba8033e560cfac55671c1237d7b415c0b9f2))
+* **hub:** Jump to latest works on a phone-width Task page ([#2306](https://github.com/anis-marrouchi/agentx/issues/2306) review C2) ([#2405](https://github.com/anis-marrouchi/agentx/issues/2405)) ([7501aa2](https://github.com/anis-marrouchi/agentx/commit/7501aa260be323b5c3295639fe33635af5083081))
+* **hub:** Tasks finds gh when the daemon runs under launchd ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226)) ([#2413](https://github.com/anis-marrouchi/agentx/issues/2413)) ([f896364](https://github.com/anis-marrouchi/agentx/commit/f89636437b22b97bd29231682692601f32dd766e))
+
 ## [0.289.0](https://github.com/anis-marrouchi/agentx/compare/v0.288.0...v0.289.0) (2026-11-26)
 
 
