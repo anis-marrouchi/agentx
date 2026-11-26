@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.292.0](https://github.com/anis-marrouchi/agentx/compare/v0.291.0...v0.292.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** Settings Agent and Actions panes ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST2a) ([#2418](https://github.com/anis-marrouchi/agentx/issues/2418)) ([f810f59](https://github.com/anis-marrouchi/agentx/commit/f810f59e1ed13b56f69401a2ce6cceeca4b1d120))
+* **hub:** Settings Guests pane ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST3a) ([#2414](https://github.com/anis-marrouchi/agentx/issues/2414)) ([235f44b](https://github.com/anis-marrouchi/agentx/commit/235f44be3c1a7cb56573016f4d9221da8c38507d))
+* **hub:** Settings Jobs, Approvals and Inbox panes ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST2b) ([#2417](https://github.com/anis-marrouchi/agentx/issues/2417)) ([29991da](https://github.com/anis-marrouchi/agentx/commit/29991da5ceb33b097451b75ba49f0ed9f09d630d))
+
+
+### Bug Fixes
+
+* **hub:** Agent pane says "Secret in file" for a literal credential ([#2420](https://github.com/anis-marrouchi/agentx/issues/2420)) ([#2427](https://github.com/anis-marrouchi/agentx/issues/2427)) ([146c06c](https://github.com/anis-marrouchi/agentx/commit/146c06c72804329b494530d270c2aa080d9c08d0))
+* **settings:** never send an agent integration's literal secret ([#2420](https://github.com/anis-marrouchi/agentx/issues/2420)) ([#2422](https://github.com/anis-marrouchi/agentx/issues/2422)) ([d6e8927](https://github.com/anis-marrouchi/agentx/commit/d6e89271002129933e8006c69dd6b5e0092c13aa))
+
 ## [0.291.0](https://github.com/anis-marrouchi/agentx/compare/v0.290.0...v0.291.0) (2026-11-26)
 
 
