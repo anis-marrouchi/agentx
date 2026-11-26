@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
-  bootstrapWithRetry, countHolding, healthIsUpgraded, holdsUpgrade, oneShotPlist, plistNamesDir, releaseDirFromArgs, retargetPlist,
-  runsToCut, upgradeJobLabel,
+  bootstrapWithRetry, chatRouteOk, checksSummary, countHolding, healthIsUpgraded, holdsUpgrade, hubPageOk, oneShotPlist, peerSkew,
+  plistNamesDir, releaseDirFromArgs, retargetPlist, runsToCut, upgradeJobLabel,
 } from "../src/daemon/upgrade"
 
 // Pure parts of `agentx daemon upgrade`. Nothing here runs launchctl.
@@ -145,5 +145,44 @@ describe("waiting for idle on a busy daemon", () => {
     })
     expect(r.outcome).toBe("idle")
     expect(IDLE_MAX_MISSES).toBeGreaterThan(6)
+  })
+})
+
+describe("checks after the upgrade (#2227)", () => {
+  const self = { version: "0.278.0", commit: "08469c96aaaa" }
+  it("finds no skew when every peer runs the same version and commit", () => {
+    expect(peerSkew(self, [{ peer: "clawd", url: "http://c", health: { version: "0.278.0", commit: "08469c96aaaa" } }])).toEqual([])
+  })
+  it("reports a peer on another version, another commit, or not answering", () => {
+    const skew = peerSkew(self, [
+      { peer: "a", url: "http://a", health: { version: "0.277.0", commit: "bffdedf7" } },
+      { peer: "b", url: "http://b", health: { version: "0.278.0", commit: "deadbeef" } },
+      { peer: "c", url: "http://c", health: null },
+    ])
+    expect(skew.map((s) => s.peer)).toEqual(["a", "b", "c"])
+    expect(skew[2]).toEqual({ peer: "c", url: "http://c", version: null, commit: null })
+  })
+  it("compares version only when a side has no commit", () => {
+    expect(peerSkew({ version: "0.278.0", commit: null }, [{ peer: "x", url: "u", health: { version: "0.278.0", commit: "x" } }])).toEqual([])
+  })
+  it("counts the Hub page ok only for a real HTML page", () => {
+    expect(hubPageOk(200, "text/html; charset=utf-8", 1_036_273)).toBe(true)
+    expect(hubPageOk(200, "text/html", 200)).toBe(false)
+    expect(hubPageOk(502, "text/html", 5000)).toBe(false)
+    expect(hubPageOk(null, "", 0)).toBe(false)
+  })
+  it("counts the chat route ok when its handler answers JSON below 500", () => {
+    expect(chatRouteOk(401, "application/json; charset=utf-8")).toBe(true)
+    expect(chatRouteOk(200, "application/json")).toBe(true)
+    expect(chatRouteOk(500, "application/json")).toBe(false)
+    expect(chatRouteOk(200, "text/html")).toBe(false)
+    expect(chatRouteOk(null, "")).toBe(false)
+  })
+  it("summarises skew and failed probes for the RESULT line", () => {
+    expect(checksSummary(
+      [{ peer: "clawd", url: "u", version: "0.277.0", commit: "bffdedf7bd35" }],
+      [{ name: "Hub page", url: "h", status: 502, ok: false, detail: "text/html, 10 bytes" }, { name: "chat route", url: "c", status: 401, ok: true }],
+    )).toBe("peer clawd runs 0.277.0 bffdedf7; Hub page failed (502, text/html, 10 bytes)")
+    expect(checksSummary([], [])).toBe("")
   })
 })
