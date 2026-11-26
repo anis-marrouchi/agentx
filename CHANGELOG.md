@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.282.0](https://github.com/anis-marrouchi/agentx/compare/v0.281.0...v0.282.0) (2026-11-26)
+
+
+### Features
+
+* **desktop:** tray controls for window, daemon and settings ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2330](https://github.com/anis-marrouchi/agentx/issues/2330)) ([4eaa4d2](https://github.com/anis-marrouchi/agentx/commit/4eaa4d26e43f6354ebd55b4f987b663c2c9d2198))
+* **hub:** resize, collapse and expand the side menu and the right panel; Back and Forward — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P ([#2339](https://github.com/anis-marrouchi/agentx/issues/2339)) ([fb0d8c1](https://github.com/anis-marrouchi/agentx/commit/fb0d8c13f62aaa32d9313cc0b01d82ef3d132df8))
+
+
+### Bug Fixes
+
+* **upgrade:** follow-ups from [#2333](https://github.com/anis-marrouchi/agentx/issues/2333) review ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227)) ([#2358](https://github.com/anis-marrouchi/agentx/issues/2358)) ([f0829f8](https://github.com/anis-marrouchi/agentx/commit/f0829f81c63ba50047fa8ebbca190e73d6299f0a))
+
 ## [0.281.0](https://github.com/anis-marrouchi/agentx/compare/v0.280.0...v0.281.0) (2026-11-26)
 
 
