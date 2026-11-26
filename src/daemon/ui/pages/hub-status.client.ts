@@ -1,8 +1,9 @@
 // Spliced into WALL_PAGE_SCRIPT's closure. Uses $, esc, headers, act, S,
 // buildLast and haChatAgent from the existing Hub script, and the injected
-// hubUsageText, hubConnState, hubEngineName, hubCliText and hubCliHtml (hub-status.ts),
+// hubConnState, hubEngineName, hubCliText and hubCliHtml (hub-status.ts),
 // and engineIcon (engine-icons.ts) for each engine's own logo (#2272).
-// Usage is read every minute; the rest is painted with the agent list.
+// It is painted with the agent list; the plan usage is
+// hub-status-usage.client.ts.
 export const HUB_STATUS_SCRIPT = String.raw`
   // Connection and machine (R25): from the last live read.
   function hsPaintConn() {
@@ -106,9 +107,11 @@ export const HUB_STATUS_SCRIPT = String.raw`
     // No reading yet: the item stays hidden, as Version does (no "—").
     if (!S.live) { el.parentNode.hidden = true; return; }
     el.parentNode.hidden = false;
-    // The Hub's Working count (liveWorkCount, #2258).
+    // The Hub's Working count (liveWorkCount, #2258); "3 running" when narrow.
     var count = liveWorkCount(S.live.nodes || []).agents;
-    el.textContent = count + (count === 1 ? ' agent running' : ' agents running');
+    el.innerHTML = count + '<span class="hs__long">' + (count === 1 ? ' agent' : ' agents') + '</span> running';
+    // The engines in use and the drop-downs (hub-status-usage.client.ts, #2101 R28).
+    if (typeof hsuPaint === 'function') hsuPaint();
   }
   function hsPaintVersion() {
     var el = $('hs-version');
@@ -117,19 +120,6 @@ export const HUB_STATUS_SCRIPT = String.raw`
     el.textContent = 'v' + buildLast.version;
     el.parentNode.hidden = false;
     el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + '. ' + buildTitle(buildLast);
-  }
-  function hsLoadUsage() {
-    fetch('/api/admin/hub/usage', { headers: headers() }).then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); }).then(function (data) {
-      var el = $('hs-claude');
-      if (!el) return;
-      var said = hubUsageText(data.windows || [], Date.now());
-      // No reading: the item goes, rather than saying "not known" (Anis 11-25).
-      el.parentNode.hidden = !said;
-      el.textContent = 'Claude: ' + said;
-      el.title = data.readAt ? 'Last read ' + new Date(data.readAt).toLocaleString() : 'Based on the latest CLI report; no fresh plan reading';
-    }).catch(function () {
-      var el = $('hs-claude'); if (el) el.parentNode.hidden = true;
-    });
   }
   // CLI accounts (#2101 P9b): owner only; a 403 leaves the button hidden.
   var hsAcct = null;
@@ -166,7 +156,5 @@ export const HUB_STATUS_SCRIPT = String.raw`
   });
   // Only the owner's page asks (window.AX_WALL_SETTINGS is set for the owner alone).
   if (window.AX_WALL_SETTINGS) hsAccounts();
-  hsLoadUsage();
-  setInterval(hsLoadUsage, 60e3);
   setInterval(hsPaintVersion, 60e3);
 `

@@ -1,31 +1,11 @@
-// The Hub's desktop status bar (#2101 P9a, R23, R25). It reads the same
-// Claude plan windows as /usage/plan. Codex and Gemini get an item only
-// once their CLIs provide a reading; we never present a guessed percentage
-// as usage, and never write "not known" (Anis 11-25). R25 (Orca's bottom bar): each item has an icon, and the CLI
-// drop-down switches the engine of the agent in view; R23: the light/dark
-// switch lives here, not in the side menu.
+// The Hub's desktop status bar (#2101 P9a, R23, R25, R28). The engines in
+// use, their plan limits and the agents drop-down are hub-status-usage.ts.
+// We never present a guessed percentage as usage, and never write "not
+// known" (Anis 11-25). R25 (Orca's bottom bar): each item has an icon, and
+// the CLI drop-down switches the engine of the agent in view; R23: the
+// light/dark switch lives here, not in the side menu.
 
-export interface HubUsageWindow { window: string; utilization: number; resetsAt?: number }
-
-export function hubUsageText(windows: HubUsageWindow[], now: number): string {
-  const until = (ms: number): string => {
-    const minutes = Math.ceil(ms / 60_000)
-    return minutes < 60 ? minutes + "m" : minutes < 48 * 60 ? Math.ceil(minutes / 60) + "h" : Math.ceil(minutes / (24 * 60)) + "d"
-  }
-  // A window with no reading is left out, never written as "not known"
-  // (Anis 11-25: no "not known" text in the UI). A reading taken before its
-  // window reset no longer says anything about current use, so it is left
-  // out too. No window at all gives "", and the bar hides the item.
-  const label = (key: string, short: string): string => {
-    const w = windows.find((item) => item.window === key && Number.isFinite(item.utilization))
-    if (!w) return ""
-    if (w.resetsAt && w.resetsAt <= now) return ""
-    const used = Math.round(Math.max(0, Math.min(1, w.utilization)) * 100)
-    const reset = w.resetsAt ? " · resets in " + until(w.resetsAt - now) : ""
-    return short + " " + used + "%" + reset
-  }
-  return [label("five_hour", "5h"), label("seven_day", "7d")].filter(Boolean).join(" · ")
-}
+import { HUB_USAGE_POP_HTML } from "./hub-status-usage"
 
 /** One provider row of the account picker (#2101 P9b): what GET /api/admin/hub/accounts returns. */
 export interface HubAccountsProvider {
@@ -118,7 +98,6 @@ export function hubConnState(o: { live: boolean; error: boolean; online: boolean
 const HS_ICON = {
   node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
   agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01"/></svg>',
-  gauge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 18 4-6"/></svg>',
   cli: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 4 4-4 4M12 17h7"/></svg>',
   theme: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg>',
   tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2" fill="currentColor"/></svg>',
@@ -128,8 +107,8 @@ const HS_ICON = {
 export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="Hub status">
   <span class="hs__conn" id="hs-conn" data-state="wait" role="status"><i class="hs__dot" aria-hidden="true"></i><span id="hs-conn-t">Connecting…</span></span>
   <span class="hs__i" id="hs-node" title="The machines this Hub reads" hidden>${HS_ICON.node}<span id="hs-node-t"></span></span>
-  <span class="hs__i" id="hs-running-i" hidden>${HS_ICON.agents}<span id="hs-running"></span></span>
-  <span class="hs__i hs__usage">${HS_ICON.gauge}<span id="hs-claude">Claude: checking usage…</span></span>
+  <button type="button" class="hs__btn hsu__trig" id="hs-running-i" data-hsu-pop="agents" aria-haspopup="true" aria-expanded="false" aria-controls="hsu-pop" hidden>${HS_ICON.agents}<span id="hs-running"></span>${HS_ICON.down}</button>
+  <span class="hsu" id="hs-engines"></span>
   <span class="hs__gap"></span>
   <button type="button" class="hs__btn hs__acct" id="hs-acct" aria-expanded="false" aria-controls="hs-acct-pop" hidden>Accounts</button>
   <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" title="Switch the CLI of the agent in view" hidden><span id="hs-cli-i" class="hs__eng">${HS_ICON.cli}</span><span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
@@ -137,11 +116,11 @@ export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="H
   <span class="hs__i" id="hs-version-i" hidden>${HS_ICON.tag}<span id="hs-version"></span></span>
 </footer>
 <section class="hsa" id="hs-acct-pop" aria-label="CLI accounts for new runs" hidden></section>
-<section class="hsa hsc" id="hs-cli-pop" aria-label="Switch the CLI of an agent" hidden></section>`
+<section class="hsa hsc" id="hs-cli-pop" aria-label="Switch the CLI of an agent" hidden></section>
+${HUB_USAGE_POP_HTML}`
 
 export const HUB_STATUS_CSS = `
 .hs { position: fixed; z-index: 9; bottom: 0; left: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-top: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-muted); font-size: 11.5px; white-space: nowrap; overflow-x: auto; font-variant-numeric: tabular-nums; }
-.hs__usage { color: var(--ax-text-2); }
 .hs__i, .hs__conn, .hs__btn { display: inline-flex; align-items: center; gap: 5px; }
 .hs svg { width: 13px; height: 13px; flex: none; }
 .hs__gap { margin-left: auto; }
@@ -177,15 +156,14 @@ export const HUB_STATUS_CSS = `
 .hsa__rm { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-muted); cursor: pointer; text-decoration: underline; }
 .hsa__add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; margin: 6px 0; }
 .hsa__add input { font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
-/* Up to 1180 px (the icon nav), everything still fits on one line: the
-   Claude reading and the CLI button shorten with an ellipsis (the CLI
-   drop-down names the agent), Accounts is its one word (the full words
-   stay in its title) and
-   Theme is its icon (#2101 "fits 900 px"). */
+/* Up to 1180 px (the icon nav), everything still fits on one line down to
+   900 px: the CLI button shortens with an ellipsis (the CLI drop-down names
+   the agent), Accounts is its one word (the full words stay in its title),
+   Theme is its icon and the engines keep their logo and bars
+   (hub-status-usage.ts) (#2101 "fits 900 px"). */
 .hs > * { flex: none; }
 .hs [hidden] { display: none !important; }
-.hs > .hs__usage.hs__i { flex: 0 1 auto; min-width: 60px; overflow: hidden; }
-#hs-claude, #hs-cli-t { overflow: hidden; text-overflow: ellipsis; }
+#hs-cli-t { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1180px) {
   .hs { gap: 12px; padding: 0 10px; overflow-x: hidden; }
   .hs__btn[data-wall-theme] > span { display: none; }

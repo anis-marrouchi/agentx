@@ -96,8 +96,10 @@ import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
 import { haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
-import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
+import { hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
+import { hubPlanEngines, hubEngineShort, hubEnginesInUse, hubUsageRows, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
+import { HUB_USAGE_SCRIPT } from "./hub-status-usage.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount } from "./wall-tree"
 import { engineIconKey, engineIcon } from "./engine-icons"
@@ -126,7 +128,8 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount })}
   ${injectFns({ engineIconKey, engineIcon })}
-  ${injectFns({ hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
+  ${injectFns({ hubPlanEngines, hubEngineShort, hubEnginesInUse, hubUsageRows, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubEnginePopHtml, hubAgentsPopHtml })}
+  ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
@@ -156,6 +159,7 @@ ${WALL_NUMBERS_SCRIPT}
 ${WALL_JOBLEDGER_SCRIPT}
 ${WALL_AGENTS_SCRIPT}
 ${HUB_STATUS_SCRIPT}
+${HUB_USAGE_SCRIPT}
 ${HUB_NAV_SCRIPT}
 
   function headers(peer) {

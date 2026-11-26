@@ -31,8 +31,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
 import { hubAgentsFor } from "./hub-agents-api"
-import { liftProviderHolds, planWindowUse } from "@/agents/claude-code-quota"
-import { planUsageReader } from "@/agents/claude-plan-usage"
+import { liftProviderHolds } from "@/agents/claude-code-quota"
+import { fetchHubUsage } from "./hub-usage-api"
 import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
@@ -1109,11 +1109,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
   }
-  // Read-only status for the Hub's bottom bar (#2101 P9a). The admin gate
-  // above protects this route; only percentages and reset times leave it.
+  // Read-only status for the Hub's status bar (#2101 P9a, R28): each plan
+  // engine's windows, from the daemon's /usage/plan (hub-usage-api.ts). This
+  // process has no reading of its own (R28g). The admin gate above protects
+  // this route; only percentages, statuses and times leave it.
   if (method === "GET" && path === "/api/admin/hub/usage") {
-    const now = Date.now()
-    sendJson(res, 200, { windows: planWindowUse(now), readAt: planUsageReader.getState().reading?.readAt ?? null })
+    try { sendJson(res, 200, await fetchHubUsage(ctx.config)) }
+    catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
     return
   }
   // CLI account profiles (#2101 P9b, agents/cli-accounts.ts): which Claude

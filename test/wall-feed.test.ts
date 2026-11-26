@@ -400,7 +400,7 @@ describe("Running now does not wait on the feed (#1252)", () => {
     await w.settle()
     expect(w.el("wall-feed").innerHTML).toContain('id="post-r1"')
     expect(w.el("hub-agents").innerHTML).toContain("Customer Desk")
-    expect(w.el("hs-running").textContent).toBe("1 agent running")
+    expect(w.el("hs-running").innerHTML.replace(/<[^>]+>/g, "")).toBe("1 agent running")
   })
 
   it("still draws Running now when the feed fails", async () => {
