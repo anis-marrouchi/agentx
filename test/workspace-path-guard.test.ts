@@ -183,7 +183,7 @@ describe("resolveWorkspaceFile", () => {
 })
 
 describe("isHiddenName", () => {
-  it.each([".env", ".env.production", "server.key", "cert.PEM", "id_ed25519.pub", "credentials", "secrets.yaml", "token.txt", "tokens.json", "auth.json", ".git", "node_modules", ".ssh", ".npmrc", ".envrc", "prod.env", ".env-local", ".gnupg", "secrets.prod.json", "application_default_credentials.json"])("hides %s", (n) => {
+  it.each([".env", ".env.production", "server.key", "cert.PEM", "id_ed25519.pub", "credentials", "secrets.yaml", "token.txt", "tokens.json", "auth.json", ".git", "node_modules", ".ssh", ".npmrc", ".envrc", "prod.env", ".env-local", ".gnupg", "secrets.prod.json", "application_default_credentials.json", ".secrets", ".SECRETS", ".secret", ".tokens", ".credentials", ".secrets.json"])("hides %s", (n) => {
     expect(isHiddenName(n)).toBe(true)
   })
   it.each(["chart.png", "report.pdf", ".agentx", "environment.md", "keys.md", "tokenizer.json", "notes.txt"])("shows %s", (n) => {
