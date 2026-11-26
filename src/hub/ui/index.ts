@@ -10,3 +10,7 @@ export { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./tool
 export { Skeleton, Kbd, StatusDot, EmptyState, type DotState } from "./misc"
 export { Icon, ICON_NAMES } from "./icons"
 export { AfCard, AfCount, AfRow, AfStateLabel, AfLoader, AfSkeletonRows, type AfState } from "./affect"
+export { Switch } from "./switch"
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from "./popover"
+export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectLabel, SelectItem, SelectSeparator } from "./select"
+export { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator, CommandShortcut } from "./command"
