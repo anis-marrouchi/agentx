@@ -95,8 +95,9 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
   function stLayoutHtml() {
     var v = (S.st.data && S.st.data.hubLayout) || HL.view || { layout: 'simple', show: {}, overrides: [] };
     var own = v.overrides || [];
+    // A radio group: one tab stop (the chosen one), arrow keys move the choice.
     var seg = function (id, name) {
-      return '<button type="button" role="radio" aria-checked="' + (v.layout === id) + '" data-hl-layout="' + id + '">' + name + '</button>';
+      return '<button type="button" role="radio" aria-checked="' + (v.layout === id) + '" data-hl-layout="' + id + '" tabindex="' + (v.layout === id ? '0' : '-1') + '">' + name + '</button>';
     };
     var row = function (title, line, end) {
       return '<div class="wsa"><div class="wsa__b"><b>' + title + '</b><small>' + line + '</small></div>' + end + '</div>';
@@ -142,4 +143,33 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
     show[item] = kind === 'hl-reset' ? null : t.getAttribute('aria-checked') !== 'true';
     stLayoutSave({ show: show });
   });
+  /** Simple | Full by keyboard, as a radio group (#2226 S1 review): Left and
+   *  Up go back, Right and Down go on, Home and End go to the ends. The new
+   *  choice takes the focus and is saved as a click saves it. */
+  var HL_LAYOUTS = ['simple', 'full'];
+  function hlLayoutKey(ev) {
+    if (S.page !== 'settings' || !ev || !ev.target || typeof ev.target.getAttribute !== 'function') return;
+    var t = ev.target;
+    var cur = t.getAttribute('data-hl-layout');
+    var i = HL_LAYOUTS.indexOf(cur);
+    if (i < 0) return;
+    var n = HL_LAYOUTS.length;
+    var k = ev.key;
+    var next = k === 'ArrowRight' || k === 'ArrowDown' ? (i + 1) % n
+      : k === 'ArrowLeft' || k === 'ArrowUp' ? (i + n - 1) % n
+      : k === 'Home' ? 0 : k === 'End' ? n - 1 : -1;
+    if (next < 0) return;
+    if (ev.preventDefault) ev.preventDefault();
+    var id = HL_LAYOUTS[next];
+    var group = t.closest ? t.closest('[role="radiogroup"]') : null;
+    var to = group && group.querySelector ? group.querySelector('[data-hl-layout="' + id + '"]') : null;
+    if (to) {
+      // Roving tabindex: the focused radio is the one tab stop.
+      if (to !== t) { t.setAttribute('tabindex', '-1'); to.setAttribute('tabindex', '0'); }
+      if (typeof to.focus === 'function') to.focus();
+    }
+    if (id === cur && t.getAttribute('aria-checked') === 'true') return;
+    stLayoutSave({ layout: id });
+  }
+  document.addEventListener('keydown', hlLayoutKey);
 `

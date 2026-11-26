@@ -149,8 +149,15 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     for (const f of onDoc.change ?? []) f({ target: t })
     await settle()
   }
+  /** A key pressed on a given target (an element stub the test builds). */
+  const keyAt = async (target: any, k: string) => {
+    let prevented = false
+    for (const f of onDoc.keydown ?? []) f({ key: k, target, preventDefault() { prevented = true } })
+    await settle()
+    return prevented
+  }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, paints: () => paints, wall, sources, win }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
