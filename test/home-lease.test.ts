@@ -261,6 +261,46 @@ describe("one run per agent and home, in the registry", () => {
     await busy.run
   }, 15_000)
 
+  it("#2337: a run waiting for a slot holds no lease, so the run behind it is not refused for the home", async () => {
+    const { r } = registry(1)
+    const busy = start(r, a2a("a2a:pm:coder:1"))
+    const busyId = await busy.started
+    const first = start(r, a2a("a2a:pm:coder:2", H), { slotWaitMs: 10_000 })
+    await tick(200)
+    expect((r as any).workLanes.homeHolder("coder", H)).toBeNull()
+    const second = start(r, a2a("a2a:pm:coder:3", H), { slotWaitMs: 800 })
+    const res = await second.run
+    expect(res.error).toMatch(/slot wait timed out/)
+    expect(res.error).not.toMatch(/home_busy/)
+    r.cancelRunningTask(busyId, "done")
+    await busy.run
+    const firstId = await first.started
+    r.cancelRunningTask(firstId, "done")
+    await first.run
+  }, 15_000)
+
+  it("#2337: a home_busy refusal is kept for the agent's next run, says so, and the log names the holder running", async () => {
+    const { r, logs } = registry()
+    const holder = start(r, a2a("a2a:pm:coder:1", H))
+    const holderId = await holder.started
+    const peer = start(r, a2a("a2a:owner:coder:9", H), { slotWaitMs: 1200, message: "owner ask: ship the fix" })
+    const res = await peer.run
+    expect(res.error).toMatch(/^home_busy: .*kept as a notice for its next run, do not send it again$/)
+    expect(peer.didStart()).toBe(false)
+    expect(logs.some((l) => /still held by \S+ \(running\) after \d+s; refused \(home_busy\)/.test(l))).toBe(true)
+    const notices = (r as any).notices
+    expect(notices.count("coder")).toBe(1)
+    expect(notices.byAgent.get("coder")[0].text).toMatch(/Refused on noqta\/agentx#2084[\s\S]*owner ask: ship the fix/)
+    // The agent's next run of agent work takes it.
+    const next = start(r, a2a("a2a:pm:coder:10"))
+    const nextId = await next.started
+    expect(notices.count("coder")).toBe(0)
+    r.cancelRunningTask(nextId, "done")
+    await next.run
+    r.cancelRunningTask(holderId, "done")
+    await holder.run
+  }, 15_000)
+
   it("a caller that leaves while waiting is dropped and never runs", async () => {
     const { r } = registry()
     const holder = start(r, a2a("a2a:pm:coder:1", H))

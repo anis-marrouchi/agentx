@@ -16,7 +16,7 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    At the bottom of the nav: **Waiting on you** (what waits on you, to answer there, with its count), **Jobs** and, for the owner, the gear for **Settings**. **Upgrading:** Workflows, Mobile app and some ⌘K pages are hidden after this upgrade; [Settings › Layout](./settings.md#layout) › **Full** brings them back. With the full layout, or their switches on there, **Workflows** and **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) show there too.
 
    Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Waiting on you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the classic pages at **Operations**) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
-3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute. If the dashboard cannot ask the daemon, the last answer stays, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
+3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute; if an ask fails, it asks again after 5, 10, 20 and 40 seconds. The dashboard keeps the daemon's last answer, so when the daemon is slow to answer, that answer still shows, marked **as of** its time. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
 
@@ -30,6 +30,154 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
    ![The Hub on a phone in dark mode, with the bottom bar](/screenshots/wall/phone-dark.png)
 
 ![Mockup take B (left, post text blurred) next to the Hub as built](/screenshots/wall/compare-desktop.png)
+
+## Try the simple shell (new version of the Hub)
+
+The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [Configuration › Operations](../reference/config-operations.md)). With it on and the simple layout (the default, see [Settings › Layout](./settings.md#layout)), `/hub` opens on the **simple shell**: three columns, for the owner.
+
+![The simple shell on a computer: the side menu, the chat with the agent in view, and the Files tab on the right](/screenshots/hub-shell/simple.png)
+
+*Demo data; your agents will differ.*
+
+1. **Browser:** open `/hub?react=1` (once), or turn `dashboard.hub.react` on and open `/hub`. The shell's own address is `/hub#page=home`.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
+3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
+4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart and no reload:
+
+   ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
+
+   The full layout shows them all:
+
+   ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
+
+6. **Phone:** the chat takes the screen. The menu button at the top left opens the side menu; the panel button at the top right opens the Files tab.
+
+   ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
+   ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
+
+**Tasks**, **Automations** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+
+### Tasks: List or Kanban
+
+**Tasks** lists the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine. They are the posts of the old Hub's feed. Its address is `/hub#page=home&pane=tasks`.
+
+![Tasks as a list, grouped by state: In progress, Waiting on you, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
+
+*Demo data; your tasks will differ.*
+
+1. **Browser:** in the simple shell, select **Tasks** in the side menu.
+2. **List or Kanban:** the switch at the bottom of the side menu (on a phone, at the top of Tasks) changes the view. This browser remembers your choice.
+3. **Project:** the box at the top of Tasks shows one project's tasks only; **All projects** shows them all again. The project is in the address (`&project=<name>`), so Back and a shared link keep it.
+
+   ![Tasks for one project, picked in the box at the top](/screenshots/hub-automations/tasks-project.png)
+
+4. **The columns** are the request states: **In progress**, **Waiting on you**, **Waiting on others**, **Needs attention**, and **Closed** (done, declined or dropped in the last 7 days). Each task shows its agent, its project and how long ago it last moved.
+
+   ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
+
+5. **Open a task:** select it. Its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+
+   ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
+
+6. **Phone:** the list and the board fill the screen; the board scrolls sideways. The List and Kanban buttons are icons only, next to the project box.
+
+   ![Tasks as a list on a phone](/screenshots/hub-tasks/list-phone.png)
+   ![Tasks as a Kanban on a phone](/screenshots/hub-tasks/kanban-phone.png)
+   ![Tasks for one project on a phone](/screenshots/hub-automations/tasks-project-phone.png)
+
+Tasks only shows: moving a card does not change a task's state. Close or hand over a task from its **Full record**.
+
+### Check Tasks worked
+
+- Ask an agent something that leaves work open (for example a task it hands to another agent). Within 30 seconds it is under **In progress** in Tasks.
+- Pick **Kanban**, reload the page: Tasks opens as a Kanban again.
+
+### If Tasks is wrong
+
+- **Could not read the tasks:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **No tasks in the last 7 days:** nothing was asked that left work behind. A question an agent answers at once is not a task.
+- **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
+- **Task not found** after opening a link: it was closed more than 7 days ago, or its machine is not answering.
+- **No tasks in a project:** none of that project's tasks moved in the last 7 days. Select **All projects**. A task with no project shows under **All projects** only.
+
+### Automations
+
+**Automations** lists what runs on its own on every connected machine: the scheduled jobs, and the workflows a schedule or an event starts. It reads what the old Hub's **Schedules** page reads. Its address is `/hub#page=home&pane=automations`.
+
+![Automations: per machine, each job and workflow with its next run, its last result and its last seven runs](/screenshots/hub-automations/automations.png)
+
+*Demo data; your schedules will differ.*
+
+1. **Browser:** in the simple shell, select **Automations** in the side menu.
+2. **The figures** at the top: how many are on, how many are failing (last run failed, or several failures in a row), how many look stale.
+3. **Each machine** has its own table. A row shows the name and its agent, what it is for (or the first line of its last failure, in red), **Next run** (`off` for one that is off, `on event` for a workflow an event starts), **Last result** and **Last 7**: one square per run, oldest first, green for worked, red for failed or timed out, grey for an empty slot.
+4. **The badge** at the end, first match wins: **Off** (or **Quarantined**) for one that is off, whatever else it shows; **Last run failed**; **Failing** (failed several times in a row); **Looks stale** (overdue: no run since its schedule should have fired, or dormant: ran the week before, silent the last one); **Not run yet** for a new job with no run so far; else **On**. The reason is under the name, and under **Notes** when you open the row.
+5. **Select a row** to open it: its schedule and time zone (or the event that starts it), whether it is a job or a workflow, its project, and what its last run said.
+
+   ![A job opened: its schedule, kind and last run](/screenshots/hub-automations/automations-open.png)
+
+6. **Phone:** the name and the badge only; open a row for the rest, its last seven runs included.
+
+   ![Automations on a phone](/screenshots/hub-automations/automations-phone.png)
+
+Automations only shows. To add, change or turn off a schedule, use [Settings › Schedules](#add-or-remove-a-schedule). Sensors, host jobs and the day's totals stay on the old **Schedules** page; the link is at the bottom of Automations.
+
+### Check Automations worked
+
+- Every schedule in Settings › Schedules is in Automations, under its machine.
+- After a job runs, its **Last result** and its last square change within 30 seconds.
+
+### If Automations is wrong
+
+- **Could not read the automations:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **Nothing runs on its own yet:** no machine has a schedule, and no workflow starts on a schedule or an event.
+- **A machine says "does not answer":** it is off or out of reach. Its automations show again when it answers. **checking…** means it is slow; the page asks again every 2 seconds.
+- **No Last 7 squares:** the machine runs an older AgentX that does not report its runs this way. Update it.
+
+### Waiting on you in the shell
+
+**Waiting on you** lists what waits on you: decisions and approvals your agents asked for, and requests whose agent asked you a question. It is the same list, with the same count, as **Needs you**, the phone app's Desk and the daily digest. The one waiting longest is at the top. Its address is `/hub#page=home&pane=waiting`.
+
+![Waiting on you: each item with its kind, its question, who asked and how long ago](/screenshots/hub-automations/waiting.png)
+
+*Demo data; your items will differ.*
+
+1. **Browser:** in the simple shell, select **Waiting on you** in the side menu.
+2. **Each row** shows the kind (Decision, Request, Schedule, Memory and so on), the title, the question, the agent and how long ago it asked. **Answer today** marks one that expires within a day: after that its default applies without you.
+3. **Select an item** to open it: the question, the choices, what is known, what the agent suggests, what **Yes** and **No** do, and when to answer by.
+
+   ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
+
+4. **Answer** opens **Needs you**, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
+5. **Phone:** the list and the opened item fill the screen.
+
+   ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
+   ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
+
+What you put off with **Later** is not listed; the line under the list counts it and links to it in Needs you.
+
+### Check Waiting on you worked
+
+- The number next to **Waiting on you** matches the **Needs you** count in the old Hub and the phone app's Desk.
+- Answer an item in Needs you, then come back: within 15 seconds it is gone from the list.
+
+### If Waiting on you is wrong
+
+- **Could not read what waits on you:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**.
+- **A yellow line above the list:** one source could not be read (for example the requests). The list may be short until it can; the line says which.
+- **No longer waiting** after opening a link: it was answered, put off, or it expired.
+
+### Check the simple shell worked
+
+- `/hub?react=1` as the owner opens on three columns, and the address ends in `#page=home`.
+- In Settings › Layout, turn **Workflows page** on, then open `/hub#page=home`: **Workflows** is under **More**.
+
+### If the simple shell is wrong
+
+- **`/hub` opens the old Hub:** the layout is **Full** (pick **Simple** in Settings › Layout), you are not the owner (the shell is the owner's), or `dashboard.hub.react` is off. `/hub#page=home` opens the shell in any layout.
+- **The shell looks broken:** open `/hub?legacy=1` for the old version, or add `"home"` to `dashboard.hub.legacyPages`.
+- **No agents in the menu:** the dashboard could not reach the daemon. Check that it runs (**Terminal:** `agentx daemon status`).
 
 ## See every agent at a glance
 
@@ -69,7 +217,7 @@ Select **Mobile app** at the bottom of the nav (with the simple layout, turn **M
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each plan engine your agents use now (**Claude** and **Codex**), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
+On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each plan engine your agents use now (**Claude** and **Codex**), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it, usually at once and at most a few seconds after the page opens. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
 
 ### See plan usage and the agents from the status bar
 
@@ -164,6 +312,21 @@ The top of the chat shows the agent's letter, the computer it runs on and its en
 3. Select **Chat** to go back to the conversation.
 
 When the agent asks you something, the question shows at the end of the chat as a card. Select **Accept** (or one of the answers it offers), **Ask for changes** to write what to change, or **Later** to put it off. The answer is the same as on the Desk: an answered question leaves the Desk too.
+
+### Resize, collapse and expand the side menu and the panel
+
+On a window wider than 1,180 px you can size both side columns, and the Hub remembers what you set in this browser, also after a reload.
+
+1. **Browser:** drag the edge between the side menu and the page, or between the page and the right panel. The menu goes from 200 to 420 px wide. The panel goes from 320 px up to 70% of the window. The page in the middle always keeps at least 480 px: when the window is too narrow for the widths you set, the panel and then the menu are made narrower, and they get their widths back when the window is wide enough again.
+2. To collapse the side menu to a column of icons, select the button at its top right. Select it again to expand the menu to its last width.
+3. To collapse the right panel, double-click its edge. Its tabs stay open; select the panel button at the top right of the page to bring it back. Opening something new in the panel also brings it back.
+4. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it. On a Mac, **⌘B** collapses or expands the side menu and **⌘J** the right panel while it has tabs. Windows and Linux have no shortcut for this, because Ctrl+B and Ctrl+J belong to the browser.
+
+Narrower windows keep the icon menu and the sliding panel, as above.
+
+### Go back to the previous page
+
+Select **‹** at the top left of the page to go back to the page you were on before, and **›** to go forward again. They follow your browser's history in this tab. A post opened from a link, with nothing before it, goes back to the feed. On a phone these buttons are hidden and the post's own **←** goes back to the feed.
 
 ### See a run's files
 

@@ -27,7 +27,7 @@ const RUNS: Record<string, unknown[]> = {
 const POST = { id: "r1", owner: "cx", state: "in_progress", headline: "Refund order 47", group: { channel: "telegram", chatId: "demo" }, project: "support",
   node: { name: "node-a", peer: null }, createdAt: NOW - 5 * H, lastMoveAt: NOW - H, runs: 1, failedRuns: 0, runMs: 95e3, lastRun: { taskId: "t1", agentId: "cx" } }
 
-function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?: unknown[]; build?: unknown; monitorFails?: boolean; monitorHangs?: boolean }) {
+function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?: unknown[]; build?: unknown; monitorFails?: boolean; monitorHangs?: boolean; missing?: string[] }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -54,6 +54,7 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
     return e
   }
   const el = (id: string) => {
+    if (opts.missing?.includes(id)) return null
     if (!els.has(id)) {
       const tag = new RegExp(`<[^>]*\\sid="${id}"[^>]*>`).exec(page)
       if (!tag) throw new Error(`no element #${id} on the page`)
@@ -87,10 +88,14 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
       : { runs: [] }
     return Promise.resolve({ ok: true, status: 200, json: async () => body })
   }
-  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
+  // Timeouts of 5 s or more wait for the test to run them (later); shorter ones run as usual.
+  const later: Array<{ f: () => void; ms: number }> = []
+  const timeoutStub = (f: () => void, ms = 0) => { if (ms >= 5e3) { later.push({ f, ms }); return 0 } return setTimeout(f, ms) }
+  new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", "setTimeout", script)(
     doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, (f: () => void) => { timers.push(f); return 0 }, class { addEventListener() {} close() {} }, (f: () => void) => { f(); return 1 },
+    timeoutStub,
   )
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((r) => setTimeout(r, 0)) }
   const go = async (hash: string) => { loc.hash = hash; onWindow.hashchange?.(); await settle() }
@@ -108,7 +113,9 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
   const rows = () => html().split('<article class="wp wac').slice(1)
   /** Let every interval fire once, as a minute going by would. */
   const tick = async () => { for (const f of timers) f(); await settle() }
-  return { el, calls, settle, loc, go, pick, click, html, rows, tick, opts }
+  /** Run the waiting timeouts of this many ms, as that time going by would. */
+  const wait = async (ms: number) => { for (const t of later.splice(0).filter((x) => x.ms === ms)) t.f(); await settle() }
+  return { el, calls, settle, loc, go, pick, click, html, rows, tick, opts, later, wait }
 }
 
 describe("Wall Activity: the agents' runs, newest first (#1429)", () => {
@@ -415,5 +422,50 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     await w.tick()
     expect(w.el("wall-build").innerHTML).toContain("0.182.0 · 4f2c9a1")
     expect(w.el("wall-build").innerHTML).toContain('wbl__asof">as of ')
+  })
+
+  // #2101, Anis 11-26: the Hub bar showed no version on 0.277.x.
+  it("shows the version in the Hub status bar", async () => {
+    const w = openWall({ hash: "#page=wall", build: BUILD })
+    await w.settle()
+    expect(w.el("hs-version").textContent).toBe("v0.182.0")
+    expect(w.el("hs-version").parentNode.hidden).toBe(false)
+  })
+
+  it("shows the bar version on a page without the title build line", async () => {
+    const w = openWall({ hash: "#page=wall", build: BUILD, missing: ["wall-build"] })
+    await w.settle()
+    expect(w.el("hs-version").textContent).toBe("v0.182.0")
+  })
+
+  it("asks again after 5, 10, 20 and 40 s when the first ask fails, then waits for the minute", async () => {
+    const w = openWall({ hash: "#page=wall" })
+    await w.settle()
+    const asks = () => w.calls.filter((c) => c.url === "/api/node/build").length
+    expect(asks()).toBe(1)
+    expect(w.el("hs-version").textContent).toBe("")
+    for (const [i, ms] of [5e3, 10e3, 20e3, 40e3].entries()) {
+      expect(w.later.map((t) => t.ms)).toContain(ms)
+      await w.wait(ms)
+      expect(asks()).toBe(i + 2)
+    }
+    expect(w.later.filter((t) => t.ms >= 5e3 && t.ms <= 40e3)).toHaveLength(0)
+    // The answer comes on a later ask: the bar shows it.
+    ;(w.opts as any).build = BUILD
+    await w.tick()
+    expect(w.el("hs-version").textContent).toBe("v0.182.0")
+  })
+
+  it("marks an answer the dashboard kept as of its time", async () => {
+    const w = openWall({ hash: "#page=wall", build: { ...BUILD, asOf: "2026-11-26T09:00:00.000Z" } })
+    await w.settle()
+    expect(w.el("wall-build").innerHTML).toContain('wbl__asof">as of ')
+    expect(w.el("hs-version").textContent).toBe("v0.182.0")
+  })
+
+  it("does not mark a fresh answer as of", async () => {
+    const w = openWall({ hash: "#page=wall", build: BUILD })
+    await w.settle()
+    expect(w.el("wall-build").innerHTML).not.toContain("wbl__asof")
   })
 })

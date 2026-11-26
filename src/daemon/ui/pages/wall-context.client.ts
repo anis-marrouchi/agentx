@@ -37,6 +37,7 @@
 // than one, a picker. The chat script asks for it through window.AXCtx.
 
 import { HUB_NAME } from "../hub-name"
+import { hubPanelGripHtml } from "./hub-panels"
 import { injectFns } from "../inject"
 import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
 import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
@@ -386,7 +387,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
 export const WALL_CONTEXT_CSS = `
 /* The right panel (#2101 R15): only while a tab is open. */
 .wcx { grid-column: 3; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; min-width: 0; display: flex; flex-direction: column; background: var(--ax-bg); border-left: 1px solid var(--ax-border); }
-.ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings, .ax-wall.hc-open.cx-open { grid-template-columns: 280px minmax(0, 1fr) minmax(380px, 42vw); justify-content: stretch; }
+.ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings, .ax-wall.hc-open.cx-open { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr) var(--axp-cx-w, minmax(380px, 42vw)); justify-content: stretch; }
 .ax-wall.cx-open .ax-wall__aside { display: none !important; }
 .wcx__tabs { flex: none; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 8px 8px 0; border-bottom: 1px solid var(--ax-border); }
 .wcx__tabs::-webkit-scrollbar { display: none; }
@@ -440,6 +441,7 @@ export const WALL_CONTEXT_CSS = `
 /** The panel itself, empty and hidden until a tab opens. */
 export function wallContextHtml(): string {
   return `<aside class="wcx" id="wall-ctx" aria-label="Changes, plan and files" hidden>
+    ${hubPanelGripHtml("cx")}
     <div class="wcx__tabs" id="wcx-tabs" role="tablist" aria-label="Open in the panel"></div>
     <div class="wcx__body" id="wcx-body" role="tabpanel"></div>
   </aside>`

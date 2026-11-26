@@ -9,7 +9,8 @@
 // hover text. Same source and the same one-minute refresh as the classic
 // top bar: GET /api/node/build. Until the first answer the line is not
 // drawn, but keeps its height; when an answer fails after one worked, the
-// last one stays, marked "as of" its time.
+// last one stays, marked "as of" its time. A failed ask is tried again
+// after 5, 10, 20 and 40 s, besides the one-minute ask.
 
 export const WALL_BUILD_SCRIPT = String.raw`
   // --- Build line (#1444): version, commit, since, restart pending ---
@@ -32,22 +33,37 @@ export const WALL_BUILD_SCRIPT = String.raw`
   }
   var buildLast = null, buildAt = null;
   function paintBuild(asOf) {
+    if (!buildLast) return;
+    // The Hub status bar's version does not need the title build line (#2101).
+    if (typeof hsPaintVersion === 'function') hsPaintVersion();
     var el = $('wall-build');
-    if (!el || !buildLast) return;
+    if (!el) return;
     el.innerHTML = buildHtml(buildLast, asOf);
     el.title = buildTitle(buildLast);
     // Wall Live, where each machine's card has Restart when idle (#1439).
     el.setAttribute('href', '#page=live');
     el.classList.remove('is-wait');
     el.removeAttribute('aria-hidden');
-    hsPaintVersion();
+  }
+  // After a failed ask, ask again sooner than the minute: 5 s, 10 s, 20 s,
+  // then 40 s; the one-minute ask goes on beside them (#2101: a busy
+  // dashboard at page load used to leave the version off for a minute).
+  var buildRetry = 0, buildRetryTimer = null;
+  function retryBuild() {
+    if (buildRetryTimer || buildRetry >= 4) return;
+    var wait = 5e3 * Math.pow(2, buildRetry);
+    buildRetry++;
+    buildRetryTimer = setTimeout(function () { buildRetryTimer = null; loadBuild(); }, wait);
   }
   function loadBuild() {
     fetch('/api/node/build').then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (!b || !b.version) throw new Error('no build');
-      buildLast = b; buildAt = new Date();
-      paintBuild(null);
-    }).catch(function () { if (buildLast) paintBuild(buildAt); });
+      // asOf: the dashboard could not ask the daemon and gave its last answer.
+      var asOf = b.asOf ? new Date(b.asOf) : null;
+      if (asOf && isNaN(asOf.getTime())) asOf = null;
+      buildLast = b; buildAt = asOf || new Date(); buildRetry = 0;
+      paintBuild(asOf);
+    }).catch(function () { if (buildLast) paintBuild(buildAt); retryBuild(); });
   }
   loadBuild();
   setInterval(loadBuild, BUILD_EVERY_MS);

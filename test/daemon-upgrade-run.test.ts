@@ -1,0 +1,113 @@
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+// The whole upgrade run with launchd, the daemon and the network faked:
+// checks the wiring from the post-upgrade checks (#2227) to RESULT, exit
+// code and last.json. No launchctl, no real daemon.
+
+const h = vi.hoisted(() => ({
+  root: "",
+  config: {} as any,
+  configThrows: null as Error | null,
+  healthCalls: 0,
+  fetch: (_url: string): Response | Promise<Response> => new Response("", { status: 404 }),
+}))
+
+vi.mock("child_process", async (orig) => ({
+  ...(await orig<typeof import("child_process")>()),
+  spawnSync: vi.fn(() => ({ status: 0, stdout: "0.2.0\n", stderr: "" })),
+}))
+vi.mock("../src/daemon/config", async (orig) => ({
+  ...(await orig<typeof import("../src/daemon/config")>()),
+  loadDaemonConfig: () => { if (h.configThrows) throw h.configThrows; return h.config },
+}))
+vi.mock("../src/daemon/restart", () => ({ waitForIdle: async () => ({ outcome: "idle" }) }))
+vi.mock("../src/daemon/restart-host", () => ({
+  launchdDomain: () => "gui/501",
+  launchdPlistPath: () => join(h.root, "daemon.plist"),
+}))
+vi.mock("../src/native/macos/launchd", () => ({
+  jobPid: () => 100,
+  loadedJobsNaming: () => [],
+  plistValid: () => true,
+  readPlistJson: () => ({ ProgramArguments: ["/usr/bin/node", join(h.root, "old/dist/cli.js"), "daemon", "start"] }),
+  reloadJob: async () => true,
+}))
+vi.mock("../src/daemon/shutdown", () => ({ writeShutdownRequest: () => {} }))
+vi.mock("../src/daemon/upgrade-native", () => ({ ensureNativeModules: () => ({ ok: true, detail: "loads" }) }))
+vi.mock("../src/commands/daemon-http", () => {
+  return {
+    daemonBase: () => "http://daemon.test",
+    drainLimitMs: () => 1000,
+    readInflight: async () => 0,
+    readHolding: async () => 0,
+    readRunning: async () => [],
+    getJson: async (url: string) => {
+      if (url.endsWith("/daemon/restart")) return { cwd: h.root, pid: 100, service: { kind: "launchd", label: "tn.test.agentx", domain: "gui/501" } }
+      // First /health is the old daemon, later ones the new one.
+      return h.healthCalls++ === 0 ? { version: "0.1.0", pid: 100 } : { version: "0.2.0", pid: 200, commit: "abc12345" }
+    },
+  }
+})
+
+const html = () => new Response("<html>" + "x".repeat(4096) + "</html>", { status: 200, headers: { "content-type": "text/html" } })
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+async function run() {
+  vi.resetModules()
+  const { runUpgrade } = await import("../src/commands/daemon-upgrade-run")
+  const code = await runUpgrade({ dir: join(h.root, "new"), timeoutMin: 1, force: false, bootTimeoutMin: 1, hubWaitMs: 0 })
+  const last = JSON.parse(readFileSync(join(h.root, ".agentx/upgrade/last.json"), "utf-8"))
+  return { code, last }
+}
+
+describe("daemon upgrade run: checks after the upgrade (#2227)", () => {
+  beforeEach(() => {
+    h.root = mkdtempSync(join(tmpdir(), "upgrade-run-"))
+    mkdirSync(join(h.root, "new/dist"), { recursive: true })
+    writeFileSync(join(h.root, "new/dist/cli.js"), "")
+    writeFileSync(join(h.root, "daemon.plist"), `<plist><string>${join(h.root, "old")}/dist/cli.js</string></plist>`)
+    h.configThrows = null
+    h.healthCalls = 0
+    h.config = {
+      mesh: { enabled: true, peers: [{ name: "clawd", url: "http://peer.test" }] },
+      dashboard: { enabled: true, bind: "::", port: 4202 },
+    }
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => h.fetch(url)))
+  })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it("ends degraded with exit 1 when the Hub page fails, and keeps the fetch error", async () => {
+    h.fetch = (url) => {
+      if (url.startsWith("http://peer.test")) return json({ version: "0.2.0", commit: "abc12345" })
+      throw Object.assign(new TypeError("fetch failed"), { cause: new Error("connect ECONNREFUSED 127.0.0.1:4202") })
+    }
+    const { code, last } = await run()
+    expect(code).toBe(1)
+    expect(last.result).toBe("degraded")
+    expect(last.hub[0]).toMatchObject({ name: "Hub page", url: "http://127.0.0.1:4202/", ok: false, detail: "fetch failed: connect ECONNREFUSED 127.0.0.1:4202" })
+  })
+
+  it("ends ok with exit 0 when only a peer runs another version", async () => {
+    h.fetch = (url) => {
+      if (url.startsWith("http://peer.test")) return json({ version: "0.1.0", commit: "bffdedf7" })
+      if (url.endsWith("/api/app/conversations")) return json({ error: "unpaired" }, 401)
+      return html()
+    }
+    const { code, last } = await run()
+    expect(code).toBe(0)
+    expect(last.result).toBe("ok")
+    expect(last.peerSkew).toEqual([{ peer: "clawd", url: "http://peer.test", version: "0.1.0", commit: "bffdedf7" }])
+    expect(last.reason).toContain("peer clawd runs 0.1.0")
+  })
+
+  it("records the checks as skipped, with the reason, when agentx.json does not load", async () => {
+    h.configThrows = new Error("Unexpected token } in JSON")
+    const { last } = await run()
+    expect(last.checksSkipped).toBe("agentx.json did not load: Unexpected token } in JSON")
+    expect(last.reason).toContain("peer and Hub checks skipped")
+  })
+})

@@ -36,3 +36,8 @@ Hub's React root so the old Hub pages do not change.
 
 Task chat parts from the shadcn successor of Vercel AI Elements (Apache-2.0)
 come in with the Task page (step 2); their notice is added with them.
+
+Icons are [Lucide](https://lucide.dev) (`lucide-static`, used as a package),
+under the ISC licence: Copyright (c) 2026 Lucide Icons and Contributors.
+Some Lucide icons derive from Feather (MIT, Copyright (c) 2013-2023 Cole
+Bemis). The full text is in the package's LICENSE file.

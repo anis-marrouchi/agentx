@@ -11,6 +11,7 @@ import {
   chatRouteOk, checksSummary, daemonNodeFromArgs, healthIsUpgraded, hubPageOk, peerSkew, releaseDirFromArgs, retargetPlist, runsToCut,
   upgradeJobLabel, type HubProbe, type PeerSkew, type UpgradeOutcome,
 } from "@/daemon/upgrade"
+import { dashboardBaseUrl } from "./start-plan"
 import { daemonBase, drainLimitMs, getJson, readHolding, readInflight, readRunning } from "./daemon-http"
 
 // The upgrade itself, run inside the one-shot launchd job that
@@ -26,6 +27,8 @@ export interface UpgradeRunOptions {
   bootTimeoutMin: number
   /** Wait only for runs a person is waiting on (see holdsUpgrade). */
   peopleOnly?: boolean
+  /** How long the Hub page may take to load after the reload (tests). */
+  hubWaitMs?: number
 }
 
 /** The version a release folder's CLI reports, or null when it does not run. */
@@ -57,14 +60,17 @@ async function waitHealth(base: string, ms: number, ok: (h: any) => boolean): Pr
   return null
 }
 
-/** One GET with status, content type and size; status null when no answer. */
-async function probe(url: string, timeoutMs: number, headers: Record<string, string> = {}): Promise<{ status: number | null; type: string; bytes: number; body: string }> {
+/** One GET with status, content type and size; status null and the error
+ *  message when no answer. */
+async function probe(url: string, timeoutMs: number, headers: Record<string, string> = {}): Promise<{ status: number | null; type: string; bytes: number; body: string; error?: string }> {
   try {
     const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
     const body = await r.text()
     return { status: r.status, type: r.headers.get("content-type") ?? "", bytes: Buffer.byteLength(body), body }
-  } catch {
-    return { status: null, type: "", bytes: 0, body: "" }
+  } catch (e) {
+    // fetch says only "fetch failed"; the cause has ECONNREFUSED and the like.
+    const cause = (e as { cause?: { message?: string } })?.cause?.message
+    return { status: null, type: "", bytes: 0, body: "", error: `${e instanceof Error ? e.message : String(e)}${cause ? `: ${cause}` : ""}` }
   }
 }
 
@@ -74,12 +80,18 @@ export const HUB_WAIT_MS = 90_000
 /** After the new daemon answers /health (#2227): compare every mesh peer's
  *  /health version and commit with ours, and load the real Hub page and the
  *  chat route of the local dashboard. */
-async function postUpgradeChecks(configPath: string | undefined, up: any): Promise<{ self: { version: string | null; commit: string | null }; peerSkew: PeerSkew[]; hub: HubProbe[] }> {
-  let config: ReturnType<typeof loadDaemonConfig> | null = null
-  try { config = loadDaemonConfig(configPath) } catch { /* checks below are skipped */ }
+async function postUpgradeChecks(configPath: string | undefined, up: any, hubWaitMs: number): Promise<{ self: { version: string | null; commit: string | null }; peerSkew: PeerSkew[]; hub: HubProbe[]; checksSkipped?: string }> {
   const self = { version: typeof up?.version === "string" ? up.version : null, commit: typeof up?.commit === "string" ? up.commit : null }
+  let config: ReturnType<typeof loadDaemonConfig>
+  try { config = loadDaemonConfig(configPath) } catch (e) {
+    // Without agentx.json there are no peers or dashboard to check; say so
+    // instead of passing as "dashboard not enabled".
+    const checksSkipped = `agentx.json did not load: ${e instanceof Error ? e.message : String(e)}`
+    log(`peer and Hub checks skipped: ${checksSkipped}`)
+    return { self, peerSkew: [], hub: [], checksSkipped }
+  }
 
-  const peers = (config?.mesh?.enabled ? config.mesh.peers : []) ?? []
+  const peers = (config.mesh?.enabled ? config.mesh.peers : []) ?? []
   const answers = await Promise.all(peers.map(async (p) => {
     const url = p.url.replace(/\/+$/, "")
     const r = await probe(`${url}/health`, 10_000, p.token ? { Authorization: `Bearer ${p.token}` } : {})
@@ -95,23 +107,22 @@ async function postUpgradeChecks(configPath: string | undefined, up: any): Promi
   }
 
   const hub: HubProbe[] = []
-  const dash = config?.dashboard
-  if (dash?.enabled) {
-    const host = !dash.bind || dash.bind === "0.0.0.0" ? "127.0.0.1" : dash.bind
-    const hubUrl = `http://${host}:${dash.port}`
+  if (config.dashboard?.enabled) {
+    // Same address `agentx start` opens: 0.0.0.0 and :: become 127.0.0.1.
+    const hubUrl = dashboardBaseUrl(config)
     // The dashboard job was reloaded a moment ago; give it time to listen.
     const t0 = Date.now()
     let page = await probe(`${hubUrl}/`, 15_000)
-    while (!hubPageOk(page.status, page.type, page.bytes) && Date.now() - t0 < HUB_WAIT_MS) {
+    while (!hubPageOk(page.status, page.type, page.bytes) && Date.now() - t0 < hubWaitMs) {
       await sleep(3000)
       page = await probe(`${hubUrl}/`, 15_000)
     }
     hub.push({ name: "Hub page", url: `${hubUrl}/`, status: page.status, ok: hubPageOk(page.status, page.type, page.bytes),
-      ...(hubPageOk(page.status, page.type, page.bytes) ? {} : { detail: `${page.type || "no type"}, ${page.bytes} bytes` }) })
+      ...(hubPageOk(page.status, page.type, page.bytes) ? {} : { detail: page.error ?? `${page.type || "no type"}, ${page.bytes} bytes` }) })
     const chat = await probe(`${hubUrl}/api/app/conversations`, 15_000)
     hub.push({ name: "chat route", url: `${hubUrl}/api/app/conversations`, status: chat.status, ok: chatRouteOk(chat.status, chat.type),
-      ...(chatRouteOk(chat.status, chat.type) ? {} : { detail: chat.type || "no type" }) })
-    for (const h of hub) log(`${h.name} ${h.url}: ${h.status ?? "no answer"} ${h.ok ? "ok" : "FAILED"}`)
+      ...(chatRouteOk(chat.status, chat.type) ? {} : { detail: chat.error ?? (chat.type || "no type") }) })
+    for (const h of hub) log(`${h.name} ${h.url}: ${h.status ?? "no answer"} ${h.ok ? "ok" : `FAILED${h.detail ? ` (${h.detail})` : ""}`}`)
   } else log("Hub check skipped: dashboard not enabled in agentx.json")
   return { self, peerSkew: skew, hub }
 }
@@ -214,10 +225,11 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
     // 3b. Checks past /health (#2227): peers on the same version, Hub serves.
     // A failed Hub check leaves the upgrade in place ("degraded"); only a
     // failed /health rolls back.
-    const checks = await postUpgradeChecks(o.configPath, up)
+    const checks = await postUpgradeChecks(o.configPath, up, o.hubWaitMs ?? HUB_WAIT_MS)
     Object.assign(outcome, checks)
     const summary = checksSummary(checks.peerSkew, checks.hub)
-    const reasons = [failed.length ? `could not reload ${failed.join(", ")}` : "", summary].filter(Boolean)
+    const skipped = checks.checksSkipped ? `peer and Hub checks skipped (${checks.checksSkipped})` : ""
+    const reasons = [failed.length ? `could not reload ${failed.join(", ")}` : "", summary, skipped].filter(Boolean)
     const hubBroken = checks.hub.some((h) => !h.ok)
     return finish(hubBroken ? "degraded" : "ok", reasons.length ? `daemon upgraded; ${reasons.join("; ")}` : undefined)
   }
