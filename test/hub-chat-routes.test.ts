@@ -9,7 +9,7 @@ import { AgentXDaemon } from "../src/daemon"
 import { AssistantStore } from "../src/daemon/assistant-store"
 import { handleBoardRequest } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
-import { acceptAttachments, attachedLine, safeUploadName } from "../src/daemon/assistant-upload"
+import { acceptAttachments, attachedLine, safeUploadName, withAttachedFiles } from "../src/daemon/assistant-upload"
 import { answerSteps, assistantRuns } from "../src/daemon/assistant-runs"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { openDb, closeDb } from "../src/storage/sqlite"
@@ -132,6 +132,26 @@ describe("POST /api/assistant/upload (#2101 R14)", () => {
     expect(msgs[0].content).toBe("What is in it?\n\nAttached: chart.png")
     // The title stays the question.
     expect(daemon._assistant.thread(threadId).title).toBe("What is in it?")
+  })
+
+  it("sends uploaded files with a Task page follow-up: names and paths in the message, others dropped (#2306)", async () => {
+    const queued: string[] = []
+    const daemon = buildDaemon()
+    daemon.registry.list = () => [{ id: "helper", workspace, runningTasks: [{ id: "t1" }] }, { id: "other", workspace: join(tmp, "other"), runningTasks: [] }]
+    daemon.registry.queueFollowUp = (_id: string, message: string) => { queued.push(message); return { agentId: "helper", pending: 1 } }
+    const node = await serveDaemon(daemon, LOCAL)
+    const file = await (await up(node, "agent=helper&name=notes.txt", "n")).json()
+    const res = await fetch(`${node}/api/tasks/t1/followup`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Use these", attachments: [file, { name: "secrets", path: join(workspace, ".env") }] }),
+    })
+    expect(res.status).toBe(200)
+    expect(queued).toEqual([withAttachedFiles("Use these", [{ name: "notes.txt", path: file.path }])])
+    expect(queued[0]).toContain(`- notes.txt: ${file.path}`)
+    expect(queued[0]).not.toContain(".env")
+    // No files: the message goes in as it was typed.
+    await fetch(`${node}/api/tasks/t1/followup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Plain" }) })
+    expect(queued[1]).toBe("Plain")
   })
 
   it("asks a spoken question for a short answer", async () => {

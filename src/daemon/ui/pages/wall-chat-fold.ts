@@ -67,12 +67,22 @@ export function cfStepLine(tool: string, input: string): string {
   return "Used " + t
 }
 
-/** "12s", "1m 12s", "1h 3m". */
+/** "12s", "1m 12s", "4m 02s", "1h 03m": whole seconds gone by. */
 export function cfDuration(ms: number | null | undefined): string {
-  const s = Math.max(0, Math.round(Number(ms) / 1000) || 0)
+  const s = Math.max(0, Math.floor(Number(ms) / 1000) || 0)
+  // The second unit keeps two digits, so a ticking clock does not jump (#2306).
+  const p2 = (n: number) => (n < 10 ? "0" : "") + n
   if (s < 60) return s + "s"
-  if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s"
-  return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m"
+  if (s < 3600) return Math.floor(s / 60) + "m " + p2(s % 60) + "s"
+  return Math.floor(s / 3600) + "h " + p2(Math.floor((s % 3600) / 60)) + "m"
+}
+
+/** A run's clock (#2306): "Working · 2m 14s" while it goes, "Took 4m 02s"
+ *  once it ended; "" when its start is unknown. Epoch ms; `end` 0 while it
+ *  runs. Ships with cfDuration. */
+export function cfClock(start: number, end: number, now: number): string {
+  if (!(start > 0)) return ""
+  return (end > 0 ? "Took " : "Working · ") + cfDuration((end > 0 ? end : now) - start)
 }
 
 /** The live output of a run, read line by line (see the head of this file). */

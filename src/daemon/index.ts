@@ -220,7 +220,7 @@ import {
 } from "@/daemon/mesh-inbox"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
 import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
-import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload } from "./assistant-upload"
+import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload, withAttachedFiles } from "./assistant-upload"
 import { assistantModel } from "./assistant-model"
 import { assistantRuns } from "./assistant-runs"
 import { ProcessRegistry } from "@/agents/process-registry"
@@ -5658,7 +5658,7 @@ export class AgentXDaemon {
     }
     // Heartbeat so proxies don't kill idle SSE connections.
     const heartbeat = setInterval(() => { if (!closed) try { res.write(": ping\n\n") } catch { /* */ } }, 15000)
-    let sub: { initial: string; done: boolean; unsubscribe: () => void } | null = null
+    let sub: ReturnType<AgentRegistry["subscribeToTaskOutput"]> = null
     const finish = (reason: string) => {
       if (closed) return
       send("end", { reason })
@@ -5667,8 +5667,11 @@ export class AgentXDaemon {
       try { sub?.unsubscribe() } catch { /* */ }
       try { res.end() } catch { /* */ }
     }
+    // Each chunk carries the time it came in, and the start event the times
+    // of the lines so far (output-stamps.ts, #2306): the Task page shows
+    // when each step happened.
     sub = this.registry.subscribeToTaskOutput(taskId, (chunk) => {
-      send("chunk", { text: chunk })
+      send("chunk", { text: chunk, at: Date.now() })
       if (chunk === "\n[task finished]\n") finish("completed")
     })
     if (!sub) {
@@ -5681,7 +5684,9 @@ export class AgentXDaemon {
     // show a request cut off mid-sentence.
     const live = this.registry.list().flatMap(a => a.runningTasks).find(t => t.id === taskId)
     send("start", {
-      taskId, initial: sub.initial, done: sub.done,
+      taskId, initial: sub.initial, stamps: sub.stamps, done: sub.done,
+      // A run that already ended: when, so the page's clock shows the time it took (#2306).
+      ...(sub.endedAt ? { endedAt: sub.endedAt } : {}),
       ...(live ? { message: live.message, sender: live.sender, startedAt: live.startedAt } : {}),
     })
     if (sub.done) {
@@ -8269,7 +8274,7 @@ export class AgentXDaemon {
       // Operator follow-up: enqueue a correction/update message for an in-flight
       // task. With replace=true the current run is aborted so the new message
       // runs immediately; otherwise it waits for the current run to finish.
-      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent? }
+      //   POST /api/tasks/:taskId/followup  body: { message, replace?, sender?, agent?, attachments? }
       // 200 → { ok, agentId, channel, chatId, replaced, pending }
       // 200 → { ok, resumed: true, taskId: <new run>|undefined, queued }  (finished cron run, `agent` given)
       // 404 → task not running (and no stored record when `agent` given)
@@ -8279,8 +8284,14 @@ export class AgentXDaemon {
         const taskId = decodeURIComponent(followupMatch[1])
         try {
           const body = await readJsonBody(req)
-          const message = typeof (body as any)?.message === "string" ? (body as any).message.trim() : ""
-          if (!message) { this.json(res, 400, { error: "message required" }); return }
+          const typed = typeof (body as any)?.message === "string" ? (body as any).message.trim() : ""
+          if (!typed) { this.json(res, 400, { error: "message required" }); return }
+          // Files from the Task page's ask box (#2306), uploaded for this
+          // run's agent (POST /api/assistant/upload); anything else is dropped.
+          const runAgent = this.registry.list().find(a => (a.runningTasks || []).some(t => t.id === taskId))?.id
+            || (typeof (body as any)?.agent === "string" ? (body as any).agent : "")
+          const runDef = runAgent ? this.registry.list().find(a => a.id === runAgent) : undefined
+          const message = withAttachedFiles(typed, acceptAttachments(runDef?.workspace || null, (body as any)?.attachments))
           const replace = (body as any)?.replace === true
           const sender = typeof (body as any)?.sender === "string" && (body as any).sender.trim()
             ? (body as any).sender.trim()

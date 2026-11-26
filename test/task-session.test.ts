@@ -5,7 +5,7 @@ import { join } from "path"
 import { TaskSessionIndex, askText, readHead, type LiveRun } from "../src/agents/task-session"
 import { JOB_STATE_RULE } from "../src/agents/run-state"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
-import { tsBeforeHtml, tsTurnHtml, tsTurnLabel } from "../src/daemon/ui/pages/wall-task-session"
+import { tsBeforeHtml, tsTimeHtml, tsTurnHtml, tsTurnLabel, tsWhen } from "../src/daemon/ui/pages/wall-task-session"
 
 // #2101 R4: a Task page opened on a follow-up shows its whole chat.
 
@@ -121,10 +121,45 @@ describe("Task page session HTML", () => {
     expect(tsTurnHtml({ id: "r", message: "q", running: true }, o)).toContain("working now")
     expect(tsTurnHtml({ id: "e", message: "q", ok: false, error: "<boom>" }, o)).toContain("&lt;boom&gt;")
   })
+  it("shows the ask's time and the reply's (#2306)", () => {
+    const h = tsTurnHtml({ id: "t", message: "q", responseText: "a", ok: true, startedAt: "2026-11-26T10:00:00Z", endedAt: "2026-11-26T10:04:00Z" },
+      { ...o, when: (iso: string) => "<time>" + iso.slice(11, 16) + "</time>" })
+    expect(h).toContain('<span class="wsess__when"><time>10:00</time></span>')
+    expect(h).toContain('<span class="wsess__when"><time>10:04</time></span>')
+    expect(tsTurnHtml({ id: "t", message: "q", responseText: "a", ok: true }, o)).not.toContain("today")
+  })
   it("pins the first turn and offers older turns", () => {
     const turn = (t: any) => "[" + t.n + "]"
     expect(tsBeforeHtml({ first: { id: "a", n: 1, message: "" }, before: [{ id: "c", n: 3, message: "" }], olderBefore: "c" }, turn))
       .toMatch(/^\[1\]<div class="wsess__gap"><button[^>]*data-session-older="c"[^>]*>Load earlier turns<\/button><\/div>\[3\]$/)
     expect(tsBeforeHtml({ first: null, before: [], olderBefore: null }, turn)).toBe("")
+  })
+})
+
+describe("tsWhen: a Task page time stamp (#2306)", () => {
+  // Built from local parts, so the test holds in any time zone.
+  const now = new Date(2026, 10, 26, 18, 30).getTime()
+  it("shows HH:MM today", () => {
+    expect(tsWhen(new Date(2026, 10, 26, 9, 5).getTime(), now)!.short).toBe("09:05")
+    expect(tsWhen(new Date(2026, 10, 26, 0, 0).getTime(), now)!.short).toBe("00:00")
+  })
+  it("adds the day on another day, and the year in another year", () => {
+    expect(tsWhen(new Date(2026, 10, 25, 23, 59).getTime(), now)!.short).toBe("25 Nov 23:59")
+    expect(tsWhen(new Date(2025, 10, 26, 14, 2).getTime(), now)!.short).toBe("26 Nov 2025 14:02")
+  })
+  it("carries the full local time and the ISO form", () => {
+    const ms = new Date(2026, 10, 26, 9, 5, 7).getTime()
+    const w = tsWhen(ms, now)!
+    expect(w.full).toBe(new Date(ms).toLocaleString())
+    expect(w.iso).toBe(new Date(ms).toISOString())
+  })
+  it("shows nothing for no time", () => {
+    expect(tsWhen(0, now)).toBeNull()
+    expect(tsWhen(NaN, now)).toBeNull()
+    expect(tsTimeHtml(0, now)).toBe("")
+  })
+  it("draws a <time> with datetime and a hover title", () => {
+    const ms = new Date(2026, 10, 26, 9, 5).getTime()
+    expect(tsTimeHtml(ms, now)).toBe('<time class="ax-time" datetime="' + new Date(ms).toISOString() + '" title="' + new Date(ms).toLocaleString() + '">09:05</time>')
   })
 })
