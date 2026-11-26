@@ -48,6 +48,9 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** Due times from the queue (#1909); here only `fillMissing` is read:
+   *  the check asks each open item with no due time for one (noqta#886). */
+  dueTimes?: { fillMissing?: boolean }
   /** A request whose last reply asks the owner with tap answers is not
    *  settled: "warn" leaves it open and logs it. Unset: warn. */
   settleOwnerWait?: "off" | "warn"

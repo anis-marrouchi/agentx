@@ -343,6 +343,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // newest delegation that came back done. Its agent is woken once per
   // hand-back, not at every check.
   ensureColumns(db, "requests", [["handback_asked_for", "INTEGER"]])
+  // When the requests check asked its agent for a due time it lacked
+  // (noqta#886): once, ever.
+  ensureColumns(db, "requests", [["due_asked_at", "INTEGER"]])
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
@@ -623,6 +626,22 @@ export class RequestStore {
   /** The missed-PR follow-up ran for the due time it has now (#2279). */
   markPrLead(id: string): void {
     this.db.prepare("UPDATE requests SET pr_lead_for = due_at WHERE id = ?").run(id)
+  }
+
+  /** Open items with no due time, made before `before`, whose agent was
+   *  not asked for one yet (noqta#886), oldest first. Not one waiting on
+   *  the owner, and not a standing order: neither is the agent's to date. */
+  noDueUnasked(before: number, limit: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND due_at IS NULL AND due_asked_at IS NULL
+         AND state != 'waiting_owner' AND ${NOT_STANDING}
+         AND created_at < ? ORDER BY created_at, rowid LIMIT ?`,
+    ).all(...OPEN_STATES, before, limit).map(toRecord)
+  }
+
+  /** Its agent was asked for a due time (noqta#886). */
+  markDueAsked(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET due_asked_at = ? WHERE id = ?").run(now, id)
   }
 
   /** It was already pushed for the due time it has now (noqta#876). */
