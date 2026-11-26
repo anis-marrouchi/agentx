@@ -21,6 +21,10 @@ import type { WikiHub } from "./hub"
 
 export const CURATOR_REASON = "curator: waits for the approver"
 
+/** At most this many curator changes wait at once (held.json would
+ *  otherwise grow with every run the owner does not answer). */
+export const CURATOR_WAITING_CAP = 50
+
 export function isCuratorHeld(h: Pick<HeldPatch, "reason">): boolean {
   return h.reason.startsWith("curator:")
 }
@@ -51,7 +55,9 @@ export function holdPatches(
     const all = listHeld(wikiDir, { all: true })
     const known = new Set(all.map((h) => heldKey(h.patch)))
     const out: HoldResult = { held: [], skipped: [] }
+    let waiting = all.filter((h) => h.status === "held" && h.reason === reason).length
     for (const p of patches) {
+      if (waiting >= CURATOR_WAITING_CAP) { out.skipped.push({ patch: p, why: `${CURATOR_WAITING_CAP} changes already wait for the approver` }); continue }
       const key = heldKey(p)
       if (known.has(key)) { out.skipped.push({ patch: p, why: "the same change is already held, approved or rejected" }); continue }
       const target = targets.get(pageKey(p.page))?.[0]
@@ -68,6 +74,7 @@ export function holdPatches(
       all.push(entry)
       known.add(key)
       out.held.push(entry)
+      waiting++
     }
     if (out.held.length) saveHeld(wikiDir, all)
     return out

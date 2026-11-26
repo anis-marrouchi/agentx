@@ -1911,7 +1911,7 @@ Re-read the pages of waiting curator changes. Each one gets the page's new finge
 
 ### `agentx wiki contributions approve <id>`
 
-Apply a held patch as it is. The page's previous version is kept in its history. A curator change (reason `curator:`) is applied only with `--card` naming the popup-only card the owner answered in the popup; the decider is recorded as `<who> (popup, card <id>)`.
+Apply a held patch as it is. The page's previous version is kept in its history. A curator change (reason `curator:`) is applied only with `--card` naming the popup-only card the owner answered yes in the popup, and that card must name the held id (in its ask, context, draft or source); the decider is recorded as `<who> (popup, card <id>)`.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1921,7 +1921,7 @@ Apply a held patch as it is. The page's previous version is kept in its history.
 
 ### `agentx wiki contributions reject <id>`
 
-Drop a held patch. A curator change needs `--card`, as for `approve`.
+Drop a held patch. A curator change needs `--card`, as for `approve`, but the answer may be yes or no.
 
 | Flag | Default | What it does |
 |---|---|---|

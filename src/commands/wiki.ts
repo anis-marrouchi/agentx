@@ -2686,10 +2686,19 @@ contributions
     console.log()
   })
 
+/** True when the card's text names held id `id` as a whole word, so a card
+ *  raised for other changes cannot answer this one. */
+function cardNamesHeld(card: { ask?: string; context?: string; draft?: string; source?: string }, id: string): boolean {
+  const word = new RegExp(`(^|[^\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\w-])`)
+  return [card.ask, card.context, card.draft, card.source].some((t) => !!t && word.test(t))
+}
+
 /** A curator change (reason "curator:") is answered on its popup-only card
  *  (noqta#910): approve or reject needs `--card` naming a card the owner
- *  decided in the popup. Returns who decided, or prints why not. */
-async function curatorCardDecider(id: string, dir: string, cardId: string | undefined): Promise<string | null | undefined> {
+ *  decided in the popup, raised for this change (the card names its held
+ *  id). Approve also needs the answer yes. Returns who decided, or prints
+ *  why not. */
+async function curatorCardDecider(id: string, dir: string, cardId: string | undefined, action: "approve" | "reject"): Promise<string | null | undefined> {
   const { listHeld } = await import("@/wiki/contributions")
   const { isCuratorHeld } = await import("@/wiki/curator-queue")
   const h = listHeld(dir, { all: true }).find((x) => x.id === id)
@@ -2702,6 +2711,8 @@ async function curatorCardDecider(id: string, dir: string, cardId: string | unde
   if (card.status !== "decided" || card.decided_from !== "popup" || !card.popup_only) {
     return refuse(`card "${cardId}" was not answered in the popup, so it applies nothing`)
   }
+  if (!cardNamesHeld(card, id)) return refuse(`card "${cardId}" was not raised for ${id} (the card does not name it)`)
+  if (action === "approve" && card.verdict !== "yes") return refuse(`card "${cardId}" was answered no, so ${id} is not applied`)
   return `${card.decided_by ?? "operator"} (popup, card ${card.id})`
 }
 
@@ -2730,7 +2741,7 @@ contributions
   .option("--fingerprint <fp>", "write only onto the page as it was when shown (default: the fingerprint saved by the last refresh)")
   .action(async (id: string, opts) => {
     const { approveHeld } = await import("@/wiki/contributions")
-    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card)
+    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card, "approve")
     if (decider === null) return
     const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator"), expectedFingerprint: opts.fingerprint })
     if (!r.ok) {
@@ -2748,7 +2759,7 @@ contributions
   .option("--card <id>", "curator changes: the popup-only card the owner answered")
   .action(async (id: string, opts) => {
     const { rejectHeld } = await import("@/wiki/contributions")
-    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card)
+    const decider = await curatorCardDecider(id, wikiDir(opts.dir), opts.card, "reject")
     if (decider === null) return
     const r = rejectHeld(wikiDir(opts.dir), id, { by: decider ?? (process.env.USER || "operator") })
     if (!r.ok) {

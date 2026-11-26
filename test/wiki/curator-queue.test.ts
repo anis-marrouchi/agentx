@@ -5,7 +5,7 @@ import { join } from "path"
 import { WikiHub } from "../../src/wiki/hub"
 import { FactLedger, factId } from "../../src/wiki/facts/ledger"
 import { approveHeld, heldChange, listHeld, mergeContributions, rejectHeld, runContribution, type ContributionPatch } from "../../src/wiki/contributions"
-import { holdPatches, refreshHeld, heldKey, CURATOR_REASON } from "../../src/wiki/curator-queue"
+import { holdPatches, refreshHeld, heldKey, CURATOR_REASON, CURATOR_WAITING_CAP } from "../../src/wiki/curator-queue"
 import { pageFingerprint } from "../../src/wiki/curate"
 import { createCard, decideCard } from "../../src/approvals/cards"
 import { wiki } from "../../src/commands/wiki"
@@ -21,6 +21,9 @@ let hub: WikiHub
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "curator-queue-"))
   hub = new WikiHub(dir, () => {})
+  // Commander keeps option values between parseAsync calls on one program.
+  const contributions = wiki.commands.find((c) => c.name() === "contributions")
+  for (const c of contributions?.commands ?? []) c.setOptionValue("card", undefined)
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -70,6 +73,17 @@ describe("holding curator patches (12)", () => {
     const r = holdPatches(hub, dir, [patch()], { now: NOW })
     expect(r.held).toHaveLength(0)
     expect(r.skipped[0].why).toMatch(/cannot read/)
+  })
+
+  it("holds at most CURATOR_WAITING_CAP waiting changes", () => {
+    page("sales-agent", "projects/acme.md", "Acme")
+    const many = Array.from({ length: CURATOR_WAITING_CAP + 2 }, (_, i) => patch({ id: `n${i}`, value: `value ${i}` }))
+    const r = holdPatches(hub, dir, many, { now: NOW })
+    expect(r.held).toHaveLength(CURATOR_WAITING_CAP)
+    expect(r.skipped.map((s) => s.why)).toEqual([`${CURATOR_WAITING_CAP} changes already wait for the approver`, `${CURATOR_WAITING_CAP} changes already wait for the approver`])
+    // A decided change frees a place.
+    expect(rejectHeld(dir, "h-n0", { by: "x" }).ok).toBe(true)
+    expect(holdPatches(hub, dir, [patch({ id: "late", value: "late" })], { now: NOW }).held).toHaveLength(1)
   })
 
   it("--work keeps no cursor and --hold queues nothing for the merge", async () => {
@@ -188,12 +202,48 @@ describe("refresh at each ask (13)", () => {
 })
 
 describe("S1 and the lock (15)", () => {
-  const card = (popup: boolean) => {
-    const c = createCard(dir, { title: "Curator changes", ask: "Apply?", recommend: "See the note", if_silent: "keep", raised_by: "pm-agent" }, { popupOnly: true })
+  const card = (popup: boolean, opts: { verdict?: "yes" | "no"; names?: string } = {}) => {
+    const c = createCard(dir, {
+      title: "Curator changes", ask: "Apply?", recommend: "See the note", if_silent: "keep", raised_by: "pm-agent",
+      context: `w1 ${opts.names ?? "h-a1"}: Acme contact`,
+    }, { popupOnly: true })
     if (!c.ok) throw new Error(c.error)
-    decideCard(dir, c.card.id, popup ? "yes" : "no", { by: "anis", popup })
+    decideCard(dir, c.card.id, opts.verdict ?? (popup ? "yes" : "no"), { by: "anis", popup })
     return c.card.id
   }
+
+  it("a no in the popup applies nothing, and still rejects", async () => {
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
+    page("sales-agent", "projects/acme.md", "Acme")
+    holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    const no = card(true, { verdict: "no" })
+    await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", no], { from: "user" })
+    expect(process.exitCode).toBe(1)
+    expect(log.mock.calls.flat().join("\n")).toMatch(/answered no/)
+    expect(listHeld(dir)[0].status).toBe("held")
+    process.exitCode = undefined
+    await wiki.parseAsync(["contributions", "reject", "h-a1", "--dir", dir, "--card", no], { from: "user" })
+    expect(process.exitCode).toBeUndefined()
+    expect(listHeld(dir, { all: true })[0].status).toBe("rejected")
+    cwd.mockRestore()
+  })
+
+  it("a yes card raised for another change cannot approve this one", async () => {
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
+    page("sales-agent", "projects/acme.md", "Acme")
+    holdPatches(hub, dir, [patch({ id: "a1" })], { now: NOW })
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    // h-a10 contains h-a1 but is another id.
+    for (const names of ["h-a2", "h-a10"]) {
+      await wiki.parseAsync(["contributions", "approve", "h-a1", "--dir", dir, "--card", card(true, { names })], { from: "user" })
+      expect(process.exitCode).toBe(1)
+      process.exitCode = undefined
+    }
+    expect(log.mock.calls.flat().join("\n")).toMatch(/not raised for h-a1/)
+    expect(listHeld(dir)[0].status).toBe("held")
+    cwd.mockRestore()
+  })
 
   it("the CLI refuses a curator entry without a card answered in the popup", async () => {
     const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir)
