@@ -160,6 +160,9 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
 
 export const WALL_JOBLEDGER_CSS = `
 .wjl__tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin: 12px 16px 8px; }
+.wjl__fold { flex: 1; min-width: 0; }
+.wjl__fold > summary { margin: 0 0 4px; }
+.wjl__fold .axp-fold__n { margin-left: 0; }
 .wjl__chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wjl__chips button { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 4px 12px; cursor: pointer; min-height: 30px; }
 .wjl__chips button .n { font-weight: 500; color: var(--ax-muted); font-variant-numeric: tabular-nums; }

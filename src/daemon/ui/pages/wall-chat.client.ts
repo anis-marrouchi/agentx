@@ -67,7 +67,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__head">${close}${wallChatHeadHtml()}
       <button type="button" class="hc__ib" id="hc-hist" aria-expanded="false" aria-controls="hc-hist-panel">History</button><button type="button" class="hc__ib" id="hc-new">New</button>${x}</div>
     <div class="hc__hist" id="hc-hist-panel" hidden><p class="hc__histe hc__histe--err" id="hc-hist-err" role="alert" hidden></p><p class="hc__histe" id="hc-hist-empty">No past conversations yet.</p><ul id="hc-hist-list"></ul></div>
-    <div class="hc__to"><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
+    <div class="hc__to"><details class="axp-fold hc__sfold" data-fold="chat.agents" open><summary class="axp-fold__h"><span class="axp-fold__t">Agents</span><span class="axp-fold__n" id="hc-strip-n"></span></summary><div class="hc__strip" id="hc-strip" role="group" aria-label="Agents" hidden></div></details><label for="hc-agent">To</label><select id="hc-agent"><option value="">Loading agents…</option></select><select id="hc-node" aria-label="Node" hidden></select></div>
     <div class="hc__work" id="hc-work" aria-label="The request this agent works on" hidden></div>
     <p class="hc__conn" id="hc-conn" role="status" hidden>Connection lost. Reconnecting…</p>
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
@@ -207,7 +207,8 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var agentInfo = {};
   function currentAgent() { return (thread && thread.agentId) || $('hc-agent').value || ''; }
   // The agent strip (#2101): one chip per agent, as on the phone. The
-  // picker stays in the page as the strip's value and its fallback.
+  // picker stays in the page as the strip's value and its fallback, and
+  // shows again while the strip is folded (#2352, hub-folds.ts).
   function paintStrip() {
     var s = $('hc-strip');
     if (!s || !agentIds.length) return;
@@ -215,6 +216,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     s.innerHTML = agentIds.map(function (id) {
       return '<button type="button" class="hc__chip" data-agent="' + esc(id) + '" aria-pressed="' + (id === cur) + '">' + esc(agentNames[id] || id) + '</button>';
     }).join('');
+    if ($('hc-strip-n')) $('hc-strip-n').textContent = String(agentIds.length);
     s.hidden = false;
   }
   if ($('hc-strip')) $('hc-strip').addEventListener('click', function (ev) {
