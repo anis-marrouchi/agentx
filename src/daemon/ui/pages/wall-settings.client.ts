@@ -77,6 +77,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       ['health', 'Health', '', 'Agents online, channels and what needs you'], ['diagnostics', 'Diagnostics', '', 'Errors, routing, rotations and checks'], ['screen', 'Screen capture', '', 'How agents see the screen'],
       ['advanced', 'Advanced', '', 'agentx.json itself'],
     ]],
+    // Simple or full, and each hidden item's switch (#2226 S1, hub-layout.ts).
+    ['${HUB_NAME}', [['layout', 'Layout', '', 'Simple or full, and what the ${HUB_NAME} shows']]],
   ].map(function (g) { return [g[0], g[1].filter(function (s) { return s[0] !== 'business' || (ST && ST.business); })]; });
   var ST_SECTIONS = ST_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var ST_ENGINES = [['claude-code', 'Claude Code'], ['codex-cli', 'Codex CLI'], ['opencode', 'OpenCode'], ['sdk', 'Anthropic API (SDK)'], ['orchestrator', 'Orchestrator']];
@@ -293,6 +295,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     if (sec === 'advanced') return stAdvancedHtml();
     if (sec === 'diagnostics') return stDiagnosticsHtml();
     if (sec === 'guests') return stGuestsHtml();
+    if (sec === 'layout') return stLayoutHtml();
     return S.st.agent ? stAgentHtml(S.st.agent) : stAgentsHtml();
   }
 

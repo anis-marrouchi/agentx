@@ -26,6 +26,7 @@ import { holdAgent, holdsRoot, readHolds, releaseAgent } from "@/agents/holds"
 import { buildOrgView } from "@/business/org-view"
 import { leadKey, projectWriteProblem } from "@/business/org-projects"
 import { applyOrgEdit, orgChoices, readOrgSetup } from "@/business/org-edit"
+import { applyHubLayoutPatch, parseHubLayoutPatch, resolveHubLayout } from "@/hub/layout"
 
 // --- /admin panel: form-driven management for agents, channels, crons ---
 //
@@ -148,6 +149,10 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/notifications":   () => updateNotifications(body),
       "POST /api/admin/wiki/curator":    () => updateWikiCurator(body),
       "POST /api/admin/screen":          () => updateScreen(body),
+      // The Hub's layout (#2226 S1, src/hub/layout.ts): simple or full, and
+      // each hidden item's switch. The Hub reads agentx.json as it is now,
+      // so it shows the change at once: no restart.
+      "POST /api/admin/hub-layout":      () => updateHubLayout(body, opts.owner === true),
       // Wiki notes inbox (#825) — mirrors `agentx wiki notes config`;
       // the note list is read from the daemon, which owns the inbox.
       "POST /api/admin/wiki-notes":      () => updateWikiNotes(body),
@@ -481,7 +486,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, sensors, hostJobs, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, sensors, hostJobs, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg), hubLayout: resolveHubLayout((cfg as any).dashboard?.hub) }
 }
 
 // ========================================================================
@@ -1788,6 +1793,22 @@ async function updateWikiNotes(body: any) {
   if ("maxDeferrals" in body) patch.maxDeferrals = Number(body.maxDeferrals)
   const { summary } = mutateAgentxConfig((cfg) => patchWikiNotes(cfg, patch))
   return { summary }
+}
+
+// The Hub's layout (#2226 S1). Answers the new view, which the Hub page
+// applies at once.
+async function updateHubLayout(body: any, owner: boolean) {
+  // The owner's choice, as the org chart (#1420): a dashboard token alone is
+  // not enough, on this route and on the Hub's Settings route alike.
+  if (!owner) throw Object.assign(new Error("Only the owner can change the Hub's layout."), { status: 403 })
+  const patch = parseHubLayoutPatch(body)
+  let raw: unknown
+  const { summary } = mutateAgentxConfig((cfg) => {
+    const said = applyHubLayoutPatch(cfg, patch)
+    raw = cfg.dashboard?.hub
+    return said
+  })
+  return { summary, layout: resolveHubLayout(raw as any) }
 }
 
 // Screen capture — mirrors `agentx screen config`. The daemon applies a

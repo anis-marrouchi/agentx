@@ -6,7 +6,7 @@ Settings is where you manage agents, the apps they answer from, schedules and ac
 
 *The demo's agent is local and uses scripted replies.*
 
-The sections are listed on the left in three groups:
+The sections are listed on the left in four groups:
 
 | Section | What it's for |
 |---|---|
@@ -24,6 +24,7 @@ The sections are listed on the left in three groups:
 | **Health** | Agents online, channels, and what needs you |
 | **Screen capture** | How agents see the screen |
 | **Advanced** | The whole settings file, to read or edit directly |
+| **Layout** | Simple or full, and what the Hub shows. See [Layout](#layout) |
 
 A **Business** section (org chart, projects, and which chat belongs to which client) appears only when the business features are switched on (`business.enabled` in `agentx.json`).
 
@@ -250,6 +251,28 @@ The file can contain credentials. Don't share screenshots of this section.
 ![Settings › Advanced with agentx.json in the editor and its Save and Reload from disk buttons](/screenshots/settings/advanced.png)
 
 Text that is not valid JSON is refused and nothing is saved. A value that is valid JSON but not an accepted setting is saved, and the daemon only reports it when it reloads, so always run step 4.
+
+## Layout
+
+**Layout** sets how much the Hub shows. **Simple**, the default, keeps the bare minimum: agents, chat, **Waiting on you**, **Jobs** and **Settings**. **Full** also shows the Workflows and Mobile app pages, plan gates and request steps on a post, the hosts in the status bar, and every page in ⌘K.
+
+Under **Shown in the Hub**, each item has its own switch, which wins over the layout. **As the layout** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default.
+
+Hiding never turns anything off: schedules, gates and workflows keep running, a hidden page still opens from a link, and a gate that waits on you still shows in **Waiting on you**.
+
+1. **Browser:** in **Settings**, select **Layout**.
+2. Select **Full**, or turn one item's switch on.
+3. The message reads **Saved**, and the item shows in the Hub at once, with no reload and no restart.
+
+![The Hub with the simple layout: Waiting on you, Jobs and Settings at the bottom of the nav](/screenshots/hub-layout/simple.png)
+
+![The same Hub with the full layout: Workflows and Mobile app added at the bottom of the nav](/screenshots/hub-layout/full.png)
+
+The keys are `dashboard.hub.layout` and `dashboard.hub.show` in the [configuration reference](../reference/config-operations.md).
+
+> **Warning:** if you edit `dashboard.hub.show` by hand in `agentx.json`, use only the item names Settings lists (`mobile`, `workflows`, `wiki`, `rules`, `gates`, `hosts`, `activity`, `org`, `sessions`, `usage`) and only `true` or `false`. A misspelt name or another value makes the whole file invalid, and the daemon does not load any of it. Use **Settings › Layout**, which only writes valid values.
+
+**After an upgrade:** an install that had no layout set before gets the simple layout. Workflows, Mobile app, Activity, Org, Live and Cost leave the menus, and nothing stops running. To get them back, select **Full** in **Settings › Layout**.
 
 ## Check it worked
 

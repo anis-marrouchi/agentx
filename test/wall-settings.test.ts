@@ -99,6 +99,8 @@ describe("Wall Settings: the shell (#1428)", () => {
       ["Fleet", ["Agents", "Channels", "Schedules", "Webhooks", "Mesh", "Boards", "Actions", "Inbox", "Requests"]],
       ["Access", ["Guests", "People", "Tokens"]],
       ["Machines", ["Health", "Diagnostics", "Screen capture", "Advanced"]],
+      // Simple or full (#2226 S1, hub-layout.ts).
+      ["Hub", ["Layout"]],
     ])
     expect(html).toContain("3 agents, their pictures, models and on/off")
     // Every section is on the Hub (#1428 phase 3, Guests #1449): only People opens its own page.
