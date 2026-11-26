@@ -8,20 +8,29 @@
 // (#page=task&task=<id>&agent=<id>&node=<url>). On top, the request and,
 // when the run belongs to a tracked request, its status strip, plan and
 // facts as in #1377. Under it, the run's conversation, streaming live
-// (GET /api/task/stream), or the stored record of a finished run. Last, a
-// steer box: a message goes in as the next turn (POST /api/task/action
-// kind=followup), and Stop cancels the turn (kind=cancel). The stream,
-// steer box and Stop are TASK_MOUNT_FN below, with its rules: a finished
-// cron run can be continued, other finished runs are read-only.
+// (GET /api/task/stream), or the stored record of a finished run. Last,
+// the Hub chat's ask box (#2306, wall-chat-input.client.ts): a message goes
+// in as the next turn (POST /api/task/action kind=followup). By its send
+// arrow sit the run's controls (wall-task-ctl.ts): Pause and Stop while it
+// runs, Resume once paused. The stream and the ask box are TASK_MOUNT_FN
+// below, with its rules: a finished cron run can be continued, other
+// finished runs are read-only.
 //
-// Under the head (#1439): a run a stop paused shows its plan with Resume
-// and Drop, as on Live; a live run has Pause, which stops it with a resume
-// plan (Stop only ends the turn). Both use wall-live.client.ts's controls.
+// Pause (#1439) is the stop signal: the run stops at the next point it can
+// and the agent writes a resume plan; Resume starts a new turn from that
+// plan, with the paused record's id. Stop only ends the turn. Under the
+// head, a paused run shows its plan and Drop, as on Live.
+//
+// The head's clock ticks "Working · 2m 14s" while the run goes and shows
+// the time it took once it ended. Each step of the conversation shows when
+// it came in (#2306): the stream's stamps (output-stamps.ts) go to the
+// React island with the output.
 //
 // While Live or a Task is open, the Wall follows /api/live/stream (a
 // snapshot every two seconds) instead of its one-minute refresh.
 
 import { followBtnHtml } from "./wall-follow"
+import { wallChatInputHtml } from "./wall-chat-input.client"
 
 // --- The run's stream, steer box and Stop ---
 //
@@ -66,11 +75,10 @@ function mountTaskPage(root, opts) {
   var outputEl  = document.getElementById('task-output');
   var statusEl  = document.getElementById('task-status');
   var elapsedEl = document.getElementById('task-elapsed');
-  var inputEl   = document.getElementById('task-input');
-  var hintEl    = document.getElementById('task-hint');
+  var inputEl   = document.getElementById('task-text');
+  var hintEl    = document.getElementById('task-voice');
   var sendBtn   = document.getElementById('task-send');
-  var stopBtn   = document.getElementById('task-stop');
-  var composeEl = root.querySelector('.ax-task-page__compose');
+  var composeEl = document.getElementById('wtask-steer');
   // Follow the stream; scrolling up stops it and shows Jump to latest (#2101).
   // The React island keeps its own stick-to-bottom with the same 60 px rule,
   // so the button's jump puts it back to following too.
@@ -80,9 +88,22 @@ function mountTaskPage(root, opts) {
   var plain = opts.plain || function (s) { return s; };
   var buffer = '';
   var raf = 0;
-  // The run's clock starts when the run did, when that is known.
-  var startedAt = Date.parse(root.getAttribute('data-ask-at') || '') || Date.now();
+  // The run's clock starts when the run did, when that is known; endedAt
+  // stays 0 while it runs (cfClock).
+  var startedAt = Date.parse(root.getAttribute('data-ask-at') || '') || 0;
+  var startKnown = startedAt > 0;
+  if (!startKnown) startedAt = Date.now();
+  var endedAt = 0;
   var finished = false;
+  // When each line of the output came in (output-stamps.ts, #2306): the
+  // start event's for the output so far, then one per chunk.
+  var stamps = [];
+  function changed() { if (opts.onChange) opts.onChange(); }
+  function say(text, err) {
+    hintEl.textContent = text || '';
+    hintEl.hidden = !text;
+    hintEl.className = 'hc__voice' + (err ? ' is-err' : '');
+  }
 
   function setStatus(label, kind) {
     statusEl.textContent = label;
@@ -233,7 +254,7 @@ function mountTaskPage(root, opts) {
   function convStart() {
     outputEl.innerHTML = '';
     buffer = ''; lineBuf = ''; openText = null; openRaw = '';
-    conv = window.AXTaskConversation.mount(outputEl, { plain: plain });
+    conv = window.AXTaskConversation.mount(outputEl, { plain: plain, stamps: function () { return stamps; } });
     if (raw) conv.append(raw);
     if (ended) conv.end();
   }
@@ -287,19 +308,18 @@ function mountTaskPage(root, opts) {
     if (!text) return;
     document.getElementById('task-ask-body').innerHTML = markdownToHtml(text);
     document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
-    var when = document.getElementById('task-ask-when');
-    if (startedAt) {
-      var d = new Date(startedAt);
-      when.textContent = isNaN(d.getTime()) ? '' : d.toLocaleString();
-    }
+    // Short local time, the full date on hover (#2306).
+    if (startedAt) document.getElementById('task-ask-when').innerHTML = tsTimeHtml(Date.parse(startedAt) || 0, Date.now());
     document.getElementById('task-ask').hidden = false;
   }
 
-  function tickElapsed() {
-    if (finished) return;
-    var s = Math.floor((Date.now() - startedAt) / 1000);
-    var m = Math.floor(s / 60);
-    elapsedEl.textContent = m > 0 ? m + 'm ' + (s % 60) + 's' : s + 's';
+  // "Working · 2m 14s", every second; once the run ended, the time it took.
+  // A run seen only once it ended, with no start: no made-up time.
+  function tickElapsed() { elapsedEl.textContent = cfClock(endedAt && !startKnown ? 0 : startedAt, endedAt, Date.now()); }
+  function runEnded(at) {
+    if (!endedAt) endedAt = at || Date.now();
+    clearInterval(timer);
+    tickElapsed();
   }
   timer = setInterval(tickElapsed, 1000);
   tickElapsed();
@@ -315,6 +335,7 @@ function mountTaskPage(root, opts) {
     // agent lets the daemon find the stored record when the task has
     // already finished, so a follow-up on a scheduled run resumes its chat.
     var payload = message ? { message: message, agent: agentId } : {};
+    if (message && files) { var att = files.attachments(); if (att.length) payload.attachments = att; }
     return fetch(q, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -325,43 +346,80 @@ function mountTaskPage(root, opts) {
   /** The Task page for another run of the same agent on this node. */
   function taskHref(id, channel) { return opts.href(id, channel); }
 
-  sendBtn.addEventListener('click', function () {
+  function send() {
     var text = (inputEl.value || '').trim();
-    if (!text) { inputEl.focus(); return; }
+    if (!text) { inputEl.focus(); return Promise.resolve(false); }
+    if (files && files.uploading()) { say('Wait for the files to finish uploading.', true); return Promise.resolve(false); }
     sendBtn.disabled = true;
-    hintEl.textContent = 'queuing…';
-    action('followup', text).then(function (r) {
+    say('Queuing…');
+    return action('followup', text).then(function (r) {
       sendBtn.disabled = false;
-      if (r && r.error) { hintEl.textContent = 'failed: ' + r.error; return; }
+      if (r && r.error) { say('Not sent: ' + r.error, true); return false; }
       inputEl.value = '';
+      if (files) files.clear();
       // A finished scheduled run was continued as a new turn in its chat.
       // Follow that turn: it is where the reply will appear.
-      if (r && r.resumed && r.taskId) { location.href = taskHref(r.taskId, r.channel); return; }
-      if (r && r.resumed && r.answeredBy === 'attached') { hintEl.textContent = 'answered by the attached session — no new run here'; return; }
-      if (r && r.resumed && r.answeredBy) { hintEl.textContent = 'delivered and answered — no new run on this node'; return; }
-      if (r && r.resumed) { hintEl.textContent = 'agent busy — queued as the next turn in this chat'; return; }
-      hintEl.textContent = 'queued — dispatches as the next turn';
+      if (r && r.resumed && r.taskId) { location.href = taskHref(r.taskId, r.channel); return true; }
+      if (r && r.resumed && r.answeredBy === 'attached') { say('Answered by the attached session: no new run here.'); return true; }
+      if (r && r.resumed && r.answeredBy) { say('Delivered and answered: no new run on this node.'); return true; }
+      if (r && r.resumed) { say('The agent is busy: queued as the next turn in this chat.'); return true; }
+      say('Queued: it goes in as the next turn.');
+      return true;
     });
-  });
-
-  stopBtn.addEventListener('click', function () {
-    stopBtn.disabled = true;
-    hintEl.textContent = 'stopping…';
-    action('cancel').then(function (r) {
-      stopBtn.disabled = false;
-      hintEl.textContent = (r && r.error) ? 'failed: ' + r.error : 'stop requested';
-    });
-  });
-
+  }
+  sendBtn.addEventListener('click', send);
+  // Enter sends, Shift+Enter starts a new line, as in the Hub chat.
   inputEl.addEventListener('keydown', function (e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); sendBtn.click(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
+
+  /** Stop: the turn ends now, with no resume plan. */
+  function stop() {
+    say('Stopping…');
+    return action('cancel').then(function (r) {
+      say((r && r.error) ? 'Not stopped: ' + r.error : 'Stop asked: the turn ends now.', !!(r && r.error));
+    });
+  }
+
+  // The page's controls reach these (WALL_TASK_SCRIPT's taskCtl).
+  close.stop = stop;
+  close.live = function () { return !finished; };
+
+  // Files and the mic, as in the Hub chat (#2306). Both come from the chat's
+  // script (wall-chat-input.client.ts), which loads after this one: a Task
+  // link opened straight away mounts before it ran, so wait for the page.
+  var files = null, lastErr = '';
+  function withComposer() {
+    var hdrs = function (h) { var o = headers(); for (var k in (h || {})) o[k] = h[k]; return o; };
+    // Each file goes up to the run's node when picked and rides with the
+    // next follow-up.
+    if (window.AXComposerFiles) files = window.AXComposerFiles('task', {
+      agent: function () { return agentId; },
+      node: function () { return nodeUrl; },
+      headers: hdrs,
+    });
+    // The mic: its words go in as the next turn.
+    if (window.AXComposerVoice) window.AXComposerVoice('task', {
+      agent: function () { return agentId; },
+      headers: hdrs,
+      send: function (text) {
+        inputEl.value = text;
+        return send().then(function (ok) { lastErr = ok ? '' : hintEl.textContent; return ok; });
+      },
+      sendError: function () { return lastErr; },
+    });
+  }
+  if (document.readyState === 'loading' && document.addEventListener) {
+    // Only while this run's page is still the one shown.
+    document.addEventListener('DOMContentLoaded', function () { if (document.getElementById('task-text') === inputEl) withComposer(); });
+  } else withComposer();
 
   // Archived: one fetch of the stored record, no SSE. Opening a stream for a
   // task that ended hours ago would sit "connecting…" forever and then report
   // a disconnect, which reads as breakage rather than as history.
   if (root.getAttribute('data-archived')) {
     finished = true;
+    clearInterval(timer);
     elapsedEl.textContent = '';
     setStatus('loading…', '');
     fetch('/api/task/history?node=' + encodeURIComponent(nodeUrl)
@@ -376,22 +434,25 @@ function mountTaskPage(root, opts) {
         // Other channels stay read-only — their replies belong in their chat.
         if (rec.channel === 'cron') {
           composeEl.hidden = false;
-          stopBtn.style.display = 'none'; // nothing is running to stop
-          inputEl.placeholder = 'Continue this scheduled run — your message starts a new turn in the same session. ⌘/Ctrl+Enter to send.';
+          inputEl.placeholder = 'Continue this scheduled run: your message starts a new turn in the same session.';
         }
+        // The times of its lines, kept with the record (#2306); the parts
+        // added here came in when it ended.
+        var end = Date.parse(rec.endedAt || '') || 0;
+        stamps = (rec.transcriptStamps || []).slice();
+        function more(text) { if (end) outStamp(stamps, raw, text, end); append(text); }
         var tx = rec.transcript || '';
         if (tx) append(tx);
         // Only append the final reply when the transcript didn't already
         // carry it, so the answer isn't printed twice.
         if (rec.responseText && (!tx || tx.indexOf(rec.responseText) === -1)) {
-          append('\\n\\n--- Final reply ---\\n' + rec.responseText);
+          more('\\n\\n--- Final reply ---\\n' + rec.responseText);
         }
-        if (rec.error) append('\\n\\n[error] ' + rec.error);
-        if (rec.durationMs) {
-          var s = Math.round(rec.durationMs / 1000);
-          elapsedEl.textContent = s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
-        }
+        if (rec.error) more('\\n\\n[error] ' + rec.error);
+        var began = Date.parse(rec.startedAt || '') || 0;
+        if (began && rec.durationMs) { startedAt = began; startKnown = true; endedAt = began + rec.durationMs; tickElapsed(); }
         drain();
+        changed();
       })
       .catch(function (e) { setStatus(e.message, 'err'); });
     return close;
@@ -407,19 +468,29 @@ function mountTaskPage(root, opts) {
     try {
       var d = JSON.parse(ev.data);
       if (d.message || d.sender) showAsk(d.message, d.sender, d.startedAt);
-      if (d.startedAt) startedAt = Date.parse(d.startedAt) || startedAt;
+      if (Date.parse(d.startedAt || '')) { startedAt = Date.parse(d.startedAt); startKnown = true; }
+      // The stamps of the whole output so far, which d.initial is.
+      if (d.stamps) stamps = d.stamps.slice();
       if (d.initial) catchUp(d.initial);
-      if (d.done) { finished = true; setStatus('finished', 'done'); }
+      if (d.done) { finished = true; setStatus('finished', 'done'); runEnded(d.endedAt); }
     } catch (e) {}
+    tickElapsed();
+    changed();
   });
   es.addEventListener('chunk', function (ev) {
-    try { append(JSON.parse(ev.data).text || ''); } catch (e) {}
+    try {
+      var d = JSON.parse(ev.data), text = d.text || '';
+      if (text) outStamp(stamps, raw, text, d.at || Date.now());
+      append(text);
+    } catch (e) {}
   });
   es.addEventListener('end', function () {
     finished = true;
     setStatus('finished', 'done');
+    runEnded(0);
     try { es.close(); } catch (e) {}
     drain();
+    changed();
   });
   es.addEventListener('error', function () {
     if (!finished) setStatus('disconnected', 'err');
@@ -428,8 +499,14 @@ function mountTaskPage(root, opts) {
 }
 `
 
+/** The Task page's ask box: the Hub chat's card (wall-chat-input.client.ts)
+ *  with its ids under "task", text only, and a slot by the send arrow for
+ *  the run's controls (#2306). */
+const TASK_COMPOSER_HTML = wallChatInputHtml({ id: "task", chat: false, acts: '<span class="hc__acts" id="task-ctl"></span>' })
+
 export const WALL_TASK_SCRIPT = String.raw`
   ${TASK_MOUNT_FN}
+  var TASK_COMPOSER = ${JSON.stringify(TASK_COMPOSER_HTML)};
   /** The query keys of a Task page's hash. */
   var TASK_KEYS = ['task', 'agent', 'node', 'trace', 'ch', 'ask', 'at', 'done'];
   /** The Wall's link to a run's Task page. t: { id, traceId?, channel?, message?, startedAt? } */
@@ -484,11 +561,9 @@ export const WALL_TASK_SCRIPT = String.raw`
       '<div class="ax-task-page__output wtask__out" id="task-output" aria-live="polite"></div>' +
       '<div class="wtask__jump">${followBtnHtml("task-jump")}</div>' +
       '<section class="wsess" id="wtask-after" aria-label="Later turns in this chat" hidden></section>' +
-      '<footer class="ax-task-page__compose wtask__steer" id="wtask-steer"' + (t.done ? ' hidden' : '') + '>' +
-        '<textarea id="task-input" class="ax-task-page__input" rows="2" aria-label="Steer ' + esc(who) + '" placeholder="Message ' + esc(who) + ': it goes in as the next turn, the current one keeps running. ⌘/Ctrl+Enter sends."></textarea>' +
-        '<div class="ax-task-page__actions"><span class="ax-task-page__hint" id="task-hint" role="status"></span>' +
-          '<button type="button" id="task-stop" class="ax-btn ax-btn--ghost wtask__stop">Stop</button>' +
-          '<button type="button" id="task-send" class="ax-btn">Send</button></div>' +
+      '<footer class="wtask__steer" id="wtask-steer"' + (t.done ? ' hidden' : '') + '>' +
+        TASK_COMPOSER.replace('placeholder="Message…"', 'placeholder="Message ' + esc(who) + ': it goes in as the next turn…"')
+          .replace('aria-label="Message"', 'aria-label="Message ' + esc(who) + '"') +
       '</footer>' +
       '<p class="wtask__ro">This run is finished. Its chat goes on where it came from' + (t.ch ? ' (' + esc(t.ch) + ')' : '') + ', so this page only reads it.</p>' +
     '</div>';
@@ -538,7 +613,7 @@ export const WALL_TASK_SCRIPT = String.raw`
   function sessionTurn(t, want) {
     return tsTurnHtml(t, {
       agent: nameOf(want.agent), md: markdownToHtml, plain: plainMarkerText,
-      when: function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.toLocaleString(); },
+      when: function (iso) { return tsTimeHtml(Date.parse(iso) || 0, Date.now()); },
       href: wallTaskHref({ id: t.id, channel: want.ch, message: t.message, startedAt: t.startedAt }, want.agent, want.node, !t.running),
     });
   }
@@ -614,16 +689,93 @@ export const WALL_TASK_SCRIPT = String.raw`
       return a.id === t.agent && (a.runningTasks || []).some(function (r) { return r.id === t.task; });
     });
   }
-  /** Paused: its plan, Resume and Drop. Running: Pause. */
+  /** Paused: who paused it, its plan and Drop (Resume is in the ask box). */
   function taskOpsHtml(t) {
-    var x = stoppedOf(t.task, t.node), inner = '';
-    if (x) inner = stoppedHtml(x, true);
-    else if (runsNow(t)) {
-      inner = '<div class="wtask__pause">' + lvBtn('pause', t.node, t.task, 'Pause', 'Pause it?', 'Stop this task and keep a resume plan, so it can be resumed later', true) +
-        '<span class="wls__k">Pause keeps a plan to resume from; Stop below only ends the turn.</span></div>';
-    }
+    var x = taskPaused(t), inner = x ? stoppedHtml(x, true) : '';
     return inner || lvState().msg ? '<div class="wlv wtask__ops">' + lvNoteHtml() + inner + '</div>' : '';
   }
+
+  // --- The run's controls in the ask box (#2306, wall-task-ctl.ts) ---
+  // S.taskCtl: { pausedId, state, busy } for the run on the page. pausedId
+  // is the paused record's id, as the pause answered; Resume sends it.
+  function taskCtlState() { return S.taskCtl || (S.taskCtl = { pausedId: '', state: '', busy: '' }); }
+  /** The run's paused record in the live snapshot, if any. */
+  function taskPaused(t) { return stoppedOf(taskCtlState().pausedId || t.task, t.node); }
+  function taskSay(text, err) {
+    var p = $('task-voice');
+    if (!p) return;
+    p.textContent = text || '';
+    p.hidden = !text;
+    p.className = 'hc__voice' + (err ? ' is-err' : '');
+  }
+  function paintCtl(t) {
+    var el = $('task-ctl'), c = taskCtlState();
+    if (!el || !t) return;
+    var x = taskPaused(t), resumed = c.state === 'resumed';
+    // Just paused: the snapshot may not list it yet; it is writing its plan.
+    // Just resumed: the snapshot may still list it as paused.
+    var paused = resumed ? null : x ? { state: x.t.state, resumable: !!x.t.resumable } : c.state === 'pausing' ? { state: 'winding-down', resumable: false } : null;
+    var live = !!(S.taskClose && S.taskClose.live && S.taskClose.live()) && !resumed;
+    el.innerHTML = tcCtlHtml({ running: live && (runsNow(t) || !S.live), paused: paused, busy: c.busy });
+    // A paused run's page keeps the ask box for Resume, even when the run is
+    // otherwise read-only; the box then says where the run stands.
+    var steer = $('wtask-steer');
+    if (!steer || !(paused || resumed || steer.hasAttribute('data-ro'))) return;
+    steer.hidden = false;
+    steer.setAttribute('data-ro', '1');
+    $('task-text').disabled = true;
+    $('task-send').hidden = true;
+    $('task-text').placeholder = resumed ? 'Resumed: the new turn opens here once it starts.'
+      : !paused ? 'No longer paused.'
+      : paused.state === 'winding-down' ? 'Pausing: the agent writes its plan to resume from…'
+      : paused.resumable ? 'Paused. Resume goes on from its plan.' : 'Paused. This one cannot resume from here.';
+  }
+  /** Pause, Stop or Resume pressed. */
+  function taskCtl(kind) {
+    var t = S.task, c = taskCtlState(), key = taskKey(t);
+    if (!t || c.busy) return;
+    if (kind === 'stop') { if (S.taskClose && S.taskClose.stop) S.taskClose.stop(); return; }
+    var pause = kind === 'pause';
+    var x = taskPaused(t);
+    c.busy = pause ? 'Pausing…' : 'Resuming…';
+    taskSay('');
+    paintCtl(t);
+    act('POST', '/api/admin/wall/live/' + kind + '?node=' + encodeURIComponent(t.node), pause ? { taskId: t.task } : { id: x ? x.t.id : c.pausedId || t.task }).then(function (r) {
+      if (taskKey(S.task) !== key) return;
+      c.busy = '';
+      if (!r.ok) { taskSay((pause ? 'Not paused: ' : 'Not resumed: ') + r.error, true); paintCtl(t); return; }
+      if (pause) {
+        c.pausedId = (r.body && r.body.id) || t.task;
+        c.state = 'pausing';
+        taskSay(nameOf(t.agent) + ' stops at the next point and writes a plan to resume from. Resume shows here once the plan is saved.');
+      } else {
+        c.state = 'resumed';
+        taskSay('Resumed: a new turn goes on from the plan. It opens here once it starts.');
+        followResumed(t, 0);
+      }
+      paintCtl(t);
+      render();
+    });
+  }
+  /** After Resume: open the new turn of the chat once it runs. */
+  function followResumed(t, n) {
+    if (n > 6 || taskKey(S.task) !== taskKey(t)) return;
+    setTimeout(function () {
+      if (taskKey(S.task) !== taskKey(t)) return;
+      fetch(sessionUrl(t), { headers: headers() })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (p) {
+          var turns = (p && p.turns) || [], i = turns.findIndex(function (x) { return x.id === (p && p.selected); });
+          var next = i >= 0 ? turns.slice(i + 1).filter(function (x) { return x.running; })[0] : null;
+          if (next && taskKey(S.task) === taskKey(t)) { location.hash = wallTaskHref({ id: next.id, channel: t.ch, message: next.message, startedAt: next.startedAt }, t.agent, t.node, false); return; }
+          followResumed(t, n + 1);
+        }, function () { followResumed(t, n + 1); });
+    }, 1500);
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-task-ctl]');
+    if (b) taskCtl(b.getAttribute('data-task-ctl'));
+  });
 
   /** Open, keep or close the mounted run as the page changes. */
   function paintTask(page) {
@@ -634,11 +786,13 @@ export const WALL_TASK_SCRIPT = String.raw`
       S.taskDetail = null;
       S.taskSession = null;
       S.taskTurnOpen = {};
+      S.taskCtl = null;
       if (!want) { $('wall-task').innerHTML = ''; return; }
       $('wall-task').innerHTML = taskSkeleton(want);
       S.taskClose = mountTaskPage($('wtask-root'), {
         href: function (id, channel) { return wallTaskHref({ id: id, channel: channel }, want.agent, want.node, false); },
         plain: plainMarkerText,
+        onChange: function () { if (taskKey(S.task) === taskKey(want)) paintCtl(want); },
       });
       loadSession(want);
     }
@@ -649,6 +803,7 @@ export const WALL_TASK_SCRIPT = String.raw`
     $('wtask-where').textContent = at.n && S.live.nodes.length > 1 ? 'on ' + at.n.name : '';
     $('wtask-details').innerHTML = taskDetailsHtml();
     $('wtask-ops').innerHTML = taskOpsHtml(want);
+    paintCtl(want);
   }
 
   /** While Live or a Task is open, or the live tree is on screen (#2101
@@ -708,24 +863,9 @@ export const WALL_TASK_CSS = `
   border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow);
   padding: var(--ax-pad); font-size: var(--ax-fs-sm); line-height: 1.6; min-height: 320px;
 }
-/* A "display: flex" rule beats the user-agent's [hidden] rule, so an archived
-   task still showed a send/stop box that could do nothing. (No backticks in
-   this file's CSS comments — it lives in a TS template literal and one
-   backtick silently truncates the whole stylesheet.) */
-.ax-task-page__compose[hidden] { display: none; }
-.ax-task-page__compose {
-  display: flex; flex-direction: column; gap: 8px;
-  background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border);
-  border-radius: var(--ax-radius-lg); padding: var(--ax-pad-sm);
-}
-.ax-task-page__input {
-  width: 100%; resize: vertical; background: var(--ax-bg); color: var(--ax-text);
-  border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius);
-  padding: 10px 12px; font: inherit; font-size: var(--ax-fs-sm);
-}
-.ax-task-page__input:focus { outline: none; border-color: var(--ax-accent); }
-.ax-task-page__actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.ax-task-page__hint { flex: 1; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+/* The ask box is the Hub chat's card (#2306); this footer only places it. */
+.wtask__steer { display: flex; flex-direction: column; gap: 6px; }
+.wtask__steer[hidden] { display: none; }
 /* The request that started everything. The page used to render the agent's
    work with no sign of what it had been asked — you could read a whole
    transcript without learning why it ran. */
@@ -826,13 +966,12 @@ export const WALL_TASK_CSS = `
 .wtask__req { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px 14px; }
 .wtask__req .wtask__h { margin: 0 0 10px; }
 .wtask__out { box-shadow: none; min-height: 260px; max-height: 62vh; }
-/* A chat box right under the conversation, which scrolls on its own. */
-.wtask__stop { color: var(--ax-err); border-color: color-mix(in srgb, var(--ax-err) 45%, var(--ax-border)); }
 .wtask__ops.wlv { padding: 0; }
 .wtask__ops .wls { margin: 0; }
-.wtask__pause { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .wtask__ro { margin: 0; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
-.ax-task-page__compose:not([hidden]) ~ .wtask__ro { display: none; }
+.wtask__steer:not([hidden]) ~ .wtask__ro { display: none; }
+/* The run's clock: digits that do not jump as they tick. */
+#task-elapsed { font-variant-numeric: tabular-nums; }
 /* The run's session (#2101 R4): the chat's other turns, quieter than the
    selected run, which keeps the full stream and the accent. */
 .wtask__turn[hidden], .wsess[hidden] { display: none; }

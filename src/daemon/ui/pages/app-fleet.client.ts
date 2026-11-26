@@ -176,9 +176,9 @@ export const APP_FLEET_SCRIPT = `
   window.AXAsk = { ask: ask, api: api, esc: esc, ago: ago, advised: advised, flash: flash, statusLine: statusLine, open: function () { return sheet.open; } };
 
   function statusPill(n) {
-    if (!n.reachable) return '<span class="fx-pill fx-off"><span aria-hidden="true">⊘ </span>Offline</span>';
-    if (n.restart) return '<span class="fx-pill fx-warn">Restart ' + esc(n.restart.state) + '</span>';
-    return '<span class="fx-pill fx-on"><span aria-hidden="true">● </span>Online</span>';
+    if (!n.reachable) return '<span class="ax-af-state" data-state="error">Offline</span>';
+    if (n.restart) return '<span class="ax-af-state" data-state="waiting">Restart ' + esc(n.restart.state) + '</span>';
+    return '<span class="ax-af-state" data-state="done">Online</span>';
   }
   function renderFleet(data) {
     // Redraws every 15 seconds; keep the sections the user opened open.
@@ -186,7 +186,7 @@ export const APP_FLEET_SCRIPT = `
     fleetPanel.querySelectorAll('details[open]').forEach(function (d) { openKeys[d.getAttribute('data-key')] = true; });
     var html = '<div class="fx-head"><h2>Fleet</h2><button type="button" class="fx-btn" data-act="refresh">Refresh</button></div>' +
       statusLine(fleetPanel, data.ts);
-    if (!data.nodes.length) html += '<p class="soon">No machines found.</p>';
+    if (!data.nodes.length) html += '<div class="ax-af-empty"><strong>No machines found.</strong>This phone sees no AgentX machine yet.<button type="button" class="fx-btn" data-act="refresh">Try again</button></div>';
     data.nodes.forEach(function (n, i) {
       var running = n.agents.reduce(function (sum, a) { return sum + (a.active || 0); }, 0);
       html += '<article class="fx-card' + (n.reachable ? '' : ' fx-offline') + '"><div class="fx-row"><h3 class="fx-machine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4zM2 20h20' + (n.reachable ? '' : 'M2 2l20 20') + '"/></svg>' + esc(n.name) + '</h3>' + statusPill(n) + '</div>';
@@ -198,13 +198,13 @@ export const APP_FLEET_SCRIPT = `
         n.crons.today.success + ' ok, ' + n.crons.today.failed + ' failed</p>';
       html += '<ul class="fx-list fx-agents">';
       n.agents.forEach(function (a) {
-        html += '<li><div class="fx-row"><strong>' + esc(a.name) + '</strong><span class="fx-muted">' +
+        html += '<li><div class="fx-row"><strong>' + esc(a.name) + '</strong><span class="ax-af-state"' + (a.active ? ' data-state="running"' : '') + '>' +
           (a.active ? a.active + ' running' : (a.lastActive ? ago(a.lastActive) : 'idle')) + (a.errors ? ' · ' + a.errors + ' errors' : '') + '</span></div>' +
           (a.last ? '<p class="fx-muted' + (a.last.ok ? '' : ' fx-bad') + '">' + esc(a.last.text) + '</p>' : '') + '</li>';
       });
-      html += '</ul><details data-key="' + esc(n.url) + '|crons"' + (openKeys[n.url + '|crons'] ? ' open' : '') + '><summary>Schedules (' + n.crons.items.length + ')</summary><ul class="fx-list">';
+      html += '</ul><details data-key="' + esc(n.url) + '|crons"' + (openKeys[n.url + '|crons'] ? ' open' : '') + '><summary>Schedules <span class="ax-af-count" data-n="' + n.crons.items.length + '">' + n.crons.items.length + '</span></summary><ul class="fx-list">';
       n.crons.items.forEach(function (c, j) {
-        var last = c.last ? '<span class="fx-pill ' + (c.last.status === 'success' ? 'fx-on' : 'fx-off') + '">' + esc(c.last.status) + '</span>' : '';
+        var last = c.last ? '<span class="ax-af-state" data-state="' + (c.last.status === 'success' ? 'done' : 'error') + '">' + esc(c.last.status) + '</span>' : '';
         html += '<li><div class="fx-row"><strong>' + esc(c.id) + '</strong>' +
           '<button type="button" class="fx-switch" role="switch" aria-checked="' + c.enabled + '" aria-label="' + (c.enabled ? 'Turn off ' : 'Turn on ') + esc(c.id) +
           '" data-act="cron" data-i="' + i + '" data-j="' + j + '"><span></span></button></div>' +
@@ -226,10 +226,10 @@ export const APP_FLEET_SCRIPT = `
       statusLine(activityPanel, act.ts);
     var items = [];
     appr.nodes.forEach(function (n) { n.items.forEach(function (it) { items.push({ node: n, it: it }); }); });
-    html += '<h3 class="fx-sub">Needs you (' + items.length + ')</h3>';
-    if (!items.length) html += '<p class="fx-muted">Nothing is waiting for a decision.</p>';
+    html += '<h3 class="fx-sub">Waiting on you <span class="ax-af-count" data-tone="warn" data-n="' + items.length + '">' + items.length + '</span></h3>';
+    if (!items.length) html += '<div class="ax-af-empty"><strong>Nothing is waiting for a decision.</strong>Requests that wait for you are on the Desk too.<a href="#desk">Open the Desk</a></div>';
     items.forEach(function (x, k) {
-      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(x.it.title) + '</h4><span class="fx-pill fx-warn">Ⅱ Waiting</span></div><p>' + esc(x.it.ask) + '</p>' +
+      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(x.it.title) + '</h4><span class="ax-af-state" data-state="waiting">Waiting</span></div><p>' + esc(x.it.ask) + '</p>' +
         (x.it.recommend ? '<p class="fx-muted">Suggested: ' + esc(x.it.recommend) + '</p>' : '') +
         '<p class="fx-muted">' + esc(x.it.raisedBy || '') + ' · ' + esc(x.node.nodeName) + '</p>' +
         (x.it.choices ? '<p class="fx-muted">' + plural(x.it.choices.length, 'choice') + ' on offer</p>' : '') +
@@ -238,13 +238,13 @@ export const APP_FLEET_SCRIPT = `
         '<button type="button" class="fx-btn" data-act="decide" data-k="' + k + '" data-v="later">Later</button></div></article>';
     });
     appr.nodes.forEach(function (n) { if (n.error) html += '<p class="fx-muted fx-bad">Approvals on ' + esc(n.nodeName) + ' could not be read: ' + esc(n.error) + '</p>'; });
-    html += '<h3 class="fx-sub">Running now (' + act.tasks.length + ')</h3>';
-    if (!act.tasks.length) html += '<p class="fx-muted">No agent is working right now.</p>';
+    html += '<h3 class="fx-sub">Running now <span class="ax-af-count" data-n="' + act.tasks.length + '">' + act.tasks.length + '</span></h3>';
+    if (!act.tasks.length) html += '<div class="ax-af-empty"><strong>No agent is working right now.</strong>Ask one and its work shows here.<a href="#chat">Open Chat</a></div>';
     // Following, Stop and send need live control on this phone (#2103):
     // without it the list stays read-only and says how to turn it on.
     if (act.tasks.length && !act.live) html += '<p class="fx-muted">Live control is off for this phone. Turn it on from the Mac: agentx app live &lt;device&gt; on</p>';
     act.tasks.forEach(function (t, k) {
-      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(t.agentName) + '</h4><span class="fx-muted">' + esc(ago(t.startedAt)) + '</span></div><p class="fx-working"><span aria-hidden="true">◔</span> Working</p>' +
+      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(t.agentName) + '</h4><span class="fx-muted">' + esc(ago(t.startedAt)) + '</span></div><p><span class="ax-af-state" data-state="running">Working</span></p>' +
         '<p>' + esc(t.preview) + '</p><p class="fx-muted">' + esc(t.nodeName) + ' · ' + esc(t.channel) + '</p>' +
         (act.live ? '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="watch" data-k="' + k + '">Watch</button>' +
         '<button type="button" class="fx-btn" data-act="followup" data-k="' + k + '">Follow up</button>' +

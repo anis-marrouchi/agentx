@@ -235,6 +235,8 @@ export interface UpgradeOutcome {
   peerSkew?: PeerSkew[]
   /** Hub page and chat route probes after the upgrade. */
   hub?: HubProbe[]
+  /** Why the peer and Hub checks did not run (agentx.json did not load). */
+  checksSkipped?: string
   reason?: string
   startedAt: string
   endedAt: string

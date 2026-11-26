@@ -30,7 +30,7 @@ describe("agmStatus: one status per agent", () => {
     expect(f({})).toMatchObject({ key: "idle", label: "Idle" })
   })
   it("draws it as a chip", () => {
-    expect(agmStatusHtml(f({ running: 1 }))).toBe('<span class="chip agm-st is-working" title="1 task running now">Working</span>')
+    expect(agmStatusHtml(f({ running: 1 }))).toBe('<span class="ax-af-state agm-st is-working" data-state="running" title="1 task running now">Working</span>')
   })
 })
 
@@ -129,7 +129,7 @@ describe("the manager's markup escapes fleet text", () => {
     expect(acts).toContain('data-agm-act="pause" data-id="cx"')
     expect(acts).toContain('data-agm-act="remove" data-id="cx"')
     expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "paused", started: true }), "paused", "")).toContain('data-agm-act="resume"')
-    expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "waiting", started: true }), "waiting", "")).toContain("Approve in Needs you")
+    expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "waiting", started: true }), "waiting", "")).toContain("Approve in Waiting on you")
     expect(agmTestHtml("cx", evil, { agent: "cx", msgs: [{ kind: "agent", text: evil }] })).not.toContain("<img")
     expect(agmHeadHtml(false, "x", "needed", "")).toBe("")
     expect(agmHeadHtml(true, evil, "needed", "")).not.toContain("<img")

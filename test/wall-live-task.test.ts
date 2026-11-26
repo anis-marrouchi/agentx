@@ -19,7 +19,7 @@ const LIVE = { nodes: [
   ] },
 ] }
 
-function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown>; wide?: boolean }) {
+function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown>; wide?: boolean; win?: Record<string, unknown>; readyState?: string }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -62,7 +62,7 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   const onDoc: Record<string, Array<(ev: any) => void>> = {}
   const onWindow: Record<string, () => void> = {}
   const doc = {
-    getElementById: el, hidden: false,
+    getElementById: el, hidden: false, readyState: opts.readyState ?? "complete",
     querySelector: (sel: string) => (sel === ".ax-wall" ? { classList: classes() } : null),
     querySelectorAll: () => [],
     addEventListener: (t: string, f: (ev: any) => void) => { (onDoc[t] ??= []).push(f) },
@@ -89,8 +89,9 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
     addEventListener(t: string, f: (ev: any) => void) { this.s.on[t] = f }
     close() { this.s.closed = true }
   }
+  const win: Record<string, any> = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, ...(opts.wide === undefined ? {} : { matchMedia: () => ({ matches: opts.wide, addEventListener() {} }) }), ...opts.win }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
-    doc, { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, ...(opts.wide === undefined ? {} : { matchMedia: () => ({ matches: opts.wide, addEventListener() {} }) }) }, fetchStub, loc,
+    doc, win, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },
     { getItem: () => null, setItem: () => {} }, () => 0, FakeEventSource, (f: () => void) => { f(); return 1 },
   )
@@ -110,7 +111,7 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   }
   /** The tab goes to the background (or comes back). */
   const hide = (hidden = true) => { doc.hidden = hidden; for (const f of onDoc.visibilitychange ?? []) f({}) }
-  return { el, calls, settle, loc, streams, go, press, hide }
+  return { el, calls, settle, loc, streams, go, press, hide, win, onDoc }
 }
 
 describe("Wall Live: sessions and jobs running now (#1381)", () => {
@@ -118,15 +119,15 @@ describe("Wall Live: sessions and jobs running now (#1381)", () => {
     const w = openWall({ hash: "#page=live" })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Running now <small>2</small></h3>")
+    expect(html).toContain('<h3>Running now <span class="ax-af-count" data-n="2">2</span></h3>')
     const cx = html.split("task=t9")[1].split("</a>")[0]
-    expect(cx).toContain("● Session")
+    expect(cx).toContain('data-state="running">Session</span>')
     expect(cx).toContain("<b>Customer Desk</b><span class=\"h\">@cx</span>")
     expect(cx).toContain("Answering a refund")
     expect(cx).toContain("for 2 min")
     expect(cx).toContain("Using Bash")
     const job = html.split("task=t5")[1].split("</a>")[0]
-    expect(job).toContain("● Job")
+    expect(job).toContain('data-state="running">Job</span>')
     expect(job).toContain('<span class="chip chip--ghost">digest</span>')
     expect(job).toContain("Step: agent")
   })
@@ -135,12 +136,12 @@ describe("Wall Live: sessions and jobs running now (#1381)", () => {
     const w = openWall({ hash: "#page=live" })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain('<a class="wls is-work" href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;trace=tr9&amp;ch=telegram&amp;ask=Answering+a+refund+for+order+47&amp;at=')
+    expect(html).toContain('<a class="wls ax-af-card is-work" href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;trace=tr9&amp;ch=telegram&amp;ask=Answering+a+refund+for+order+47&amp;at=')
     const live = w.streams.find((s) => s.url === "/api/live/stream")!
     expect(live).toBeTruthy()
     // A snapshot with the run gone takes its card away.
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...LIVE.nodes[0], agents: [{ id: "cx", name: "Customer Desk", runningTasks: [] }] }] }) })
-    expect(w.el("wall-live").innerHTML).toContain("No session or job is running.")
+    expect(w.el("wall-live").innerHTML).toContain("No session or job is running</strong>")
     w.go("#page=agents")
     await w.settle()
     expect(live.closed).toBe(true)
@@ -172,35 +173,112 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
     expect(w.el("wtask-steer").hidden).toBe(false)
   })
 
-  it("sends the steer box's message as the next turn (followup)", async () => {
+  it("sends the ask box's message as the next turn (followup)", async () => {
     const w = openWall({ hash: LIVE_HASH })
     await w.settle()
-    w.el("task-input").value = "Use the new refund form"
+    w.el("task-text").value = "Use the new refund form"
     w.el("task-send").on.click()
     await w.settle()
     const sent = w.calls.filter((c) => c.url.startsWith("/api/task/action?"))
     expect(sent.map((c) => c.url)).toEqual(["/api/task/action?node=http%3A%2F%2Fnode-a&task=t9&kind=followup"])
     expect(sent[0].init.method).toBe("POST")
     expect(JSON.parse(sent[0].init.body)).toEqual({ message: "Use the new refund form", agent: "cx" })
-    expect(w.el("task-input").value).toBe("")
-    expect(w.el("task-hint").textContent).toBe("queued — dispatches as the next turn")
+    expect(w.el("task-text").value).toBe("")
+    expect(w.el("task-voice").textContent).toBe("Queued: it goes in as the next turn.")
   })
 
-  it("stops the running turn (cancel)", async () => {
+  it("sends on Enter, and keeps Shift+Enter for a new line, as the Hub chat does (#2306)", async () => {
     const w = openWall({ hash: LIVE_HASH })
     await w.settle()
-    w.el("task-stop").on.click()
+    const key = (k: { key: string; shiftKey?: boolean }) => w.el("task-text").on.keydown({ preventDefault() {}, ...k })
+    w.el("task-text").value = "Check the totals"
+    key({ key: "Enter", shiftKey: true })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/task/action?"))).toHaveLength(0)
+    key({ key: "Enter" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/task/action?")).map((c) => c.url)).toEqual(["/api/task/action?node=http%3A%2F%2Fnode-a&task=t9&kind=followup"])
+  })
+
+  it("puts the Hub chat's ask box on the page, with Pause and Stop by the send arrow (#2306)", async () => {
+    const w = openWall({ hash: LIVE_HASH })
+    await w.settle()
+    const steer = w.el("wall-task").innerHTML.split('id="wtask-steer"')[1].split("</footer>")[0]
+    expect(steer).toContain('class="hc__comp" id="task-comp"')
+    expect(steer).toContain('id="task-mic"')
+    // Files as in the chat; no model picker: the run is already on its model.
+    expect(steer).toContain('id="task-attach"')
+    expect(steer).toContain('id="task-files"')
+    expect(steer).not.toContain('id="task-model"')
+    expect(steer).toContain('placeholder="Message Customer Desk: it goes in as the next turn…"')
+    const ctl = w.el("task-ctl").innerHTML
+    expect(ctl).toContain('data-task-ctl="pause"')
+    expect(ctl).toContain('data-task-ctl="stop"')
+    expect(ctl.indexOf("pause")).toBeLessThan(ctl.indexOf("stop"))
+    expect(ctl).not.toContain('data-task-ctl="resume"')
+  })
+
+  it("wires files and the mic once the chat's script has run, when a Task link opens first (#2306)", async () => {
+    const w = openWall({ hash: LIVE_HASH, readyState: "loading" })
+    await w.settle()
+    const got: string[] = []
+    w.win.AXComposerFiles = (p: string) => { got.push("files:" + p); return { attachments: () => [{ name: "a.txt", path: "/ws/uploads/a.txt" }], uploading: () => false, clear() {} } }
+    w.win.AXComposerVoice = (p: string) => { got.push("voice:" + p) }
+    for (const f of w.onDoc.DOMContentLoaded ?? []) f({})
+    expect(got).toEqual(["files:task", "voice:task"])
+    // A follow-up then carries the files.
+    w.el("task-text").value = "See the file"
+    w.el("task-send").on.click()
+    await w.settle()
+    const sent = w.calls.filter((c) => c.url.includes("kind=followup"))
+    expect(JSON.parse(sent[0].init.body)).toEqual({ message: "See the file", agent: "cx", attachments: [{ name: "a.txt", path: "/ws/uploads/a.txt" }] })
+  })
+
+  it("stops the running turn (cancel) from the ask box", async () => {
+    const w = openWall({ hash: LIVE_HASH })
+    await w.settle()
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="stop"')
     await w.settle()
     const sent = w.calls.filter((c) => c.url.startsWith("/api/task/action?"))
     expect(sent.map((c) => c.url)).toEqual(["/api/task/action?node=http%3A%2F%2Fnode-a&task=t9&kind=cancel"])
     expect(JSON.parse(sent[0].init.body)).toEqual({})
-    expect(w.el("task-hint").textContent).toBe("stop requested")
+    expect(w.el("task-voice").textContent).toBe("Stop asked: the turn ends now.")
+  })
+
+  it("ticks Working · elapsed while the run goes, then shows the time it took (#2306)", async () => {
+    const w = openWall({ hash: LIVE_HASH })
+    await w.settle()
+    const stream = w.streams.find((s) => s.url.startsWith("/api/task/stream?"))!
+    stream.on.start({ data: JSON.stringify({ initial: "", startedAt: iso(Date.now() - 134e3) }) })
+    expect(w.el("task-elapsed").textContent).toMatch(/^Working · 2m 1[45]s$/)
+    stream.on.end({})
+    expect(w.el("task-elapsed").textContent).toMatch(/^Took 2m 1[45]s$/)
+    // Ended: no Pause or Stop any more.
+    expect(w.el("task-ctl").innerHTML).toBe("")
+  })
+
+  it("hands the island each line's time, from the start event and each chunk (#2306)", async () => {
+    let got: any = null
+    const fake = { mount: (_el: unknown, o: any) => { got = o; return { append() {}, end() {}, reset() {}, unmount() {} } } }
+    const w = openWall({ hash: LIVE_HASH, win: { AXTaskConversation: fake } })
+    await w.settle()
+    const stream = w.streams.find((s) => s.url.startsWith("/api/task/stream?"))!
+    stream.on.start({ data: JSON.stringify({ initial: "· init\n", stamps: [[0, 1000]] }) })
+    stream.on.chunk({ data: JSON.stringify({ text: "→ Read(a.ts)\n", at: 5000 }) })
+    expect(got.stamps()).toEqual([[0, 1000], [7, 5000]])
+  })
+
+  it("shows when the request came in, short, with the full date on hover (#2306)", async () => {
+    const w = openWall({ hash: LIVE_HASH + "&at=" + encodeURIComponent(iso(Date.now() - 60e3)) })
+    await w.settle()
+    expect(w.el("task-ask-when").innerHTML).toMatch(/^<time class="ax-time" datetime="[^"]+" title="[^"]+">\d\d:\d\d<\/time>$/)
   })
 
   it("keeps a finished run from another channel read-only", async () => {
     const w = openWall({ hash: "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1",
-      history: { ok: true, channel: "telegram", message: "Ship it", transcript: "done\n" } })
+      history: { ok: true, channel: "telegram", message: "Ship it", transcript: "done\n", startedAt: iso(NOW - 242e3), durationMs: 242e3 } })
     await w.settle()
+    expect(w.el("task-elapsed").textContent).toBe("Took 4m 02s")
     expect(w.calls.some((c) => c.url === "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=t1")).toBe(true)
     expect(w.streams.some((s) => s.url.startsWith("/api/task/stream?"))).toBe(false)
     expect(w.el("task-status").textContent).toBe("archived")
@@ -214,8 +292,8 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
       action: { resumed: true, taskId: "t6", channel: "cron" } })
     await w.settle()
     expect(w.el("wtask-steer").hidden).toBe(false)
-    expect(w.el("task-stop").style.display).toBe("none")
-    w.el("task-input").value = "Add the weekend numbers"
+    expect(w.el("task-ctl").innerHTML).not.toContain('data-task-ctl="stop"')
+    w.el("task-text").value = "Add the weekend numbers"
     w.el("task-send").on.click()
     await w.settle()
     expect(w.loc.href).toBe("#page=task&task=t6&agent=ops&node=http%3A%2F%2Fnode-a&ch=cron")
@@ -318,8 +396,8 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Paused <small>1</small></h3>")
-    const card = html.split('class="wls is-stopped"')[1].split("</article>")[0]
+    expect(html).toContain('<h3>Paused <span class="ax-af-count" data-n="1">1</span></h3>')
+    const card = html.split('class="wls ax-af-card is-stopped"')[1].split("</article>")[0]
     expect(card).toContain("stopped by you")
     expect(card).toContain("Update the price list")
     expect(card).toContain("Why: Waiting for the new price list")
@@ -352,23 +430,57 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     expect(JSON.parse(posts(w, "/api/admin/wall/live/drop")[0].init.body)).toEqual({ id: "t7" })
   })
 
-  it("shows the same task as Paused, with Resume, on its Task page", async () => {
+  it("shows the same task as Paused on its Task page, with its plan above and Resume in the ask box (#2306)", async () => {
     const w = openWall({ hash: "#page=task&task=t7&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1", live: OPS, history: { ok: true, channel: "telegram", message: "Update the price list" } })
     await w.settle()
     const ops = w.el("wtask-ops").innerHTML
-    expect(ops).toContain("❚❚ Paused")
-    w.press(ops, 'data-lv="resume"')
+    expect(ops).toContain('data-state="waiting">Paused</span>')
+    expect(ops).toContain("Resume plan, by Customer Desk")
+    expect(ops).not.toContain('data-lv="resume"')
+    // A read-only run's ask box opens for Resume alone.
+    expect(w.el("wtask-steer").hidden).toBe(false)
+    expect(w.el("task-text").disabled).toBe(true)
+    expect(w.el("task-text").placeholder).toBe("Paused. Resume goes on from its plan.")
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="resume"')
     await w.settle()
-    expect(posts(w, "/api/admin/wall/live/resume").map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
+    const sent = posts(w, "/api/admin/wall/live/resume")
+    expect(sent.map((c) => c.url)).toEqual(["/api/admin/wall/live/resume?node=http%3A%2F%2Fnode-a"])
+    expect(JSON.parse(sent[0].init.body)).toEqual({ id: "t7" })
+    expect(w.el("task-voice").textContent).toContain("Resumed: a new turn goes on from the plan.")
+    expect(w.el("task-ctl").innerHTML).toBe("")
   })
 
-  it("offers Pause on a live run's Task page, which stops it with a resume plan", async () => {
-    const w = openWall({ hash: "#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram", live: OPS })
+  it("pauses a live run from the ask box, then resumes it with the paused record's id (#2306)", async () => {
+    const w = openWall({ hash: "#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram", live: OPS,
+      replies: { "/api/admin/wall/live/pause": { ok: true, id: "t9-paused", state: "winding-down" } } })
     await w.settle()
-    w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
-    w.press(w.el("wtask-ops").innerHTML, 'data-lv="pause"')
+    expect(w.el("wtask-ops").innerHTML).not.toContain('data-lv="pause"')
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="pause"')
     await w.settle()
     expect(JSON.parse(posts(w, "/api/admin/wall/live/pause")[0].init.body)).toEqual({ taskId: "t9" })
+    // Not a freeze: the agent stops at the next point and writes its plan.
+    expect(w.el("task-voice").textContent).toBe("Customer Desk stops at the next point and writes a plan to resume from. Resume shows here once the plan is saved.")
+    expect(w.el("task-ctl").innerHTML).toContain("Writing its plan…")
+    expect(w.el("task-ctl").innerHTML).not.toContain('data-task-ctl="pause"')
+    // The run ends; the snapshot lists the paused record with its plan.
+    w.streams.find((s) => s.url.startsWith("/api/task/stream?"))!.on.end({})
+    const live = w.streams.find((s) => s.url === "/api/live/stream")!
+    live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...OPS.nodes[0], agents: [{ id: "cx", name: "Customer Desk", runningTasks: [] }],
+      stoppedTasks: [{ ...PAUSED, id: "t9-paused", request: "Answering a refund" }] }] }) })
+    expect(w.el("task-text").placeholder).toBe("Paused. Resume goes on from its plan.")
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="resume"')
+    await w.settle()
+    expect(JSON.parse(posts(w, "/api/admin/wall/live/resume")[0].init.body)).toEqual({ id: "t9-paused" })
+  })
+
+  it("says why when the node refuses the pause, and keeps Pause (#2306)", async () => {
+    const w = openWall({ hash: "#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram", live: OPS,
+      replies: { "/api/admin/wall/live/pause": null } })
+    await w.settle()
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="pause"')
+    await w.settle()
+    expect(w.el("task-voice").textContent).toMatch(/^Not paused: /)
+    expect(w.el("task-ctl").innerHTML).toContain('data-task-ctl="pause"')
   })
 })
 
@@ -391,7 +503,7 @@ describe("Wall Live: machines (#1439)", () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Machines <small>2</small></h3>")
+    expect(html).toContain('<h3>Machines <span class="ax-af-count" data-n="2">2</span></h3>')
     w.press(html, 'data-lv="restart"')
     w.press(w.el("wall-live").innerHTML, 'data-lv="restart"')
     await w.settle()
@@ -410,7 +522,7 @@ describe("Wall Live: machines (#1439)", () => {
   it("lists the attached Claude Code sessions with their agent and start time", async () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
-    const s = w.el("wall-live").innerHTML.split("Claude Code sessions <small>1</small>")[1].split("</section>")[0]
+    const s = w.el("wall-live").innerHTML.split('Claude Code sessions <span class="ax-af-count" data-n="1">1</span>')[1].split("</section>")[0]
     expect(s).toContain("<b>Customer Desk</b>")
     expect(s).toContain("<b>demo-site</b>")
     expect(s).toMatch(/started \d\d:\d\d \(60 min ago\)/)
@@ -464,7 +576,7 @@ describe("The agent list in the nav (#2101 P4, R26)", () => {
     live.on.snapshot({ data: JSON.stringify(LIVE) })
     const agents = w.el("hub-agents").innerHTML
     expect(agents.match(/class="ha__row is-working/g)).toHaveLength(2)
-    expect(agents).toContain("Working <span>2</span>")
+    expect(agents).toContain('Working <span class="ax-af-count" data-n="2">2</span>')
     expect(w.el("wall-feed").innerHTML).toBe(feed)
     // R26: a working agent's row opens its live run on the Task page, not its chat.
     const row = /<a class="ha__row is-working[^"]*" href="([^"]*)" data-ha-agent="cx"/.exec(agents)
@@ -557,7 +669,7 @@ describe("The Task page's Files button (#2101 R17)", () => {
     const body = w.el("wcx-body").innerHTML
     expect(body).toContain('href="#page=task&amp;task=t1&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;ch=telegram&amp;done=1"')
     expect(body).toContain("1 changed · 0 read · 1 attached")
-    expect(body).toContain("edited</span><b>price.ts</b><small>src · 2×</small>")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src</small>")
     expect(body).toContain("<b>spec.pdf</b><small>you attached it</small>")
     expect(w.el("wtask-files").getAttribute("aria-pressed")).toBe("true")
   })

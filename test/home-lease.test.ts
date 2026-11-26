@@ -268,15 +268,60 @@ describe("one run per agent and home, in the registry", () => {
     const first = start(r, a2a("a2a:pm:coder:2", H), { slotWaitMs: 10_000 })
     await tick(200)
     expect((r as any).workLanes.homeHolder("coder", H)).toBeNull()
-    const second = start(r, a2a("a2a:pm:coder:3", H), { slotWaitMs: 800 })
+    const second = start(r, a2a("a2a:pm:coder:3", H), { slotWaitMs: 800, message: "hand-off: review #2337" })
     const res = await second.run
     expect(res.error).toMatch(/slot wait timed out/)
     expect(res.error).not.toMatch(/home_busy/)
+    // B1: out of budget before the lease, the hand-off is kept, not lost.
+    expect(res.error).toMatch(/kept as a notice for its next run, do not send it again$/)
+    const notices = (r as any).notices
+    expect(notices.count("coder")).toBe(1)
+    expect(notices.byAgent.get("coder")[0].text).toMatch(/Refused on noqta\/agentx#2084 while every slot of yours was busy[\s\S]*hand-off: review #2337/)
     r.cancelRunningTask(busyId, "done")
     await busy.run
     const firstId = await first.started
     r.cancelRunningTask(firstId, "done")
     await first.run
+  }, 15_000)
+
+  it("#2337 C2: runs of one home waiting for a slot go in the order they came", async () => {
+    const { r } = registry(1)
+    const busy = start(r, a2a("a2a:pm:coder:1"))
+    const busyId = await busy.started
+    const first = start(r, a2a("a2a:pm:coder:2", H), { slotWaitMs: 10_000 })
+    await tick(400)
+    const second = start(r, a2a("a2a:pm:coder:3", H), { slotWaitMs: 10_000 })
+    // Free the slot just before the second's own poll would come round
+    // ahead of the first's: without the line, the second took it.
+    await tick(700)
+    r.cancelRunningTask(busyId, "done")
+    await busy.run
+    const firstId = await first.started
+    await tick(800)
+    expect(second.didStart()).toBe(false)
+    r.cancelRunningTask(firstId, "done")
+    await first.run
+    const secondId = await second.started
+    r.cancelRunningTask(secondId, "done")
+    await second.run
+    expect((r as any).slotLines.size).toBe(0)
+  }, 15_000)
+
+  it("#2337 C1: a run whose free slot is taken in the gap waits after the lease, and is kept if that wait runs out", async () => {
+    const { r } = registry(1)
+    // The run without a home is sent first but has not taken the slot yet,
+    // so the home run, in the same tick, sees it free and does not wait
+    // before its lease; the other run then takes the slot first.
+    const other = start(r, a2a("a2a:pm:coder:1"))
+    const home = start(r, a2a("a2a:pm:coder:2", H), { slotWaitMs: 800, message: "hand-off in the gap" })
+    const otherId = await other.started
+    const res = await home.run
+    expect(home.didStart()).toBe(false)
+    expect(res.error).toMatch(/slot wait timed out.*kept as a notice for its next run, do not send it again$/)
+    const notices = (r as any).notices
+    expect(notices.byAgent.get("coder")[0].text).toMatch(/hand-off in the gap/)
+    r.cancelRunningTask(otherId, "done")
+    await other.run
   }, 15_000)
 
   it("#2337: a home_busy refusal is kept for the agent's next run, says so, and the log names the holder running", async () => {

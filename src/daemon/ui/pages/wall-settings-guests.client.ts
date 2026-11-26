@@ -11,6 +11,8 @@
 // so the Hub's owner guard holds it (wall-actions.ts wallGuestsTarget).
 // Opening, widening and narrowing a grant stay in the terminal.
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_GUESTS_SCRIPT = String.raw`
   // --- Guests ---
   var ST_GU_STATE = { active: 'active', pending: 'waiting for your approval', paused: 'paused', ended: 'ended' };
@@ -46,13 +48,13 @@ export const WALL_SETTINGS_GUESTS_SCRIPT = String.raw`
     var g = stGu();
     if (!g.data && !g.loading && !g.error) { stGuLoad(); }
     var grants = (g.data && g.data.grants) || [];
-    var body = g.loading && !g.data ? '<p class="ax-wall__empty">Loading…</p>'
+    var body = g.loading && !g.data ? '${afLoaderHtml("Loading…")}'
       : g.error ? '<p class="wst__err">Could not read the grants: ' + esc(g.error) + '.</p>'
       : !grants.length ? '<p class="ax-wall__empty">No guest grants yet.</p>'
       : '<ul class="wsj">' + grants.map(stGuRow).join('') + '</ul>';
     return '<header class="wst__h"><h2>Guests</h2><p>Other organisations let into part of this mesh. Each grant names one agent of yours, what it may touch for them, how much freedom it has and until when. Nothing is shared until you open it.</p></header>' +
       stNoteHtml('gu') + body +
-      '<p class="wsj__sub">Open a grant from a terminal: <code>agentx mesh guests invite --name "…" --guest "…" --agent &lt;id&gt;</code>. The guest joins with the code; its join arrives as a card in Needs you. Widen or narrow one with <code>agentx mesh guests set</code>.</p>' +
+      '<p class="wsj__sub">Open a grant from a terminal: <code>agentx mesh guests invite --name "…" --guest "…" --agent &lt;id&gt;</code>. The guest joins with the code; its join arrives as a card in Waiting on you. Widen or narrow one with <code>agentx mesh guests set</code>.</p>' +
       '<div class="wsf__foot"><button type="button" class="ax-btn ax-btn--ghost" data-st-act="gu-load">Refresh</button></div>';
   }
   async function stGuAct(id, op) {

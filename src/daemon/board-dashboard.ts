@@ -30,14 +30,14 @@ import { handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
-import { hubAgentsFor } from "./hub-agents-api"
+import { hubAgentsFor, hubDayStart } from "./hub-agents-api"
 import { liftProviderHolds } from "@/agents/claude-code-quota"
-import { fetchHubUsage } from "./hub-usage-api"
+import { fetchHubUsage, hubSpendToday, type HubSpend } from "./hub-usage-api"
 import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
 import { handlePicturesPanel, servePicture } from "./pictures-panel"
 import { IMPLICIT_OWNER } from "@/people/people"
-import { handleObservabilityApi } from "./observability-panel"
+import { currentBudgetSource, handleObservabilityApi, openReadOnly } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderProjectsPage } from "./ui/pages/projects"
 import { createWikiHandler } from "@/wiki/serve"
@@ -45,7 +45,8 @@ import { recordSurfaceUse } from "@/observability/surface-usage"
 import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphDetail, setDaemonConfigForActivityGraph, buildLocalActivityGraphSnapshot, mergeFleetSnapshots, withForgeStatus, type FleetSnapshot } from "./activity-graph-panel"
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { handleSituationsPanel } from "./situations-panel"
-import { renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
+import { hubMenuCatalog, renderWallPage, WALL_LIVE_HREF } from "./ui/pages/wall"
+import { handleHubMenu, hubMenuDeps, isHubMenuPath } from "./hub-menu-routes"
 import { WALL_COST_HREF } from "./ui/pages/wall-cost"
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH, hubRedirect } from "./ui/hub-name"
 import { hubReactOn } from "./ui/hub-react"
@@ -93,6 +94,7 @@ import { handleWallApi, WALL_PREFIX, withForge, type WallDeps } from "./wall-api
 import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
 import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { reportedReader, wallReported, withReported, type WallReportedSource } from "./wall-reported"
+import { forgeTaskSources, forgeTasks, forgeTasksReader, type ForgeTasksSource } from "./hub-forge-tasks"
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
@@ -336,7 +338,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     node: localNodeName(ctx.config), dashboardToken: ctx.token,
     posts: (days) => buildWallFleet(new URLSearchParams({ days: String(days) }), ctx) as Promise<any>,
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, agents: { rows: (dayStart, now) => hubAgentsNow(ctx.config, dayStart, now) }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -1068,6 +1070,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // and the Diff view's read and line comments (#2102). After the token
   // gate above; the proxy above sends a comment, a call, a diff read or
   // diff comments to the node that keeps the post.
+  // The Hub's menu (#2149): the owner's, read and written. Writes are past
+  // the Wall's owner guard above; the read is checked here.
+  if (isHubMenuPath(path)) {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
+    await handleHubMenu(req, res, path, method, hubMenuDeps(ctx.config, process.cwd(), hubMenuCatalog()))
+    return
+  }
   if (isWallActionPath(path)) {
     // A read takes its one argument from the query (run-on ?id=, #2104).
     const body = method === "POST" ? await readJson(req) : Object.fromEntries(url.searchParams)
@@ -1107,21 +1116,38 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/api/admin/hub/agents") {
     try {
       const now = Date.now()
-      const ds = Number(url.searchParams.get("dayStart"))
-      const dayStart = Number.isFinite(ds) && ds > now - 2 * 86_400_000 && ds <= now ? ds : new Date(new Date(now).toISOString().slice(0, 10)).getTime()
-      const snap = await buildLiveSnapshot(ctx.config, undefined, true) as { nodes?: LtNode[] }
-      const node = { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" }
-      sendJson(res, 200, hubAgentsFor(snap.nodes || [], node, now, dayStart))
+      sendJson(res, 200, await hubAgentsNow(ctx.config, hubDayStart(url.searchParams.get("dayStart"), now), now))
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+  // The Hub's Tasks (#2226): the open issues and pull/merge requests of the
+  // repositories this node works on (hub-forge-tasks.ts), cached a minute.
+  // Read only, with the `gh` login and the GitLab channel's token.
+  //   GET /api/admin/hub/tasks
+  if (method === "GET" && path === "/api/admin/hub/tasks") {
+    try { sendJson(res, 200, await hubForgeTasksSource(ctx.config).read()) }
+    catch (e: any) { sendJson(res, 502, { error: e.message || "forges not read" }) }
     return
   }
   // Read-only status for the Hub's status bar (#2101 P9a, R28): each plan
   // engine's windows, from the daemon's /usage/plan (hub-usage-api.ts). This
   // process has no reading of its own (R28g). The admin gate above protects
-  // this route; only percentages, statuses and times leave it.
+  // this route; only percentages, statuses and times leave it. The API
+  // engines' spend today (R28e) is this machine's recorded run cost, the
+  // same sum the Cost page reads; with the daemon down it still shows.
   if (method === "GET" && path === "/api/admin/hub/usage") {
-    try { sendJson(res, 200, await fetchHubUsage(ctx.config)) }
-    catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
+    let spend: HubSpend | null = null
+    const opened = openReadOnly()
+    if (opened) {
+      try { spend = hubSpendToday(opened.db, Object.keys(currentBudgetSource(ctx.config)?.agents ?? {})) }
+      catch (e: any) { console.warn(`[hub] spend today not read: ${e?.message ?? e}`); spend = null }
+      finally { opened.close() }
+    }
+    try { sendJson(res, 200, { ...(await fetchHubUsage(ctx.config)), spend }) }
+    catch (e: any) {
+      if (spend) sendJson(res, 200, { engines: [], windows: [], readAt: null, spend })
+      else sendJson(res, 502, { error: e.message || "daemon not reachable" })
+    }
     return
   }
   // CLI account profiles (#2101 P9b, agents/cli-accounts.ts): which Claude
@@ -1387,7 +1413,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (same as /api/task/stream), and the dashboard forwards to the daemon's
   // /api/tasks/:taskId/{cancel|followup} endpoint with the operator token.
   //   POST /api/task/action?node=<url>&task=<id>&kind=cancel|followup
-  // body: passthrough JSON (cancel: { reason? }; followup: { message, replace?, sender? })
+  // body: passthrough JSON (cancel: { reason? }; followup: { message, replace?, sender?, agent?, attachments? })
   if (method === "POST" && path === "/api/task/action") {
     const u = new URL(req.url || "/", "http://localhost")
     const nodeUrl = u.searchParams.get("node")
@@ -3467,6 +3493,13 @@ function resolveFromHere(rel: string): string {
   return resolve(here, rel)
 }
 
+/** The Hub's agent rows (#2101 P4a), for the Hub and the phone's Agents tab (C1a). */
+async function hubAgentsNow(config: DaemonConfig, dayStart: number, now: number) {
+  const snap = await buildLiveSnapshot(config, undefined, true) as { nodes?: LtNode[] }
+  const node = { url: config.dashboard.daemonUrl.replace(/\/+$/, ""), name: config.node?.name || "this computer" }
+  return hubAgentsFor(snap.nodes || [], node, now, dayStart)
+}
+
 async function readAsset(path: string): Promise<Buffer> {
   return readFile(path)
 }
@@ -3769,6 +3802,17 @@ function wallReportedSource(config: DaemonConfig): WallReportedSource | null {
   const key = JSON.stringify([cfg, c])
   if (wallReportedCached?.key !== key) wallReportedCached = { key, source: wallReported(cfg, reportedReader(c)) }
   return wallReportedCached.source
+}
+
+/** The Hub's forge Tasks (#2226), kept across reads so the minute's cache
+ *  holds; rebuilt when the projects or the GitLab channel change. */
+let hubForgeTasksCached: { key: string; source: ForgeTasksSource } | null = null
+function hubForgeTasksSource(config: DaemonConfig): ForgeTasksSource {
+  const sources = forgeTaskSources(config)
+  const gl = config.channels?.gitlab
+  const key = JSON.stringify([sources, gl?.host ?? null, gl?.token ?? null])
+  if (hubForgeTasksCached?.key !== key) hubForgeTasksCached = { key, source: forgeTasks(sources, forgeTasksReader(config)) }
+  return hubForgeTasksCached.source
 }
 
 /** A quick fleet read waits this long for each peer (#1442); a peer still

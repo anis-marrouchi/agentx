@@ -60,7 +60,7 @@ export function agmSlug(name: unknown): string {
 
 /** One status per agent. Needs you comes first: it is what the owner acts on. */
 export function agmStatus(f: AgmFacts): AgmStatus {
-  if (f.hold === "waiting") return { key: "needs", label: "Needs you", title: "Waits for your approval in Needs you" }
+  if (f.hold === "waiting") return { key: "needs", label: "Needs you", title: "Waits for your approval in Waiting on you" }
   if (f.needs > 0) return { key: "needs", label: "Needs you", title: f.needs + (f.needs === 1 ? " item waits" : " items wait") + " on you" }
   if (f.hold === "paused") return { key: "paused", label: "Paused", title: "Starts no run until you resume it" }
   if (f.running > 0) return { key: "working", label: "Working", title: f.running + (f.running === 1 ? " task" : " tasks") + " running now" }
@@ -68,8 +68,11 @@ export function agmStatus(f: AgmFacts): AgmStatus {
   return { key: "idle", label: "Idle", title: "Ready; nothing running" }
 }
 
+/** The shared state (dot and word, #2152): working runs, needs you waits;
+ *  paused, not started and idle stay grey. agm-st is-<key> is the hook. */
 export function agmStatusHtml(st: AgmStatus): string {
-  return '<span class="chip agm-st is-' + agmEsc(st.key) + '" title="' + agmEsc(st.title) + '">' + agmEsc(st.label) + "</span>"
+  const state = st.key === "working" ? "running" : st.key === "needs" ? "waiting" : ""
+  return '<span class="ax-af-state agm-st is-' + agmEsc(st.key) + '"' + (state ? ' data-state="' + state + '"' : "") + ' title="' + agmEsc(st.title) + '">' + agmEsc(st.label) + "</span>"
 }
 
 /** The calls that create an agent from the form: the agent first (with its
@@ -193,7 +196,7 @@ export function agmFormHtml(f: AgmForm, mode: string, engines: Array<[string, st
 /** The owner's buttons on an agent's card, and its confirm line. */
 export function agmActsHtml(id: string, name: string, st: AgmStatus, hold: string, confirm: string): string {
   const e = agmEsc(id), paused = hold === "paused"
-  const hold_ = hold === "waiting" ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=decide">Approve in Needs you</a>'
+  const hold_ = hold === "waiting" ? '<a class="ax-btn ax-btn--ghost" href="#status=open&amp;view=decide">Approve in Waiting on you</a>'
     : '<button type="button" class="ax-btn ax-btn--ghost" data-agm-act="' + (paused ? "resume" : "pause") + '" data-id="' + e + '">' + (paused ? "Resume" : "Pause") + "</button>"
   const ask = confirm === id
     ? '<div class="wsk agm-confirm" role="alertdialog" aria-label="Confirm"><p>Remove @' + e + " (" + agmEsc(name) + ")? It leaves agentx.json and the org chart (with its lines), and its Telegram, Slack and Discord bots are unbound. Its workspace folder stays on disk.</p>" +
@@ -205,8 +208,13 @@ export function agmActsHtml(id: string, name: string, st: AgmStatus, hold: strin
     '<button type="button" class="ax-btn ax-btn--ghost agm-rm" data-agm-act="ask" data-id="' + e + '">Remove</button></div>' + ask
 }
 
+/** The log; the answer waited for shows the shared loader (#2152, the markup of afLoaderHtml). */
 export function agmTestLogHtml(td: AgmTestDrive | null): string {
-  return td && td.msgs.length ? td.msgs.map((m) => '<li class="wtd__m is-' + agmEsc(m.kind) + '">' + agmEsc(m.text) + "</li>").join("") : ""
+  let rays = ""
+  for (let i = 0; i < 8; i++) rays += '<span style="rotate:' + i * 45 + "deg;animation-delay:" + ((i - 8) * 0.1).toFixed(1) + 's"></span>'
+  const text = (m: { kind: string; text: string }) => m.kind === "wait"
+    ? '<span class="ax-af-loader" role="status"><span class="ax-af-loader__rays" aria-hidden="true">' + rays + "</span>" + agmEsc(m.text) + "</span>" : agmEsc(m.text)
+  return td && td.msgs.length ? td.msgs.map((m) => '<li class="wtd__m is-' + agmEsc(m.kind) + '">' + text(m) + "</li>").join("") : ""
 }
 
 /** Test drive: a message to the agent and its answer, before any channel. */

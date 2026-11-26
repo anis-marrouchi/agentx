@@ -55,7 +55,7 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
       '<section class="wsc"><h3>Org chart</h3><p class="wsj__sub">Who reports to whom, the same editor as the Org page.</p>' +
         (S.st.org ? orgTreeHtml(S.st.org.setup) : '') +
         '<div class="org-edit" id="st-org-edit">' + (!S.st.org ? '<p class="ax-wall__empty">Could not read the org chart.</p>' : ST_OE.html() || '<p class="ax-wall__empty">Only the owner changes the org chart.</p>') + '</div></section>' +
-      '<section class="wsc"><h3>Projects <small>' + projRows.length + '</small></h3>' + stBizList(projRows, 'No project.') +
+      '<section class="wsc"><h3>Projects <span class="ax-af-count" data-n="' + projRows.length + '">' + projRows.length + '</span></h3>' + stBizList(projRows, 'No project.') +
       '<details class="wsc"><summary><h3>Add or update a project</h3></summary><form class="wsf" data-st-form="biz-proj">' +
         stChField('st-bp-id', 'Project id', '', 'example/app', '(owner/repo for GitLab or GitHub)') +
         '<div class="wsf__row">' + stChField('st-bp-pm', 'PM', '', 'pm-agent', '(agent id: drives the PM gate)') + stChField('st-bp-client', 'Client', '', 'example') + '</div>' +
@@ -64,14 +64,14 @@ export const WALL_SETTINGS_BUSINESS_SCRIPT = String.raw`
         '<p class="wsf__hint">Leave a field blank to keep what is saved. Tick Clear to remove a name, lead or team.</p>' +
         '<div class="wsf__row">' + ['name', 'lead', 'team'].map(function (k) { return '<label class="wsf__check"><input type="checkbox" id="st-bp-clear-' + k + '"> Clear ' + k + '</label>'; }).join('') + '</div>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Save project</button>' + stNoteHtml('biz-proj') + '</div></form></details></section>' +
-      '<section class="wsc"><h3>Clients <small>' + clientRows.length + '</small></h3><p class="wsj__sub">A client exists as soon as a project or a contact names it. Set one up only to treat it differently.</p>' + stBizList(clientRows, 'No client yet: add a project or a contact mapping.') +
+      '<section class="wsc"><h3>Clients <span class="ax-af-count" data-n="' + clientRows.length + '">' + clientRows.length + '</span></h3><p class="wsj__sub">A client exists as soon as a project or a contact names it. Set one up only to treat it differently.</p>' + stBizList(clientRows, 'No client yet: add a project or a contact mapping.') +
       '<details class="wsc"><summary><h3>Set up a client</h3></summary><form class="wsf" data-st-form="biz-client">' +
         '<div class="wsf__row">' + stChField('st-bc-id', 'Client id', '', 'example') + stChField('st-bc-name', 'Display name', '', 'Example Co', '(optional)') + '</div>' +
         '<div class="wsf__row"><label>Kind <small>(client: someone waiting on you; own: your product; internal: machinery)</small><select id="st-bc-kind">' + stOptions(kinds, '') + '</select></label>' +
         stChField('st-bc-respond', 'Respond within', '', '4h', '(4h, 90m, 2d; empty for no clock)') + '</div>' +
         stChField('st-bc-standing', 'Standing authorizations', '', 'rebase-branch, open-followup-issue', '(comma-separated, * for all; ignored for kind client)') +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Save client</button>' + stNoteHtml('biz-client') + '</div></form></details></section>' +
-      '<section class="wsc"><h3>Contact map <small>' + contactRows.length + '</small></h3><p class="wsj__sub">Which client a Telegram or WhatsApp chat belongs to. Without it, chats count as internal.</p>' + stBizList(contactRows, 'No contact mapping.') +
+      '<section class="wsc"><h3>Contact map <span class="ax-af-count" data-n="' + contactRows.length + '">' + contactRows.length + '</span></h3><p class="wsj__sub">Which client a Telegram or WhatsApp chat belongs to. Without it, chats count as internal.</p>' + stBizList(contactRows, 'No contact mapping.') +
       '<details class="wsc"><summary><h3>Add a contact mapping</h3></summary><form class="wsf" data-st-form="biz-contact">' +
         '<div class="wsf__row">' + stChField('st-bm-channel', 'Channel', '', 'telegram', '(telegram or whatsapp; optional)') + stChField('st-bm-chat', 'Chat id', '', '-1001234567890') + '</div>' +
         '<div class="wsf__row">' + stChField('st-bm-user', 'Username', '', 'alex') + stChField('st-bm-sender', 'Sender id', '', '123456789') + '</div>' +

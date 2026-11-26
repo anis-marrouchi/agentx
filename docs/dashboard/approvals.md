@@ -1,6 +1,6 @@
 # Approvals — every decision waiting for you, in one place
 
-Some actions wait for your yes or no before an agent goes ahead: the kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Needs you** on the [Hub](./hub.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
+Some actions wait for your yes or no before an agent goes ahead: the kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. It is one list of everything waiting for you, most urgent first: **Waiting on you** on the [Hub](./hub.md). You can answer there, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Waiting on you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
 
 The list brings together these kinds of item:
 
@@ -51,7 +51,7 @@ Only you can answer. Agents can raise cards and read the list, but nothing they 
 
 Only the owner answers: the Hub asks for the dashboard key.
 
-1. **Browser:** open the dashboard and select **Needs you** in the nav. The line under the title says how many wait for you and how many you put off. It is the same count as the phone app's Desk and the daily digest.
+1. **Browser:** open the dashboard and select **Waiting on you** in the nav. The line under the title says how many wait for you and how many you put off. It is the same count as the phone app's Desk and the daily digest.
 2. **Browser:** the tabs are **Waiting**, **Put off** (what you answered **Later**) and **Answered** (your yes and no answers, newest first, and the cards an agent closed, either after you answered in chat or because it withdrew them; reviews and request replies are not listed). **Answered** keeps the last 50 and starts empty on the day this version is installed; until then it says when its history starts. Under them, the chips narrow the list to one kind: **Decisions** (cards and new agents), **Schedules**, **Memory**, **Wiki**, **Drafts** (WhatsApp and email replies, posts), **Requests**, **CI** and **Reviews**. **Reviews** are the pending [intent graph](./activity.md) classifications. They have their own chip and are not in **All** or the count.
 3. **Browser:** read the card. It says who asked, on which machine, how long ago, when it expires and what happens then. The agent's advice is under the question. On a card with choices, the advised one is already picked and marked **advised**. Pick another if you want.
 4. **Browser:** **The draft, and what Yes and No do** opens the message the agent gets with your answer (change the wording if you like), exactly what each answer does, and the source link.
@@ -59,7 +59,7 @@ Only the owner answers: the Hub asks for the dashboard key.
 6. **Browser:** select **Yes**, **No** or **Later**. Memory facts have **Keep** and **Drop**. A line opens under the buttons that says exactly what is sent, for example **Send Writer: Yes, Tuesday.** Select **Confirm** to send it, or **Back** to change your mind. Nothing is sent before **Confirm**.
 7. The note over the list says what happened. The card leaves the list, and the post it was on updates without a reload. **Later** puts it on **Put off** for a day; a card still expires on time.
 
-![Needs you on the Hub: the tabs, the kind chips, decision cards with their advice, what one unblocks, and the side column](/screenshots/wall/needs-you.png)
+![Waiting on you on the Hub: the tabs, the kind chips, decision cards with their advice, what one unblocks, and the side column](/screenshots/wall/needs-you.png)
 
 A card raised while an agent works on a task is also on that task's post, with the same buttons. **Reply instead** opens that post, so you can answer with a comment.
 
@@ -69,7 +69,7 @@ Under the count, one line says what the cards do not: the runs held on an answer
 
 On a phone, the cards fill the width and the buttons share it:
 
-<img src="/screenshots/wall/needs-you-phone.png" alt="Needs you on a phone: the tabs, the kind chips and a card with its buttons" width="320">
+<img src="/screenshots/wall/needs-you-phone.png" alt="Waiting on you on a phone: the tabs, the kind chips and a card with its buttons" width="320">
 
 Anyone who opens the Hub without the dashboard key sees the same cards without buttons, under the title **Needs the owner** and the line **Only the owner can answer these. You see them read only.** The dashboard refuses their answer even if they send one.
 
@@ -166,7 +166,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-On **Needs you**, a request that waits on you is answered in place: see [Answer on the Hub](#answer-on-the-hub). Every request you gave, finished or not, is a post on the [Hub](./hub.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). A request that does not wait on you is handed off, closed as done or dropped from its post: see [Close or hand off a request](./hub.md#close-or-hand-off-a-request). A goal's progress is the Hub's [Goal filter](./hub.md#follow-one-goal), and the request settings are in [Settings › Requests](./hub.md#choose-approvals-and-requests).
+On **Waiting on you**, a request that waits on you is answered in place: see [Answer on the Hub](#answer-on-the-hub). Every request you gave, finished or not, is a post on the [Hub](./hub.md), with its headline, what is needed from you, the agent that has it, its plan and its goal (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)). A request that does not wait on you is handed off, closed as done or dropped from its post: see [Close or hand off a request](./hub.md#close-or-hand-off-a-request). A goal's progress is the Hub's [Goal filter](./hub.md#follow-one-goal), and the request settings are in [Settings › Requests](./hub.md#choose-approvals-and-requests).
 
 ## Check-ins: a few times a day
 
@@ -210,7 +210,7 @@ The first time, macOS asks whether AgentX may use Reminders. Click **OK**. The d
 
 ## Get one reminder a day
 
-Once a day AgentX sends you one message: how many items are waiting, and the most urgent one. It never sends one message per card. The number is the one next to **Needs you** on the Hub and under **Your turn** on the phone app's Desk: the decisions here, plus requests where an agent asked you a question. What you put off with **Later** is named apart. See [One list, one count](./mobile-desk.md#one-list-one-count). To have new items sent to your phone or shown on this computer at once instead, see [Choose where new items go](./mobile-desk.md#choose-where-new-items-go). It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
+Once a day AgentX sends you one message: how many items are waiting, and the most urgent one. It never sends one message per card. The number is the one next to **Waiting on you** on the Hub and under **Your turn** on the phone app's Desk: the decisions here, plus requests where an agent asked you a question. What you put off with **Later** is named apart. See [One list, one count](./mobile-desk.md#one-list-one-count). To have new items sent to your phone or shown on this computer at once instead, see [Choose where new items go](./mobile-desk.md#choose-where-new-items-go). It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
 
 To change the time, or where it goes:
 
@@ -347,12 +347,12 @@ It shows titles only, never a card's question, a notice's message or a request's
 ## Check it worked
 
 1. **Terminal:** raise a test card with `agentx approvals request` as shown above.
-2. **Browser:** select **Needs you** on the Hub. The card is in the list with **Expires in 2 days, then the agent drops it**.
+2. **Browser:** select **Waiting on you** on the Hub. The card is in the list with **Expires in 2 days, then the agent drops it**.
 3. **Browser:** select **No**, then **Confirm**. The note says the agent will be told no, and the card leaves the list. On the **Answered** tab it is listed as **No**.
 4. **Browser:** within a minute, the Hub's **Activity** page shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
 6. **Terminal:** if agents have proposed wiki claims, `agentx approvals list` ends with one line starting `Also:` that gives how many wait, and the count above it does not include them.
-7. **Browser:** open `<dashboard>/approvals`, the old address of this page. It opens **Needs you** on the Hub.
+7. **Browser:** open `<dashboard>/approvals`, the old address of this page. It opens **Waiting on you** on the Hub.
 
 For the popup (Mac):
 
@@ -365,14 +365,14 @@ For a second machine:
 
 1. **Terminal, on the other machine:** run `agentx approvals settings`. The line **Cards go to** names this machine.
 2. **Terminal, on the other machine:** raise a test card with `agentx approvals request`. The confirmation says `raised on <machine>`.
-3. **Browser, on the machine with your screen:** select **Needs you** on the Hub. The card is there, from the agent on the other machine. Select **No**, then **Confirm**.
+3. **Browser, on the machine with your screen:** select **Waiting on you** on the Hub. The card is there, from the agent on the other machine. Select **No**, then **Confirm**.
 4. **Browser, on the other machine:** within a minute, the **Activity** page of its Hub shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
 
 For a card answered in chat:
 
 1. **Chat:** ask an agent for something that needs your approval, and wait until it says a decision card is waiting.
 2. **Chat:** say yes in the same chat, and let the agent do it.
-3. **Browser:** select **Needs you** on the Hub. The card is gone.
+3. **Browser:** select **Waiting on you** on the Hub. The card is gone.
 4. **Terminal:** `agentx approvals list` does not show it, and the next `agentx approvals checkin` does not ask about it.
 5. **Terminal:** the daemon log has a line `[approvals] <card> closed by <agent>: <reason>`.
 
@@ -400,7 +400,7 @@ For what is on your screen:
 
 ## If something is wrong
 
-- **Needs you shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
+- **Waiting on you shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
 - **A wiki claim or a missing-article question is not a card:** that is expected. See [Wiki claims and other wiki questions](#wiki-claims-and-other-wiki-questions).
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it. On another device, [sign in](../jobs/reverse-proxy.md#sign-in-from-another-device) first.
@@ -410,15 +410,15 @@ For what is on your screen:
 - **An agent gets "a card from you on this source is still pending":** it already has an open card with the same `source` link, so the same question would reach you twice. The message names the open card: answer it, or let the agent close it with the `resolve` action and raise a new one. Cards without a `source`, and cards from another agent or another machine, are not affected.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
-- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode, widget hold or call is on (`agentx notify --status`), and that the card is less than a day old. A card that breaks a screen-gate rule is never shown by itself: the daemon log says `not shown, back to <agent>`. Each card pops up once; use `agentx approvals popup <key>`, or **Show it on the Mac again** in the card's details on **Needs you**, to show it again. The daemon log has a line starting `[approvals] popup`.
+- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode, widget hold or call is on (`agentx notify --status`), and that the card is less than a day old. A card that breaks a screen-gate rule is never shown by itself: the daemon log says `not shown, back to <agent>`. Each card pops up once; use `agentx approvals popup <key>`, or **Show it on the Mac again** in the card's details on **Waiting on you**, to show it again. The daemon log has a line starting `[approvals] popup`.
 - **A card went away and you don't know why:** the daemon log says how each popup ended. `left waiting: not now` means **Not now** or **Esc**, `timed out` means the wait ran out, and `closed` means the window was closed. The card is still in Approvals in all three cases.
 - **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
 - **A card comes back after you already approved it in chat:** the agent did not close it. Answer it with what you said in chat (**Yes**), or tell the agent to close it with the `resolve` action. Agents whose sessions started before this update need a new session to see that action.
 - **An agent gets "only the agent that raised the card can close it":** the call did not come from one of that agent's running turns, or it came from another agent. Only the agent that raised a card can close it, while it is working. Answer the card in **Approvals** instead.
 - **An agent on another machine can't close its card ("needs a request from that peer"):** the request did not reach this machine with a mesh token over the network. Check that `agentx mesh list` on the other machine shows this machine as `healthy`, and that both machines hold the same `MESH_TOKEN` (or give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`). Until then, answer the card in **Approvals**.
-- **An agent gets "card … was raised by another agent (… on node …)":** the card came from an agent on another machine. Only that agent can close it, through its own machine. Answer it on **Needs you** instead.
-- **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it on **Needs you**.
+- **An agent gets "card … was raised by another agent (… on node …)":** the card came from an agent on another machine. Only that agent can close it, through its own machine. Answer it on **Waiting on you** instead.
+- **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it on **Waiting on you**.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"Pick one of the choices first":** you clicked **Yes** on a card with choices without picking one. Click a choice, then **Yes**.

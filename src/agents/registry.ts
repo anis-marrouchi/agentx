@@ -36,6 +36,7 @@ import { AgentMemory, agentMemoryStartBlock } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { outStamp, outStampTrim, type OutStamp } from "./output-stamps"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, handedOffTimeLimitError, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, stateOnAnswer, withoutStateLines, type JobState } from "./run-state"
 import { isQuietAnswer } from "@/crons/quiet"
@@ -258,6 +259,8 @@ export function lastActivityLine(buffer: string): string | undefined {
 interface TaskOutput {
   agentId: string
   buffer: string
+  /** When each line of the buffer came in (output-stamps.ts, #2306). */
+  stamps: OutStamp[]
   subscribers: Set<TaskOutputSubscriber>
   done: boolean
   endedAt?: Date
@@ -303,6 +306,9 @@ export interface TaskRecord {
   responseText: string
   /** Terminal-style transcript captured from stream-json events. */
   transcript: string
+  /** When each line of the transcript came in: [offset, epoch ms]
+   *  (output-stamps.ts, #2306). Absent on records saved before it. */
+  transcriptStamps?: OutStamp[]
   /** The home the run held the lease on (#2084): counted per week. */
   home?: string
 }
@@ -873,6 +879,11 @@ function homeBusy(agentId: string, home: string, holder: string, waitedMs: numbe
   }
 }
 
+/** A slot-wait refusal on a home run, saying whether it was kept (#2337 B1). */
+function slotTimedOut(refusal: AgentResponse, kept: boolean): AgentResponse {
+  return kept ? { ...refusal, error: `${refusal.error}; kept as a notice for its next run, do not send it again` } : refusal
+}
+
 export class AgentRegistry {
   private agents: Map<string, AgentState> = new Map()
   private config: DaemonConfig
@@ -958,6 +969,10 @@ export class AgentRegistry {
   readonly midTurn = new MidTurnInbox()
   /** One run at a time per agent and owner's request (work-lane.ts). */
   private workLanes = new WorkLanes({ log: (line) => this.log(line) })
+  /** Runs waiting for a free slot before their home, by agent and home, in
+   *  the order they came (#2337 C2): only the first one goes when a slot
+   *  frees, so the 500 ms polls cannot reorder them. */
+  private slotLines = new Map<string, object[]>()
   /** Notices for an agent's next run (notices.ts, /send/agent notice:true). */
   readonly notices: AgentNotices
   /** Chat messages waiting for an agent paused by its monthly budget (#1162). */
@@ -2176,11 +2191,24 @@ export class AgentRegistry {
     // spends the budget of the runs behind it. A forge comment queues at
     // once when the slots are full, so it never waits here. Checked first
     // without an await, so a run with a free slot joins the line in the
-    // order it came.
+    // order it came; one that finds others of its home already waiting
+    // joins the end of their line, even with a slot free (C2).
+    //
+    // The gap (C1): the slot is only looked at here, not taken. Another run
+    // can take it before this one reaches executeInternal; this one then
+    // waits there for a slot with what is left of its budget, holding the
+    // lease. If that wait runs out too, the message is kept (below).
     const agentState = this.agents.get(task.agentId)
-    if (channel !== "gitlab" && channel !== "github" && agentState && this.slotFull(agentState)) {
-      const noSlot = await this.waitForFreeSlot(task, deadline ?? start + (task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS), `${channel}:${chatId}`)
-      if (noSlot) return noSlot
+    const lineKey = `${task.agentId}\u0000${home}`
+    if (channel !== "gitlab" && channel !== "github" && agentState && (this.slotFull(agentState) || this.slotLines.has(lineKey))) {
+      const noSlot = await this.waitForFreeSlot(task, deadline ?? start + (task.slotWaitMs ?? DEFAULT_SLOT_WAIT_MS), `${channel}:${chatId}`, lineKey)
+      if (noSlot) {
+        // Out of budget with no slot (#2337 B1): kept, like a home_busy
+        // refusal, so the hand-off is not lost.
+        if (!/slot wait timed out/.test(noSlot.error ?? "")) return noSlot
+        emitSignal({ kind: "home_busy", agentId: task.agentId, ref: home, detail: `${channel} refused: no slot within the wait budget, before the home` })
+        return slotTimedOut(noSlot, this.keepRefused(task, home, channel, chatId, "while every slot of yours was busy (slot wait timed out)"))
+      }
     }
     const entry = await this.workLanes.enterHome(task.agentId, home, {
       deadline,
@@ -2222,11 +2250,15 @@ export class AgentRegistry {
       })
       if (entry.note) run = { ...run, message: entry.note + run.message }
       response = await this.executeInLane(key, run, onDelta, onThinking, onEvent)
-      // The lane wait used the budget up and the slot wait ran out after it.
-      if (entry.waitedMs > 0 && response.errorKind === "agent_busy" && /slot wait timed out/.test(response.error ?? "")) {
+      // The slot wait after the lane ran out: the lane wait used the budget
+      // up, or another run took the slot in the gap (C1). Kept either way.
+      if (response.errorKind === "agent_busy" && /slot wait timed out/.test(response.error ?? "")) {
         emitSignal({ kind: "home_busy", agentId: task.agentId, ref: home, detail: `${channel} refused: no slot within the wait budget left after the lane` })
-        const kept = this.keepRefused(task, home, channel, chatId)
-        response = homeBusy(task.agentId, home, "a busy slot", Date.now() - start, kept)
+        if (entry.waitedMs > 0) {
+          response = homeBusy(task.agentId, home, "a busy slot", Date.now() - start, this.keepRefused(task, home, channel, chatId))
+        } else {
+          response = slotTimedOut(response, this.keepRefused(task, home, channel, chatId, "while every slot of yours was busy (slot wait timed out)"))
+        }
       }
     } finally {
       const queued = !!response.error && isQueued(response.error)
@@ -2243,32 +2275,45 @@ export class AgentRegistry {
   /** Wait until the agent has a free slot, up to `by` (epoch ms). The slot
    *  is not taken here: the run takes it in executeInternal, so another
    *  run can still take it first, and the run then waits there as before.
-   *  Null: a slot is free. */
-  private async waitForFreeSlot(task: AgentTask, by: number, chat: string): Promise<AgentResponse | null> {
+   *  It goes in the line of `lineKey` (agent and home) and leaves only from
+   *  its front, so runs of one home go in the order they came (C2).
+   *  Null: a slot is free and this run is first in its line. */
+  private async waitForFreeSlot(task: AgentTask, by: number, chat: string, lineKey: string): Promise<AgentResponse | null> {
     const state = this.agents.get(task.agentId)
-    if (!state || !this.slotFull(state)) return null
-    const waitMs = Math.max(0, by - Date.now())
-    const waitLabel = waitMs < 60_000 ? `${Math.max(1, Math.ceil(waitMs / 1000))}s` : `${Math.round(waitMs / 60_000)}m`
-    this.log(`[${task.agentId}] busy, waiting for a slot before its home (up to ${waitLabel}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${chat}`)
-    while (this.slotFull(state)) {
-      if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
-      if (Date.now() >= by) {
-        this.log(`[${task.agentId}] slot wait timed out after ${waitLabel} chat=${chat} — message not run`)
-        return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${waitLabel}`, errorKind: "agent_busy" }
+    if (!state) return null
+    const me = {}
+    const line = this.slotLines.get(lineKey) ?? []
+    line.push(me)
+    this.slotLines.set(lineKey, line)
+    try {
+      const waitMs = Math.max(0, by - Date.now())
+      const waitLabel = waitMs < 60_000 ? `${Math.max(1, Math.ceil(waitMs / 1000))}s` : `${Math.round(waitMs / 60_000)}m`
+      this.log(`[${task.agentId}] busy, waiting for a slot before its home (up to ${waitLabel}, ${line.length - 1} ahead on it) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${chat}`)
+      while (this.slotFull(state) || line[0] !== me) {
+        if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
+        if (Date.now() >= by) {
+          this.log(`[${task.agentId}] slot wait timed out after ${waitLabel} chat=${chat} — message not run`)
+          return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${waitLabel}`, errorKind: "agent_busy" }
+        }
+        await new Promise((r) => setTimeout(r, line[0] === me ? 500 : 100))
       }
-      await new Promise((r) => setTimeout(r, 500))
+      return null
+    } finally {
+      // Leaving is synchronous with the caller's enterHome (no await
+      // between), so the next in line cannot reach the home lease first.
+      line.splice(line.indexOf(me), 1)
+      if (line.length === 0) this.slotLines.delete(lineKey)
     }
-    return null
   }
 
   /** A message refused on a busy home is not lost (#2337): it waits as a
    *  notice for the agent's next run of agent work (notices.ts), or runs on
    *  its own within the notice hold. An event wake is left out: its waker
    *  holds the wake and sends it again. True: kept. */
-  private keepRefused(task: AgentTask, home: string, channel: string, chatId: string): boolean {
+  private keepRefused(task: AgentTask, home: string, channel: string, chatId: string, why = "while another run of yours held it (home_busy)"): boolean {
     if (channel === "events") return false
     const sender = typeof task.context?.sender === "string" ? task.context.sender : `${channel}:${chatId}`
-    this.notices.add(task.agentId, sender, `Refused on ${home} while another run of yours held it (home_busy); kept so it is not lost. Message:\n${task.message}`)
+    this.notices.add(task.agentId, sender, `Refused on ${home} ${why}; kept so it is not lost. Message:\n${task.message}`)
     this.log(`[${task.agentId}] ${home}: refused message from ${channel}:${chatId} kept as a notice for the next run`)
     return true
   }
@@ -3046,16 +3091,27 @@ export class AgentRegistry {
     //     and system events — i.e. everything you'd see in a real terminal.
     //   - Caller did NOT pass onDelta → leave runtime in non-streaming mode and
     //     post the final response.content as a single chunk after execution.
-    const output: TaskOutput = { agentId: task.agentId, buffer: "", subscribers: new Set(), done: false }
+    const output: TaskOutput = { agentId: task.agentId, buffer: "", stamps: [], subscribers: new Set(), done: false }
     this.taskOutputs.set(runningTask.id, output)
     const pushToBuffer = (chunk: string) => {
       if (!chunk) return
+      outStamp(output.stamps, output.buffer, chunk, Date.now())
       output.buffer += chunk
       if (output.buffer.length > TASK_OUTPUT_BUFFER_MAX) {
-        output.buffer = output.buffer.slice(output.buffer.length - TASK_OUTPUT_BUFFER_MAX)
+        const cut = output.buffer.length - TASK_OUTPUT_BUFFER_MAX
+        output.buffer = output.buffer.slice(cut)
+        output.stamps = outStampTrim(output.stamps, cut)
       }
       for (const sub of output.subscribers) {
         try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
+      }
+    }
+    // The whole output in one go (a refusal, or a non-streaming run's answer).
+    const setBuffer = (text: string) => {
+      output.buffer = text
+      output.stamps = [[0, Date.now()]]
+      for (const sub of output.subscribers) {
+        try { sub(text) } catch { /* */ }
       }
     }
     // Allocate the per-execution trace id eagerly so both the streaming
@@ -3305,6 +3361,7 @@ export class AgentRegistry {
             : timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
+          ...(output.stamps.length ? { transcriptStamps: output.stamps } : {}),
           ...(task.leaseHome ? { home: task.leaseHome } : {}),
         }
         this.persistTaskRecord(record)
@@ -4780,10 +4837,7 @@ export class AgentRegistry {
             duration: 0,
           }
           if (!onDelta) {
-            output.buffer = `[error] ${abort.message}`
-            for (const sub of output.subscribers) {
-              try { sub(output.buffer) } catch { /* */ }
-            }
+            setBuffer(`[error] ${abort.message}`)
           } else {
             // A streaming caller (the Hub chat, #2101 R14) shows the
             // refusal while it waits, as an error line of the live output.
@@ -4808,10 +4862,7 @@ export class AgentRegistry {
         traceStep("budget-gate")
         this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
         if (!onDelta) {
-          output.buffer = `[error] ${overBudget.message}`
-          for (const sub of output.subscribers) {
-            try { sub(output.buffer) } catch { /* */ }
-          }
+          setBuffer(`[error] ${overBudget.message}`)
         } else {
           pushToBuffer(`\n[error] ${oneLine(overBudget.message)}\n`)
         }
@@ -5014,11 +5065,7 @@ export class AgentRegistry {
           pushToBuffer(`${output.buffer && !output.buffer.endsWith("\n") ? "\n" : ""}[error] ${response.error}\n`)
         }
       } else if (!onDelta && (response.content || response.error)) {
-        const finalText = response.error ? `[error] ${response.error}` : response.content
-        output.buffer = finalText
-        for (const sub of output.subscribers) {
-          try { sub(finalText) } catch { /* */ }
-        }
+        setBuffer(response.error ? `[error] ${response.error}` : response.content)
       }
 
       if (response.error) {
@@ -5918,13 +5965,14 @@ export class AgentRegistry {
    * returns null. If the task already finished, the subscriber is given the
    * tail buffer and immediately ended.
    */
-  subscribeToTaskOutput(taskId: string, sub: TaskOutputSubscriber): { initial: string; done: boolean; unsubscribe: () => void } | null {
+  subscribeToTaskOutput(taskId: string, sub: TaskOutputSubscriber): { initial: string; stamps: OutStamp[]; done: boolean; endedAt?: number; unsubscribe: () => void } | null {
     const out = this.taskOutputs.get(taskId)
     if (!out) return null
-    if (out.done) return { initial: out.buffer, done: true, unsubscribe: () => {} }
+    if (out.done) return { initial: out.buffer, stamps: out.stamps.slice(), done: true, endedAt: out.endedAt?.getTime(), unsubscribe: () => {} }
     out.subscribers.add(sub)
     return {
       initial: out.buffer,
+      stamps: out.stamps.slice(),
       done: false,
       unsubscribe: () => { out.subscribers.delete(sub) },
     }

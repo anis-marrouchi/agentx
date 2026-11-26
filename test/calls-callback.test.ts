@@ -256,6 +256,111 @@ describe("every path that changes the state (C4)", () => {
   })
 })
 
+// #2281: a "Done" call-back, then the owner-words check reopens it.
+describe("correction after a reopen (#2281)", () => {
+  const closeDone = (id: string, at = now) => requests.close(id, "done", "https://example.com/pr/1", at, null, "coder")
+  const reopen = (id: string, at = now) => requests.reopenForOwnerCheck(id, "the close does not match your words", at)
+
+  it("a reopen after a done call-back rings once with a correction", async () => {
+    const id = ask()
+    closeDone(id)
+    await settle()
+    const [done] = callbacks()
+    calls.answer(done.id)
+    calls.hangup(done.id)
+    expect(reopen(id, now + 1)).toBe(true)
+    await settle()
+    const correction = callbacks().find((c) => c.id !== done.id)!
+    expect(correction).toMatchObject({ status: "ringing", about: [{ id, state: "reopened", round: 1 }] })
+    expect(correction.reason).toBe("Not done after all: Fix the login page")
+    expect(rings()).toHaveLength(2)
+    // Answered: the agent says what is still missing.
+    const { opener } = calls.answer(correction.id)
+    expect(opener).toContain("is not done after all")
+    expect(opener).toContain("the close does not match your words")
+  })
+
+  it("no correction when there was no done call-back", async () => {
+    const id = ask({ ago: 1 }) // short: the done did not ring
+    closeDone(id)
+    await settle()
+    expect(callbacks()).toEqual([])
+    expect(reopen(id)).toBe(true)
+    await settle()
+    expect(callbacks()).toEqual([])
+    expect(logs.some((l) => l.includes("call-back for") && l.includes("reopened"))).toBe(false)
+  })
+
+  it("no correction for a request the owner did not ask himself", async () => {
+    const id = ask({ channel: "a2a" })
+    closeDone(id)
+    expect(reopen(id)).toBe(true)
+    await settle()
+    expect(callbacks()).toEqual([])
+  })
+
+  it("calls.callback.enabled off: no correction", async () => {
+    const id = ask()
+    closeDone(id)
+    await settle()
+    cfg = callsSchema.parse({ callback: { enabled: false } })
+    reopen(id)
+    await settle()
+    expect(callbacks()).toHaveLength(1)
+  })
+
+  it("one per reopen; the real done after a correction rings again", async () => {
+    const id = ask()
+    for (let round = 1; round <= 2; round++) {
+      closeDone(id, now + round * 10)
+      await settle()
+      for (const c of callbacks()) if (c.status === "ringing") { calls.answer(c.id); calls.hangup(c.id) }
+      reopen(id, now + round * 10 + 1)
+      await settle()
+      for (const c of callbacks()) if (c.status === "ringing") { calls.answer(c.id); calls.hangup(c.id) }
+    }
+    closeDone(id, now + 100)
+    await settle()
+    const about = callbacks().map((c) => c.about![0]).sort((a, b) => (a.round ?? 0) - (b.round ?? 0) || a.state.localeCompare(b.state))
+    expect(about).toEqual([
+      { id, state: "done" },
+      { id, state: "done", round: 1 },
+      { id, state: "reopened", round: 1 },
+      { id, state: "done", round: 2 },
+      { id, state: "reopened", round: 2 },
+    ])
+    // The once check is per round: reopen 1's correction is not reopen 2's.
+    expect(callStore.hasCallback({ id, state: "reopened", round: 1 })).toBe(true)
+    expect(callStore.hasCallback({ id, state: "reopened", round: 3 })).toBe(false)
+    expect(callStore.hasCallback({ id, state: "reopened" })).toBe(false)
+  })
+
+  it("the owner's own reopen does not ring: he knows", async () => {
+    const id = ask()
+    closeDone(id)
+    await settle()
+    expect(requests.reopen(id, "still broken on Safari", now + 1)).toBe(true)
+    await settle()
+    expect(callbacks()).toHaveLength(1)
+  })
+
+  it("in Focus the correction is kept as missed, with its notice", async () => {
+    const id = ask()
+    closeDone(id)
+    await settle()
+    const [done] = callbacks()
+    calls.answer(done.id)
+    calls.hangup(done.id)
+    inFocus = true
+    reopen(id, now + 1)
+    await settle()
+    const correction = callbacks().find((c) => c.id !== done.id)!
+    expect(correction.status).toBe("missed")
+    expect(correction.about).toEqual([{ id, state: "reopened", round: 1 }])
+    expect(rings()).toHaveLength(1)
+  })
+})
+
 describe("Focus (C2)", () => {
   it("in Focus it does not ring: kept as a missed call, its notice held by notify", async () => {
     inFocus = true

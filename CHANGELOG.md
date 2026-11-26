@@ -2,6 +2,57 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.284.0](https://github.com/anis-marrouchi/agentx/compare/v0.283.1...v0.284.0) (2026-11-26)
+
+
+### Features
+
+* **app:** phone Agents tab and bottom tabs Agents · Chat · Desk · Alerts · More ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C1a) ([#2372](https://github.com/anis-marrouchi/agentx/issues/2372)) ([347c21f](https://github.com/anis-marrouchi/agentx/commit/347c21f49f92143d0c404b9987aad46c0bb6f38e))
+* **ci:** green PR with no review wakes the reviewer, then the owner ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227) PR B) ([#2368](https://github.com/anis-marrouchi/agentx/issues/2368)) ([58ba867](https://github.com/anis-marrouchi/agentx/commit/58ba8676689f65660315c6560cf36dd445426970))
+* **hub:** menu model and API for the Hub menu ([#2149](https://github.com/anis-marrouchi/agentx/issues/2149) M1) ([#2373](https://github.com/anis-marrouchi/agentx/issues/2373)) ([dd4d39f](https://github.com/anis-marrouchi/agentx/commit/dd4d39f5d5fc52ab0562e19670c2b2d3b2c3f81d))
+
+
+### Bug Fixes
+
+* **agents:** keep a hand-off whose slot wait runs out on a home ([#2337](https://github.com/anis-marrouchi/agentx/issues/2337) follow-up) ([#2366](https://github.com/anis-marrouchi/agentx/issues/2366)) ([5a5f3ff](https://github.com/anis-marrouchi/agentx/commit/5a5f3ff797de5dc42758a1a2641f01857f07c12c))
+* **hub:** the bar's version hover says "as of" for an old answer ([#2343](https://github.com/anis-marrouchi/agentx/issues/2343) C1) ([#2369](https://github.com/anis-marrouchi/agentx/issues/2369)) ([fae6bc3](https://github.com/anis-marrouchi/agentx/commit/fae6bc3d20dce1ab6008904914636b979fdb59e3)), closes [#2101](https://github.com/anis-marrouchi/agentx/issues/2101)
+* **requests:** no open item without a due time (noqta[#886](https://github.com/anis-marrouchi/agentx/issues/886)) ([#2344](https://github.com/anis-marrouchi/agentx/issues/2344)) ([dbd483f](https://github.com/anis-marrouchi/agentx/commit/dbd483fbe722497e9d098f087933854a1e16cf3c))
+
+## [0.283.1](https://github.com/anis-marrouchi/agentx/compare/v0.283.0...v0.283.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **desktop:** no Start/Stop/Restart for a daemon on another machine ([#2357](https://github.com/anis-marrouchi/agentx/issues/2357)) ([a5e0411](https://github.com/anis-marrouchi/agentx/commit/a5e041123a7ed01f5d234f544c13cc4cbb29201c))
+
+## [0.283.0](https://github.com/anis-marrouchi/agentx/compare/v0.282.0...v0.283.0) (2026-11-26)
+
+
+### Features
+
+* curator queue and popup-only step cards (noqta[#910](https://github.com/anis-marrouchi/agentx/issues/910) piece 1) ([#2327](https://github.com/anis-marrouchi/agentx/issues/2327)) ([9dcc400](https://github.com/anis-marrouchi/agentx/commit/9dcc400a92b07ce689651109d43928c71c19495d))
+* **hub:** Tasks lists GitHub and GitLab issues and open PRs ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226)) ([#2359](https://github.com/anis-marrouchi/agentx/issues/2359)) ([ecf23c1](https://github.com/anis-marrouchi/agentx/commit/ecf23c19c8e4cda985d0e93e59812c84b503220a))
+* **hub:** usage per added account, API spend — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR D2 ([#2347](https://github.com/anis-marrouchi/agentx/issues/2347)) ([02485e5](https://github.com/anis-marrouchi/agentx/commit/02485e5d8803c2d2d7ccfe7409083e4ca1776a33))
+
+
+### Bug Fixes
+
+* **hub:** Files panel orca fixes after [#2315](https://github.com/anis-marrouchi/agentx/issues/2315) ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2354](https://github.com/anis-marrouchi/agentx/issues/2354)) ([d69923d](https://github.com/anis-marrouchi/agentx/commit/d69923d15d2a8f128f673ef1d0c22239df8b7e9e))
+* **hub:** Settings › Layout as switch rows; one name for the Desk ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226) S1 review) ([#2346](https://github.com/anis-marrouchi/agentx/issues/2346)) ([04df59d](https://github.com/anis-marrouchi/agentx/commit/04df59d1fd206adf9c2bc69db17112d1029561f1))
+
+## [0.282.0](https://github.com/anis-marrouchi/agentx/compare/v0.281.0...v0.282.0) (2026-11-26)
+
+
+### Features
+
+* **desktop:** tray controls for window, daemon and settings ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2330](https://github.com/anis-marrouchi/agentx/issues/2330)) ([4eaa4d2](https://github.com/anis-marrouchi/agentx/commit/4eaa4d26e43f6354ebd55b4f987b663c2c9d2198))
+* **hub:** resize, collapse and expand the side menu and the right panel; Back and Forward — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) P ([#2339](https://github.com/anis-marrouchi/agentx/issues/2339)) ([fb0d8c1](https://github.com/anis-marrouchi/agentx/commit/fb0d8c13f62aaa32d9313cc0b01d82ef3d132df8))
+
+
+### Bug Fixes
+
+* **upgrade:** follow-ups from [#2333](https://github.com/anis-marrouchi/agentx/issues/2333) review ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227)) ([#2358](https://github.com/anis-marrouchi/agentx/issues/2358)) ([f0829f8](https://github.com/anis-marrouchi/agentx/commit/f0829f81c63ba50047fa8ebbca190e73d6299f0a))
+
 ## [0.281.0](https://github.com/anis-marrouchi/agentx/compare/v0.280.0...v0.281.0) (2026-11-26)
 
 

@@ -234,8 +234,4 @@ export const WALL_AGENTS_CSS = `
 .agm-acts .ax-btn { font-size: var(--ax-fs-xs); padding: 3px 10px; }
 .agm-rm { color: var(--ax-red-ink); }
 .agm-confirm { margin-top: 8px; }
-.agm-st.is-needs { background: var(--ax-amber-t); color: var(--ax-amber-ink); }
-.agm-st.is-working { background: color-mix(in srgb, var(--ax-green) 15%, transparent); color: var(--ax-green-d, var(--ax-green)); }
-.agm-st.is-paused, .agm-st.is-off { background: var(--ax-surface-2); color: var(--ax-muted); }
-.agm-st.is-idle { background: var(--ax-blue-t, var(--ax-surface-2)); color: var(--ax-accent); }
 `

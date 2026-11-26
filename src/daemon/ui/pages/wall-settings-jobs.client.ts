@@ -17,6 +17,8 @@
 // schedules: on/off, the inbox agent, the schedules and the absorb pass
 // that read it (POST wiki-notes), and the recent notes (a read).
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
   /** Presets for the schedule field, as the classic guided builder offers. */
   var ST_CRON_PRESETS = [['0 9 * * *', 'Every day at 9:00'], ['0 9 * * 1-5', 'Weekdays at 9:00'], ['0 9 * * 1', 'Mondays at 9:00'], ['0 * * * *', 'Every hour'], ['*/15 * * * *', 'Every 15 minutes']];
@@ -121,7 +123,7 @@ export const WALL_SETTINGS_JOBS_SCRIPT = String.raw`
     var d = S.st.data || {}, n = d.wikiNotes || {}, picked = n.crons || [], crons = d.crons || [], l = S.st.wnList;
     var agents = '<datalist id="st-wn-agents">' + (d.agents || []).map(function (a) { return '<option value="' + esc(a.id) + '"></option>'; }).join('') + '</datalist>';
     var list = !l ? '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="wn-list">Show recent notes</button>'
-      : l.loading ? '<p class="ax-wall__empty">Loading…</p>'
+      : l.loading ? '${afLoaderHtml("Loading…")}'
       : l.error ? '<p class="wst__err">Could not read them: ' + esc(l.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="wn-list">Try again</button>'
       : l.notes.length ? '<ul class="wsj__trig">' + l.notes.map(function (x) {
           return '<li><b>' + esc(x.status) + '</b> <code>' + esc(x.id) + '</code> <small>from ' + esc(x.from) + ' · ' + esc(x.date) + '</small><p class="wsj__sub">' + esc(x.change) + '</p>' +

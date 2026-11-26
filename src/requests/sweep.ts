@@ -46,6 +46,10 @@ import { missedPr, PR_LEAD_AFTER_MS, PR_LEAD_WINDOW_MS, prDueText, prLeadText } 
 //      past it instead, unless its handed work all came back done: that
 //      one waits to settle. A request waiting on the owner is left alone; its
 //      question is what reminds them.
+//   2a. No due time (noqta#886, with `dueTimes.fillMissing`): an open
+//      item with no due time, older than NO_DUE_GRACE_MS, wakes its agent
+//      once, ever, to give its own: `NO_DUE_ASKS_PER_CHECK` a check, oldest
+//      first, so a back-fill of many does not start them all at once.
 //   2b. Resend once (#1542, resend.ts): a request stopped by a usage
 //      limit or a restart goes back to its agent once, on the pick-up
 //      path, after `autoResend.afterMinutes` and, for a limit, once no
@@ -138,6 +142,8 @@ export interface RequestSweepResult {
   /** Promises whose agent was woken before their due time
    *  (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY). */
   leadWoken: number
+  /** Open items with no due time whose agent was asked for one (noqta#886). */
+  dueAsked: number
 }
 
 /** The pick-up turn ended. A turn that started is followed through its
@@ -287,6 +293,28 @@ function wakePrDue(deps: RequestSweepDeps, r: RequestRecord, lead: string | null
   return "turn"
 }
 
+/** An item this new may still get its due time from its own accept. */
+export const NO_DUE_GRACE_MS = 30 * 60_000
+/** Agents asked for a missing due time per check (noqta#886). */
+export const NO_DUE_ASKS_PER_CHECK = 3
+
+/** What the agent of an open item with no due time reads (noqta#886). */
+export function noDueText(r: RequestRecord): string {
+  const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
+  return `[agentx:request-no-due id=${r.id}] It is open and has no due time, so nothing wakes you for it: ${words.length > 300 ? `${words.slice(0, 299)}…` : words}. ` +
+    `Give it your time now with agentx_request {action:"accept", id:"${r.id}"${workHint(r)}, estimateMinutes:<n>} and the daemon sets the due time from your queue, ` +
+    `or close it with {action:"done", id:"${r.id}", evidence:"<link>"} or {action:"decline", id:"${r.id}", reason:"<why>"}.`
+}
+
+/** Wakes the agent of an open item with no due time, as wakeOverdue does. */
+function wakeNoDue(deps: RequestSweepDeps, r: RequestRecord): string | null {
+  const text = noDueText(r)
+  if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
+  if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
+  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not ask ${r.agentId} for a due time: ${e?.message ?? e}`))
+  return "turn"
+}
+
 /** What an agent that waits on a promise reads when it falls due (#1908). */
 export function duePromiseText(r: RequestRecord): string {
   const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
@@ -306,7 +334,7 @@ export function leadText(r: RequestRecord, now: number): string {
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, homesClosed: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0, resent: 0, held: 0, duePushed: 0, prLeads: 0, leadWoken: 0, dueAsked: 0 }
   if (!settings.enabled) return result
   // Who hears of a missed PR after its agent (#2279): never the agent itself.
   const prLead = settings.promises?.prLead ?? DEFAULT_PROMISE_SETTINGS.prLead
@@ -618,6 +646,20 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     }
   } catch (e: any) {
     log(`[requests] quiet check failed: ${e?.message ?? e}`)
+  }
+
+  if (settings.dueTimes?.fillMissing) {
+    try {
+      for (const r of store.noDueUnasked(now - NO_DUE_GRACE_MS, NO_DUE_ASKS_PER_CHECK)) {
+        // Marked first: once, ever, even when nothing could wake it.
+        store.markDueAsked(r.id, now)
+        const woken = deps.inPlan?.(r.id) ? null : wakeNoDue(deps, r)
+        if (woken) result.dueAsked++
+        log(`[requests] ${r.id} has no due time: ${woken ? `${r.agentId} asked for one (${woken})` : "nobody to ask"}`)
+      }
+    } catch (e: any) {
+      log(`[requests] no-due check failed: ${e?.message ?? e}`)
+    }
   }
 
   try {

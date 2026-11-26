@@ -800,6 +800,12 @@ const channelsConfigSchema = z.object({
     ci: z.object({
       fixAttempts: z.number().int().min(0).default(3),
       holdSeconds: z.number().min(0).max(3600).default(30),
+      /** The green-PR review wait (#2227): an agent-owned PR all green with
+       *  no review for `reviewWakeMinutes` wakes this agent; at
+       *  `reviewOwnerMinutes` the PR's owner agent is told. Unset: off. */
+      reviewer: z.string().min(1).optional(),
+      reviewWakeMinutes: z.number().min(0).default(15),
+      reviewOwnerMinutes: z.number().min(0).default(30),
     }).default({}),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
@@ -1873,6 +1879,11 @@ export const requestsConfigSchema = z.object({
     factorDays: z.number().int().min(1).max(365).default(30),
     /** Fewer closed rows with an estimate than this: the factor is 1. */
     factorMinRows: z.number().int().min(1).max(100).default(3),
+    /** No open item without a due time (noqta#886): a promise or an accept
+     *  with no due, on an item with none, gets the daemon's time even in
+     *  shadow, or is refused with no estimate; the requests check asks each
+     *  open item with no due time, once, for its own. */
+    fillMissing: z.boolean().default(false),
   }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),

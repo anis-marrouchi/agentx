@@ -96,7 +96,7 @@ A message to a person never leaves without your yes. There is no setting that sk
 
 To answer a message card:
 
-1. **Browser:** open the dashboard's Hub and select **Needs you**.
+1. **Browser:** open the dashboard's Hub and select **Waiting on you**.
 2. **Browser:** read the card **Send to …**. It names the person and the exact chat (channel and chat id) the message goes to. Open **The draft, and what Yes and No do** to see the message in a box you can edit.
 3. **Browser:** change the text if you like.
 4. **Browser:** select **Yes** to send it, or **No** to not send it, then **Confirm**.
@@ -183,7 +183,7 @@ A workflow an agent built for you runs once. To keep it:
 
 1. Ask the agent to propose it as a template, for example: "Keep that as a workflow for next time."
 2. A decision card asks you whether to keep it. The workflow is saved switched off until you answer.
-3. **Browser:** on the Hub, select **Needs you**, then **Yes** on the card and **Confirm**. The workflow is switched on and agents can pick it next time.
+3. **Browser:** on the Hub, select **Waiting on you**, then **Yes** on the card and **Confirm**. The workflow is switched on and agents can pick it next time.
 
 A no, or a card that expires, leaves it switched off. An agent can also propose a new workflow from scratch the same way. An agent can only propose from a run it started itself, and the saved workflow is in that agent's name.
 

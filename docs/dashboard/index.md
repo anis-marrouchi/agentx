@@ -27,12 +27,12 @@ If nothing loads, start the dashboard yourself:
 
 ## Where things are
 
-The nav starts with **Hub** and **Needs you**. The other pages sit in groups, each under a small grey heading. The number next to a page counts what is on it; the page you are on is in bold.
+The nav starts with **Hub** and **Waiting on you**. The other pages sit in groups, each under a small grey heading. The number next to a page counts what is on it; the page you are on is in bold.
 
 | Page | What to look for |
 |---|---|
 | [Hub](./hub.md#read-a-post) | Every open task as a post, with its thread. **Feed** and **List** switch the view |
-| [Needs you](./hub.md#see-what-waits-on-you) | Posts that wait on your answer |
+| [Waiting on you](./hub.md#see-what-waits-on-you) | Posts that wait on your answer |
 | **Work** | |
 | [Jobs](./jobs.md) | Every piece of assigned work, with one status line each |
 | [Live](./live.md) | Sessions and jobs running now, paused tasks, and each machine's card |

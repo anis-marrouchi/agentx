@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "crypto"
 import type { DaemonConfig } from "./config"
 import { readJson } from "./app-fleet"
 import { LockBusyError, withLock } from "@/wiki/facts/ledger-file"
+import { DEFAULT_MENU_FILE, menuFile, menuLinks, writeMenuLinks } from "./hub-menu"
 
 // --- Pinned pages in the phone app (#1120) ---
 //
@@ -112,9 +113,15 @@ type Changed<T> = { ok: true } & T | { ok: false; status: 404 | 409; error: stri
  *  other's change.
  *
  *  `fixed` are the pins from agentx.json: listed first, counted toward the
- *  limit and the names in use, and never written to the file. */
+ *  limit and the names in use, and never written to the file.
+ *
+ *  `menuPath` is the Hub's menu file (#2149). Once the owner has saved a
+ *  menu, the pins are its link items: they are read and written there and
+ *  the pins file is left as it was. Before that, the pins file is used as
+ *  always. Either way a change holds the menu file's lock, so the Hub's
+ *  Settings and `agentx app pin` can't drop each other's change. */
 export class PinStore {
-  constructor(private path: string, private now: () => number = Date.now, private fixed: Pin[] = []) {}
+  constructor(private path: string, private now: () => number = Date.now, private fixed: Pin[] = [], private menuPath?: string) {}
 
   list(): Pin[] {
     return [...this.fixed, ...this.load().pins.filter((p) => !this.shadowed(p))]
@@ -131,7 +138,23 @@ export class PinStore {
     return this.fixed.some((p) => p.id === id)
   }
 
+  /** The pins file's own pins, without agentx.json's or shadowed ones:
+   *  what the menu takes in on its first save. */
+  ownPins(): Pin[] {
+    return this.loadFile().pins.filter((p) => !this.shadowed(p))
+  }
+
+  /** Does the pins file hold entries it can't read? */
+  ownDamaged(): boolean {
+    return this.loadFile().damaged
+  }
+
   private load(): { pins: Pin[]; damaged: boolean } {
+    const fromMenu = this.menuPath ? menuLinks(this.menuPath) : null
+    return fromMenu ?? this.loadFile()
+  }
+
+  private loadFile(): { pins: Pin[]; damaged: boolean } {
     let text: string
     try { text = readFileSync(this.path, "utf-8") } catch (e: any) {
       return { pins: [], damaged: e?.code !== "ENOENT" }
@@ -150,7 +173,7 @@ export class PinStore {
    *  refusal, not a crash. */
   private locked<T>(fn: () => Changed<T>): Changed<T> {
     try {
-      return withLock(this.path, fn, { what: "The pinned pages file" })
+      return withLock(this.menuPath ?? this.path, fn, { what: "The pinned pages file" })
     } catch (e) {
       if (e instanceof LockBusyError) return { ok: false, status: 409, error: e.message }
       throw e
@@ -160,11 +183,13 @@ export class PinStore {
   /** The pins to change, or why they can't be changed. */
   private editable(): { ok: true; pins: Pin[] } | { ok: false; status: 409; error: string } {
     const { pins, damaged } = this.load()
+    if (damaged && this.menuPath && menuLinks(this.menuPath)) return { ok: false, status: 409, error: `The menu file (${this.menuPath}) can't be read. Fix or remove it on the computer, then try again.` }
     if (damaged) return { ok: false, status: 409, error: `The pinned pages file (${this.path}) can't be read. Fix or remove it on the computer, then try again.` }
     return { ok: true, pins }
   }
 
   private write(pins: Pin[]): void {
+    if (this.menuPath && menuLinks(this.menuPath)) return writeMenuLinks(this.menuPath, pins)
     mkdirSync(dirname(this.path), { recursive: true })
     const tmp = `${this.path}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify({ pins }, null, 2) + "\n", { mode: 0o600 })
@@ -228,7 +253,7 @@ export interface PinsDeps {
 /** Built per request, so a config reload is picked up. */
 export function pinsDeps(config: DaemonConfig, root: string): PinsDeps {
   const s = config.app.pins
-  return { store: new PinStore(pinsFile(root, s.file), Date.now, configPins(s.pages)), max: s.max }
+  return { store: new PinStore(pinsFile(root, s.file), Date.now, configPins(s.pages), menuFile(root, DEFAULT_MENU_FILE)), max: s.max }
 }
 
 /** Handles /api/app/pins* for a paired phone. */

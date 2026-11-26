@@ -43,9 +43,15 @@ export interface DueTimeSettings {
   factorDays: number
   /** Fewer closed rows than this: the factor is 1. */
   factorMinRows: number
+  /** No open item without a due time (noqta#886): a promise or an accept
+   *  with no `due`, on an item that has none, gets the daemon's time even
+   *  in shadow; with no estimate and no usual length it is refused, never
+   *  given the default minutes. The requests check also asks each open
+   *  item with no due time, once, for its own (sweep.ts). */
+  fillMissing: boolean
 }
 
-export const DEFAULT_DUE_TIME_SETTINGS: DueTimeSettings = { mode: "off", capacity: 0, defaultEstimateMinutes: 30, factorDays: 30, factorMinRows: 3 }
+export const DEFAULT_DUE_TIME_SETTINGS: DueTimeSettings = { mode: "off", capacity: 0, defaultEstimateMinutes: 30, factorDays: 30, factorMinRows: 3, fillMissing: false }
 
 export const dueTimeSettingsOf = (s: { dueTimes?: Partial<DueTimeSettings> } | undefined): DueTimeSettings => ({ ...DEFAULT_DUE_TIME_SETTINGS, ...s?.dueTimes })
 
@@ -155,6 +161,8 @@ export interface DueAsk {
   work: string | null
   /** The due time the call wrote, if any. */
   due: number | null
+  /** The due time the item already has, if any (noqta#886). */
+  keptDue?: number | null
   fields: DueFields
   requester: string | null
   words: string
@@ -180,7 +188,8 @@ export interface DueGiven {
 export type DuePlan =
   /** Go on as before. `finish` records the shadow row once the id is known. */
   | { kind: "pass"; finish: (requestId: string, now: number) => void }
-  | { kind: "refuse"; status: number; body: Record<string, unknown> }
+  /** `binding`: refused in shadow too (noqta#886), not only noted. */
+  | { kind: "refuse"; status: number; body: Record<string, unknown>; binding?: boolean }
   /** Go on with this due time; `finish` keeps the slot and moves others. */
   | { kind: "set"; dueAt: number; finish: (requestId: string, now: number) => DueGiven }
 
@@ -190,6 +199,12 @@ export const NO_SOURCE_REFUSAL =
   "Not recorded: you wrote a due time with no source. Register the work instead: send estimateMinutes and priority without due, " +
   "and the daemon gives the time from your queue. If the requester named the time, or an outside fact sets it (a posting slot, a meeting), " +
   'send due with dueSource {kind:"requester"|"fact", text:"<their words, or the fact>"}.'
+
+/** fillMissing refuses work with no due time, no estimate and no usual
+ *  length (noqta#886): the default minutes would be a guessed time. */
+export const NO_ESTIMATE_REFUSAL =
+  "Not recorded: no due time and no estimate. Send estimateMinutes (and work) so the daemon gives the time from your queue, " +
+  'or send due with dueSource {kind:"requester"|"fact", text:"<their words, or the fact>"}.'
 
 /** On refuses an agent's own critical (#1919). */
 export const CRITICAL_OWNER_ONLY =
@@ -247,6 +262,25 @@ export function planDue(ctx: DueTimesCtx | undefined, ask: DueAsk, now: number):
     requestId, agentId: ask.agentId, priority: ask.fields.priority, ahead, source, sourceText: ask.fields.source?.text ?? null,
     mode, computedDue: computed.dueAt, agentDue: ask.due, givenDue: given, wouldRefuse, inputs,
   })
+
+  // No open item without a due time (noqta#886): an item with none, and
+  // no due in the call, gets the daemon's time, in shadow too; never one
+  // made of the default minutes.
+  const filling = ctx.settings.fillMissing && ask.due === null && ask.keptDue == null
+  if (filling && from === "default") {
+    return { kind: "refuse", status: 400, body: { error: NO_ESTIMATE_REFUSAL, estimateRequired: true }, binding: true }
+  }
+  if (mode === "shadow" && filling) {
+    return {
+      kind: "set",
+      dueAt: computed.dueAt,
+      finish: (requestId, at) => {
+        ctx.slots.put(row(requestId, computed.dueAt, false, computed.inputs), at)
+        ctx.log?.(`[due-times] shadow ${requestId} @${ask.agentId}: no due written, given ${utc(computed.dueAt)} (fillMissing)`)
+        return { at: isoOf(computed.dueAt), dueAt: computed.dueAt, source, inputs: computed.inputs, moved: 0 }
+      },
+    }
+  }
 
   if (mode === "shadow") {
     return {

@@ -22,6 +22,8 @@
 // wall-settings-whatsapp.client.ts; notification routing is the Inbox
 // section (wall-settings-inbox.client.ts).
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   var ST_CHANNELS = [['telegram', 'Telegram'], ['whatsapp', 'WhatsApp'], ['email', 'Email'], ['slack', 'Slack'], ['discord', 'Discord'], ['gitlab', 'GitLab'], ['github', 'GitHub'], ['calls', 'Calls']];
   /** A token reference in agentx.json (dollar sign, {NAME}) → NAME, for the edit forms; empty for a literal. */
@@ -102,7 +104,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
         stChField('st-em-env', 'Password, as an environment variable name', '', 'EMAIL_SUPPORT_PASSWORD') +
         stChField('st-em-allow', 'Who may write', '*', '', '(addresses, @domain, or * for anyone)') +
         '<label class="wsf__check"><input type="checkbox" id="st-em-auto"> Send replies at once, without my approval</label>' +
-        '<p class="wsj__sub">Only mail that arrives after the daemon starts reading is answered, and the mailbox is never changed. Each reply waits in Needs you unless you tick the box. To check the login first, run <code>agentx connect email</code>.</p>' +
+        '<p class="wsj__sub">Only mail that arrives after the daemon starts reading is answered, and the mailbox is never changed. Each reply waits in Waiting on you unless you tick the box. To check the login first, run <code>agentx connect email</code>.</p>' +
         '<div class="wsf__foot"><button type="submit" class="ax-btn">Add mailbox</button>' + stNoteHtml('em-add') + '</div></form></details></section>';
   }
 
@@ -155,7 +157,7 @@ export const WALL_SETTINGS_CHANNELS_SCRIPT = String.raw`
   // --- Calls: reads only ---
   function stCallsHtml() {
     var c = S.st.calls;
-    if (!c) { stLoadCalls(); return '<p class="ax-wall__empty">Loading…</p>'; }
+    if (!c) { stLoadCalls(); return '${afLoaderHtml("Loading…")}'; }
     if (c.error) return '<p class="wst__err">Could not read the calls: ' + esc(c.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="calls">Try again</button>';
     function dur(s) { return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s'; }
     var active = c.active || [], recent = c.history || [];

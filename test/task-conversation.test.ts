@@ -104,6 +104,24 @@ describe("the Task page stream as conversation parts (#2101 R16)", () => {
   })
 })
 
+describe("each part's time (#2306)", () => {
+  it("takes the time its first line came in; a result keeps its call's time", () => {
+    const raw = "Looking\nat it\n→ Read({})\n← ok\n💭 hmm\n[error] boom\n"
+    const at = (s: string) => raw.indexOf(s)
+    const stamps: Array<[number, number]> = [[0, 1000], [at("→ Read"), 2000], [at("← ok"), 3000], [at("💭"), 4000], [at("[error]"), 5000]]
+    const parts = parseStream(raw, { final: true, stamps })
+    expect(parts.map((p) => [p.kind, p.at])).toEqual([["text", 1000], ["tool", 2000], ["thought", 4000], ["error", 5000]])
+  })
+  it("leaves a part with no stamp untimed, and the reply still trimmed", () => {
+    expect(parseStream("Hi\n", { final: true })).toEqual([{ kind: "text", md: "Hi" }])
+    expect(parseStream("Hi\n", { final: true, stamps: [] })).toEqual([{ kind: "text", md: "Hi" }])
+  })
+  it("times the half-written line at the end of a live stream", () => {
+    const parts = parseStream("→ Read({})\n← ok\nWriting", { stamps: [[0, 1000], [16, 2000]] })
+    expect(parts.map((p) => [p.kind, p.at])).toEqual([["tool", 1000], ["text", 2000]])
+  })
+})
+
 describe("the conversation bundle (#2101 R16)", () => {
   it("is built as its own web entry and loaded by the Task page, with the old renderer as fallback", () => {
     expect(readFileSync("tsup.web.config.ts", "utf8")).toContain('"task-conversation": "src/web/task-conversation/main.tsx"')

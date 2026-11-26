@@ -92,7 +92,6 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .fx-card { border-radius: var(--ax-radius-lg); padding: 16px; }
 .fx-row > h3, .fx-row > h4, .fx-row > strong { min-width: 0; overflow-wrap: anywhere; }
 .fx-row > .fx-muted { text-align: right; }
-.fx-working { color: var(--ax-accent); font-size: 14px; }
 .fx-sub { font-weight: 600; font-size: 14px; margin-top: 24px; }
 .fx-machine { display: flex; align-items: center; gap: 12px; }
 .fx-machine svg { flex: none; width: 44px; height: 44px; padding: 10px; border-radius: 12px; background: var(--ax-surface-2); fill: none; stroke: currentColor; stroke-width: 1.7; }

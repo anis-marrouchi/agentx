@@ -1848,6 +1848,8 @@ Queue sourced wiki patches from an agent's work since its last run: its chat mes
 | `--model <model>` | the agent's `model`, else `wiki.contributions.model`, else `AGENTX_WIKI_CONTRIBUTE_MODEL`, else `sonnet` | Model for the contribution call. |
 | `--db <path>` | `.agentx/db.sqlite` | Trace database with the agents' tasks. Without it, only chat messages are read. |
 | `--dry-run` | — | Show the patches without queueing them or moving the agent's starting point. |
+| `--work <file>` | — | Read these work items (a JSON array of `{id, at, kind, title, text}`) instead of the agent's chat and tasks. Keeps no starting point. Needs `--agent`. |
+| `--hold` | — | With `--work`: hold each patch for a person (the curator queue, reason `curator: waits for the approver`) instead of queueing it for the merge. A change already held, approved or rejected, or on a page the agent cannot read, is skipped. |
 | `--json` | — | Print the batches as JSON. |
 
 ### `agentx wiki contribute enable <agent>`
@@ -1897,21 +1899,34 @@ Patches the merge held for a person, with the reason and the facts the change wo
 | `--all` | — | Include approved and rejected. |
 | `--json` | — | Print as JSON. |
 
+### `agentx wiki contributions refresh`
+
+Re-read the pages of waiting curator changes. Each one gets the page's new fingerprint and the changed lines; a change that no longer applies (the old text is gone, the page already says it, or the page is gone) is marked rejected.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--reason <prefix>` | — | Required. Only held changes whose reason starts with this; the curator's is `curator:`. |
+| `--dir <path>` | — | Wiki directory. |
+| `--json` | — | Print as JSON. |
+
 ### `agentx wiki contributions approve <id>`
 
-Apply a held patch as it is. The page's previous version is kept in its history.
+Apply a held patch as it is. The page's previous version is kept in its history. A curator change (reason `curator:`) is applied only with `--card` naming the popup-only card the owner answered yes in the popup. The card is read from the AgentX home that owns the wiki (`<home>/.agentx/wiki` beside `agentx.json`), never from the current folder. It must have been raised by a workflow step of the agent that proposed the change, and must show the change as `<held id>@<page fingerprint>` (in its ask, context, draft or source): the change is written only onto that page. The decider is recorded as `<who> (popup, card <id>)`.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
+| `--card <id>` | — | Curator changes: the popup-only card the owner answered. |
+| `--fingerprint <fp>` | the fingerprint saved by the last `refresh`; for a curator change, the one its card shows | Write only onto the page as it was when shown. |
 
 ### `agentx wiki contributions reject <id>`
 
-Drop a held patch.
+Drop a held patch. A curator change needs `--card`, as for `approve`, answered no.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
+| `--card <id>` | — | Curator changes: the popup-only card the owner answered. |
 
 ### `agentx wiki curate <agent> <titleOrPath> <instruction>`
 

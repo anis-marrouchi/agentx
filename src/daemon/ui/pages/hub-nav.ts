@@ -21,8 +21,14 @@ const ICON = {
 /** The switcher button and the agent list, at the top of the nav. */
 export function hubAgentsNavHtml(): string {
   return `<button type="button" class="ha__k" id="hub-k" aria-haspopup="dialog" aria-controls="hub-k-dlg" title="Jump to an agent or request (⌘K)">${ICON.search}<span>Jump to an agent or request</span><kbd>⌘K</kbd></button>
-    <section class="lt ha" id="hub-agents" aria-label="Agents, by what they are doing"><p class="ha__empty">Loading the agents…</p></section>
-    <div class="hk" id="hub-k-dlg" role="dialog" aria-modal="true" aria-label="Jump to an agent or request" hidden>
+    <section class="lt ha" id="hub-agents" aria-label="Agents, by what they are doing"><div role="status"><span class="ax-sr">Loading the agents…</span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span></div></section>`
+}
+
+/** The ⌘K switcher dialog. Mounted as a direct child of <body>, never in
+ *  the sticky side menu, whose stacking context hid it behind the page
+ *  (#2353). */
+export function hubSwitcherHtml(): string {
+  return `<div class="hk" id="hub-k-dlg" role="dialog" aria-modal="true" aria-label="Jump to an agent or request" hidden>
       <button type="button" class="hk__scrim" data-hk-close aria-label="Close"></button>
       <div class="hk__box">
         <label class="hk__q">${ICON.search}<input id="hub-k-q" type="search" autocomplete="off" spellcheck="false" placeholder="Jump to an agent or request" aria-controls="hub-k-list" aria-label="Agent or request"><kbd>esc</kbd></label>
@@ -39,7 +45,7 @@ export function hubNavFootHtml(owner: boolean, settingsHref: string): string {
   const a = (nav: string, href: string, icon: string, label: string, count = "") =>
     `<a class="hf__item" data-nav="${nav}" href="${href}" title="${label}">${icon}<span>${label}</span>${count}</a>`
   return `<div class="hf" id="hub-foot">
-      ${a("needs", "#status=open&amp;view=decide", ICON.desk, "Waiting on you", '<b class="hf__n" data-n-for="nav-n-needs" hidden></b>')}
+      ${a("needs", "#status=open&amp;view=decide", ICON.desk, "Waiting on you", '<b class="hf__n ax-af-count" data-tone="warn" data-n-for="nav-n-needs" hidden></b>')}
       ${a("jobledger", "#page=jobledger", ICON.jobs, "Jobs")}
       ${a("workflows", "#page=workflows", ICON.workflows, "Workflows")}
       ${a("mobile", "#page=mobile", ICON.phone, "Mobile app")}
@@ -53,7 +59,7 @@ const PAIR_DOC = "https://agentx-docs.pages.dev/dashboard/mobile-app"
 /** The Mobile app page (Anis, 2026-11-24): why to try it, then how. */
 export function hubMobilePageHtml(): string {
   return `<section id="wall-mobile" class="hm" aria-labelledby="hm-h" hidden>
-      <div class="hm__hero">
+      <div class="hm__hero ax-af-card">
         <h2 id="hm-h">Your agents, in your pocket</h2>
         <p class="hm__lede">The same agents and the same chats as here, on your phone. Hold to talk to the agent you are with, answer what waits for you on the Desk with one tap, and get a note when a run ends or an agent asks you something.</p>
         <ul class="hm__why">
@@ -110,9 +116,7 @@ export const HUB_NAV_CSS = `
 .ha__chip.is-done, .ha__row.is-done, .hk__hit.is-done { --ha-s: var(--ax-green, #2fbf71); }
 .ha__row.is-idle, .hk__hit.is-idle { --ha-s: var(--ax-muted); }
 .ha__h { display: flex; justify-content: space-between; margin: 12px 0 4px; padding: 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
-.ha__h span { font-weight: 500; letter-spacing: 0; }
 .ha__m { display: flex; justify-content: space-between; margin: 6px 0 2px; padding: 0 6px 0 12px; font-size: 11px; font-weight: 500; color: var(--ax-muted); }
-.ha__m span { font-variant-numeric: tabular-nums; }
 /* Needs you and Not working today fold (Anis 2026-11-26): closed on load,
    the arrow leads the heading and turns down when open; the count stays. */
 .ha__fold > summary { cursor: pointer; list-style: none; justify-content: flex-start; align-items: center; gap: 6px; border-radius: var(--ax-radius-sm); }
@@ -151,7 +155,6 @@ a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); colo
 .ha__row.is-working .ha__line { color: transparent; background: linear-gradient(100deg, var(--ax-text-2) 0 40%, var(--ax-text) 50%, var(--ax-text-2) 60% 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; animation: ha-shine 2.4s ease-in-out infinite; }
 @keyframes ha-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .ha__row.is-working .ha__dot::after { animation: none; opacity: 0; } .ha__row.is-working .ha__line { animation: none; color: var(--ax-text-2); background: none; } }
-.ha__n { align-self: center; min-width: 18px; padding: 0 5px; line-height: 18px; border-radius: var(--ax-radius-pill); background: var(--ax-accent); color: #fff; font-size: 11px; font-weight: 700; text-align: center; }
 .ha__empty { margin: 8px 6px; font-size: 13px; color: var(--ax-muted); }
 .ax-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* The foot row: Desk · Jobs · Workflows · Mobile app · Settings. */
@@ -160,9 +163,9 @@ a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); colo
 .hf__item:hover, .hf__item.is-on { background: var(--ax-surface-3); color: var(--ax-text); }
 .hf__item svg { width: 15px; height: 15px; }
 .hf__set { margin-left: auto; }
-.hf__n { min-width: 16px; padding: 0 4px; line-height: 16px; border-radius: var(--ax-radius-pill); background: var(--ax-amber, #f5a524); color: #111; font-size: 10.5px; font-weight: 700; text-align: center; }
+.hf__n[hidden] { display: none; }
 /* The ⌘K switcher (V3). */
-.hk { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.hk { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
 .hk__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgb(5 8 14 / 55%); backdrop-filter: blur(3px); cursor: default; }
 .hk__box { position: relative; width: min(640px, calc(100vw - 24px)); max-height: 72vh; display: flex; flex-direction: column; background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: 14px; box-shadow: 0 24px 64px rgb(0 0 0 / 40%); overflow: hidden; }
 .hk__q { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
@@ -177,7 +180,7 @@ a.ha__run:hover, a.ha__run:focus-visible { background: var(--ax-surface-2); colo
 .hk__foot { display: flex; gap: 18px; margin: 0; padding: 8px 16px; border-top: 1px solid var(--ax-border); font-size: 12px; color: var(--ax-muted); }
 /* The Mobile app page. */
 .hm { max-width: 640px; padding: 8px 24px 40px; }
-.hm__hero { padding: 20px 22px; margin: 8px 0 20px; border-radius: 14px; background: linear-gradient(135deg, var(--ax-accent-t, rgb(41 121 255 / 12%)), transparent 70%); border: 1px solid var(--ax-border); }
+.hm__hero { padding: 20px 22px; margin: 8px 0 20px; }
 .hm h2 { margin: 0 0 8px; font: 600 24px/1.2 var(--ax-font-head, inherit); }
 .hm h3 { margin: 18px 0 8px; font-size: 16px; }
 .hm__lede { margin: 0 0 12px; color: var(--ax-text-2); font-size: 15px; }

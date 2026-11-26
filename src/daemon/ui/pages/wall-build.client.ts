@@ -31,9 +31,12 @@ export const WALL_BUILD_SCRIPT = String.raw`
       ? 'The code on disk is newer than the running daemon. Restart the daemon to load it.'
       : 'The build the daemon is running, and when it started.') + (b.node ? ' Node: ' + b.node : '');
   }
-  var buildLast = null, buildAt = null;
+  // buildAsOf: set while the painted answer is an old one, so the Hub bar's
+  // hover says "as of" too (#2343 C1).
+  var buildLast = null, buildAt = null, buildAsOf = null;
   function paintBuild(asOf) {
     if (!buildLast) return;
+    buildAsOf = asOf || null;
     // The Hub status bar's version does not need the title build line (#2101).
     if (typeof hsPaintVersion === 'function') hsPaintVersion();
     var el = $('wall-build');

@@ -348,6 +348,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // newest delegation that came back done. Its agent is woken once per
   // hand-back, not at every check.
   ensureColumns(db, "requests", [["handback_asked_for", "INTEGER"]])
+  // When the requests check asked its agent for a due time it lacked
+  // (noqta#886): once, ever.
+  ensureColumns(db, "requests", [["due_asked_at", "INTEGER"]])
   // The owner-words check (owner-check.ts): who closed it, and whether
   // what was closed matches what the owner asked.
   ensureColumns(db, "requests", [["closed_by", "TEXT"], ["owner_check", "TEXT"], ["owner_check_at", "INTEGER"], ["owner_check_note", "TEXT"]])
@@ -657,6 +660,22 @@ export class RequestStore {
 
   markGraceRaised(id: string): void {
     this.db.prepare("UPDATE requests SET grace_raised_for = due_at WHERE id = ?").run(id)
+  }
+
+  /** Open items with no due time, made before `before`, whose agent was
+   *  not asked for one yet (noqta#886), oldest first. Not one waiting on
+   *  the owner, and not a standing order: neither is the agent's to date. */
+  noDueUnasked(before: number, limit: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND due_at IS NULL AND due_asked_at IS NULL
+         AND state != 'waiting_owner' AND ${NOT_STANDING}
+         AND created_at < ? ORDER BY created_at, rowid LIMIT ?`,
+    ).all(...OPEN_STATES, before, limit).map(toRecord)
+  }
+
+  /** Its agent was asked for a due time (noqta#886). */
+  markDueAsked(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET due_asked_at = ? WHERE id = ?").run(now, id)
   }
 
   /** It was already pushed for the due time it has now (noqta#876). */
@@ -1492,7 +1511,25 @@ export class RequestStore {
     ).run("needs_attention", now, now, why, now, why, id, ...CLOSED_STATES).changes > 0
     // The count is in the signal (#2056): a loop shows as reopen 1, 2, ...
     if (reopened) this.signal("owner_check_mismatch", id, `reopen ${this.get(id)?.ownerReopens ?? 1}: ${why}`, now)
+    if (reopened) this.checkReopened(id)
     return reopened
+  }
+
+  private reopenedHooks = new Set<(r: RequestRecord) => void>()
+
+  /** Called after the owner-words check reopens a closed request (#2281),
+   *  with the request after the reopen (`ownerReopens` counts this one).
+   *  Not on the owner's own reopen: he knows. Returns the function that
+   *  removes it. */
+  onReopened(fn: (r: RequestRecord) => void): () => void {
+    this.reopenedHooks.add(fn)
+    return () => { this.reopenedHooks.delete(fn) }
+  }
+
+  private checkReopened(id: string): void {
+    if (!this.reopenedHooks.size) return
+    const r = this.get(id)
+    if (r) for (const fn of this.reopenedHooks) fn(r)
   }
 
   /** A close as superseded after the check already reopened it (#2082):

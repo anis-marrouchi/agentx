@@ -9,7 +9,7 @@ import { useState } from "react"
 import { useLiveSnapshot, useLiveStatus } from "../live-react"
 import type { HubPageProps } from "../registry"
 import {
-  Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+  AfCard, AfCount, AfLoader, AfRow, AfSkeletonRows, AfStateLabel, Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
   EmptyState, ICON_NAMES, Icon, Kbd, Skeleton, StatusDot, Tabs, TabsContent, TabsList, TabsTrigger,
   Tooltip, TooltipContent, TooltipTrigger,
@@ -151,6 +151,21 @@ export default function CatalogPage(_: HubPageProps) {
         <EmptyState className="w-full max-w-xs" title="Nothing waiting on you" action={<Button size="sm" variant="outline">Open the Desk</Button>}>
           New asks from your agents show here.
         </EmptyState>
+      </Section>
+
+      <Section title="affectUI treatments">
+        <AfCard className="w-full max-w-md" title="Needs you" count={2} action={<AfCount n={1} tone="warn" label="1 overdue" />}>
+          <AfRow name="Read" meta="src/hub/ui/affect.tsx" state="done" />
+          <AfRow name="Edit" meta="src/hub/pages/CatalogPage.tsx" state="running" />
+          <AfRow name="Approve" meta="deploy to production" state="waiting" />
+          <AfRow name="Test" meta="vitest run" state="error" />
+          <AfRow name="Plan" meta="not started" state="idle" />
+        </AfCard>
+        <div className="flex w-full max-w-xs flex-col gap-3">
+          <AfLoader>Thinking…</AfLoader>
+          <span className="inline-flex flex-wrap items-center gap-3"><AfStateLabel state="running" /><AfStateLabel state="done" /><AfStateLabel state="waiting" /><AfStateLabel state="error" /><AfStateLabel state="idle" /></span>
+          <AfSkeletonRows />
+        </div>
       </Section>
 
       <Section title="Live">

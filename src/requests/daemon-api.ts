@@ -240,6 +240,8 @@ function dueSlot(
   input: Record<string, unknown>,
   ask: {
     agentId: string; requestId: string | null; due: number | null; requester: string | null; words: string; createdAt?: number
+    /** The due time the item already has (noqta#886). */
+    keptDue?: number | null
     kept?: { work: string | null; estimateMinutes: number | null }
     /** May be critical (#1919): see ownerSourced. */
     ownerSourced: boolean
@@ -272,7 +274,7 @@ function dueSlot(
       estimateMinutes: work.estimateMinutes ?? ask.kept?.estimateMinutes ?? null,
       work: work.work ?? ask.kept?.work ?? null,
     }, now)
-    if (plan.kind === "refuse") return shadow ? pass : { refuse: { status: plan.status, body: plan.body } }
+    if (plan.kind === "refuse") return shadow && !plan.binding ? pass : { refuse: { status: plan.status, body: plan.body } }
     // Only "on" writes the work declaration on a promise.
     return { plan, work: !shadow && (work.work !== undefined || work.estimateMinutes !== undefined) ? work : null }
   } catch (e: any) {
@@ -344,7 +346,7 @@ function updateLoop(
   const { loop } = p
   const fromOwner = ownerSourced(r)
   const slot = dueSlot(deps, p.input, {
-    agentId: r.agentId, requestId: r.id, due: loop.dueAt ?? null, requester: r.owedTo ?? r.sender ?? "owner",
+    agentId: r.agentId, requestId: r.id, due: loop.dueAt ?? null, keptDue: r.dueAt, requester: r.owedTo ?? r.sender ?? "owner",
     words: p.described.headline ?? p.text,
     kept: { work: r.work, estimateMinutes: r.estimateMinutes }, ownerSourced: fromOwner,
   }, now)
@@ -993,7 +995,7 @@ export function handleRequestsApi(
     // behind by a refused accept. The slot itself is kept only by slotDone.
     const slot = action === "accept"
       ? dueSlot(deps, input, {
-        agentId, requestId: request.id, due: loop.dueAt ?? null, requester: request.owedTo ?? request.sender ?? "owner",
+        agentId, requestId: request.id, due: loop.dueAt ?? null, keptDue: request.dueAt, requester: request.owedTo ?? request.sender ?? "owner",
         // It queues from its accept, not from when it was asked: an old
         // request accepted now does not go ahead of work accepted before.
         words: described.headline ?? request.headline ?? request.text,

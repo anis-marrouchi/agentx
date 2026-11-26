@@ -18,6 +18,8 @@
 // whether it is set; the pairing code is drawn from the daemon's SVG as an
 // image, never as markup.
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_WHATSAPP_SCRIPT = String.raw`
   /** A Settings write under the owner guard: the classic path after /api/admin. */
   async function stSetSave(note, method, path, body, done, noteTo) {
@@ -43,12 +45,12 @@ export const WALL_SETTINGS_WHATSAPP_SCRIPT = String.raw`
   function stWaPairHtml() {
     var w = (S.st.data && S.st.data.whatsapp) || {}, s = S.st.wa;
     if (!w.enabled) return '<p class="ax-wall__empty">WhatsApp is off in agentx.json. Turn on <code>channels.whatsapp.enabled</code> in Advanced and restart the daemon: the pairing code shows here once WhatsApp asks for one.</p>';
-    if (!s) return '<p class="ax-wall__empty">Checking…</p>';
+    if (!s) return '${afLoaderHtml("Checking…")}';
     if (s.error) return '<p class="wst__err">Could not read the pairing state: ' + esc(s.error) + '</p>';
     var detail = s.detail ? ' (' + esc(s.detail) + ')' : '';
     if (s.connection === 'open') return '<p><span class="wsj__pill is-ok">connected</span> Paired: the daemon is signed in to WhatsApp.</p>';
     if (s.qr) return '<p><span class="wsj__pill is-warn">waiting for scan</span>' + detail + '</p>' +
-      (S.st.waQrSrc ? '<img class="wsw__qr" id="st-wa-qr" alt="WhatsApp pairing code" src="' + esc(S.st.waQrSrc) + '">' : '<p class="ax-wall__empty">Loading the code…</p>') +
+      (S.st.waQrSrc ? '<img class="wsw__qr" id="st-wa-qr" alt="WhatsApp pairing code" src="' + esc(S.st.waQrSrc) + '">' : '${afLoaderHtml("Loading the code…")}') +
       '<p class="wsj__sub">On your phone, open WhatsApp › <b>Settings</b> › <b>Linked devices</b> › <b>Link a device</b>, and scan. The code changes about every 20 seconds.</p>';
     return '<p class="wsj__sub">' + esc(s.connection || 'init') + detail + ': waiting for the daemon to show a pairing code…</p>';
   }
@@ -82,7 +84,7 @@ export const WALL_SETTINGS_WHATSAPP_SCRIPT = String.raw`
   function stWaChatsHtml() {
     var l = S.st.waLists;
     var lists = !l ? '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="wa-lists">Show chats and contacts</button>'
-      : l.loading ? '<p class="ax-wall__empty">Loading…</p>'
+      : l.loading ? '${afLoaderHtml("Loading…")}'
       : l.error ? '<p class="wst__err">Could not read them: ' + esc(l.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="wa-lists">Try again</button>'
       : '<div class="wsw__lists"><div><h4>Chats <small>' + l.chats.length + '</small></h4>' + stWaListHtml(l.chats.slice(0, 100).map(function (c) {
           return esc(c.name || c.jid) + ' <small>' + (c.isGroup ? 'group' : 'chat') + (c.unreadCount ? ' · ' + c.unreadCount + ' unread' : '') + '</small>';

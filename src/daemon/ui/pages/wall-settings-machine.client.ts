@@ -15,6 +15,8 @@
 //                   keeps its value on save (config-hidden.ts), so the page
 //                   never holds one. Invalid JSON is refused before the call.
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_MACHINE_SCRIPT = String.raw`
   // --- Screen capture ---
   function stScreenHtml() {
@@ -65,7 +67,7 @@ export const WALL_SETTINGS_MACHINE_SCRIPT = String.raw`
     var a = S.st.adv;
     if (!a) { stAdvLoad(true); a = S.st.adv; }
     var head = '<header class="wst__h"><h2>Advanced</h2><p>agentx.json itself: every other section writes to it. Edit it here for bulk changes or a setting with no form yet. Saving keeps a backup next to it and reloads the daemon. Every setting is in the configuration reference.</p></header>';
-    if (a.loading) return head + '<p class="ax-wall__empty">Loading…</p>';
+    if (a.loading) return head + '${afLoaderHtml("Loading…")}';
     if (a.error) return head + '<p class="wst__err">Could not read agentx.json: ' + esc(a.error) + '.</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="adv-load">Try again</button>';
     return head + stNoteHtml('adv') +
       '<p class="wsj__sub">agentx.json · ' + (a.raw.length / 1024).toFixed(1) + ' KB' + (a.hidden ? ' · ' + a.hidden + ' secret' + (a.hidden === 1 ? '' : 's') + ' typed into the file, shown as <code>[hidden secret: kept on save]</code>. Leave those as they are, or put a <code>$' + '{NAME}</code> reference there and the secret in .env.' : '') + '</p>' +

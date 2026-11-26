@@ -62,13 +62,13 @@ describe("haListHtml", () => {
   it("draws the chips, the groups and the current agent", () => {
     const h = haListHtml(m, "all", "pm", false, ltEsc, ltAge)
     expect(h).toContain('data-ha-filter="all" aria-pressed="true">All <b>4</b>')
-    expect(h).toContain("Working <span>2</span>")
-    expect(h).toContain("Needs you <span>1</span>")
-    expect(h).toContain("Done today <span>1</span>")
-    expect(h).toContain("Not working today <span>1</span>")
+    expect(h).toContain('Working <span class="ax-af-count" data-n="2">2</span>')
+    expect(h).toContain('Needs you <span class="ax-af-count" data-n="1">1</span>')
+    expect(h).toContain('Done today <span class="ax-af-count" data-n="1">1</span>')
+    expect(h).toContain('Not working today <span class="ax-af-count" data-n="1">1</span>')
     expect(h).toContain('href="#page=chat&amp;agent=pm" data-ha-agent="pm" aria-current="true"')
     expect(h).toContain('style="--ha-c:#2979FF"')
-    expect(h).toContain('<b class="ha__n" title="2 questions for you">2</b>')
+    expect(h).toContain('<b class="ax-af-count" data-tone="warn" data-n="2" title="2 questions for you">2</b>')
   })
   it("filters to one group", () => {
     const h = haListHtml(m, "working", "", false, ltEsc, ltAge)
@@ -134,13 +134,13 @@ describe("a short side menu", () => {
   const rowsOf = (h: string) => (h.match(/data-ha-agent="([^"]+)"/g) || []).map((x) => x.slice(15, -1))
   it("folds Needs you on first load and keeps its count in the header", () => {
     const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
-    expect(h).toContain('<details class="ha__fold" data-ha-open="needs"><summary class="ha__h">Needs you <span>2</span></summary>')
+    expect(h).toContain('<details class="ha__fold" data-ha-open="needs"><summary class="ha__h">Needs you <span class="ax-af-count" data-n="2">2</span></summary>')
     expect(haListHtml(mm, "all", "", { needs: true }, ltEsc, ltAge)).toContain('data-ha-open="needs" open>')
   })
   it("shows 3 working agents, then Show all (N), and all of them once opened", () => {
     const h = haListHtml(mm, "all", "", {}, ltEsc, ltAge)
     expect(rowsOf(h).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3"])
-    expect(h).toContain("Working <span>5</span>")
+    expect(h).toContain('Working <span class="ax-af-count" data-n="5">5</span>')
     expect(h).toContain('data-ha-more="working" aria-expanded="false">Show all (5)</button>')
     const all = haListHtml(mm, "all", "", { working: true }, ltEsc, ltAge)
     expect(rowsOf(all).filter((id) => id.startsWith("a"))).toEqual(["a1", "a2", "a3", "a4", "a5"])
@@ -234,6 +234,18 @@ describe("the Hub page's left column", () => {
     expect(HUB_NAV_CSS).not.toMatch(/\.ax-wall__nav > \.ha \{[^}]*overflow-y/)
     expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
     expect(block).toMatch(/\.ax-wall__nav > \.hf \{ position: sticky; bottom: 0;/)
+  })
+  it("mounts the ⌘K dialog on <body>, above every page, not in the sticky side menu (#2353)", () => {
+    const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
+    expect(nav).toContain('aria-controls="hub-k-dlg"')
+    expect(nav).not.toContain('id="hub-k-dlg"')
+    expect(page.match(/id="hub-k-dlg"/g)).toHaveLength(1)
+    // After the whole .ax-wall wrapper and the status bar: a direct child of <body>.
+    const tail = page.slice(page.indexOf('id="wall-wf-dialog"'), page.indexOf("</body>"))
+    expect(tail).toMatch(/^id="wall-wf-dialog" hidden><\/div>\n<\/div>\n[^]*<div class="hk" id="hub-k-dlg"/)
+    // Above the floating assistant (assistant.ts, z-index up to 62).
+    const z = Number(/\.hk \{[^}]*z-index: (\d+)/.exec(HUB_NAV_CSS)?.[1])
+    expect(z).toBeGreaterThan(62)
   })
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))

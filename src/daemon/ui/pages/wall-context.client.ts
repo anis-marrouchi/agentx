@@ -37,14 +37,16 @@
 // than one, a picker. The chat script asks for it through window.AXCtx.
 
 import { HUB_NAME } from "../hub-name"
+import { hubPanelGripHtml } from "./hub-panels"
 import { injectFns } from "../inject"
+import { afLoaderHtml } from "../affect.css"
 import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
-import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
+import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, wflLoader, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
 
 export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
   ${injectFns({ chAgo, chDate, chReqMetaHtml })}
-  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
+  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, wflLoader, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
   S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {}, src: {} };
   var CX_MAX = 6;
   var CX_NAME = { files: 'Files', wfile: 'File', wsfile: 'File', changes: 'Changes', plan: 'Plan', file: 'File' };
@@ -120,7 +122,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
         (t.kind === 'files' ? wflIcon('files') : '') +
         '<b>' + esc(CX_NAME[t.kind]) + '</b>' + (t.path ? ' ' + esc(cxTitle(t)) : what ? ' ' + esc(cxShort(what)) : '') + '</button>' +
-        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '">×</button></span>';
+        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '" title="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
     }).join('');
   }
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
@@ -139,7 +141,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
-    if (!th || th.loading) return '<p class="ax-wall__empty">Loading the plan…</p>';
+    if (!th || th.loading) return '${afLoaderHtml("Loading the plan…")}';
     if (th.error) return '<p class="ax-wall__empty">Plan not available: ' + esc(th.error) + '</p>';
     if (!th.plan || !th.plan.length) return '<p class="ax-wall__empty">This request has no plan steps.' + (p.mergeRef ? ' Its changes are under Changes.' : '') + '</p>';
     return planHtml(th.plan);
@@ -157,7 +159,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxFileHtml(t) {
     var f = S.cx.files[cxKey(t)];
-    if (!f || f.loading) return '<p class="ax-wall__empty">Loading the file…</p>';
+    if (!f || f.loading) return '${afLoaderHtml("Loading the file…")}';
     if (f.error) return '<p class="ax-wall__empty">File not available: ' + esc(f.error) + '</p>';
     var d = f.data;
     if (d.status === 'removed') return '<p class="ax-wall__empty">' + esc(d.ref) + ' removes this file.</p>';
@@ -296,7 +298,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var head = '<div class="wcx__h wcx__src">' + (s.href ? '<a href="' + esc(s.href) + '" title="Open it">' + esc(s.label) + '</a>' : '<b>' + esc(s.label) + '</b>') +
       (t.kind === 'files' ? '<button type="button" class="wcx__re" data-cx="freload" data-src="' + esc(s.key) + '"' + (s.loading ? ' disabled' : '') + '>Reload</button>' : '') + '</div>';
     if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path]);
-    if (!s.data && s.loading) return head + '<p class="ax-wall__empty">Reading the runs…</p>' + workspaceHtml(s.ws, s.key);
+    if (!s.data && s.loading) return head + '${afLoaderHtml("Reading the runs…")}' + workspaceHtml(s.ws, s.key);
     if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '. A run still going has its record when it ends.</p>' + workspaceHtml(s.ws, s.key);
     if (t.kind === 'wfile') {
       // The file as it is now, from the workspace, when the path is in it.
@@ -386,7 +388,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
 export const WALL_CONTEXT_CSS = `
 /* The right panel (#2101 R15): only while a tab is open. */
 .wcx { grid-column: 3; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; min-width: 0; display: flex; flex-direction: column; background: var(--ax-bg); border-left: 1px solid var(--ax-border); }
-.ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings, .ax-wall.hc-open.cx-open { grid-template-columns: 280px minmax(0, 1fr) minmax(380px, 42vw); justify-content: stretch; }
+.ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings, .ax-wall.hc-open.cx-open { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr) var(--axp-cx-w, minmax(380px, 42vw)); justify-content: stretch; }
 .ax-wall.cx-open .ax-wall__aside { display: none !important; }
 .wcx__tabs { flex: none; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 8px 8px 0; border-bottom: 1px solid var(--ax-border); }
 .wcx__tabs::-webkit-scrollbar { display: none; }
@@ -396,7 +398,7 @@ export const WALL_CONTEXT_CSS = `
 .wcx__tab > button[role="tab"] b { font-weight: 600; color: var(--ax-text-2); }
 .wcx__tab.is-on > button[role="tab"] b { color: var(--ax-text); }
 .wcx__tab > button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
-.wcx__x { font: inherit; font-size: 16px; line-height: 1; padding: 2px 8px 4px 4px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
+.wcx__x { display: inline-flex; align-items: center; padding: 3px 6px 3px 2px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
 .wcx__x:hover { color: var(--ax-text); }
 .wcx__body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
 .wcx__body #wdf > .wdf { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -440,6 +442,7 @@ export const WALL_CONTEXT_CSS = `
 /** The panel itself, empty and hidden until a tab opens. */
 export function wallContextHtml(): string {
   return `<aside class="wcx" id="wall-ctx" aria-label="Changes, plan and files" hidden>
+    ${hubPanelGripHtml("cx")}
     <div class="wcx__tabs" id="wcx-tabs" role="tablist" aria-label="Open in the panel"></div>
     <div class="wcx__body" id="wcx-body" role="tabpanel"></div>
   </aside>`

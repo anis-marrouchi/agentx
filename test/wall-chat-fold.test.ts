@@ -70,8 +70,15 @@ describe("cfStepLine: one line a step", () => {
   it("says how long in s, m s, h m", () => {
     expect(cfDuration(12_400)).toBe("12s")
     expect(cfDuration(72_000)).toBe("1m 12s")
-    expect(cfDuration(3_780_000)).toBe("1h 3m")
+    expect(cfDuration(3_780_000)).toBe("1h 03m")
     expect(cfDuration(null)).toBe("0s")
+  })
+
+  it("keeps two digits after the first unit and never rounds up, for a ticking clock (#2306)", () => {
+    expect(cfDuration(242_000)).toBe("4m 02s")
+    expect(cfDuration(59_900)).toBe("59s")
+    expect(cfDuration(134_999)).toBe("2m 14s")
+    expect(cfDuration(-5)).toBe("0s")
   })
 })
 

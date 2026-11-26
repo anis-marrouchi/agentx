@@ -30,7 +30,7 @@ export function Tool({ part, running }: { part: ToolPart; running: boolean }) {
             <span className="axc-add">+{counts.added}</span> <span className="axc-del">−{counts.removed}</span>
           </span>
         ) : null}
-        <span className={`axc-tool__state axc-tool__state--${state}`}>
+        <span className="axc-tool__state ax-af-state" data-state={state}>
           {stateLabels[state]}
         </span>
       </button>

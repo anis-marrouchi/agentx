@@ -53,6 +53,7 @@ import { WALL_SETTINGS_DIAGNOSTICS_CSS, WALL_SETTINGS_DIAGNOSTICS_SCRIPT } from 
 import { WALL_SETTINGS_APPROVALS_SCRIPT } from "./wall-settings-approvals.client"
 import { WALL_SETTINGS_GUESTS_SCRIPT } from "./wall-settings-guests.client"
 import { HUB_NAME } from "../hub-name"
+import { afLoaderHtml } from "../affect.css"
 
 export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Settings (#1428) ---
@@ -169,6 +170,37 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   }
   function stPaint() { S.st.v++; settingsShow(); }
 
+  /** What has the keyboard in the Settings panel, so a repaint can give it
+   *  back (#2226 S1 review): its id, or else its tag and data-* attributes,
+   *  and the caret of a field. Null when focus is outside the panel. */
+  function stFocusKey(box) {
+    var a = document.activeElement;
+    if (!a || !box || typeof box.contains !== 'function' || !box.contains(a)) return null;
+    var k = { id: a.id || '', tag: String(a.tagName || ''), attrs: [], sel: null };
+    if (!k.id) {
+      var list = a.attributes || [];
+      for (var i = 0; i < list.length; i++) if (list[i].name.indexOf('data-') === 0) k.attrs.push([list[i].name, list[i].value]);
+      if (!k.attrs.length) return null;
+    }
+    try { if (typeof a.selectionStart === 'number') k.sel = [a.selectionStart, a.selectionEnd]; } catch (e) {}
+    return k;
+  }
+  /** Focuses the element of a key from stFocusKey(), if the repaint kept it. */
+  function stFocusBack(box, k) {
+    if (!k) return;
+    var el = null;
+    if (k.id) el = document.getElementById(k.id);
+    else if (box && typeof box.querySelectorAll === 'function') {
+      var all = box.querySelectorAll(k.tag || '*');
+      for (var i = 0; i < all.length && !el; i++) {
+        if (k.attrs.every(function (p) { return all[i].getAttribute(p[0]) === p[1]; })) el = all[i];
+      }
+    }
+    if (!el || typeof el.focus !== 'function') return;
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    if (k.sel && typeof el.setSelectionRange === 'function') { try { el.setSelectionRange(k.sel[0], k.sel[1]); } catch (e) {} }
+  }
+
   /** Called from render(): paints only when the section, the agent or the data changed. */
   function settingsShow() {
     if (S.page !== 'settings' || S.post) return;
@@ -222,7 +254,10 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     }
     S.st.painted = painted;
     S.st.healthSig = health;
+    // The repaint keeps the keyboard where it was (#2226 S1 review).
+    var focusKey = stFocusKey(box);
     box.innerHTML = settingsHtml();
+    stFocusBack(box, focusKey);
     stPaintTest();
   }
 
@@ -243,8 +278,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   function stRestartOn(n) { return !nodeDown(n) && n.restart && n.restart.state && n.restart.state !== 'none'; }
   function stCountHtml(id, att) {
     var n = id === 'agents' ? att[0] : id === 'mesh' ? att[1] : id === 'health' ? att[2] : 0;
-    if (n) return '<b class="wst__n-att" title="' + n + ' need' + (n === 1 ? 's' : '') + ' you">' + n + '</b>';
-    if (id === 'agents' && S.st.data && S.st.data.agents) return '<b class="wst__n-all" title="Agents on this machine">' + S.st.data.agents.length + '</b>';
+    if (n) return '<b class="wst__n-att ax-af-count" data-tone="warn" data-n="' + n + '" title="' + n + ' need' + (n === 1 ? 's' : '') + ' you">' + n + '</b>';
+    if (id === 'agents' && S.st.data && S.st.data.agents) return '<b class="wst__n-all ax-af-count" data-n="' + S.st.data.agents.length + '" title="Agents on this machine">' + S.st.data.agents.length + '</b>';
     return '';
   }
   function settingsHtml() {
@@ -268,7 +303,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   function stSectionHtml(sec) {
     if (S.st.error === 'owner') return '<p class="wst__err">Only the owner can change settings. <a href="/login">Sign in</a> as the owner and open this page again.</p>';
     if (S.st.error) return '<p class="wst__err">Could not load the settings: ' + esc(S.st.error) + '.</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="reload">Try again</button>';
-    if (!S.st.data) return '<p class="ax-wall__empty">Loading…</p>';
+    if (!S.st.data) return '${afLoaderHtml("Loading…")}';
     if (!S.st.data.exists) return '<p class="wst__err">This machine has no agentx.json yet. <a href="/setup">Run the setup</a> first.</p>';
     if (sec === 'health') return '<header class="wst__h"><h2>Health</h2><p>Your machines, your channels and what needs fixing, as classic Settings shows them.</p></header>' +
       '<div id="st-health-main">' + stHealthHtml(false) + '</div>';
@@ -340,8 +375,8 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
       var what = checking ? 'checking…' : down ? (n.stale && n.staleSince ? 'not answering since ' + stamp(Date.parse(n.staleSince)) : 'not answering')
         : 'answering' + (n.version ? ' · v' + n.version : '');
       var restart = stRestartOn(n) ? '<span class="ax-badge ax-badge--warn">Restart ' + esc(n.restart.state) + '</span>' : '';
-      return '<li class="' + (down ? 'is-down' : checking ? 'is-check' : 'is-up') + '"><i aria-hidden="true"></i><b>' + esc(n.name) + '</b><span>' + esc(what) + '</span>' + restart + '</li>';
-    }).join('') + '</ul>' : '<p class="ax-wall__empty">' + (S.liveError ? 'Could not reach the machines just now; trying again.' : 'Loading the machines…') + '</p>';
+      return '<li class="' + (down ? 'is-down' : checking ? 'is-check' : 'is-up') + '"><b>' + esc(n.name) + '</b><span class="ax-af-state"' + (checking ? '' : ' data-state="' + (down ? 'error' : 'done') + '"') + '>' + esc(what) + '</span>' + restart + '</li>';
+    }).join('') + '</ul>' : S.liveError ? '<p class="ax-wall__empty">Could not reach the machines just now; trying again.</p>' : '${afLoaderHtml("Loading the machines…")}';
     var fix = issues.length ? '<ul class="wsh__fix">' + issues.map(function (x) { return '<li>' + esc(x.text) + ' <a href="' + esc(x.href) + '">' + esc(x.link) + '</a></li>'; }).join('') + '</ul>'
       : nodes.length ? '<p class="wsh__ok">Nothing to fix.</p>' : '';
     return '<section class="wsh' + (compact ? ' wsh--compact' : '') + '" aria-label="Health">' + (compact ? '<h2>Health</h2>' : '') + strip + lines + fix + '</section>';
@@ -350,7 +385,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
   // --- Agents: one card each, then add one, then the wiki page curator ---
   function stSwitchHtml(a) {
     var o = stOrgNode(a.id);
-    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="#status=open&amp;view=decide" title="It starts once you approve it in Needs you">Waits for approval</a>';
+    if (o.status === 'waiting') return '<a class="chip chip--warn wsa__wait" href="#status=open&amp;view=decide" title="It starts once you approve it in Waiting on you">Waits for approval</a>';
     var on = o.status !== 'paused';
     return '<button type="button" class="wsa__sw" role="switch" aria-checked="' + (on ? 'true' : 'false') + '" data-st-hold="' + esc(a.id) + '"' +
       ' title="' + (on ? 'On. Turn off: it starts no run until you turn it back on.' : 'Off: it starts no run. Turn on to let it work again.') + '">' +
@@ -427,7 +462,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         var facts = [esc(o.title)];
         if (o.refreshes) facts.push('renews itself');
         if (o.expiresAt) facts.push('expires ' + esc(new Date(o.expiresAt).toISOString().slice(0, 10)));
-        signin = '<div><span class="chip ' + (o.connected && !probs.length ? 'chip--done">connected' : o.connected ? 'chip--warn">needs attention' : 'chip--warn">not connected') + '</span> <small>' + facts.join(' · ') + '</small></div>' +
+        signin = '<div><span class="ax-af-state" data-state="' + (o.connected && !probs.length ? 'done">connected' : o.connected ? 'waiting">needs attention' : 'waiting">not connected') + '</span> <small>' + facts.join(' · ') + '</small></div>' +
           (probs.length ? '<details class="wsx"><summary>' + probs.length + ' to fix</summary>' + probs.map(function (p) { return '<small>' + esc(p) + '</small>'; }).join('') + '</details>' : '');
       }
       var refs = Object.keys(i.credentials || {}).map(function (k) { return k + '=' + i.credentials[k]; }).join(', ');
@@ -437,7 +472,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
         '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="ask" data-key="int:' + n + '">Remove</button>' +
         stConfirmHtml('int:' + n, 'Remove ' + esc(i.kind) + ' "' + esc(i.label) + '" from @' + esc(a.id) + '?', 'Remove') + '</li>';
     }).join('');
-    return '<section class="wsc"><h3>Integrations <small>' + list.length + '</small></h3>' +
+    return '<section class="wsc"><h3>Integrations <span class="ax-af-count" data-n="' + list.length + '">' + list.length + '</span></h3>' +
       '<p class="wsf__hint">Credentials for outside services. Only the names of environment variables are kept here; the secrets stay in the environment or the keyring.</p>' +
       (rows ? '<ul class="wsi-list">' + rows + '</ul>' : '<p class="ax-wall__empty">None yet.</p>') + stNoteHtml('int') +
       '<details class="wsx"><summary>Add an integration</summary><form class="wsf" data-st-form="int" data-id="' + esc(a.id) + '">' +
@@ -456,7 +491,7 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     var head = '<section class="wsc" id="st-files"><h3>' + (skillsTab ? 'Skills' : 'Instruction files') + '</h3><p class="wsf__hint">' +
       (skillsTab ? 'What @' + esc(a.id) + ' knows how to do, one folder with a SKILL.md each, in its workspace.' : 'The files that tell @' + esc(a.id) + ' who it is and how it works, in its workspace.') + '</p>';
     if (!f || f.error) return head + (f ? '<p class="wst__err">Could not list the files: ' + esc(f.error) + '</p>' : '') + '<button type="button" class="ax-btn ax-btn--ghost" data-st-act="files" data-id="' + esc(a.id) + '">' + (f ? 'Try again' : 'Show files') + '</button></section>';
-    if (!f.overview) return head + '<p class="ax-wall__empty">Loading…</p></section>';
+    if (!f.overview) return head + '${afLoaderHtml("Loading…")}</section>';
     var ov = f.overview, mine = (skillsTab ? ov.skills : ov.identity) || [];
     var items = mine.map(function (x, n) {
       return '<li><button type="button" class="wsl__f' + (f.path === x.path ? ' is-on' : '') + '" data-st-act="open-file" data-path="' + esc(x.path) + '">' + esc(x.title) +
@@ -757,10 +792,6 @@ export const WALL_SETTINGS_CSS = `
 .wst__sub { display: none; color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
 .wst__sec.is-classic { font-weight: 400; color: var(--ax-text-2); }
 .wst__grp { margin: 14px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
-.wst__n-att, .wst__n-all { min-width: 22px; padding: 1px 7px; border-radius: var(--ax-radius-pill); font-size: 12px; text-align: center; }
-.wst__n-att { background: var(--ax-amber-t); color: var(--ax-amber-ink); }
-.wst__n-all { background: var(--ax-surface-2, var(--ax-border)); color: var(--ax-text-2); }
-.wst__sec.is-on .wst__n-all { background: var(--ax-accent); color: #fff; }
 .wst-owner { max-width: 520px; padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .wst-owner h2 { margin: 0; font-size: 20px; font-weight: 800; }
 .wst-owner p { margin: 0; color: var(--ax-text-2); }
@@ -789,11 +820,6 @@ export const WALL_SETTINGS_CSS = `
 .wsh__s.is-warn b { color: var(--ax-amber-ink); }
 .wsh__nodes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .wsh__nodes li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--ax-fs-sm); }
-.wsh__nodes i { width: 10px; height: 10px; border-radius: 50%; background: var(--ax-green); flex: none; }
-.wsh__nodes li.is-down i { background: var(--ax-red); }
-.wsh__nodes li.is-down span { color: var(--ax-red-ink); }
-.wsh__nodes li.is-check i { background: var(--ax-border-2); }
-.wsh__nodes span { color: var(--ax-muted); }
 .wsh__nodes .ax-badge { margin-left: auto; }
 .wsh__fix { margin: 0; padding-left: 18px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
 .wsh__fix a { color: var(--ax-accent); }

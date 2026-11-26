@@ -23,11 +23,11 @@ export const WALL_CAPACITY_SCRIPT = String.raw`
     var t = cap && typeof cap.threshold === 'number' ? cap.threshold : null;
     var note = t === null ? 'No threshold set, so no agent is flagged.' : 'Flagged: in progress plus waiting above ' + t + '.';
     var head = '<h3>Capacity per owner</h3><p class="ax-wall__count">Open work on every node, by agent. ' + note + '</p>';
-    if (!rows.length) return head + '<p class="ax-wall__empty">No agent carries open work.</p>';
+    if (!rows.length) return head + '<div class="ax-af-empty"><strong>No agent carries open work</strong><span>Open posts count here once an agent works on them.</span><a class="ax-btn ax-btn--ghost" href="#status=open&view=list">Open the list</a></div>';
     return head + '<table class="wl"><thead><tr><th>Owner</th><th>In progress</th><th>Waiting on it</th><th>Capacity</th></tr></thead><tbody>' +
       rows.map(function (r) {
         var href = '#load=' + encodeURIComponent(r.owner) + '&view=list';
-        var flag = r.over ? '<span class="chip chip--warn">over capacity</span>' : t === null ? '—' : 'ok';
+        var flag = r.over ? '<span class="ax-af-state" data-state="waiting">over capacity</span>' : t === null ? '—' : 'ok';
         return '<tr' + (r.over ? ' class="is-over"' : '') + '><td><a href="' + esc(href) + '">' + esc(r.owner) + '</a></td>' +
           '<td class="num">' + r.inProgress + '</td><td class="num">' + r.waiting + '</td><td>' + flag + '</td></tr>';
       }).join('') + '</tbody></table>';

@@ -13,10 +13,39 @@ export interface TsTurn {
   sender?: string
   message: string
   startedAt?: string
+  endedAt?: string
   ok?: boolean
   error?: string
   responseText?: string
   running?: boolean
+}
+
+/**
+ * When something happened, as the Task page shows it (#2306): "14:05" when
+ * it was today in the viewer's time, "24 Nov 14:05" another day this year,
+ * "24 Nov 2025 14:05" before that. `full` is the whole local date and time
+ * for the hover title, `iso` the machine form for <time datetime>. Null for
+ * no time: nothing is shown rather than a made-up one.
+ */
+export function tsWhen(ms: number, now: number): { short: string; full: string; iso: string } | null {
+  if (!(ms > 0)) return null
+  const d = new Date(ms), n = new Date(now)
+  if (isNaN(d.getTime())) return null
+  const p2 = (x: number) => (x < 10 ? "0" : "") + x
+  const hm = p2(d.getHours()) + ":" + p2(d.getMinutes())
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]
+  const sameYear = d.getFullYear() === n.getFullYear()
+  const today = sameYear && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+  const short = today ? hm : d.getDate() + " " + mon + (sameYear ? "" : " " + d.getFullYear()) + " " + hm
+  return { short, full: d.toLocaleString(), iso: d.toISOString() }
+}
+
+/** tsWhen as a <time> element; "" for no time. */
+export function tsTimeHtml(ms: number, now: number, cls?: string): string {
+  const w = tsWhen(ms, now)
+  if (!w) return ""
+  const esc = (x: string) => x.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
+  return '<time class="' + esc(cls || "ax-time") + '" datetime="' + esc(w.iso) + '" title="' + esc(w.full) + '">' + esc(w.short) + "</time>"
 }
 
 export function tsEsc(x: unknown): string {
@@ -31,19 +60,21 @@ export function tsTurnLabel(n: number, total: number): string {
 }
 
 /** One earlier or later turn: what was asked, what came back, and a link to
- *  that turn's own page with its full log. */
+ *  that turn's own page with its full log. `when` gives a time's HTML
+ *  (tsTimeHtml): the ask at its start, the reply at its end. */
 export function tsTurnHtml(t: TsTurn, o: { agent: string; href: string; md: (s: string) => string; plain: (s: string) => string; when: (iso: string) => string }): string {
   const ask = o.plain(t.message || "").trim()
   const reply = o.plain(t.responseText || "").trim()
   const err = !t.running && t.ok === false
   const replyHtml = t.running
     ? '<div class="wsess__reply is-running"><span class="ax-ev__label ax-ev__label--text">' + tsEsc(o.agent) + "</span> working now…</div>"
-    : '<div class="wsess__reply' + (err ? " is-err" : "") + '"><div class="wsess__head"><span class="ax-ev__label ax-ev__label--text">' + tsEsc(o.agent) + "</span></div>" +
+    : '<div class="wsess__reply' + (err ? " is-err" : "") + '"><div class="wsess__head"><span class="ax-ev__label ax-ev__label--text">' + tsEsc(o.agent) + "</span>" +
+      (t.endedAt ? '<span class="wsess__when">' + o.when(t.endedAt) + "</span>" : "") + "</div>" +
       '<div class="wsess__body ax-ev__text">' + (reply ? o.md(reply) : err ? tsEsc(t.error || "failed") : '<span class="wsess__none">No reply text.</span>') + "</div></div>"
   return '<article class="wsess__turn" data-turn="' + tsEsc(t.id) + '">' +
     '<div class="wsess__ask"><div class="wsess__head"><span class="ax-ev__label ax-ev__label--soft">turn ' + tsEsc(t.n || "") + "</span>" +
     (t.sender ? '<span class="wsess__who">' + tsEsc(t.sender) + "</span>" : "") +
-    '<span class="wsess__when">' + tsEsc(t.startedAt ? o.when(t.startedAt) : "") + "</span></div>" +
+    '<span class="wsess__when">' + (t.startedAt ? o.when(t.startedAt) : "") + "</span></div>" +
     '<div class="wsess__body">' + (ask ? o.md(ask) : '<span class="wsess__none">No request text.</span>') + "</div></div>" +
     replyHtml +
     '<a class="wsess__open" href="' + tsEsc(o.href) + '">View log</a></article>'

@@ -228,7 +228,7 @@ The run belongs to the merge request, so the reply is a comment there. The messa
 - **One start per commit.** AgentX waits `ci.holdSeconds` after the first failed pipeline of a commit, and puts every failed pipeline of that commit in one start. A later failure on the same commit starts nothing.
 - **A limit per merge request.** `ci.fixAttempts` counts the starts on a merge request, across its commits. After that, AgentX posts one note asking a person to look. A passing pipeline on the merge request's latest commit resets the count. It does not when another pipeline of that commit failed, for example a passing branch pipeline beside a failing merge request pipeline, and a late pass of an older commit does not either.
 - **Repeats are dropped.** The same pipeline sent again with the same status starts nothing and does not count.
-- **Where "still red" shows.** Besides the note on the merge request, the merge request goes on the Hub's **Needs you** list (kind *CI still red*) with its project, number and link, latest commit, number of tries and the agent that owns it. One item per merge request. It leaves the list when a passing pipeline resets the count, when the merge request is merged or closed, or when you answer it. The owning agent's last run on the merge request gets a `ci_still_red` step, so it shows on that run's timeline.
+- **Where "still red" shows.** Besides the note on the merge request, the merge request goes on the Hub's **Waiting on you** list (kind *CI still red*) with its project, number and link, latest commit, number of tries and the agent that owns it. One item per merge request. It leaves the list when a passing pipeline resets the count, when the merge request is merged or closed, or when you answer it. The owning agent's last run on the merge request gets a `ci_still_red` step, so it shows on that run's timeline.
 
 A merge request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed pipeline.
 
@@ -264,6 +264,9 @@ A failed pipeline with no open merge request starts the agent in `routes`, as be
 | `channels.github.noWakeLabel` | string | `"agent:no-wake"` | An issue or pull request carrying this label starts no run: not when it is opened, not on a label change, not on a comment or review, even one that @-mentions the agent. A project rule is not needed. Adding the label also drops a run still waiting its `debounceSeconds`. Remove the label to let the agent in. `""` turns this off. |
 | `channels.github.ci.fixAttempts` | number | `3` | How many times failed workflow runs on one pull request start its agent, counted across all its commits. Each commit starts the agent at most once. After that, AgentX posts one comment on the pull request asking a person to look. The count resets when every workflow run of the pull request's latest commit passes, if that commit had not started the agent. `0` never starts the agent. |
 | `channels.github.ci.holdSeconds` | number (0–3600) | `30` | AgentX waits this many seconds after the first failed workflow run of a commit. Every failed run of that commit in the wait goes into one start. |
+| `channels.github.ci.reviewer` | string | unset | The agent woken when an agent-owned pull request is all green and has no review. Unset turns the review wait off. See [Green pull requests with no review](#green-pull-requests-with-no-review). |
+| `channels.github.ci.reviewWakeMinutes` | number | `15` | Minutes a pull request stays green with no review before `ci.reviewer` is woken on the pull request's chat. Once per wait. |
+| `channels.github.ci.reviewOwnerMinutes` | number | `30` | Minutes a pull request stays green with no review before the agent that owns it is told. Once per wait. |
 
 ### Failed workflow runs
 
@@ -282,11 +285,26 @@ The run belongs to the pull request, so the reply is a comment there. The messag
 - **One start per commit.** AgentX waits `ci.holdSeconds` after the first failed run of a commit, and puts every failed workflow of that commit in one start. A later failure on the same commit, a re-run included, starts nothing.
 - **A limit per pull request.** `ci.fixAttempts` counts the starts on a pull request, across its commits. After that, AgentX posts one comment asking a person to look. The count resets when every workflow run of the pull request's latest commit has passed, if that commit had not started the agent. A late pass of an older commit does not reset it.
 - **Repeats are dropped.** The same run and attempt sent again starts nothing and does not count.
-- **Where "still red" shows.** Besides the comment on the pull request, the pull request goes on the Hub's **Needs you** list (kind *CI still red*) with its repository, number and link, latest commit, number of tries and the agent that owns it. One item per pull request. It leaves the list when the count resets on a passing commit, when the pull request is merged or closed, or when you answer it. The owning agent's last run on the pull request gets a `ci_still_red` step, so it shows on that run's timeline.
+- **Where "still red" shows.** Besides the comment on the pull request, the pull request goes on the Hub's **Waiting on you** list (kind *CI still red*) with its repository, number and link, latest commit, number of tries and the agent that owns it. One item per pull request. It leaves the list when the count resets on a passing commit, when the pull request is merged or closed, or when you answer it. The owning agent's last run on the pull request gets a `ci_still_red` step, so it shows on that run's timeline.
 
 A pull request labelled with `noWakeLabel` (default `agent:no-wake`) starts no agent for a failed run.
 
 A run with no pull request starts nothing. The webhook must send **Workflow runs** events. Check suite and check run events start nothing.
+
+### Green pull requests with no review
+
+When `ci.reviewer` is set, a pull request whose latest commit has passed every workflow run, that an agent owns (found as in [Failed workflow runs](#failed-workflow-runs)) and that has no review yet starts a review wait.
+
+- After `ci.reviewWakeMinutes` the reviewer agent is woken on the pull request's chat, once.
+- After `ci.reviewOwnerMinutes` the owning agent is told that no review has come, once.
+- The wait ends on a submitted GitHub review, a comment on the pull request signed by the reviewer (`<!-- agentx:<reviewer> -->`) from an account AgentX posts with, or the pull request closing or merging. A comment signed by another agent does not end it.
+- A review or a reviewer-signed comment counts for the commit that was the head when it came. A later green of that same commit (a re-run, or a workflow that finishes after the comment) starts no new wait, even after a daemon restart.
+- A new push ends the wait. The next all-green commit starts a new one.
+- Draft pull requests, release pull requests (release-please), pull requests from a fork and pull requests labelled with `noWakeLabel` never wait. Turning a pull request back into a draft ends its wait.
+- The owner is told only `ci.reviewOwnerMinutes − ci.reviewWakeMinutes` after the reviewer was really woken, never in the same check, even after a daemon restart.
+- Waits are kept in `.agentx/state/review-wait-github.json` and checked once a minute, so a daemon restart neither loses a wait nor wakes twice.
+
+A review given only agent to agent, with no comment on the pull request, does not end the wait.
 
 ### Which comments start a run
 

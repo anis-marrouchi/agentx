@@ -24,6 +24,7 @@ import { ASSISTANT_CSS, ASSISTANT_HTML, ASSISTANT_SCRIPT } from "./assistant"
 import { injectFns } from "./inject"
 import { markdownToHtml } from "@/utils/markdown-html"
 import { AX_COMPONENTS_CSS } from "./components.css"
+import { AX_AFFECT_CSS } from "./affect.css"
 import {
   TOPBAR_HEAD,
   TOPBAR_CSS,
@@ -79,7 +80,7 @@ export interface ShellOpts {
 }
 
 export function renderShell(opts: ShellOpts): string {
-  const css = `${AX_TOKENS_CSS}\n${AX_COMPONENTS_CSS}\n${TOPBAR_CSS}\n${ASSISTANT_CSS}${opts.css ? "\n" + opts.css : ""}`
+  const css = `${AX_TOKENS_CSS}\n${AX_AFFECT_CSS}\n${AX_COMPONENTS_CSS}\n${TOPBAR_CSS}\n${ASSISTANT_CSS}${opts.css ? "\n" + opts.css : ""}`
 
   const header = opts.customHeader
     ?? (opts.activeTab === "custom"

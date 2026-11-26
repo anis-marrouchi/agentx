@@ -52,9 +52,21 @@ export interface Call {
 export interface CallbackRef {
   id: string
   state: CallbackState
+  /** Which owner-words reopen of the request this is about (#2281): a
+   *  correction is per reopen, and the done after reopen n is a new done.
+   *  Unset before the first reopen, so older call-backs keep their key. */
+  round?: number
 }
 
-export type CallbackState = "done" | "waiting_owner" | "needs_attention"
+/** "reopened": a request that had a done call-back was opened again by
+ *  the owner-words check; the call corrects the "Done" (#2281). */
+export type CallbackState = "done" | "waiting_owner" | "needs_attention" | "reopened"
+
+/** A ref as stored: the same key order everywhere, round only when set,
+ *  so the once check's LIKE finds it. */
+export function callbackRef(id: string, state: CallbackState, round?: number | null): CallbackRef {
+  return round ? { id, state, round } : { id, state }
+}
 
 /** A call waiting for a busy owner: since when, and when the owner was
  *  last told. Ms since the epoch. */
@@ -88,7 +100,7 @@ function fromRow(row: any): Call | undefined {
 
 /** The text a call-back's `about` holds for one request and state, so a
  *  LIKE finds it whatever else the call is about. */
-const refKey = (r: CallbackRef) => JSON.stringify({ id: r.id, state: r.state })
+const refKey = (r: CallbackRef) => JSON.stringify(callbackRef(r.id, r.state, r.round))
 
 export class CallStore {
   constructor(private db: Database.Database) {
@@ -133,7 +145,7 @@ export class CallStore {
       answered_at, ended_at, ring_again_at, note, summary, channel, chat_id, placed_by, origin, about) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       call.id, call.agentId, call.kind, call.reason, call.urgency, call.status, call.createdAt,
       call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId, call.placedBy ?? null,
-      call.origin ?? null, call.about?.length ? JSON.stringify(call.about.map((r) => ({ id: r.id, state: r.state }))) : null)
+      call.origin ?? null, call.about?.length ? JSON.stringify(call.about.map((r) => callbackRef(r.id, r.state, r.round))) : null)
   }
 
   get(id: string): Call | undefined {
@@ -200,7 +212,7 @@ export class CallStore {
   addAbout(id: string, refs: CallbackRef[], reason: string): Call | undefined {
     const call = this.get(id)
     if (!call || call.origin !== "callback" || !["ringing", "later"].includes(call.status)) return undefined
-    const about = [...(call.about ?? []), ...refs].map((r) => ({ id: r.id, state: r.state }))
+    const about = [...(call.about ?? []), ...refs].map((r) => callbackRef(r.id, r.state, r.round))
     const changed = this.db.prepare("UPDATE calls SET about=?, reason=? WHERE id=? AND status IN ('ringing','later')")
       .run(JSON.stringify(about), reason, id).changes
     return changed ? this.get(id) : undefined
