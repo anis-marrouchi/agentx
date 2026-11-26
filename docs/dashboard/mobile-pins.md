@@ -77,7 +77,7 @@ If the page says the microphone is blocked, open the browser's site settings for
 
 ## Keep the address private
 
-Some addresses work as a key: anyone who has the link can use the page. The list of buttons is kept on the computer in `.agentx/app-pins.json` (and `agentx.json`, for the buttons set there), readable only by you, and given only to phones paired with this computer. Each phone also keeps the last list it loaded, so the row works offline. Unpairing a phone doesn't delete that saved list: to clear it, delete the stored data for this computer's address in Chrome's site settings on the phone. AgentX never writes the addresses or the button names to its logs, and the phone app sends no referrer when it opens one.
+Some addresses work as a key: anyone who has the link can use the page. The list of buttons is kept on the computer in `.agentx/app-pins.json` (and `agentx.json`, for the buttons set there), readable only by you, and given only to phones paired with this computer. Once you save the Hub's menu, the buttons move into it: they are kept in `.agentx/menu.json` (also readable only by you) as the menu's links, and `.agentx/app-pins.json` is left on disk as it was. The phone app and `agentx app pin` work the same either way. Each phone also keeps the last list it loaded, so the row works offline. Unpairing a phone doesn't delete that saved list: to clear it, delete the stored data for this computer's address in Chrome's site settings on the phone. AgentX never writes the addresses or the button names to its logs, and the phone app sends no referrer when it opens one.
 
 ## Settings
 
@@ -101,7 +101,8 @@ Some addresses work as a key: anyone who has the link can use the page. The list
 - **"Only https:// pages can be pinned"** — the address starts with `http://` or has no scheme. Browsers allow the microphone only on `https://` pages; serve the page over https (on a tailnet, `tailscale serve` does it).
 - **The page opens in the Chrome browser instead of the app** — the phone app was opened from Chrome, not from the AgentX app. Open **AgentX** from the app list.
 - **The page says the microphone is blocked** — open the site settings for the page's address in the browser and allow the microphone. On Android, also check **Settings** > **Apps** > **Chrome** > **Permissions** > **Microphone**.
-- **"The pinned pages file is busy"** — another change was still being saved and did not finish within 3 seconds. Try again. If it keeps happening and no `agentx` command is running, delete `.agentx/app-pins.json.lock` on the computer.
+- **"The pinned pages file is busy"** — another change was still being saved and did not finish within 3 seconds. Try again. If it keeps happening and no `agentx` command is running, delete `.agentx/menu.json.lock` on the computer.
+- **"The menu file can't be read"** — `.agentx/menu.json` was edited by hand and is no longer valid JSON. Buttons are not changed until it is fixed: fix the file, or move it away to go back to `.agentx/app-pins.json`.
 - **"This button is set in agentx.json"** — the button comes from `app.pins.pages`. Edit or remove it in `agentx.json` on the computer.
 - **`agentx config check` reports `app.pins.pages`** — an address there is not `https://`, has a user name or password in it, or a `label` is empty or longer than 40 characters. Fix the entry named in the error. If the error says there are more pages than `app.pins.max` allows, raise `app.pins.max` or remove a page.
 - **"This page is already a button, set in agentx.json"** — the page you tried to pin on the phone is already in `app.pins.pages`. Use that button.
