@@ -30,7 +30,7 @@ describe("agmStatus: one status per agent", () => {
     expect(f({})).toMatchObject({ key: "idle", label: "Idle" })
   })
   it("draws it as a chip", () => {
-    expect(agmStatusHtml(f({ running: 1 }))).toBe('<span class="chip agm-st is-working" title="1 task running now">Working</span>')
+    expect(agmStatusHtml(f({ running: 1 }))).toBe('<span class="ax-af-state agm-st is-working" data-state="running" title="1 task running now">Working</span>')
   })
 })
 

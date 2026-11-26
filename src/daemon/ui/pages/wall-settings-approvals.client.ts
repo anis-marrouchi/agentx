@@ -14,6 +14,8 @@
 // Each save goes under the Settings prefix (wall-actions.ts), so the owner
 // guard holds it; board-dashboard.ts hands it to approvals-panel.ts.
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_APPROVALS_SCRIPT = String.raw`
   var ST_REACH = [['all', 'Everything new'], ['urgent', 'Only what expires within a day'], ['off', 'Nothing: the Desk and the digest only']];
   /** Reads one of the two, quietly when its section's paint asked for it. */
@@ -29,7 +31,7 @@ export const WALL_SETTINGS_APPROVALS_SCRIPT = String.raw`
   function stApvState(which) {
     var x = S.st[which];
     if (!x) { stApvLoad(which, true); x = S.st[which]; }
-    if (x.loading) return '<p class="ax-wall__empty">Loading…</p>';
+    if (x.loading) return '${afLoaderHtml("Loading…")}';
     if (x.error) return '<p class="wst__err">Could not read them: ' + esc(x.error) + '.</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="apv-load" data-which="' + which + '">Try again</button>';
     return '';
   }

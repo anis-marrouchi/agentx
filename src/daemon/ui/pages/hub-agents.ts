@@ -182,7 +182,7 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   const word = ({ working: "working", needs: "waiting on you", done: "done today", idle: "idle" } as Record<string, string>)[r.state]
   const bg = r.color && /^#[0-9a-f]{3,8}$/i.test(r.color) ? ' style="--ha-c:' + r.color + '"' : ""
   const when = r.ageMs >= 0 ? "<time>" + esc(age(r.ageMs)) + "</time>" : ""
-  const unread = r.unread ? '<b class="ha__n" title="' + r.unread + (r.unread === 1 ? " question" : " questions") + ' for you">' + r.unread + "</b>" : ""
+  const unread = r.unread ? '<b class="ax-af-count" data-tone="warn" data-n="' + r.unread + '" title="' + r.unread + (r.unread === 1 ? " question" : " questions") + ' for you">' + r.unread + "</b>" : ""
   const run = r.state === "working" && r.taskId && runHref ? runHref(r) : ""
   const href = run ? esc(run) : "#page=chat&amp;agent=" + encodeURIComponent(r.id)
   const opens = run ? ". Opens its live run" : ""
@@ -259,13 +259,13 @@ export function haListHtml(m: HaModel, filter: string, cur: string, open: boolea
     const byNode: Record<string, HaRow[]> = {}
     for (const r of rows) { const key = r.nodeUrl || r.node; (byNode[key] || (order.push(key), byNode[key] = [])).push(r) }
     const list = k === "working" && order.length > 1
-      ? order.map((n) => '<h4 class="ha__m">' + esc(byNode[n][0].node || "?") + " <span>" + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
+      ? order.map((n) => '<h4 class="ha__m">' + esc(byNode[n][0].node || "?") + ' <span class="ax-af-count" data-n="' + byNode[n].length + '">' + byNode[n].length + "</span></h4>" + byNode[n].map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")).join("")
       : rows.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("")
     if (k === "needs") {
-      body += '<details class="ha__fold" data-ha-open="needs"' + (o.needs ? " open" : "") + '><summary class="ha__h">' + label + " <span>" + all.length + "</span></summary>" + list + "</details>"
+      body += '<details class="ha__fold" data-ha-open="needs"' + (o.needs ? " open" : "") + '><summary class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></summary>" + list + "</details>"
       continue
     }
-    body += '<h3 class="ha__h">' + label + " <span>" + all.length + "</span></h3>" + list
+    body += '<h3 class="ha__h">' + label + ' <span class="ax-af-count" data-n="' + all.length + '">' + all.length + "</span></h3>" + list
     if (k === "working" && filter === "all" && all.length > cap) {
       body += '<button type="button" class="ha__more" data-ha-more="working" aria-expanded="' + !capped + '">' +
         (capped ? "Show all (" + all.length + ")" : "Show fewer") + "</button>"
@@ -273,10 +273,13 @@ export function haListHtml(m: HaModel, filter: string, cur: string, open: boolea
   }
   const idle = m.rows.filter((r) => r.state === "idle")
   if (filter === "all" && idle.length) {
-    body += '<details class="ha__idle ha__fold" data-ha-idle data-ha-open="idle"' + (o.idle ? " open" : "") + '><summary class="ha__h">Not working today <span>' + idle.length + "</span></summary>" +
+    body += '<details class="ha__idle ha__fold" data-ha-idle data-ha-open="idle"' + (o.idle ? " open" : "") + '><summary class="ha__h">Not working today <span class="ax-af-count" data-n="' + idle.length + '">' + idle.length + "</span></summary>" +
       idle.map((r) => haRowHtml(r, cur, esc, age, runHref)).join("") + "</details>"
   }
-  if (!body) body = '<p class="ha__empty">' + (m.rows.length ? "No agent here right now." : "No agents yet.") + "</p>"
+  // Empty, with its action (#2152): back to every agent, or set the first one up.
+  if (!body) body = m.rows.length
+    ? '<div class="ax-af-empty"><strong>No agent here right now.</strong><span>None of the agents is in this view.</span><button type="button" class="ax-btn ax-btn--ghost" data-ha-filter="all">Show all agents</button></div>'
+    : '<div class="ax-af-empty"><strong>No agents yet.</strong><span>An agent answers your messages and runs your work.</span><a class="ax-btn ax-btn--ghost" href="#page=agents">Set up an agent</a></div>'
   return chips + body
 }
 
@@ -329,7 +332,7 @@ export function haSwitchHtml(hits: HaHits, sel: number, esc: (s: unknown) => str
       return '<a class="hk__hit is-' + r.state + (on ? " is-sel" : "") + '" role="option" aria-selected="' + on + '" href="' + esc(href ? href(r) : haChatHref(r)) + '" data-hk-i="' + (i - 1) + '">' +
         '<span class="ha__face"' + bg + ' aria-hidden="true">' + esc(r.face) + '<i class="ha__dot"></i></span>' +
         '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + '</b><span class="ha__node">' + esc(r.node) + "</span></span>" +
-        '<span class="ha__line">' + esc(r.line) + "</span></span>" + (r.unread ? '<b class="ha__n">' + r.unread + "</b>" : "") +
+        '<span class="ha__line">' + esc(r.line) + "</span></span>" + (r.unread ? '<b class="ax-af-count" data-tone="warn" data-n="' + r.unread + '">' + r.unread + "</b>" : "") +
         (n < 9 ? '<kbd class="hk__kbd">⌘' + (n + 1) + "</kbd>" : "") + "</a>"
     }).join("")
   }

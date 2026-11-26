@@ -38,13 +38,14 @@
 
 import { HUB_NAME } from "../hub-name"
 import { injectFns } from "../inject"
+import { afLoaderHtml } from "../affect.css"
 import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
-import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
+import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, wflLoader, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
 
 export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
   ${injectFns({ chAgo, chDate, chReqMetaHtml })}
-  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
+  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, wflLoader, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
   S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {}, src: {} };
   var CX_MAX = 6;
   var CX_NAME = { files: 'Files', wfile: 'File', wsfile: 'File', changes: 'Changes', plan: 'Plan', file: 'File' };
@@ -139,7 +140,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
-    if (!th || th.loading) return '<p class="ax-wall__empty">Loading the plan…</p>';
+    if (!th || th.loading) return '${afLoaderHtml("Loading the plan…")}';
     if (th.error) return '<p class="ax-wall__empty">Plan not available: ' + esc(th.error) + '</p>';
     if (!th.plan || !th.plan.length) return '<p class="ax-wall__empty">This request has no plan steps.' + (p.mergeRef ? ' Its changes are under Changes.' : '') + '</p>';
     return planHtml(th.plan);
@@ -157,7 +158,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxFileHtml(t) {
     var f = S.cx.files[cxKey(t)];
-    if (!f || f.loading) return '<p class="ax-wall__empty">Loading the file…</p>';
+    if (!f || f.loading) return '${afLoaderHtml("Loading the file…")}';
     if (f.error) return '<p class="ax-wall__empty">File not available: ' + esc(f.error) + '</p>';
     var d = f.data;
     if (d.status === 'removed') return '<p class="ax-wall__empty">' + esc(d.ref) + ' removes this file.</p>';
@@ -296,7 +297,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var head = '<div class="wcx__h wcx__src">' + (s.href ? '<a href="' + esc(s.href) + '" title="Open it">' + esc(s.label) + '</a>' : '<b>' + esc(s.label) + '</b>') +
       (t.kind === 'files' ? '<button type="button" class="wcx__re" data-cx="freload" data-src="' + esc(s.key) + '"' + (s.loading ? ' disabled' : '') + '>Reload</button>' : '') + '</div>';
     if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path]);
-    if (!s.data && s.loading) return head + '<p class="ax-wall__empty">Reading the runs…</p>' + workspaceHtml(s.ws, s.key);
+    if (!s.data && s.loading) return head + '${afLoaderHtml("Reading the runs…")}' + workspaceHtml(s.ws, s.key);
     if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '. A run still going has its record when it ends.</p>' + workspaceHtml(s.ws, s.key);
     if (t.kind === 'wfile') {
       // The file as it is now, from the workspace, when the path is in it.

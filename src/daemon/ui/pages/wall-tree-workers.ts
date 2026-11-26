@@ -155,11 +155,11 @@ export function ltAddWorkers(machines: LtMachine[], nodes: LtNode[], now: number
  *  `esc` and `age` are wall-tree.ts's ltEsc and ltAge. */
 export function ltWorkerHtml(w: LtWorker, href: string, esc: (s: unknown) => string, age: (ms: number) => string): string {
   const word = w.state === "done" || w.state === "failed" || w.state === "waiting" ? w.state : "working"
-  const mark = '<span class="lt__wm is-' + word + '" role="img" aria-label="' + word + '"></span>'
+  const state = '<span class="ax-af-state" data-state="' + (w.state === "working" ? "running" : w.state === "failed" ? "error" : w.state) + '">' + word + "</span>"
   const who = (w.agentName ? '<span class="lt__who">' + esc(w.agentName) + "</span>" : "") +
     (w.where ? (w.agentName ? " " : "") + "on " + esc(w.where) : "")
-  const sub = (who ? who + " · " : "") + word + " · <time>" + age(w.ageMs) + "</time>"
-  const inner = mark + '<span class="lt__txt"><span class="lt__title">' + esc(w.title) + '</span><span class="lt__sub">' + sub + "</span></span>"
+  const sub = (who ? who + " · " : "") + state + " · <time>" + age(w.ageMs) + "</time>"
+  const inner = '<span class="lt__txt"><span class="lt__title">' + esc(w.title) + '</span><span class="lt__sub">' + sub + "</span></span>"
   const label = esc((w.agentName ? w.agentName + ", " : "") + word + ": " + w.title)
   return href ? '<a class="lt__wk is-' + word + '" href="' + esc(href) + '" title="' + label + '">' + inner + "</a>"
     : '<div class="lt__wk is-' + word + '" title="' + label + '">' + inner + "</div>"

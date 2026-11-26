@@ -24,7 +24,7 @@ export const AX_AFFECT_CSS = `
 .ax-af-card__head > :last-child:not(:first-child) { margin-left: auto; }
 
 /* --- affect: count --- */
-.ax-af-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text-2); font: 600 11px/1 var(--ax-mono); font-variant-numeric: tabular-nums; flex: none; }
+.ax-af-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text-2); font: 600 11px/1 var(--ax-mono); font-variant-numeric: tabular-nums; flex: none; align-self: center; }
 .ax-af-count[data-tone="warn"] { background: color-mix(in oklch, var(--ax-warn) 16%, transparent); color: var(--ax-text); }
 .ax-af-count:empty, .ax-af-count[data-n="0"] { display: none; }
 

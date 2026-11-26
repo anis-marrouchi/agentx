@@ -32,7 +32,7 @@ export const WALL_SETTINGS_MESH_SCRIPT = String.raw`
       stNoteHtml('mesh') +
       '<section class="wsc"><h3>Mesh ' + stChState(m.enabled) + '</h3><p class="wsj__sub">' + lead + '</p>' +
         '<label class="wsf__check"><input type="checkbox" data-st-mesh-toggle' + (m.enabled ? ' checked' : '') + '> Mesh on</label></section>' +
-      '<section class="wsc"><h3>Peers <small>' + n + '</small></h3>' + (rows ? '<ul class="wsj">' + rows + '</ul>' : '<p class="ax-wall__empty">No peers yet.</p>') +
+      '<section class="wsc"><h3>Peers <span class="ax-af-count" data-n="' + n + '">' + n + '</span></h3>' + (rows ? '<ul class="wsj">' + rows + '</ul>' : '<p class="ax-wall__empty">No peers yet.</p>') +
       '<details class="wsc"><summary><h3>Add a peer</h3></summary><form class="wsf" data-st-form="mesh-peer">' +
         '<div class="wsf__row">' + stChField('st-m-name', 'Peer name', '', 'office-server') + stChField('st-m-url', 'Address', '', 'http://192.168.1.50:18800') + '</div>' +
         stChField('st-m-token', 'Token, as an environment variable name', '', 'PEER_TOKEN', '(optional: the .env variable that holds a token with the <code>mesh:peer</code> scope)') +

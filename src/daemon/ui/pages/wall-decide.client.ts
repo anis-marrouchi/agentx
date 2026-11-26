@@ -226,7 +226,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     return '<div class="ax-wall__views wdc__tabs" role="tablist" aria-label="Show">' + tabs.map(function (t) {
       var on = D.tab === t[0];
       return '<button type="button" role="tab" data-dtab="' + t[0] + '" class="' + (on ? 'is-on' : '') + '" aria-selected="' + (on ? 'true' : 'false') + '">' + t[1] +
-        (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>';
+        (t[2] ? ' <span class="ax-af-count n" data-n="' + t[2] + '">' + t[2] + '</span>' : '') + '</button>';
     }).join('') + '</div>';
   }
   function decChips(list, reviews) {
@@ -247,7 +247,8 @@ export const WALL_DECIDE_SCRIPT = String.raw`
   }
   function decAnsweredHtml(list, since) {
     var start = since ? 'History starts ' + stamp(Date.parse(since)).slice(0, 10) + '. ' : '';
-    if (!list.length) return '<div class="wdc__empty"><h2>Nothing answered yet</h2><p>' + esc(start) + 'Your yes and no answers show here, from this page, the Desk, the phone app and the Mac card. Reviews and request replies are not listed.</p></div>';
+    if (!list.length) return '<div class="ax-af-empty"><strong>Nothing answered yet</strong><span>' + esc(start) + 'Your yes and no answers show here, from this page, the Desk, the phone app and the Mac card. Reviews and request replies are not listed.</span>' +
+      '<button type="button" class="ax-btn ax-btn--ghost" data-dtab="waiting">See what waits</button></div>';
     return '<ol class="wdc__done">' + list.map(function (a) {
       return '<li><b>' + decVerb(a) + '</b>' + (a.choice ? ' (' + esc(a.choice) + ')' : '') + ' · ' + esc(nameOf(a.raised_by)) + ' · <span dir="auto">' + esc(a.title) + '</span>' +
         (a.text ? ' · <span dir="auto" class="k">' + esc(a.text) + '</span>' : '') + ' · <time title="' + esc(stamp(Date.parse(a.at))) + '">' + esc(stamp(Date.parse(a.at))) + '</time>' +
@@ -256,23 +257,25 @@ export const WALL_DECIDE_SCRIPT = String.raw`
   }
   function decEmpty() {
     var week = ((D.data && D.data.answered) || []).filter(function (a) { return Date.now() - Date.parse(a.at) < 7 * 864e5; }).length;
-    if (D.tab === 'later') return '<div class="wdc__empty"><h2>Nothing put off</h2><p>What you answer Later waits here until it comes back.</p></div>';
-    if (D.kind) return '<div class="wdc__empty"><h2>Nothing of this kind</h2><p><button type="button" class="wa-more" data-dkind="">Show all</button></p></div>';
-    return '<div class="wdc__empty"><h2>' + (decOwner() ? 'Nothing needs you' : 'Nothing needs the owner') + '</h2><p>When an agent asks ' + (decOwner() ? 'you' : 'the owner') + ' something, it shows here.' +
-      (week ? ' ' + week + ' answered this week.' : '') + '</p></div>';
+    // Each empty state has its action (#2152, the shared .ax-af-empty).
+    if (D.tab === 'later') return '<div class="ax-af-empty"><strong>Nothing put off</strong><span>What you answer Later waits here until it comes back.</span><button type="button" class="ax-btn ax-btn--ghost" data-dtab="waiting">See what waits</button></div>';
+    if (D.kind) return '<div class="ax-af-empty"><strong>Nothing of this kind</strong><span>Another kind may have items.</span><button type="button" class="ax-btn ax-btn--ghost" data-dkind="">Show all</button></div>';
+    return '<div class="ax-af-empty"><strong>' + (decOwner() ? 'Nothing needs you' : 'Nothing needs the owner') + '</strong><span>When an agent asks ' + (decOwner() ? 'you' : 'the owner') + ' something, it shows here.' +
+      (week ? ' ' + week + ' answered this week.' : '') + '</span><button type="button" class="ax-btn ax-btn--ghost" data-dtab="answered">See what was answered</button></div>';
   }
   function decideHtml() {
     var v = D.data;
     var note = '<p class="wdc__note' + (D.noteErr ? ' is-err' : '') + '" role="status">' + esc(D.note) + '</p>';
-    if (!v) return note + '<div class="wdc__skel" aria-label="Loading what waits for you"><i></i><i></i><i></i><b></b></div>';
+    if (!v) return note + '<div aria-busy="true" aria-label="Loading what waits for you"><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span></div>';
     if (v.error) return note + '<div class="wdc__err"><p>Could not read what waits for you: ' + esc(v.error) + '.</p><button type="button" class="ax-btn ax-btn--ghost" data-dreload>Try again</button></div>';
     var all = decAll(), reviews = decReviews();
     var errs = (v.errors || []).map(function (e) { return 'the ' + (DEC_BADGE[e.kind] || e.kind).toLowerCase() + ' items'; });
     if (D.reqs && D.reqs.error) errs.push('the requests');
     var err = errs.length ? '<div class="wdc__err is-part"><p>Could not read ' + esc(errs.join(', ')) + '. The rest is shown.</p><button type="button" class="ax-btn ax-btn--ghost" data-dreload>Try again</button></div>' : '';
     // The count-led heading follows affectUI’s clean Decision Inbox (src/daemon/ui/LICENSE.affectui).
-    var head = '<p class="ax-wall__count wdc__head"><strong>' + decideCount() + ' waiting for ' + (decOwner() ? 'you' : 'the owner') + (decLater() ? ', ' + decLater() + ' put off for later' : '') +
-      '</strong></p>';
+    // What is put off has its count on the Put off tab.
+    var head = '<div class="ax-af-card__head wdc__head"><strong class="ax-af-card__title">Waiting for ' + (decOwner() ? 'you' : 'the owner') + '</strong>' +
+      '<span class="ax-af-count" data-tone="warn" data-n="' + decideCount() + '" title="' + decideCount() + ' waiting">' + decideCount() + '</span></div>';
     var ro = decOwner() ? '' : '<p class="wdc__ro">Only the owner can answer these. You see them read only.</p>';
     if (D.tab === 'answered') return note + head + decTabs() + ro + decAnsweredHtml(v.answered || [], v.answered_since);
     var tabList = all.filter(function (o) { return D.tab === 'later' ? o.snoozed : !o.snoozed; });
@@ -452,10 +455,8 @@ export const WALL_DECIDE_SCRIPT = String.raw`
 
 export const WALL_DECIDE_CSS = `
 .ax-wall__decide { padding: 0 0 12px; }
-.wdc__head { margin: 0; padding: 8px 16px; color: var(--ax-text); background: var(--ax-surface); border-bottom: 1px solid var(--ax-border); }
 .wdc__tabs { display: flex; border-bottom: 1px solid var(--ax-border); }
 .wdc__tabs button { flex: 1 1 0; }
-.wdc__tabs .n { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); font-size: var(--ax-fs-xs); }
 .wdc__chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
 .wdc__chip { font: inherit; font-size: var(--ax-fs-sm); padding: 5px 14px; min-height: 36px; border-radius: var(--ax-radius-pill); border: 1px solid var(--ax-border-2); background: var(--ax-bg); color: var(--ax-text); cursor: pointer; }
 .wdc__chip.is-on { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
@@ -503,18 +504,11 @@ export const WALL_DECIDE_CSS = `
 .wdc__note { margin: 0; padding: 8px 16px 0; font-size: var(--ax-fs-sm); color: var(--ax-green); }
 .wdc__note:empty { display: none; }
 .wdc__note.is-err { color: var(--ax-red-ink, var(--ax-err)); }
-.wdc__empty { text-align: center; padding: 36px 16px; color: var(--ax-muted); }
-.wdc__empty h2 { font-size: var(--ax-fs-lg, var(--ax-fs)); color: var(--ax-text); margin: 0 0 6px; }
-.wdc__empty p { margin: 0; }
 .wdc__err { text-align: center; padding: 0 0 16px; }
 .wdc__err p { margin: 0 0 10px; padding: 10px 16px; text-align: left; background: var(--ax-red-t, var(--ax-surface-2)); color: var(--ax-red-ink, var(--ax-err)); }
 .wdc__err.is-part { padding-bottom: 0; text-align: left; }
 .wdc__err.is-part p { margin: 0; }
 .wdc__err.is-part .ax-btn { margin: 8px 16px; }
-.wdc__skel { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.wdc__skel i, .wdc__skel b { display: block; height: 12px; border-radius: 6px; background: var(--ax-surface-2); }
-.wdc__skel i:nth-child(1) { width: 30%; } .wdc__skel i:nth-child(2) { width: 75%; } .wdc__skel i:nth-child(3) { width: 55%; }
-.wdc__skel b { width: 90px; height: 28px; border-radius: 14px; }
 .wdc__done { list-style: none; margin: 0; padding: 0; }
 .wdc__done li { padding: 10px 16px; border-bottom: 1px solid var(--ax-border); overflow-wrap: anywhere; }
 .wdc__done .k { color: var(--ax-muted); }

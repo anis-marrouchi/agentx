@@ -19,6 +19,8 @@
 //              with a stream ticket when the page carries a token)
 //   Doctor     the preflight checks of `agentx doctor` (GET /api/admin/doctor)
 
+import { afLoaderHtml } from "../affect.css"
+
 export const WALL_SETTINGS_DIAGNOSTICS_SCRIPT = String.raw`
   // --- Diagnostics ---
   var ST_DG_TABS = [['overview', 'Overview'], ['activity', 'Activity'], ['errors', 'Errors'], ['routing', 'Routing'], ['rotations', 'Rotations'], ['logs', 'Logs'], ['doctor', 'Doctor']];
@@ -198,7 +200,7 @@ export const WALL_SETTINGS_DIAGNOSTICS_SCRIPT = String.raw`
     var rowsPick = d.tab === 'errors' || d.tab === 'routing' || d.tab === 'rotations';
     var filter = d.tab === 'doctor' || d.tab === 'logs' ? '' : '<div class="wsf__row"><label>Agent<select id="st-dg-agent" data-st-dg="agent">' + stOptions([['', 'All agents']].concat(agents), d.agent) + '</select></label>' +
       (rowsPick ? '<label>Rows<select id="st-dg-limit" data-st-dg="limit">' + stOptions(['50', '100', '200', '500'], String(d.limit)) + '</select></label>' : '') + '</div>';
-    var body = d.loading ? '<p class="ax-wall__empty">Loading…</p>'
+    var body = d.loading ? '${afLoaderHtml("Loading…")}'
       : d.error ? '<p class="wst__err">Could not read ' + esc(d.tab) + ': ' + esc(d.error) + '.</p>' : stDgBody(d);
     return '<header class="wst__h"><h2>Diagnostics</h2><p>What the agents ran today, what went wrong, how messages were routed, when sessions were started fresh, the daemon\'s output and the preflight checks. Read-only. Spend is on the Cost page.</p></header>' +
       tabs + filter + body +

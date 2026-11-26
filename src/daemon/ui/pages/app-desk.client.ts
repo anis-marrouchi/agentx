@@ -18,17 +18,17 @@ export const APP_DESK_SCRIPT = `
   var esc = ax.esc, ago = ax.ago;
   var COLS = [['yours', 'Your turn'], ['agent', 'With agents'], ['quiet', 'No news'], ['done', 'Done']];
   var EMPTY = {
-    yours: 'Nothing waits for you.',
-    agent: 'No agent is working on a request right now.',
-    quiet: 'Nothing open has gone quiet.',
-    done: 'Nothing ended in the last 7 days.',
+    yours: ['Nothing waits for you.', 'An answer an agent asks for shows here.'],
+    agent: ['No agent is working on a request right now.', 'A request an agent takes on shows here.'],
+    quiet: ['Nothing open has gone quiet.', 'An open request with no news shows here.'],
+    done: ['Nothing ended in the last 7 days.', 'A finished request shows here for 7 days.'],
   };
   var col = 'yours';
 
   function pill(c) {
-    if (c.column === 'yours') return '<span class="fx-pill fx-warn">Ⅱ Waiting</span>';
-    if (c.column === 'agent') return '<span class="fx-pill fx-on">' + (c.live ? '◔ Working now' : 'Active') + '</span>';
-    if (c.column === 'quiet') return '<span class="fx-pill fx-off">No news</span>';
+    if (c.column === 'yours') return '<span class="ax-af-state" data-state="waiting">Waiting</span>';
+    if (c.column === 'agent') return c.live ? '<span class="ax-af-state" data-state="running">Working now</span>' : '<span class="ax-af-state">Active</span>';
+    if (c.column === 'quiet') return '<span class="ax-af-state">No news</span>';
     return '';
   }
   function when(c) {
@@ -80,7 +80,7 @@ export const APP_DESK_SCRIPT = `
       (f.yours.later ? ' (' + f.yours.later + ' put off for later)' : '') +
       '. With agents: <strong>' + f.agent.count + '</strong>. No news: <strong>' + f.quiet.count + '</strong>' + (f.quiet.oldest ? ', the longest since ' + esc(ago(f.quiet.oldest)) : '') + '.</p>' +
       '<div class="dk-cols" role="group" aria-label="Column">' + COLS.map(function (x) {
-        return '<button type="button" class="dk-col" aria-pressed="' + (x[0] === col) + '" data-act="col" data-col="' + x[0] + '">' + x[1] + '<span>' + f[x[0]].count + '</span></button>';
+        return '<button type="button" class="dk-col" aria-pressed="' + (x[0] === col) + '" data-act="col" data-col="' + x[0] + '">' + x[1] + ' <span class="ax-af-count"' + (x[0] === 'yours' ? ' data-tone="warn"' : '') + ' data-n="' + f[x[0]].count + '">' + f[x[0]].count + '</span></button>';
       }).join('') + '</div>';
     data.errors.forEach(function (e) { html += '<p class="fx-muted fx-bad">' + esc(e) + '</p>'; });
     var shown = 0;
@@ -89,7 +89,7 @@ export const APP_DESK_SCRIPT = `
       html += card(c, k, openKeys);
       shown++;
     });
-    if (!shown) html += '<p class="fx-muted">' + EMPTY[col] + '</p>';
+    if (!shown) html += '<div class="ax-af-empty"><strong>' + EMPTY[col][0] + '</strong>' + EMPTY[col][1] + '<button type="button" class="fx-btn" data-act="refresh">Refresh</button></div>';
     panel.innerHTML = html;
     panel._data = data;
   }

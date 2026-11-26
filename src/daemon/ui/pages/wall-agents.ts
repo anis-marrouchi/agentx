@@ -68,8 +68,11 @@ export function agmStatus(f: AgmFacts): AgmStatus {
   return { key: "idle", label: "Idle", title: "Ready; nothing running" }
 }
 
+/** The shared state (dot and word, #2152): working runs, needs you waits;
+ *  paused, not started and idle stay grey. agm-st is-<key> is the hook. */
 export function agmStatusHtml(st: AgmStatus): string {
-  return '<span class="chip agm-st is-' + agmEsc(st.key) + '" title="' + agmEsc(st.title) + '">' + agmEsc(st.label) + "</span>"
+  const state = st.key === "working" ? "running" : st.key === "needs" ? "waiting" : ""
+  return '<span class="ax-af-state agm-st is-' + agmEsc(st.key) + '"' + (state ? ' data-state="' + state + '"' : "") + ' title="' + agmEsc(st.title) + '">' + agmEsc(st.label) + "</span>"
 }
 
 /** The calls that create an agent from the form: the agent first (with its
@@ -205,8 +208,13 @@ export function agmActsHtml(id: string, name: string, st: AgmStatus, hold: strin
     '<button type="button" class="ax-btn ax-btn--ghost agm-rm" data-agm-act="ask" data-id="' + e + '">Remove</button></div>' + ask
 }
 
+/** The log; the answer waited for shows the shared loader (#2152, the markup of afLoaderHtml). */
 export function agmTestLogHtml(td: AgmTestDrive | null): string {
-  return td && td.msgs.length ? td.msgs.map((m) => '<li class="wtd__m is-' + agmEsc(m.kind) + '">' + agmEsc(m.text) + "</li>").join("") : ""
+  let rays = ""
+  for (let i = 0; i < 8; i++) rays += '<span style="rotate:' + i * 45 + "deg;animation-delay:" + ((i - 8) * 0.1).toFixed(1) + 's"></span>'
+  const text = (m: { kind: string; text: string }) => m.kind === "wait"
+    ? '<span class="ax-af-loader" role="status"><span class="ax-af-loader__rays" aria-hidden="true">' + rays + "</span>" + agmEsc(m.text) + "</span>" : agmEsc(m.text)
+  return td && td.msgs.length ? td.msgs.map((m) => '<li class="wtd__m is-' + agmEsc(m.kind) + '">' + text(m) + "</li>").join("") : ""
 }
 
 /** Test drive: a message to the agent and its answer, before any channel. */

@@ -22,7 +22,7 @@
 import { APP_REDESIGN_CSS } from "./app-redesign.css"
 import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
-import { AX_AFFECT_CSS } from "../affect.css"
+import { AX_AFFECT_CSS, afLoaderHtml } from "../affect.css"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_LIVE_CSS, APP_LIVE_SCRIPT } from "./app-live.client"
@@ -106,7 +106,7 @@ export function renderAppPage(): string {
   const panels = TABS.map((t, i) =>
     `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
       <h2>${t.label}</h2>
-      <p class="soon">${t.soon}</p>
+      ${afLoaderHtml(t.soon)}
     </section>`,
   ).join("")
 
