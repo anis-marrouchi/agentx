@@ -118,11 +118,23 @@ export const WALL_EDITOR_CSS = `
 .ax-wall.is-editor .ax-wall__main { grid-row: 1; border-right: 0; border-top: 0; margin-top: 0; min-height: 0; }
 .ax-wall.is-editor .ax-wall__nav { padding: 12px 8px; align-items: center; }
 .ax-wall.is-editor .ax-wall__logo small, .ax-wall.is-editor .ax-wall__item span, .ax-wall.is-editor .ax-wall__navfoot { display: none; }
+/* The side menu of #2101 R22/R26 (hub-nav.ts) folds as it does under
+   1180 px: no agent list, the switcher is its magnifier, the foot row a
+   column of icons. Without this its text was cut at 72 px (#2101 W). */
+.ax-wall.is-editor .ax-wall__nav > .lt, .ax-wall.is-editor .ax-wall__nav > .ha__k span, .ax-wall.is-editor .ax-wall__nav > .ha__k kbd, .ax-wall.is-editor .hf__item span { display: none; }
+.ax-wall.is-editor .ax-wall__nav > .ha__k { width: 40px; height: 40px; padding: 0; justify-content: center; }
+.ax-wall.is-editor .ax-wall__nav > .hf { flex-direction: column; flex-wrap: nowrap; gap: 4px; padding: 10px 0 2px; }
+.ax-wall.is-editor .hf__item { position: relative; padding: 8px; }
+.ax-wall.is-editor .hf__item svg { width: 18px; height: 18px; }
+.ax-wall.is-editor .hf__set { margin-left: 0; }
+.ax-wall.is-editor .hf__n { position: absolute; top: 0; right: -4px; }
 .ax-wall.is-editor .ax-wall__logo { padding: 8px 0 16px; }
 .ax-wall.is-editor .ax-wall__nav > .ax-wall__navlbl { font-size: 0; padding: 0; height: 1px; width: 32px; background: var(--ax-border-2); margin: 8px 0; }
 .ax-wall.is-editor .ax-wall__n { position: absolute; top: 4px; right: 0; min-width: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; }
 .ax-wall.is-editor .ax-wall__n.is-zero { display: none; }
-#wall-editor { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+/* Above the Hub's 30 px bottom bar (hub-status.ts .hs): at full height the
+   zoom controls and the chat button sat on top of it (#2101 W). */
+#wall-editor { height: calc(100vh - 30px); height: calc(100dvh - 30px); display: flex; flex-direction: column; }
 #wall-editor .wed__root { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #wall-editor .wed__root > #wfe-root { flex: 1; min-height: 0; }
 .wed__msg { padding: 48px 16px; text-align: center; }

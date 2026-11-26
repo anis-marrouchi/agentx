@@ -112,7 +112,7 @@
 #wfe-root .app {
   /* Two columns (#1524): the side menu and the canvas, under one toolbar.
      The menu folds away and the canvas takes its room. */
-  --menu-w: 340px;
+  --menu-w: 300px; /* was 340 px: it took too much of the canvas (#2101 W) */
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr);
   grid-template-columns: var(--menu-w) minmax(0, 1fr);
@@ -1459,4 +1459,35 @@
 @media (max-width: 900px) {
   #wfe-root .app[data-menu="open"] > .run { left: 14px; }
   #wfe-root .app > .run { width: min(320px, calc(100% - 28px)); max-height: 45%; }
+}
+
+/* ============================================================
+   In the Hub (#2101 W): the Hub's faces, hints under their labels
+   ============================================================ */
+/* Space Grotesk, JetBrains Mono and Instrument Serif are not loaded in
+   the Hub, and the rules that name them with no fallback drew labels,
+   tabs and section titles in a serif face. Every one takes the Hub's
+   own sans or mono. */
+#wfe-root .btn, #wfe-root .pal__search input, #wfe-root .node,
+#wfe-root .cv__mini-head, #wfe-root .insp__tab, #wfe-root .insp__section-head h4,
+#wfe-root .fld__label, #wfe-root .fld__input, #wfe-root .fld__select, #wfe-root .fld__textarea,
+#wfe-root .combo__avatar, #wfe-root .combo__menu-search input, #wfe-root .expr__hint,
+#wfe-root .expr__pop-opt .typ, #wfe-root .card__add, #wfe-root .tweaks__head,
+#wfe-root .tweaks__opts button, #wfe-root .cv__empty-card h3, #wfe-root .insp__empty h3,
+#wfe-root .kbd-card h3 { font-family: var(--ax-font); }
+#wfe-root kbd, #wfe-root .tb__brand-sub, #wfe-root .tb__status, #wfe-root .pal__section-count,
+#wfe-root .cv__edges .edge-label, #wfe-root .node__kind, #wfe-root .node__tag, #wfe-root .node__badge,
+#wfe-root .handle__label, #wfe-root .cv__zoom, #wfe-root .run__chip, #wfe-root .run__marker,
+#wfe-root .run__foot, #wfe-root .insp__type-pill, #wfe-root .insp__tab .count,
+#wfe-root .fld.is-mono .fld__textarea, #wfe-root .combo__id, #wfe-root .combo__opt-id,
+#wfe-root .combo__opt-tag, #wfe-root .expr__box, #wfe-root .expr__pop-group,
+#wfe-root .expr__pop-opt { font-family: var(--ax-mono); }
+/* A field's hint sat beside its label and squeezed both into a few
+   words a line; it goes under the label, full width. */
+#wfe-root .fld__label { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 2px; }
+#wfe-root .fld__hint { line-height: 1.4; }
+/* The chat button and panel are fixed to the window: lift them above the
+   Hub's 30 px bottom bar (the phone keeps its own place, above). */
+@media (min-width: 641px) {
+  #wfe-root .ax-chat__pill, #wfe-root .ax-chat__panel { bottom: 48px; }
 }

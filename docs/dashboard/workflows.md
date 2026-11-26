@@ -97,7 +97,7 @@ See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
 
 ## Edit a workflow
 
-The editor is a page of the Hub. It has two columns: a **side menu** on the left and the **canvas** on the right. The Hub's nav shrinks to its icons, so the canvas gets the room.
+The editor is a page of the Hub. It has two columns: a **side menu** on the left and the **canvas** on the right. The Hub's nav shrinks to its icons (the search magnifier, then Desk, Jobs, Workflows, Mobile app and Settings), so the canvas gets the room. In the side menu, each setting's help line sits under its name. To give the canvas the whole width, select the side-menu button at the top left of the editor, or **×** on the side menu; select the button again to bring the side menu back.
 
 ![The workflow editor on the Hub: the side menu with the workflow's settings on the left, the steps arranged from left to right on the canvas](/screenshots/workflows/editor.png)
 
