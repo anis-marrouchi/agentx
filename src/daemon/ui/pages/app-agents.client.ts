@@ -17,7 +17,9 @@ export const APP_AGENTS_SCRIPT = `
   if (!panel) return;
   var box = document.createElement('div');
   box.className = 'lt ha ag';
-  panel.querySelector('.soon').replaceWith(box);
+  // The server renders the shared loader (afLoaderHtml) as the placeholder.
+  var wait = panel.querySelector('.ax-af-loader');
+  if (wait) wait.replaceWith(box); else panel.appendChild(box);
   box.innerHTML = '<p class="ha__empty">Loading the agents…</p>';
   // open: the folds the reader opened (Needs you, Working Show all, idle); all start closed.
   var S = { model: null, filter: 'all', open: { needs: false, working: false, idle: false }, loading: false };

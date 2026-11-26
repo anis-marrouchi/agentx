@@ -247,6 +247,10 @@ describe("the Hub page's left column", () => {
     const z = Number(/\.hk \{[^}]*z-index: (\d+)/.exec(HUB_NAV_CSS)?.[1])
     expect(z).toBeGreaterThan(62)
   })
+  it("keeps the closed ⌘K dialog out of sight and out of the way of clicks (#2353)", () => {
+    expect(page).toMatch(/<div class="hk" id="hub-k-dlg"[^>]* hidden>/)
+    expect(HUB_NAV_CSS).toMatch(/\.hk\[hidden\] \{ display: none; \}/)
+  })
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Waiting on you<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)

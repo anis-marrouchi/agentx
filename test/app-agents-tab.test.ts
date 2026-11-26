@@ -45,6 +45,14 @@ describe("the bottom tabs (#2101 C1a)", () => {
     expect(() => new Function(script)).not.toThrow()
     expect(APP_AGENTS_SCRIPT).toContain("fetch('/api/app/hub/agents?dayStart='")
   })
+
+  it("finds the placeholder the Agents panel really renders (#2152 loader)", () => {
+    const panel = html.slice(html.indexOf('id="panel-agents"'), html.indexOf('id="panel-chat"'))
+    const sel = /panel\.querySelector\('\.([\w-]+)'\)/.exec(APP_AGENTS_SCRIPT)?.[1]
+    expect(sel).toBe("ax-af-loader")
+    expect(panel).toContain(`class="${sel}"`)
+    expect(APP_AGENTS_SCRIPT).not.toContain("querySelector('.soon')")
+  })
 })
 
 describe("the rows the phone draws", () => {
