@@ -57,7 +57,8 @@ main { min-height: 0; }
 .cx-msg .md a { color: var(--ax-accent); }
 .cx-typing { color: var(--ax-text-2); }
 .cx-tools { font-size: var(--ax-fs-xs); color: var(--ax-text-2); margin: 0 0 6px; }
-.cx-tools summary { min-height: 32px; font-weight: 600; }
+.cx-tools summary { min-height: 32px; font-weight: 600; cursor: pointer; }
+.cx-tools summary:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; border-radius: var(--ax-radius-sm, 4px); }
 .cx-tools ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .cx-tools li { font-family: var(--ax-mono); background: var(--ax-surface-3); border-radius: var(--ax-radius-pill); padding: 2px 8px; }
 .cx-tools li.cx-bad { background: var(--ax-red-t); color: var(--ax-red-ink); }

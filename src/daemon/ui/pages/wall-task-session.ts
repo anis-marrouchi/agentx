@@ -64,3 +64,16 @@ export function tsBeforeHtml(p: { first: TsTurn | null; before: TsTurn[]; olderB
   if (p.error) h += '<p class="wsess__none">' + tsEsc(p.error) + "</p>"
   return h
 }
+
+/**
+ * The selected run's stream came back after a drop (#2175): its `start`
+ * event carries the run's whole output again. `have` is what the page
+ * already shows, `all` what the node sent. Add only the new part, so
+ * nothing shows twice and a tool step the reader opened stays open; when
+ * the node kept less than the page has, draw it again from `all`.
+ */
+export function tsCatchUp(have: string, all: string): { add: string } | { reset: string } {
+  const h = String(have || ""), a = String(all || "")
+  if (a.indexOf(h) === 0) return { add: a.slice(h.length) }
+  return { reset: a }
+}

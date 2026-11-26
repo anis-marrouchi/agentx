@@ -52,7 +52,7 @@ The phone remembers typing mode until you tap the keyboard button again. Answers
 
 ## While the agent answers
 
-- **See the tools it used:** tap the grey line above the answer, for example **2 tools · Bash (npm test)**. A tool that failed is marked in red.
+- **See the tools it used:** tap the grey line above the answer, for example **2 tools · Bash (npm test)**. A tool that failed is marked in red. The list stays open while the agent works and after it finishes. With a keyboard, move to the line with Tab and press Enter or Space to open or close it.
 - **Stop it:** tap **Stop**. The agent stops, and what it wrote so far is kept. **Stop** is the only thing that stops an answer. It can't cancel a message that is still waiting for a busy agent; that message runs once the agent is free.
 - **Add to your request:** hold the orb and speak, or type and tap **Send**. It shows as *Sent when the agent finishes* and goes to the agent as soon as the current answer ends.
 
