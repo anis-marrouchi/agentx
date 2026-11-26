@@ -1,4 +1,4 @@
-import { classifyInitiator, propagatedRootOf, type InitiatorContext } from "@/a2a/initiator"
+import { classifyInitiator, HUMAN_CHANNELS, propagatedRootOf, type InitiatorContext } from "@/a2a/initiator"
 import { OPERATOR_CHANNELS } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
 
@@ -170,6 +170,69 @@ export function refusedPerson(people: Person[], agentId: string, ctx: InitiatorC
   if (!person || agentAllowed(person, agentId)) return null
   const list = (person.agents ?? []).join(", ")
   return { person, note: `${person.name}, you can reach ${list} here, not ${agentId}. Ask the owner if you need ${agentId}.` }
+}
+
+// ── Who may ask an agent (#2116) ─────────────────────────────────────────
+//
+// The agent's side of the same gate: `agents.<id>.askers` lists the people
+// and agents it takes work from. Unset keeps the default above (open). Set:
+//   - the owner passes on their own turn (their surfaces must reach every
+//     agent). A chain's root never makes a turn the owner's: a root is not
+//     authenticated, so `initiator.person` = the owner's id gets no role;
+//   - work from another machine (`fromPeer`) is refused: a peer's agent may
+//     share a local agent's name, and its root is the peer's word;
+//   - an agent caller (`sender: "agent:<id>"`) counts only on an agent
+//     channel (a2a, mcp, mesh) when this daemon checked the name itself
+//     (`senderVerified === true`) and `<id>` is a local agent listed in
+//     `askers.agents`. On a person's channel the sender is a display name,
+//     so any other agent-shaped sender is refused;
+//   - a turn a person started, directly or at the root of a chain, needs a
+//     listed person; a sender who is not in people[] is refused;
+//   - anything else (cron, workflows, heartbeats) is the agent's own work.
+
+/** Channels where an `agent:<id>` sender can be checked by the daemon. */
+const ASKER_AGENT_CHANNELS: ReadonlySet<string> = new Set(["a2a", "mcp", "mesh"])
+
+export interface Askers {
+  people?: string[]
+  agents?: string[]
+}
+
+/** Why `agentId` will not take this turn, or null. `isAgent` names the
+ *  agents of this machine: only those are matched by id. */
+export function askerRefusal(
+  people: Person[],
+  agentId: string,
+  askers: Askers | undefined,
+  ctx: InitiatorContext | undefined | null,
+  isAgent: (id: string) => boolean,
+): { sender: string; reason: string; note: string } | null {
+  if (!askers) return null
+  const ref = personOfTurn(people, ctx)
+  const person = ref ? people.find((p) => p.id === ref.id) : undefined
+  const note = `${agentId} takes requests only from the people and agents it lists. Ask the owner if you need ${agentId}.`
+  const sender = typeof ctx?.sender === "string" ? ctx.sender.trim() : ""
+  if (ctx?.fromPeer === true) return { sender: sender || "peer", reason: "work from another machine", note }
+  // Only personOfTurn's role counts: it gives the owner's own turn a role
+  // and a root none, so a forwarded root cannot claim the owner.
+  if (ref?.role === "owner") return null
+  const channel = base(String(ctx?.channel ?? ""))
+  if (sender === "agent" || sender.toLowerCase().startsWith("agent:")) {
+    const id = sender.slice(6).trim()
+    const verified = !!id && ASKER_AGENT_CHANNELS.has(channel) && ctx?.senderVerified === true && isAgent(id)
+    if (!verified) return { sender: sender || "agent", reason: "unverified agent", note }
+    const list = askers.agents ?? []
+    return list.includes("*") || list.includes(id) ? null : { sender: `agent:${id}`, reason: "agent not in askers.agents", note }
+  }
+  // On a person's channel the sender is a display name: "cron:x" there is
+  // still a person.
+  const root = propagatedRootOf(ctx)
+  const human = root ? root.kind === "human" : HUMAN_CHANNELS.has(channel) || classifyInitiator(ctx) === "human"
+  if (!human) return null
+  if (!person) return { sender: ref?.id ?? (sender || "unknown"), reason: "sender not in people[]", note }
+  const list = (askers.people ?? []).map((s) => s.trim().toLowerCase())
+  const listed = list.includes("*") || list.includes(person.id.toLowerCase()) || list.includes(person.name.trim().toLowerCase())
+  return listed ? null : { sender: person.id, reason: "person not in askers.people", note }
 }
 
 /** The note alone. */

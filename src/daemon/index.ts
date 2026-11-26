@@ -5470,7 +5470,7 @@ export class AgentXDaemon {
       const intentRef = this.recordInboundDispatch(
         target.callee,
         {
-          channel: "a2a", sender: `agent:${caller.agentId}`, chatId: `a2a:${caller.agentId}:${target.callee}`,
+          channel: "a2a", sender: `agent:${caller.agentId}`, senderVerified: true, chatId: `a2a:${caller.agentId}:${target.callee}`,
           // The same root delegations.start() stamps on the callee's turn.
           initiator: rootInitiatorOf(caller.context, caller.agentId),
         },
@@ -5531,7 +5531,7 @@ export class AgentXDaemon {
     if (!peer) {
       const intentRef = this.recordInboundDispatch(
         target.callee,
-        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", ...(!named && label ? { senderVerified: false } : {}), chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
+        { channel: "a2a", sender: named || label ? `agent:${named ?? label}` : "agent", ...(named ? { senderVerified: true } : label ? { senderVerified: false } : {}), chatId: `a2a:${callerName}:${target.callee}`, initiator: rootInitiatorOf(context, named) },
         target.message,
         named,
       )
@@ -9454,6 +9454,11 @@ export class AgentXDaemon {
           // node again (#2104 B1): the sender already chose.
           if (!isLoopback(req.socket?.remoteAddress || "")) {
             body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), fromPeer: true }
+          }
+          // Only this daemon vouches for an agent sender (#2116): a caller
+          // cannot send `senderVerified: true`.
+          if (body.context && typeof body.context === "object" && (body.context as Record<string, unknown>).senderVerified === true) {
+            delete (body.context as Record<string, unknown>).senderVerified
           }
           const agentId = (body.agent as string) || this.config.node.defaultAgent
           if (!agentId || !body.message) {

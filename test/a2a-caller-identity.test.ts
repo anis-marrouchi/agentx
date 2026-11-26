@@ -412,7 +412,8 @@ describe("a named sender that is not a local agent (review item 2)", () => {
     h.mgr.start({ caller: agentCaller("builder"), callee: "worker", message: "two", kind: "send", wayHome: "none" })
     expect(h.runs[0].context).toMatchObject({ sender: "agent:not-local", senderVerified: false })
     expect(h.runs[1].context.sender).toBe("agent:builder")
-    expect(h.runs[1].context).not.toHaveProperty("senderVerified")
+    // #2116: the daemon vouches for a local agent it resolved.
+    expect(h.runs[1].context.senderVerified).toBe(true)
   })
 
   it("tells the callee in its prompt that the name is not checked (#2052)", () => {
@@ -450,7 +451,7 @@ describe("a named sender that is not a local agent (review item 2)", () => {
     const none = src.slice(src.indexOf("  private startNone("), src.indexOf("  private recordInboundDispatch("))
     expect(none).toMatch(/sender: `agent:\$\{label\}`/)
     // The inbound record marks it unverified too (#2052).
-    expect(none).toMatch(/!named && label \? \{ senderVerified: false \}/)
+    expect(none).toMatch(/named \? \{ senderVerified: true \} : label \? \{ senderVerified: false \}/)
   })
 })
 

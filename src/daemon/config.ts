@@ -483,6 +483,15 @@ const agentConfigSchema = z.object({
    *   - "public": external apps can POST /api/public/agents/<id>/messages
    *     with a scoped token (agent:<id> or agent:*). */
   access: z.enum(["private", "public"]).default("private"),
+  /** Who may ask this agent for work (#2116). Unset: anyone, as before.
+   *  Set: a person must be listed in `people` (by people[] id or name, or
+   *  `*` for any listed person) and an agent caller in `agents` (a local
+   *  agent id, or `*`). An unknown sender is refused; the owner and the
+   *  agent's own schedules always pass. See people/people.ts askerRefusal. */
+  askers: z.object({
+    people: z.array(z.string().min(1)).default([]),
+    agents: z.array(z.string().min(1)).default([]),
+  }).optional(),
   /** Governance override for agent-facing management tools. An admin agent
    *  may pause, resume and request deletion of schedules created by other
    *  agents or by the operator. It never approves anything: approval of a
