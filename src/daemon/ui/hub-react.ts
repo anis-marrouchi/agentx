@@ -11,6 +11,7 @@ import { readFileSync } from "fs"
 import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import { hubReactPageIds } from "../../hub/pages"
+import { hubLayoutSetting, type HubLayoutView } from "../../hub/layout"
 
 export const HUB_ASSET_BASE = "/assets/hub/"
 const ENTRY = "main.tsx"
@@ -56,7 +57,7 @@ const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").rep
 const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c")
 
 /** The tags for the /hub document's <head>, or "" when the app is not built. */
-export function hubReactHead(opts: { owner: boolean; legacyPages?: readonly string[] }, manifest: HubManifest | null = readHubManifest()): string {
+export function hubReactHead(opts: { owner: boolean; legacyPages?: readonly string[]; layout?: HubLayoutView }, manifest: HubManifest | null = readHubManifest()): string {
   const entry = manifest?.[ENTRY]
   if (!manifest || !entry?.file) return ""
   const css = new Set<string>()
@@ -74,7 +75,7 @@ export function hubReactHead(opts: { owner: boolean; legacyPages?: readonly stri
     }
   }
   walk(ENTRY, new Set())
-  const boot = { pages: hubReactPageIds(opts.owner, opts.legacyPages ?? []), owner: opts.owner }
+  const boot = { pages: hubReactPageIds(opts.owner, opts.legacyPages ?? []), owner: opts.owner, ...(opts.layout ? { layout: hubLayoutSetting(opts.layout) } : {}) }
   return [
     `<script>window.AX_HUB = ${scriptJson(boot)};</script>`,
     ...Array.from(css, (f) => `<link rel="stylesheet" href="${attr(HUB_ASSET_BASE + f)}">`),

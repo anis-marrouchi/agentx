@@ -114,6 +114,7 @@ import { handleAgentChatApi } from "./agent-chat-api"
 import { NUMBERS_HUB_PATH, numbersHubReply } from "@/numbers/hub-api"
 import { isJobsHubPath, JOBS_HUB_PATH, jobsHubReply } from "@/jobs/hub-api"
 import { capacityOf, dueTimeSettingsOf } from "@/requests/due-times"
+import { resolveHubLayout } from "@/hub/layout"
 
 /** agentx.json as it is now, read again only when the file changed (its
  *  mtime or size): a page that polls does not parse it every time. A
@@ -3646,7 +3647,12 @@ function wallPageOpts(req: IncomingMessage, ctx: Ctx) {
     business: !!getTopbarFeatures().business,
     signIn: !!ctx.token,
     // The React Hub (#2218): dashboard.hub.react, or ?react=1 / ?legacy=1.
-    hub: { react: hubReactOn(hub, new URL(req.url || "/", "http://x").searchParams), legacyPages: hub?.legacyPages ?? [] },
+    hub: {
+      react: hubReactOn(hub, new URL(req.url || "/", "http://x").searchParams), legacyPages: hub?.legacyPages ?? [],
+      // Simple or full (#2226 S1): agentx.json as it is now, so a change
+      // in Settings › Layout needs no restart.
+      layout: resolveHubLayout(liveConfig(ctx.config).dashboard?.hub),
+    },
   }
 }
 

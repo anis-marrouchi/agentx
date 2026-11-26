@@ -235,9 +235,9 @@ describe("the Hub page's left column", () => {
     expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
     expect(block).toMatch(/\.ax-wall__nav > \.hf \{ position: sticky; bottom: 0;/)
   })
-  it("ends with Desk, Jobs, Workflows, Mobile app and Settings", () => {
+  it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
-    for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Desk<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
+    for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Waiting on you<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
     expect(renderWallPage().includes('class="hf__item hf__set"')).toBe(false)
   })
   it("has the Mobile app setup page without an unpaired app preview link", () => {

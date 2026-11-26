@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { monthlyBudgetSchema } from "@/agents/budget-schema"
+import { HUB_DEFAULT_LAYOUT, HUB_LAYOUTS, HUB_SHOW_IDS, type HubShowItem } from "@/hub/layout"
 
 // --- Kanban board configuration ---
 //
@@ -159,6 +160,12 @@ export const dashboardConfigSchema = z.object({
   hub: z.object({
     react: z.boolean().default(false),
     legacyPages: z.array(z.string().min(1).max(40)).max(50).default([]),
+    /** Simple by default, full as an option (#2226 S1, src/hub/layout.ts).
+     *  `layout` sets every item's default (simple hides them, full shows
+     *  them); `show.<item>` overrides one. Hidden items keep running. */
+    layout: z.enum(HUB_LAYOUTS).default(HUB_DEFAULT_LAYOUT),
+    show: z.object(Object.fromEntries(HUB_SHOW_IDS.map((id) => [id, z.boolean().optional()])) as Record<HubShowItem, z.ZodOptional<z.ZodBoolean>>)
+      .strict().default({}),
   }).default({}),
 }).default({})
 
