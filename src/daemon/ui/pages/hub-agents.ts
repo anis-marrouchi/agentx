@@ -203,10 +203,16 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   const unread = r.unread ? '<b class="ax-af-count" data-tone="warn" data-n="' + r.unread + '" title="' + r.unread + (r.unread === 1 ? " question" : " questions") + ' for you">' + r.unread + "</b>" : ""
   // Its numbers next to its name (#2145): runs going now and runs today, each
   // left out at zero. Needs you is the orange count at the row's end.
+  // A lucide icon and the number; the words are in the tooltip and for
+  // screen readers, so the name keeps its room in the side menu.
   const going = r.runs || 0, today = r.today || 0
+  const svg = (d: string) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + "</svg>"
+  const words = [going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")
   const stats = going || today
-    ? '<span class="ha__stats" title="' + esc([going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")) + '">' +
-      (going ? '<span data-stat="now">' + going + " running</span>" : "") + (today ? '<span data-stat="today">' + today + " today</span>" : "") + "</span>"
+    ? '<span class="ha__stats" title="' + esc(words) + '">' +
+      (going ? '<span data-stat="now">' + svg('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>') + going + "</span>" : "") +
+      (today ? '<span data-stat="today">' + svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>') + today + "</span>" : "") +
+      '<span class="ax-sr">' + esc(words) + "</span></span>"
     : ""
   const run = r.state === "working" && r.taskId && runHref ? runHref(r) : ""
   const href = run ? esc(run) : "#page=chat&amp;agent=" + encodeURIComponent(r.id)

@@ -81,7 +81,8 @@ describe("the counts next to each agent (#2145)", () => {
     const lead = m.rows.find((r) => r.id === "lead")!
     expect([lead.runs, lead.today]).toEqual([2, 3])
     const h = ha.haRowHtml(lead, "", ltEsc, ltAge)
-    expect(h).toContain('<span class="ha__stats" title="2 running now, 3 runs today"><span data-stat="now">2 running</span><span data-stat="today">3 today</span></span>')
+    expect(h).toContain('<span class="ha__stats" title="2 running now, 3 runs today">')
+    expect(h).toMatch(/<span data-stat="now"><svg [^]*?<\/svg>2<\/span><span data-stat="today"><svg [^]*?<\/svg>3<\/span><span class="ax-sr">2 running now, 3 runs today<\/span>/)
     // Next to the name, before the time.
     expect(h.indexOf("ha__stats")).toBeGreaterThan(h.indexOf("ha__name"))
     expect(h.indexOf("ha__stats")).toBeLessThan(h.indexOf("<time>"))
@@ -97,6 +98,9 @@ describe("the counts next to each agent (#2145)", () => {
   })
   it("styles the counts quietly, with even-width digits", () => {
     expect(HUB_NAV_CSS).toMatch(/\.ha__stats \{[^}]*color: var\(--ax-muted\)[^}]*font-variant-numeric: tabular-nums/)
+    // The name keeps its room: the machine chip gives way first.
+    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__name \{ flex-shrink: 0;/)
+    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__node \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/)
   })
 })
 
