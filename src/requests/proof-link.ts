@@ -1,5 +1,6 @@
 import { checkIssue, type CommitReader, type ForgeReader } from "./checkers/issue"
 import { checkUrl } from "./checkers/url"
+import { safeFetch } from "./checkers/fetch-guard"
 import type { CheckResult, IssueState } from "./checkers"
 
 // --- Open a proof link and check it matches the claim (#2122) ---
@@ -18,8 +19,15 @@ import type { CheckResult, IssueState } from "./checkers"
 //
 // verified: the link shows it. failed: it does not (a 404 page, an MR not
 // merged when the claim says merged). unverifiable: it could not be told
-// (a private host, no connector, a timeout, not http). Unverifiable never
+// (a private host, no connector, a timeout, not http, or a page that would
+// not let us read it: 401, 403, 407, 429 or 5xx). Unverifiable never
 // counts as a pass. Never throws.
+//
+// A failure is firm when the link itself shows the claim is false: the
+// forge API gives another state or sha, or the page answers 404 or 410.
+// "The ref is not on the page" is not firm: many pages build their text
+// in the browser, and a plain fetch never sees it. Only a firm failure
+// may refuse a close (requests.proofCheck.mode "block", PR 2 review C2).
 
 export type ProofLinkState = "verified" | "failed" | "unverifiable"
 
@@ -27,6 +35,9 @@ export interface ProofLinkResult {
   state: ProofLinkState
   /** What was seen, or why it could not be checked. One line, for people. */
   detail: string
+  /** Set on a failure the link itself shows: a wrong forge state or sha,
+   *  or a 404 or 410 page. Only these may refuse a close. */
+  firm?: true
 }
 
 export interface ProofLinkContext {
@@ -85,10 +96,25 @@ export function claimedRef(claim: string): string | null {
   return ref ? ref[1] : null
 }
 
-const fromCheck = (r: CheckResult): ProofLinkResult => ({
-  state: r.verdict === "met" ? "verified" : r.verdict === "not_met" ? "failed" : "unverifiable",
-  detail: r.detail,
-})
+/** HTTP answers that mean the page is gone: the claim is false. Any
+ *  other non-2xx (401, 403, 407, 429, 5xx...) means it could not be read. */
+const GONE = new Set([404, 410])
+
+/** The forge check's verdict: not met is a wrong state, which is firm. */
+const fromIssueCheck = (r: CheckResult): ProofLinkResult =>
+  r.verdict === "met" ? { state: "verified", detail: r.detail }
+    : r.verdict === "not_met" ? { state: "failed", detail: r.detail, firm: true }
+    : { state: "unverifiable", detail: r.detail }
+
+/** The URL check's verdict, read with the HTTP status it got. checkUrl
+ *  itself is left as it is: plan steps (#788) and loops (#1039) keep
+ *  treating every non-2xx as not met. */
+export function fromCheck(r: CheckResult, status: number | null): ProofLinkResult {
+  if (r.verdict === "met") return { state: "verified", detail: r.detail }
+  if (r.verdict !== "not_met") return { state: "unverifiable", detail: r.detail }
+  if (status === null || (status >= 200 && status < 300)) return { state: "failed", detail: r.detail }
+  return GONE.has(status) ? { state: "failed", detail: r.detail, firm: true } : { state: "unverifiable", detail: `${r.detail}: the page could not be read` }
+}
 
 /** Open `link` and check it shows what `claim` says. */
 export async function checkProofLink(link: string, claim: string, ctx: ProofLinkContext = {}): Promise<ProofLinkResult> {
@@ -105,11 +131,11 @@ export async function checkProofLink(link: string, claim: string, ctx: ProofLink
       if ("error" in c) return { state: "unverifiable", detail: `${raw}: ${c.error}` }
       return c.sha.toLowerCase().startsWith(forge.sha.toLowerCase())
         ? { state: "verified", detail: `${c.url} is commit ${c.sha.slice(0, 12)}` }
-        : { state: "failed", detail: `${raw} is commit ${c.sha.slice(0, 12) || "unknown"}, not ${forge.sha}` }
+        : { state: "failed", detail: `${raw} is commit ${c.sha.slice(0, 12) || "unknown"}, not ${forge.sha}`, firm: true }
     }
     if (forge?.kind === "item") {
       const want = claimedState(claim ?? "", forge.mr)
-      if (want) return fromCheck(await checkIssue({ kind: "issue", provider: forge.provider, ref: forge.ref, state: want }, { forge: ctx.forge }))
+      if (want) return fromIssueCheck(await checkIssue({ kind: "issue", provider: forge.provider, ref: forge.ref, state: want }, { forge: ctx.forge }))
       // No state claimed: that the item exists and the connector can read
       // it is what the link shows.
       if (!ctx.forge) return { state: "unverifiable", detail: `no ${forge.provider} connector on this node to read ${raw}` }
@@ -119,7 +145,16 @@ export async function checkProofLink(link: string, claim: string, ctx: ProofLink
       return { state: "verified", detail: `${item.url} is ${item.state}` }
     }
     const contains = claimedRef(claim ?? "")
-    return fromCheck(await checkUrl({ kind: "url", url: raw, ...(contains ? { contains } : {}) }, { fetch: ctx.fetch }))
+    // The status the page answered, seen through the URL check's own fetch.
+    let status: number | null = null
+    const base = ctx.fetch ?? safeFetch
+    const seen = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const res = await base(input, init)
+      status = res.status
+      return res
+    }) as typeof fetch
+    const r = await checkUrl({ kind: "url", url: raw, ...(contains ? { contains } : {}) }, { fetch: seen })
+    return fromCheck(r, status)
   } catch (e: any) {
     return { state: "unverifiable", detail: `the link check failed: ${String(e?.message ?? e).slice(0, 200)}` }
   }

@@ -1385,7 +1385,10 @@ export class RequestStore {
    *  A done may carry a typed proof (#1138 D), kept beside the evidence.
    *  A decline or drop as superseded (#2082) carries the link to what
    *  replaced it as a link proof, kept the same way. */
-  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: string | null = null, kind: CloseKind | null = null): boolean {
+  close(
+    id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null, by: string | null = null, kind: CloseKind | null = null,
+    verify?: { state: "verified" | "unverified"; detail: string },
+  ): boolean {
     const text = detail.trim()
     if (!text) throw new Error(state === "done" ? "a finished request needs a link to the evidence" : `a ${state} request needs a reason`)
     if (kind === "superseded" && state === "done") throw new Error("only a decline or a drop can be superseded")
@@ -1404,6 +1407,10 @@ export class RequestStore {
       by, check, id, ...CLOSED_STATES)
     const closed = res.changes > 0
     if (closed && state === "done") {
+      // What opening its proof links found (#2122), before the done hooks
+      // read it: a promise's fact says who checked it.
+      if (verify) this.db.prepare("UPDATE requests SET checked_at = ?, verified_at = ?, verify_state = ?, verify_detail = ? WHERE id = ?")
+        .run(now, verify.state === "verified" ? now : null, verify.state, verify.detail.slice(0, REASON_MAX), id)
       this.typeIfMissing(id)
       this.done(id)
     }

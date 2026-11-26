@@ -9,6 +9,7 @@ import type { FlowSettings } from "./flow"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import type { OwnerCheckSettings } from "./owner-check"
 import type { CloseProofSettings } from "./close-proof"
+import type { ProofCheckSettings } from "./proof-check"
 import type { JobWakeSettings } from "@/jobs/wake"
 import { queueOwnerSubjectSignal } from "@/improve/bayan"
 import { firstLink, HANDOFF_REASON, OPEN_STATES, OWED_TO_OWNER, OWNER_BY, type OpenState, type RequestStore } from "./store"
@@ -76,6 +77,8 @@ export interface RequestSettings {
   /** Proof per deliverable before a close by check (close-proof.ts,
    *  #692). Unset: off. */
   closeProof?: Partial<CloseProofSettings>
+  /** Proof links opened on a close (proof-check.ts, #2122). Unset: off. */
+  proofCheck?: Partial<ProofCheckSettings>
   /** The job ledger (#1861): a job for every run that is not the owner's
    *  turn. Unset: on. */
   jobs?: { enabled?: boolean; wake?: JobWakeSettings }

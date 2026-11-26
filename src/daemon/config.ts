@@ -1824,6 +1824,20 @@ export const requestsConfigSchema = z.object({
     /** Agents told per requests check which items need a link. */
     askPerCheck: z.number().int().min(1).max(20).default(3),
   }).default({}),
+  /** Proof links opened when a request or promise closes (#2122,
+   *  src/requests/proof-check.ts): an agent's done with a link, its
+   *  per-deliverable proofs, and a hand-back the settle pass closes.
+   *  "warn" records what the links showed and tells the closing agent;
+   *  "block" also refuses a close a link shows is false (a wrong forge
+   *  state or sha, a 404 or 410 page). Never refused on a link that could
+   *  not be read. Off by default. */
+  proofCheck: z.object({
+    mode: z.enum(["off", "warn", "block"]).default("off"),
+    /** Links opened per close; the rest are named as not checked. */
+    maxLinks: z.number().int().min(1).max(50).default(10),
+    /** One time limit on all the links of a close, in ms. */
+    totalTimeoutMs: z.number().int().min(1_000).max(60_000).default(20_000),
+  }).default({}),
   /** Due times from the queue (src/requests/due-times.ts, #1909): a
    *  promise or an accept registers the work (estimateMinutes, priority)
    *  and the daemon gives the due time from the queue, the priorities, the
