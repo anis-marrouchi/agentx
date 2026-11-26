@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.284.0](https://github.com/anis-marrouchi/agentx/compare/v0.283.1...v0.284.0) (2026-11-26)
+
+
+### Features
+
+* **app:** phone Agents tab and bottom tabs Agents · Chat · Desk · Alerts · More ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C1a) ([#2372](https://github.com/anis-marrouchi/agentx/issues/2372)) ([347c21f](https://github.com/anis-marrouchi/agentx/commit/347c21f49f92143d0c404b9987aad46c0bb6f38e))
+* **ci:** green PR with no review wakes the reviewer, then the owner ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227) PR B) ([#2368](https://github.com/anis-marrouchi/agentx/issues/2368)) ([58ba867](https://github.com/anis-marrouchi/agentx/commit/58ba8676689f65660315c6560cf36dd445426970))
+* **hub:** menu model and API for the Hub menu ([#2149](https://github.com/anis-marrouchi/agentx/issues/2149) M1) ([#2373](https://github.com/anis-marrouchi/agentx/issues/2373)) ([dd4d39f](https://github.com/anis-marrouchi/agentx/commit/dd4d39f5d5fc52ab0562e19670c2b2d3b2c3f81d))
+
+
+### Bug Fixes
+
+* **agents:** keep a hand-off whose slot wait runs out on a home ([#2337](https://github.com/anis-marrouchi/agentx/issues/2337) follow-up) ([#2366](https://github.com/anis-marrouchi/agentx/issues/2366)) ([5a5f3ff](https://github.com/anis-marrouchi/agentx/commit/5a5f3ff797de5dc42758a1a2641f01857f07c12c))
+* **hub:** the bar's version hover says "as of" for an old answer ([#2343](https://github.com/anis-marrouchi/agentx/issues/2343) C1) ([#2369](https://github.com/anis-marrouchi/agentx/issues/2369)) ([fae6bc3](https://github.com/anis-marrouchi/agentx/commit/fae6bc3d20dce1ab6008904914636b979fdb59e3)), closes [#2101](https://github.com/anis-marrouchi/agentx/issues/2101)
+* **requests:** no open item without a due time (noqta[#886](https://github.com/anis-marrouchi/agentx/issues/886)) ([#2344](https://github.com/anis-marrouchi/agentx/issues/2344)) ([dbd483f](https://github.com/anis-marrouchi/agentx/commit/dbd483fbe722497e9d098f087933854a1e16cf3c))
+
 ## [0.283.1](https://github.com/anis-marrouchi/agentx/compare/v0.283.0...v0.283.1) (2026-11-26)
 
 
