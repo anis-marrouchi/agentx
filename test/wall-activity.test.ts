@@ -333,7 +333,7 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
     const nav = page.slice(page.indexOf('<nav class="ax-wall__nav"'), page.indexOf("</nav>"))
     const order = [...nav.matchAll(/data-nav="([\w]+)"|(?:<summary>|ax-wall__navlbl" aria-hidden="true">)(\w+)</g)].map((m) => m[1] || m[2])
     expect(order).toEqual([
-      // The phone bar's four, then the V1 foot row (#2101 P4, hub-nav.ts): Desk · Jobs · Workflows · Mobile app · Settings.
+      // The phone bar's four, then the V1 foot row (#2101 P4, hub-nav.ts): Waiting on you · Jobs · Workflows · Mobile app · Settings.
       "wall", "needs", "running", "projects", "needs", "jobledger", "workflows", "mobile", "settings",
       // The hidden page links: the ⌘K switcher's Pages and the counts' source.
       "wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",

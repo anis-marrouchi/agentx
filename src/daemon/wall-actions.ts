@@ -145,6 +145,7 @@ export function wallAnswerRoute(method: string, path: string): string | null {
 //   POST   /api/admin/wall/settings/approvals/settings        approvals (approvals-panel.ts)
 //   POST   /api/admin/wall/settings/approvals/requests/settings  requests (requests-panel.ts)
 //   POST   /api/admin/wall/settings/guests/<id>/<pause|resume|end>  a guest grant (wallGuestsTarget)
+//   POST   /api/admin/wall/settings/hub-layout                  simple or full, item switches (#2226 S1)
 export const WALL_SETTINGS_PREFIX = `${WALL_ACTIONS_PREFIX}/settings`
 const WALL_SETTINGS_WRITES = new Set([
   "POST /org/hold", "POST /org/chart", "POST /agents", "PATCH /agents", "DELETE /agents", "POST /agents/access",
@@ -171,6 +172,8 @@ const WALL_SETTINGS_WRITES = new Set([
   "POST /actions", "DELETE /actions", "POST /actions/run",
   "POST /tokens", "DELETE /tokens", "POST /screen", "POST /wiki-notes", "POST /config/raw",
   "POST /approvals/settings", "POST /approvals/requests/settings",
+  // The Hub's layout (#2226 S1).
+  "POST /hub-layout",
 ])
 /** An agent's handovers, written from its Handovers tab (agent-panel.ts's id shape). */
 const WALL_SETTINGS_HANDOVERS = /^\/agent\/[a-z0-9][a-z0-9_-]*\/handovers$/

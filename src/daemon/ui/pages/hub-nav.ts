@@ -32,12 +32,14 @@ export function hubAgentsNavHtml(): string {
     </div>`
 }
 
-/** The row at the bottom of the nav: Desk · Jobs · Workflows · Mobile app, and Settings. */
+/** The row at the bottom of the nav: Waiting on you (the Desk, #2226) ·
+ *  Jobs · Workflows · Mobile app, and Settings. The simple layout hides
+ *  Workflows and Mobile app (hub-layout.ts). */
 export function hubNavFootHtml(owner: boolean, settingsHref: string): string {
   const a = (nav: string, href: string, icon: string, label: string, count = "") =>
     `<a class="hf__item" data-nav="${nav}" href="${href}" title="${label}">${icon}<span>${label}</span>${count}</a>`
   return `<div class="hf" id="hub-foot">
-      ${a("needs", "#status=open&amp;view=decide", ICON.desk, "Desk", '<b class="hf__n" data-n-for="nav-n-needs" hidden></b>')}
+      ${a("needs", "#status=open&amp;view=decide", ICON.desk, "Waiting on you", '<b class="hf__n" data-n-for="nav-n-needs" hidden></b>')}
       ${a("jobledger", "#page=jobledger", ICON.jobs, "Jobs")}
       ${a("workflows", "#page=workflows", ICON.workflows, "Workflows")}
       ${a("mobile", "#page=mobile", ICON.phone, "Mobile app")}

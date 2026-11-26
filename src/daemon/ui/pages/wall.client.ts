@@ -96,6 +96,7 @@ import { wsKey, wsFold, wsCopiesHtml } from "./wall-sidebar"
 import { wsProject, wsLast, wsHeadHtml } from "./wall-schedules"
 import { haFace, hubAgentRows, haChatHref, haRowHtml, haListHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount } from "./hub-agents"
 import { HUB_NAV_SCRIPT } from "./hub-nav.client"
+import { HUB_LAYOUT_SCRIPT } from "./hub-layout"
 import { hubUsageText, hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
@@ -150,6 +151,7 @@ ${WALL_LIVE_SCRIPT}
 ${WALL_PICTURES_SCRIPT}
 ${WALL_TASK_SCRIPT}
 ${WALL_SETTINGS_SCRIPT}
+${HUB_LAYOUT_SCRIPT}
 ${WALL_ACTIVITY_SCRIPT}
 ${WALL_BUILD_SCRIPT}
 ${WALL_NUMBERS_SCRIPT}

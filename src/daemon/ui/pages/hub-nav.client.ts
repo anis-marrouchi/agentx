@@ -11,7 +11,7 @@
 // ⌘K and ⌘1…9 (#2101 R26, wall-task.client.ts wallTaskHref).
 //
 // A fragment of WALL_PAGE_SCRIPT: it uses S, $, esc, decAll, decOwner,
-// isOpen and the injected hubAgentRows, haListHtml, haSwitchHits,
+// isOpen, hlNavHidden (hub-layout.ts) and the injected hubAgentRows, haListHtml, haSwitchHits,
 // haSwitchHtml, haHitCount, ltAge.
 
 export const HUB_NAV_SCRIPT = String.raw`
@@ -100,7 +100,8 @@ export const HUB_NAV_SCRIPT = String.raw`
     var seen = {}, out = [];
     document.querySelectorAll('#wall-pagelinks a[data-nav]').forEach(function (a) {
       var key = a.getAttribute('data-nav');
-      if (!key || seen[key] || a.hidden) return;
+      // A page the layout hides (#2226 S1, hub-layout.ts) is left out too.
+      if (!key || seen[key] || a.hidden || hlNavHidden(key)) return;
       seen[key] = true;
       var span = a.querySelector('span');
       out.push({ key: key, label: (span ? span.textContent : a.textContent || '').trim(), href: a.getAttribute('href') || '' });

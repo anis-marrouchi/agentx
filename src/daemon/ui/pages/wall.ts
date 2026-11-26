@@ -58,6 +58,8 @@ import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml 
 import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
+import { HUB_LAYOUT_CSS, hubLayoutBoot } from "./hub-layout"
+import { resolveHubLayout, type HubLayoutView } from "../../../hub/layout"
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -74,7 +76,7 @@ export interface WallPageOpts {
   signIn?: boolean
   /** The React Hub (#2218): on for this load, and the pages sent back to
    *  the old code. Off or missing: the page is exactly the old Hub. */
-  hub?: { react: boolean; legacyPages?: readonly string[] }
+  hub?: { react: boolean; legacyPages?: readonly string[]; layout?: HubLayoutView }
 }
 
 /** The classic pages, one tap from the Wall (#1180 items 1, 23, 27). */
@@ -211,7 +213,9 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     // The Task page conversation's bundle (#2101 R16), by its hashed URL.
     + `<script>window.AX_TASK_CONVERSATION_SRC = ${JSON.stringify(assetUrl("task-conversation.global.js"))};</script>`
   // The React Hub (#2218): its tags, or "" when off or not built here.
-  const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages }) : ""
+  // Simple or full (#2226 S1): no setting is the simple layout.
+  const layout = opts.hub?.layout ?? resolveHubLayout()
+  const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages, layout }) : ""
   const groups = wallNavGroups(owner)
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
@@ -330,8 +334,8 @@ ${HUB_STATUS_HTML}`
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS,
-    head: hubHead,
+    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_LAYOUT_CSS,
+    head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script>`,
   })
 }
