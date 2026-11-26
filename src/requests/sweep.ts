@@ -598,6 +598,9 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       // A promise is pushed above; with that push off (#1912) it keeps the
       // old rule: a touch after its due time holds it until quiet.
       if (r.promise) {
+        // Inside its grace window it is left to the grace check above, however
+        // long it was quiet before its due time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY).
+        if (duePush && graceMinutes > 0 && now < r.dueAt! + graceMinutes * 60_000) continue
         if (r.updatedAt > r.dueAt! && r.updatedAt >= now - hours * HOUR) continue
         if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
         continue

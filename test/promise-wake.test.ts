@@ -337,6 +337,31 @@ describe("a promise near and just past its due time", () => {
     expect((await check()).quiet).toBe(0)
   })
 
+  it("gives the grace to a promise nobody touched for 24 h before its due time", async () => {
+    const p = promise({ owedTo: "pm", dueAt: clock + 26 * HOUR })
+    // Nothing touches it: no wake lands (a run is on it), no reply comes.
+    const created = clock
+    const untouched = () => db.prepare("UPDATE requests SET updated_at = ? WHERE id = ?").run(created, p.id)
+    const quietCheck = async () => { untouched(); return check() }
+    clock += 26 * HOUR - MIN
+    expect((await quietCheck()).quiet).toBe(0)
+    expect(store.get(p.id)?.state).toBe("in_progress")
+    clock += 2 * MIN
+    const due = await quietCheck()
+    expect(due.duePushed).toBe(1)
+    expect(due.quiet).toBe(0)
+    expect(store.get(p.id)?.state).toBe("in_progress")
+    clock += 28 * MIN
+    expect((await quietCheck()).quiet).toBe(0)
+    expect(store.get(p.id)?.state).toBe("in_progress")
+    clock += 2 * MIN
+    expect((await quietCheck()).quiet).toBe(1)
+    expect(store.get(p.id)).toMatchObject({ state: "needs_attention" })
+    expect(store.get(p.id)!.attentionReason).toContain("still open 30 min later")
+    clock += MIN
+    expect((await check()).quiet).toBe(0)
+  })
+
   it("wakes and raises again for a new due time", async () => {
     const p = promise()
     clock += 2 * HOUR + 31 * MIN
