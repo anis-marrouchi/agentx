@@ -27,24 +27,40 @@ export interface Follow {
 /**
  * Watch `scroller`: following while it sits at the bottom, not following
  * once the reader scrolls up; `btn` shows only while not following.
+ * `pageBelow` (px): at or below that window width, a `scroller` that does
+ * not scroll itself hands over to the page's own scroll.
  */
-export function followAttach(scroller: HTMLElement | null, btn: HTMLElement | null): Follow {
+export function followAttach(scroller: HTMLElement | null, btn: HTMLElement | null, pageBelow?: number): Follow {
   let on = true
   // No scroll box (a signed-out panel): nothing to follow.
   if (!scroller) return { stick() {}, jump() {}, following() { return true }, stop() {} }
-  const near = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60
+  // The box that really scrolls (#2306 review C2). On a phone-width Task page
+  // the output has no height limit, so the page scrolls, not the output: at
+  // or below `pageBelow` px wide, follow the page instead. A box that can
+  // scroll itself always wins, and without `pageBelow` only the box counts.
+  const win = pageBelow && typeof window !== "undefined" ? window : null
+  const page = (): HTMLElement | null =>
+    pageBelow && win && win.innerWidth <= pageBelow && typeof document !== "undefined"
+      ? ((document.scrollingElement || document.documentElement) as HTMLElement | null) : null
+  const box = (): HTMLElement => (scroller.scrollHeight > scroller.clientHeight + 1 ? scroller : page() || scroller)
+  const near = () => { const b = box(); return b.scrollHeight - b.scrollTop - b.clientHeight < 60 }
   const show = () => { if (btn) btn.hidden = on }
   const onScroll = () => { on = near(); show() }
-  const toEnd = () => { scroller.scrollTop = scroller.scrollHeight }
+  const toEnd = () => { const b = box(); b.scrollTop = b.scrollHeight }
   const onClick = (e: Event) => { e.preventDefault(); on = true; toEnd(); show() }
   scroller.addEventListener("scroll", onScroll, { passive: true })
+  if (win) win.addEventListener("scroll", onScroll, { passive: true })
   if (btn) btn.addEventListener("click", onClick)
   show()
   return {
     stick() { if (on) toEnd(); else show() },
     jump() { on = true; toEnd(); show() },
     following() { return on },
-    stop() { scroller.removeEventListener("scroll", onScroll); if (btn) btn.removeEventListener("click", onClick) },
+    stop() {
+      scroller.removeEventListener("scroll", onScroll)
+      if (win) win.removeEventListener("scroll", onScroll)
+      if (btn) btn.removeEventListener("click", onClick)
+    },
   }
 }
 
