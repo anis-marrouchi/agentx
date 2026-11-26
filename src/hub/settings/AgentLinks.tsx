@@ -26,7 +26,19 @@ export function integrationBadge(i: Integration): { variant: "ok" | "warn" | "se
   if (i.enabled === false) return { variant: "secondary", text: "Off" }
   if (i.oauth) return !i.oauth.connected ? { variant: "warn", text: "Not connected" } : i.oauth.problems?.length ? { variant: "warn", text: "Needs attention" } : { variant: "ok", text: "Connected" }
   const st = Object.values(i.credStatus ?? {})
+  if (st.includes("literal")) return { variant: "warn", text: "Secret in file" }
   return st.includes("unset") ? { variant: "warn", text: "Not set" } : { variant: "ok", text: "Set" }
+}
+
+/** The credential names that may be shown: environment variable names only.
+ *  A secret typed into the agent's file ("literal") is never shown, even if a
+ *  daemon sent its value (#2101 ST2a review, #2420). */
+export function credentialRefs(i: Integration): { refs: string[]; unset: boolean; literal: string[] } {
+  const st = i.credStatus ?? {}
+  const refs = Object.entries(i.credentials ?? {})
+    .filter(([k, v]) => st[k] !== "literal" && /^[A-Z][A-Z0-9_]*$/.test(v))
+    .map(([, v]) => v)
+  return { refs, unset: Object.values(st).includes("unset"), literal: Object.keys(st).filter((k) => st[k] === "literal") }
 }
 
 function integrationMeta(i: Integration): ReactNode {
@@ -34,12 +46,12 @@ function integrationMeta(i: Integration): ReactNode {
     const exp = i.oauth.expiresAt ? new Date(i.oauth.expiresAt).toISOString().slice(0, 10) : ""
     return [i.oauth.title, i.oauth.refreshes && "renews itself", exp && "expires " + exp, ...(i.oauth.problems ?? [])].filter(Boolean).join(" · ")
   }
-  const unset = Object.entries(i.credStatus ?? {}).filter(([, s]) => s === "unset").map(([k]) => i.credentials?.[k])
-  const refs = Object.values(i.credentials ?? {})
+  const { refs, unset, literal } = credentialRefs(i)
   const meta = Object.entries(i.metadata ?? {}).map(([k, v]) => `${k}=${v}`)
   return <>
     {refs.map((r) => <span key={r} className="font-mono text-xs">{r}</span>)}
-    {unset.length > 0 && <span>is not in the environment</span>}
+    {unset && <span>is not in the environment</span>}
+    {literal.length > 0 && <span>{literal.join(", ")}: secret written in the agent file, move it to an environment variable</span>}
     {meta.length > 0 && <><span aria-hidden="true">·</span><span>{meta.join(" · ")}</span></>}
   </>
 }

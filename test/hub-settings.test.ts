@@ -24,7 +24,7 @@ import { TooltipProvider } from "../src/hub/ui"
 import ActionsPane from "../src/hub/settings/ActionsPane"
 import AgentPane from "../src/hub/settings/AgentPane"
 import { FilesTab } from "../src/hub/settings/AgentFiles"
-import { ChannelsTab, HandoversTab, integrationBadge } from "../src/hub/settings/AgentLinks"
+import { ChannelsTab, HandoversTab, credentialRefs, integrationBadge } from "../src/hub/settings/AgentLinks"
 import {
   type AgentConfig, type AgentState, type CronRow, actionUsers, agentPatch, alsoLines, changedFields, inputsText, modelTier, parseInputs, restartWords, savedValue, showValue,
 } from "../src/hub/settings/agent-data"
@@ -506,6 +506,14 @@ describe("Settings › Agent (#2101 ST2a)", () => {
     expect(integrationBadge({ kind: "x", label: "x", credStatus: { t: "set" } }).text).toBe("Set")
     expect(integrationBadge({ kind: "x", label: "x", oauth: { title: "Google", connected: true } }).text).toBe("Connected")
     expect(integrationBadge({ kind: "x", label: "x", enabled: false }).text).toBe("Off")
+  })
+  it("the pane shows env var names only, even if a daemon sent a literal value", () => {
+    const i = { kind: "github-user", label: "GH", credentials: { tokenEnv: "GH_TOKEN", token: "ghp_secret123" }, credStatus: { tokenEnv: "set" as const, token: "literal" as const } }
+    expect(credentialRefs(i)).toEqual({ refs: ["GH_TOKEN"], unset: false, literal: ["token"] })
+    expect(integrationBadge(i).text).toBe("Secret in file")
+    const html = render(createElement(ChannelsTab, { agent: { ...agentState.agents[0], integrations: [i] } as never, state: agentState as never }))
+    expect(html).toContain("GH_TOKEN")
+    expect(html).not.toContain("ghp_secret123")
   })
 })
 
