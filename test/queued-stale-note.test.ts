@@ -22,6 +22,9 @@ import { MessageQueue, STALE_QUEUE_NOTE_AFTER_MS, staleQueueNote } from "../src/
 import { isQueued } from "../src/agents/queued"
 import { getEventBus } from "../src/events/bus"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { openDb, closeDb } from "../src/storage/sqlite"
+import { attachSqliteSubscribers } from "../src/storage/subscribers"
+import { listQueuedMessages } from "../src/storage/queued-messages"
 
 describe("staleQueueNote", () => {
   const at = Date.UTC(2026, 0, 5, 14, 2)
@@ -165,6 +168,32 @@ describe("registry flush of a queued channel message", () => {
     expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", count: 1 })
     expect(seen[0].flushedAt).toBeGreaterThanOrEqual(before)
     await stopFlushed(r)
+  })
+
+  it("hands over the line when every waiting message is dropped at the flush, so its rows go (#2280)", async () => {
+    const db = openDb({ path: join(dir, "db.sqlite"), quiet: true } as any)!
+    const detach = attachSqliteSubscribers(db)
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queue-flushed", listen)
+    try {
+      const r = new AgentRegistry(config(), () => {})
+      r.setQueuedOutdated(() => true)
+      const first = await busy(r)
+      await r.execute({ message: "second", agentId: "ops", context: ctx })
+      expect(listQueuedMessages(db).map((row) => row.chatId)).toEqual(["chat-1"])
+      r.cancelRunningTask(first.id, "done")
+      await first.run
+      for (let i = 0; i < 100 && seen.length === 0; i++) await new Promise((res) => setTimeout(res, 20))
+      expect(seen).toHaveLength(1)
+      expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", count: 0 })
+      expect(listQueuedMessages(db)).toEqual([])
+      expect((r as any).agents.get("ops").runningTasks).toHaveLength(0)
+    } finally {
+      getEventBus().off("task:queue-flushed", listen)
+      detach()
+      closeDb()
+    }
   })
 
   it("records a follow-up from the dashboard as the owner's place in the line (#443)", async () => {

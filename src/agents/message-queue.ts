@@ -69,6 +69,11 @@ export class MessageQueue {
   /** Did the running turn take this message mid-turn? (mid-turn.ts) */
   wasTaken?: (midTurnId: string) => boolean
 
+  /** Is this queued message out of date by now (#2280)? Asked at the
+   *  flush, not when it is queued: a plan step done while its hand-off
+   *  waited is not run. The check logs its own reason. */
+  outdated?: (agentId: string, message: QueuedMessage) => boolean
+
   constructor(defaultMode: QueueMode = "collect") {
     this.defaultMode = defaultMode
   }
@@ -163,7 +168,8 @@ export class MessageQueue {
     q.running = false
 
     // A message the run already took mid-turn is not run a second time.
-    const messages = q.pending.filter((m) => !(m.midTurnId && this.wasTaken?.(m.midTurnId)))
+    // Nor is one that went out of date while it waited (#2280).
+    const messages = q.pending.filter((m) => !(m.midTurnId && this.wasTaken?.(m.midTurnId)) && !this.isOutdated(agentId, m))
     q.pending = []
     if (messages.length === 0) return []
 
@@ -209,6 +215,15 @@ export class MessageQueue {
 
       default:
         return messages
+    }
+  }
+
+  /** A check that fails keeps the message: it runs as it always did. */
+  private isOutdated(agentId: string, m: QueuedMessage): boolean {
+    try {
+      return this.outdated?.(agentId, m) === true
+    } catch {
+      return false
     }
   }
 

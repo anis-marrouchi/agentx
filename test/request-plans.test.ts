@@ -7,11 +7,12 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { PlanStore, waitsText } from "../src/requests/plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, type PlanSettings } from "../src/requests/plans"
-import { cutByRestart, ownerStepAction, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
+import { cutByRestart, outdatedStepTurn, ownerStepAction, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { requestsConfigSchema } from "../src/daemon/config"
 import { createCard, decideCard, readCard } from "../src/approvals/cards"
+import { MessageQueue } from "../src/agents/message-queue"
 import { runApprovalsSweep } from "../src/approvals/sweep"
 
 const MIN = 60_000
@@ -273,6 +274,57 @@ describe("following a plan", () => {
     expect(api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "done", evidence: "v1.2.3 live" }).status).toBe(200)
     // A message step is the daemon's to send.
     expect((api({ action: "step", agentId: "coder", id: "req-1", step: 3, status: "done", evidence: "sent" }).body as any).error).toMatch(/daemon sends/)
+  })
+})
+
+describe("a queued step hand-off (#2280)", () => {
+  // The daemon's wiring: the queue asks the plan when the hand-off's turn
+  // comes, not when it is queued.
+  let queue: MessageQueue
+  beforeEach(async () => {
+    makePlan([{ name: "Build", done: "PR merged" }, { name: "Review the PR", agent: "devops", done: "verdict posted" }])
+    api({ action: "step", agentId: "coder", id: "req-1", step: 1, status: "done", evidence: "PR 7" })
+    await sweep()
+    queue = new MessageQueue()
+    queue.outdated = (agentId, m) => outdatedStepTurn(plans, agentId, m.text, m.queuedAt ?? m.timestamp, clock) !== null
+    // devops is already busy in the request's chat: the hand-off waits.
+    queue.markRunning("devops", "requests", "req-1")
+    queue.enqueue("devops", "requests", "req-1", { text: turns[0].text, sender: "operator", timestamp: clock, channel: "requests", chatId: "req-1" })
+  })
+
+  it("starts no run for a step marked done between queue and start, and logs the drop with the step and why", async () => {
+    clock += 4 * MIN
+    expect(api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "done", evidence: "verdict on PR 7" }).status).toBe(200)
+    expect(await queue.markDone("devops", "requests", "req-1")).toEqual([])
+    expect(plans.events("req-1").filter((e) => e.kind === "dropped")).toEqual([
+      expect.objectContaining({ step: 2, detail: "queued hand-off to devops not run: step 2 is already done" }),
+    ])
+  })
+
+  it("starts no run for a step the agent's running session already took up", async () => {
+    clock += 2 * MIN
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "progress", note: "reviewing PR 7" })
+    expect(await queue.markDone("devops", "requests", "req-1")).toEqual([])
+    expect(plans.events("req-1").find((e) => e.kind === "dropped")?.detail).toMatch(/devops already took step 2 up/)
+  })
+
+  it("starts one run for a step still open", async () => {
+    clock += 4 * MIN
+    const out = await queue.markDone("devops", "requests", "req-1")
+    expect(out).toHaveLength(1)
+    expect(out[0].text).toContain("[agentx:plan-step id=req-1 step=2]")
+    expect(plans.events("req-1").some((e) => e.kind === "dropped")).toBe(false)
+  })
+
+  it("keeps other queued messages, and keeps the message when the check fails", async () => {
+    queue.enqueue("devops", "requests", "req-1", { text: "Any news on the review?", sender: "operator", timestamp: clock, channel: "requests", chatId: "req-1" })
+    api({ action: "step", agentId: "devops", id: "req-1", step: 2, status: "done", evidence: "verdict on PR 7" })
+    expect((await queue.markDone("devops", "requests", "req-1")).map((m) => m.text)).toEqual(["Any news on the review?"])
+    const q2 = new MessageQueue()
+    q2.outdated = () => { throw new Error("db gone") }
+    q2.markRunning("devops", "requests", "req-1")
+    q2.enqueue("devops", "requests", "req-1", { text: turns[0].text, sender: "operator", timestamp: clock, channel: "requests", chatId: "req-1" })
+    expect(await q2.markDone("devops", "requests", "req-1")).toHaveLength(1)
   })
 })
 
