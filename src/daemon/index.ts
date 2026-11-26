@@ -256,6 +256,7 @@ import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
+import { writeQueueAtClose } from "@/daemon/upgrade-queue-record"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
 import { readAccountsPlanUsage } from "@/agents/plan-usage-accounts"
@@ -1712,7 +1713,13 @@ export class AgentXDaemon {
     // messages still waiting are replayed from the inflight log on boot;
     // other waiting runs are answered as interrupted.
     this.nodeEnv.stop()
+    const heldForUpgrade = this.registry.admission.startHold !== null
     const left = this.registry.admission.close()
+    if (heldForUpgrade) {
+      try { writeQueueAtClose(resolve(process.cwd(), ".agentx"), { at: new Date().toISOString(), ...left }) } catch (err) {
+        this.log(`  Could not record the queue at close for the upgrade: ${(err as Error).message}`)
+      }
+    }
     if (left.kept || left.refused) this.log(`  Admission queue closed — ${left.kept} chat message(s) kept for replay on boot, ${left.refused} other run(s) answered as interrupted`)
 
     // Drain active agent tasks before exit. Channels are already stopped, so
@@ -8346,12 +8353,18 @@ export class AgentXDaemon {
           inflight: () => this.inflightCounts(),
           running: () => this.runningSummaries(),
           policy: this.config.shutdown?.restart,
+          operator: operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER]),
+          hold: {
+            start: (by, untilMs) => this.registry.admission.holdStarts(by, untilMs),
+            release: () => this.registry.admission.releaseHold(),
+            state: () => this.registry.admission.startHold,
+          },
           service: () => this.restartService(),
           pid: process.pid,
           cwd: process.cwd(),
           configPath: this.configPath,
         })
-        if (req.method === "POST" && reply.status < 300) {
+        if (req.method === "POST" && reply.status < 300 && path.startsWith("/daemon/restart")) {
           const st = this.idleRestart.state()
           this.log(`  Restart when idle: ${path.endsWith("/cancel") ? "cancelled" : `${st.state} (requested by ${st.requestedBy}, until ${st.state === "deferred" ? st.until : st.deadline}, then ${st.onTimeout})`}`)
         }

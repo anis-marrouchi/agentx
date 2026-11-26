@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { AdmissionQueue, contextWithAdmissionPriority, DEFAULT_ADMISSION_SETTINGS, gateReasons, priorityOf, requestedPriorityOf, type AdmissionSettings, type AdmissionTicket } from "../src/admission/queue"
 import { parseMeminfo, parseSwapUsage, parseVmStat, ResourceSampler, type ResourceSample } from "../src/native/resources"
 import { formatQueue } from "../src/admission/format"
@@ -605,5 +605,138 @@ describe("closing idle sessions under memory pressure (noqta/noqta#509)", () => 
     ask(q, "held2", { chatId: "y" })
     await tick(); await tick()
     expect(said()).toBe(2)
+  })
+})
+
+describe("start hold for a daemon upgrade (#2360)", () => {
+  it("holds new starts, owner and critical too, and keeps the queued runs", async () => {
+    const { q } = setup({ priority: { ...DEFAULT_ADMISSION_SETTINGS.priority, criticalAgents: ["crit"] } })
+    const running = ask(q, "running")
+    await tick(); await tick()
+    expect(running.ticket).toBeTruthy()
+    const hold = q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
+    expect(hold).toMatchObject({ by: "agentx daemon upgrade", waiting: 0, running: 1 })
+    const chat = { keepOnClose: true }
+    const normal = ask(q, "normal", chat), owner = ask(q, "owner", { channel: "voice", ...chat }), crit = ask(q, "crit", chat)
+    await tick(); await tick()
+    expect([normal.ticket, owner.ticket, crit.ticket]).toEqual([undefined, undefined, undefined])
+    const snap = q.snapshot()
+    expect(snap.waiting).toHaveLength(3)
+    expect(snap.waiting[0].blockedBy).toEqual(["start hold: agentx daemon upgrade"])
+    expect(snap.hold).toMatchObject({ waiting: 3, running: 1 })
+    expect(formatQueue(snap)).toMatch(/Starts held: agentx daemon upgrade/)
+    // The running count reaches 0 while the queue stays full.
+    running.ticket!.release()
+    await tick(); await tick()
+    expect(q.snapshot().running).toHaveLength(0)
+    expect(q.waitingCount).toBe(3)
+  })
+
+  it("does not hold a run the switch would drop: agent-to-agent, schedule, workflow step", async () => {
+    const { q } = setup()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
+    const a2a = ask(q, "a2a", { channel: "a2a" }), sched = ask(q, "sched", { channel: "schedule" })
+    const chat = ask(q, "chat", { keepOnClose: true })
+    await tick(); await tick()
+    expect(a2a.ticket).toBeTruthy()
+    expect(sched.ticket).toBeTruthy()
+    expect(chat.ticket).toBeUndefined()
+    // At the switch only the chat message is waiting, and it is kept for replay.
+    expect(q.close()).toEqual({ kept: 1, refused: 0 })
+  })
+
+  it("still starts a delegated helper, whose parent waits on it", async () => {
+    const { q } = setup()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
+    const helper = ask(q, "helper", { delegated: true })
+    await tick(); await tick()
+    expect(helper.ticket).toBeTruthy()
+  })
+
+  it("reopens on release and starts what waited", async () => {
+    const { q, logs } = setup()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 3_600_000)
+    const a = ask(q, "a", { keepOnClose: true })
+    await tick(); await tick()
+    expect(a.ticket).toBeUndefined()
+    expect(q.releaseHold()).toMatchObject({ waiting: 1 })
+    await tick(); await tick()
+    expect(a.ticket).toBeTruthy()
+    expect(q.startHold).toBeNull()
+    expect(q.releaseHold()).toBeNull()
+    expect(logs.join("\n")).toMatch(/start hold for agentx daemon upgrade released/)
+  })
+
+  it("ends by itself at its deadline, so a dead upgrade job cannot keep the queue shut", async () => {
+    const { q, advance } = setup()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
+    const a = ask(q, "a", { keepOnClose: true })
+    await tick(); await tick()
+    expect(a.ticket).toBeUndefined()
+    advance(60_000)
+    await q.pump()
+    expect(a.ticket).toBeTruthy()
+    expect(q.startHold).toBeNull()
+  })
+
+  it("starts the waiting runs at the deadline with no other wake-up", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      // The queue samples every 60 s; the hold ends after 5 s.
+      const { q, advance } = setup()
+      q.holdStarts("agentx daemon upgrade", 1_000_000 + 5_000)
+      const a = ask(q, "a", { keepOnClose: true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(a.ticket).toBeUndefined()
+      advance(5_000)
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(a.ticket).toBeTruthy()
+      expect(q.startHold).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not move the deadline later on a repeat hold", async () => {
+    const { q, advance } = setup()
+    const first = q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
+    const again = q.holdStarts("someone else", 1_000_000 + 7_200_000)
+    expect(again.until).toBe(first.until)
+    expect(again).toMatchObject({ by: "agentx daemon upgrade", since: first.since })
+    // A nearer deadline is taken.
+    expect(q.holdStarts("agentx daemon upgrade", 1_000_000 + 30_000).until).toBe(new Date(1_000_000 + 30_000).toISOString())
+    const a = ask(q, "a", { keepOnClose: true })
+    await tick(); await tick()
+    expect(a.ticket).toBeUndefined()
+    advance(30_000)
+    await q.pump()
+    expect(a.ticket).toBeTruthy()
+  })
+
+  it("does not count the held time toward maxWaitMinutes", async () => {
+    const { q, advance } = setup({ maxSessions: 1, ownerExtraSessions: 0, maxWaitMinutes: 1 })
+    const a = ask(q, "a")
+    await tick(); await tick()
+    let out: any
+    void q.admit({ agentId: "b", channel: "api", keepOnClose: true }).then((o) => { out = o })
+    await tick(); await tick()
+    // 30 s held by the session cap, then 2 h held for the upgrade.
+    advance(30_000)
+    await q.pump()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 30_000 + 7_200_000)
+    advance(7_200_000)
+    await q.pump()
+    expect(out).toBeUndefined()
+    q.releaseHold()
+    await tick(); await tick()
+    expect(out).toBeUndefined()
+    // The node clock resumes where it stopped: refused 30 s later, not before.
+    advance(29_000)
+    await q.pump()
+    expect(out).toBeUndefined()
+    advance(2_000)
+    await q.pump()
+    expect(out).toMatchObject({ ok: false, reason: "timeout" })
+    expect(a.ticket).toBeTruthy()
   })
 })

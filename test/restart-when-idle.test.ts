@@ -301,3 +301,62 @@ describe("restart API", () => {
     expect(handleRestartApi("POST", "/daemon/restart/cancel", {}, c).status).toBe(200)
   })
 })
+
+describe("upgrade start hold API (#2360)", () => {
+  const ok = { ok: true as const, exitCode: 0, how: "launchd job com.example.agentx restarts it" }
+  function ctx(withHold = true): RestartApiContext & { calls: string[] } {
+    const calls: string[] = []
+    let on: { by: string; until: number } | null = null
+    const state = () => on && { by: on.by, since: "2026-11-26T00:00:00.000Z", until: new Date(on.until).toISOString(), waiting: 4, running: 2 }
+    return {
+      calls,
+      scheduler: scheduler(() => 0).s,
+      inflight: () => ({ local: 2, meshForwards: 0, total: 2 }),
+      service: () => ({ service: LAUNCHD, plan: ok }),
+      pid: 4242,
+      cwd: "/srv/agentx",
+      now: () => 0,
+      operator: true,
+      ...(withHold ? {
+        hold: {
+          start: (by: string, until: number) => { calls.push(`start ${by} ${until}`); on = { by, until }; return state()! },
+          release: () => { const was = state(); on = null; calls.push("release"); return was },
+          state,
+        },
+      } : {}),
+    }
+  }
+
+  it("holds for the minutes asked, shows the hold on GET, and releases it", () => {
+    const c = ctx()
+    const a = handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 70, by: "agentx daemon upgrade" }, c)
+    expect(a).toMatchObject({ status: 200, body: { by: "agentx daemon upgrade", waiting: 4, running: 2 } })
+    expect(c.calls).toEqual([`start agentx daemon upgrade ${70 * 60_000}`])
+    expect(handleRestartApi("GET", "/daemon/restart", {}, c).body).toMatchObject({ startHold: { waiting: 4 } })
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold/release", {}, c)).toMatchObject({ status: 200, body: { waiting: 4 } })
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold/release", {}, c).status).toBe(409)
+    expect(handleRestartApi("GET", "/daemon/restart", {}, c).body).toMatchObject({ startHold: null })
+  })
+
+  it("refuses a hold without an end, and answers 501 where the daemon cannot hold", () => {
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", {}, ctx()).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 0 }, ctx()).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 10 }, ctx(false)).status).toBe(501)
+  })
+
+  it("caps a hold at 2 hours", () => {
+    const c = ctx()
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 121 }, c).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 24 * 60 }, c).status).toBe(400)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 120 }, c).status).toBe(200)
+  })
+
+  it("refuses to hold or reopen starts without the operator key, though loopback let the caller in", () => {
+    const c = { ...ctx(), operator: false }
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold", { minutes: 10 }, c).status).toBe(403)
+    expect(handleRestartApi("POST", "/daemon/upgrade/hold/release", {}, c).status).toBe(403)
+    expect(c.calls).toEqual([])
+    // Reading the hold stays open to loopback.
+    expect(handleRestartApi("GET", "/daemon/restart", {}, c).status).toBe(200)
+  })
+})

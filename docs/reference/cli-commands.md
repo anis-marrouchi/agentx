@@ -245,7 +245,7 @@ Restart the daemon through launchd, systemd or a plain stop + start; --when-idle
 
 ### `agentx daemon upgrade <release-dir>`
 
-Move this node (launchd) to a built release folder: waits for idle, switches the daemon and dashboard, rolls back on failure. See [move to a new release](../jobs/restart-safely.md#move-to-a-new-release-mac).
+Move this node (launchd) to a built release folder: holds new runs and waits for idle, switches the daemon and dashboard, rolls back on failure. See [move to a new release](../jobs/restart-safely.md#move-to-a-new-release-mac).
 
 | Flag | Default | What it does |
 |---|---|---|

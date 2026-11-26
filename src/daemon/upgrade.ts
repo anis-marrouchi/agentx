@@ -237,6 +237,23 @@ export interface UpgradeOutcome {
   hub?: HubProbe[]
   /** Why the peer and Hub checks did not run (agentx.json did not load). */
   checksSkipped?: string
+  /** The start hold while waiting for idle (#2360); absent when the daemon
+   *  could not hold starts. */
+  drain?: {
+    startedAt: string
+    /** Runs waiting in the queue when the hold began, and at its end. */
+    heldAtStart: number
+    heldAtEnd?: number
+    /** Seconds from the hold to no runs going; absent when never idle. */
+    idleAfterSeconds?: number
+    /** When starts were reopened on this daemon (refused or rolled back). */
+    reopenedAt?: string
+    /** What the old daemon's queue did at the switch: chat messages kept
+     *  for replay, other waiting runs refused. Only chat messages are held,
+     *  so refused counts runs other limits (memory, cap) held. */
+    keptAtSwitch?: number
+    refusedAtSwitch?: number
+  }
   reason?: string
   startedAt: string
   endedAt: string

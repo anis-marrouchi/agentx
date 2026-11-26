@@ -1,3 +1,4 @@
+import type { StartHold } from "@/admission/queue"
 import { applyRestartPolicy, type IdleRestartScheduler, type OnTimeout, type RestartPolicy, type SelfRestartPlan, type ServiceInfo } from "./restart"
 
 // --- HTTP surface for "restart when idle" (operator-only; the daemon gates
@@ -11,13 +12,24 @@ import { applyRestartPolicy, type IdleRestartScheduler, type OnTimeout, type Res
 //                                hold the request until a daily window (202,
 //                                state "deferred"), or refuse it (403)
 //   POST /daemon/restart/cancel  drop a pending or deferred request
+//   POST /daemon/upgrade/hold    { minutes, by? } hold new run starts (#2360);
+//                                queued runs stay queued; ends by itself
+//                                within MAX_HOLD_MINUTES; a repeat call never
+//                                moves the end later
+//   POST /daemon/upgrade/hold/release  reopen starts
+//
+// Both hold paths need the operator key (x-agentx-operator): loopback alone
+// is not enough, since every agent on this node can reach loopback and a
+// hold stops owner and critical runs too.
 //
 // Pure request → reply mapping; index.ts supplies the context.
 
-export const RESTART_API_PATHS = new Set(["/daemon/restart", "/daemon/restart/cancel"])
+export const RESTART_API_PATHS = new Set(["/daemon/restart", "/daemon/restart/cancel", "/daemon/upgrade/hold", "/daemon/upgrade/hold/release"])
 
 export const DEFAULT_IDLE_TIMEOUT_MINUTES = 30
 const MAX_IDLE_TIMEOUT_MINUTES = 24 * 60
+/** The longest start hold one call can ask for (#2360). */
+export const MAX_HOLD_MINUTES = 120
 
 /** A run a restart would cut off, for the deploy script asking. */
 export interface RunningSummary {
@@ -37,6 +49,14 @@ export interface RestartApiContext {
   /** What runs the daemon, and whether it can restart itself. Detected once. */
   service: () => { service: ServiceInfo; plan: SelfRestartPlan }
   policy?: RestartPolicy
+  /** The admission queue's start hold (#2360). */
+  hold?: {
+    start: (by: string, untilMs: number) => StartHold
+    release: () => StartHold | null
+    state: () => StartHold | null
+  }
+  /** The caller showed this node's operator key. */
+  operator?: boolean
   now?: () => number
   pid: number
   cwd: string
@@ -66,6 +86,7 @@ export function handleRestartApi(
         service,
         selfRestart: plan,
         policy: ctx.policy ?? null,
+        startHold: ctx.hold?.state() ?? null,
         ...ctx.scheduler.state(),
       },
     }
@@ -104,6 +125,23 @@ export function handleRestartApi(
         running: running(),
       },
     }
+  }
+  if ((path === "/daemon/upgrade/hold" || path === "/daemon/upgrade/hold/release") && m === "POST" && !ctx.operator) {
+    return { status: 403, body: { error: "holding run starts needs the operator key: run `agentx daemon upgrade` from the AgentX folder (it sends .agentx/operator.key)" } }
+  }
+  if (path === "/daemon/upgrade/hold" && m === "POST") {
+    if (!ctx.hold) return { status: 501, body: { error: "this daemon cannot hold run starts" } }
+    const minutes = Number(body.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_HOLD_MINUTES) {
+      return { status: 400, body: { error: `minutes must be above 0 and at most ${MAX_HOLD_MINUTES}` } }
+    }
+    const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 80) : "a daemon upgrade"
+    return { status: 200, body: ctx.hold.start(by, (ctx.now ?? Date.now)() + minutes * 60_000) }
+  }
+  if (path === "/daemon/upgrade/hold/release" && m === "POST") {
+    if (!ctx.hold) return { status: 501, body: { error: "this daemon cannot hold run starts" } }
+    const was = ctx.hold.release()
+    return was ? { status: 200, body: was } : { status: 409, body: { error: "no start hold is on" } }
   }
   if (path === "/daemon/restart/cancel" && m === "POST") {
     const cancelled = ctx.scheduler.cancel()

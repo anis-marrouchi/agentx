@@ -25,7 +25,7 @@ function fail(msg: string, hint?: string): never {
 }
 
 export const upgradeCommand = new Command("upgrade")
-  .description("move this node (launchd) to a built release folder: waits for idle, switches the daemon and dashboard, rolls back on failure")
+  .description("move this node (launchd) to a built release folder: holds new runs and waits for idle, switches the daemon and dashboard, rolls back on failure")
   .argument("<release-dir>", "built release folder (holds dist/cli.js)")
   .option("-c, --config <path>", "path to agentx.json")
   .option("--expect-version <version>", "refuse unless the release reports this version")
@@ -75,7 +75,7 @@ export const upgradeCommand = new Command("upgrade")
     console.log()
     console.log(`  Upgrade ${chalk.bold(service.label)}: ${oldDir} → ${chalk.bold(dir)} (${version})`)
     if (opts.dryRun) {
-      console.log(chalk.dim(`  Would wait up to ${runOpts.timeoutMin} min for ${runOpts.peopleOnly ? "runs a person is waiting on (other runs are not waited for)" : "idle"}${runOpts.force ? ", then restart anyway" : ", then give up"}, switch every loaded job naming ${oldDir},`))
+      console.log(chalk.dim(`  Would hold new run starts (queued runs stay queued) and wait up to ${runOpts.timeoutMin} min for ${runOpts.peopleOnly ? "runs a person is waiting on (other runs are not waited for)" : "idle"}${runOpts.force ? ", then restart anyway" : ", then give up"}, switch every loaded job naming ${oldDir},`))
       console.log(chalk.dim(`  reload them, and wait up to ${runOpts.bootTimeoutMin} min for ${version}; on failure put the old settings back.`))
       console.log()
       return
