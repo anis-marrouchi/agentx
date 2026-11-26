@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.289.0](https://github.com/anis-marrouchi/agentx/compare/v0.288.0...v0.289.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** feed and List view to the approved orca mock ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2387](https://github.com/anis-marrouchi/agentx/issues/2387)) ([544c293](https://github.com/anis-marrouchi/agentx/commit/544c293b95583041a516c80e2c36d8dd6086129f))
+* **hub:** side menu, icon rail, phone Sheet and ⌘K to the approved orca mock ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2388](https://github.com/anis-marrouchi/agentx/issues/2388)) ([6f77d01](https://github.com/anis-marrouchi/agentx/commit/6f77d015d4419e4a16fbc8dc6178ea476f8b4e72))
+* **jobs:** requester or assignee closes a stalled job whose chat is gone ([#2318](https://github.com/anis-marrouchi/agentx/issues/2318)) ([#2407](https://github.com/anis-marrouchi/agentx/issues/2407)) ([87704e3](https://github.com/anis-marrouchi/agentx/commit/87704e32b0f234eca3ecbf8e1d9ffa7925b8f159))
+
 ## [0.288.0](https://github.com/anis-marrouchi/agentx/compare/v0.287.2...v0.288.0) (2026-11-26)
 
 
