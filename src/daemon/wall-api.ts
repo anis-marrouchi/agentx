@@ -179,6 +179,10 @@ export interface WallPost {
   runMs: number
   runs: number
   failedRuns: number
+  /** Its latest finished run, when that run failed (#2101): the run and
+   *  what went wrong, so a list can say why next to Retry. Null: the
+   *  latest finished run did not fail, or none finished. */
+  lastFailure: { taskId: string; agentId: string | null; error: string; at: number } | null
   /** Estimate against measured run time, in words. Null: nothing to flag. */
   timeFlag: string | null
   /** The forge's own time tracking (#1189): GitLab homes only. Null: the
@@ -627,6 +631,10 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     blockedBy = blockerOf({ owner: r.askedAgent ?? r.agentId, project: project.name, handedTo, stepAgent, waitsOn: look }, deps.projects)
   }
   const last = [...runs].reverse().find((x) => x.agentId)
+  const ended = [...runs].reverse().find((x) => x.status)
+  const lastFailure = ended && FAILED.has(ended.status!)
+    ? { taskId: ended.taskId, agentId: ended.agentId, error: clean(ended.error, 200) || ended.status!, at: ended.finishedAt ?? ended.startedAt ?? 0 }
+    : null
   return {
     id: r.id,
     state: r.state,
@@ -658,6 +666,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     runMs,
     runs: runs.length,
     failedRuns: runs.filter((x) => x.status && FAILED.has(x.status)).length,
+    lastFailure,
     timeFlag: timeFlag(r, runs, runMs, deps.now, deps.staleAfterHours),
     forgeTime: null,
     forgeState: null,
