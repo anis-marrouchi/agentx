@@ -52,6 +52,8 @@ export const KIND_WEIGHT: Record<SignalKind, number> = {
   a2a_extra_rounds: 1,
   clarification_asked: 1,
   owner_asked_subject: 2,
+  // retro:01M8AG6YTMQG790EQXF01DFG00: a whole run spent only on a nudge.
+  waiting_step_unfiled: 1,
 }
 
 /** Kinds whose detail is the owner's or a checker's own words: never the

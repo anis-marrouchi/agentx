@@ -41,6 +41,9 @@ export const SIGNAL_KINDS = [
   "a2a_extra_rounds",
   "clarification_asked",
   "owner_asked_subject",
+  // retro:01M8AG6YTMQG790EQXF01DFG00: a run ended waiting until a time on
+  // a plan step it filed nothing on (requests.waitingStep warn).
+  "waiting_step_unfiled",
 ] as const
 export type SignalKind = (typeof SIGNAL_KINDS)[number]
 
@@ -67,6 +70,7 @@ export const SIGNAL_MEANING: Record<SignalKind, string> = {
   a2a_extra_rounds: "a hand-off took more than one round before the receiver started the work",
   clarification_asked: "the receiver of a hand-off asked back what was meant or missing instead of starting",
   owner_asked_subject: "the owner asked what a reply was about",
+  waiting_step_unfiled: "a run ended waiting until a time and filed nothing on the plan step it owns, so the step would be nudged (requests.waitingStep warn)",
 }
 
 export const DEDUPE_MS = 10 * 60_000
