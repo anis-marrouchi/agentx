@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.279.0](https://github.com/anis-marrouchi/agentx/compare/v0.278.0...v0.279.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** simple layout S1 ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226)) ([#2313](https://github.com/anis-marrouchi/agentx/issues/2313)) ([999499d](https://github.com/anis-marrouchi/agentx/commit/999499d409e7018afb4dfab3febb82c73d3545e1))
+* **upgrade:** version check against mesh peers and Hub check after upgrade ([#2227](https://github.com/anis-marrouchi/agentx/issues/2227)) ([#2333](https://github.com/anis-marrouchi/agentx/issues/2333)) ([5a644c6](https://github.com/anis-marrouchi/agentx/commit/5a644c6fcc1fc80660e4d966cd066da7b5c67f2e))
+
+
+### Bug Fixes
+
+* **requests:** daemon-filed waits keep the nudge count ([#2320](https://github.com/anis-marrouchi/agentx/issues/2320) review C1) ([#2336](https://github.com/anis-marrouchi/agentx/issues/2336)) ([33adc6d](https://github.com/anis-marrouchi/agentx/commit/33adc6d5f0ad8e3ad884db4b7a47cb2821b48c1a))
+* **storage:** add the Wall span index missed in [#2323](https://github.com/anis-marrouchi/agentx/issues/2323) ([#2322](https://github.com/anis-marrouchi/agentx/issues/2322) B1) ([#2335](https://github.com/anis-marrouchi/agentx/issues/2335)) ([97f1f00](https://github.com/anis-marrouchi/agentx/commit/97f1f0081d42b7ec3882600b07cd5de4b154e13d))
+
 ## [0.278.0](https://github.com/anis-marrouchi/agentx/compare/v0.277.1...v0.278.0) (2026-11-26)
 
 
