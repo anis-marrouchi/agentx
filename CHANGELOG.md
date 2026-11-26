@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.276.0](https://github.com/anis-marrouchi/agentx/compare/v0.275.0...v0.276.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** follow the stream with Jump to latest, fold earlier turns ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2306](https://github.com/anis-marrouchi/agentx/issues/2306)) ([bfa78c3](https://github.com/anis-marrouchi/agentx/commit/bfa78c3498facedaa109889fd9ea1c3c0a413ef5))
+* **skills:** agentx-bridge skill with the receipt flow ([#2007](https://github.com/anis-marrouchi/agentx/issues/2007)) ([#2299](https://github.com/anis-marrouchi/agentx/issues/2299)) ([845d543](https://github.com/anis-marrouchi/agentx/commit/845d543b0e42a1d7c5f96e18802192df5a846623))
+
+
+### Bug Fixes
+
+* **hub:** a working agent's run streams on its Task page; no "not known" in the bar ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R26) ([#2303](https://github.com/anis-marrouchi/agentx/issues/2303)) ([80142b7](https://github.com/anis-marrouchi/agentx/commit/80142b76d94a7a3f830d1f2b4817b6adc0f24ab7))
+* **requests:** a follow-up run's promise updates the open loop instead of opening another ([#2079](https://github.com/anis-marrouchi/agentx/issues/2079)) ([#2289](https://github.com/anis-marrouchi/agentx/issues/2289)) ([0b8e623](https://github.com/anis-marrouchi/agentx/commit/0b8e623019f4b82535aa99a55b0c2654be692d65))
+* **session-model:** an owner's turn leaves a warm cheap session for the agent's model ([#2034](https://github.com/anis-marrouchi/agentx/issues/2034)) ([#2304](https://github.com/anis-marrouchi/agentx/issues/2304)) ([8f059c5](https://github.com/anis-marrouchi/agentx/commit/8f059c586c4d4fa2d4648c8f16954cd7b4101c38))
+
 ## [0.275.0](https://github.com/anis-marrouchi/agentx/compare/v0.274.2...v0.275.0) (2026-11-26)
 
 
