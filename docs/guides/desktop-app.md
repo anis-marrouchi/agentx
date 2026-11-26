@@ -42,6 +42,8 @@ The app is still in preview. Each change to it is built for all three systems by
 | **Closing the window** | **Hide to the tray** (the default) or **Quit the app**. |
 | **Quit AgentX** | Closes the app. The daemon keeps running. |
 
+Start, Stop and Restart act on this computer only. When the app points at a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.0.0.1, ::1 or localhost), all three are off and say **(on another machine)**, whether that daemon is up or down.
+
 The last three choices are kept in `settings.json` in the app's data folder and survive a restart.
 
 Links to other websites open in your usual browser, not in the app. The app lets only the dashboard's own pages use the microphone. It never lets any page use the camera.
