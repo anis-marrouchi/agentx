@@ -154,6 +154,7 @@ import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
 import type { BeforeCloseCtx } from "@/requests/before-close"
 import { DueTimeGate, madeSchedule, postedNotes } from "@/requests/due-gate"
+import { fileWaitingStep } from "@/requests/waiting-step"
 import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, cutByRestart, outdatedStepTurn, planNotice, requeueCrashedStep, requeueInterruptedStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -1132,6 +1133,15 @@ export class AgentXDaemon {
             log: this.log,
           })
           this.registry.setDueTimeGate((run, askAgent) => dueGate.runEnded(run, askAgent))
+          // retro:01M8AG6YTMQG790EQXF01DFG00: a run ending "waiting until
+          // <time>" files its plan step's wait (requests/waiting-step.ts).
+          const reqs = this.requests
+          this.registry.setWaitingStepHook((run) => fileWaitingStep({
+            requests: reqs.store, plans: reqs.plans,
+            mode: () => this.config.requests.waitingStep?.mode ?? "warn",
+            log: this.log,
+            signal: (agentId, ref, detail) => emitSignal({ kind: "waiting_step_unfiled", agentId, ref, detail }),
+          }, run))
         }
         // Request status was removed (#1950): its old tables leave the
         // database once, their rows exported to .agentx first.

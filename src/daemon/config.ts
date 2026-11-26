@@ -1841,6 +1841,14 @@ export const requestsConfigSchema = z.object({
      *  wait for the next one, so the minute check stays short. */
     perSweep: z.number().int().min(1).max(10).default(3),
   }).default({}),
+  /** A run that ends "State: waiting … until <time>" on a plan step it
+   *  owns and filed nothing on (src/requests/waiting-step.ts),
+   *  retro:01M8AG6YTMQG790EQXF01DFG00. "warn" (the default) logs and
+   *  records a waiting_step_unfiled signal; "on" files the step's progress
+   *  with waitUntil, so it is not nudged before then; "off" does nothing. */
+  waitingStep: z.object({
+    mode: z.enum(["off", "warn", "on"]).default("warn"),
+  }).default({}),
   /** Due times from the queue (src/requests/due-times.ts, #1909): a
    *  promise or an accept registers the work (estimateMinutes, priority)
    *  and the daemon gives the due time from the queue, the priorities, the

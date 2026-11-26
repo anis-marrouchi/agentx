@@ -920,6 +920,8 @@ export class AgentRegistry {
     run: { agentId: string; channel: string; chatId: string; runIds: string[]; startedAt: number; reply: string },
     askAgent: (text: string) => Promise<{ reply?: string; error?: string }>,
   ) => Promise<unknown>
+  /** See setWaitingStepHook. retro:01M8AG6YTMQG790EQXF01DFG00 */
+  private waitingStepHook?: (run: import("@/requests/waiting-step").WaitingStepRun) => unknown
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -1194,6 +1196,14 @@ export class AgentRegistry {
    *  to ask the agent one question in the same session. Unset: no check. */
   setDueTimeGate(fn: AgentRegistry["dueTimeGate"]): void {
     this.dueTimeGate = fn
+  }
+
+  /** Wire the check a run's end goes through when it ends waiting until a
+   *  time on a plan step it filed nothing on (requests/waiting-step.ts).
+   *  retro:01M8AG6YTMQG790EQXF01DFG00: remove with that file. Unset: no
+   *  check. */
+  setWaitingStepHook(fn: AgentRegistry["waitingStepHook"]): void {
+    this.waitingStepHook = fn
   }
 
   /** Wire the check a queued message goes through when its turn comes
@@ -2351,6 +2361,7 @@ export class AgentRegistry {
     if (!task.jobStateAsk) response = await this.checkJobState(task, response)
     if (!task.jobStateAsk) response = await this.checkStatusClaim(task, response)
     if (!task.jobStateAsk) this.checkDueTime(task, response, startedAt)
+    if (!task.jobStateAsk) this.checkWaitingStep(task, response, startedAt)
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -2533,6 +2544,24 @@ export class AgentRegistry {
       .catch((e: any) => this.log(`[due-time] ${task.agentId} ${task.taskId ?? "-"}: check failed: ${e?.message ?? e}`))
     // A run on a home keeps its lease until this ends (#2084).
     task.onFollowUp?.(followUp)
+  }
+
+  /**
+   * retro:01M8AG6YTMQG790EQXF01DFG00: a run that ends "waiting until
+   * <time>" on a plan step it owns and filed nothing on gets the step's
+   * wait filed (mode on) or a warn signal (requests/waiting-step.ts), so
+   * the plan check does not start a new run only to ask for it. Pure
+   * store work, no model call: run in line, never throws.
+   */
+  private checkWaitingStep(task: AgentTask, response: AgentResponse, startedAt: number): void {
+    const hook = this.waitingStepHook
+    if (!hook || response.error || response.viaMesh) return
+    const runIds = [task.taskId, task.runningTaskId].filter((id): id is string => !!id)
+    try {
+      hook({ agentId: task.agentId, runIds, startedAt, jobState: response.jobState ?? null, reply: response.content })
+    } catch (e: any) {
+      this.log(`[waiting-step] ${task.agentId} ${task.taskId ?? "-"}: check failed: ${e?.message ?? e}`)
+    }
   }
 
   /**

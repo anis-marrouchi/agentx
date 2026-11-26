@@ -148,6 +148,20 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 
 A `progress` report can also carry `waitUntil`, an ISO time up to 7 days ahead, for a step that waits on something with a known time (a 24-hour soak, a release window). Until that time the step gets no nudges and is not marked blocked, and the nudge count goes back to zero. After it, the usual minutes before a nudge count from `waitUntil`. A later `progress` report without `waitUntil` ends the wait. While the wait lasts, the step's line shows `waits until <time>Z`.
 
+### A run that ends waiting
+
+An agent sometimes ends its run with `State: waiting — devops, until 00:00Z` and reports nothing on the step it owns. The plan check then sees the step as quiet and nudges it, which starts a whole new run only to say it is still waiting. The setting `requests.waitingStep.mode` in `agentx.json` covers this:
+
+| Mode | What happens |
+|---|---|
+| `"warn"` (default) | One log line, `[waiting-step] … would file step <request>#<step> progress, waits until <time> (warn)`, and one `waiting_step_unfiled` signal. The step is not changed. |
+| `"on"` | The step gets a `progress` report with `waitUntil` set to that time, at most 7 days ahead. Its log shows `(waits until <time>)` and no nudge comes before then. |
+| `"off"` | Nothing. |
+
+The time is the `until` part of the line: a full ISO time, or a clock time such as `00:00Z`, read as UTC and taken as the next one to come. With no `until`, the last full ISO time in the line counts (`my check is at 2026-11-26T00:00Z`). Nothing is filed when the line has no time or the time is past, when the run is not linked to a request with an active plan step that the agent owns, or when the run already reported on that step.
+
+To check it, set the mode to `"on"`, give an agent a plan step and have it end its run with `State: waiting — devops, until <a time an hour ahead>` and no step report. Run `agentx requests show <id>`. The step's line shows `waits until <time>Z`, and no `nudged` line is added to the log before that time.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx requests settings`. It says `Requests on` and `Plans on`.

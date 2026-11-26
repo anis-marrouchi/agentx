@@ -74,6 +74,7 @@ Some problems are not failures of the work but of what an agent knew or said. An
 | `handoff_refused` (missing information) | The agent that received a hand-off ended blocked because something was missing, for example a link or an issue number. It is shown as `missing information -> <agent>: blocked`. | The agent that sent the hand-off |
 | `a2a_extra_rounds` | A hand-off was only started after one or more questions back on the same work, between the same two agents, in the last 2 hours. The detail says how many rounds it took. | The agent that sent the hand-off |
 | `owner_asked_subject` | You asked what a reply was about, in a short message (80 characters or fewer), at most 6 hours after the agent replied in that chat. If the agent had just asked you a question, "which one?" is your answer, not a complaint, so it is not counted. | The agent that replied |
+| `waiting_step_unfiled` | A run ended with `State: waiting` and a time, on a request whose plan step it owns, and reported nothing on that step. Without a report the plan check sees the step as quiet and nudges it, which starts a new run. Recorded only while `requests.waitingStep.mode` is `"warn"` (the default); with `"on"` the step gets the wait itself. See [A run that ends waiting](./tracked-plans.md#a-run-that-ends-waiting). | The agent whose run ended waiting |
 
 A **hand-off** is one agent giving work to another. The hand-off signals are only recorded when both agents run on this install, and only for a hand-off AgentX tracks, with its own chat (`a2a:<sender>:<receiver>:dlg-…`). A message from an agent on another machine, or from a guest, is never counted against anyone.
 
@@ -209,7 +210,7 @@ Counting is stage 1, ranking stage 2, the retro on the worst problem stage 3, an
 3. **Terminal:** run `agentx improve signals --since 7d`. The totals by kind and by agent are shown, or `none in this window` on a quiet install.
 4. **Terminal:** run `agentx improve rank --since 7d`. It prints `Recurring problems:` with a count, and a line `Merge call: not run (preview)`.
 5. **Terminal:** run `agentx improve held`. It lists the fixes you picked, or `No fix picked on a self-improvement card yet.`
-6. **Terminal:** run `agentx improve kinds`. The cost kinds `job_cost_high`, `start_no_cache_reuse`, `context_rewrite`, `model_switch` and `start_over_budget` are each marked `(cost)`. The list ends with `duplicate_session`, `stale_status_told`, `a2a_extra_rounds`, `clarification_asked` and `owner_asked_subject`.
+6. **Terminal:** run `agentx improve kinds`. The cost kinds `job_cost_high`, `start_no_cache_reuse`, `context_rewrite`, `model_switch` and `start_over_budget` are each marked `(cost)`. The list ends with `duplicate_session`, `stale_status_told`, `a2a_extra_rounds`, `clarification_asked`, `owner_asked_subject` and `waiting_step_unfiled`.
 7. **Terminal:** after a day of work, run `agentx improve signals --kind context_rewrite --since 24h`. Each line names the run and its job type, or `none in this window`.
 8. **Terminal:** run `agentx improve rules`. It lists each agent's rules, or `No fix rule written yet.` on an install where the nightly pass has not written one.
 9. **Terminal:** run `agentx memory index --agent <agent id>` for an agent that has a rule. The rule sentence is listed in quotes under `## Rules from your own failure signals …`, before the other notes.
