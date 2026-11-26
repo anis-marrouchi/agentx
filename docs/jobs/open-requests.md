@@ -208,7 +208,9 @@ A link given as proof is kept as text unless `requests.proofCheck.mode` is set. 
 - A GitHub or GitLab issue, pull or merge request, or commit link is read through the connector, not as a page: it exists, it is merged or closed when the close says so, and a commit link is that commit.
 - Any other `http` or `https` link must answer with success and, when the close names a commit or an issue number, hold it. Only public addresses are opened, as for the `url` check below.
 - A page that answers 404 or 410 did not check out. A page that would not let AgentX read it (401, 403, 407, 429, or a server error) could not be checked; that never counts against the close.
+- Whether something is merged, closed, fixed or resolved is read only from the closer's own words: the agent's done evidence, or the delegate's answer. The request's headline is never read as that claim ("Review PR #5 before it is merged" does not claim #5 is merged); it may still name the commit or number a page should hold.
 - At most `maxLinks` links are opened per close, all at once, with one time limit on all of them (`totalTimeoutMs`).
+- The settle pass opens the links of at most `perSweep` hand-backs per requests check (default 3); the rest wait for the next check.
 
 | Mode | What happens |
 |---|---|

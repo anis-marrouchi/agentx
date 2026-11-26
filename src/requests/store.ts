@@ -320,6 +320,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // Who a delegation went to (#1522): a later one to the same agent that
   // came back done is the retry of one that failed.
   ensureColumns(db, "request_links", [["agent", "TEXT"]])
+  // The words a hand-back came back with (#2122 review C5): what its
+  // proof link is checked against, never the request's headline.
+  ensureColumns(db, "request_links", [["answer", "TEXT"]])
   // When the owner last sent it back (reply, hand-off, pick-up, reopen,
   // #1522): a home closed before that does not close it.
   ensureColumns(db, "requests", [["sent_back_at", "INTEGER"]])
@@ -1115,10 +1118,11 @@ export class RequestStore {
   }
 
   /** How the linked work ended ("done", "waiting", "error"…), and the
-   *  link its answer gave as proof, if any (#1138). */
-  endLink(kind: LinkKind, ref: string, ended: string, proof: string | null, now: number): void {
-    this.db.prepare("UPDATE request_links SET ended = ?, ended_at = ?, proof = ? WHERE kind = ? AND ref = ?")
-      .run(ended, now, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
+   *  link its answer gave as proof, if any (#1138), with the answer's
+   *  words when it gave one (#2122). */
+  endLink(kind: LinkKind, ref: string, ended: string, proof: string | null, now: number, answer: string | null = null): void {
+    this.db.prepare("UPDATE request_links SET ended = ?, ended_at = ?, proof = ?, answer = ? WHERE kind = ? AND ref = ?")
+      .run(ended, now, proof ? proof.slice(0, HOME_LINK_MAX) : null, proof && answer ? answer.slice(0, REASON_MAX) : null, kind, ref)
   }
 
   /** The owner sent the request back (a reply on it, a hand-off, a
@@ -1184,10 +1188,10 @@ export class RequestStore {
 
   /** The newest proof link the request's delegations brought back since
    *  the owner last sent it back. */
-  handBackProof(requestId: string): { proof: string; ref: string } | null {
+  handBackProof(requestId: string): { proof: string; ref: string; answer: string | null } | null {
     const row = this.db.prepare(
-      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND ended = 'done' AND proof IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT 1`,
-    ).get(requestId) as { proof: string; ref: string } | undefined
+      `SELECT proof, ref, answer FROM request_links WHERE request_id = ? AND kind = 'delegation' AND ended = 'done' AND proof IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT 1`,
+    ).get(requestId) as { proof: string; ref: string; answer: string | null } | undefined
     return row ?? null
   }
 

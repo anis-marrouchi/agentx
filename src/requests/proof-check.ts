@@ -1,4 +1,4 @@
-import { checkProofLink, type ProofLinkContext, type ProofLinkResult } from "./proof-link"
+import { checkProofLink, type ProofClaim, type ProofLinkContext, type ProofLinkResult } from "./proof-link"
 
 // --- Proof links checked when a request or promise closes (#2122 PR 2) ---
 //
@@ -20,9 +20,13 @@ export interface ProofCheckSettings {
   maxLinks: number
   /** One time limit on the whole check, in ms. */
   totalTimeoutMs: number
+  /** Hand-backs the once-a-minute settle pass checks per run (review C6).
+   *  Each may take up to totalTimeoutMs, one after another; the rest wait
+   *  for the next run. */
+  perSweep: number
 }
 
-export const DEFAULT_PROOF_CHECK: ProofCheckSettings = { mode: "off", maxLinks: 10, totalTimeoutMs: 20_000 }
+export const DEFAULT_PROOF_CHECK: ProofCheckSettings = { mode: "off", maxLinks: 10, totalTimeoutMs: 20_000, perSweep: 3 }
 
 export interface ProofCheckOutcome {
   /** What the close records: verified only when every link was opened
@@ -35,13 +39,13 @@ export interface ProofCheckOutcome {
 }
 
 /** Checks the links of one close. Unset when the mode is off. */
-export type ProofChecker = (links: string[], claim: string) => Promise<ProofCheckOutcome | null>
+export type ProofChecker = (links: string[], claim: ProofClaim) => Promise<ProofCheckOutcome | null>
 
 const DETAIL_MAX = 600
 
 export async function checkProofLinks(
   links: string[],
-  claim: string,
+  claim: string | ProofClaim,
   ctx: ProofLinkContext,
   settings: ProofCheckSettings,
   check: typeof checkProofLink = checkProofLink,

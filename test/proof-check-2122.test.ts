@@ -11,6 +11,7 @@ import { handleRequestsCall, type RequestsApiDeps } from "../src/requests/daemon
 import { attachPromiseFacts, DEFAULT_PROMISE_SETTINGS, type PromiseSettings } from "../src/requests/promise"
 import { FactLedger } from "../src/wiki/facts/ledger"
 import { requestsConfigSchema } from "../src/daemon/config"
+import type { ForgeReader } from "../src/requests/checkers/issue"
 
 // #2122 PR 2: proof links opened on a close. No network: every fetch is mocked.
 
@@ -100,8 +101,33 @@ describe("checkProofLinks (review C2, C3)", () => {
     expect(await checkProofLinks(["  "], "done", {}, settings())).toBeNull()
   })
 
-  it("the setting defaults to off, 10 links, 20 s", () => {
-    expect(requestsConfigSchema.parse({}).proofCheck).toEqual({ mode: "off", maxLinks: 10, totalTimeoutMs: 20_000 })
+  it("the setting defaults to off, 10 links, 20 s, 3 hand-backs per check", () => {
+    expect(requestsConfigSchema.parse({}).proofCheck).toEqual({ mode: "off", maxLinks: 10, totalTimeoutMs: 20_000, perSweep: 3 })
+    expect(DEFAULT_PROOF_CHECK.perSweep).toBe(3)
+  })
+})
+
+describe("the claimed state comes only from the closer's words (review C5)", () => {
+  const forge: ForgeReader = async (_p, ref) => ref.number === 5
+    ? { state: "open", url: "https://github.com/acme/app/pull/5" }
+    : { error: "not found (or not visible to the connector)" }
+  const link = "https://github.com/acme/app/pull/5"
+  const about = "Review PR #5 before it is merged"
+
+  it("a headline that says merged does not claim the PR is merged", async () => {
+    const r = await checkProofLink(link, { said: "reviewed, 2 comments left", about }, { forge })
+    expect(r).toMatchObject({ state: "verified" })
+    expect(r.firm).toBeUndefined()
+  })
+
+  it("the closer saying merged does, and an open PR fails firmly", async () => {
+    expect(await checkProofLink(link, { said: "merged it", about }, { forge })).toMatchObject({ state: "failed", firm: true })
+  })
+
+  it("the headline may still name the ref a plain page should hold", async () => {
+    const r = await checkProofLink("https://docs.example.com/x", { said: "done", about: "Publish #42" }, { fetch: page(200, "nothing here") })
+    expect(r.state).toBe("failed")
+    expect(r.firm).toBeUndefined()
   })
 })
 
@@ -190,5 +216,15 @@ describe("an agent's done with a proof link (#2122)", () => {
     const walled = await done(id, "https://docs.example.com/walled", d)
     expect(walled.status).toBe(200)
     expect(store.get(id)).toMatchObject({ state: "done", verifyState: "unverified" })
+  })
+
+  it("block: 'Review PR #5 before it is merged' closed with the open PR's link is not refused (review C5)", async () => {
+    const forge: ForgeReader = async () => ({ state: "open", url: "https://github.com/acme/app/pull/5" })
+    const d = deps("block", {}, { proofCheck: proofChecker({ mode: "block" }, () => ({ forge })) })
+    const res = await post({ action: "promise", agentId: "coder", owedTo: "client-a", text: "Review PR #5 before it is merged" }, d)
+    const id = (res.body as any).request.id
+    const closed = await post({ action: "done", work: "review", agentId: "coder", id, evidence: "reviewed, 2 comments left", proof: { kind: "link", url: "https://github.com/acme/app/pull/5" } }, d)
+    expect(closed.status).toBe(200)
+    expect(store.get(id)).toMatchObject({ state: "done", verifyState: "verified" })
   })
 })

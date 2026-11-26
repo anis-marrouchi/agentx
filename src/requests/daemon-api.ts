@@ -9,6 +9,7 @@ import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredF
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
 import type { ProofChecker, ProofCheckOutcome } from "./proof-check"
+import type { ProofClaim } from "./proof-link"
 import { armPromiseWake, DEFAULT_PROMISE_SETTINGS, describeProof, issueCloseWhen, openPromise, parseProof, proofRefusal, setDueTime, type PromiseSettings } from "./promise"
 import { parseNeedsQa, parseVerdict, QA_FILTERS, type QaFilter } from "./qa"
 import { parseGoal } from "./goals"
@@ -195,7 +196,7 @@ export interface ApiReply {
   judgeOwner?: { requestId: string; record: RequestRecord }
   /** Set on a done that passed the proof gates while its proof links are
    *  opened (#2122): check them, then call again with the outcome. */
-  checkLinks?: { requestId: string; links: string[]; claim: string }
+  checkLinks?: { requestId: string; links: string[]; claim: ProofClaim }
 }
 
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
@@ -917,7 +918,7 @@ export function handleRequestsApi(
           ...(proof?.kind === "link" ? [proof.value] : []),
           ...(store.get(request.id)?.deliverableProofs ?? []).map((p) => p.link),
         ]
-        if (links.length) return { status: 202, body: { checking: "proof links" }, checkLinks: { requestId: request.id, links, claim: `${request.headline ?? request.text} ${str(input.evidence)}` } }
+        if (links.length) return { status: 202, body: { checking: "proof links" }, checkLinks: { requestId: request.id, links, claim: { said: str(input.evidence), about: request.headline ?? request.text } } }
       } else linkCheck = given.outcome
       if (linkCheck?.refuse) {
         store.markChecked(request.id, "failed", `Not closed: ${linkCheck.refuse}`, now)

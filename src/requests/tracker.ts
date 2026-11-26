@@ -334,7 +334,7 @@ export class RequestTracker {
       const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
       // Kept on the link: the requests check settles a request once all
       // its handed work came back done and nobody closed it (#1138).
-      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null, now)
+      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null, now, status === "done" ? text : null)
       if (status === "done") {
         // The answer is back with the asking agent. Still open: the agent
         // closes it, or the requests check settles it once it goes quiet.

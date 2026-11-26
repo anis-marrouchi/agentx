@@ -116,8 +116,17 @@ export function fromCheck(r: CheckResult, status: number | null): ProofLinkResul
   return GONE.has(status) ? { state: "failed", detail: r.detail, firm: true } : { state: "unverifiable", detail: `${r.detail}: the page could not be read` }
 }
 
-/** Open `link` and check it shows what `claim` says. */
-export async function checkProofLink(link: string, claim: string, ctx: ProofLinkContext = {}): Promise<ProofLinkResult> {
+/** What a close claims (PR 2 review C5). `said` is the closer's own
+ *  words: a done's evidence, a hand-back's answer. Only they may claim a
+ *  state (merged, closed...). `about` is what the request asked (its
+ *  headline): it may name the ref a page should hold, never a state, so
+ *  "Review PR #5 before it is merged" is not read as "#5 is merged". */
+export interface ProofClaim { said: string; about?: string }
+
+/** Open `link` and check it shows what `claim` says. A plain string is
+ *  the closer's own words. */
+export async function checkProofLink(link: string, claim: string | ProofClaim, ctx: ProofLinkContext = {}): Promise<ProofLinkResult> {
+  const { said, about } = typeof claim === "string" ? { said: claim, about: "" } : { said: claim?.said ?? "", about: claim?.about ?? "" }
   const raw = (link ?? "").trim()
   let u: URL
   try { u = new URL(raw) } catch { return { state: "unverifiable", detail: `${raw.slice(0, 200) || "the proof"} is not a link` } }
@@ -134,7 +143,7 @@ export async function checkProofLink(link: string, claim: string, ctx: ProofLink
         : { state: "failed", detail: `${raw} is commit ${c.sha.slice(0, 12) || "unknown"}, not ${forge.sha}`, firm: true }
     }
     if (forge?.kind === "item") {
-      const want = claimedState(claim ?? "", forge.mr)
+      const want = claimedState(said, forge.mr)
       if (want) return fromIssueCheck(await checkIssue({ kind: "issue", provider: forge.provider, ref: forge.ref, state: want }, { forge: ctx.forge }))
       // No state claimed: that the item exists and the connector can read
       // it is what the link shows.
@@ -144,7 +153,7 @@ export async function checkProofLink(link: string, claim: string, ctx: ProofLink
       if ("error" in item) return { state: "unverifiable", detail: `${forge.ref}: ${item.error}` }
       return { state: "verified", detail: `${item.url} is ${item.state}` }
     }
-    const contains = claimedRef(claim ?? "")
+    const contains = claimedRef(said) ?? claimedRef(about)
     // The status the page answered, seen through the URL check's own fetch.
     let status: number | null = null
     const base = ctx.fetch ?? safeFetch

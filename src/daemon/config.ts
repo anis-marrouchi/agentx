@@ -1837,6 +1837,9 @@ export const requestsConfigSchema = z.object({
     maxLinks: z.number().int().min(1).max(50).default(10),
     /** One time limit on all the links of a close, in ms. */
     totalTimeoutMs: z.number().int().min(1_000).max(60_000).default(20_000),
+    /** Hand-backs the settle pass checks per requests check; the rest
+     *  wait for the next one, so the minute check stays short. */
+    perSweep: z.number().int().min(1).max(10).default(3),
   }).default({}),
   /** Due times from the queue (src/requests/due-times.ts, #1909): a
    *  promise or an accept registers the work (estimateMinutes, priority)

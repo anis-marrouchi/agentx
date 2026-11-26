@@ -513,6 +513,7 @@ To turn it on by hand:
 | `requests.proofCheck.mode` | `"off"`, `"warn"` or `"block"` | `"off"` | Open the proof links of a close: an agent's done with a link, its per-deliverable links, and a hand-back the settle pass closes. `"warn"` records what the links showed and tells the agent; `"block"` also refuses a close a link shows is false (a wrong state or commit on GitHub or GitLab, a page that answers 404 or 410). A link that could not be read never refuses. See [Proof links are opened](/jobs/open-requests#proof-links-are-opened). |
 | `requests.proofCheck.maxLinks` | number (1 to 50) | `10` | Links opened per close. The rest are named as not checked. |
 | `requests.proofCheck.totalTimeoutMs` | number (1000 to 60000) | `20000` | One time limit, in ms, on all the links of a close. |
+| `requests.proofCheck.perSweep` | number (1 to 10) | `3` | Hand-backs whose link the settle pass opens per requests check. The rest wait for the next check, a minute later. |
 | `requests.flow.timeZone` | string | `"Africa/Tunis"` | The time zone whose day the daily [flow rate](/jobs/open-requests#how-many-requests-get-closed-the-flow-rate) counts by (`agentx requests flow`). |
 | `requests.flow.days` | whole number (1 to 90) | `7` | Days the flow rate shows when none are asked for. |
 | `requests.promises` | object | `{}` | One record for everything someone owes: proof on close, a fact when it closes. See [A promise closes with proof](/jobs/open-requests#a-promise-closes-with-proof-and-leaves-a-fact). |
