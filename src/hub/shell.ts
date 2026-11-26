@@ -27,7 +27,7 @@ export interface ShellNavItem {
  *  Agents is a heading here: the shell lists the agents under it. */
 export const SHELL_MAIN: readonly ShellNavItem[] = [
   { id: "search", label: "Search", icon: "search" },
-  { id: "tasks", label: "Tasks", icon: "list-todo", href: "#status=open" },
+  { id: "tasks", label: "Tasks", icon: "list-todo", href: "#status=open&view=feed" },
   { id: "automations", label: "Automations", icon: "clock", href: "#view=jobs" },
   { id: "agents", label: "Agents", icon: "bot", href: "#page=agents" },
   { id: "projects", label: "Projects", icon: "folder", href: "#view=projects" },
