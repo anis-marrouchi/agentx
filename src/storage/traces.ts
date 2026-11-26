@@ -577,16 +577,29 @@ export function traceToolCalls(
 // otherwise walks idx_traces_agent_started and reads every row, 25–52 s on
 // a 2.4 GB db, even after ANALYZE.
 
+/** Runs a read that names its index with INDEXED BY. A read-only handle
+ *  opened before the daemon migrated has no such index and SQLite throws
+ *  "no such index"; then the same read runs without the hint (slower, but
+ *  correct). Exported for the test. */
+export function allIndexed<T>(db: Database.Database, sql: string, ...params: unknown[]): T[] {
+  try {
+    return db.prepare(sql).all(...params) as T[]
+  } catch (err) {
+    if (!/no such index/i.test(String((err as Error)?.message))) throw err
+    return db.prepare(sql.replace(/\s+INDEXED BY \w+/gi, "")).all(...params) as T[]
+  }
+}
+
 /**
  * Recorded run cost per agent since `sinceMs` (a month start, for the
  * monthly budget, #1162). Rows without a cost add nothing.
  */
 export function spendByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
-  const rows = db.prepare(`
+  const rows = allIndexed<{ agent_id: string; usd: number | null }>(db, `
     SELECT agent_id, SUM(cost_usd) AS usd FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NOT NULL
     GROUP BY agent_id
-  `).all(sinceMs) as Array<{ agent_id: string; usd: number | null }>
+  `, sinceMs)
   const out: Record<string, number> = {}
   for (const r of rows) if (r.usd && r.usd > 0) out[r.agent_id] = r.usd
   return out
@@ -595,23 +608,23 @@ export function spendByAgentSince(db: Database.Database, sinceMs: number): Recor
 /** Recorded run cost per (agent, chat) since `sinceMs`, from which spend
  *  per project is mapped (#1290). */
 export function spendByChatSince(db: Database.Database, sinceMs: number): Array<{ agentId: string; chatId: string | null; usd: number }> {
-  const rows = db.prepare(`
+  const rows = allIndexed<{ agent_id: string; chat_id: string | null; usd: number | null }>(db, `
     SELECT agent_id, chat_id, SUM(cost_usd) AS usd FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NOT NULL
     GROUP BY agent_id, chat_id
-  `).all(sinceMs) as Array<{ agent_id: string; chat_id: string | null; usd: number | null }>
+  `, sinceMs)
   return rows.filter((r) => r.usd && r.usd > 0).map((r) => ({ agentId: r.agent_id, chatId: r.chat_id, usd: r.usd as number }))
 }
 
 /** Runs per agent since `sinceMs` that used tokens but have no price
  *  (local models, #1290): a budget does not see them. */
 export function unpricedRunsByAgentSince(db: Database.Database, sinceMs: number): Record<string, number> {
-  const rows = db.prepare(`
+  const rows = allIndexed<{ agent_id: string; n: number }>(db, `
     SELECT agent_id, COUNT(*) AS n FROM task_traces INDEXED BY idx_traces_started_cost
     WHERE started_at >= ? AND cost_usd IS NULL
       AND COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) > 0
     GROUP BY agent_id
-  `).all(sinceMs) as Array<{ agent_id: string; n: number }>
+  `, sinceMs)
   const out: Record<string, number> = {}
   for (const r of rows) if (r.n > 0) out[r.agent_id] = r.n
   return out

@@ -4,7 +4,8 @@ import { tmpdir } from "os"
 import { join } from "path"
 import type Database from "better-sqlite3"
 import { openDb, closeDb } from "../src/storage/sqlite"
-import { spendByAgentSince, spendByChatSince, unpricedRunsByAgentSince } from "../src/storage/traces"
+import { allIndexed, spendByAgentSince, spendByChatSince, unpricedRunsByAgentSince } from "../src/storage/traces"
+import { concurrentOfSql, concurrentOfAllSql } from "../src/daemon/wall-api"
 import { monthSums, resetBudgetSumsCache, BUDGET_SUMS_TTL_MS } from "../src/daemon/observability-panel"
 
 // #2322: the month's cost sums froze the Hub (25–52 s on 193k rows) because
@@ -67,5 +68,43 @@ describe("month cost sums (#2322)", () => {
     expect(monthSums(db, SINCE, now + BUDGET_SUMS_TTL_MS).byAgent).toEqual({ scout: 2 })
     // A new month never reuses last month's sums.
     expect(monthSums(db, SINCE + 2, now + BUDGET_SUMS_TTL_MS + 1).byAgent).toEqual({ scout: 1 })
+  })
+
+  it("a handle without the index (opened before the migration) still sums, without the hint", () => {
+    insert("scout", "c1", SINCE + 1, 1.5)
+    insert("coder", "c1", SINCE + 2, null)
+    db.exec("DROP INDEX idx_traces_started_cost")
+    expect(() => db.prepare("SELECT 1 FROM task_traces INDEXED BY idx_traces_started_cost").all()).toThrow(/no such index/)
+    expect(spendByAgentSince(db, SINCE)).toEqual({ scout: 1.5 })
+    expect(spendByChatSince(db, SINCE)).toEqual([{ agentId: "scout", chatId: "c1", usd: 1.5 }])
+    expect(unpricedRunsByAgentSince(db, SINCE)).toEqual({ coder: 1 })
+  })
+
+  it("the fallback only swallows a missing index", () => {
+    expect(() => allIndexed(db, "SELECT nope FROM task_traces INDEXED BY idx_traces_started_cost")).toThrow(/no such column/)
+  })
+})
+
+// #2322 B1: the Wall's concurrent-run reads walked idx_traces_agent_started
+// and read every row. The Mac DB has idx_traces_agent_started_span built by
+// hand; the migration adds it under the same name and columns.
+describe("Wall span index (#2322 B1)", () => {
+  it("the migration creates idx_traces_agent_started_span", () => {
+    const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_traces_agent_started_span'").get() as { sql: string } | undefined
+    expect(row?.sql).toContain("agent_id, started_at, task_id, channel, chat_id, status, finished_at, duration_ms")
+  })
+
+  it("concurrentOf and concurrentOfAll read only the span index", () => {
+    for (const n of [1, 3]) {
+      const agents = Array.from({ length: n }, (_, i) => `a${i}`)
+      const cases: Array<[string, unknown[]]> = [
+        [concurrentOfSql(n), [...agents, SINCE, SINCE + 1000, SINCE]],
+        [concurrentOfAllSql(n), [...agents, SINCE, SINCE + 1000]],
+      ]
+      for (const [sql, params] of cases) {
+        const plan = (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>).map((r) => r.detail).join(" | ")
+        expect(plan).toMatch(/USING COVERING INDEX idx_traces_agent_started_span/)
+      }
+    }
   })
 })

@@ -359,6 +359,23 @@ function traceAgentsOf(db: Database.Database, deps: WallDeps): string[] {
   return agents
 }
 
+// Both reads below stay on idx_traces_agent_started_span (#2322), which
+// covers these columns: a test checks the plan of these exact strings.
+const agentPlaceholders = (n: number): string => Array.from({ length: n }, () => "?").join(",")
+
+/** concurrentOf's read, for `n` agents. Exported for the plan test. */
+export const concurrentOfSql = (n: number): string =>
+  `SELECT ${TRACE_SPAN_COLUMNS}
+     FROM task_traces WHERE agent_id IN (${agentPlaceholders(n)}) AND started_at >= ? AND started_at < ?
+       AND (status = 'in-flight' OR COALESCE(finished_at, started_at + COALESCE(duration_ms, 0)) > ?)
+     ORDER BY started_at DESC LIMIT ${OVERLAP_CANDIDATES}`
+
+/** concurrentOfAll's read, for `n` agents. Exported for the plan test. */
+export const concurrentOfAllSql = (n: number): string =>
+  `SELECT ${TRACE_SPAN_COLUMNS}
+     FROM task_traces WHERE agent_id IN (${agentPlaceholders(n)}) AND started_at >= ? AND started_at < ?
+     ORDER BY started_at DESC`
+
 /** The overlaps of `own` with the candidate runs read for each of them. */
 function overlapsOf(own: RunSpan[], candidates: (s: RunSpan) => Array<RunSpan | null>, deps: WallDeps): RunOverlap[] {
   const spans = new Map(own.map((s) => [s.runId, s] as const))
@@ -382,15 +399,10 @@ export function concurrentOf(runs: WallRun[], deps: WallDeps): RunOverlap[] {
   if (!db || own.length === 0) return []
   const agents = traceAgentsOf(db, deps)
   if (agents.length === 0) return []
-  // agent_id IN (…) keeps the read on idx_traces_agent_started. Only runs
+  // agent_id IN (…) keeps the read on idx_traces_agent_started_span. Only runs
   // still going when this one started: a busy node logs 500+ runs a day,
   // so the oldest rows of the lookback would crowd out the real overlaps.
-  const q = safe(() => db.prepare(
-    `SELECT ${TRACE_SPAN_COLUMNS}
-     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
-       AND (status = 'in-flight' OR COALESCE(finished_at, started_at + COALESCE(duration_ms, 0)) > ?)
-     ORDER BY started_at DESC LIMIT ${OVERLAP_CANDIDATES}`,
-  ), null)
+  const q = safe(() => db.prepare(concurrentOfSql(agents.length)), null)
   if (!q) return []
   return overlapsOf(own, (s) => safe(() => q.all(...agents, s.startedAt - OVERLAP_LOOKBACK, s.endedAt ?? deps.now, s.startedAt) as TraceSpanRow[], []).map((row) => spanOf(row, deps)), deps)
 }
@@ -416,11 +428,7 @@ export function concurrentOfAll(runsByPost: Map<string, WallRun[]>, deps: WallDe
     if (last && lo <= last[1]) last[1] = Math.max(last[1], hi)
     else merged.push([lo, hi])
   }
-  const q = safe(() => db.prepare(
-    `SELECT ${TRACE_SPAN_COLUMNS}
-     FROM task_traces WHERE agent_id IN (${agents.map(() => "?").join(",")}) AND started_at >= ? AND started_at < ?
-     ORDER BY started_at DESC`,
-  ), null)
+  const q = safe(() => db.prepare(concurrentOfAllSql(agents.length)), null)
   if (!q) return out
   // Newest first across all windows: the windows are disjoint, so read
   // them newest window first.

@@ -440,6 +440,11 @@ function runMigrations(db: Database.Database): void {
   // seed (#2322). Covering: the three sums in traces.ts read only these
   // columns, so they walk the index and never touch the ~1 KB rows.
   db.exec("CREATE INDEX IF NOT EXISTS idx_traces_started_cost ON task_traces(started_at, agent_id, chat_id, cost_usd, input_tokens, output_tokens)")
+  // The Wall's concurrent-run reads (concurrentOf, concurrentOfAll in
+  // wall-api.ts), also #2322. Covering: they read only these columns per
+  // agent and time window. Same name and column order as the index built
+  // by hand on the Mac, so this is a no-op there.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_traces_agent_started_span ON task_traces(agent_id, started_at, task_id, channel, chat_id, status, finished_at, duration_ms)")
   // Messages waiting behind a busy agent, with who sent them (#443). By
   // name, not by version number, for the same reason as the columns above.
   ensureQueuedMessagesTable(db)
