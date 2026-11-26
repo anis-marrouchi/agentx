@@ -53,6 +53,8 @@ import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
 import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { WALL_AGENTS_CSS } from "./wall-agents.client"
 import { injectFns } from "../inject"
+import { hubIcon } from "./hub-lucide"
+import { WALL_FEED_CSS } from "./wall-feed.client"
 import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_FILES_CSS } from "./wall-files"
@@ -92,7 +94,7 @@ export const WALL_CLASSIC_LINKS: Array<[string, string]> = [
 
 /** The status tabs over the feed and the list (#1355): filter value, label. */
 export const WALL_STATUS_TABS: Array<[string, string]> = [
-  ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["done", "Done"], ["failed", "Failed"], ["", "All"],
+  ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["failed", "Failed"], ["done", "Done"], ["", "All"],
 ]
 
 /** Where the Wall's "Dashboard" link goes: the first classic page. Classic
@@ -192,6 +194,55 @@ function navItemHtml(i: NavItem): string {
   return `<a class="ax-wall__item${i.key === "wall" ? " is-on" : ""}" data-nav="${i.key}" href="${i.href}"${i.hidden ? " hidden" : ""} title="${i.title || i.label}">${NAV_ICON[i.icon]}<span>${i.label}</span>${n}</a>`
 }
 
+/** Search, Filters, and the List's Group and columns, right of the title
+ *  (#2101 feed mock). The filters and the columns are popovers: the
+ *  default view shows the search and the two buttons only (Rule B). */
+function feedToolsHtml(): string {
+  return `<label class="fd-q">${hubIcon("search")}<input id="f-q" type="search" placeholder="Search tasks" aria-label="Search tasks"><kbd>/</kbd></label>
+          <button type="button" class="fd-ib fd-qbtn" data-fd-q aria-expanded="false" aria-label="Search tasks" title="Search tasks">${hubIcon("search")}</button>
+          <button type="button" class="ax-btn ax-btn--ghost fd-btn" id="wall-search" data-fd-pop aria-controls="wall-filters" aria-expanded="false" title="Filters">${hubIcon("list-filter")}<span>Filters</span> <b id="wall-fn" title="Filters in use"></b></button>
+          <section class="ax-wall__filters fd-pop" id="wall-filters" aria-label="Filters">
+            <div class="ax-wall__fset">
+            <label>Owner <select id="f-owner"><option value="">All</option></select></label>
+            <label>Asked by <select id="f-asker"><option value="">All</option></select></label>
+            <label>Counted for <select id="f-load"><option value="">All</option></select></label>
+            <label>Status <select id="f-status">
+              <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
+              <option value="in_progress">In progress</option><option value="waiting">Waiting</option><option value="done">Done</option><option value="failed">Failed</option><option value="closed">Closed</option><option value="">All</option>
+            </select></label>
+            <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
+            <label>Project <select id="f-project"><option value="">All</option></select></label>
+            <label>Goal <select id="f-goal"><option value="">All</option></select></label>
+            <label>Node <select id="f-node"><option value="">All</option></select></label>
+            <label>Group <select id="f-group"><option value="">All</option></select></label>
+            <label>Group blocked by <select id="f-by"><option value="">nothing</option><option value="project">project</option><option value="agent">agent</option></select></label>
+            <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
+            <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
+            <label class="ax-wall__check"><input type="checkbox" id="f-qa"> Awaiting QA only</label>
+            </div>
+            <span class="ax-wall__saved">
+              <button type="button" id="v-mine" class="ax-btn ax-btn--ghost">My view</button>
+              <button type="button" id="v-save" class="ax-btn ax-btn--ghost">Save as my view</button>
+            </span>
+          </section>
+          <button type="button" class="fd-ib" id="wall-cols-btn" data-fd-pop aria-controls="fd-cols" aria-expanded="false" aria-label="Group and columns" title="Group and columns" hidden>${hubIcon("sliders-horizontal")}</button>
+          <section class="fd-pop fd-cols" id="fd-cols" aria-label="Group and columns">
+            <label class="fd-cols__grp">Group by <select id="f-grp"><option value="">nothing</option><option value="owner">owner</option><option value="project">project</option><option value="blocked">blocked by</option></select></label>
+            <hr>
+            <h2>More columns</h2>
+            <label><input type="checkbox" data-fd-col="node"> Node</label>
+            <label><input type="checkbox" data-fd-col="runs"> Runs</label>
+            <label><input type="checkbox" data-fd-col="group"> Group</label>
+          </section>`
+}
+
+/** A task's ... menu (#2101 feed mock): one for the page, placed under
+ *  the button that opened it (wall-feed.client.ts fdMenuOpen). */
+function feedMenuHtml(): string {
+  const item = (kind: string, icon: string, label: string) => `<button type="button" role="menuitem" data-fd-do="${kind}">${hubIcon(icon)}${label}</button>`
+  return `<div class="fd-menu" id="fd-menu" role="menu" aria-label="Task actions" hidden>${item("hand", "arrow-right", "Hand off to another agent")}${item("runon", "server", "Run on another machine")}${item("call", "phone", "Call me about it")}${item("space", "radio", "Start a Space")}<hr>${item("done", "circle-check", "Close as done")}</div>`
+}
+
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
   // Settings (#1428): only the owner gets its nav entry and config. Anyone
@@ -246,50 +297,28 @@ ${dashboard}
   <div class="ax-wall__main">${hubHead ? "\n    " + HUB_REACT_ROOT : ""}
     <header class="ax-wall__head">
       <div class="ax-wall__titlebar">${hubMenuButtonHtml()}${hubHistoryHtml()}<button type="button" id="wall-back" class="ax-wall__back" data-back aria-label="Back to the feed" hidden>←</button><h1 id="wall-title">${HUB_NAME}</h1>
-        <span class="ax-wall__switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">Feed</button><button type="button" role="tab" data-view="list">List</button></span>
+        <span class="fd-switch" id="wall-switch" role="tablist" aria-label="Show as"><button type="button" role="tab" data-view="feed" class="is-on">${hubIcon("rows-3")}Feed</button><button type="button" role="tab" data-view="list">${hubIcon("table")}List</button></span>
         <span class="ax-wall__switch" id="wall-act-switch" aria-label="Show as" hidden><button type="button" class="is-on" aria-pressed="true">Feed</button><a href="/activity" title="The classic lane view, and the Map">Timeline</a></span>
         <a class="ax-btn ax-btn--ghost wwf__new" id="wall-wf-new" href="#page=editor&amp;e-new=1" hidden>New workflow</a>
+        <div class="fd-tools" id="wall-tools">${feedToolsHtml()}</div>
         <a class="wbl is-wait" id="wall-build" href="#page=live" aria-hidden="true">&nbsp;</a>${hubPanelReopenHtml()}${hubSearchButtonHtml()}${wallChatButtonHtml()}</div>
-      <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span><span class="ax-wall__sync">Last synced <time id="wall-synced">—</time> <button id="wall-refresh" type="button">Refresh</button></span></p>
-      <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
-        ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label}</button>`).join("")}
-        <button type="button" id="wall-search" class="ax-wall__search" aria-expanded="false" aria-controls="wall-filters" title="Search and filters">${NAV_ICON.search}</button>
-      </div>
     </header>
-    <section class="ax-wall__filters" id="wall-filters" aria-label="Filters">
-      <details class="axp-fold ax-wall__fold" data-fold="wall.filters" data-fold-start="closed" open><summary class="axp-fold__h"><span class="axp-fold__t">Filters</span><span class="axp-fold__n" id="wall-fn" title="Filters in use"></span></summary>
-      <div class="ax-wall__fset">
-      <label>Owner <select id="f-owner"><option value="">All</option></select></label>
-      <label>Asked by <select id="f-asker"><option value="">All</option></select></label>
-      <label>Counted for <select id="f-load"><option value="">All</option></select></label>
-      <label>Status <select id="f-status">
-        <option value="open">Open</option><option value="blocked">Blocked</option><option value="waiting_owner">Waiting on the owner</option><option value="stalled">Stalled</option>
-        <option value="in_progress">In progress</option><option value="waiting">Waiting</option><option value="done">Done</option><option value="failed">Failed</option><option value="closed">Closed</option><option value="">All</option>
-      </select></label>
-      <label>No move for <select id="f-idle"><option value="">any time</option><option value="1">1+ day</option><option value="3">3+ days</option><option value="7">7+ days</option></select></label>
-      <label>Project <select id="f-project"><option value="">All</option></select></label>
-      <label>Goal <select id="f-goal"><option value="">All</option></select></label>
-      <label>Node <select id="f-node"><option value="">All</option></select></label>
-      <label>Group <select id="f-group"><option value="">All</option></select></label>
-      <label>Group the list by <select id="f-grp"><option value="">nothing</option><option value="owner">owner</option><option value="project">project</option><option value="blocked">blocked by</option></select></label>
-      <label>Group blocked by <select id="f-by"><option value="">nothing</option><option value="project">project</option><option value="agent">agent</option></select></label>
-      <label class="ax-wall__check"><input type="checkbox" id="f-time"> Time flags only</label>
-      <label class="ax-wall__check"><input type="checkbox" id="f-conc"> Concurrent only</label>
-      <label class="ax-wall__check"><input type="checkbox" id="f-qa"> Awaiting QA only</label>
-      </div></details>
-      <input id="f-q" type="search" placeholder="Search" aria-label="Search posts">
-      <span class="ax-wall__saved">
-        <button type="button" id="v-mine" class="ax-btn ax-btn--ghost">My view</button>
-        <button type="button" id="v-save" class="ax-btn ax-btn--ghost">Save as my view</button>
-      </span>
-    </section>
-    <form id="wall-compose" class="ax-wall__compose" aria-label="New post">
-      <span class="av av--person" aria-hidden="true">You</span>
-      <div class="ax-wall__composeb">
-        <textarea id="wc-text" rows="2" maxlength="4000" placeholder="Ask the fleet… use @agent to pick who" aria-label="New post: start with @agent"></textarea>
-        <div class="ax-wall__composerow"><span id="wc-note" class="wdo__n" role="status"></span><button type="submit" class="ax-btn" id="wc-post">Post</button></div>
+    <form id="wall-compose" class="fd-compose" aria-label="Give an agent a task">
+      <textarea id="wc-text" rows="1" maxlength="4000" placeholder="Give an agent a task. Type @ to pick who." aria-label="Give an agent a task"></textarea>
+      <div class="fd-compose__row">
+        <label class="fd-pick">${hubIcon("at-sign")}<select id="wc-agent" aria-label="Agent"><option value="">Any agent</option></select>${hubIcon("chevrons-up-down")}</label>
+        <span id="wc-note" class="wdo__n" role="status"></span>
+        <span class="fd-hint"><kbd>Enter</kbd> to send, <kbd>Shift Enter</kbd> for a new line</span>
+        <button type="submit" class="fd-send" id="wc-post" aria-label="Send" title="Send" disabled>${hubIcon("arrow-up")}</button>
       </div>
     </form>
+    <div class="fd-bar" id="wall-bar">
+      <div class="ax-wall__views" id="wall-views" role="tablist" aria-label="Status">
+        ${WALL_STATUS_TABS.map(([v, label]) => `<button type="button" role="tab" data-tab="${v}">${label} <span class="fd-n" data-tab-n></span></button>`).join("")}
+      </div>
+      <span class="fd-sync">${hubIcon("check")}<span id="wall-sync-w">Synced</span> <time id="wall-synced">—</time><button type="button" class="fd-ib" id="wall-refresh" aria-label="Refresh" title="Refresh">${hubIcon("refresh-cw")}</button></span>
+    </div>
+    <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span></p>
     <section id="wall-profile" class="ax-wall__profile" aria-label="Agent profile" hidden></section>
     <section id="wall-goal" class="ax-wall__goal" aria-label="Goal" hidden></section>
     <section id="wall-feed" class="ax-wall__feed" aria-label="Posts"></section>
@@ -320,6 +349,7 @@ ${dashboard}
     ${wallChatPanelHtml(chat)}
   </div>
   ${wallContextHtml()}
+  ${feedMenuHtml()}
   <div id="wall-wf-dialog" hidden></div>
 </div>
 ${HUB_STATUS_HTML}
@@ -328,7 +358,7 @@ ${hubSwitcherHtml()}`
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,
     body,
-    css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS + HUB_FOLDS_CSS,
+    css: WALL_PAGE_CSS + WALL_FEED_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS + HUB_FOLDS_CSS,
     head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
     scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns({ ...HUB_PANELS_FNS, ...HUB_FOLDS_FNS })}\n${HUB_PANELS_SCRIPT}\n${HUB_FOLDS_SCRIPT}</script>`,
   })

@@ -141,6 +141,13 @@ describe("posts", () => {
     expect(r2.failedRuns).toBe(2)
   })
 
+  it("names the latest run when it failed, with its error, for Retry (#2101)", () => {
+    const posts = wallPosts(deps(), 7)
+    const r2 = posts.find((p) => p.id === "r2")!
+    expect(r2.lastFailure).toMatchObject({ taskId: "t4", agentId: "pm", error: "spawn failed after 4100 ms" })
+    expect(posts.find((p) => p.id === "r1")!.lastFailure).toBeNull()
+  })
+
   it("keeps closed posts with their proof, and drops them outside the days asked", () => {
     const r3 = wallPosts(deps(), 7).find((p) => p.id === "r3")!
     expect(r3.state).toBe("done")

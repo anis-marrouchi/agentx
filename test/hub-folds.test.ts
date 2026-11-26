@@ -99,12 +99,16 @@ describe("Hub folds: in the page", () => {
     expect(() => new Function(injectFns({ ...HUB_PANELS_FNS, ...HUB_FOLDS_FNS }) + "\n" + HUB_FOLDS_SCRIPT)).not.toThrow()
     expect(HUB_FOLDS_SCRIPT).toContain('"ax.hub.panels","ax.hub.folds","ax.hub.agentOpen"')
   })
-  it("puts the 11 Search filters behind one folded Filters header, and ships the folds", () => {
+  it("puts the 10 Search filters behind one Filters button, Group by under Group and columns, and ships the folds", () => {
     const html = renderWallPage()
-    expect(html).toContain('<details class="axp-fold ax-wall__fold" data-fold="wall.filters" data-fold-start="closed" open><summary class="axp-fold__h"><span class="axp-fold__t">Filters</span>')
-    const fold = html.slice(html.indexOf('data-fold="wall.filters"'), html.indexOf("</details>", html.indexOf('data-fold="wall.filters"')))
-    expect(fold.match(/<select /g)).toHaveLength(11)
-    expect(fold).not.toContain('id="f-q"')
+    // A popover the Filters button opens (#2101 feed mock): closed on load.
+    expect(html).toMatch(/<button type="button" class="ax-btn ax-btn--ghost fd-btn" id="wall-search" data-fd-pop aria-controls="wall-filters" aria-expanded="false"[^>]*>.*?<span>Filters<\/span> <b id="wall-fn"/)
+    const pop = html.slice(html.indexOf('<section class="ax-wall__filters fd-pop" id="wall-filters"'), html.indexOf("</section>", html.indexOf('id="wall-filters"')))
+    expect(pop.match(/<select /g)).toHaveLength(10)
+    expect(pop).not.toContain('id="f-q"')
+    expect(pop).not.toContain('id="f-grp"')
+    const cols = html.slice(html.indexOf('id="fd-cols"'), html.indexOf("</section>", html.indexOf('id="fd-cols"')))
+    expect(cols).toContain('id="f-grp"')
     expect(html).toContain("[data-cap]:not(.is-all)")
     expect(html).toContain("hubFoldsRead")
   })
