@@ -837,15 +837,14 @@ export const WALL_SETTINGS_CSS = `
 .wsa__b small { color: var(--ax-muted); font-size: var(--ax-fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wsa__open { color: var(--ax-text); text-decoration: none; }
 .wsa__open::after { content: ""; position: absolute; inset: 0; }
-.wsa__open:focus-visible { outline: none; }
-.wsa:focus-within { box-shadow: inset 0 0 0 2px var(--ax-accent); }
+.wsa__open:focus-visible { box-shadow: none; }
+.wsa:focus-within { box-shadow: inset var(--ax-focus-ring); }
 .wsa__sw, .wsa__wait { position: relative; z-index: 1; flex: none; }
 .wsa__sw { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text); background: none; border: 0; padding: 6px 0; cursor: pointer; }
 .wsa__sw i { width: 36px; height: 20px; border-radius: var(--ax-radius-pill); background: var(--ax-border-2); position: relative; transition: background .15s; }
 .wsa__sw i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .wsa__sw[aria-checked="true"] i { background: var(--ax-green); }
 .wsa__sw[aria-checked="true"] i::after { transform: translateX(16px); }
-.wsa__sw:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; border-radius: var(--ax-radius); }
 .wsa__wait { text-decoration: none; }
 
 /* Forms and boxes */
@@ -859,7 +858,6 @@ export const WALL_SETTINGS_CSS = `
 .wsf label small, .wsf__check small { font-size: 12px; }
 .wsf input:not([type=checkbox]):not([type=file]), .wsf select, .wsf textarea, .wse textarea {
   font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 8px 10px; width: 100%; }
-.wsf input:focus, .wsf select:focus, .wsf textarea:focus, .wse textarea:focus { outline: 2px solid var(--ax-accent); outline-offset: -1px; }
 .wsf .wsf__check { flex-direction: row; align-items: baseline; gap: 8px; color: var(--ax-text); font-size: var(--ax-fs-sm); flex-wrap: wrap; }
 .wsf__row { display: flex; gap: 10px; flex-wrap: wrap; }
 .wsf__row > label { flex: 1 1 180px; }
@@ -885,6 +883,7 @@ export const WALL_SETTINGS_CSS = `
 .wsl__f small { color: var(--ax-muted); font-size: 12px; }
 .wsl__f:hover, .wsl__f.is-on { background: var(--ax-surface); }
 .wsl__f.is-on { box-shadow: inset 3px 0 0 var(--ax-accent); }
+.wsl__f.is-on:focus-visible { box-shadow: inset 3px 0 0 var(--ax-accent), var(--ax-focus-ring); }
 .wsl li .ax-btn { font-size: var(--ax-fs-xs); padding: 2px 10px; }
 .wse { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .wse__p { margin: 0; font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }

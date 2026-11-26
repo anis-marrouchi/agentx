@@ -187,7 +187,7 @@ export const WALL_COST_SCRIPT = String.raw`
 
 export const WALL_COST_CSS = `
 .wc__head { display: grid; grid-template-columns: 1fr 160px; gap: 4px 12px; align-items: center; margin-bottom: 8px; }
-.wc__big { font-size: var(--ax-fs-lg, 1.15rem); }
+.wc__big { font-size: var(--ax-fs-group); }
 .wc__big b { font-size: 1.6em; font-weight: 700; }
 .wc__kpis { grid-column: 1; display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
 .wc__kpis i, .wc__amt i, .wc__rail small { font-style: normal; color: var(--ax-muted); font-size: var(--ax-fs-xs); margin-left: 4px; }
@@ -214,7 +214,6 @@ export const WALL_COST_CSS = `
 .wc__who span { display: flex; flex-direction: column; min-width: 0; }
 .wc__who small, .wc__runs, .wc__cap small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wc__who:hover b { text-decoration: underline; }
-.wc__who:focus-visible, .wc__toggle:focus-visible, .wc__chips button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__amt { text-align: right; }
 .wc__cap { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; min-width: 0; }
 .wc__bar { flex: 0 1 120px; min-width: 40px; height: 6px; border-radius: 3px; background: var(--ax-surface); overflow: hidden; }
@@ -247,7 +246,7 @@ export const WALL_COST_CSS = `
 .wc-m { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
 .wc-m.in { background: var(--ax-accent); } .wc-m.out { background: var(--ax-green); } .wc-m.cr { background: var(--ax-amber); } .wc-m.cw { background: var(--ax-muted); }
 .wc__chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
-.wc__chips button { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 12px; cursor: pointer; }
+.wc__chips button { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-md); padding: 3px 12px; cursor: pointer; }
 .wc__chips button[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
 .wc__scroll { overflow-x: auto; }
 .wc__daily td { white-space: nowrap; }
@@ -255,14 +254,13 @@ export const WALL_COST_CSS = `
 .wc__mini i { display: block; height: 100%; width: auto; margin: 0; border-radius: 0; }
 /* Monthly budgets: each cap, and the owner's form. */
 .wc__budgets { margin: 16px 0 0; border-top: 1px solid var(--ax-border); padding-top: 10px; }
-.wc__h { font-size: var(--ax-fs); font-weight: 800; margin: 0 0 4px; }
+.wc__h { font-size: var(--ax-fs); font-weight: 600; margin: 0 0 4px; }
 .wc__budgets h3 { font-size: var(--ax-fs-sm); margin: 10px 0 2px; }
 .wc__caps { list-style: none; margin: 6px 0; padding: 0; font-size: var(--ax-fs-sm); }
 .wc__caps li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--ax-border); align-items: baseline; }
 .wc__caps small { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wc__link { font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-accent); background: none; border: 0; padding: 2px 0; cursor: pointer; }
 .wc__link:hover { text-decoration: underline; }
-.wc__link:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
 .wc__form { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin: 10px 0 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wc__form label { display: flex; flex-direction: column; gap: 2px; }
 .wc__form select, .wc__form input { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius); padding: 6px 8px; min-width: 0; }

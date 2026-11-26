@@ -130,9 +130,8 @@ export const HUB_STATUS_CSS = `
 .hs__conn[data-state="err"], .hs__conn[data-state="off"] { color: var(--ax-amber-ink, var(--ax-text)); }
 .hs__btn { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid transparent; border-radius: var(--ax-radius-sm); padding: 2px 6px; cursor: pointer; }
 .hs__btn:hover, .hs__btn[aria-expanded="true"] { background: var(--ax-surface-3); color: var(--ax-text); }
-.hs__btn:focus-visible { outline: 2px solid var(--ax-ring, var(--ax-accent)); outline-offset: 1px; }
 .hs__chev { width: 11px; height: 11px; }
-.hsa { position: fixed; z-index: 10; bottom: 36px; right: 18px; width: min(520px, calc(100vw - 36px)); max-height: 70vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: var(--ax-fs-sm); }
+.hsa { position: fixed; z-index: 10; bottom: 36px; right: 18px; width: min(520px, calc(100vw - 36px)); max-height: 70vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); box-shadow: var(--ax-shadow-lg); font-size: var(--ax-fs-sm); }
 .hsa__lead, .hsa__hint, .hsa__note { margin: 0 0 8px; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .hsa__note.is-ok { color: var(--ax-green-d, var(--ax-text)); }
 .hsa__note.is-err { color: var(--ax-red-ink, var(--ax-red)); }
@@ -149,7 +148,7 @@ export const HUB_STATUS_CSS = `
 /* The status bar takes 30 px: the columns stop above it, so no page scrolls past the window (C23, #2352). */
 @media (min-width: 641px) { body { padding-bottom: 30px; } .ax-wall, .ax-wall__main { min-height: calc(100vh - 30px); } .ax-wall__nav, .hc { height: calc(100vh - 30px); } }
 @media (min-width: 1181px) { .wcx { height: calc(100vh - 30px); } }
-.hs__acct { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid var(--ax-border); border-radius: 999px; padding: 1px 10px; cursor: pointer; }
+.hs__acct { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); padding: 1px 10px; cursor: pointer; }
 .hs__acct[aria-expanded="true"] { border-color: var(--ax-accent); color: var(--ax-text); }
 .hsa__p legend small { color: var(--ax-muted); font-weight: 400; font-family: var(--ax-mono); }
 .hsa__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; }

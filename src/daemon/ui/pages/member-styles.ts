@@ -11,7 +11,7 @@
 // the first declaration.
 
 export const BASE_CSS = `
-:root { --link: var(--ax-blue-d); --ring: var(--ax-blue); --tick: var(--ax-green-d); }
+:root { --link: var(--ax-blue-d); --tick: var(--ax-green-d); }
 [data-theme="dark"] { --link: var(--ax-blue); --tick: var(--ax-green); }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); }
@@ -20,22 +20,21 @@ h1, h2, p, ul, ol { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 a { color: var(--link); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; }
-:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border); }
 .mark { flex: none; width: 36px; height: 36px; border-radius: 10px; }
-.bar h1 { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.bar h1 { font-size: 20px; font-weight: 600; line-height: 1.2; }
 .bar .grow { flex: 1; min-width: 0; }
 .who { font-size: 14px; color: var(--ax-text-2); overflow-wrap: anywhere; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; counter-reset: s; }
 .steps li { counter-increment: s; font-size: 14px; color: var(--ax-text-2); padding-top: 10px; border-top: 4px solid var(--ax-border-2); }
 .steps li::before { content: counter(s) ". "; }
 .steps li.done { border-color: var(--ax-blue); }
-.steps li.now { border-color: var(--ax-blue); color: var(--ax-text); font-weight: 700; }
+.steps li.now { border-color: var(--ax-blue); color: var(--ax-text); font-weight: 600; }
 .narrow { max-width: 480px; margin: 0 auto; padding: 28px 20px 48px; }
 .narrow .steps { margin-bottom: 24px; }
 .card { padding: 24px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow-lg); }
-.card h2 { font-size: 24px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
+.card h2 { font-size: var(--ax-fs-pane); font-weight: 600; line-height: 1.2; margin-bottom: 8px; }
 .card p { color: var(--ax-text-2); }
 .help { margin-top: 20px; font-size: 14px; color: var(--ax-text-2); }
 `
@@ -44,12 +43,12 @@ export const WORK_CSS = `
 .icon-btn { min-width: 44px; min-height: 44px; font-size: 20px; line-height: 1; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-pill); background: var(--ax-surface); color: var(--ax-text); cursor: pointer; }
 .strip, .install { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 20px; font-size: 14px; background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: var(--ax-border-w) solid var(--ax-amber-e); }
 .strip[hidden], .install[hidden] { display: none; }
-.strip button { min-height: 36px; padding: 4px 16px; font: inherit; font-weight: 700; color: var(--ax-amber-ink); background: transparent; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius-pill); cursor: pointer; }
+.strip button { min-height: 36px; padding: 4px 16px; font: inherit; font-weight: 600; color: var(--ax-amber-ink); background: transparent; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius-pill); cursor: pointer; }
 .strip button:disabled { opacity: 0.55; cursor: default; }
 .install { display: block; background: var(--ax-surface-2); color: var(--ax-text-2); border-bottom-color: var(--ax-border); }
 .wrap { max-width: 760px; margin: 0 auto; padding: 24px 20px 48px; }
 .sum { font-size: 22px; font-weight: 600; line-height: 1.3; margin-bottom: 24px; text-wrap: balance; }
-.wrap h2 { font-size: 15px; font-weight: 700; color: var(--ax-text-2); margin: 32px 0 8px; }
+.wrap h2 { font-size: var(--ax-fs-group); font-weight: 600; color: var(--ax-text-2); margin: 32px 0 8px; }
 .wrap h2 .n { font-weight: 400; }
 .need[hidden] + section h2 { margin-top: 0; }
 .need { border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: var(--ax-shadow-lg); }
@@ -60,7 +59,7 @@ export const WORK_CSS = `
 .need .q { font-size: 19px; font-weight: 600; line-height: 1.35; margin: 6px 0 8px; overflow-wrap: anywhere; }
 .need .for { color: var(--ax-text-2); overflow-wrap: anywhere; }
 .need .for b { color: var(--ax-text); font-weight: 600; }
-.state { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.state { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; white-space: nowrap; }
 .state::before { content: ""; flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; }
 .state.work::before { background: var(--ax-blue); }
 .state.wait { color: var(--ax-amber-ink); }
@@ -82,7 +81,7 @@ export const WORK_CSS = `
 @media (min-width: 640px) { .agents { grid-template-columns: 1fr 1fr; } }
 .agent { display: grid; gap: 6px; align-content: start; padding: 16px 18px 18px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
 .agent .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
-.agent .name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.agent .name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 .agent .state { font-size: 15px; }
 .agent .state::before { width: 14px; height: 14px; }
 .agent .what { overflow-wrap: anywhere; }
@@ -123,7 +122,7 @@ export const LOCKED_CSS = `
 .pair-form input { width: 100%; min-height: 52px; padding: 10px 14px; font: inherit; font-size: 17px; color: var(--ax-text); background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-text-2); border-radius: var(--ax-radius-sm); }
 .pair-form input#pair-code { min-height: 64px; font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
 .pair-form input:focus { border-color: var(--ax-blue); outline: none; }
-.pair-form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-pill); font: inherit; font-size: 19px; font-weight: 700; color: var(--ax-primary-fg); background: var(--ax-primary); cursor: pointer; }
+.pair-form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-md); font: inherit; font-size: 19px; font-weight: 600; color: var(--ax-primary-fg); background: var(--ax-primary); cursor: pointer; }
 .pair-form button:disabled { opacity: 0.55; cursor: default; }
 .pair-msg { min-height: 1.5em; }
 .card .pair-msg.bad { color: var(--ax-red-ink); }

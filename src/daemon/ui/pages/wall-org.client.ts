@@ -444,7 +444,7 @@ export const WALL_ORG_CSS = ORG_PROJECTS_CSS + `
 .wog__key.is-dept { border: 1.5px dashed var(--ax-accent); background: var(--ax-blue-t); }
 .wog__legend .wog__kind { position: static; }
 .wog__tools { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--ax-fs-xs); }
-.wog__toggle { font: inherit; font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 3px 12px; cursor: pointer; }
+.wog__toggle { font: inherit; font-weight: 600; background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-md); padding: 3px 12px; cursor: pointer; }
 .wog__toggle[aria-pressed="true"] { background: var(--ax-text); color: var(--ax-bg); border-color: var(--ax-text); }
 .wog__zoom { display: inline-flex; border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); overflow: hidden; }
 .wog__zoom button { font: inherit; font-weight: 600; background: none; border: 0; color: var(--ax-text); padding: 3px 10px; cursor: pointer; min-width: 32px; }
@@ -528,7 +528,7 @@ button.wog__head:hover b { text-decoration: underline; }
 .wog__counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 8px; }
 .wog__counts div { background: var(--ax-bg); border-radius: var(--ax-radius); padding: 6px 10px; }
 .wog__counts dt { font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wog__counts dd { margin: 0; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wog__counts dd { margin: 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .wog__h3 { font-size: var(--ax-fs); margin: 10px 0 4px; }
 .wog__outside { display: flex; flex-direction: column; }
 /* The counts and who is not in the chart, under the chart (no side column, #2101 R24). */
