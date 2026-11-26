@@ -15,8 +15,15 @@
 // haSwitchHtml, haHitCount, ltAge.
 
 export const HUB_NAV_SCRIPT = String.raw`
-  var HA = { filter: 'all', idleOpen: false, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
+  // What the reader opened (Anis 2026-11-26, orca-design C21): saved like the
+  // filter. A first visit starts with Needs you folded and Working at 3 rows.
+  var HA = { filter: 'all', open: { needs: false, working: false, idle: false }, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
   try { HA.filter = localStorage.getItem('ax.hub.agentFilter') || 'all'; } catch (e) { /* private mode */ }
+  try {
+    var haSaved = JSON.parse(localStorage.getItem('ax.hub.agentOpen') || '{}');
+    for (var hk in HA.open) if (haSaved[hk] === true) HA.open[hk] = true;
+  } catch (e) { /* private mode or bad value: keep the defaults */ }
+  function haSaveOpen() { try { localStorage.setItem('ax.hub.agentOpen', JSON.stringify(HA.open)); } catch (e) { /* private mode */ } }
   // The agent in view: its chat, or the Task page of one of its runs (R26).
   function haChatAgent() {
     var m = /(?:^#|&)page=(?:chat|task)(?:&|$)/.test(location.hash) && /(?:^#|&)agent=([^&]*)/.exec(location.hash);
@@ -58,7 +65,7 @@ export const HUB_NAV_SCRIPT = String.raw`
     if (none) { if (S.liveError) { HA.last = ''; el.innerHTML = '<p class="ha__empty">Could not reach the machines just now; trying again.</p>'; } return; }
     HA.model = haModel();
     HA.cur = haChatAgent();
-    var html = haListHtml(HA.model, HA.filter, HA.cur, HA.idleOpen, esc, ltAge, haRunHref);
+    var html = haListHtml(HA.model, HA.filter, HA.cur, HA.open, esc, ltAge, haRunHref);
     if (html === HA.last) return;
     HA.last = html;
     el.innerHTML = html;
@@ -72,13 +79,16 @@ export const HUB_NAV_SCRIPT = String.raw`
       try { localStorage.setItem('ax.hub.agentFilter', HA.filter); } catch (e) { /* private mode */ }
       HA.last = ''; renderHubAgents(); return;
     }
+    var more = t.closest('[data-ha-more]');
+    if (more) { HA.open.working = !HA.open.working; haSaveOpen(); HA.last = ''; renderHubAgents(); return; }
     if (t.closest('#hub-k')) { haOpenK(); return; }
     if (t.closest('[data-hk-close]')) { haCloseK(); return; }
     if (t.closest('#hub-k-dlg a[href]')) haCloseK(true);
   });
   document.addEventListener('toggle', function (ev) {
     var d = ev.target;
-    if (d && d.matches && d.matches('[data-ha-idle]')) HA.idleOpen = d.open;
+    var k = d && d.getAttribute && d.closest && d.closest('#hub-agents') ? d.getAttribute('data-ha-open') : '';
+    if (k && HA.open[k] !== d.open) { HA.open[k] = d.open; haSaveOpen(); }
   }, true);
   // The agent in view changes: the current row follows, and ⌃Tab knows the last one.
   window.addEventListener('hashchange', function () {
