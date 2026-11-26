@@ -16,7 +16,8 @@ export const ORG_PROJECTS_JS = `
   /** The Projects view: one box per project, then the members on none. */
   function orgProjectsHtml(d, esc) {
     var list = (d && d.projects) || [], rest = (d && d.notInProject) || [];
-    var STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
+    // No reading: the state is left out, never written as "not known" (Anis 11-25).
+    var STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval' };
     var ICON = { person: '${ORG_PERSON_ICON}', agent: '${ORG_AGENT_ICON}' };
     function card(c, role) {
       var person = c.kind === 'person', st = c.status || 'unknown';
@@ -25,7 +26,7 @@ export const ORG_PROJECTS_JS = `
         + (role ? '<span class="opj-role">' + esc(role) + '</span>' : '')
         + '<b class="opj-name">' + esc(c.name) + '</b>'
         + (c.title ? '<span class="opj-title">' + esc(c.title) + '</span>' : '')
-        + (person ? '' : '<span class="opj-state is-' + esc(st) + '"><span class="opj-dot" aria-hidden="true"></span>' + esc(STATE[st] || st) + '</span>')
+        + (person || !STATE[st] ? '' : '<span class="opj-state is-' + esc(st) + '"><span class="opj-dot" aria-hidden="true"></span>' + esc(STATE[st]) + '</span>')
         + '</li>';
     }
     function box(p, i) {

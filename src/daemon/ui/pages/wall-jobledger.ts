@@ -155,7 +155,7 @@ export function jlDetailHtml(d: HubJobDetail | null, err: string, node: string, 
   const runs = (d.runs || []).map((r) => {
     const live = r.status === "in-flight"
     const took = r.startedAt == null ? "—" : r.finishedAt != null ? jlSpan(r.finishedAt - r.startedAt) : live ? jlSpan(now - r.startedAt) + " so far" : "—"
-    return "<tr><td><code>" + jlEsc(r.runId) + "</code></td><td>" + jlEsc(live ? "running" : r.status || "not known") + (r.error ? ' <span class="is-err">' + jlEsc(r.error) + "</span>" : "") + "</td>" +
+    return "<tr><td><code>" + jlEsc(r.runId) + "</code></td><td>" + jlEsc(live ? "running" : r.status || "") + (r.error ? ' <span class="is-err">' + jlEsc(r.error) + "</span>" : "") + "</td>" +
       "<td>" + (r.startedAt == null ? "—" : '<time datetime="' + jlEsc(new Date(r.startedAt).toISOString()) + '">' + jlSpan(now - r.startedAt) + " ago</time>") + "</td>" +
       "<td>" + took + "</td><td>" + (r.costUsd == null ? "—" : "$" + Number(r.costUsd).toFixed(2)) + "</td></tr>"
   }).join("")
@@ -184,7 +184,8 @@ export function jlRowHtml(j: HubJob, o: { open: boolean; detail: HubJobDetail | 
   const node = j.node || ""
   const home = jlHomeHtml(j.home)
   const facts = [
-    "<span>" + jlEsc(j.requester || "not known") + " → @" + jlEsc(j.assignee) + "</span>",
+    // No requester recorded: the line names only the assignee, never "not known".
+    "<span>" + (j.requester ? jlEsc(j.requester) + " → " : "") + "@" + jlEsc(j.assignee) + "</span>",
     "<span>" + jlEsc(jlDoorLabel(j.door)) + "</span>",
     home ? "<span>" + home + "</span>" : "",
     j.parentId ? "<span>part of another job</span>" : "",

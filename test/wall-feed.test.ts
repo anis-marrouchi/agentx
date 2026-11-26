@@ -2022,6 +2022,21 @@ describe("The Org page on the Wall (#1419)", () => {
     expect(html.replace(/<[^>]*>/g, " ")).not.toMatch(/(agent|person):/)
   })
 
+  it("leaves out a status with no reading, and never writes \"not known\" (Anis 11-25, #2101 C1)", async () => {
+    // The daemon did not answer: buildOrgView gets no live reading.
+    const DOWN = { exists: true, ...buildOrgView({
+      agents: { cx: { name: "Customer Desk" }, reviewer: { name: "Reviewer" } },
+      people: [{ id: "sam", name: "Sam Demo", role: "owner" }],
+      business: { orgChart: { reviewer: { role: "Head of Quality", reportsTo: "person:sam" }, cx: { role: "Support Lead", reportsTo: "reviewer" } } },
+    }, {}, null) }
+    const w = openWall({ org: DOWN, hash: "#page=org" })
+    await w.settle()
+    const html = w.el("wall-org").innerHTML
+    expect(html).toContain("The daemon did not answer, so working and idle are not shown.")
+    expect(html).not.toContain("not known")
+    expect(html).not.toContain("wog__dot")
+  })
+
   it("shows a department as a chip on its members, grouped side by side, with a legend key (#1681)", async () => {
     const org = { exists: true, ...buildOrgView({
       agents: { ann: { name: "Ann" }, bob: { name: "Bob" }, cid: { name: "Cid" } },

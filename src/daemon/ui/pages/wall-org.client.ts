@@ -79,7 +79,8 @@ ${ORG_PROJECTS_JS}
       (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
       '<div class="wog__projects">' + orgProjectsHtml(S.org, esc) + '</div>';
   }
-  var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval', unknown: 'Status not known' };
+  // No reading: no dot and no word, never "not known" (Anis 11-25).
+  var ORG_STATE = { working: 'Working', idle: 'Idle', paused: 'Paused', waiting: 'Waits for your approval' };
   // An agent on another node (agent:<node>/<id>): how its node last answered.
   var ORG_REMOTE = { up: 'Shown, not routed to: runs on', down: 'Its node does not answer; last seen on', unseen: 'Not seen yet on' };
   var ORG_CHART_HREF = '/org';
@@ -131,7 +132,7 @@ ${ORG_PROJECTS_JS}
     var dotted = d.edges.filter(function (e) { return e.type === 'dotted-line' && e.from === b.key; });
     var remote = b.remote;
     var face = person ? avatar(b.id, 'sm', true, b.name) : avatar(remote ? remote.agent : b.id, 'sm');
-    var dot = person || remote ? '' : '<span class="wog__dot is-' + esc(b.status || 'unknown') + '" title="' + esc(ORG_STATE[b.status] || b.status) + '"></span>';
+    var dot = person || remote || !ORG_STATE[b.status] ? '' : '<span class="wog__dot is-' + esc(b.status) + '" title="' + esc(ORG_STATE[b.status]) + '"></span>';
     var who = '<span class="wog__who"><b>' + esc(b.name) + dot + '</b><small>@' + esc(remote ? remote.agent : b.id) + '</small>' + (b.title ? '<small class="wog__title">' + esc(b.title) + '</small>' : '') + '</span>';
     // An agent on another node is shown, not opened or routed to: no profile button.
     var top = person || remote ? '<div class="wog__head">' + face + who + '</div>'
@@ -207,7 +208,7 @@ ${ORG_PROJECTS_JS}
     var top = orgLegendHtml(d) +
       '<p class="ax-wall__count wog__note wog__owner">Only the owner can change the org</p>' +
       (S.org.problem ? '<p class="wog__problem" role="alert">Something in the org chart does not hold: ' + esc(S.org.problem) + '</p>' : '') +
-      (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working or idle is not known.</p>' : '');
+      (S.org.live === false ? '<p class="ax-wall__count wog__note">The daemon did not answer, so working and idle are not shown.</p>' : '');
     // The rail counts the whole org, whatever the switch shows.
     if (orgView() === 'dept') return top + orgDeptsHtml(d) + '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
     var rail = '<div class="wog__inrail">' + orgRailHtml(d) + '</div>';
@@ -508,7 +509,6 @@ button.wog__head:hover b { text-decoration: underline; }
 .wog__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ax-border-2); }
 .wog__dot.is-working { background: var(--ax-green); }
 .wog__dot.is-paused, .wog__dot.is-waiting { background: var(--ax-amber); }
-.wog__dot.is-unknown { background: none; border: 1.5px solid var(--ax-border-2); }
 .wog__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .wog__chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .wog__chip { font-size: 12px; line-height: 1.5; border-radius: var(--ax-radius-pill); padding: 0 8px; background: var(--ax-surface-2); color: var(--ax-text-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
