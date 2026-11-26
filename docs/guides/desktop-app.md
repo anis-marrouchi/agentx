@@ -42,7 +42,7 @@ The app is still in preview. Each change to it is built for all three systems by
 | **Closing the window** | **Hide to the tray** (the default) or **Quit the app**. |
 | **Quit AgentX** | Closes the app. The daemon keeps running. |
 
-Start, Stop and Restart act on this computer only. When the app points at a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.0.0.1, ::1 or localhost), all three are off and say **(on another machine)**, whether that daemon is up or down.
+Start, Stop and Restart act on this computer only. When the app points at a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.x.x.x, ::1 or localhost; `0.0.0.0` counts as another machine), all three are off and say **(on another machine)**, whether that daemon is up or down.
 
 The last three choices are kept in `settings.json` in the app's data folder and survive a restart.
 
@@ -56,7 +56,7 @@ On macOS, the AgentX Voice app keeps its floating pill and the ⌥Space shortcut
 |---|---|---|---|
 | `AGENTX_DASHBOARD_URL` | environment variable, read when the app starts | `http://127.0.0.1:4202` | The dashboard the app opens. Set it if your dashboard uses another port. |
 | `AGENTX_DAEMON_URL` | environment variable | `node.bind` of `AGENTX_CONFIG`, else `http://127.0.0.1:18800` | The daemon the menu checks and controls. |
-| `AGENTX_CONFIG` | environment variable | none | The daemon's `agentx.json`. Start and Restart use it, and run in its folder. Without it, Start is off and Restart uses the folder the running daemon reports; it never runs in your home folder. |
+| `AGENTX_CONFIG` | environment variable | none | The daemon's `agentx.json`. Start and Restart use it, and run in its folder. Without it, Start is off and Restart runs in the folder the running daemon was started in, with the config it reports (a relative path such as `-c agentx.json` is read from that folder); it never runs in your home folder. |
 | `AGENTX_CLI` | environment variable | `agentx` | The AgentX command. On macOS and Ubuntu it is found through your login shell. A login shell does not read `~/.zshrc` or `~/.bashrc`: if `agentx` or its Node.js comes from there (for example nvm), set the full path here. |
 | `AGENTX_SERVICE` | environment variable | none | The launchd label or systemd unit that runs your daemon, if its name does not end in `agentx` (such as `tn.noqta.agentx` or `agentx.service`). While it is loaded, Start is off. |
 
