@@ -327,3 +327,42 @@ describe("daemon POST /chat gate", () => {
     expect(executed).toEqual(["hello"])
   })
 })
+
+// #2101 R17: the Hub's right panel reads an agent's workspace, read only.
+describe("daemon /agents/:id/workspace?path= and its dashboard proxy (#2101 R17)", () => {
+  const owner = { Authorization: `Bearer ${OWNER}`, "X-Requested-With": "agentx-board" }
+  const list = (base: string, path: string, headers: Record<string, string> = {}) =>
+    fetch(`${base}/agents/helper/workspace?path=${encodeURIComponent(path)}`, { headers })
+
+  it("answers 401 off the box with no credential, and lists with a mesh token", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => OFF_BOX)
+    expect((await list(base, "")).status).toBe(401)
+    const res = await list(base, "", { Authorization: `Bearer ${MESH}` })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.kind).toBe("dir")
+    expect(body.entries.map((e: { name: string }) => e.name)).toEqual(["chart.png"])
+  })
+
+  it("refuses .., absolute paths and secrets on loopback too", async () => {
+    const base = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
+    expect((await list(base, "../")).status).toBe(403)
+    expect((await list(base, "/etc/passwd")).status).toBe(400)
+    const env = await list(base, ".env")
+    expect(env.status).toBe(403)
+    expect(await env.text()).not.toContain("NOT_A_REAL_VALUE")
+    expect((await fetch(`${base}/agents/nobody/workspace?path=`)).status).toBe(404)
+  })
+
+  it("is the owner's alone through the dashboard", async () => {
+    const daemonUrl = await serveDaemon(buildDaemon(MESH_CONFIG), () => LOCAL)
+    const config = daemonConfigSchema.parse({ node: { id: "board", name: "board" }, dashboard: { token: OWNER, daemonUrl } })
+    const board = await listen((req, res) => { void handleBoardRequest(req, res, { boards: [], sources: new Map(), token: OWNER, config } as never) })
+    const path = `/api/task/workspace?node=${encodeURIComponent(daemonUrl)}&agent=helper&path=chart.png`
+    expect((await call(board, "GET", path)).status).toBe(401)
+    const res = await call(board, "GET", path, owner)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ kind: "file", path: "chart.png", content: "png" })
+    expect((await call(board, "GET", `/api/task/workspace?node=${encodeURIComponent("http://elsewhere.invalid")}&agent=helper&path=`, owner)).status).toBe(403)
+  })
+})

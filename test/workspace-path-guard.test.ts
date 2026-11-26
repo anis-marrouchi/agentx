@@ -169,10 +169,21 @@ describe("resolveWorkspaceFile", () => {
   it("answers 404 for a missing workspace", () => {
     expect(resolveWorkspaceFile(join(tmp, "gone"), "a.png")).toMatchObject({ ok: false, status: 404 })
   })
+
+  it("refuses the gh CLI's login file, asked for or reached through a link, and serves a hosts.yml elsewhere (#2315)", () => {
+    mkdirSync(join(workspace, "gh"), { recursive: true })
+    mkdirSync(join(workspace, "deploy"), { recursive: true })
+    writeFileSync(join(workspace, "gh", "hosts.yml"), "oauth_token: x")
+    writeFileSync(join(workspace, "deploy", "hosts.yml"), "web: 1")
+    symlinkSync(join(workspace, "gh", "hosts.yml"), join(workspace, "hosts-link.yml"))
+    expect(resolveWorkspaceFile(workspace, "gh/hosts.yml")).toMatchObject({ ok: false, status: 403 })
+    expect(resolveWorkspaceFile(workspace, "hosts-link.yml")).toMatchObject({ ok: false, status: 403 })
+    expect(resolveWorkspaceFile(workspace, "deploy/hosts.yml")).toMatchObject({ ok: true })
+  })
 })
 
 describe("isHiddenName", () => {
-  it.each([".env", ".env.production", "server.key", "cert.PEM", "id_ed25519.pub", "credentials", "secrets.yaml", "token.txt", "tokens.json", "auth.json", ".git", "node_modules", ".ssh", ".npmrc"])("hides %s", (n) => {
+  it.each([".env", ".env.production", "server.key", "cert.PEM", "id_ed25519.pub", "credentials", "secrets.yaml", "token.txt", "tokens.json", "auth.json", ".git", "node_modules", ".ssh", ".npmrc", ".envrc", "prod.env", ".env-local", ".gnupg", "secrets.prod.json", "application_default_credentials.json"])("hides %s", (n) => {
     expect(isHiddenName(n)).toBe(true)
   })
   it.each(["chart.png", "report.pdf", ".agentx", "environment.md", "keys.md", "tokenizer.json", "notes.txt"])("shows %s", (n) => {

@@ -149,6 +149,7 @@ The Hub has no fixed column on the right. A panel opens there only when you ask 
    - In a chat, select **Changes** or **Plan** on the **Working on** line.
    - On an open post, select **Diff**.
    - In **Changes**, select **File** next to a file's name. The whole file opens as it is on the pull or merge request's last commit, with the lines it adds or changes in green. A removed or binary file has no **File** button.
+   - At the top of a chat, or of a run's [Task page](#watch-and-steer-a-run), select **Files**. See [See a run's files](#see-a-runs-files) below.
 2. Each thing you open is a tab at the top of the panel. Select a tab to see it again, or its **×** to close it. Select the request's name at the top of a tab to open the request.
 3. Close the last tab to give the width back to the page.
 
@@ -163,6 +164,18 @@ The top of the chat shows the agent's letter, the computer it runs on and its en
 3. Select **Chat** to go back to the conversation.
 
 When the agent asks you something, the question shows at the end of the chat as a card. Select **Accept** (or one of the answers it offers), **Ask for changes** to write what to change, or **Later** to put it off. The answer is the same as on the Desk: an answered question leaves the Desk too.
+
+### See a run's files
+
+**Files** shows what a run, or every run of a chat, did to files, and the agent's workspace (the folder it works in). Its tab is always the first one in the panel.
+
+1. **Browser:** at the top of a chat or of a run's Task page, select **Files**. Select it again to close the tab.
+2. The first list holds the files the runs changed (**wrote**, **edited**), then the ones they only **read**, the files the agent sent with its answer, and the files you attached. When the run is on a pull or merge request, **PR** opens its **Changes**.
+3. Select a changed file: it opens in its own tab with what the run removed in red and added in green. A file the run only read shows its path. Select **Open it as it is now** to see the file in the workspace today.
+4. Under **Workspace**, select a folder to open it, and the names in the path above the list to go back up. Select a file: it opens in its own tab with its line numbers.
+5. Select **Reload** to read the runs again, for example after a run ends.
+
+The workspace only reads: nothing here changes a file. Only you (the dashboard's owner) can open it. It shows text files of up to 256 KB. It never shows `.git`, `node_modules`, or files that usually hold secrets, such as `.env`, keys and token files. It never follows a link that leads out of the workspace.
 
 ## Read a post
 
@@ -1161,6 +1174,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 45. WhatsApp and Inbox: in **Settings** › **Channels**, select **WhatsApp**: with WhatsApp on, it says **connected** (or shows a code to scan), and its watch rules match **WhatsApp triage** on the classic `/admin#tab=webhooks`. Select **Inbox**: **Where it goes** names the same chat as `agentx notifications`. Untick **A task is queued**, select **Save**, and the classic **Notifications routing** shows the same. In a private window without the dashboard key, `curl -X POST <dashboard>/api/admin/wall/settings/notifications` gets `401`.
 47. Events: give an agent a subscription such as `{ "kinds": ["test:ping"], "delivery": "wake", "prompt": "Reply with agentx events emit test:pong" }`. **Terminal:** run `agentx events emit test:ping --summary "hello"`. **Browser:** select **Events**, then **Refresh** after a minute. The `test:ping` card says **1 wake: 1 ran**, and `test:pong` is under it, marked **in reply to test:ping**.
 48. Right panel: open the chat of an agent that works on an open request on a GitHub or GitLab issue. The **Working on** line names it. Select **Changes**: the panel opens on the right with its diff, and the chat narrows. Select **File** next to a file: a second tab shows the whole file with its new lines in green. Close both tabs: the chat takes the whole width again.
+49. Files: ask an agent in a chat to "write a file named hello.txt with one line". When it is done, select **Files** at the top of the chat. The **Files** tab opens first in the panel, with `hello.txt` marked **wrote**. Select it: its line shows in green. Under **Workspace**, `hello.txt` is listed; select it, and the file opens with its line number.
 
 ## If something is wrong
 
@@ -1168,6 +1182,8 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **Channels says "set in agentx.json as a literal value: move it to .env":** the secret itself is typed into `agentx.json` instead of the name of a variable, so the page hides it and leaves the form field empty. **Terminal**, on that machine: add a line such as `TG_SUPPORT_BOT_TOKEN=<the token>` to `.env`. Then **Browser:** type that name in the form and save it. The page then shows the name, and `agentx.json` no longer holds the secret.
 - **Inbox says "type the name of the .env variable":** the ntfy topic or token itself was typed in the form. Put it in `.env` as a line such as `NTFY_TOPIC=<the topic>`, then type `NTFY_TOPIC` and save again. Nothing was saved.
 - **WhatsApp chats say "WhatsApp channel not enabled":** the daemon has no WhatsApp channel running. Turn on `channels.whatsapp.enabled` in **Advanced** and restart the daemon.
+- **Files says "Files not available":** the run's machine did not answer, or the run is still going (its record is kept when it ends). Select **Reload** later.
+- **Workspace says "not available" or a file says "Not shown":** the reason follows. "this file is not shown" is a secret-like name or `.git`; "the file is too big" is over 256 KB; "not a text file" is a picture or another binary file; "the path leads out of the workspace" is a link to a folder outside it. "unauthorized" means the browser is not signed in as the owner, or the machine refused this dashboard's token: add it under `dashboard.daemons` with a token it accepts.
 - **Workflows says "Could not read the workflows":** the dashboard could not ask the machine for them. The rest of the Hub still works; select **Try again**. See [Workflows](./workflows.md#if-something-is-wrong).
 
 - **Activity says a machine "does not answer":** the dashboard could not reach that machine's run records. Check the machine with `agentx daemon status`. The other machines' runs still show.

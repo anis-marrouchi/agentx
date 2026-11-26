@@ -237,6 +237,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
+import { readWorkspace } from "@/daemon/workspace-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
@@ -7799,6 +7800,19 @@ export class AgentXDaemon {
         const page = this.registry.getTaskSession(agentId, decodeURIComponent(taskSessionMatch[2]), { before: url.searchParams.get("before"), limit })
         if (!page) { this.json(res, 404, { error: "not found" }); return }
         this.json(res, 200, page)
+        return
+      }
+      // The agent's workspace, read only (#2101 R17): one folder's list or
+      // one text file, never outside the workspace (workspace-files-api.ts).
+      // GET /agents/:agentId/workspace?path=<relative>. Mesh-gated (mesh-auth.ts).
+      const workspaceMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/workspace$/)
+      if (workspaceMatch) {
+        const ws = this.registry.getAgent(decodeURIComponent(workspaceMatch[1]))?.workspace
+        if (!ws) { this.json(res, 404, { error: "agent not found" }); return }
+        const out = readWorkspace(ws, url.searchParams.get("path") || "")
+        if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
+        const { ok: _ok, ...body } = out
+        this.json(res, 200, body)
         return
       }
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)

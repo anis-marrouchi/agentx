@@ -539,3 +539,26 @@ describe("The agent list in the nav (#2101 P4, R26)", () => {
     expect(w.streams.some((s) => s.url === "/api/live/stream")).toBe(false)
   })
 })
+
+describe("The Task page's Files button (#2101 R17)", () => {
+  const history = { ok: true, channel: "telegram", message: "Fix the price\n\nAttached: spec.pdf", responseText: "Done.",
+    transcript: '→ Read({"file_path":"src/price.ts"})\n← ok\n→ Edit({"file_path":"src/price.ts","old_string":"1","new_string":"2"})\nDone.\n' }
+
+  it("sits in the run's header and opens the right panel's Files tab for this run", async () => {
+    const w = openWall({ hash: "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1", history })
+    await w.settle()
+    const head = w.el("wall-task").innerHTML
+    expect(head).toMatch(/<div class="wtask__meta">.*<button type="button" class="wtask__files" id="wtask-files" data-cx="files" data-src="task" aria-pressed="false" title="The files this run read, changed or was given, and the workspace"><svg class="wfl__ic"[^>]*>.*<\/svg>Files<\/button>/)
+    expect(w.el("wall-ctx").hidden).toBe(true)
+    w.press(head, 'data-cx="files"')
+    await w.settle()
+    expect(w.el("wall-ctx").hidden).toBe(false)
+    expect(w.el("wcx-tabs").innerHTML).toContain("<b>Files</b>")
+    const body = w.el("wcx-body").innerHTML
+    expect(body).toContain('href="#page=task&amp;task=t1&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;ch=telegram&amp;done=1"')
+    expect(body).toContain("1 changed · 0 read · 1 attached")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src · 2×</small>")
+    expect(body).toContain("<b>spec.pdf</b><small>you attached it</small>")
+    expect(w.el("wtask-files").getAttribute("aria-pressed")).toBe("true")
+  })
+})

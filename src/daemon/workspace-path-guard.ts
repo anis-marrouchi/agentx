@@ -1,5 +1,5 @@
 import { realpathSync } from "fs"
-import { join, relative, resolve, sep } from "path"
+import { basename, dirname, join, relative, resolve, sep } from "path"
 
 // --- Where a path asked for in an agent's workspace really is (#2316) ---
 //
@@ -14,10 +14,12 @@ import { join, relative, resolve, sep } from "path"
 //     every part of the path as asked AND of the real path. The real path
 //     comes from realpathSync.native, which gives the names as stored on
 //     disk, so a case-insensitive file system (".ENV") or a link to a hidden
-//     file ("notes.txt -> .env") cannot reach a hidden name another way.
+//     file ("notes.txt -> .env") cannot reach a hidden name another way;
+//   - the gh CLI's login file (gh/hosts.yml) is hidden by its parent folder's
+//     name, so a hosts.yml elsewhere stays visible.
 //
-// The name list is the same as the Files tab's (#2315,
-// workspace-files-api.ts), so both can use this module.
+// The Files tab (#2315, workspace-files-api.ts) imports its name checks from
+// here, so both routes hide the same names.
 
 const PATH_MAX = 1024
 
@@ -26,21 +28,35 @@ const PATH_MAX = 1024
  *  open videos and other files the agent wrote. */
 export const WORKSPACE_FILE_ROUTE_MAX = 50 * 1024 * 1024
 
-/** Names never served: version control, packages, and what usually holds secrets. */
+/** Names never served or listed: version control, packages, and what usually holds secrets. */
 export function isHiddenName(name: string): boolean {
   const n = name.toLowerCase()
   return n === ".git" || n === "node_modules" ||
-    n === ".env" || n.startsWith(".env.") || n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
+    // .env, .env.local, .env-local, prod.env, and direnv's .envrc.
+    n === ".env" || /^\.env[-.]/.test(n) || /\.env$/.test(n) || n === ".envrc" ||
+    n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
     /\.(pem|key|p12|pfx|keystore|jks)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)/.test(n) ||
-    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)?$/.test(n) || n === "tokens.json" || n === "auth.json" ||
+    // secrets.yaml, secrets.prod.json, credentials.yml.enc; any *credentials.json
+    // (gcloud's application_default_credentials.json).
+    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)*$/.test(n) || /credentials\.json$/.test(n) || n === "auth.json" ||
     // Logins of git, Claude, MCP servers, Python packages; whole folders of
-    // SSH, Docker and Kubernetes logins (.docker/config.json, .kube/config).
+    // SSH, GnuPG, Docker and Kubernetes logins (.docker/config.json, .kube/config).
     n === ".git-credentials" || n === ".credentials.json" || n === ".mcp.json" || n === "settings.local.json" ||
-    n === ".pypirc" || n === ".ssh" || n === ".docker" || n === ".kube"
+    n === ".pypirc" || n === ".ssh" || n === ".gnupg" || n === ".docker" || n === ".kube"
+}
+
+/** The gh CLI's login file: hosts.yml directly inside a folder named gh. */
+export function isGhHosts(name: string, parent: string): boolean {
+  return name.toLowerCase() === "hosts.yml" && parent.toLowerCase() === "gh"
+}
+
+/** Whether a real (absolute) path is the gh CLI's login file. */
+export function isGhHostsPath(real: string): boolean {
+  return isGhHosts(basename(real), basename(dirname(real)))
 }
 
 /** Whether any part of a path relative to the workspace is a hidden name. */
-function hasHiddenPart(rel: string): boolean {
+export function hasHiddenPart(rel: string): boolean {
   return rel.split(/[\\/]+/).some((s) => s && isHiddenName(s))
 }
 
@@ -51,7 +67,7 @@ export function workspaceParts(path: string): string[] | { status: number; error
   if (p.startsWith("/") || p.startsWith("\\") || /^[a-zA-Z]:/.test(p) || p.startsWith("~")) return { status: 400, error: "the path must be relative to the workspace" }
   const parts = p.split(/[\\/]+/).filter((s) => s && s !== ".")
   if (parts.includes("..")) return { status: 403, error: "the path leaves the workspace" }
-  if (parts.some(isHiddenName)) return { status: 403, error: "this file is not shown" }
+  if (parts.some(isHiddenName) || parts.some((s, i) => i > 0 && isGhHosts(s, parts[i - 1]))) return { status: 403, error: "this file is not shown" }
   return parts
 }
 
@@ -75,6 +91,6 @@ export function resolveWorkspaceFile(workspaceDir: string, rawPath: string, cwd 
   let real: string
   try { real = realpathSync.native(join(root, ...parts)) } catch { return { ok: false, status: 404, error: "file not found" } }
   if (!real.startsWith(root + sep)) return { ok: false, status: 403, error: "the path leads out of the workspace" }
-  if (hasHiddenPart(relative(root, real))) return { ok: false, status: 403, error: "this file is not shown" }
+  if (hasHiddenPart(relative(root, real)) || isGhHostsPath(real)) return { ok: false, status: 403, error: "this file is not shown" }
   return { ok: true, realPath: real }
 }

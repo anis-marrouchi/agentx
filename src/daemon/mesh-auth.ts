@@ -43,6 +43,8 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/api/assistant" || path.startsWith("/api/assistant/") ||
     // A run's session (#2101 R4): every turn asked and answered in its chat.
     /^\/agents\/[^/]+\/tasks\/[^/]+\/session$/.test(path) ||
+    // An agent's workspace, read only (#2101 R17): its folders and text files.
+    /^\/agents\/[^/]+\/workspace$/.test(path) ||
     // An agent sets its own profile picture (#1425): it shows on every page.
     path === "/api/agent-picture" ||
     // Approvals list held memory facts and draft wiki articles, and a card

@@ -569,6 +569,17 @@ export const WALL_CHAT_SCRIPT = String.raw`
     });
   }
   api.stop = function () { var p = pendingMsg(); return stopRun(p && p.taskId, null); };
+  /** This chat as a source for the right panel's Files tab (wall-context.client.ts, #2101 R17):
+   *  its answers' runs and the files its messages carried. Null with no conversation. */
+  api.files = function () {
+    if (!threadId || !thread) return null;
+    var runs = [], attached = [];
+    msgs.forEach(function (m) {
+      if (m.role === 'assistant' && m.taskId && threadNode) runs.push({ node: threadNode, agent: thread.agentId, task: m.taskId });
+      if (m.role === 'user') chatAttached(String(m.content || '')).files.forEach(function (f) { if (attached.indexOf(f) < 0) attached.push(f); });
+    });
+    return { key: 'chat:' + threadId, kind: 'chat', label: thread.title || 'This chat', runs: runs, attached: attached, ws: threadNode ? { node: threadNode, agent: thread.agentId } : null };
+  };
   api.repaint = paintLog;
   $('hc-log').addEventListener('click', function (e) {
     var t = e.target, stop = t.closest('[data-hc-stop]');

@@ -1362,6 +1362,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // An agent's workspace, read only, for the Hub's right panel (#2101 R17):
+  // one folder's list or one text file (workspace-files-api.ts on the node).
+  //   GET /api/task/workspace?node=<url>&agent=<id>&path=<relative>
+  // The proxy sends the node's own token, so it is the owner's alone.
+  if (method === "GET" && path === "/api/task/workspace") {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
+    const u = new URL(req.url || "/", "http://localhost")
+    const nodeUrl = u.searchParams.get("node")
+    const agentId = u.searchParams.get("agent")
+    if (!nodeUrl || !agentId) { sendJson(res, 400, { error: "node and agent query params required" }); return }
+    // Always JSON: a file's text must never come back as a page the browser runs.
+    await proxyNodeGet(res, ctx, nodeUrl, `/agents/${encodeURIComponent(agentId)}/workspace?path=${encodeURIComponent(u.searchParams.get("path") || "")}`, "application/json; charset=utf-8")
+    return
+  }
+
   // Cross-node action proxy: stop / follow-up a running task on any daemon
   // in the dashboard's allowlist. The browser talks to the dashboard origin
   // (same as /api/task/stream), and the dashboard forwards to the daemon's
@@ -2868,6 +2883,26 @@ async function proxyTaskHistory(
   limit: string,
   session: { before: string | null; limit: string | null } | null = null,
 ): Promise<void> {
+  const sq = new URLSearchParams()
+  if (session?.before) sq.set("before", session.before)
+  if (session?.limit) sq.set("limit", session.limit)
+  const upstreamPath = session && taskId
+    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/session${sq.size ? "?" + sq : ""}`
+    : taskId
+    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`
+    : `/agents/${encodeURIComponent(agentId)}/tasks?limit=${encodeURIComponent(limit)}`
+  await proxyNodeGet(res, ctx, nodeUrl, upstreamPath)
+}
+
+/** A GET passed on to a daemon in the dashboard's allowlist (its own, its
+ *  dashboard.daemons, its mesh peers) with that node's token. */
+async function proxyNodeGet(
+  res: ServerResponse,
+  ctx: { config: DaemonConfig },
+  nodeUrl: string,
+  upstreamPath: string,
+  contentType?: string,
+): Promise<void> {
   const target = nodeUrl.replace(/\/+$/, "")
   const allowed = new Set<string>()
   allowed.add(ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""))
@@ -2883,19 +2918,12 @@ async function proxyTaskHistory(
   const tokenForNode = dashboardTokenForNode(ctx.config.dashboard, target)
   const headers: Record<string, string> = { Accept: "application/json" }
   if (tokenForNode) headers["Authorization"] = `Bearer ${tokenForNode}`
-  const sq = new URLSearchParams()
-  if (session?.before) sq.set("before", session.before)
-  if (session?.limit) sq.set("limit", session.limit)
-  const upstreamPath = session && taskId
-    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/session${sq.size ? "?" + sq : ""}`
-    : taskId
-    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`
-    : `/agents/${encodeURIComponent(agentId)}/tasks?limit=${encodeURIComponent(limit)}`
   try {
     const r = await fetch(`${target}${upstreamPath}`, { headers })
     const body = await r.text()
     res.writeHead(r.status, {
-      "Content-Type": r.headers.get("content-type") || "application/json; charset=utf-8",
+      "Content-Type": contentType || r.headers.get("content-type") || "application/json; charset=utf-8",
+      ...(contentType ? { "X-Content-Type-Options": "nosniff" } : {}),
     })
     res.end(body)
   } catch (e: any) {

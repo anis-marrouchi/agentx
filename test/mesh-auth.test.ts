@@ -129,6 +129,11 @@ describe("isMeshGatedPath — routes gated for every method", () => {
     expect(isMeshGatedPath("/tracesx")).toBe(false)
   })
 
+  it("gates an agent's workspace, read only (#2101 R17)", () => {
+    expect(isMeshGatedPath("/agents/cx/workspace")).toBe(true)
+    expect(isMeshGatedPath("/agents/cx/workspacex")).toBe(false)
+  })
+
   it("gates the wiki routes peers sync entries and articles from", () => {
     for (const p of ["/wiki/agents", "/wiki/entries", "/wiki/articles", "/wiki/article"]) {
       expect(isMeshGatedPath(p)).toBe(true)
