@@ -8,11 +8,16 @@ import { describe, expect, it } from "vitest"
 import { HUB_REACT_PAGES, hubReactPageIds } from "../src/hub/pages"
 import { SETTINGS_PAGE, settingsHash } from "../src/hub/settings/address"
 import { activeTokens, channelSummary, initials, needsYou, orgNode } from "../src/hub/settings/data"
+import ApprovalsPane from "../src/hub/settings/ApprovalsPane"
 import GeneralPane from "../src/hub/settings/GeneralPane"
 import MenuPane from "../src/hub/settings/MenuPane"
 import {
   addAt, barIds, inGroup, inMore, itemMeta, moveItem, newItemId, pageNames, removeItem, renameItem, toggleBar, type MenuItem, type MenuReply,
 } from "../src/hub/settings/menu-model"
+import InboxPane from "../src/hub/settings/InboxPane"
+import JobsPane from "../src/hub/settings/JobsPane"
+import { DisclosureContext } from "../src/hub/settings/parts"
+import { cronHuman, hookState, hookUrl, inboxBody, inboxChanged, inboxForm, valueLine } from "../src/hub/settings/work-data"
 import { SETTINGS_GROUPS, SETTINGS_PANES, paneDef, rowDef } from "../src/hub/settings/panes"
 import { buildSettingsIndex, searchSettings } from "../src/hub/settings/search"
 import { TooltipProvider } from "../src/hub/ui"
@@ -126,7 +131,7 @@ describe("Settings › General", () => {
 
 describe("Settings › General: one relative time format (C17)", () => {
   it("says now, minutes, hours and days", async () => {
-    const { relTime } = await import("../src/hub/settings/GeneralPane")
+    const { relTime } = await import("../src/hub/settings/parts")
     const now = Date.parse("2026-11-26T12:00:00Z")
     expect(relTime(now - 20e3, now)).toBe("now")
     expect(relTime(now - 5 * 60e3, now)).toBe("5m")
@@ -233,5 +238,157 @@ describe("Settings › Menu: the steps on the list", () => {
     expect(addAt(menuItems, { id: "m_bbbbbb1", kind: "page", page: "cost" }).at(-2)!.id).toBe("m_bbbbbb1")
     expect(newItemId("link")).toMatch(/^pin_[a-f0-9]{12}$/)
     expect(newItemId("page")).toMatch(/^m_[a-f0-9]{12}$/)
+  })
+})
+
+// --- ST2b: Jobs, Approvals and Inbox (#2101) ---
+
+const workState = {
+  ...state,
+  daemonUrl: "https://hub.example.net:18800/",
+  nodeName: "studio",
+  crons: [
+    { id: "daily-standup", schedule: "0 9 * * 1-5", agent: "pm-agent", prompt: "Post today's plan.", kind: "agent", value: { why: "the team starts aligned", metric: "plan posted by 9:05" }, goal: "Q4 delivery plan",
+      changes: [{ at: "2026-11-24T10:12:00Z", field: "schedule", by: "dev-session", old: "0 9 * * *", new: "0 9 * * 1-5", reason: "no plan on weekends" }] },
+    { id: "inbox-sweep", schedule: "*/15 * * * *", agent: "cx", prompt: "Answer new client emails.", kind: "agent" },
+    { id: "nightly-backup", schedule: "0 2 * * *", agent: "devops-agent", prompt: "agentx backup", kind: "command" },
+  ],
+  sensors: [{ id: "disk-free", reading: "disk free", every: "5m", targets: ["devops-agent"], last: "41% free", lastAt: Date.parse("2026-11-26T11:00:00Z"), wakes: [] }],
+  hostJobs: [],
+  webhooks: [
+    { id: "main-repo", source: "gitlab", agentId: "dev-session", secretEnv: "GITLAB_WEBHOOK_SECRET", description: "", enabled: true, triggers: { "issues.opened": "triage-issue" }, defaultWorkflow: "dev-intake" },
+    { id: "billing", source: "stripe", agentId: "cx", secretEnv: "", description: "", enabled: true, triggers: {}, defaultWorkflow: "" },
+  ],
+  wikiNotes: { enabled: true, inbox: "dev-session", crons: ["daily-standup"], absorbAgent: "", maxNotesPerRun: 20, maxDeferrals: 3 },
+  notifications: {
+    longTaskThreshold: 30, destination: { channel: "telegram", chatId: "-1009988776655" },
+    on: { taskComplete: true, taskError: true, taskQueued: false },
+    local: { banner: true, sound: true, soundName: "Glass", volume: 0.4, icon: "" },
+    ntfy: { enabled: false, server: "https://ntfy.sh", topicSet: true, tokenSet: false },
+  },
+}
+const apvSettings = { defaultExpiryDays: 3, maxExpiryDays: 14, laterHours: 4, notifyAgent: true, digest: { enabled: true, time: "09:00" }, desk: { phone: "urgent", computer: "all" } }
+const reqSettings = {
+  enabled: true, from: ["telegram:100200300"], channels: ["voice", "app"], staleAfterHours: 24, retentionDays: 30, headlines: { enabled: true },
+  plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["cx"], requireForWork: ["code"], requireOverMinutes: 30 },
+  checkers: { enabled: ["url", "issue"], checkEveryMinutes: 10 },
+}
+
+function renderPane(Pane: () => unknown, open: string[] = []): string {
+  const client = new QueryClient()
+  client.setQueryData(["settings", "state"], workState)
+  client.setQueryData(["settings", "approvals"], apvSettings)
+  client.setQueryData(["settings", "requests"], reqSettings)
+  client.setQueryData(["settings", "wiki-notes"], { notes: [{ id: "n-7f2c", status: "open", from: "@cx", date: "25 Nov", change: "Support hours moved." }] })
+  const disclosure = { isOpen: (id: string) => open.includes(id), setOpen: () => {} }
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null,
+      createElement(DisclosureContext.Provider, { value: disclosure }, createElement(Pane as never)))),
+  )
+}
+
+/** Every pane, every tab: what it draws as data-row is in search. */
+const WORK_SHOTS: [string, () => unknown, string[]][] = [
+  ["jobs", JobsPane, []], ["jobs", JobsPane, ["jobs-tab-webhooks"]], ["jobs", JobsPane, ["jobs-tab-wiki", "wn-adv"]],
+  ["approvals", ApprovalsPane, []], ["inbox", InboxPane, []],
+]
+
+describe("Settings › Work panes: every row drawn is in search (condition 1)", () => {
+  const index = buildSettingsIndex()
+  it.each(WORK_SHOTS)("%s %#", (pane, Pane, open) => {
+    expect(paneDef(pane).built).toBe(true)
+    const html = renderPane(Pane, open)
+    const drawn = [...html.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1])
+    expect(drawn.length).toBeGreaterThan(1)
+    const inSearch = new Set(index.filter((e) => e.pane === pane).map((e) => e.row))
+    for (const id of drawn) expect(inSearch, `${pane}: row "${id}" is drawn but not in search`).toContain(id)
+  })
+  it("finds every Jobs, Approvals and Inbox row by its own label", () => {
+    for (const pane of ["jobs", "approvals", "inbox"]) {
+      for (const r of paneDef(pane).rows) {
+        expect(searchSettings(index, r.label, 100), `${pane}: "${r.label}" not found`).toContainEqual(expect.objectContaining({ pane, row: r.id }))
+      }
+    }
+  })
+  it("keeps the Inbox help to one short line (80 characters)", () => {
+    const p = paneDef("inbox")
+    for (const h of [p.help, ...p.rows.map((r) => r.help ?? "")]) expect(h.length, h).toBeLessThanOrEqual(80)
+  })
+  it("search opens the tab or the fold a row sits in", () => {
+    expect(searchSettings(index, "webhooks")[0]).toMatchObject({ pane: "jobs", row: "webhooks", open: "jobs-tab-webhooks" })
+    expect(searchSettings(index, "most notes")[0]).toMatchObject({ pane: "jobs", row: "wn-max", open: "wn-adv" })
+    expect(searchSettings(index, "digest")[0]).toMatchObject({ pane: "approvals" })
+    expect(searchSettings(index, "ntfy")[0]).toMatchObject({ pane: "inbox" })
+  })
+})
+
+describe("Settings › Jobs", () => {
+  it("draws schedules with their value line, sensors and the row menu", () => {
+    const html = renderPane(JobsPane)
+    expect(html).toContain("daily-standup")
+    expect(html).toContain("Weekdays at 9:00")
+    expect(html).toContain("plan posted by 9:05")
+    expect(html).toContain("No value line · no goal")
+    expect(html).toContain("Change log (1)")
+    expect(html).toContain("disk-free")
+    expect(html).toContain("More actions for daily-standup")
+    // C4: the … shows on hover or focus with a pointer, always on touch.
+    expect(html).toContain("can-hover:opacity-0")
+  })
+  it("draws webhooks with state, address and routing", () => {
+    const html = renderPane(JobsPane, ["jobs-tab-webhooks"])
+    expect(html).toContain("https://hub.example.net:18800/webhook/dev-session/gitlab")
+    expect(html).toContain("Receiving")
+    expect(html).toContain("Signing secret missing")
+    expect(html).toContain("Routing · 1 trigger · default dev-intake")
+    // C4: the badge sits under the name below 640 px.
+    expect(html).toContain("mt-1 flex sm:hidden")
+  })
+  it("draws the wiki notes inbox with Advanced folded open by search", () => {
+    const html = renderPane(JobsPane, ["jobs-tab-wiki", "wn-adv"])
+    expect(html).toContain("Support hours moved.")
+    expect(html).toMatch(/data-disclosure="wn-adv" data-state="open"/)
+  })
+  it("says a schedule in words and finds what its value line misses", () => {
+    expect(cronHuman("*/15 * * * *")).toBe("Every 15 minutes")
+    expect(cronHuman("0 2 * * *")).toMatch(/02:00/)
+    expect(cronHuman("not a cron")).toBe("")
+    expect(valueLine({ id: "x", schedule: "", agent: "a", kind: "command" }).missing).toEqual(["No value line"])
+    expect(valueLine({ id: "x", schedule: "", agent: "a", value: { why: "w", metric: "m" } }).missing).toEqual(["No goal"])
+    expect(hookUrl("http://h:1/", { agentId: "a b", source: "github" })).toBe("http://h:1/webhook/a%20b/github")
+    expect(hookState({ id: "c", source: "custom", agentId: "a", secretEnv: "", description: "", enabled: false, triggers: {}, defaultWorkflow: "" })).toBe("off")
+  })
+})
+
+describe("Settings › Approvals", () => {
+  it("draws the reach, digest, requests and plans, with rare rows folded", () => {
+    const html = renderPane(ApprovalsPane)
+    expect(html).toMatch(/aria-label="Cards expire after"[^>]*value="3"/)
+    expect(html).toContain("telegram:100200300")
+    expect(html).toMatch(/data-disclosure="apv-adv" data-state="closed"/)
+    expect(html).toMatch(/data-disclosure="lc-adv" data-state="closed"/)
+  })
+})
+
+describe("Settings › Inbox: a draft with one Save", () => {
+  const saved = inboxForm(workState.notifications as never)
+  it("reads the saved settings into the form", () => {
+    expect(saved).toMatchObject({ channel: "telegram", chat: "-1009988776655", done: true, queued: false, long: "30", soundName: "Glass", ntfy: false })
+    const html = renderPane(InboxPane)
+    expect(html).toContain("Goes to <span class=\"font-mono\">telegram:-1009988776655</span>")
+    expect(html).not.toContain("changes not saved")
+  })
+  it("sends only what changed on ntfy, and asks for a restart then", () => {
+    expect(inboxChanged(saved, { ...saved, queued: true })).toEqual(["queued"])
+    const a = inboxBody(saved, { ...saved, queued: true })
+    expect(a).toMatchObject({ restart: false, body: { on: { taskQueued: true } } })
+    expect("body" in a && "destination" in a.body).toBe(false)
+    expect(inboxBody(saved, { ...saved, ntfy: true, topic: "NTFY_TOPIC" })).toMatchObject({ restart: true, body: { ntfy: { enabled: true, topic: "${NTFY_TOPIC}" } } })
+    expect(inboxBody(saved, { ...saved, channel: "" , chat: "" })).toMatchObject({ body: { destination: null } })
+  })
+  it("refuses a secret typed as a variable name, and a half destination", () => {
+    expect(inboxBody(saved, { ...saved, topic: "tk_secret-value!" })).toHaveProperty("error")
+    expect(inboxBody(saved, { ...saved, chat: "" })).toHaveProperty("error")
+    expect(inboxBody(saved, { ...saved, volume: "2" })).toHaveProperty("error")
   })
 })

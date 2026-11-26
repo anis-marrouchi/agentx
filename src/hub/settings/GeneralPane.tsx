@@ -11,14 +11,14 @@ import { engineIcon } from "../../daemon/ui/pages/engine-icons"
 import { apiFetch, apiGet } from "../api"
 import {
   Badge, badgeVariants, Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Switch, Tooltip, TooltipContent, TooltipTrigger,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch, Tooltip, TooltipContent, TooltipTrigger,
 } from "../ui"
 import { settingsHash } from "./address"
 import {
   AGENT_ID, ENGINE_CHOICES, activeTokens, channelSummary, engineName, initials, needsYou, nodeChecking, nodeDown, orgNode, restartWaiting,
   type AdminState, type LiveNode, type LiveReply, type OrgReply, type StateAgent, type TokenRow,
 } from "./data"
-import { Disclosure, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, ToneDot } from "./parts"
+import { Ago, Disclosure, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows, ToneDot } from "./parts"
 import { paneDef } from "./panes"
 
 const PANE = "general"
@@ -324,40 +324,6 @@ function Disclosed({ open, onOpenChange, children }: { open: boolean; onOpenChan
         Advanced
       </button>
       <div hidden={!open} className="flex flex-col gap-3 pb-1 pl-5">{children}</div>
-    </div>
-  )
-}
-
-/** One relative time format (orca-design C17): `now`, `2m`, `1h`, `2d`, the
- *  full stamp in its tooltip. */
-function Ago({ iso, prefix = "" }: { iso: string; prefix?: string }) {
-  const ms = Date.parse(iso)
-  if (!Number.isFinite(ms)) return null
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild><time dateTime={iso}>{prefix}{relTime(ms) === "now" ? "now" : relTime(ms) + " ago"}</time></TooltipTrigger>
-      <TooltipContent>{new Date(ms).toLocaleString()}</TooltipContent>
-    </Tooltip>
-  )
-}
-
-export function relTime(ms: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - ms) / 1000))
-  if (s < 60) return "now"
-  if (s < 3600) return Math.floor(s / 60) + "m"
-  if (s < 86400) return Math.floor(s / 3600) + "h"
-  return Math.floor(s / 86400) + "d"
-}
-
-function SkeletonRows() {
-  return <div className="flex flex-col gap-3 py-4" aria-busy="true"><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /><Skeleton className="h-5 w-3/5" /></div>
-}
-
-function ErrorLine({ text, onRetry }: { text: string; onRetry: () => void }) {
-  return (
-    <div role="alert" className="flex items-center justify-between gap-4 py-3 text-sm">
-      <span className="text-destructive">{text}</span>
-      <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
     </div>
   )
 }
