@@ -120,7 +120,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
         (t.kind === 'files' ? wflIcon('files') : '') +
         '<b>' + esc(CX_NAME[t.kind]) + '</b>' + (t.path ? ' ' + esc(cxTitle(t)) : what ? ' ' + esc(cxShort(what)) : '') + '</button>' +
-        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
+        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '" title="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
     }).join('');
   }
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
