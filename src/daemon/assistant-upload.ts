@@ -74,6 +74,16 @@ export function attachedLine(files: Array<{ name: string }>): string {
   return "Attached: " + files.map(f => f.name).join(", ")
 }
 
+/** A Task page follow-up with files (#2306): the message, then the files
+ *  by name and path, so the agent can open them with its own tools. The
+ *  follow-up goes into the run as it is, so the paths are part of it. */
+export function withAttachedFiles(message: string, files: Array<{ name: string; path: string }>): string {
+  if (!files.length) return message
+  return `${message}\n\n${attachedLine(files)}\n` +
+    "(saved on this computer; open them with your tools when they matter)\n" +
+    files.map(f => `- ${f.name}: ${f.path}`).join("\n")
+}
+
 export async function handleAssistantUpload(req: IncomingMessage, res: ServerResponse, url: URL, deps: UploadDeps): Promise<void> {
   if (req.method !== "POST") { req.resume(); return json(res, 405, { error: "POST" }) }
   const agent = String(url.searchParams.get("agent") || "").trim()

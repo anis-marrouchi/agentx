@@ -6,6 +6,11 @@
 .axc { font: var(--ax-fs, 14px)/1.6 var(--ax-font, system-ui, sans-serif); color: var(--ax-text); min-width: 0; }
 .axc-conv { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .axc-msg { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* One row per part, its time in a column on the right (#2306). */
+.axc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: start; min-width: 0; }
+.axc-row__main { min-width: 0; }
+.axc-when { min-width: 3.2em; padding-top: 4px; text-align: right; white-space: nowrap; font: 11px/1.4 var(--ax-mono, ui-monospace, monospace); color: var(--ax-muted); font-variant-numeric: tabular-nums; }
+.axc-row--system .axc-when { padding-top: 0; }
 
 /* Reply */
 .axc-reply { min-width: 0; color: var(--ax-text); }

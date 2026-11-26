@@ -36,6 +36,7 @@ import { AgentMemory, agentMemoryStartBlock } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { redactSecrets } from "./memory-trust"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
+import { outStamp, outStampTrim, type OutStamp } from "./output-stamps"
 import { buildTimeLimitNote, DEFAULT_TIME_LIMIT_SETTINGS, handedOffTimeLimitError, planTimeLimit, reportedTimeLimitError } from "./resume/time-limit"
 import { describeJobState, JOB_STATE_ASK, JOB_STATE_RULE, jobStateInText, needsJobState, stalledLine, stateOnAnswer, withoutStateLines, type JobState } from "./run-state"
 import { isQuietAnswer } from "@/crons/quiet"
@@ -258,6 +259,8 @@ export function lastActivityLine(buffer: string): string | undefined {
 interface TaskOutput {
   agentId: string
   buffer: string
+  /** When each line of the buffer came in (output-stamps.ts, #2306). */
+  stamps: OutStamp[]
   subscribers: Set<TaskOutputSubscriber>
   done: boolean
   endedAt?: Date
@@ -303,6 +306,9 @@ export interface TaskRecord {
   responseText: string
   /** Terminal-style transcript captured from stream-json events. */
   transcript: string
+  /** When each line of the transcript came in: [offset, epoch ms]
+   *  (output-stamps.ts, #2306). Absent on records saved before it. */
+  transcriptStamps?: OutStamp[]
   /** The home the run held the lease on (#2084): counted per week. */
   home?: string
 }
@@ -3046,16 +3052,27 @@ export class AgentRegistry {
     //     and system events — i.e. everything you'd see in a real terminal.
     //   - Caller did NOT pass onDelta → leave runtime in non-streaming mode and
     //     post the final response.content as a single chunk after execution.
-    const output: TaskOutput = { agentId: task.agentId, buffer: "", subscribers: new Set(), done: false }
+    const output: TaskOutput = { agentId: task.agentId, buffer: "", stamps: [], subscribers: new Set(), done: false }
     this.taskOutputs.set(runningTask.id, output)
     const pushToBuffer = (chunk: string) => {
       if (!chunk) return
+      outStamp(output.stamps, output.buffer, chunk, Date.now())
       output.buffer += chunk
       if (output.buffer.length > TASK_OUTPUT_BUFFER_MAX) {
-        output.buffer = output.buffer.slice(output.buffer.length - TASK_OUTPUT_BUFFER_MAX)
+        const cut = output.buffer.length - TASK_OUTPUT_BUFFER_MAX
+        output.buffer = output.buffer.slice(cut)
+        output.stamps = outStampTrim(output.stamps, cut)
       }
       for (const sub of output.subscribers) {
         try { sub(chunk) } catch { /* subscriber crashed — ignore */ }
+      }
+    }
+    // The whole output in one go (a refusal, or a non-streaming run's answer).
+    const setBuffer = (text: string) => {
+      output.buffer = text
+      output.stamps = [[0, Date.now()]]
+      for (const sub of output.subscribers) {
+        try { sub(text) } catch { /* */ }
       }
     }
     // Allocate the per-execution trace id eagerly so both the streaming
@@ -3305,6 +3322,7 @@ export class AgentRegistry {
             : timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
+          ...(output.stamps.length ? { transcriptStamps: output.stamps } : {}),
           ...(task.leaseHome ? { home: task.leaseHome } : {}),
         }
         this.persistTaskRecord(record)
@@ -4780,10 +4798,7 @@ export class AgentRegistry {
             duration: 0,
           }
           if (!onDelta) {
-            output.buffer = `[error] ${abort.message}`
-            for (const sub of output.subscribers) {
-              try { sub(output.buffer) } catch { /* */ }
-            }
+            setBuffer(`[error] ${abort.message}`)
           } else {
             // A streaming caller (the Hub chat, #2101 R14) shows the
             // refusal while it waits, as an error line of the live output.
@@ -4808,10 +4823,7 @@ export class AgentRegistry {
         traceStep("budget-gate")
         this.log(`[${task.agentId}] run refused — ${overBudget.reason}`)
         if (!onDelta) {
-          output.buffer = `[error] ${overBudget.message}`
-          for (const sub of output.subscribers) {
-            try { sub(output.buffer) } catch { /* */ }
-          }
+          setBuffer(`[error] ${overBudget.message}`)
         } else {
           pushToBuffer(`\n[error] ${oneLine(overBudget.message)}\n`)
         }
@@ -5014,11 +5026,7 @@ export class AgentRegistry {
           pushToBuffer(`${output.buffer && !output.buffer.endsWith("\n") ? "\n" : ""}[error] ${response.error}\n`)
         }
       } else if (!onDelta && (response.content || response.error)) {
-        const finalText = response.error ? `[error] ${response.error}` : response.content
-        output.buffer = finalText
-        for (const sub of output.subscribers) {
-          try { sub(finalText) } catch { /* */ }
-        }
+        setBuffer(response.error ? `[error] ${response.error}` : response.content)
       }
 
       if (response.error) {
@@ -5918,13 +5926,14 @@ export class AgentRegistry {
    * returns null. If the task already finished, the subscriber is given the
    * tail buffer and immediately ended.
    */
-  subscribeToTaskOutput(taskId: string, sub: TaskOutputSubscriber): { initial: string; done: boolean; unsubscribe: () => void } | null {
+  subscribeToTaskOutput(taskId: string, sub: TaskOutputSubscriber): { initial: string; stamps: OutStamp[]; done: boolean; endedAt?: number; unsubscribe: () => void } | null {
     const out = this.taskOutputs.get(taskId)
     if (!out) return null
-    if (out.done) return { initial: out.buffer, done: true, unsubscribe: () => {} }
+    if (out.done) return { initial: out.buffer, stamps: out.stamps.slice(), done: true, endedAt: out.endedAt?.getTime(), unsubscribe: () => {} }
     out.subscribers.add(sub)
     return {
       initial: out.buffer,
+      stamps: out.stamps.slice(),
       done: false,
       unsubscribe: () => { out.subscribers.delete(sub) },
     }

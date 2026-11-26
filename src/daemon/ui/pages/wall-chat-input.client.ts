@@ -41,29 +41,227 @@ const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'
 
 /** The composer card: who it goes to, files, the message, then attach,
- *  the model, the mic and the send arrow. */
-export function wallChatInputHtml(): string {
-  return `<div class="hc__comp" id="hc-comp">
-      <div class="hc__compto"><span class="hc__totag" id="hc-to-tag" hidden><span class="hc__av" id="hc-to-av" aria-hidden="true"></span><span id="hc-to">To</span></span></div>
-      <div class="hc__files hc__files--draft" id="hc-files" hidden></div>` +
-    `<textarea id="hc-text" rows="1" maxlength="4000" placeholder="Message…" aria-label="Message"></textarea>` +
-    `<div class="hc__row"><button type="button" class="hc__tool" id="hc-attach" aria-label="Attach files" title="Attach files">${ICON_PLUS}</button><input type="file" id="hc-file" multiple hidden>` +
-    `<select class="hc__model" id="hc-model" aria-label="Model" title="Model for this message" hidden></select><span class="hc__model hc__model--own" id="hc-model-own" hidden></span>` +
-    `<button type="button" class="hc__tool hc__tool--mic" id="hc-mic" aria-label="Record a voice message" aria-pressed="false" title="Record a voice message" hidden>${ICON_MIC}</button>` +
-    `<button type="button" class="hc__tool hc__tool--check" id="hc-mic-check" aria-label="Check before sending" aria-pressed="false" title="Check before sending: off. A recording sends when you stop." hidden>${ICON_CHECK}</button>` +
-    `<button type="button" class="hc__tool" id="hc-mic-play" aria-label="Hear my message" title="Hear my message" hidden>${ICON_PLAY}</button>` +
-    `<button class="hc__send" id="hc-send" type="submit" aria-label="Send" title="Send (Enter)">${ICON_SEND}</button></div>
+ *  the model, the mic and the send arrow. The Task page uses the same card
+ *  (#2306): `id` prefixes every id ("hc" by default), `chat: false` leaves
+ *  out who it goes to and the model (a follow-up joins a run already on
+ *  its model), and `acts` is put just before the send arrow (Pause, Stop,
+ *  Resume). Files are on both. */
+export function wallChatInputHtml(o: { id?: string; chat?: boolean; acts?: string; placeholder?: string; label?: string } = {}): string {
+  const P = o.id || "hc"
+  const chat = o.chat !== false
+  return `<div class="hc__comp" id="${P}-comp">` +
+    (chat ? `
+      <div class="hc__compto"><span class="hc__totag" id="${P}-to-tag" hidden><span class="hc__av" id="${P}-to-av" aria-hidden="true"></span><span id="${P}-to">To</span></span></div>` : "") + `
+      <div class="hc__files hc__files--draft" id="${P}-files" hidden></div>` +
+    `<textarea id="${P}-text" rows="1" maxlength="4000" placeholder="${o.placeholder || "Message…"}" aria-label="${o.label || "Message"}"></textarea>` +
+    `<div class="hc__row">` +
+    `<button type="button" class="hc__tool" id="${P}-attach" aria-label="Attach files" title="Attach files">${ICON_PLUS}</button><input type="file" id="${P}-file" multiple hidden>` +
+    (chat ? `<select class="hc__model" id="${P}-model" aria-label="Model" title="Model for this message" hidden></select><span class="hc__model hc__model--own" id="${P}-model-own" hidden></span>` : "") +
+    `<button type="button" class="hc__tool hc__tool--mic" id="${P}-mic" aria-label="Record a voice message" aria-pressed="false" title="Record a voice message" hidden>${ICON_MIC}</button>` +
+    `<button type="button" class="hc__tool hc__tool--check" id="${P}-mic-check" aria-label="Check before sending" aria-pressed="false" title="Check before sending: off. A recording sends when you stop." hidden>${ICON_CHECK}</button>` +
+    `<button type="button" class="hc__tool" id="${P}-mic-play" aria-label="Hear my message" title="Hear my message" hidden>${ICON_PLAY}</button>` +
+    (o.acts || "") +
+    `<button class="hc__send" id="${P}-send" type="${chat ? "submit" : "button"}" aria-label="Send" title="Send (Enter)">${ICON_SEND}</button></div>
     </div>
-    <p class="hc__voice" id="hc-voice" role="status" hidden></p>`
+    <p class="hc__voice" id="${P}-voice" role="status" hidden></p>`
 }
 
 export const WALL_CHAT_INPUT_SCRIPT = String.raw`
 // The Hub chat's ask box: files and the mic (wall-chat-input.client.ts).
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+
+  // --- The voice part of an ask box, shared (#2306) ---
+  // The mic, Check before sending and Hear my message, on the ask box whose
+  // ids start with P ("hc" in the chat, "task" on the Task page). api:
+  // agent(), headers(extra), send(text, {spoken}) -> Promise<bool>,
+  // sendError(), and pauseAudio() when the page plays answers aloud.
+  window.AXComposerVoice = function (P, api) {
+    if (!$(P + '-mic')) return;
+    function say(text, err) {
+      var p = $(P + '-voice');
+      if (!p) return;
+      p.textContent = text || '';
+      p.hidden = !text;
+      p.className = 'hc__voice' + (err ? ' is-err' : '');
+    }
+    // --- The mic: record, write it down, send it, say the answer back ---
+    var nav = window.navigator || {};
+    var canRecord = !!(nav.mediaDevices && nav.mediaDevices.getUserMedia && window.MediaRecorder);
+    if (!canRecord) return;
+    $(P + '-mic').hidden = false;
+    $(P + '-mic-check').hidden = false;
+    var rec = null, chunks = [], started = 0, stream = null, MAX_MS = 120000, stopTimer = null;
+    // Check before sending (#2266): off by default, so a recording sends when it stops.
+    var CHECK_KEY = 'ax-hub-chat-mic-check';
+    var checkFirst = false;
+    try { checkFirst = localStorage.getItem(CHECK_KEY) === '1'; } catch (e) { /* private mode: off */ }
+    function paintCheck() {
+      var b = $(P + '-mic-check');
+      b.setAttribute('aria-pressed', String(checkFirst));
+      b.setAttribute('title', checkFirst
+        ? 'Check before sending: on. Your words go in the box; you send them.'
+        : 'Check before sending: off. A recording sends when you stop.');
+    }
+    paintCheck();
+    $(P + '-mic-check').addEventListener('click', function () {
+      checkFirst = !checkFirst;
+      try { localStorage.setItem(CHECK_KEY, checkFirst ? '1' : '0'); } catch (e) { /* kept for this page only */ }
+      paintCheck();
+      say(checkFirst ? 'Recordings now wait in the box for you to send.' : 'Recordings now send when you stop.');
+    });
+    // Hear my message: the last recording, kept in this page only.
+    var lastUrl = '', mine = null;
+    function keepRecording(blob) {
+      if (!window.URL || typeof window.URL.createObjectURL !== 'function') return;
+      if (lastUrl && typeof window.URL.revokeObjectURL === 'function') window.URL.revokeObjectURL(lastUrl);
+      lastUrl = window.URL.createObjectURL(blob);
+      $(P + '-mic-play').hidden = false;
+    }
+    $(P + '-mic-play').addEventListener('click', function () {
+      if (!lastUrl || typeof window.Audio !== 'function') return;
+      if (typeof api.pauseAudio === 'function') api.pauseAudio();
+      if (mine) mine.pause();
+      mine = new window.Audio(lastUrl);
+      var p = mine.play();
+      if (p && p.catch) p.catch(function () { say('Could not play the recording.', true); });
+    });
+    function micOn(v) {
+      $(P + '-mic').setAttribute('aria-pressed', String(v));
+      $(P + '-mic').classList.toggle('is-on', v);
+      $(P + '-comp').classList.toggle('is-live', v);
+    }
+    function release() {
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+    function start() {
+      if (!api.agent()) { say('Pick an agent first.', true); return; }
+      nav.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+        stream = s; chunks = [];
+        rec = new window.MediaRecorder(s);
+        rec.addEventListener('dataavailable', function (e) { if (e.data && e.data.size) chunks.push(e.data); });
+        rec.addEventListener('stop', finish);
+        rec.start();
+        started = Date.now();
+        micOn(true);
+        say(checkFirst ? 'Recording… press the mic again to stop.' : 'Recording… press the mic again to send.');
+        stopTimer = setTimeout(stop, MAX_MS);
+      }).catch(function () { say('The browser did not give the microphone.', true); });
+    }
+    function stop() {
+      clearTimeout(stopTimer);
+      if (rec && rec.state !== 'inactive') rec.stop();
+    }
+    function finish() {
+      var ms = Date.now() - started, type = (rec && rec.mimeType) || 'audio/webm';
+      rec = null; micOn(false); release();
+      var blob = new Blob(chunks, { type: type });
+      if (!blob.size) { say('Nothing was recorded.', true); return; }
+      keepRecording(blob);
+      say('Writing it down…');
+      fetch('/api/assistant/voice/transcribe', {
+        method: 'POST', headers: api.headers({ 'Content-Type': type.split(';')[0], 'X-Audio-Duration-Ms': String(ms) }), body: blob,
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          if (!r.ok || !d.text) throw new Error(d.hint || d.error || ('HTTP ' + r.status));
+          if (checkFirst) {
+            // The person sends it: the words join what is already in the box.
+            var box = $(P + '-text'), was = String(box.value || '').trim();
+            box.value = was ? was + ' ' + d.text : d.text;
+            if (typeof box.dispatchEvent === 'function' && typeof window.Event === 'function') box.dispatchEvent(new window.Event('input'));
+            if (typeof box.focus === 'function') box.focus();
+            say('Check it, then send.');
+            return;
+          }
+          say('');
+          return api.send(d.text, { spoken: true }).then(function (ok) {
+            // Written down but not sent: say why here too, not only in the log (#2238).
+            var why = !ok && typeof api.sendError === 'function' ? api.sendError() : '';
+            if (why) say('Not sent: ' + why, true);
+          });
+        });
+      }).catch(function (e) { say('Not written down: ' + (e && e.message || 'failed'), true); });
+    }
+    $(P + '-mic').addEventListener('click', function () { rec ? stop() : start(); });
+
+  };
+
+  // --- The files part of an ask box, shared (#2306) ---
+  // Each file goes up when picked (POST /api/assistant/upload, kept on the
+  // node that runs the agent), then waits as a chip until the message is
+  // sent. On the ask box whose ids start with P. api: agent(), node()
+  // (the node's url, '' for this one), headers(extra). Returns
+  // attachments(), uploading() and clear(); null when the box has no files.
+  window.AXComposerFiles = function (P, api) {
+    if (!$(P + '-attach')) return null;
+    var MAX = ${ATTACH_MAX};
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function say(text, err) {
+      var p = $(P + '-voice');
+      if (!p) return;
+      p.textContent = text || '';
+      p.hidden = !text;
+      p.className = 'hc__voice' + (err ? ' is-err' : '');
+    }
+    var files = [], uploading = 0;
+    function paint() {
+      var box = $(P + '-files');
+      box.innerHTML = files.map(function (f, i) {
+        return '<span class="hc__file' + (f.path ? '' : ' is-wait') + '">' + esc(f.name) + (f.path ? '' : ' …') +
+          '<button type="button" data-hc-unattach="' + i + '" aria-label="Remove ' + esc(f.name) + '">×</button></span>';
+      }).join('');
+      box.hidden = !files.length;
+    }
+    function upload(file) {
+      var entry = { name: file.name || 'file', path: '' };
+      files.push(entry); uploading++; paint();
+      var q = new URLSearchParams();
+      q.set('agent', api.agent()); q.set('name', entry.name);
+      var node = api.node(); if (node) q.set('node', node);
+      return fetch('/api/assistant/upload?' + q.toString(), {
+        method: 'POST', headers: api.headers({ 'Content-Type': 'application/octet-stream' }), body: file,
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          if (!r.ok || !d.path) throw new Error(d.error || ('HTTP ' + r.status));
+          entry.path = d.path; entry.name = d.name || entry.name;
+        });
+      }).catch(function (e) {
+        files = files.filter(function (f) { return f !== entry; });
+        say('Not attached: ' + entry.name + ' (' + (e && e.message || 'failed') + ')', true);
+      }).then(function () { uploading--; paint(); });
+    }
+    $(P + '-attach').addEventListener('click', function () {
+      if (!api.agent()) { say('Pick an agent first.', true); return; }
+      $(P + '-file').click();
+    });
+    $(P + '-file').addEventListener('change', function () {
+      var list = Array.prototype.slice.call($(P + '-file').files || []);
+      var room = MAX - files.length;
+      if (list.length > room) say('A message carries ' + MAX + ' files at most.', true);
+      else say('');
+      list.slice(0, Math.max(0, room)).forEach(upload);
+      $(P + '-file').value = '';
+    });
+    $(P + '-files').addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('[data-hc-unattach]') : null;
+      if (!b) return;
+      files.splice(Number(b.getAttribute('data-hc-unattach')), 1);
+      paint();
+    });
+    return {
+      attachments: function () {
+        return files.filter(function (f) { return f.path; }).map(function (f) { return { name: f.name, path: f.path }; });
+      },
+      uploading: function () { return uploading > 0; },
+      clear: function () { files = []; paint(); },
+    };
+  };
+
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-attach')) return;
-  var ATTACH_MAX = ${ATTACH_MAX};
   var MODEL_CHOICES = ${JSON.stringify(MODEL_CHOICES)};
   var MODEL_KEY = 'ax-hub-chat-model';
   function esc(s) {
@@ -118,60 +316,15 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
   api.onAgent(api.agent(), api.agent(), null);
 
   // --- Files: each goes up when picked, then waits as a chip ---
-  var files = [], uploading = 0;
-  function paintFiles() {
-    var box = $('hc-files');
-    box.innerHTML = files.map(function (f, i) {
-      return '<span class="hc__file' + (f.path ? '' : ' is-wait') + '">' + esc(f.name) + (f.path ? '' : ' …') +
-        '<button type="button" data-hc-unattach="' + i + '" aria-label="Remove ' + esc(f.name) + '">×</button></span>';
-    }).join('');
-    box.hidden = !files.length;
-  }
-  function upload(file) {
-    var entry = { name: file.name || 'file', path: '' };
-    files.push(entry); uploading++; paintFiles();
-    var q = new URLSearchParams();
-    q.set('agent', api.agent()); q.set('name', entry.name);
-    var node = api.node(); if (node) q.set('node', node);
-    return fetch('/api/assistant/upload?' + q.toString(), {
-      method: 'POST', headers: api.headers({ 'Content-Type': 'application/octet-stream' }), body: file,
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok || !d.path) throw new Error(d.error || ('HTTP ' + r.status));
-        entry.path = d.path; entry.name = d.name || entry.name;
-      });
-    }).catch(function (e) {
-      files = files.filter(function (f) { return f !== entry; });
-      say('Not attached: ' + entry.name + ' (' + (e && e.message || 'failed') + ')', true);
-    }).then(function () { uploading--; paintFiles(); });
-  }
-  $('hc-attach').addEventListener('click', function () {
-    if (!api.agent()) { say('Pick an agent first.', true); return; }
-    $('hc-file').click();
-  });
-  $('hc-file').addEventListener('change', function () {
-    var list = Array.prototype.slice.call($('hc-file').files || []);
-    var room = ATTACH_MAX - files.length;
-    if (list.length > room) say('A message carries ' + ATTACH_MAX + ' files at most.', true);
-    else say('');
-    list.slice(0, Math.max(0, room)).forEach(upload);
-    $('hc-file').value = '';
-  });
-  $('hc-files').addEventListener('click', function (e) {
-    var b = e.target && e.target.closest ? e.target.closest('[data-hc-unattach]') : null;
-    if (!b) return;
-    files.splice(Number(b.getAttribute('data-hc-unattach')), 1);
-    paintFiles();
-  });
-  api.attachments = function () {
-    return files.filter(function (f) { return f.path; }).map(function (f) { return { name: f.name, path: f.path }; });
-  };
-  api.uploading = function () { return uploading > 0; };
-  api.onSent = function () { files = []; paintFiles(); say(''); };
+  var files = window.AXComposerFiles('hc', api);
+  api.attachments = files.attachments;
+  api.uploading = files.uploading;
+  api.onSent = function () { files.clear(); say(''); };
 
   // The answer to a spoken message is said back in the agent's voice; the
   // node answers with audio, or asks the browser to say it.
   var player = null;
+  api.pauseAudio = function () { if (player) player.pause(); };
   api.onSpokenAnswer = function (a) {
     fetch('/api/assistant/voice/speak', {
       method: 'POST', headers: api.headers({ 'Content-Type': 'application/json' }),
@@ -194,106 +347,6 @@ export const WALL_CHAT_INPUT_SCRIPT = String.raw`
       });
     }).catch(function () { say('Not said aloud: the node did not answer.', true); });
   };
-
-  // --- The mic: record, write it down, send it, say the answer back ---
-  var nav = window.navigator || {};
-  var canRecord = !!(nav.mediaDevices && nav.mediaDevices.getUserMedia && window.MediaRecorder);
-  if (!canRecord) return;
-  $('hc-mic').hidden = false;
-  $('hc-mic-check').hidden = false;
-  var rec = null, chunks = [], started = 0, stream = null, MAX_MS = 120000, stopTimer = null;
-  // Check before sending (#2266): off by default, so a recording sends when it stops.
-  var CHECK_KEY = 'ax-hub-chat-mic-check';
-  var checkFirst = false;
-  try { checkFirst = localStorage.getItem(CHECK_KEY) === '1'; } catch (e) { /* private mode: off */ }
-  function paintCheck() {
-    var b = $('hc-mic-check');
-    b.setAttribute('aria-pressed', String(checkFirst));
-    b.setAttribute('title', checkFirst
-      ? 'Check before sending: on. Your words go in the box; you send them.'
-      : 'Check before sending: off. A recording sends when you stop.');
-  }
-  paintCheck();
-  $('hc-mic-check').addEventListener('click', function () {
-    checkFirst = !checkFirst;
-    try { localStorage.setItem(CHECK_KEY, checkFirst ? '1' : '0'); } catch (e) { /* kept for this page only */ }
-    paintCheck();
-    say(checkFirst ? 'Recordings now wait in the box for you to send.' : 'Recordings now send when you stop.');
-  });
-  // Hear my message: the last recording, kept in this page only.
-  var lastUrl = '', mine = null;
-  function keepRecording(blob) {
-    if (!window.URL || typeof window.URL.createObjectURL !== 'function') return;
-    if (lastUrl && typeof window.URL.revokeObjectURL === 'function') window.URL.revokeObjectURL(lastUrl);
-    lastUrl = window.URL.createObjectURL(blob);
-    $('hc-mic-play').hidden = false;
-  }
-  $('hc-mic-play').addEventListener('click', function () {
-    if (!lastUrl || typeof window.Audio !== 'function') return;
-    if (player) player.pause();
-    if (mine) mine.pause();
-    mine = new window.Audio(lastUrl);
-    var p = mine.play();
-    if (p && p.catch) p.catch(function () { say('Could not play the recording.', true); });
-  });
-  function micOn(v) {
-    $('hc-mic').setAttribute('aria-pressed', String(v));
-    $('hc-mic').classList.toggle('is-on', v);
-    $('hc-comp').classList.toggle('is-live', v);
-  }
-  function release() {
-    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-    stream = null;
-  }
-  function start() {
-    if (!api.agent()) { say('Pick an agent first.', true); return; }
-    nav.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
-      stream = s; chunks = [];
-      rec = new window.MediaRecorder(s);
-      rec.addEventListener('dataavailable', function (e) { if (e.data && e.data.size) chunks.push(e.data); });
-      rec.addEventListener('stop', finish);
-      rec.start();
-      started = Date.now();
-      micOn(true);
-      say(checkFirst ? 'Recording… press the mic again to stop.' : 'Recording… press the mic again to send.');
-      stopTimer = setTimeout(stop, MAX_MS);
-    }).catch(function () { say('The browser did not give the microphone.', true); });
-  }
-  function stop() {
-    clearTimeout(stopTimer);
-    if (rec && rec.state !== 'inactive') rec.stop();
-  }
-  function finish() {
-    var ms = Date.now() - started, type = (rec && rec.mimeType) || 'audio/webm';
-    rec = null; micOn(false); release();
-    var blob = new Blob(chunks, { type: type });
-    if (!blob.size) { say('Nothing was recorded.', true); return; }
-    keepRecording(blob);
-    say('Writing it down…');
-    fetch('/api/assistant/voice/transcribe', {
-      method: 'POST', headers: api.headers({ 'Content-Type': type.split(';')[0], 'X-Audio-Duration-Ms': String(ms) }), body: blob,
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok || !d.text) throw new Error(d.hint || d.error || ('HTTP ' + r.status));
-        if (checkFirst) {
-          // The person sends it: the words join what is already in the box.
-          var box = $('hc-text'), was = String(box.value || '').trim();
-          box.value = was ? was + ' ' + d.text : d.text;
-          if (typeof box.dispatchEvent === 'function' && typeof window.Event === 'function') box.dispatchEvent(new window.Event('input'));
-          if (typeof box.focus === 'function') box.focus();
-          say('Check it, then send.');
-          return;
-        }
-        say('');
-        return api.send(d.text, { spoken: true }).then(function (ok) {
-          // Written down but not sent: say why here too, not only in the log (#2238).
-          var why = !ok && typeof api.sendError === 'function' ? api.sendError() : '';
-          if (why) say('Not sent: ' + why, true);
-        });
-      });
-    }).catch(function (e) { say('Not written down: ' + (e && e.message || 'failed'), true); });
-  }
-  $('hc-mic').addEventListener('click', function () { rec ? stop() : start(); });
-
+  window.AXComposerVoice('hc', api);
 })();
 `

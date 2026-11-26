@@ -1409,7 +1409,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // (same as /api/task/stream), and the dashboard forwards to the daemon's
   // /api/tasks/:taskId/{cancel|followup} endpoint with the operator token.
   //   POST /api/task/action?node=<url>&task=<id>&kind=cancel|followup
-  // body: passthrough JSON (cancel: { reason? }; followup: { message, replace?, sender? })
+  // body: passthrough JSON (cancel: { reason? }; followup: { message, replace?, sender?, agent?, attachments? })
   if (method === "POST" && path === "/api/task/action") {
     const u = new URL(req.url || "/", "http://localhost")
     const nodeUrl = u.searchParams.get("node")
