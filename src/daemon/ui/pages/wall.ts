@@ -421,6 +421,9 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 @media (prefers-reduced-motion: reduce) { .mt details > summary::before { transition: none; } }
 .lt__m > .lt__row, .lt__m > .lt__idle { margin-left: 12px; }
 .lt__m > .lt__ws { margin-left: 31px; }
+/* C5: a hand-off whose run shows on its own machine is one pointer line. */
+.lt__ptr { display: block; font-size: 12px; color: var(--ax-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.lt__ptr:hover { color: var(--ax-accent); }
 /* R1: the tree is the one live list on a wide screen; Running now stays
    its "All" page (ops details) and the phone's bar button. */
 @media (min-width: 1181px) { .ax-wall__navgroup > .ax-wall__item[data-nav="running"] { display: none; } }

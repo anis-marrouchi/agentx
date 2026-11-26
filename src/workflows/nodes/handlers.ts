@@ -7,6 +7,7 @@ import type { NodeContext, NodeHandler, NodeResult } from "./types"
 import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
 import { sendToChat } from "@/situations/send-to-chat"
 import { leaseHomeOfText } from "@/agents/work-lane"
+import { failOrContinue, heldText, queueConfigOf, queueTimeoutText, StepWait } from "./agent-queue"
 
 // --- Node handlers (Phase 1 set) ---
 //
@@ -50,6 +51,12 @@ const agentHandler: NodeHandler = async (ctx) => {
     return { error: `agent node "${ctx.node.id}" has invalid autonomy "${autonomy}" (expected report, propose or act)` }
   }
 
+  // Waiting for room on the node (#2334). An unknown value fails the step
+  // rather than running it at a priority nobody asked for.
+  const queueCfg = queueConfigOf(cfg, timeoutMinutes)
+  if ("error" in queueCfg) return { error: `agent node "${ctx.node.id}" ${queueCfg.error}` }
+  const q = queueCfg
+
   // The step's home (#2084): one run of the agent at a time on it. Empty
   // after rendering: no home. A bare `#12` or `!12` names different work
   // in every repository, so it fails the step instead of locking nothing.
@@ -67,62 +74,94 @@ const agentHandler: NodeHandler = async (ctx) => {
     ? cfg.maxConcurrent
     : null
   const gateKey = maxConcurrent ? nodeKey(ctx.workflow.id, ctx.node.id) : null
-  if (gateKey && maxConcurrent) {
-    const before = nodeConcurrencyGate.stats(gateKey)
-    if (before.active >= maxConcurrent) {
-      ctx.log(`[node:${ctx.node.id}] gated: ${before.active} active (cap ${maxConcurrent}), ${before.waiting + 1} waiting`)
+
+  // The step's queue clock (#2334) starts here, before the node's own cap:
+  // every minute the step waits to start counts, wherever it waits.
+  const queuedAt = Date.now()
+  const wait = new StepWait(q.queueLimitMs)
+  let gateHeld = false
+  try {
+    if (gateKey && maxConcurrent) {
+      const before = nodeConcurrencyGate.stats(gateKey)
+      if (before.active >= maxConcurrent) {
+        ctx.log(`[node:${ctx.node.id}] gated: ${before.active} active (cap ${maxConcurrent}), ${before.waiting + 1} waiting`)
+      }
+      const acquired = nodeConcurrencyGate.acquire(gateKey, maxConcurrent)
+      gateHeld = await wait.race(acquired)
+      // Out of time first: the slot it gets later is given straight back.
+      if (!gateHeld) void acquired.then(() => nodeConcurrencyGate.release(gateKey))
     }
-    await nodeConcurrencyGate.acquire(gateKey, maxConcurrent)
+    if (wait.timedOut) return failOrContinue(ctx, agentId, q.onError, "queue_timeout", queueTimeoutText(ctx.node.id, Date.now() - queuedAt, q.queueLimitMs, [`the step's own cap: ${maxConcurrent} at a time`]))
+    return await runAgentStep()
+  } finally {
+    wait.stop()
+    if (gateKey && gateHeld) nodeConcurrencyGate.release(gateKey)
   }
 
-  const start = Date.now()
-  try {
-    const resp = await ctx.agents.execute({
-      agentId,
-      message: prompt,
-      workflowRunId: ctx.run.id,
-      workflowId: ctx.run.workflowId,
-      timeoutMinutes,
-      ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
-      ...(home ? { home } : {}),
-    })
-    const durationMs = Date.now() - start
-    // A stop signal (#870): the run pauses at this step, it does not fail.
-    // A resume signal re-enters the step with the agent's plan.
-    if (resp.error && resp.errorKind === "stopped") {
-      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" stopped by a signal; run paused at this step`)
-      return {
-        paused: true,
-        pausedAt: { kind: "agentStop", nodeId: ctx.node.id, agentId, ...(resp.runTaskId ? { taskId: resp.runTaskId } : {}) },
+  async function runAgentStep(): Promise<NodeResult> {
+    let heldBy: string[] = []
+    const start = Date.now()
+    try {
+      const resp = await ctx.agents.execute({
+        agentId,
+        message: prompt,
+        workflowRunId: ctx.run.id,
+        workflowId: ctx.run.workflowId,
+        timeoutMinutes,
+        ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
+        ...(home ? { home } : {}),
+        ...(q.priority ? { priority: q.priority } : {}),
+        ...(wait.signal ? { signal: wait.signal } : {}),
+        onStarted: () => wait.stop(),
+        ...(q.heldNoticeMs > 0 ? {
+          heldNoticeMs: q.heldNoticeMs,
+          onHeld: (w: { waitedMs: number; blockedBy: string[]; position?: number; of?: number }) => {
+            heldBy = w.blockedBy
+            ctx.held?.(heldText(ctx.node.id, agentId, Date.now() - queuedAt, w))
+          },
+        } : {}),
+      })
+      const durationMs = Date.now() - start
+      // Out of queue time before the turn started (#2334): its own kind, so
+      // the workflow can route it. A turn that started anyway is kept.
+      if (resp.error && wait.timedOut && !wait.started) {
+        return failOrContinue(ctx, agentId, q.onError, "queue_timeout", queueTimeoutText(ctx.node.id, Date.now() - queuedAt, q.queueLimitMs, heldBy))
       }
+      // A stop signal (#870): the run pauses at this step, it does not fail.
+      // A resume signal re-enters the step with the agent's plan.
+      if (resp.error && resp.errorKind === "stopped") {
+        ctx.log(`[node:${ctx.node.id}] agent "${agentId}" stopped by a signal; run paused at this step`)
+        return {
+          paused: true,
+          pausedAt: { kind: "agentStop", nodeId: ctx.node.id, agentId, ...(resp.runTaskId ? { taskId: resp.runTaskId } : {}) },
+        }
+      }
+      if (resp.error) {
+        const kind = resp.errorKind ?? "unknown"
+        ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed (${kind}): ${resp.error}`)
+        // Followed: a failed turn is a stall, nudged like any other.
+        if (supervised) return supervisedResult(ctx, agentId, { error: `[${kind}] ${resp.error}`, output: { error: `[${kind}] ${resp.error}` } })
+        // Prefix the kind onto the run-level error string so the workflow
+        // execution log and dashboard surface a stable, parseable token.
+        // The friendly message follows verbatim for operators reading the log.
+        return failOrContinue(ctx, agentId, q.onError, kind, resp.error)
+      }
+      const parser = String(cfg.resultParser ?? "acme-result-token")
+      const parsed = parser === "json" ? extractJsonBlock(resp.content) : parseResultToken(resp.content)
+      const output = {
+        reply: resp.content,
+        result: parsed.result,
+        json: parsed.json,
+        taskId: resp.taskId,
+        durationMs,
+        ...(resp.autonomyBlocks?.length ? { autonomyBlocks: resp.autonomyBlocks } : {}),
+      }
+      if (supervised) return supervisedResult(ctx, agentId, { output, result: parsed.result, reply: resp.content })
+      return { output }
+    } catch (e: any) {
+      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" threw: ${e.message}`)
+      return { error: e.message }
     }
-    if (resp.error) {
-      const kind = resp.errorKind ?? "unknown"
-      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed (${kind}): ${resp.error}`)
-      // Followed: a failed turn is a stall, nudged like any other.
-      if (supervised) return supervisedResult(ctx, agentId, { error: `[${kind}] ${resp.error}`, output: { error: `[${kind}] ${resp.error}` } })
-      // Prefix the kind onto the run-level error string so the workflow
-      // execution log and dashboard surface a stable, parseable token.
-      // The friendly message follows verbatim for operators reading the log.
-      return { error: `[${kind}] ${resp.error}` }
-    }
-    const parser = String(cfg.resultParser ?? "acme-result-token")
-    const parsed = parser === "json" ? extractJsonBlock(resp.content) : parseResultToken(resp.content)
-    const output = {
-      reply: resp.content,
-      result: parsed.result,
-      json: parsed.json,
-      taskId: resp.taskId,
-      durationMs,
-      ...(resp.autonomyBlocks?.length ? { autonomyBlocks: resp.autonomyBlocks } : {}),
-    }
-    if (supervised) return supervisedResult(ctx, agentId, { output, result: parsed.result, reply: resp.content })
-    return { output }
-  } catch (e: any) {
-    ctx.log(`[node:${ctx.node.id}] agent "${agentId}" threw: ${e.message}`)
-    return { error: e.message }
-  } finally {
-    if (gateKey) nodeConcurrencyGate.release(gateKey)
   }
 }
 

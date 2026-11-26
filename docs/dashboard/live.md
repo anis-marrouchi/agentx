@@ -26,7 +26,7 @@ Under **Running now**, each card is one run. **Session** is a task from a chat, 
 1. **Browser:** on **Live**, select the card. The run's **Task** page opens, with what it was asked and its conversation as it happens.
 2. To add something, write in the box under the conversation and select **Send**. The current turn keeps running; your message goes in as the next turn.
 3. To end the current turn, select **Stop**.
-4. To pause the task so it can go on later, select **Pause** at the top, then select **Pause it?** to confirm. The agent writes a *resume plan* (a short note of where it got to and what is left), and the task moves to **Paused** on Live.
+4. To pause the task so it can go on later, select **Pause** at the top, then select **Pause it?** to confirm. The agent writes a *resume plan* (a short note of where it got to and what is left), and the task moves to **Paused** on Live. While it pauses and once it is paused, the box, the files button and the mic are off: nothing you write or say goes in until you select **Resume**.
 
 ![A running task's page with the Pause button at the top](/screenshots/wall/task-pause.png)
 

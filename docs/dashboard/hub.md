@@ -22,6 +22,8 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 4. The Hub never pings you on its own. The classic pages that still hold something the Hub does not have yet, **Monitor**, **Org**, **Activity** and **Workflows**, are in the **⌘K** switcher as **Dashboard ·** *page*. [Live](#live-sessions), [People](./people.md), [Cost](#see-what-the-fleet-costs), [Workflows](#see-your-workflows), [Settings](#change-settings) and the workflow editor are Hub pages, and old links to their classic pages open them here. The classic Workflows page stays for **Follow-ups** and the full history of each run.
 5. **Theme**, in the bottom status bar (see [Read the bottom status bar](#read-the-bottom-status-bar)), switches between light and dark. The choice is shared with the other dashboard pages and the phone app on the same browser; until you pick one, it follows your system. A choice made on the Hub before this change is kept.
+
+   **Keyboard and motion:** press Tab to move through the page; whatever has the focus gets a soft blue ring. With reduced motion turned on in your system, nothing slides or fades and spinners stand still; the words next to them still say what is running.
 6. **Phone:** Chat opens first. Use **Back to the page** to reach the feed and its navigation bar: **Hub**, **Waiting on you**, **Running**, **Projects** and **More**, each with its name under its icon. **More** opens a sheet from the bottom with every other page, in the same groups as on a computer, then **Settings**, **New post** (the Creator), **Dashboard** and **Light / dark**. Pick a page, tap outside the sheet, or press Escape to close it. A small number on an icon is its count; a count of zero is not shown. The build line sits under each page's title. On a tablet (up to 1180 pixels wide) the nav is a column of icons and the page takes the rest.
 
    ![The Hub on a phone with More open: Work, Automation and Fleet, then Settings, Dashboard and Light / dark](/screenshots/wall/more-phone.png)
@@ -43,11 +45,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Go back to `/hub#page=home` and they are there, with no restart and no reload:
-
-   ![Turning Workflows and Wiki on in Settings › Layout, then back in the shell: both are under More](/screenshots/hub-automations/turn-on.gif)
-
-   The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
@@ -208,7 +206,7 @@ The top of the nav lists every agent of every connected machine once, by what it
    - **Not working today**, folded at the end: every other agent.
 
    Under **All** every group folds: select its heading to open or close it. The first time, **Working** is open and the others are folded. The Hub remembers in this browser which groups you opened or closed and whether a group shows all its agents, also after a reload. **Reset layout** in Settings › Layout puts them back.
-4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and an amber number when it has questions for you. The agent whose chat is open has a blue bar on its left.
+4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, its counts, how long ago it last moved, its line, and an amber number when it has questions for you. The counts sit next to the name: a pulse line with how many of its own runs are going now (a worker a run started counts on its own agent's row) and a clock with how many runs it started today, since your midnight, the ones still going included. A count of 0 is left out. Point at the counts to read them in words. Finished runs today are counted by the hour, so a run that ended up to an hour before midnight can still count. The agent whose chat is open has a blue bar on its left.
 5. The whole side menu scrolls as one, so the last agent is always in reach; **Jump to an agent or request** stays at the top and **Desk**, **Jobs**, **Workflows** stay at the bottom.
 6. Select a row to open it:
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
@@ -220,7 +218,7 @@ The agent list shows *who* is working. **Machines**, under it, shows *where*: ea
 
 1. **Browser:** on a screen at least 1181 pixels wide, select **Machines** under the agent list. It starts folded, with the number of agents working on its heading. The Hub remembers whether you left it open.
 2. **Your mesh** comes first, with how many of its machines answer (for example **3/4**) and how many agents are working. Under it, every machine is listed, even when nothing runs on it.
-3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. Select a row to open that run live.
+3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. A hand-off whose run is going is one line that points to it, for example **→ Tester on Workshop**: the run itself is listed under its own machine. Select a row to open that run live.
 4. A machine that is slow says **checking…** and keeps its last rows, with **as of** and the time. A machine that does not answer says **not checked**, and its runs are not shown.
 5. An agent is shown on one machine only, and the machines' numbers add up to **Working** in the agent list.
 

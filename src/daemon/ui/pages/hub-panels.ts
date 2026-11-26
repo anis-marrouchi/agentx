@@ -190,7 +190,6 @@ export const HUB_PANELS_CSS = `
 /* Panels you resize, collapse and expand (#2101 P, hub-panels.ts). */
 .axp-btn { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 28px; padding: 0 4px; border-radius: var(--ax-radius-sm); color: var(--ax-muted); cursor: pointer; }
 .axp-btn:hover:not(:disabled) { background: var(--ax-surface-3); color: var(--ax-text); }
-.axp-btn:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 1px; }
 .axp-btn:disabled { opacity: .35; cursor: default; }
 .axp-btn svg { width: 16px; height: 16px; flex: none; }
 .axp-hist { display: inline-flex; gap: 2px; margin-right: 6px; flex: none; }
@@ -201,7 +200,7 @@ export const HUB_PANELS_CSS = `
 .axp-grip { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 5; cursor: col-resize; touch-action: none; }
 .axp-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background-color .12s ease-out; }
 .axp-grip:hover::after, .axp-grip:focus-visible::after, .axp-grip.is-drag::after { background: var(--ax-accent); }
-.axp-grip:focus-visible { outline: none; }
+.axp-grip:focus-visible { box-shadow: none; }
 /* The menu scrolls, so its edge sits on the page, at the menu's width. */
 .axp-grip--nav { position: fixed; left: calc(var(--axp-nav-w, 280px) - 4px); }
 .ax-wall.is-editor .axp-grip--nav, .ax-wall.is-editor .axp-navfold { display: none; }

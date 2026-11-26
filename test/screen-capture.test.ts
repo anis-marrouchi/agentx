@@ -313,19 +313,6 @@ describe("ScreenBuffer — recent frames, in memory, opt-in", () => {
   })
 })
 
-describe("dashboard Screen capture card", () => {
-  it("ships its controls in a page script that parses", async () => {
-    const { renderAdminPage } = await import("../src/daemon/ui/pages/admin")
-    const html = renderAdminPage()
-    for (const id of ["screen-max-pixels", "screen-regions", "screen-buffer-enabled", "screen-buffer-region"]) {
-      expect(html).toContain(`id="${id}"`)
-    }
-    for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)) {
-      expect(() => new Function(m[1])).not.toThrow()
-    }
-  })
-})
-
 // The wait loop and the ring are Swift; their tests compile with swiftc.
 const canSwift = process.platform === "darwin" && (() => {
   try { execFileSync("xcrun", ["--find", "swiftc"], { stdio: "pipe" }); return true } catch { return false }

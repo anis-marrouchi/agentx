@@ -110,6 +110,9 @@ export interface DispatcherOptions {
   startGuard?: (workflowId: string, meta: Partial<RunMeta> | undefined) => string | null
   /** Mints an action.run step's proof (#1849). Absent: steps get none. */
   stepProof?: StepProofMinter
+  /** Leaves a notice for an agent of this node (#2334): a step held long
+   *  in the node queue tells the workflow's owner agent. */
+  noticeAgent?: (agentId: string, from: string, text: string) => void
 }
 
 /** An inbound message a `person.wait` step may be waiting for. */
@@ -173,6 +176,7 @@ export class WorkflowDispatcher {
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
   private readonly startGuard?: DispatcherOptions["startGuard"]
   private readonly stepProof?: StepProofMinter
+  private readonly noticeAgent?: (agentId: string, from: string, text: string) => void
   /** Revokers of the step proofs live per run, so cancelling a run ends
    *  the proof of a step still running (#1849). */
   private readonly liveProofs = new Map<string, Set<() => void>>()
@@ -228,6 +232,7 @@ export class WorkflowDispatcher {
     this.onBlocked = opts.onBlocked
     this.startGuard = opts.startGuard
     this.stepProof = opts.stepProof
+    this.noticeAgent = opts.noticeAgent
 
     // Register the timer-fire callback once. TimerService is a per-node
     // singleton; re-registration would clobber prior instances, but the
@@ -251,6 +256,21 @@ export class WorkflowDispatcher {
   /** Publish a run-phase event if an EventBus is configured. No-op
    *  otherwise. Used by the walk loop + resume paths so operators can
    *  Monitor runs live. */
+  /** A step held long in the node queue (#2334): one log line, one run
+   *  event, one notice to the workflow's owner agent (else the agent that
+   *  started the run). The queue calls it once per wait. */
+  private stepHeld(workflow: Workflow, run: WorkflowRun, nodeId: string, text: string): void {
+    this.log(`[workflow:${workflow.id}] run ${run.id}: ${text}`)
+    this.emitRunEvent({ runId: run.id, workflowId: workflow.id, nodeId, phase: "held", status: "running", note: text.slice(0, 200), rootId: run.eventRootId })
+    const to = workflow.ownerAgent ?? run.meta?.startedBy
+    if (!to || !this.noticeAgent) return
+    try {
+      this.noticeAgent(to, `workflow ${workflow.id}`, `${text} Run ${run.id}. It fails with queue_timeout when its queue time runs out.`)
+    } catch (e: any) {
+      this.log(`[workflow:${workflow.id}] run ${run.id}: held notice not left: ${e?.message ?? e}`)
+    }
+  }
+
   private emitRunEvent(args: {
     runId: string; workflowId: string; nodeId?: string; phase: string; status?: string; note?: string; homeNode?: string
     /** The run's event root; defaults to the current root context. */
@@ -1268,6 +1288,7 @@ export class WorkflowDispatcher {
           ...(this.stepProof && node.type === "action.run"
             ? { stepProof: (ttlMs: number) => this.mintStepProof(workflow, run, node, ttlMs) }
             : {}),
+          held: (text: string) => this.stepHeld(workflow, run, node.id, text),
         })
       } catch (e: any) {
         this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)

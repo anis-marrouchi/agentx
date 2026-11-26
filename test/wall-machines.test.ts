@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { liveTreeModel, liveWorkCount, ltEsc, ltFold, ltRowHtml, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
-import { ltAddWorkers, ltWorkersHtml } from "../src/daemon/ui/pages/wall-tree-workers"
-import { mtCountWords, mtModel, mtTreeHtml, type MtMesh } from "../src/daemon/ui/pages/wall-machines"
+import { ltAddWorkers, ltWorkerHtml } from "../src/daemon/ui/pages/wall-tree-workers"
+import { mtCountWords, mtListed, mtModel, mtTreeHtml, mtWorkersHtml, type MtMesh } from "../src/daemon/ui/pages/wall-machines"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 // #2101 Machines tree, option A (Hakim PASS with C1–C4, 2026-11-26): the
@@ -39,7 +39,7 @@ function build(nodes = NODES): MtMesh[] {
 
 const deps = {
   esc: ltEsc, fold: ltFold, row: ltRowHtml,
-  under: (r: any) => ltWorkersHtml(r.workers, () => "#w", ltEsc, (ms: number) => String(ms)),
+  under: (r: any) => mtWorkersHtml(r.workers, () => "#w", ltEsc, (ms: number) => String(ms), ltWorkerHtml),
 }
 
 describe("mtModel (#2101 Machines tree)", () => {
@@ -101,6 +101,45 @@ describe("mtTreeHtml", () => {
     expect(html).toContain("Does not answer, so its runs are not shown.")
     expect(html).not.toMatch(/idle<\/span>|Done in the last hour|No project/)
     expect(html).toContain('class="lt__ws"')
+  })
+
+  // Hakim C5 (2026-11-26): Builder on Studio hands off to Tester, whose
+  // run goes on Workshop. Tester shows once, as its own run on Workshop;
+  // under Builder's run it is one pointer line, no state, no run details.
+  it("shows a hand-off run on another machine once, with a pointer under its parent (C5)", () => {
+    const nodes: LtNode[] = [
+      { id: "studio", name: "Studio", url: "http://studio", reachable: true, agents: [
+        { id: "builder", name: "Builder", runningTasks: [run("b1", { workers: [
+          { kind: "handoff", id: "h9", title: "Run the checkout e2e suite", status: "running", agentId: "tester", peer: "workshop" },
+          { kind: "handoff", id: "h8", title: "Lint the old branch", status: "done", agentId: "linter", endedAt: ago(5_000) },
+        ] })] },
+      ] },
+      { id: "workshop", name: "Workshop", url: "http://workshop", reachable: true, agents: [
+        { id: "tester", name: "Tester", runningTasks: [run("t1", { messagePreview: "Run the checkout e2e suite", parent: { taskId: "b1", agentId: "builder", node: "studio" } })] },
+      ] },
+    ]
+    const meshes = build(nodes)
+    const b1 = meshes[0].machines[0].rows[0]
+    expect(b1.workers!.map((w) => [w.agentId, mtListed(w)])).toEqual([["tester", true], ["linter", false]])
+    const out = mtTreeHtml(meshes, () => "#t", {}, deps)
+    // The task title and the agent's state show once: on Workshop.
+    expect(out.match(/Run the checkout e2e suite<\/span>/g)).toHaveLength(1)
+    const studio = out.slice(out.indexOf('data-lt-key="m:http://studio"'), out.indexOf('data-lt-key="m:http://workshop"'))
+    const workshop = out.slice(out.indexOf('data-lt-key="m:http://workshop"'))
+    expect(studio).toContain('class="lt__wk lt__ptr" href="#w"')
+    expect(studio).toContain(">→ Tester on Workshop</a>")
+    expect(studio).not.toMatch(/Tester<\/span>|lt__sub">Tester/)
+    expect(workshop).toContain("Run the checkout e2e suite")
+    // An ended hand-off is no row elsewhere: it keeps its full worker row.
+    expect(studio).toContain("Lint the old branch")
+  })
+
+  it("shows no agent twice anywhere in the fold, hand-offs included (C5)", () => {
+    // seif (Peer) runs d1's hand-off: its run row on Peer, a pointer on the Mac.
+    const mac = html.slice(html.indexOf('data-lt-key="m:http://mac"'), html.indexOf('data-lt-key="m:http://clawd"'))
+    expect(mac).toContain(">→ seif on Peer</a>")
+    // Its task text is only the pointer's hover title, never a row.
+    expect(mac).not.toContain(">Check the deploy<")
   })
 
   it("keeps a reader's fold", () => {

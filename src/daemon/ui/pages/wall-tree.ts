@@ -49,6 +49,8 @@ export interface LtAgent {
   lastActive?: string
   lastSummary?: { text: string; at: string; ok: boolean }
   runningTasks?: LtTask[]
+  /** Runs started per hour, the last 24 hours, oldest first (#2145). */
+  hourlyTasks?: number[]
 }
 export interface LtNode {
   id?: string

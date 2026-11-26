@@ -3924,9 +3924,9 @@ export class AgentXDaemon {
       message: text,
       context: pickupContext(r.id),
     }).then((res) => {
-      if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
+      if (pickupEnded(requests.store, r, res, Date.now(), agentId)) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
     }).catch((e: any) => {
-      pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now())
+      pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now(), agentId)
       this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
     })
   }
@@ -4876,6 +4876,10 @@ export class AgentXDaemon {
       // An action.run step acts for the run's agent, the same one a card
       // from the run is raised in the name of (owner.ask above, #1849).
       stepProof: stepProofMinter(this.stepProofs, (id) => !!this.registry.getAgent(id)),
+      // A step held long in the node queue tells the owner agent (#2334).
+      noticeAgent: (to, from, text) => {
+        if (this.registry.getAgent(to) && this.registry.notices.count(to) < MAX_NOTICES) this.registry.notices.add(to, from, text)
+      },
       // The situation workflows run only when the situation record starts them (#1892).
       startGuard: situationStartGuard,
       onRunEnded: async (run, wf) => {

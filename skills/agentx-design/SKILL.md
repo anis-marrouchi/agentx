@@ -74,7 +74,7 @@ Always use the tokens. Never write a hex value in a page.
 
 - Amber and red are fills. When they carry words, use `--ax-amber-ink` or
   `--ax-red-ink` instead.
-- For text on `--ax-accent`, such as a count badge, use `--ax-accent-ink`.
+- For text on `--ax-accent`, such as a count badge, use `--ax-on-accent`.
   White on the dark-theme blue is only 3:1.
 - Contrast must be at least 4.5:1 for text. `test/design-tokens.test.ts`
   checks the main pairs. Add any new pair there.

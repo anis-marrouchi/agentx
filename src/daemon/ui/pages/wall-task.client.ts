@@ -347,6 +347,10 @@ function mountTaskPage(root, opts) {
   function taskHref(id, channel) { return opts.href(id, channel); }
 
   function send() {
+    // One follow-up at a time: a quick second Enter, or Enter plus the mic,
+    // must not send the same words twice. A paused run's box is read-only:
+    // nothing goes in from it, the mic included.
+    if (sendBtn.disabled || inputEl.disabled) return Promise.resolve(false);
     var text = (inputEl.value || '').trim();
     if (!text) { inputEl.focus(); return Promise.resolve(false); }
     if (files && files.uploading()) { say('Wait for the files to finish uploading.', true); return Promise.resolve(false); }
@@ -365,6 +369,12 @@ function mountTaskPage(root, opts) {
       if (r && r.resumed) { say('The agent is busy: queued as the next turn in this chat.'); return true; }
       say('Queued: it goes in as the next turn.');
       return true;
+    }, function (e) {
+      // The request never got an answer (network down, node gone): give
+      // Send back so the words can go again.
+      sendBtn.disabled = false;
+      say('Not sent: ' + ((e && e.message) || 'the node did not answer'), true);
+      return false;
     });
   }
   sendBtn.addEventListener('click', send);
@@ -725,6 +735,9 @@ export const WALL_TASK_SCRIPT = String.raw`
     steer.setAttribute('data-ro', '1');
     $('task-text').disabled = true;
     $('task-send').hidden = true;
+    // Files and the mic go quiet too: with "Check before sending" off the
+    // mic would still post a follow-up into a pausing or paused run.
+    ['task-attach', 'task-mic', 'task-mic-check', 'task-mic-play'].forEach(function (id) { var b = $(id); if (b) b.disabled = true; });
     $('task-text').placeholder = resumed ? 'Resumed: the new turn opens here once it starts.'
       : !paused ? 'No longer paused.'
       : paused.state === 'winding-down' ? 'Pausing: the agent writes its plan to resume from…'
@@ -961,7 +974,7 @@ export const WALL_TASK_CSS = `
 .wtask__who { flex: 1; min-width: 0; }
 .wtask__who .h { color: var(--ax-muted); }
 .wtask__meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wtask__h { font-size: var(--ax-fs); font-weight: 800; margin: 4px 0 0; }
+.wtask__h { font-size: var(--ax-fs); font-weight: 600; margin: 4px 0 0; }
 .wtask__open { font-size: var(--ax-fs-xs); font-weight: 400; margin-left: 6px; }
 .wtask__req { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px 14px; }
 .wtask__req .wtask__h { margin: 0 0 10px; }

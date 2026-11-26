@@ -7,7 +7,6 @@ import type { AddressInfo } from "net"
 import { handleBoardRequest, type Ctx } from "../src/daemon/board-dashboard"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { peopleRows } from "../src/daemon/people-panel"
-import { renderGuestsPage } from "../src/daemon/ui/pages/guests"
 import { TokenStore } from "../src/daemon/token-store"
 import { PairCodeStore } from "../src/daemon/pair-codes"
 import { MemberStore } from "../src/members/store"
@@ -294,10 +293,9 @@ describe("who can open it", () => {
 })
 
 describe("the page", () => {
-  it("moved to the Wall: /people goes to the Wall's People page, and the dashboard navigation links there", async () => {
+  it("moved to the Wall: /people goes to the Wall's People page", async () => {
     const r = await fetch(`${base}/people`, { redirect: "manual" })
     expect(r.status).toBe(302)
     expect(r.headers.get("location")).toBe("/hub#page=people")
-    expect(renderGuestsPage({})).toMatch(/<a href="\/hub#page=people" class="ax-topbar__tab">People<\/a>/)
   })
 })

@@ -76,7 +76,6 @@ export const WALL_BUILD_CSS = `
 /* Build line (#1444): right of the title; under it on a phone. */
 .wbl { margin-left: auto; padding-left: 12px; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 6px; align-items: center; font-size: var(--ax-fs-xs); color: var(--ax-muted); text-decoration: none; font-variant-numeric: tabular-nums; min-height: 20px; }
 .wbl:hover .wbl__v { text-decoration: underline; }
-.wbl:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; border-radius: 4px; }
 .wbl.is-wait { visibility: hidden; }
 .wbl__v { font-family: var(--ax-mono); color: var(--ax-text); }
 .wbl__stale, .wbl__asof { font-weight: 600; }

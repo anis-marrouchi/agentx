@@ -335,7 +335,6 @@ code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surf
 }
 .card h1 { font-size: 22px; margin: 0 0 12px; }
 .muted { color: var(--ax-text-2); }
-:focus-visible { outline: 3px solid var(--ax-accent); outline-offset: 2px; }
 `
 
 const APP_CSS = `

@@ -397,7 +397,7 @@ export const WALL_CONTEXT_CSS = `
 .wcx__tab > button[role="tab"] { all: unset; cursor: pointer; padding: 7px 4px 7px 10px; font-size: 13px; color: var(--ax-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .wcx__tab > button[role="tab"] b { font-weight: 600; color: var(--ax-text-2); }
 .wcx__tab.is-on > button[role="tab"] b { color: var(--ax-text); }
-.wcx__tab > button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
+.wcx__tab > button:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wcx__x { display: inline-flex; align-items: center; padding: 3px 6px 3px 2px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
 .wcx__x:hover { color: var(--ax-text); }
 .wcx__body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
@@ -427,7 +427,7 @@ export const WALL_CONTEXT_CSS = `
   .ax-wall.cx-open, .ax-wall.cx-open.is-wide, .ax-wall.cx-open.is-settings { grid-template-columns: 72px minmax(0, 600px); }
   .ax-wall.hc-open.cx-open { grid-template-columns: 72px minmax(0, 1fr); }
   .ax-wall.cx-open .ax-wall__aside { display: contents !important; }
-  .wcx { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); height: auto; z-index: 12; box-shadow: -8px 0 24px rgb(0 0 0 / 22%); }
+  .wcx { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); height: auto; z-index: 12; box-shadow: var(--ax-shadow-lg); }
 }
 /* Phone: a full sheet over the page, above the bottom bar. */
 @media (max-width: 640px) {

@@ -26,6 +26,16 @@ export interface AgentExecuteRequest {
   /** The issue or merge request the step works on (#2084), qualified
    *  with its project: one run of the agent at a time on it. */
   home?: string
+  /** Admission priority (#2334): only "critical", the /send/agent rule. */
+  priority?: "critical"
+  /** Aborted when the step stops waiting (its queue limit, #2334): a run
+   *  still in the node queue or waiting for the agent's slot is dropped. */
+  signal?: AbortSignal
+  /** Called once when the agent's turn really starts (admitted, slot taken). */
+  onStarted?: () => void
+  /** Called once when the node has held the step for heldNoticeMs. */
+  onHeld?: (w: { waitedMs: number; blockedBy: string[]; position?: number; of?: number }) => void
+  heldNoticeMs?: number
 }
 
 export interface AgentExecuteResponse {
@@ -75,6 +85,9 @@ export interface NodeContext {
   owner?: OwnerPort
   /** Stall time, nudges and approval mode for follow-up steps. */
   followUp?: FollowUpDefaults
+  /** The node has held this step long (#2334): logged on the run and told
+   *  once to the workflow's owner agent. Absent in tests without a daemon. */
+  held?: (text: string) => void
   /** Mints this step's proof (#1849) for `ttlMs`: the agent it acts for
    *  may close its own card while the step runs. Null when the run names
    *  no agent of this node. Absent in tests and setups without a daemon. */

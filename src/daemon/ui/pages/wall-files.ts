@@ -263,7 +263,7 @@ export const WALL_FILES_CSS = `
 .wfl__i { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 6px 8px; font: inherit; color: var(--ax-text); transition: background-color .15s ease; }
 button.wfl__i { cursor: pointer; }
 button.wfl__i:hover, button.wfl__i:focus-visible { background: var(--ax-surface-2); }
-button.wfl__i:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
+button.wfl__i:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wfl__i b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wfl__i small { grid-column: 2; color: var(--ax-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wfl__op { grid-row: 1 / span 2; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; border-radius: var(--ax-radius-sm); padding: 3px 7px; min-width: 66px; background: var(--ax-surface-2); color: var(--ax-muted); }
@@ -280,12 +280,12 @@ button.wfl__i:focus-visible { outline: 2px solid var(--ax-accent); outline-offse
 .wcx__file tr.is-del { background: color-mix(in srgb, var(--ax-red) 12%, transparent); }
 .wcx__src { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .wcx__src a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wcx__re { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 2px 9px; cursor: pointer; }
+.wcx__re { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); padding: 2px 9px; cursor: pointer; }
 .wcx__re:hover { color: var(--ax-text); border-color: var(--ax-text-2); }
 .wcx__tab .wfl__ic { vertical-align: -2px; margin-right: 4px; }
 /* The Files buttons on the Task page and in the chat header. */
 .wtask__files, .hc__files { display: inline-flex; align-items: center; gap: 5px; }
-.wtask__files { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text-2); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-pill); padding: 2px 10px; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+.wtask__files { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text-2); background: var(--ax-surface); border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); padding: 2px 10px; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
 .wtask__files:hover, .wtask__files[aria-pressed="true"], .hc__files[aria-pressed="true"] { background: var(--ax-blue-t); border-color: var(--ax-accent); color: var(--ax-accent); }
 /* The panel slides in when a tab opens it, the tab's body fades in. */
 .wcx:not([hidden]) { animation: wcx-in .22s cubic-bezier(.2, .7, .2, 1); }

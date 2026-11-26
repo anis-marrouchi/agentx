@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { haFace, haHitCount, haListHtml, haSwitchHits, haSwitchHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
 import { HUB_NAV_CSS, hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
-import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
+import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode, type LtTask } from "../src/daemon/ui/pages/wall-tree"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { injectFns } from "../src/daemon/ui/inject"
 import * as ha from "../src/daemon/ui/pages/hub-agents"
@@ -54,6 +54,67 @@ describe("hubAgentRows", () => {
     expect(by("sales").unread).toBe(0) // put off: not counted
     expect(by("coder").ageMs).toBe(60_000)
     expect(by("coder").face).toBe("C")
+  })
+})
+
+describe("the counts next to each agent (#2145)", () => {
+  // 24 hourly slots, oldest first; the last one ends at NOW (12:00Z), so
+  // slots 12..23 are today (00:00Z-12:00Z) and 11 ends exactly at midnight.
+  const hourly = Array.from({ length: 24 }, (_, i) => (i === 11 ? 7 : i === 12 ? 2 : i === 23 ? 1 : i === 0 ? 9 : 0))
+
+  it("sums the hours that are today, and nothing before midnight", () => {
+    expect(ha.haRunsToday(hourly, NOW, DAY)).toBe(3)
+    expect(ha.haRunsToday(hourly, NOW, NOW - 3600_000)).toBe(1)
+    expect(ha.haRunsToday(undefined, NOW, DAY)).toBe(0)
+    expect(ha.haRunsToday([1, "x", -2, null], NOW, 0)).toBe(1)
+  })
+  it("counts a slot that is partly today (a run can be up to 59 min before midnight)", () => {
+    // Midnight at 11:30Z: the slot 11:00-12:00Z (index 23) counts whole.
+    expect(ha.haRunsToday(hourly, NOW, NOW - 1800_000)).toBe(1)
+  })
+  it("gives each row its runs going and runs today, the Hub and the phone alike", () => {
+    const ns: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+      { id: "lead", name: "lead", hourlyTasks: hourly, runningTasks: [{ id: "a", startedAt: ago(60_000) }, { id: "b", startedAt: ago(120_000) }] },
+      { id: "quiet", name: "quiet" },
+    ] }]
+    const m = hubAgentRows(ns, [], NOW, DAY, title, ltPlain, liveWorkCount(ns))
+    const lead = m.rows.find((r) => r.id === "lead")!
+    // 3 finished today from the hourly slots + the 2 going, started today.
+    expect([lead.runs, lead.today]).toEqual([2, 5])
+    const h = ha.haRowHtml(lead, "", ltEsc, ltAge)
+    expect(h).toContain('<span class="ha__stats" title="2 running now, 5 runs today">')
+    expect(h).toMatch(/<span data-stat="now"><svg [^]*?<\/svg>2<\/span><span data-stat="today"><svg [^]*?<\/svg>5<\/span><span class="ax-sr">2 running now, 5 runs today<\/span>/)
+    // Next to the name, before the time.
+    expect(h.indexOf("ha__stats")).toBeGreaterThan(h.indexOf("ha__name"))
+    expect(h.indexOf("ha__stats")).toBeLessThan(h.indexOf("<time>"))
+    const quiet = m.rows.find((r) => r.id === "quiet")!
+    expect([quiet.runs, quiet.today]).toEqual([0, 0])
+    expect(ha.haRowHtml(quiet, "", ltEsc, ltAge)).not.toContain("ha__stats")
+  })
+  it("counts a run still going in runs today, by its start, not its last move", () => {
+    // hourlyTasks holds finished runs only: a first run of the day is 1 today.
+    const first: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: [
+      { id: "new", name: "new", hourlyTasks: new Array(24).fill(0), runningTasks: [{ id: "a", startedAt: ago(60_000) }] },
+      // Started before midnight, moved since: going, not today.
+      { id: "late", name: "late", runningTasks: [{ id: "b", startedAt: new Date(DAY - 60_000).toISOString(), lastActivity: ago(1000) }] },
+    ] }]
+    const m = hubAgentRows(first, [], NOW, DAY, title, ltPlain, liveWorkCount(first))
+    const row = (id: string) => m.rows.find((r) => r.id === id)!
+    expect([row("new").runs, row("new").today]).toEqual([1, 1])
+    expect([row("late").runs, row("late").today]).toEqual([1, 0])
+    expect(ha.haRunStart({ id: "x" } as LtTask)).toBe(0)
+  })
+  it("says one run in the singular and leaves out a zero", () => {
+    const row = { ...hubAgentRows(nodes, [], NOW, DAY, title, ltPlain, liveWorkCount(nodes)).rows[0], runs: 0, today: 1 }
+    const h = ha.haRowHtml(row, "", ltEsc, ltAge)
+    expect(h).toContain('title="1 run today"')
+    expect(h).not.toContain('data-stat="now"')
+  })
+  it("styles the counts quietly, with even-width digits", () => {
+    expect(HUB_NAV_CSS).toMatch(/\.ha__stats \{[^}]*color: var\(--ax-muted\)[^}]*font-variant-numeric: tabular-nums/)
+    // The name keeps its room: the machine chip gives way first.
+    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__name \{ flex-shrink: 0;/)
+    expect(HUB_NAV_CSS).toMatch(/\.ha__top \.ha__node \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/)
   })
 })
 
@@ -288,7 +349,7 @@ describe("the Hub page's left column", () => {
     expect(m).not.toContain('href="/app"')
   })
   it("ships the model so the browser can run it (bound under its own names)", () => {
-    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunsHtml: ha.haRunsHtml })
+    const code = injectFns({ haFace: ha.haFace, hubAgentRows: ha.hubAgentRows, haChatHref: ha.haChatHref, haListHtml: ha.haListHtml, haRowHtml: ha.haRowHtml, haFold: ha.haFold, haSwitchHits: ha.haSwitchHits, haSwitchHtml: ha.haSwitchHtml, haChannelLabel: ha.haChannelLabel, haRunAt: ha.haRunAt, haRunStart: ha.haRunStart, haRunsHtml: ha.haRunsHtml, haRunsToday: ha.haRunsToday })
     const fn = new Function("ltTitle", "ltPlain", "ltEsc", "ltAge", "liveWorkCount", "nodes", "needs", "NOW", "DAY", code + "; return haListHtml(hubAgentRows(nodes, needs, NOW, DAY, function (t) { return ltTitle(t, null) }, ltPlain, liveWorkCount(nodes)), 'all', '', false, ltEsc, ltAge)")
     expect(fn(ltTitle, ltPlain, ltEsc, ltAge, liveWorkCount, nodes, needs, NOW, DAY)).toContain('data-ha-agent="coder"')
   })
