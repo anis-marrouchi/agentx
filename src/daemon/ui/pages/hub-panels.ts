@@ -67,8 +67,8 @@ export function hubPanelsApply(p: HubPanels): { vars: Record<string, string>; cl
   const vars: Record<string, string> = {}
   // A folded panel takes the fold's width (the CSS), not its saved one: the
   // saved width comes back when it is expanded.
-  if (p.nav.w != null && !p.nav.folded) vars["--ax-nav-w"] = p.nav.w + "px"
-  if (p.cx.w != null && !p.cx.folded) vars["--ax-cx-w"] = p.cx.w + "px"
+  if (p.nav.w != null && !p.nav.folded) vars["--axp-nav-w"] = p.nav.w + "px"
+  if (p.cx.w != null && !p.cx.folded) vars["--axp-cx-w"] = p.cx.w + "px"
   return { vars, classes: { "nav-folded": p.nav.folded, "cx-folded": p.cx.folded } }
 }
 
@@ -122,14 +122,14 @@ export const HUB_PANELS_CSS = `
 .axp-grip:hover::after, .axp-grip:focus-visible::after, .axp-grip.is-drag::after { background: var(--ax-accent); }
 .axp-grip:focus-visible { outline: none; }
 /* The menu scrolls, so its edge sits on the page, at the menu's width. */
-.axp-grip--nav { position: fixed; left: calc(var(--ax-nav-w, 280px) - 4px); }
+.axp-grip--nav { position: fixed; left: calc(var(--axp-nav-w, 280px) - 4px); }
 .ax-wall.is-editor .axp-grip--nav, .ax-wall.is-editor .axp-navfold { display: none; }
 .axp-grip--cx { left: -4px; }
 .wcx { position: sticky; }
 body.axp-dragging, body.axp-dragging * { cursor: col-resize !important; user-select: none !important; }
 /* The widths: the grids read these variables (wall-space.ts, wall-chat.css.ts, wall-context.client.ts). */
 @media (min-width: 1181px) {
-  .ax-wall.nav-folded { --ax-nav-w: 72px; }
+  .ax-wall.nav-folded { --axp-nav-w: 72px; }
   .ax-wall.nav-folded .ax-wall__nav { padding: 12px 8px; align-items: center; }
   .ax-wall.nav-folded .ax-wall__logo small, .ax-wall.nav-folded .ax-wall__nav > .ax-wall__item span, .ax-wall.nav-folded .ax-wall__nav > .lt,
   .ax-wall.nav-folded .ax-wall__nav .ax-wall__navlbl, .ax-wall.nav-folded .ax-wall__nav > .ha { display: none; }
@@ -147,7 +147,7 @@ body.axp-dragging, body.axp-dragging * { cursor: col-resize !important; user-sel
   .ax-wall.nav-folded .axp-navfold { position: static; margin: 0 0 10px; }
   .ax-wall.nav-folded .axp-navfold svg { transform: scaleX(-1); }
   .ax-wall.nav-folded .axp-grip--nav { display: none; }
-  .ax-wall.cx-open.cx-folded, .ax-wall.cx-open.cx-folded.is-wide, .ax-wall.cx-open.cx-folded.is-settings, .ax-wall.hc-open.cx-open.cx-folded { grid-template-columns: var(--ax-nav-w, 280px) minmax(0, 1fr); }
+  .ax-wall.cx-open.cx-folded, .ax-wall.cx-open.cx-folded.is-wide, .ax-wall.cx-open.cx-folded.is-settings, .ax-wall.hc-open.cx-open.cx-folded { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr); }
   .ax-wall.cx-folded .wcx { display: none; }
 }
 /* History Back replaces the post's own ← (it still opens the feed when the post was opened by a link). */
@@ -172,7 +172,7 @@ export const HUB_PANELS_SCRIPT = String.raw`
   function cxTabs() { return document.querySelectorAll('#wcx-tabs [role="tab"]').length; }
   function apply() {
     var a = hubPanelsApply(P);
-    wall.style.removeProperty('--ax-nav-w'); wall.style.removeProperty('--ax-cx-w');
+    wall.style.removeProperty('--axp-nav-w'); wall.style.removeProperty('--axp-cx-w');
     Object.keys(a.vars).forEach(function (k) { wall.style.setProperty(k, a.vars[k]); });
     Object.keys(a.classes).forEach(function (k) { wall.classList.toggle(k, a.classes[k]); });
     document.querySelectorAll('[data-panel-toggle="nav"]').forEach(function (b) {

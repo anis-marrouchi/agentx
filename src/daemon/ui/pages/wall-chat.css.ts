@@ -12,7 +12,7 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 .hc-btn .hc__dot { position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--ax-bg); }
 
 .hc { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--ax-bg); }
-.ax-wall.hc-open { grid-template-columns: var(--ax-nav-w, 280px) minmax(0, 1fr); }
+.ax-wall.hc-open { grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr); }
 .ax-wall.hc-open .ax-wall__main { grid-row: 1; margin-top: 0; border-top: 0; }
 .ax-wall.hc-open .ax-wall__aside,
 .ax-wall.hc-open .ax-wall__main > :not(#hc) { display: none !important; }

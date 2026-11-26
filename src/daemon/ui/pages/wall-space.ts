@@ -42,7 +42,7 @@ button, input, select { font-family: inherit; }
    one said that the page did not is a line under its header. Only the
    contextual panel with tabs (wall-context.client.ts) adds a column, when
    something is selected. */
-.ax-wall { display: grid; grid-template-columns: var(--ax-nav-w, 280px) minmax(0, 1fr); align-items: start; min-height: 100vh; }
+.ax-wall { display: grid; grid-template-columns: var(--axp-nav-w, 280px) minmax(0, 1fr); align-items: start; min-height: 100vh; }
 .ax-wall__nav { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
 .ax-wall__logo { font-weight: 600; font-size: 16px; letter-spacing: -.01em; padding: 8px 10px 14px; color: var(--ax-text); text-decoration: none; }
 .ax-wall__logo small { font-weight: 400; color: var(--ax-muted); font-size: 13px; margin-left: 4px; }

@@ -66,15 +66,15 @@ describe("Hub panels: what is remembered (#2101 P)", () => {
 
   it("turns the state into the grid's variables and classes", () => {
     expect(hubPanelsApply({ nav: { w: 320, folded: false }, cx: { w: null, folded: true } })).toEqual({
-      vars: { "--ax-nav-w": "320px" },
+      vars: { "--axp-nav-w": "320px" },
       classes: { "nav-folded": false, "cx-folded": true },
     })
   })
 
   it("gives a folded menu the rail's width and keeps its saved width for later", () => {
     const p = { nav: { w: 360, folded: true }, cx: { w: 600, folded: false } }
-    expect(hubPanelsApply(p).vars).toEqual({ "--ax-cx-w": "600px" })
-    expect(hubPanelsApply({ ...p, nav: { w: 360, folded: false } }).vars["--ax-nav-w"]).toBe("360px")
+    expect(hubPanelsApply(p).vars).toEqual({ "--axp-cx-w": "600px" })
+    expect(hubPanelsApply({ ...p, nav: { w: 360, folded: false } }).vars["--axp-nav-w"]).toBe("360px")
   })
 })
 
@@ -101,8 +101,8 @@ describe("Hub panels: the page (#2101 P)", () => {
   })
 
   it("lets the grids read the widths", () => {
-    expect(WALL_CONTEXT_CSS).toContain("var(--ax-nav-w, 280px) minmax(0, 1fr) var(--ax-cx-w, minmax(380px, 42vw))")
-    expect(HUB_PANELS_CSS).toContain(".ax-wall.nav-folded { --ax-nav-w: 72px; }")
+    expect(WALL_CONTEXT_CSS).toContain("var(--axp-nav-w, 280px) minmax(0, 1fr) var(--axp-cx-w, minmax(380px, 42vw))")
+    expect(HUB_PANELS_CSS).toContain(".ax-wall.nav-folded { --axp-nav-w: 72px; }")
     expect(HUB_PANELS_CSS).toContain(".ax-wall.cx-folded .wcx { display: none; }")
   })
 
