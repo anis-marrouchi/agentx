@@ -6,7 +6,7 @@ import { tmpdir, homedir } from "node:os"
 import { join } from "node:path"
 import daemon from "../dist/daemon.js"
 
-const { daemonTarget, cliArgs, shellQuote, readStatus, canStop, stopDaemon, DEFAULT_DAEMON_URL } = daemon
+const { daemonTarget, cliArgs, shellQuote, readStatus, canStop, stopDaemon, isLoopbackUrl, DEFAULT_DAEMON_URL } = daemon
 
 test("target: default, env URL, and the config's node.bind", () => {
   assert.deepEqual(daemonTarget({}), { url: DEFAULT_DAEMON_URL, config: undefined, cli: "agentx", cwd: homedir() })
@@ -50,4 +50,15 @@ test("Stop only signals a shell-started daemon's own pid", () => {
   stopDaemon({ running: true, pid: 7, service: "none" }, (pid, sig) => sent.push([pid, sig]))
   assert.deepEqual(sent, [[7, "SIGTERM"]])
   assert.throws(() => stopDaemon({ running: true, pid: 7, service: "systemd" }, () => assert.fail("signalled")), /systemd/)
+})
+
+test("Stop is off for a daemon on another machine (its pid is not ours)", async () => {
+  assert.ok(["http://127.0.0.1:1", "http://localhost:1", "http://[::1]:1"].every(isLoopbackUrl))
+  assert.ok(!["http://10.0.0.5:18800", "http://box.example:18800", "not a url"].some(isLoopbackUrl))
+  const shell = (url) => (url.endsWith("/health") ? reply(true, {}) : reply(true, { pid: 7, service: { kind: "none" } }))
+  const far = await readStatus({ ...T, url: "http://10.0.0.5:18800" }, shell)
+  assert.deepEqual(far, { running: true, pid: 7, service: "none", remote: true })
+  assert.equal(canStop(far), false)
+  assert.throws(() => stopDaemon(far, () => assert.fail("signalled")), /another machine/)
+  assert.equal(canStop(await readStatus({ ...T, url: "http://localhost:18800" }, shell)), true)
 })

@@ -3,7 +3,7 @@
 // (test/menu.test.mjs).
 
 import type { MenuItemConstructorOptions } from "electron"
-import type { DaemonStatus } from "./daemon.js"
+import { canStop, type DaemonStatus } from "./daemon.js"
 import type { AppSettings, CloseAction } from "./settings.js"
 
 /** What the menu shows; the menu is built again whenever it changes. */
@@ -36,7 +36,7 @@ function daemonLine(s: TrayState): string {
 export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorOptions[] {
   const d = s.daemon
   const idle = !s.busy && d !== null
-  const stopHint = d?.running && d.service && d.service !== "none" ? `Stop (kept running by ${d.service})` : "Stop"
+  const stopHint = !d?.running ? "Stop" : d.remote ? "Stop (on another machine)" : d.service && d.service !== "none" ? `Stop (kept running by ${d.service})` : "Stop"
   const close = (value: CloseAction): MenuItemConstructorOptions => ({
     label: value === "hide" ? "Hide to the tray" : "Quit the app",
     type: "radio",
@@ -49,7 +49,8 @@ export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorO
     { label: daemonLine(s), enabled: false },
     { label: "Start", enabled: idle && !d?.running, click: () => a.onDaemon("start") },
     // A daemon under launchd/systemd comes straight back from a stop; Restart covers it.
-    { label: stopHint, enabled: idle && !!d?.running && d.service === "none" && typeof d.pid === "number", click: () => a.onDaemon("stop") },
+    // A daemon on another machine: its pid is not a process here.
+    { label: stopHint, enabled: idle && !!d && canStop(d), click: () => a.onDaemon("stop") },
     { label: "Restart", enabled: idle && !!d?.running, click: () => a.onDaemon("restart") },
     { type: "separator" },
     {

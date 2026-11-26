@@ -35,7 +35,7 @@ The app is still in preview. Each change to it is built for all three systems by
 | **Show AgentX** / **Hide AgentX** | Shows or hides the Hub window. |
 | **Daemon: running** / **stopped** | Whether the daemon answers. Checked every 5 seconds. |
 | **Start** | Runs `agentx daemon start --detach`. |
-| **Stop** | Stops the daemon. It finishes its running tasks first. Only for a daemon you started from a terminal: a daemon kept running by launchd or systemd would start again at once, so the menu says so and leaves Stop off. Use **Restart** for it. |
+| **Stop** | Stops the daemon. It finishes its running tasks first. Only for a daemon you started from a terminal: a daemon kept running by launchd or systemd would start again at once, so the menu says so and leaves Stop off. Use **Restart** for it. Stop is also off for a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.0.0.1, ::1 or localhost). |
 | **Restart** | Runs `agentx daemon restart`. It works for both kinds. |
 | **Open at login** | Starts the app when you log in. macOS and Windows only. |
 | **Show the window at launch** | Off: the app starts in the top bar only. |

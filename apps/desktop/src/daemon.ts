@@ -10,7 +10,8 @@
 // Stop only ever signals the one process this daemon reports for itself
 // (GET /daemon/restart). A daemon kept running by launchd or systemd would
 // be started again at once, so Stop is offered only for a daemon started
-// from a shell; Restart works for both.
+// from a shell; Restart works for both. The pid is only meaningful on this
+// machine, so Stop is off when the daemon's URL is not loopback.
 
 import { execFile } from "child_process"
 import { existsSync, readFileSync } from "fs"
@@ -27,6 +28,8 @@ export interface DaemonStatus {
   pid?: number
   /** What keeps it running; "none" = started from a shell. */
   service?: ServiceKind
+  /** Set when the daemon's URL is not on this machine: its pid is not ours to signal. */
+  remote?: true
 }
 
 export interface DaemonTarget {
@@ -73,10 +76,25 @@ export function shellQuote(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
 }
 
+/** True when the URL's host is this machine (127.0.0.1, ::1 or localhost). */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    return host === "127.0.0.1" || host === "[::1]" || host === "::1" || host === "localhost"
+  } catch {
+    return false
+  }
+}
+
 type Fetch = (url: string, init?: { method?: string; signal?: AbortSignal }) => Promise<{ ok: boolean; json(): Promise<unknown> }>
 
 /** Running when /health answers; pid and service from /daemon/restart (best effort). */
 export async function readStatus(target: DaemonTarget, fetchFn: Fetch = fetch as unknown as Fetch): Promise<DaemonStatus> {
+  const s = await probe(target, fetchFn)
+  return s.running && !isLoopbackUrl(target.url) ? { ...s, remote: true } : s
+}
+
+async function probe(target: DaemonTarget, fetchFn: Fetch): Promise<DaemonStatus> {
   try {
     const h = await fetchFn(`${target.url}/health`, { signal: AbortSignal.timeout(2000) })
     if (!h.ok) return { running: false }
@@ -98,14 +116,24 @@ export async function readStatus(target: DaemonTarget, fetchFn: Fetch = fetch as
   }
 }
 
-/** Stop is safe only for a shell-started daemon whose own pid we know. */
+/** Stop is safe only for a shell-started daemon on this machine whose own pid we know. */
 export function canStop(s: DaemonStatus): boolean {
-  return s.running && s.service === "none" && typeof s.pid === "number"
+  return s.running && !s.remote && s.service === "none" && typeof s.pid === "number"
+}
+
+/** Why Stop is off, for the error dialog; null when Stop is allowed. */
+export function stopRefusal(s: DaemonStatus): string | null {
+  if (canStop(s)) return null
+  if (!s.running) return "the daemon is not running"
+  if (s.remote) return "the daemon is on another machine; stop it there"
+  if (s.service && s.service !== "none") return `the daemon is kept running by ${s.service}; use Restart`
+  return "the daemon's process is not known"
 }
 
 /** SIGTERM: the daemon finishes its running tasks, then exits. */
 export function stopDaemon(s: DaemonStatus, kill: (pid: number, sig: string) => void = (pid, sig) => process.kill(pid, sig)): void {
-  if (!canStop(s)) throw new Error(s.service && s.service !== "none" ? `the daemon is kept running by ${s.service}; use Restart` : "the daemon's process is not known")
+  const refusal = stopRefusal(s)
+  if (refusal) throw new Error(refusal)
   kill(s.pid as number, "SIGTERM")
 }
 

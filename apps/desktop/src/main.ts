@@ -10,7 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { allowsMedia, dashboardUrl, hubUrl, isDashboardOrigin, opensOutside } from "./hub.js"
 import { offlinePage } from "./offline.js"
-import { canStop, cliArgs, daemonTarget, readStatus, runCli, stopDaemon, type DaemonStatus } from "./daemon.js"
+import { cliArgs, daemonTarget, readStatus, runCli, stopDaemon, type DaemonStatus } from "./daemon.js"
 import type { TrayActions, TrayState } from "./menu.js"
 import { loadSettings, saveSettings, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
@@ -190,9 +190,7 @@ async function daemonAction(action: "start" | "stop" | "restart"): Promise<void>
   log(`daemon ${action} (${DAEMON.url})`)
   try {
     if (action === "stop") {
-      const now = await readStatus(DAEMON)
-      if (!canStop(now)) throw new Error(now.running ? `the daemon is kept running by ${now.service ?? "its service"}; use Restart` : "the daemon is not running")
-      stopDaemon(now)
+      stopDaemon(await readStatus(DAEMON)) // throws with the reason when Stop is not allowed
       await waitFor(async () => !(await readStatus(DAEMON)).running)
     } else {
       await runCli(DAEMON, cliArgs(action, DAEMON.config))
