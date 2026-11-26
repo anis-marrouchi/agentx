@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.277.0](https://github.com/anis-marrouchi/agentx/compare/v0.276.1...v0.277.0) (2026-11-26)
+
+
+### Features
+
+* **requests:** open proof links when a request or promise closes ([#2122](https://github.com/anis-marrouchi/agentx/issues/2122) PR 2) ([#2310](https://github.com/anis-marrouchi/agentx/issues/2310)) ([1c1224c](https://github.com/anis-marrouchi/agentx/commit/1c1224c0d1b6d821ae0e4c7c657e1f453f7410f9))
+
 ## [0.276.1](https://github.com/anis-marrouchi/agentx/compare/v0.276.0...v0.276.1) (2026-11-26)
 
 
