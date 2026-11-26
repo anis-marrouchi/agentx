@@ -121,7 +121,7 @@ import { traceToolCalls } from "@/storage/traces"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
-import { closeForwardedCard, handleApprovalsApi } from "@/approvals/daemon-api"
+import { closeForwardedCard, handleApprovalsApi, POPUP_ONLY_NEEDS_STEP } from "@/approvals/daemon-api"
 import { applyOrgProposal, handleOrgApi, isOwnerContext, orgProposalLines, readOrgProposal } from "@/business/org-proposals"
 import { handleContentApi } from "@/content/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
@@ -6375,6 +6375,12 @@ export class AgentXDaemon {
             this.json(res, 400, { error: `unknown agent "${raisedBy}": raised_by must be an agent on this node` })
             return
           }
+          // A forwarded card is never popup-only: the other node's popup
+          // cannot prove this node's step (noqta#910).
+          if (input.popup_only !== undefined && input.popup_only !== false) {
+            this.json(res, 400, { error: POPUP_ONLY_NEEDS_STEP })
+            return
+          }
           const reply = await forwardCard(input, forward)
           if (reply.status === 201) this.log(`[approvals] ${(reply.body as { card: DecisionCard }).card.id} from ${raisedBy} forwarded to ${forward.peer.name}`)
           raised(reply)
@@ -6400,6 +6406,8 @@ export class AgentXDaemon {
             return !!peer && this.approvalsPeer(node)?.name === peer
           },
           fromMeshPeer: () => !isLoopback(req.socket?.remoteAddress || "") && this.carriesMeshToken(req),
+          // The same test popNext makes before it shows a card.
+          popupEnabled: () => !!this.config.approvals.popup?.enabled && process.platform === "darwin",
           ...(this.native.tasks ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),

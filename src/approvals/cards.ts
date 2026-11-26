@@ -405,8 +405,10 @@ export function decideCard(
 
 /** Cards whose answer the daemon acts on itself (a workflow run, a plan
  *  step, a retro): only the operator closes those. A reminder card is the
- *  agent's own to act on, so it may close it like one it raised. */
-const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder"])
+ *  agent's own to act on, so it may close it like one it raised. A
+ *  step-raised card is its workflow's own: its later steps close it
+ *  (noqta#910, C1). */
+const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder", "step-raised"])
 
 /**
  * The raising agent closes its own pending card: the owner gave the same
