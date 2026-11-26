@@ -956,6 +956,21 @@ const cronJobSchema = z.object({
    * told when it fails.
    */
   command: z.string().optional(),
+  /** A cheap check run before a prompt job wakes its agent (#2115). A
+   *  `command` (run in the agent's workspace with its env, no shell) exits
+   *  0 for "work to do" and 1 for "nothing to do"; a `url` answers 2xx
+   *  with a body to run, 204 to skip. Any other answer, a timeout or an
+   *  error runs the job anyway. It must be read-only: it decides whether to
+   *  wake the agent and never does the job. See src/crons/precheck.ts. */
+  precheck: z.object({
+    command: z.string().trim().min(1).optional(),
+    url: z.string().trim().regex(/^https?:\/\/\S+$/i, "precheck url must be an http(s) address").max(1000).optional(),
+    timeoutSec: z.number().int().min(1).max(60).optional(),
+    /** Let a `url` reach a private or loopback host, e.g. the daemon's own API. */
+    allowPrivate: z.boolean().optional(),
+  }).strict().refine((p) => Boolean(p.command) !== Boolean(p.url), {
+    message: "precheck needs exactly one of command or url",
+  }).optional(),
   timeout: z.number().default(600),
   model: z.string().optional(),
   /** Soft cap on output length. Claude Code CLI has no hard flag for this,
@@ -1049,6 +1064,8 @@ const cronJobSchema = z.object({
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 }).refine((j) => !(j.command?.trim() && j.expectExitZero), {
   message: "expectExitZero applies to prompt crons; a command cron already fails on a non-zero exit (remove expectExitZero)",
+}).refine((j) => !(j.command?.trim() && j.precheck), {
+  message: "precheck applies to prompt crons; a command cron never wakes a model (remove precheck)",
 })
 
 /** Whether `expr` is a 5-field cron the scheduler can read: each field a
