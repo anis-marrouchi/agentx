@@ -26,6 +26,7 @@
 // the browser (../inject.ts).
 
 import type { LtMachine, LtRow } from "./wall-tree"
+import type { LtWorker } from "./wall-tree-workers"
 
 export interface MtMachine {
   key: string
@@ -81,6 +82,32 @@ export function mtCountWords(working: number, runs: number): string {
 export function mtRowTitle(r: LtRow): LtRow {
   const t = r.task
   return t && t.channel === "cron" && !/^Job\b/.test(r.title) ? { ...r, title: "Job: " + r.title } : r
+}
+
+/** A worker whose own run is a row of this fold: its run is going and
+ *  known (ltWorkersOf sets nodeUrl only then). It already shows on its
+ *  own machine, so under its parent it is only a pointer (Hakim C5). */
+export function mtListed(w: LtWorker): boolean {
+  return !!(w && w.task && w.nodeUrl)
+}
+
+/** "→ Tester on Workshop": one line, no state, no run details. */
+export function mtPointerHtml(w: LtWorker, href: string, esc: (s: unknown) => string): string {
+  const to = "→ " + (w.agentName || w.agentId || "its run") + (w.where ? " on " + w.where : "")
+  const label = esc((w.agentName || w.agentId) + " runs it" + (w.where ? " on " + w.where : "") + ": " + w.title)
+  return href ? '<a class="lt__wk lt__ptr" href="' + esc(href) + '" title="' + label + '">' + esc(to) + "</a>"
+    : '<div class="lt__wk lt__ptr" title="' + label + '">' + esc(to) + "</div>"
+}
+
+/** The workers under a run in this fold: a pointer for a run listed on its
+ *  own machine, the full worker row (wall-tree-workers.ts ltWorkerHtml)
+ *  for the rest (workflows, ended hand-offs). "" with none. No agent shows
+ *  twice: Anis, "no agent twice". */
+export function mtWorkersHtml(workers: LtWorker[] | undefined, hrefOf: (w: LtWorker) => string, esc: (s: unknown) => string,
+  age: (ms: number) => string, worker: (w: LtWorker, href: string, esc: (s: unknown) => string, age: (ms: number) => string) => string): string {
+  if (!workers || !workers.length) return ""
+  return '<div class="lt__ws" role="group" aria-label="Workers it started">' +
+    workers.map((w) => (mtListed(w) ? mtPointerHtml(w, hrefOf(w), esc) : worker(w, hrefOf(w), esc, age))).join("") + "</div>"
 }
 
 export interface MtDeps {
