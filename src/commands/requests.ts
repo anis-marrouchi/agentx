@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
 import { CLOSED_STATES, OPEN_STATES, OWNER_ASKED, OWNER_BY, RequestStore, type RequestRecord } from "@/requests/store"
+import { JobStore } from "@/jobs/store"
 import { LIST_MAX } from "@/requests/daemon-api"
 import { startOfDay, todayRows } from "@/requests/today"
 import { DEFAULT_FLOW, describeFlow, FLOW_DAYS_MAX, flowReport } from "@/requests/flow"
@@ -313,6 +314,26 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
 }
 closeCommand("done", "close a request as finished, with a link to the evidence or the reason", "--evidence <link>", "a finished request needs --evidence <link> or --reason <text>")
 closeCommand("drop", "drop a request you no longer want", "--reason <text>", "")
+
+// A job no run can close any more (#2318): its chat is gone, so
+// agentx_job_state cannot reach it. Its requester or assignee closes it
+// here, with a proof line; the row keeps who, when and the proof.
+requests
+  .command("close-job <jobId>")
+  .description("close a job whose chat is gone, as its requester or assignee, with a proof line")
+  .requiredOption("--proof <text>", "what shows it is finished, or why it is dropped (a link where there is one)")
+  .option("--drop", "close it as dropped, not done")
+  .action((jobId: string, opts: { proof: string; drop?: boolean }) => {
+    const s = store()
+    if (!s) return
+    const db = openDb({ quiet: true })
+    if (!db) { process.exitCode = 1; return }
+    const by = process.env.AGENTX_AGENT_ID?.trim() || OWNER_BY
+    const state = opts.drop ? "dropped" : "done"
+    const refused = new JobStore(db).closeFromOutside(jobId, { state, proof: opts.proof, by, now: Date.now() })
+    if (refused) { console.error(chalk.red(`  Not closed: ${refused}`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ ${jobId} closed as ${state} by ${by}`))
+  })
 
 const DUE_WAKE_WORDS: Record<DueWake, string> = {
   armed: "its agent is woken at that time",

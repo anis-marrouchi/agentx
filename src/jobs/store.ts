@@ -88,6 +88,9 @@ export interface JobRecord {
   createdAt: number
   updatedAt: number
   closedAt: number | null
+  /** Who closed it from outside a run (#2318): its requester or assignee.
+   *  Null: a run, or the daemon, closed it. */
+  closedBy: string | null
   /** True for a row the owner's turn opened: `requests` machinery owns
    *  its closing. */
   ownerRequest: boolean
@@ -178,6 +181,7 @@ function toJob(r: any): JobRecord {
     stalledAt: r.stalled_at ?? null, requesterToldAt: r.requester_told_at ?? null,
     peer: r.peer ?? null, remoteId: r.remote_id ?? null,
     createdAt: r.created_at, updatedAt: r.updated_at, closedAt: r.closed_at ?? null,
+    closedBy: ownerRequest ? null : r.closed_by ?? null,
     ownerRequest,
   }
 }
@@ -365,6 +369,31 @@ export class JobStore {
          waiting_on = NULL, stalled_at = NULL
        WHERE id = ? AND ${OPEN_ROW}`,
     ).run(now, now, run, why, id).changes > 0
+  }
+
+  /** Close a job from outside its runs (#2318): its chat may be gone, so
+   *  no run can state it. Only its requester or its assignee may, with a
+   *  proof line; a job with a run on it (working) states itself, and a
+   *  row the owner's turn opened closes through `agentx requests`. The
+   *  row keeps who closed it, when, and the proof. Null: closed; else why not. */
+  closeFromOutside(id: string, c: { state: "done" | "dropped"; proof: string; by: string; now: number }): string | null {
+    const job = this.get(id)
+    if (!job) return `no job "${id}"`
+    if (job.ownerRequest) return `${id} is a request: close it with agentx requests done or drop`
+    if (job.closedAt !== null || !OPEN_JOB_STATES.includes(job.state)) return `${id} is already closed (${job.state})`
+    const by = clip(c.by, WHO_MAX)
+    if (!by || (by !== job.requester && by !== job.assignee)) {
+      return `only its requester (${job.requester ?? "none"}) or its assignee (${job.assignee}) may close ${id}`
+    }
+    if (job.state === "working") return `${id} has a run on it: that run states its state`
+    const proof = clip(c.proof, JOB_NOTE_MAX)
+    if (!proof) return "a close needs its proof line"
+    const changed = this.db.prepare(
+      `UPDATE requests SET job_state = ?, updated_at = ?, state_changed_at = ?, closed_at = ?, closed_by = ?, evidence = ?,
+         job_note = ?, wake_at = NULL, waiting_on = NULL
+       WHERE id = ? AND state = '${JOB_ROW_STATE}' AND ${OPEN_ROW} AND COALESCE(job_state, '') != 'working'`,
+    ).run(c.state, c.now, c.now, c.now, by, proof, `closed by ${by} from outside its chat`, id).changes > 0
+    return changed ? null : `${id} changed while closing: read it again`
   }
 
   /** The daemon asked the ended run for the state it did not give. */
