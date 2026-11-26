@@ -150,6 +150,8 @@ describe("Workspace files: reading inside the workspace only (#2101 R17)", () =>
     writeFileSync(join(ws, "README.md"), "# Hello\nworld")
     writeFileSync(join(ws, "src", "a.ts"), "export const a = 1\n")
     writeFileSync(join(ws, ".env"), "SECRET=1")
+    mkdirSync(join(ws, ".secrets"))
+    writeFileSync(join(ws, ".secrets", "api.txt"), "SECRET=2")
     writeFileSync(join(ws, "server.pem"), "key")
     writeFileSync(join(ws, "bin.dat"), Buffer.from([1, 2, 0, 3]))
     writeFileSync(join(ws, "big.txt"), "x".repeat(WORKSPACE_FILE_MAX + 1))
@@ -172,6 +174,12 @@ describe("Workspace files: reading inside the workspace only (#2101 R17)", () =>
       "dir:src", "file:alias.ts", "file:big.txt", "file:bin.dat", "file:README.md",
     ])
     expect(r.entries.find((e) => e.name === "README.md")!.size).toBe(13)
+  })
+
+  it("neither lists nor opens a .secrets folder (#2101 R17)", () => {
+    expect(readWorkspace(ws, ".secrets")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, ".secrets/api.txt")).toMatchObject({ ok: false, status: 403 })
+    expect(readWorkspace(ws, ".SECRETS/api.txt")).toMatchObject({ ok: false })
   })
 
   it("lists a sub-folder and reads a text file", () => {

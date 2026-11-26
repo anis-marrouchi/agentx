@@ -36,9 +36,10 @@ export function isHiddenName(name: string): boolean {
     n === ".env" || /^\.env[-.]/.test(n) || /\.env$/.test(n) || n === ".envrc" ||
     n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
     /\.(pem|key|p12|pfx|keystore|jks)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)/.test(n) ||
-    // secrets.yaml, secrets.prod.json, credentials.yml.enc; any *credentials.json
-    // (gcloud's application_default_credentials.json).
-    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)*$/.test(n) || /credentials\.json$/.test(n) || n === "auth.json" ||
+    // secrets.yaml, secrets.prod.json, credentials.yml.enc, and the dot forms
+    // agents keep their keys in (.secrets/, .tokens, .credentials); any
+    // *credentials.json (gcloud's application_default_credentials.json).
+    /^\.?(credentials|secrets?|tokens?)(\.[a-z0-9]+)*$/.test(n) || /credentials\.json$/.test(n) || n === "auth.json" ||
     // Logins of git, Claude, MCP servers, Python packages; whole folders of
     // SSH, GnuPG, Docker and Kubernetes logins (.docker/config.json, .kube/config).
     n === ".git-credentials" || n === ".credentials.json" || n === ".mcp.json" || n === "settings.local.json" ||
