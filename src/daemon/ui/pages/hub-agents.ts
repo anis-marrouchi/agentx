@@ -53,8 +53,10 @@ export interface HaRow {
   unread: number
   /** The run it is on, when working: for a link to its Task page. */
   taskId: string
-  /** How many runs it has going. */
+  /** How many runs it has going: its own and the workers it started (#2145). */
   runs: number
+  /** Runs started today, from the snapshot's hourly counts (haRunsToday). */
+  today: number
   /** Its other runs going, newest first, each shown under the row (#2328). */
   more?: HaRun[]
 }
@@ -65,6 +67,21 @@ export interface HaRun {
   /** Where it came from: "Voice", "Agent to agent", … */
   channel: string
   line: string
+}
+
+/** Runs started since `dayStart`, from a 24-slot hourly count whose last
+ *  slot ends at `now` (registry.ts getHourlySparkline). A slot counts when
+ *  any of its hour is today, so a run up to 59 min before midnight can
+ *  count; one that started today is never missed (#2145). */
+export function haRunsToday(hourly: unknown, now: number, dayStart: number): number {
+  if (!Array.isArray(hourly)) return 0
+  let n = 0
+  for (let i = 0; i < hourly.length; i++) {
+    const end = now - (hourly.length - 1 - i) * 3600_000
+    const v = Number(hourly[i])
+    if (end > dayStart && Number.isFinite(v) && v > 0) n += v
+  }
+  return n
 }
 
 /** A channel, said plainly (as wall-tree.ts ltPlace names them). */
@@ -151,7 +168,7 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
         id: a.id, name: a.name || a.id, node: n.name || n.url || "", nodeUrl: n.url || "",
         color: a.color || null, face: haFace(a.name || a.id), state, line: line.slice(0, 140),
         ageMs: lastAt ? Math.max(0, now - lastAt) : -1, unread: q ? q.n : 0,
-        taskId: t ? t.id : "", runs: runs.length,
+        taskId: t ? t.id : "", runs: runs.length, today: haRunsToday(a.hourlyTasks, now, dayStart),
         ...(sorted.length > 1 ? { more: sorted.slice(1).map((r) => ({ taskId: r.id, channel: haChannelLabel(r.channel), line: title(r).slice(0, 140) })) } : {}),
       })
     }
@@ -184,13 +201,26 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   const bg = r.color && /^#[0-9a-f]{3,8}$/i.test(r.color) ? ' style="--ha-c:' + r.color + '"' : ""
   const when = r.ageMs >= 0 ? "<time>" + esc(age(r.ageMs)) + "</time>" : ""
   const unread = r.unread ? '<b class="ax-af-count" data-tone="warn" data-n="' + r.unread + '" title="' + r.unread + (r.unread === 1 ? " question" : " questions") + ' for you">' + r.unread + "</b>" : ""
+  // Its numbers next to its name (#2145): runs going now and runs today, each
+  // left out at zero. Needs you is the orange count at the row's end.
+  // A lucide icon and the number; the words are in the tooltip and for
+  // screen readers, so the name keeps its room in the side menu.
+  const going = r.runs || 0, today = r.today || 0
+  const svg = (d: string) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + "</svg>"
+  const words = [going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")
+  const stats = going || today
+    ? '<span class="ha__stats" title="' + esc(words) + '">' +
+      (going ? '<span data-stat="now">' + svg('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>') + going + "</span>" : "") +
+      (today ? '<span data-stat="today">' + svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>') + today + "</span>" : "") +
+      '<span class="ax-sr">' + esc(words) + "</span></span>"
+    : ""
   const run = r.state === "working" && r.taskId && runHref ? runHref(r) : ""
   const href = run ? esc(run) : "#page=chat&amp;agent=" + encodeURIComponent(r.id)
   const opens = run ? ". Opens its live run" : ""
   return '<a class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" href="' + href + '" data-ha-agent="' + esc(r.id) + '"' + (run ? " data-ha-run" : "") +
     (r.id === cur ? ' aria-current="true"' : "") + ' title="' + esc(r.name + " on " + r.node + ", " + word + (r.line ? ": " + r.line : "") + opens) + '">' +
     '<span class="ha__face"' + bg + ' aria-hidden="true">' + esc(r.face) + '<i class="ha__dot"></i></span>' +
-    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + (r.node ? '<span class="ha__node">' + esc(r.node) + "</span>" : "") + when + "</span>" +
+    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + (r.node ? '<span class="ha__node">' + esc(r.node) + "</span>" : "") + stats + when + "</span>" +
     '<span class="ha__line">' + esc(r.line || (r.state === "idle" ? "Nothing going" : "")) + "</span></span>" + unread +
     '<span class="ax-sr"> (' + word + ")</span></a>" + (r.state === "working" ? haRunsHtml(r, esc, runHref) : "")
 }
