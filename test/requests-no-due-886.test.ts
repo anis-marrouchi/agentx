@@ -151,6 +151,20 @@ describe("the back-fill in the requests check", () => {
     expect(left.n).toBe(0)
   })
 
+  it("does not ask for an item waiting on the owner", async () => {
+    const [waiting, open] = openNoDue(2)
+    store.waitOnOwner(waiting, "Deploy now or after the review?", T0)
+    expect((await sweep(true, T0 + NO_DUE_GRACE_MS + MIN)).dueAsked).toBe(1)
+    expect(woken.map((w) => w.id)).toEqual([open])
+  })
+
+  it("does not ask for a standing order", async () => {
+    const [standing, open] = openNoDue(2)
+    expect(store.setStanding(standing, { rhythm: "daily", numberId: "posts-per-day", cronId: null, since: T0 })).toBe(true)
+    expect((await sweep(true, T0 + NO_DUE_GRACE_MS + MIN)).dueAsked).toBe(1)
+    expect(woken.map((w) => w.id)).toEqual([open])
+  })
+
   it("leaves a new item its grace time, and does nothing while switched off", async () => {
     openNoDue(1)
     expect((await sweep(true, T0 + NO_DUE_GRACE_MS - MIN)).dueAsked).toBe(0)
