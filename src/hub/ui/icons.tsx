@@ -2,13 +2,13 @@
 // gives each icon as an SVG string; Icon draws it at size-4 by default and
 // hides it from screen readers (the control around it carries the name).
 import {
-  Activity, ArrowLeft, BookOpen, Bot, Clock, ExternalLink, Files, Folder, Gauge, GitBranch, Inbox, Kanban, List, ListTodo, Menu, Monitor,
+  Activity, ArrowLeft, BookOpen, Bot, ChevronRight, Clock, ExternalLink, Files, Folder, Gauge, GitBranch, Inbox, Kanban, List, ListTodo, Menu, Monitor,
   Network, PanelRight, Radio, Search, Send, Settings, Smartphone, Workflow,
 } from "lucide-static"
 import { cn } from "./cn"
 
 const ICONS: Record<string, string> = {
-  "activity": Activity, "arrow-left": ArrowLeft, "book-open": BookOpen, "bot": Bot, "clock": Clock, "external-link": ExternalLink, "files": Files, "folder": Folder,
+  "activity": Activity, "arrow-left": ArrowLeft, "book-open": BookOpen, "bot": Bot, "chevron-right": ChevronRight, "clock": Clock, "external-link": ExternalLink, "files": Files, "folder": Folder,
   "gauge": Gauge, "git-branch": GitBranch, "inbox": Inbox, "kanban": Kanban, "list": List, "list-todo": ListTodo, "menu": Menu, "monitor": Monitor,
   "network": Network, "panel-right": PanelRight, "radio": Radio, "search": Search, "send": Send,
   "settings": Settings, "smartphone": Smartphone, "workflow": Workflow,

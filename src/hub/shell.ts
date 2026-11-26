@@ -6,8 +6,9 @@
 // pure functions, so the tests check every layout without a browser.
 //
 // The items open today's Hub pages by their hash (the old Hub draws them);
-// later steps move them into React one by one. Tasks is the first (S4): it
-// opens in the shell's centre, as List or Kanban (tasks.ts).
+// later steps move them into React one by one. Tasks (S4, tasks.ts),
+// Automations and Waiting on you (S5, automations.ts, waiting.ts) open in
+// the shell's centre.
 
 import type { HubBoot } from "./boot"
 import { resolveHubLayout, type HubLayoutView, type HubShowItem } from "./layout"
@@ -29,10 +30,10 @@ export interface ShellNavItem {
 export const SHELL_MAIN: readonly ShellNavItem[] = [
   { id: "search", label: "Search", icon: "search" },
   { id: "tasks", label: "Tasks", icon: "list-todo", href: "#page=home&pane=tasks" },
-  { id: "automations", label: "Automations", icon: "clock", href: "#view=jobs" },
+  { id: "automations", label: "Automations", icon: "clock", href: "#page=home&pane=automations" },
   { id: "agents", label: "Agents", icon: "bot", href: "#page=agents" },
   { id: "projects", label: "Projects", icon: "folder", href: "#view=projects" },
-  { id: "needs", label: "Waiting on you", icon: "inbox", href: "#status=open&view=decide" },
+  { id: "needs", label: "Waiting on you", icon: "inbox", href: "#page=home&pane=waiting" },
 ]
 
 /** The items the simple layout hides that are a place to go, in Settings

@@ -94,12 +94,28 @@ export function saveTasksView(view: TasksView, store: Store | null = browserStor
 
 // --- The shell's centre ---
 
-export type ShellPane = "chat" | "tasks"
+export type ShellPane = "chat" | "tasks" | "automations" | "waiting"
+const PANES: readonly ShellPane[] = ["tasks", "automations", "waiting"]
 
-/** What the centre shows for this hash: `#page=home&pane=tasks&open=<id>`. */
-export function shellPane(params: URLSearchParams): { pane: ShellPane; open: string | null } {
-  const pane: ShellPane = params.get("pane") === "tasks" ? "tasks" : "chat"
-  return { pane, open: pane === "tasks" ? params.get("open") || null : null }
+/** What the centre shows for this hash: `#page=home&pane=tasks&open=<id>`,
+ *  `&pane=tasks&project=<name>`, `&pane=automations`, `&pane=waiting&open=<key>`. */
+export function shellPane(params: URLSearchParams): { pane: ShellPane; open: string | null; project: string | null } {
+  const want = params.get("pane") as ShellPane | null
+  const pane: ShellPane = want && PANES.includes(want) ? want : "chat"
+  const opens = pane === "tasks" || pane === "waiting"
+  return { pane, open: opens ? params.get("open") || null : null, project: pane === "tasks" ? params.get("project") || null : null }
+}
+
+// --- The project filter (#2226: "for the selected project") ---
+
+/** The projects the tasks name, by name; tasks without one are left out. */
+export function taskProjects(posts: TaskPost[]): string[] {
+  return [...new Set(posts.map((p) => p.project).filter((p): p is string => !!p))].sort((a, b) => a.localeCompare(b))
+}
+
+/** The tasks of one project, or all of them when none is picked. */
+export function tasksOfProject(posts: TaskPost[], project: string | null): TaskPost[] {
+  return project ? posts.filter((p) => p.project === project) : posts
 }
 
 /** "5m", "3h", "2d": how long ago, short. */

@@ -7,14 +7,15 @@
 import { useQuery } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { apiFetch, apiGet } from "../api"
-import { buildHash } from "../router"
+import { buildHash, navigate } from "../router"
 import {
-  TASKS_URL, shortAgo, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane,
+  TASKS_URL, shortAgo, taskProjects, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane, tasksOfProject,
   type TaskEvent, type TaskLane, type TaskPost, type TaskThreadReply, type TasksReply, type TasksView,
 } from "../tasks"
 import { Badge, Button, EmptyState, Icon, Skeleton, StatusDot, cn } from "../ui"
 
-const taskHref = (id?: string) => buildHash({ page: "home", pane: "tasks", open: id })
+/** A task's address in the shell; the project filter goes along. */
+export const taskHref = (id?: string, project?: string | null) => buildHash({ page: "home", pane: "tasks", project, open: id })
 
 const LANE_TOP: Record<TaskLane["tone"], string> = {
   work: "border-t-primary", warn: "border-t-warn", idle: "border-t-border", err: "border-t-destructive", ok: "border-t-ok",
@@ -22,16 +23,17 @@ const LANE_TOP: Record<TaskLane["tone"], string> = {
 
 
 /** List or Kanban: two pressed-state buttons, the choice kept by the caller. */
-export function TasksViewSwitch({ view, onView, className }: { view: TasksView; onView: (v: TasksView) => void; className?: string }) {
+export function TasksViewSwitch({ view, onView, className, compact }: { view: TasksView; onView: (v: TasksView) => void; className?: string; compact?: boolean }) {
   const item = (v: TasksView, label: string, icon: string) => (
     <button
       type="button" aria-pressed={view === v} data-tasks-view={v} onClick={() => onView(v)}
+      aria-label={compact ? label : undefined} title={compact ? label : undefined}
       className={cn(
         "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         view === v ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
       )}
     >
-      <Icon name={icon} className="size-3.5" />{label}
+      <Icon name={icon} className="size-3.5" />{compact ? null : label}
     </button>
   )
   return (
@@ -39,6 +41,26 @@ export function TasksViewSwitch({ view, onView, className }: { view: TasksView; 
       {item("list", "List", "list")}
       {item("kanban", "Kanban", "kanban")}
     </div>
+  )
+}
+
+/** The project filter: all projects, or one the tasks name. The pick is
+ *  in the address (`project=`), so Back and a shared link keep it. */
+export function TasksProjectFilter({ projects, project, className }: { projects: string[]; project: string | null; className?: string }) {
+  // A project picked from a link that no task names now still shows, so the filter says what is applied.
+  const list = project && !projects.includes(project) ? [project, ...projects] : projects
+  return (
+    <label className={cn("relative inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground focus-within:ring-2 focus-within:ring-ring", className)}>
+      <Icon name="folder" className="size-3.5" />
+      <select
+        aria-label="Project" data-shell="tasks-project" value={project ?? ""}
+        onChange={(e) => navigate({ page: "home", pane: "tasks", project: e.target.value || null })}
+        className="max-w-[96px] cursor-pointer sm:max-w-[160px] appearance-none truncate bg-transparent pr-1 text-foreground outline-none"
+      >
+        <option value="">All projects</option>
+        {list.map((p) => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </label>
   )
 }
 
@@ -53,7 +75,7 @@ function TaskMeta({ post }: { post: TaskPost }) {
 }
 
 /** One row per task, under its column's heading; empty columns left out. */
-export function TaskList({ posts }: { posts: TaskPost[] }) {
+export function TaskList({ posts, project }: { posts: TaskPost[]; project?: string | null }) {
   return (
     <div data-tasks="list" className="flex flex-col gap-4">
       {tasksByLane(posts).filter((g) => g.posts.length).map(({ lane, posts: rows }) => (
@@ -64,7 +86,7 @@ export function TaskList({ posts }: { posts: TaskPost[] }) {
           <ul className="divide-y divide-border rounded-md border border-border">
             {rows.map((p) => (
               <li key={p.id}>
-                <a href={taskHref(p.id)} data-task={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <a href={taskHref(p.id, project)} data-task={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                   <StatusDot state={taskTone(p.state)} label={taskStateLabel(p.state)} />
                   <span className="min-w-0 flex-1 truncate text-[13px]">{p.headline || p.id}</span>
                   <span className="hidden w-[40%] max-w-[280px] sm:flex"><TaskMeta post={p} /></span>
@@ -79,7 +101,7 @@ export function TaskList({ posts }: { posts: TaskPost[] }) {
 }
 
 /** One column per state, every column shown; a card per task. */
-export function TaskBoard({ posts }: { posts: TaskPost[] }) {
+export function TaskBoard({ posts, project }: { posts: TaskPost[]; project?: string | null }) {
   return (
     <div data-tasks="kanban" className="flex min-h-0 gap-3 overflow-x-auto pb-2">
       {tasksByLane(posts).map(({ lane, posts: cards }) => (
@@ -91,7 +113,7 @@ export function TaskBoard({ posts }: { posts: TaskPost[] }) {
             {cards.length === 0 ? (
               <p className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/70 text-[11px] text-muted-foreground">Empty</p>
             ) : cards.map((p) => (
-              <a key={p.id} href={taskHref(p.id)} data-task={p.id} className="flex flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 shadow-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <a key={p.id} href={taskHref(p.id, project)} data-task={p.id} className="flex flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 shadow-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <span className="line-clamp-2 text-[13px]">{p.headline || p.id}</span>
                 {lane.id === "closed" && p.state !== "done" ? <Badge variant="outline" className="self-start text-[11px]">{taskStateLabel(p.state)}</Badge> : null}
                 <TaskMeta post={p} />
@@ -109,10 +131,12 @@ export interface TasksBodyProps {
   posts?: TaskPost[]
   error?: string | null
   onRetry?: () => void
+  /** The project picked in the filter; its tasks only are shown. */
+  project?: string | null
 }
 
 /** Loading, error, empty, or the tasks in the chosen view. */
-export function TasksBody({ view, posts, error, onRetry }: TasksBodyProps) {
+export function TasksBody({ view, posts, error, onRetry, project = null }: TasksBodyProps) {
   if (error) {
     return (
       <EmptyState title="Could not read the tasks" action={<Button size="sm" variant="outline" onClick={onRetry}>Try again</Button>}>
@@ -121,6 +145,14 @@ export function TasksBody({ view, posts, error, onRetry }: TasksBodyProps) {
     )
   }
   if (!posts) return <div className="flex flex-col gap-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-2/3" /></div>
+  const shown = tasksOfProject(posts, project)
+  if (project && shown.length === 0) {
+    return (
+      <EmptyState title={`No tasks in ${project}`} action={<a className="text-sm text-link hover:underline" href={taskHref()}>All projects</a>}>
+        None in the last 7 days. Pick another project, or all of them.
+      </EmptyState>
+    )
+  }
   if (posts.length === 0) {
     return (
       <EmptyState title="No tasks in the last 7 days" action={<a className="text-sm text-link hover:underline" href={buildHash({ page: "home" })}>Ask an agent</a>}>
@@ -128,7 +160,7 @@ export function TasksBody({ view, posts, error, onRetry }: TasksBodyProps) {
       </EmptyState>
     )
   }
-  return view === "kanban" ? <TaskBoard posts={posts} /> : <TaskList posts={posts} />
+  return view === "kanban" ? <TaskBoard posts={shown} project={project} /> : <TaskList posts={shown} project={project} />
 }
 
 const EVENT_WORD: Record<string, string> = {
@@ -179,7 +211,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : "the computer 
 
 /** The pane: reads the tasks (again while a node is still checking) and
  *  draws the list, the board, or the task opened from them. */
-export function TasksPane({ view, onView, open, phoneBar }: { view: TasksView; onView: (v: TasksView) => void; open: string | null; phoneBar?: ReactNode }) {
+export function TasksPane({ view, onView, open, project = null, phoneBar }: { view: TasksView; onView: (v: TasksView) => void; open: string | null; project?: string | null; phoneBar?: ReactNode }) {
   const list = useQuery({
     queryKey: ["shell-tasks"],
     queryFn: () => apiGet<TasksReply>(TASKS_URL),
@@ -197,13 +229,14 @@ export function TasksPane({ view, onView, open, phoneBar }: { view: TasksView; o
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         {phoneBar}
         {open ? (
-          <a href={taskHref()} aria-label="Back to the tasks" title="Back to the tasks" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+          <a href={taskHref(undefined, project)} aria-label="Back to the tasks" title="Back to the tasks" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
             <Icon name="arrow-left" />
           </a>
         ) : null}
         <h1 className="truncate text-sm font-medium">Tasks</h1>
-        {!open && posts ? <span className="text-xs tabular-nums text-muted-foreground">{posts.length}</span> : null}
-        {!open ? <TasksViewSwitch view={view} onView={onView} className="ml-auto w-[150px] md:hidden" /> : null}
+        {!open && posts ? <span className="text-xs tabular-nums text-muted-foreground">{tasksOfProject(posts, project).length}</span> : null}
+        {!open && posts ? <TasksProjectFilter projects={taskProjects(posts)} project={project} className="ml-auto" /> : null}
+        {!open ? <TasksViewSwitch view={view} onView={onView} compact className={cn("w-[64px] md:hidden", posts ? "" : "ml-auto")} /> : null}
       </header>
       <div className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "kanban" && !open ? "" : "mx-auto w-full max-w-[784px]")}>
         {open ? (
@@ -212,7 +245,7 @@ export function TasksPane({ view, onView, open, phoneBar }: { view: TasksView; o
             : !post ? <EmptyState title="Task not found" action={<a className="text-sm text-link hover:underline" href={taskHref()}>All tasks</a>}>It is closed for more than 7 days, or on a computer that is not answering.</EmptyState>
             : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post } : post} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} />
         ) : (
-          <TasksBody view={view} posts={posts} error={list.isError ? errText(list.error) : null} onRetry={() => void list.refetch()} />
+          <TasksBody view={view} posts={posts} project={project} error={list.isError ? errText(list.error) : null} onRetry={() => void list.refetch()} />
         )}
       </div>
     </section>

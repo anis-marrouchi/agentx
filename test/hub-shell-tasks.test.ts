@@ -9,11 +9,11 @@ import { resolveHubLayout } from "../src/hub/layout"
 import { SHELL_MAIN } from "../src/hub/shell"
 import { parseHash } from "../src/hub/router"
 import {
-  TASKS_VIEW_KEY, TASK_LANES, readTasksView, saveTasksView, shellPane, shortAgo, taskLane, taskPosts, taskStateLabel, taskTone, tasksByLane,
+  TASKS_VIEW_KEY, TASK_LANES, readTasksView, saveTasksView, shellPane, shortAgo, taskLane, taskPosts, taskProjects, taskStateLabel, taskTone, tasksByLane, tasksOfProject,
   type TaskPost,
 } from "../src/hub/tasks"
 import { OPEN_STATES, CLOSED_STATES } from "../src/requests/store"
-import { TaskBoard, TaskList, TaskThread, TasksBody, TasksViewSwitch } from "../src/hub/pages/ShellTasks"
+import { TaskBoard, TaskList, TaskThread, TasksBody, TasksProjectFilter, TasksViewSwitch, taskHref } from "../src/hub/pages/ShellTasks"
 import { SimpleShell, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
 
@@ -65,10 +65,10 @@ describe("tasks as data", () => {
 
 describe("the centre from the hash", () => {
   it("chat by default, tasks with pane=tasks, a task with open=", () => {
-    expect(shellPane(parseHash("#page=home"))).toEqual({ pane: "chat", open: null })
-    expect(shellPane(parseHash("#page=home&pane=tasks"))).toEqual({ pane: "tasks", open: null })
-    expect(shellPane(parseHash("#page=home&pane=tasks&open=r1"))).toEqual({ pane: "tasks", open: "r1" })
-    expect(shellPane(parseHash("#page=home&open=r1"))).toEqual({ pane: "chat", open: null })
+    expect(shellPane(parseHash("#page=home"))).toEqual({ pane: "chat", open: null, project: null })
+    expect(shellPane(parseHash("#page=home&pane=tasks"))).toEqual({ pane: "tasks", open: null, project: null })
+    expect(shellPane(parseHash("#page=home&pane=tasks&open=r1"))).toEqual({ pane: "tasks", open: "r1", project: null })
+    expect(shellPane(parseHash("#page=home&open=r1"))).toEqual({ pane: "chat", open: null, project: null })
   })
   it("the Tasks menu item opens the pane in the shell, not the old Hub", () => {
     expect(SHELL_MAIN.find((i) => i.id === "tasks")?.href).toBe("#page=home&pane=tasks")
@@ -177,5 +177,44 @@ describe("the shell with Tasks open", () => {
     expect(out).toContain('data-shell="chat"')
     expect(out).not.toContain('data-shell="tasks-switch"')
     expect(out).not.toContain('aria-current="page"')
+  })
+})
+
+describe("the project filter (#2226 S5)", () => {
+  it("lists the projects the tasks name, sorted, once each", () => {
+    expect(taskProjects(sample)).toEqual(["agentx"])
+    expect(taskProjects([...sample, { ...sample[0], id: "r5", project: "docs" }])).toEqual(["agentx", "docs"])
+  })
+  it("keeps one project's tasks, or all of them", () => {
+    expect(tasksOfProject(sample, "agentx").map((p) => p.id)).toEqual(["r1", "r3"])
+    expect(tasksOfProject(sample, null)).toBe(sample)
+  })
+  it("the project is read from the hash, for Tasks only", () => {
+    expect(shellPane(parseHash("#page=home&pane=tasks&project=agentx"))).toEqual({ pane: "tasks", open: null, project: "agentx" })
+    expect(shellPane(parseHash("#page=home&pane=automations&project=agentx")).project).toBeNull()
+  })
+  it("the body shows the project's tasks, and a task's link keeps the project", () => {
+    const out = html(createElement(TasksBody, { view: "list", posts: sample, project: "agentx" }))
+    expect(out).toContain('data-task="r1"')
+    expect(out).not.toContain('data-task="r2"')
+    expect(out).toContain('href="#page=home&amp;pane=tasks&amp;project=agentx&amp;open=r1"')
+  })
+  it("a project with no task: says so, with a way back to all", () => {
+    const out = html(createElement(TasksBody, { view: "kanban", posts: sample, project: "shop" }))
+    expect(out).toContain("No tasks in shop")
+    expect(out).toContain("All projects")
+  })
+  it("the filter offers every project, and the one picked", () => {
+    const out = html(createElement(TasksProjectFilter, { projects: ["agentx", "docs"], project: "gone" }))
+    expect(out).toContain('data-shell="tasks-project"')
+    expect(out).toContain(">All projects<")
+    for (const p of ["agentx", "docs", "gone"]) expect(out).toContain(`value="${p}"`)
+    expect(taskHref("r1", "agentx")).toBe("#page=home&pane=tasks&project=agentx&open=r1")
+  })
+  it("on a phone the switch is icons only, still named for screen readers", () => {
+    const out = html(createElement(TasksViewSwitch, { view: "list", onView: () => {}, compact: true }))
+    expect(out).toContain('aria-label="List"')
+    expect(out).toContain('aria-label="Kanban"')
+    expect(out).not.toContain(">List<")
   })
 })
