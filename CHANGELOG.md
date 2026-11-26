@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.281.0](https://github.com/anis-marrouchi/agentx/compare/v0.280.0...v0.281.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** Tasks list and kanban in the simple shell — [#2226](https://github.com/anis-marrouchi/agentx/issues/2226) S4 ([#2324](https://github.com/anis-marrouchi/agentx/issues/2324)) ([6ce6b87](https://github.com/anis-marrouchi/agentx/commit/6ce6b8719cf0e63fadcac2847ce5f96536a2b4fe))
+
 ## [0.280.0](https://github.com/anis-marrouchi/agentx/compare/v0.279.0...v0.280.0) (2026-11-26)
 
 
