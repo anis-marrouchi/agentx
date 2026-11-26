@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.294.0](https://github.com/anis-marrouchi/agentx/compare/v0.293.0...v0.294.0) (2026-11-26)
+
+
+### Features
+
+* **daemon:** drain the run queue during daemon upgrade ([#2425](https://github.com/anis-marrouchi/agentx/issues/2425)) ([48ae34f](https://github.com/anis-marrouchi/agentx/commit/48ae34f3b30032a49d8622bba5580971cda5812d))
+
 ## [0.293.0](https://github.com/anis-marrouchi/agentx/compare/v0.292.0...v0.293.0) (2026-11-26)
 
 
