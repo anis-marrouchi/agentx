@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.283.0](https://github.com/anis-marrouchi/agentx/compare/v0.282.0...v0.283.0) (2026-11-26)
+
+
+### Features
+
+* curator queue and popup-only step cards (noqta[#910](https://github.com/anis-marrouchi/agentx/issues/910) piece 1) ([#2327](https://github.com/anis-marrouchi/agentx/issues/2327)) ([9dcc400](https://github.com/anis-marrouchi/agentx/commit/9dcc400a92b07ce689651109d43928c71c19495d))
+* **hub:** Tasks lists GitHub and GitLab issues and open PRs ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226)) ([#2359](https://github.com/anis-marrouchi/agentx/issues/2359)) ([ecf23c1](https://github.com/anis-marrouchi/agentx/commit/ecf23c19c8e4cda985d0e93e59812c84b503220a))
+* **hub:** usage per added account, API spend — [#2101](https://github.com/anis-marrouchi/agentx/issues/2101) PR D2 ([#2347](https://github.com/anis-marrouchi/agentx/issues/2347)) ([02485e5](https://github.com/anis-marrouchi/agentx/commit/02485e5d8803c2d2d7ccfe7409083e4ca1776a33))
+
+
+### Bug Fixes
+
+* **hub:** Files panel orca fixes after [#2315](https://github.com/anis-marrouchi/agentx/issues/2315) ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2354](https://github.com/anis-marrouchi/agentx/issues/2354)) ([d69923d](https://github.com/anis-marrouchi/agentx/commit/d69923d15d2a8f128f673ef1d0c22239df8b7e9e))
+* **hub:** Settings › Layout as switch rows; one name for the Desk ([#2226](https://github.com/anis-marrouchi/agentx/issues/2226) S1 review) ([#2346](https://github.com/anis-marrouchi/agentx/issues/2346)) ([04df59d](https://github.com/anis-marrouchi/agentx/commit/04df59d1fd206adf9c2bc69db17112d1029561f1))
+
 ## [0.282.0](https://github.com/anis-marrouchi/agentx/compare/v0.281.0...v0.282.0) (2026-11-26)
 
 
