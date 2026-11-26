@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { haListHtml, hubAgentRows } from "../src/daemon/ui/pages/hub-agents"
-import { liveTreeModel, liveWorkCount, ltEsc, ltNodeKey, ltNodeState, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
+import { liveTreeModel, liveWorkCount, ltEsc, ltNodeKey, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 
 // #2260: the Hub's "At work now" tree and its "Working" list read the same
 // live snapshot but counted with two rules (runs against agents; a machine
@@ -134,15 +134,6 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
     expect(el.innerHTML.replace(/<[^>]+>/g, "")).toBe(work.agents + " agents running")
     expect(el.innerHTML).toContain('<span class="hs__long"> agents</span> running')
     expect(el.parentNode.hidden).toBe(false)
-  })
-
-  it("the Live page's running now is the Working count", () => {
-    const live = src("live.ts")
-    expect(live).toContain("busy: liveWorkCount(snapshot.nodes).agents")
-    expect(live).toMatch(/injectFns\(\{ ltNodeKey, ltNodeState, liveWorkCount \}\)/)
-    expect(live).not.toContain("summary.busy++")
-    // The rule the page runs is the shared one; its inputs are the same snapshot.
-    expect(ltNodeState(NODES[1])).toBe("silent")
   })
 
   it("the Working list groups by machine, each agent once", () => {

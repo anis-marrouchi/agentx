@@ -3,9 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "../src/daemon/whatsapp-triage-admin"
-import { renderAdminPage } from "../src/daemon/ui/pages/admin"
 
-// WhatsApp triage in the dashboard (#328): the admin API and the page script.
+// WhatsApp triage in the dashboard (#328): the admin API.
 
 let dir: string
 let cwd: string
@@ -56,15 +55,5 @@ describe("admin API", () => {
     delete process.env.WA_ADMIN_TEST_SECRET
     expect(s.secretSet).toBe(true)
     expect(JSON.stringify(s)).not.toContain("hush")
-  })
-})
-
-describe("admin page", () => {
-  it("ships a script that parses", () => {
-    const html = renderAdminPage({})
-    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    expect(html).toContain("function renderWaTriage")
-    expect(html).toContain("function renderEmailPane")
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
   })
 })

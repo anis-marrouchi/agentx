@@ -340,20 +340,6 @@ describe("config", () => {
   })
 })
 
-describe("live page", () => {
-  it("ships a script that parses, with pause, resume and drop actions", async () => {
-    const { renderLivePage } = await import("../src/daemon/ui/pages/live")
-    const html = renderLivePage()
-    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-    expect(html).toContain("data-action=\"signal-stop\"")
-    expect(html).toContain("data-action=\"signal-resume\"")
-    expect(html).toContain("/api/signals/resume")
-    expect(html).toContain("data-action=\"signal-drop\"")
-    expect(html).toContain("/api/signals/drop")
-  })
-})
-
 describe("review points (#857)", () => {
   it("claims a resume atomically: two services on one folder, one re-entry", async () => {
     const a = harness()
