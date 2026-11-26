@@ -8,13 +8,18 @@
 // changes (every close path: close, closeVerified, settle; wait; needs
 // attention), so there is no poller and no schedule (noqta#609).
 //
+// When the owner-words check reopens a request that already rang "Done",
+// the agent rings once more with a correction, "Not done after all"
+// (#2281). Each reopen is a round: the correction and the next done are
+// keyed by it, so the real done after a correction rings again.
+//
 // Requests closed on another node are not in this store and never call
 // back from here.
 
 import type { CallsConfig } from "@/daemon/config"
 import { OWNER_BY, type RequestRecord, type RequestStore } from "@/requests/store"
 import type { CallService } from "./service"
-import type { CallbackRef, CallbackState } from "./store"
+import { callbackRef, type CallbackRef, type CallbackState } from "./store"
 
 /** Where a request counts as the owner's own ask: his voice widget, the
  *  Hub (dashboard), the phone app and its calls (webrtc), and his own
@@ -43,6 +48,8 @@ export function askedByOwner(r: Pick<RequestRecord, "channel" | "sender" | "prom
 /** Should this change of state call the owner back? */
 export function wantsCallback(r: RequestRecord, state: CallbackState, cfg: CallsConfig["callback"], now: number): boolean {
   if (!cfg.enabled || !askedByOwner(r)) return false
+  // The done it corrects already passed the time rule (#2281).
+  if (state === "reopened") return true
   // He closed it himself: he knows.
   if (state === "done" && r.closedBy === OWNER_BY) return false
   if (ASKED_TO_CALL.test(r.text)) return true
@@ -61,6 +68,7 @@ export function callbackBrief(r: RequestRecord, state: CallbackState): string {
   const title = `"${headlineOf(r)}" (${r.id})`
   if (state === "done") return `${title} is done. Proof: ${r.evidence ?? "none given"}`
   if (state === "waiting_owner") return `${title} waits on them: ${r.question ?? r.need ?? "an answer"}`
+  if (state === "reopened") return `${title} is not done after all, though they were called and told it was: ${r.attentionReason ?? "the close did not do what they asked"}`
   return `${title} is stuck: ${r.attentionReason ?? "no reason given"}`
 }
 
@@ -79,8 +87,12 @@ export function attachCallbacks(store: RequestStore, deps: CallbackDeps): () => 
       const calls = deps.calls()
       if (!calls) return
       if (!wantsCallback(r, state, deps.config().callback, deps.now?.() ?? Date.now())) return
-      const ref: CallbackRef = { id: r.id, state }
-      void calls.callback({ agentId: r.askedAgent ?? r.agentId, ref, headline: headlineOf(r) })
+      // Round n is the n-th owner-words reopen; a correction follows the
+      // done of the round before it (#2281).
+      const round = state === "done" || state === "reopened" ? r.ownerReopens ?? 0 : 0
+      const ref: CallbackRef = callbackRef(r.id, state, round)
+      const after = state === "reopened" ? callbackRef(r.id, "done", round - 1) : undefined
+      void calls.callback({ agentId: r.askedAgent ?? r.agentId, ref, headline: headlineOf(r), after })
         .then((o) => { if (o.placed !== "skipped") deps.log(`[calls] call-back for ${r.id} (${state}): ${o.placed}`) })
         .catch((e: any) => deps.log(`[calls] call-back for ${r.id} failed: ${e?.message ?? e}`))
     } catch (e: any) {
@@ -90,5 +102,6 @@ export function attachCallbacks(store: RequestStore, deps: CallbackDeps): () => 
   const offDone = store.onDone((r) => fire(r, "done"))
   const offSettled = store.onSettled((r) => fire(r, "done"))
   const offOwner = store.onNeedsOwner((r, state) => fire(r, state))
-  return () => { offDone(); offSettled(); offOwner() }
+  const offReopened = store.onReopened((r) => fire(r, "reopened"))
+  return () => { offDone(); offSettled(); offOwner(); offReopened() }
 }

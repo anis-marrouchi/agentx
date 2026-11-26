@@ -262,10 +262,12 @@ export class CallService {
    *  calls.maxPerHour, it is kept as a missed call and the owner gets its
    *  notice. Each request and state calls back once. calls.allow does not
    *  apply: the owner asked for the work. */
-  async callback(input: { agentId: string; ref: CallbackRef; headline: string }): Promise<CallbackOutcome> {
+  async callback(input: { agentId: string; ref: CallbackRef; headline: string; after?: CallbackRef }): Promise<CallbackOutcome> {
     const { agentId, ref } = input
     if (this.deps.agentName(agentId) === null) return { placed: "skipped", why: `${agentId} does not run on this computer` }
     if (this.deps.store.hasCallback(ref)) return { placed: "skipped", why: "already called back" }
+    // A correction only follows the call it corrects (#2281).
+    if (input.after && !this.deps.store.hasCallback(input.after)) return { placed: "skipped", why: `no ${input.after.state} call-back to follow` }
     await this.sweep()
     const reason = callbackReason(ref.state, input.headline)
     const live = this.deps.store.list({ status: LIVE, limit: 200 }).filter((c) => c.agentId === agentId)
@@ -636,12 +638,13 @@ export type CallbackOutcome =
 
 /** A call-back's notice title, by the state its request reached. */
 export function callbackTitle(state: CallbackRef["state"]): string {
-  return state === "done" ? "your request is done" : state === "waiting_owner" ? "your request waits on you" : "your request needs you"
+  return state === "done" ? "your request is done" : state === "waiting_owner" ? "your request waits on you"
+    : state === "reopened" ? "your request is not done after all" : "your request needs you"
 }
 
 /** A call-back's reason: the state, then the request's headline. */
 export function callbackReason(state: CallbackRef["state"], headline: string): string {
-  const lead = state === "done" ? "Done" : state === "waiting_owner" ? "Waits on you" : "Needs you"
+  const lead = state === "done" ? "Done" : state === "waiting_owner" ? "Waits on you" : state === "reopened" ? "Not done after all" : "Needs you"
   const text = `${lead}: ${headline.replace(/\s+/g, " ").trim()}`
   return text.length > REASON_MAX ? `${text.slice(0, REASON_MAX - 1)}…` : text
 }
