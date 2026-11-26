@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.283.1](https://github.com/anis-marrouchi/agentx/compare/v0.283.0...v0.283.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **desktop:** no Start/Stop/Restart for a daemon on another machine ([#2357](https://github.com/anis-marrouchi/agentx/issues/2357)) ([a5e0411](https://github.com/anis-marrouchi/agentx/commit/a5e041123a7ed01f5d234f544c13cc4cbb29201c))
+
 ## [0.283.0](https://github.com/anis-marrouchi/agentx/compare/v0.282.0...v0.283.0) (2026-11-26)
 
 
