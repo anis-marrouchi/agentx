@@ -985,6 +985,21 @@ describe("Wall Settings: a literal secret in agentx.json is never sent or shown 
     expect(pages.join("")).not.toContain("[object Object]")
     expect(w.writes()).toEqual([])
   })
+
+  it("keeps an agent integration's env var name and drops a literal credential, status only (#2420)", async () => {
+    const secret = "literal-crm-api-key-123"
+    dir = mkdtempSync(join(tmpdir(), "wall-literal-"))
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({
+      node: { id: "n", name: "n" },
+      agents: { cx: { name: "Customer Desk", integrations: [{ kind: "custom", label: "CRM", credentials: { tokenEnv: "CRM_TOKEN", apiKey: secret } }] } },
+    }))
+    process.chdir(dir)
+    const state = await adminState()
+    expect(JSON.stringify(state)).not.toContain(secret)
+    const i = state.agents.find((a: any) => a.id === "cx").integrations[0]
+    expect(i.credentials).toEqual({ tokenEnv: "CRM_TOKEN" })
+    expect(i.credStatus).toEqual({ tokenEnv: process.env.CRM_TOKEN ? "set" : "unset", apiKey: "literal" })
+  })
 })
 
 describe("Every other Wall page sends no settings write (#1428)", () => {
