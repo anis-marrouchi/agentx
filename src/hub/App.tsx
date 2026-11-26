@@ -5,7 +5,10 @@ import type { HubBoot } from "./boot"
 import { ConnectionLine } from "./ConnectionLine"
 import { hubRegistry } from "./registry"
 import { reactPageFor, useHashParams } from "./router"
-import { Skeleton, TooltipProvider } from "./ui"
+// Straight from the parts, not the ./ui barrel: the barrel would pull every
+// kit part (cmdk, Select, Popover) into the first load.
+import { Skeleton } from "./ui/misc"
+import { TooltipProvider } from "./ui/tooltip"
 
 export function App({ boot }: { boot: HubBoot }) {
   const params = useHashParams()

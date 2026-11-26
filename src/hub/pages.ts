@@ -22,6 +22,10 @@ export const HUB_REACT_PAGES: readonly HubReactPage[] = [
   // The simple shell (#2226 S3): side menu, chat, right tabs. Owner only,
   // as the chat is; /hub opens on it in the simple layout (shell.ts).
   { page: "home", ownerOnly: true },
+  // The new Settings (#2101 ST1-ST3), on a review id until all its panes
+  // are built; ST4 moves it to `settings`. Owner only, and like every page
+  // here `dashboard.hub.legacyPages` sends it back to the old code.
+  { page: "settings-preview", ownerOnly: true },
 ]
 
 /** The React page ids this viewer gets, minus the ones sent back to the old

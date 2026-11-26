@@ -5,14 +5,14 @@
 // catalog list: a page PR adds a part here when it adds one to the set.
 // It also shows the one live connection (C3): its state, the snapshots it
 // wrote into the query cache, and how many times it came back after a drop.
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { useLiveSnapshot, useLiveStatus } from "../live-react"
 import type { HubPageProps } from "../registry"
 import {
   AfCard, AfCount, AfLoader, AfRow, AfSkeletonRows, AfStateLabel, Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
-  Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-  EmptyState, ICON_NAMES, Icon, Kbd, Skeleton, StatusDot, Tabs, TabsContent, TabsList, TabsTrigger,
-  Tooltip, TooltipContent, TooltipTrigger,
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  EmptyState, ICON_NAMES, Icon, Kbd, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Skeleton, StatusDot, Switch, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, TooltipContent, TooltipTrigger,
 } from "../ui"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -37,6 +37,47 @@ function ThemeSwitch() {
     setTheme(next)
   }
   return <Button variant="outline" size="sm" onClick={flip}>Show in {theme === "dark" ? "light" : "dark"}</Button>
+}
+
+const MODEL_GROUPS = [
+  { engine: "Claude Code", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] },
+  { engine: "Codex", models: ["gpt-5.1-codex", "gpt-5.1-codex-mini"] },
+]
+
+function ModelPicker() {
+  const [open, setOpen] = useState(false)
+  const [model, setModel] = useState("claude-opus-5-5")
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="xs" role="combobox" aria-expanded={open} className="h-7 w-[180px] justify-between font-mono text-xs font-normal">
+          <span className="truncate">{model}</span>
+          <Icon name="chevrons-up-down" className="size-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-0">
+        <Command>
+          <CommandInput placeholder="Search models" />
+          <CommandList>
+            <CommandEmpty>No model found.</CommandEmpty>
+            {MODEL_GROUPS.map((g, i) => (
+              <Fragment key={g.engine}>
+                {i > 0 && <CommandSeparator />}
+                <CommandGroup heading={g.engine}>
+                  {g.models.map((m) => (
+                    <CommandItem key={m} value={m} onSelect={() => { setModel(m); setOpen(false) }} className="font-mono text-xs">
+                      {m}
+                      <Icon name="check" className={m === model ? "ml-auto size-3.5" : "ml-auto size-3.5 invisible"} />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </Fragment>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 interface LiveSnap { ts?: string; nodes?: { agents?: unknown[] }[] }
@@ -139,6 +180,37 @@ export default function CatalogPage(_: HubPageProps) {
           <TooltipTrigger asChild><Button variant="ghost">Hover me</Button></TooltipTrigger>
           <TooltipContent>Opens on hover and on keyboard focus</TooltipContent>
         </Tooltip>
+      </Section>
+
+      <Section title="Switch">
+        <label className="inline-flex items-center gap-2 text-sm"><Switch defaultChecked /> Notify on finish</label>
+        <label className="inline-flex items-center gap-2 text-sm"><Switch /> Auto-approve reads</label>
+        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground"><Switch disabled /> Disabled</label>
+      </Section>
+
+      <Section title="Select">
+        <Select defaultValue="claude-code">
+          <SelectTrigger className="w-[160px]" aria-label="Engine"><SelectValue placeholder="Pick an engine" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="claude-code">Claude Code</SelectItem>
+            <SelectItem value="codex">Codex</SelectItem>
+            <SelectItem value="gemini">Gemini CLI</SelectItem>
+          </SelectContent>
+        </Select>
+      </Section>
+
+      <Section title="Popover">
+        <Popover>
+          <PopoverTrigger asChild><Button variant="outline">Open a popover</Button></PopoverTrigger>
+          <PopoverContent className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Run limits</p>
+            <p className="text-[12.5px] text-muted-foreground">Stops a run after 30 minutes or 200 steps.</p>
+          </PopoverContent>
+        </Popover>
+      </Section>
+
+      <Section title="Model picker">
+        <ModelPicker />
       </Section>
 
       <Section title="Card, skeleton and empty state">

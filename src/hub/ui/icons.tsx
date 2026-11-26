@@ -2,16 +2,20 @@
 // gives each icon as an SVG string; Icon draws it at size-4 by default and
 // hides it from screen readers (the control around it carries the name).
 import {
-  Activity, ArrowLeft, BookOpen, Bot, ChevronRight, CircleAlert, CircleDot, Clock, ExternalLink, Files, Folder, Gauge, GitBranch, GitPullRequest, Inbox, Kanban, List, ListTodo, Menu, Monitor,
-  Network, PanelRight, Radio, Search, Send, Settings, Smartphone, Workflow,
+  Activity, ArrowLeft, BookOpen, Bot, Building2, CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, CircleAlert,
+  CircleCheck, CircleDot, Clock, Ellipsis, ExternalLink, Files, Folder, Gauge, GitBranch, GitPullRequest, Inbox, Kanban,
+  KeyRound, List, ListTodo, Menu, MessageCircle, MessageSquare, Monitor, Network, PanelLeft, PanelRight, Plus, Radio,
+  Search, Send, Settings, Settings2, ShieldCheck, Smartphone, TriangleAlert, UserRoundPlus, Workflow, X, Zap,
 } from "lucide-static"
 import { cn } from "./cn"
 
 const ICONS: Record<string, string> = {
-  "activity": Activity, "arrow-left": ArrowLeft, "book-open": BookOpen, "bot": Bot, "chevron-right": ChevronRight, "circle-alert": CircleAlert, "circle-dot": CircleDot, "clock": Clock, "external-link": ExternalLink, "files": Files, "folder": Folder,
-  "gauge": Gauge, "git-branch": GitBranch, "git-pull-request": GitPullRequest, "inbox": Inbox, "kanban": Kanban, "list": List, "list-todo": ListTodo, "menu": Menu, "monitor": Monitor,
-  "network": Network, "panel-right": PanelRight, "radio": Radio, "search": Search, "send": Send,
-  "settings": Settings, "smartphone": Smartphone, "workflow": Workflow,
+  "activity": Activity, "arrow-left": ArrowLeft, "book-open": BookOpen, "bot": Bot, "building-2": Building2, "calendar-clock": CalendarClock, "check": Check, "chevron-down": ChevronDown,
+  "chevron-left": ChevronLeft, "chevron-right": ChevronRight, "chevrons-up-down": ChevronsUpDown, "circle-alert": CircleAlert, "circle-check": CircleCheck, "circle-dot": CircleDot, "clock": Clock, "ellipsis": Ellipsis,
+  "external-link": ExternalLink, "files": Files, "folder": Folder, "gauge": Gauge, "git-branch": GitBranch, "git-pull-request": GitPullRequest, "inbox": Inbox, "kanban": Kanban,
+  "key-round": KeyRound, "list": List, "list-todo": ListTodo, "menu": Menu, "message-circle": MessageCircle, "message-square": MessageSquare, "monitor": Monitor, "network": Network,
+  "panel-left": PanelLeft, "panel-right": PanelRight, "plus": Plus, "radio": Radio, "search": Search, "send": Send, "settings": Settings, "settings-2": Settings2,
+  "shield-check": ShieldCheck, "smartphone": Smartphone, "triangle-alert": TriangleAlert, "user-round-plus": UserRoundPlus, "workflow": Workflow, "x": X, "zap": Zap,
 }
 
 /** The icon names the Hub has. */
