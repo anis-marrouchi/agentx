@@ -38,12 +38,15 @@ The top of the nav lists every agent of every connected machine once, by what it
 1. **Browser:** open the Hub on a screen at least 1181 pixels wide. On a narrower screen use the agent names at the top of Chat.
 2. The chips at the top filter the list: **All**, **Working** and **Done**, each with its count. The Hub remembers your choice. **Needs you** is a group in the list, not a chip, so it shows once.
 3. The agents are grouped:
-   - **Working**: a run is going. The row shows the run's title with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. Each agent is listed once. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page.
-   - **Needs you**: nothing running, and it asked you something. The row shows its oldest question.
+   - **Working**: a run is going. The row shows the run's title with a soft shine moving across it, and a ring pulses around the blue dot. With reduced motion turned on in your system, both stay still. Each agent is listed once. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page. Under **All**, **Working** shows its first 3 agents and **Show all (N)**; select it to see every one, and **Show fewer** to go back. The **Working** chip always shows every working agent.
+   - **Needs you**: nothing running, and it asked you something. The row shows its oldest question. The group starts folded, with its count on the heading: select **Needs you** to open it.
    - **Done today**: its last run ended today. The row shows the first line of its last answer.
    - **Not working today**, folded at the end: every other agent.
+
+   Each time the Hub opens, **Needs you** and **Not working today** are folded and **Working** shows 3 agents. What you open stays open until you reload the page.
 4. Each row: the agent's face (its first letter in its colour, with a dot for its state: blue working, amber waiting on you, green done), its name, its computer, how long ago it last moved, its line, and a blue number when it has questions for you. The agent whose chat is open has a blue bar on its left.
-5. Select a row to open it:
+5. The whole side menu scrolls as one, so the last agent is always in reach; **Jump to an agent or request** stays at the top and **Desk**, **Jobs**, **Workflows** stay at the bottom.
+6. Select a row to open it:
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
 
