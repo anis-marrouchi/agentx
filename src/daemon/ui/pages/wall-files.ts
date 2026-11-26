@@ -53,7 +53,7 @@ export function fileOpOf(name: string): FileOp | null {
 export function runFilesOf(transcript: string, answer: string): RunFiles {
   const rank: Record<string, number> = { read: 0, edited: 1, wrote: 2 }
   const changes = (o: string) => (o === "read" ? 0 : 1)
-  const field =(input: string, key: string): string => {
+  const field = (input: string, key: string): string => {
     const m = input.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
     if (!m) return ""
     try { return JSON.parse(`"${m[1]}"`) } catch { return m[1] }
