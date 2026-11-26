@@ -23,7 +23,7 @@ code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surf
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border); }
 .mark { flex: none; width: 36px; height: 36px; border-radius: 10px; }
-.bar h1 { font-size: var(--ax-fs-phone-title); font-weight: 600; line-height: 1.2; }
+.bar h1 { font-size: 20px; font-weight: 600; line-height: 1.2; }
 .bar .grow { flex: 1; min-width: 0; }
 .who { font-size: 14px; color: var(--ax-text-2); overflow-wrap: anywhere; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; counter-reset: s; }

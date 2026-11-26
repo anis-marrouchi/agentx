@@ -146,7 +146,6 @@ export const AX_TOKENS_CSS = `/* Geist, SIL OFL 1.1 (c) 2023 Vercel: served by t
   --ax-fs-group: 15px;
   --ax-fs-help: 12.5px;
   --ax-fs-label: 11px;
-  --ax-fs-phone-title: 20px;
   --ax-fw-strong: 600;
 
   /* Legacy aliases so older CSS blocks keep rendering until they're ported. */

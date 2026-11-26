@@ -107,4 +107,12 @@ describe("design tokens", () => {
       expect(rule, sel).toMatch(/box-shadow:[^;}]*(var\(--ax-focus-ring\)|var\(--ax-ring\))/)
     }
   })
+
+  it("keeps the phone app title sizes; no mock asked to shrink them (Hakim B1 v2 on #2378)", () => {
+    const app = readFileSync(join(UI, "pages/app-redesign.css.ts"), "utf8")
+    expect(app).toMatch(/\.bar h1 \{ font-size: 22px;/)
+    expect(app).toMatch(/main h2 \{ font-size: 28px;/)
+    const member = readFileSync(join(UI, "pages/member-styles.ts"), "utf8")
+    expect(member).toMatch(/\.bar h1 \{ font-size: 20px;/)
+  })
 })

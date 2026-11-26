@@ -19,7 +19,7 @@ body { position: fixed; inset: 0; height: auto; min-height: 0; overflow: hidden;
 body > * { flex-shrink: 0; }
 .bar { min-height: 56px; gap: 8px; padding: calc(4px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 4px calc(20px + env(safe-area-inset-left)); background: var(--ax-bg); border: 0; }
 .bar > div:first-child { min-width: 0; flex: 1; }
-.bar h1 { font-size: var(--ax-fs-phone-title); font-weight: 600; letter-spacing: -.01em; }
+.bar h1 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
 .who { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar-btns { flex: none; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; gap: 8px; }
@@ -33,7 +33,7 @@ body:has(#tab-chat[aria-selected=false]) main { padding-top: calc(16px + env(saf
 .icon-btn, .cam-share { background: var(--ax-surface); }
 .offline { background: #ffc94d; color: #2b1d00; font-size: 13px; }
 main { flex: 1 1 0; min-width: 0; overflow-x: hidden; padding-top: 8px; }
-main h2 { font-size: var(--ax-fs-phone-title); font-weight: 600; letter-spacing: -.02em; }
+main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 #panel-chat { height: 100%; min-height: 0 !important; }
 .cx { min-height: 0; gap: 0; }
 .cx-top { display: flex; align-items: center; justify-content: flex-end; flex: none; position: static; margin: 0; padding: 0 0 8px; gap: 6px; }
