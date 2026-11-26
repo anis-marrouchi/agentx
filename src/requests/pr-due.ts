@@ -94,10 +94,11 @@ export function prDueText(r: RequestRecord, lead: string | null): string {
     (lead ? ` If no PR is linked in ${PR_LEAD_AFTER_MS / 60_000} min, ${lead} is woken.` : "")
 }
 
-/** What the lead reads 15 min after the agent was woken, still no PR. */
-export function prLeadText(r: RequestRecord, pushedAt: number): string {
+/** What the lead reads 15 min after the agent was woken, still no PR.
+ *  `woken` false: nothing could wake the agent then (#2291 C1). */
+export function prLeadText(r: RequestRecord, pushedAt: number, woken = true): string {
   const issue = issueOf(r)
   return `[agentx:pr-due-lead id=${r.id}] ${r.agentId} set ${when(r.dueAt!)} for a PR and none is linked${issue ? `. Issue: ${issue}` : ""}. ` +
-    `${r.agentId} was woken at ${when(pushedAt)} and ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min later there is still no PR. It promised: ${wordsOf(r)}. ` +
+    `${r.agentId} ${woken ? "was woken" : "could not be woken (a run was on it, or it is not on this node)"} at ${when(pushedAt)} and ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min later there is still no PR. It promised: ${wordsOf(r)}. ` +
     `Find out from ${r.agentId} what holds it, then hand it on, set a new due time with \`agentx requests due ${r.id} <ISO time>\`, or drop it.`
 }

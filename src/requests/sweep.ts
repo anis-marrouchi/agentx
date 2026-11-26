@@ -150,8 +150,9 @@ export interface RequestSweepResult {
  *  run events; one that never started (agent busy, message dropped, rate
  *  limit) reports only here, so the request comes back instead of sitting
  *  in progress until the quiet check. A request already raised keeps its
- *  first reason. */
-export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?: string } | undefined | null, now: number): boolean {
+ *  first reason. `to` is the agent the turn was for: the lead of a missed
+ *  PR (#2279) is not the request's agent, and the reason names who failed. */
+export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?: string } | undefined | null, now: number, to: string = r.agentId): boolean {
   // "__queued__" is not a failure: the agent is busy on this request's
   // chat, the message was accepted, and the queue flush runs it when the
   // current turn ends. That turn keeps the pick-up mark, so it is linked
@@ -159,7 +160,7 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
   if (!res?.error || isQueued(res.error)) return false
   // The agent never read the owner's note: the next pick-up says it.
   if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, r.ownerNote, false)
-  return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
+  return store.needsAttention(r.id, `Could not hand it back to ${to}: ${res.error}`, now)
 }
 
 /** What the agent is told when the owner says "pick it up again", or
@@ -541,7 +542,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         : deps.wakeJob?.(r.id, `It fell due (${when(r.dueAt!)}) and is not kept, owed to ${r.owedTo ?? "the owner"}: ${words}`.slice(0, JOB_NOTE_MAX)) ?? false
       const waiter = r.owedTo && r.owedTo !== r.agentId && deps.hasAgent?.(r.owedTo) ? r.owedTo : null
       const told = waiter ? deps.tellRequester?.(waiter, duePromiseText(r), r) ?? false : false
-      store.markDuePushed(r.id, now)
+      store.markDuePushed(r.id, now, woken)
       const line = `[requests] ${r.id} fell due${pr !== undefined ? " with no PR linked" : ""}: ${r.agentId} ${woken ? `woken${pr ? ` (${pr})` : ""}` : "not woken (a run is on it, or its job cannot be woken)"}${waiter ? `, ${waiter} ${told ? "told" : "not told"}` : ""}`
       // With a grace window it needs attention only once that has run out
       // (below); the agent and its waiter are still told now.
@@ -586,9 +587,9 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           log(`[requests] ${r.id} still has no PR: ${lead} could not be woken (not on this node)`)
           continue
         }
-        void deps.tellAgent(lead, prLeadText(r, r.duePushedAt), r).catch((e: any) => log(`[requests] ${r.id}: could not wake ${lead} for the missing PR: ${e?.message ?? e}`))
+        void deps.tellAgent(lead, prLeadText(r, r.duePushedAt, r.dueWoken), r).catch((e: any) => log(`[requests] ${r.id}: could not wake ${lead} for the missing PR: ${e?.message ?? e}`))
         result.prLeads++
-        log(`[requests] ${r.id} still has no PR ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min after ${r.agentId} was woken: ${lead} woken`)
+        log(`[requests] ${r.id} still has no PR ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min after ${r.agentId} ${r.dueWoken ? "was woken" : "could not be woken"}: ${lead} woken`)
       }
     }
   } catch (e: any) {

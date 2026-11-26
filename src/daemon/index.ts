@@ -3924,9 +3924,9 @@ export class AgentXDaemon {
       message: text,
       context: pickupContext(r.id),
     }).then((res) => {
-      if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
+      if (pickupEnded(requests.store, r, res, Date.now(), agentId)) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
     }).catch((e: any) => {
-      pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now())
+      pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now(), agentId)
       this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
     })
   }
