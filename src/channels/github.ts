@@ -5,7 +5,10 @@ import { debug } from "@/observability/debug"
 import { isStatusComment } from "@/channels/status-tag"
 import { noWakeLabelIn } from "./no-wake"
 import { CI_FIX_ATTEMPTS_DEFAULT, CI_HOLD_SECONDS_DEFAULT, CiFixLoop, ciFixKey, ciNoOwnerNote, ciOwner, ciStillRedNote } from "./ci-fix"
-import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
+import {
+  REVIEW_OWNER_MINUTES_DEFAULT, REVIEW_WAKE_MINUTES_DEFAULT, ReviewWait, isReleasePr, reviewOwnerText, reviewWakeText, type ReviewWaitDue,
+} from "./review-wait"
+import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, detectAgentxMarker, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -83,9 +86,18 @@ export interface GitHubChannelConfig {
    *  for failed workflow runs, across commits, before a person is asked
    *  instead (default 3; 0 never wakes). holdSeconds: the red runs of one
    *  commit within this window make one wake (default 30). */
-  ci?: { fixAttempts?: number; holdSeconds?: number }
+  ci?: {
+    fixAttempts?: number; holdSeconds?: number
+    /** The green-PR review wait (#2227): the agent woken when an agent-owned
+     *  PR is all green with no review for `reviewWakeMinutes` (default 15);
+     *  at `reviewOwnerMinutes` (default 30) the PR's owner agent is told.
+     *  Unset: off. */
+    reviewer?: string; reviewWakeMinutes?: number; reviewOwnerMinutes?: number
+  }
   /** Where the CI fix counts persist. Unset: in memory only. */
   ciStateFile?: string
+  /** Where the green-PR review waits persist. Unset: in memory only. */
+  reviewWaitFile?: string
   /** The agent of the open request homed on issue `n` of `repo`, for a PR
    *  on branch `agentx/issue-<n>` (#2102). */
   ciAgentForIssue?: (repo: string, n: number) => string | undefined
@@ -354,6 +366,9 @@ export class GitHubAdapter implements ChannelAdapter {
   private installationTokens: Map<string, { token: string; expiresAt: number }> = new Map()
   /** The CI fix loop's wakes, holds and cap, per PR (#2102). */
   private ciFix: CiFixLoop<CiFailedRun>
+  /** Green PRs waiting for a review (#2227). */
+  private reviewWait: ReviewWait
+  private reviewTimer?: ReturnType<typeof setInterval>
 
   constructor(config: GitHubChannelConfig, log: (...args: unknown[]) => void = console.error.bind(console, "[github]")) {
     this.config = config
@@ -363,6 +378,11 @@ export class GitHubAdapter implements ChannelAdapter {
       cap: () => this.config.ci?.fixAttempts ?? CI_FIX_ATTEMPTS_DEFAULT,
       holdSeconds: () => this.config.ci?.holdSeconds ?? CI_HOLD_SECONDS_DEFAULT,
       log: (m) => this.log(`[github] ${m}`),
+    })
+    this.reviewWait = new ReviewWait({
+      file: config.reviewWaitFile,
+      wakeMinutes: () => this.config.ci?.reviewWakeMinutes ?? REVIEW_WAKE_MINUTES_DEFAULT,
+      ownerMinutes: () => this.config.ci?.reviewOwnerMinutes ?? REVIEW_OWNER_MINUTES_DEFAULT,
     })
   }
 
@@ -484,6 +504,11 @@ export class GitHubAdapter implements ChannelAdapter {
     }
 
     this.log(`GitHub channel started (${this.config.routes.length} routes, ${this.botUsernames.size} bot users)`)
+    // The green-PR review wait checks its waits once a minute (#2227).
+    if (!this.reviewTimer) {
+      this.reviewTimer = setInterval(() => { void this.reviewTick() }, 60_000)
+      this.reviewTimer.unref?.()
+    }
   }
 
   async stop(): Promise<void> {
@@ -493,6 +518,8 @@ export class GitHubAdapter implements ChannelAdapter {
     for (const held of this.pending.values()) clearTimeout(held.timer)
     this.pending.clear()
     this.ciFix.stop()
+    if (this.reviewTimer) clearInterval(this.reviewTimer)
+    this.reviewTimer = undefined
   }
 
   /**
@@ -517,6 +544,7 @@ export class GitHubAdapter implements ChannelAdapter {
 
     switch (event) {
       case "issue_comment":
+        this.reviewCommentSeen(body as unknown as GitHubIssueCommentEvent)
         await this.handleIssueComment(body as unknown as GitHubIssueCommentEvent)
         break
       case "pull_request":
@@ -525,6 +553,7 @@ export class GitHubAdapter implements ChannelAdapter {
         break
       case "pull_request_review":
         this.notifyPullRequestReview(body as unknown as GitHubPRReviewEvent)
+        this.reviewSeen(body as unknown as GitHubPRReviewEvent)
         await this.handlePRReview(body as unknown as GitHubPRReviewEvent)
         break
       case "pull_request_review_comment":
@@ -837,6 +866,13 @@ export class GitHubAdapter implements ChannelAdapter {
     // whoever closed it, before the bot and handler checks below.
     if (event.action === "closed" && pr && this.ciFix.closed(ciFixKey("github", repo, pr.number))) {
       this.log(`[github] ${repo}#${pr.number} closed: CI fix count dropped`)
+    }
+    if (pr) {
+      const key = ciFixKey("github", repo, pr.number)
+      if (event.action === "closed" && this.reviewWait.end(key)) this.log(`[github] ${repo}#${pr.number} closed: review wait ended`)
+      else if (event.action === "synchronize" && pr.head?.sha && this.reviewWait.pushed(key, pr.head.sha)) {
+        this.log(`[github] ${repo}#${pr.number} new head ${pr.head.sha}: review wait ended until it is green`)
+      }
     }
     if (!this.handler) return
 
@@ -1175,15 +1211,22 @@ export class GitHubAdapter implements ChannelAdapter {
     }
     const prs = run.pull_requests ?? []
     if (run.conclusion === "success") {
+      const reviewer = this.config.ci?.reviewer
       for (const pr of prs) {
         const key = ciFixKey("github", repo, pr.number)
-        if (!this.ciFix.has(key)) continue
+        const fix = this.ciFix.has(key)
+        // A wait already running on this commit needs no second look.
+        const wait = !!reviewer && !this.reviewWait.waiting(key, run.head_sha)
+        if (!fix && !wait) continue
         // Only the PR's head commit resets, and one green workflow is not
         // a green commit: another may be red.
         const head = pr.head?.sha ?? (await this.pullRequestInfo(repo, pr.number))?.headSha
         if (!head || head !== run.head_sha || !await this.commitGreen(repo, run.head_sha)) continue
-        const reset = this.ciFix.green(key, run.head_sha, head)
-        this.log(`[github] workflow run ${run.id} passed on ${repo}#${pr.number} (${run.head_sha}): ${reset ? "count reset" : "count kept"}`)
+        if (fix) {
+          const reset = this.ciFix.green(key, run.head_sha, head)
+          this.log(`[github] workflow run ${run.id} passed on ${repo}#${pr.number} (${run.head_sha}): ${reset ? "count reset" : "count kept"}`)
+        }
+        if (wait) await this.reviewWaitStart(repo, pr.number, run.head_sha, event)
       }
       return
     }
@@ -1277,6 +1320,83 @@ export class GitHubAdapter implements ChannelAdapter {
     this.log(`[github] CI failed on ${chatId} (${failures.length} run(s), ${sha}) -> agent "${agentId}" (${owner.via})`)
     void Promise.resolve().then(() => this.handler?.(incoming))
       .catch((e: Error) => this.log(`Error handling workflow run: ${e?.message ?? e}`))
+  }
+
+  /** A PR's head commit is all green: its review wait starts, when an agent
+   *  owns the PR and it is not a release or fork PR (#2227). */
+  private async reviewWaitStart(repo: string, number: number, sha: string, event: GitHubWorkflowRunEvent): Promise<void> {
+    const key = ciFixKey("github", repo, number)
+    const pr = await this.pullRequestInfo(repo, number)
+    if (!pr || pr.headSha !== sha) return
+    if (isReleasePr(pr.title, pr.headRef)) return
+    if (noWakeLabelIn(pr.labels, this.config.noWakeLabel)) return
+    const fromFork = pr.headRepo === null || (typeof pr.headRepo === "string" && pr.headRepo.toLowerCase() !== repo.toLowerCase())
+    if (fromFork) return
+    const owner = ciOwner({
+      body: pr.body,
+      branch: pr.headRef ?? event.workflow_run.head_branch,
+      agentForIssue: (n) => this.config.ciAgentForIssue?.(repo, n),
+      knownAgentIds: this.config.knownAgentIds,
+      isKnownAgent: this.config.ciKnownAgent,
+    })
+    if (!owner) return
+    if (await this.hasReview(repo, number)) return
+    const started = this.reviewWait.green(key, {
+      repo, number, sha, greenAt: new Date().toISOString(), owner: owner.agentId,
+      url: pr.url ?? `https://github.com/${repo}/pull/${number}`,
+      ...(pr.title ? { title: stripAgentxMarkers(pr.title) } : {}),
+    })
+    if (started) this.log(`[github] ${repo}#${number} all green on ${sha}, no review yet: review wait started (owner ${owner.agentId})`)
+  }
+
+  /** True when the PR has a submitted review already. Unreadable: false. */
+  private async hasReview(repo: string, number: number): Promise<boolean> {
+    const reviews = await this.ciRead<Array<{ state?: string }>>(repo, `pulls/${number}/reviews?per_page=100`)
+    return Array.isArray(reviews) && reviews.some((r) => r.state && r.state !== "PENDING")
+  }
+
+  /** A submitted review ends the PR's review wait (#2227). */
+  private reviewSeen(event: GitHubPRReviewEvent): void {
+    if (event.action !== "submitted" || !event.pull_request) return
+    const key = ciFixKey("github", event.repository.full_name, event.pull_request.number)
+    if (this.reviewWait.end(key)) this.log(`[github] ${key}: review by ${event.review?.user?.login ?? "?"}, review wait ended`)
+  }
+
+  /** A PR comment signed by the reviewer agent, from an account AgentX posts
+   *  with, ends the wait: agent reviews are often comments (#2227). */
+  private reviewCommentSeen(event: GitHubIssueCommentEvent): void {
+    const reviewer = this.config.ci?.reviewer
+    if (!reviewer || event.action !== "created" || !event.issue?.pull_request) return
+    if (!this.postsAs(event.comment?.user?.login ?? "")) return
+    if (detectAgentxMarker(event.comment?.body) !== reviewer) return
+    const key = ciFixKey("github", event.repository.full_name, event.issue.number)
+    if (this.reviewWait.end(key)) this.log(`[github] ${key}: ${reviewer} commented, review wait ended`)
+  }
+
+  /** Send the review-wait wakes that are due (#2227). */
+  async reviewTick(now = Date.now()): Promise<ReviewWaitDue[]> {
+    const reviewer = this.config.ci?.reviewer
+    if (!reviewer || !this.handler) return []
+    const due = this.reviewWait.due(now)
+    for (const d of due) {
+      const agentId = d.kind === "reviewer" ? reviewer : d.entry.owner
+      const chatId = `${d.entry.repo}:pull:${d.entry.number}`
+      const mapping = this.config.agentMappings?.find((m) => m.agentId === agentId)
+      const incoming: IncomingMessage = {
+        id: `review-wait-${d.kind}-${d.entry.repo}-${d.entry.number}-${d.entry.sha}`,
+        channel: "github",
+        accountId: "default",
+        sender: { id: chatId, name: "github", username: "github" },
+        text: d.kind === "reviewer" ? reviewWakeText(d.entry, d.minutes) : reviewOwnerText(d.entry, d.minutes, reviewer),
+        timestamp: new Date(now),
+        raw: { reviewWait: d },
+        resolvedAgent: agentId,
+        preferNode: mapping?.node,
+      }
+      this.log(`[github] ${chatId}: green ${d.minutes} min with no review -> ${d.kind} "${agentId}"`)
+      await Promise.resolve(this.handler(incoming)).catch((e: Error) => this.log(`[github] review-wait wake on ${chatId} failed: ${e?.message ?? e}`))
+    }
+    return due
   }
 
   /** Hand the saved still-red details to the daemon (#2212). */

@@ -4468,6 +4468,7 @@ export class AgentXDaemon {
           noWakeLabel: githubConfig.noWakeLabel,
           ci: githubConfig.ci,
           ciStateFile: resolve(process.cwd(), ".agentx/state/ci-fix-github.json"),
+          reviewWaitFile: resolve(process.cwd(), ".agentx/state/review-wait-github.json"),
           onCiStillRed: (r: CiStillRed) => this.ciStillRedStep(r),
           knownAgentIds: Object.keys(this.config.agents),
           // The webhook lands on one node; a marked PR's agent may live on
