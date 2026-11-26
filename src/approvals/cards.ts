@@ -405,8 +405,10 @@ export function decideCard(
 
 /** Cards whose answer the daemon acts on itself (a workflow run, a plan
  *  step, a retro): only the operator closes those. A reminder card is the
- *  agent's own to act on, so it may close it like one it raised. */
-const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder"])
+ *  agent's own to act on, so it may close it like one it raised. A
+ *  step-raised card is its workflow's own: its later steps close it
+ *  (noqta#910, C1). */
+const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder", "step-raised"])
 
 /**
  * The raising agent closes its own pending card: the owner gave the same
@@ -429,6 +431,11 @@ export function resolveCard(
   }
   if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
     return { ok: false, status: 409, error: `card "${id}" is answered by the operator only` }
+  }
+  // A step-raised card is closed by a running step of a workflow, not by
+  // any running turn of its agent (noqta#910 C4).
+  if (card.origin?.kind === "step-raised" && opts.via?.kind !== "workflow-step") {
+    return { ok: false, status: 403, error: `card "${id}" was raised by a workflow step: only a running step of ${card.raised_by}'s workflow closes it (X-AgentX-Step)` }
   }
   if (card.status !== "pending") return { ok: false, status: 409, error: `card "${id}" is already ${card.status}` }
   const reason = oneLine(opts.reason)

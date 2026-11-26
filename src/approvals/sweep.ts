@@ -181,6 +181,9 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       // Learned templates (#1990): the daemon sealed the owner's answer
       // itself; no agent raised the card.
       if (card.origin?.kind === "learned-drafts") continue
+      // A step-raised card (noqta#910): the workflow's next run reads the
+      // answer itself; a turn would invite the agent to act on it too.
+      if (card.origin?.kind === "step-raised") continue
       if (!settings.notifyAgent || !deps.tellAgent) continue
       if (deps.hasAgent && !deps.hasAgent(card.raised_by)) {
         log(`[approvals] ${card.id}: agent "${card.raised_by}" isn't on this node; result not delivered`)
