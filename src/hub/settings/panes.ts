@@ -23,6 +23,9 @@ export interface SettingsRowDef {
   /** What search opens to show the row: a disclosure (Advanced) id, or a
    *  comma list when it sits in more than one (a tab, then its Advanced). */
   open?: string
+  /** The tab of its pane the row sits on (Channels); the pane opens it
+   *  when the address names the row. */
+  tab?: string
 }
 
 export interface SettingsPaneDef {
@@ -154,6 +157,15 @@ const ACTIONS_ROWS = [
   { id: "add-action", label: "Add action", help: "A shell command or a web call that workflows call by its id", words: "new create shell command http web call webhook" },
 ] as const satisfies readonly SettingsRowDef[]
 
+const GUESTS_ROWS = [
+  { id: "grants", label: "Grants", help: "Each names one of your agents, what it may touch and until when", words: "guest grant organisation pause resume end usage trail" },
+  { id: "ended", label: "Ended grants", help: "Kept for their trail. An ended grant cannot be reopened.", words: "ended grant history" },
+  { id: "guests-terminal", label: "Opening and changing grants", words: "invite cli terminal widen narrow" },
+  { id: "gu-open", label: "Open a grant", help: "From a terminal. The guest joins with the code, and the join comes to Needs you.", words: "invite new guest code join" },
+  { id: "gu-cli-invite", label: "agentx mesh guests invite", words: "invite command terminal", open: "guests-adv" },
+  { id: "gu-cli-set", label: "agentx mesh guests set", help: "Widen or narrow a grant: folders, skills, commands, freedom, end date.", words: "widen narrow command terminal", open: "guests-adv" },
+] as const satisfies readonly SettingsRowDef[]
+
 export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
   {
     id: "general", label: "General", icon: "settings-2", group: "general", oldSection: "agents", built: true,
@@ -187,7 +199,11 @@ export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
     rows: APPROVALS_ROWS,
   },
   { id: "business", label: "Business", icon: "building-2", group: "people", oldSection: "business", help: "Org chart and business settings.", rows: [] },
-  { id: "guests", label: "Guests", icon: "user-round-plus", group: "people", oldSection: "guests", help: "Who else may use your agents.", rows: [] },
+  {
+    id: "guests", label: "Guests", icon: "user-round-plus", group: "people", oldSection: "guests", built: true,
+    help: "Other organisations you let into part of this mesh. Nothing is shared until you open a grant.",
+    rows: GUESTS_ROWS,
+  },
   { id: "channels", label: "Channels", icon: "message-square", group: "connections", oldSection: "channels", help: "Chat apps and developer tools.", rows: [] },
   { id: "whatsapp", label: "WhatsApp", icon: "message-circle", group: "connections", oldSection: "channels", help: "WhatsApp numbers and who they answer.", rows: [] },
   { id: "mesh", label: "Mesh", icon: "network", group: "connections", oldSection: "mesh", help: "Your other machines and tokens.", rows: [] },
