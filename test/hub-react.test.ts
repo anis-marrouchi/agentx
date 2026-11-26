@@ -182,10 +182,13 @@ describe("the daemon's switch and tags", () => {
     "vendor.tsx": { file: "vendor-def.js", css: ["vendor-def.css"] },
     "pages/CatalogPage.tsx": { file: "CatalogPage-x.js" },
   }
-  it("is off by default; ?react=1 and ?legacy=1 change one load", () => {
-    expect(dashboardConfigSchema.parse({}).hub).toEqual({ react: false, legacyPages: [], layout: "simple", show: {} })
-    expect(hubReactOn(undefined, new URLSearchParams())).toBe(false)
+  it("is on by default (#2226); false turns it off; ?react=1 and ?legacy=1 change one load", () => {
+    expect(dashboardConfigSchema.parse({}).hub).toEqual({ react: true, legacyPages: [], layout: "simple", show: {} })
+    expect(hubReactOn(undefined, new URLSearchParams())).toBe(true)
+    expect(hubReactOn({}, new URLSearchParams())).toBe(true)
     expect(hubReactOn({ react: true }, new URLSearchParams())).toBe(true)
+    expect(hubReactOn({ react: false }, new URLSearchParams())).toBe(false)
+    expect(hubReactOn(undefined, new URLSearchParams("legacy=1"))).toBe(false)
     expect(hubReactOn({ react: false }, new URLSearchParams("react=1"))).toBe(true)
     expect(hubReactOn({ react: true }, new URLSearchParams("legacy=1"))).toBe(false)
   })

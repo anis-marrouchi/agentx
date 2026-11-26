@@ -38,13 +38,13 @@ The Hub shows the records AgentX already keeps: tasks, plans and run history. Op
 
 ## Try the simple shell (new version of the Hub)
 
-The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [Configuration › Operations](../reference/config-operations.md)). With it on and the simple layout (the default, see [Settings › Layout](./settings.md#layout)), `/hub` opens on the **simple shell**: three columns, for the owner.
+The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by default, see [Configuration › Operations](../reference/config-operations.md)). With it on and the simple layout (the default, see [Settings › Layout](./settings.md#layout)), `/hub` opens on the **simple shell**: three columns, for the owner.
 
 ![The simple shell on a computer: the side menu, the chat with the agent in view, and the Files tab on the right](/screenshots/hub-shell/simple.png)
 
 *Demo data; your agents will differ.*
 
-1. **Browser:** open `/hub?react=1` (once), or turn `dashboard.hub.react` on and open `/hub`. The shell's own address is `/hub#page=home`.
+1. **Browser:** open `/hub`. A fresh install opens here with no setting. If `dashboard.hub.react` is `false`, open `/hub?react=1` (once). The shell's own address is `/hub#page=home`.
 2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
@@ -187,12 +187,12 @@ What you put off with **Later** is not listed; the line under the list counts it
 
 ### Check the simple shell worked
 
-- `/hub?react=1` as the owner opens on three columns, and the address ends in `#page=home`.
+- `/hub` as the owner opens on three columns, and the address ends in `#page=home`.
 - In Settings › Layout, turn **Workflows page** on, then open `/hub#page=home`: **Workflows** is under **More**.
 
 ### If the simple shell is wrong
 
-- **`/hub` opens the old Hub:** the layout is **Full** (pick **Simple** in Settings › Layout), you are not the owner (the shell is the owner's), or `dashboard.hub.react` is off. `/hub#page=home` opens the shell in any layout.
+- **`/hub` opens the old Hub:** the layout is **Full** (pick **Simple** in Settings › Layout), you are not the owner (the shell is the owner's), or `dashboard.hub.react` is `false`. `/hub#page=home` opens the shell in any layout.
 - **The shell looks broken:** open `/hub?legacy=1` for the old version, or add `"home"` to `dashboard.hub.legacyPages`.
 - **No agents in the menu:** the dashboard could not reach the daemon. Check that it runs (**Terminal:** `agentx daemon status`).
 

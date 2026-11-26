@@ -22,11 +22,13 @@ export interface HubSwitch {
 }
 
 /** Is the React app on for this page load? `?legacy=1` turns it off and
- *  `?react=1` turns it on, for this load only; otherwise the setting. */
+ *  `?react=1` turns it on, for this load only; otherwise the setting, on
+ *  unless it is `false` (#2226: no setting at all, as on a fresh install
+ *  with no `dashboard` block, opens the React shell too). */
 export function hubReactOn(setting: HubSwitch | undefined, search: URLSearchParams): boolean {
   if (search.get("legacy") === "1") return false
   if (search.get("react") === "1") return true
-  return !!setting?.react
+  return setting?.react !== false
 }
 
 interface ManifestChunk {
