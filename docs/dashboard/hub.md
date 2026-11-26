@@ -60,9 +60,14 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 
 ### Tasks: List or Kanban
 
-**Tasks** lists the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine. They are the posts of the old Hub's feed. Its address is `/hub#page=home&pane=tasks`.
+**Tasks** lists two things together. Its address is `/hub#page=home&pane=tasks`.
 
-![Tasks as a list, grouped by state: In progress, Waiting on you, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
+- **Issues and pull requests:** the open issues and open pull (merge) requests of your GitHub repositories and GitLab projects. The repositories are the ones in your settings: `channels.github.routes` (each `repo`), `channels.gitlab.routes` (each `project`) and your GitLab boards. GitHub is read with the `gh` login of the user that runs AgentX, GitLab with the GitLab channel's token. No new sign-in. Each one opens on GitHub or GitLab, in a new tab. Jira is not listed yet.
+- **Requests:** the requests you gave your agents, open ones and the ones closed in the last 7 days, from every connected machine (the posts of the old Hub's feed). A request whose home is one of those issues or pull requests stands for it, so it shows once.
+
+An icon says which is which: a dot in a circle for an issue, the pull request icon for a pull request, the robot for a request. The issues and pull requests are read again at most once a minute.
+
+![Tasks as a list, grouped by state: To do, In progress, In review, Waiting on others, Needs attention, Closed](/screenshots/hub-tasks/list.png)
 
 *Demo data; your tasks will differ.*
 
@@ -72,11 +77,18 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, see [C
 
    ![Tasks for one project, picked in the box at the top](/screenshots/hub-automations/tasks-project.png)
 
-4. **The columns** are the request states: **In progress**, **Waiting on you**, **Waiting on others**, **Needs attention**, and **Closed** (done, declined or dropped in the last 7 days). Each task shows its agent, its project and how long ago it last moved.
+4. **The columns:**
+   - **To do:** an open issue nobody is assigned to.
+   - **In progress:** a request being worked on, an issue someone is assigned to, a draft pull request, or one sent back with changes asked.
+   - **In review:** a request that waits for your answer or approval, and an open pull request waiting for its review.
+   - **Waiting on others**, **Needs attention:** the request states of the same name.
+   - **Closed:** requests done, declined or dropped in the last 7 days.
+
+   A GitLab board label decides first: `Status::Doing` is In progress, `Status::Review` In review, `Status::On Hold` Waiting on others. Each task shows who has it (for an issue with nobody assigned, who opened it), its project (with the issue or pull request number) and how long ago it last moved.
 
    ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
 
-5. **Open a task:** select it. Its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+5. **Open a task:** select it. An issue or pull request opens on its forge. For a request, its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
 
    ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
 
@@ -91,12 +103,16 @@ Tasks only shows: moving a card does not change a task's state. Close or hand ov
 ### Check Tasks worked
 
 - Ask an agent something that leaves work open (for example a task it hands to another agent). Within 30 seconds it is under **In progress** in Tasks.
+- Open an issue on one of your GitHub repositories. Within about a minute it is under **To do**, with the issue icon.
 - Pick **Kanban**, reload the page: Tasks opens as a Kanban again.
 
 ### If Tasks is wrong
 
-- **Could not read the tasks:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
-- **No tasks in the last 7 days:** nothing was asked that left work behind. A question an agent answers at once is not a task.
+- **Could not read the tasks:** nothing could be read yet: the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**; check the daemon runs (**Terminal:** `agentx daemon status`).
+- **Could not refresh** above the tasks: the last read failed. The tasks shown are the ones read before; they are read again within 30 seconds, or select **Try again**.
+- **Not read: owner/repo (why)** above the tasks: that repository or project could not be read. For GitHub, check `gh auth status` as the user that runs AgentX, and that the login can see the repository. For GitLab, check the GitLab channel's token can read the project. The last issues read for it stay shown.
+- **No issues or pull requests:** the repository is not in `channels.github.routes`, `channels.gitlab.routes` or a GitLab board (a `*` route is not listed), or it has none open.
+- **No tasks:** no open issue or pull request, and nothing asked that left work behind. A question an agent answers at once is not a task.
 - **A task is missing:** a machine that does not answer is left out until it answers. The old Hub's feed (`/hub#status=open`) shows the same tasks.
 - **Task not found** after opening a link: it was closed more than 7 days ago, or its machine is not answering.
 - **No tasks in a project:** none of that project's tasks moved in the last 7 days. Select **All projects**. A task with no project shows under **All projects** only.
