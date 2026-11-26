@@ -4,7 +4,6 @@
     "src/daemon/ui/**",
     "src/daemon/*-panel.ts",
     "src/daemon/topbar.ts",
-    "src/daemon/ui-labels.ts",
     "src/daemon/call-page.ts",
     "src/daemon/setup-wizard.ts",
     "src/approvals/card-page*.ts",

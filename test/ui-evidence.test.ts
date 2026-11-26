@@ -27,7 +27,7 @@ describe("uiPaths", () => {
       uiPaths(
         [
           "src/web/workflow-editor/canvas.ts",
-          "src/daemon/ui/pages/live.ts",
+          "src/daemon/ui/pages/wall-cost.ts",
           "src/daemon/agent-panel.ts",
           "src/daemon/topbar.ts",
           "src/voice/orb-palettes.ts",
@@ -41,7 +41,7 @@ describe("uiPaths", () => {
           "src/wiki/serve.ts",
           "src/approvals/card-window.ts",
           "src/approvals/popup.ts",
-          "src/daemon/ui-labels.ts",
+          "src/daemon/call-page.ts",
         ],
         config,
       ),
@@ -131,7 +131,7 @@ describe("evaluate", () => {
   })
 
   it("passes with an image under ## Evidence", () => {
-    const v = run(["src/daemon/ui/pages/live.ts"], `## What changed\n\nx\n\n## Evidence\n\n![after](${IMG})`)
+    const v = run(["src/daemon/ui/pages/wall-cost.ts"], `## What changed\n\nx\n\n## Evidence\n\n![after](${IMG})`)
     expect(v.status).toBe("passed")
     expect(v.media).toEqual([IMG])
   })

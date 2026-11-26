@@ -175,19 +175,6 @@ describe("notify with the local alert", () => {
   })
 })
 
-describe("dashboard Notifications card", () => {
-  it("ships the local controls in a page script that parses", async () => {
-    const { renderAdminPage } = await import("../src/daemon/ui/pages/admin")
-    const html = renderAdminPage()
-    for (const id of ["notif-local-banner", "notif-local-sound", "notif-local-sound-name", "notif-local-volume", "notif-local-icon"]) {
-      expect(html).toContain(`id="${id}"`)
-    }
-    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    expect(scripts.length).toBeGreaterThan(0)
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-  })
-})
-
 describe("channels.ntfy — set from the CLI and the dashboard", () => {
   it("never reads back the topic or token, only whether they are set", () => {
     const s = ntfyStatus({ enabled: true, topic: "secret-topic", token: "tk_x" })

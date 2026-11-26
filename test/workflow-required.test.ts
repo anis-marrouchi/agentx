@@ -10,7 +10,6 @@ import {
 } from "../src/workflows/required"
 import { handleFollowUpApi, type FollowUpApiDeps } from "../src/workflows/follow-up-api"
 import { daemonConfigSchema } from "../src/daemon/config"
-import { renderLivePage } from "../src/daemon/ui/pages/live"
 import { buildAgentContext } from "../src/agents/context"
 
 // workflows.required (#858): every task runs inside a workflow run — the
@@ -302,14 +301,6 @@ describe("what the agent and the live page see", () => {
       procedureContext: procedures, workflowRunContext: wrapHintText("run-1"),
     })
     expect(ctx).toContain(wrapHintText("run-1"))
-  })
-
-  it("ships a live page script that parses and shows a task's workflow step", () => {
-    const html = renderLivePage()
-    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-    expect(html).toContain("function workflowLine(w)")
-    expect(html).toContain("workflowLine(t.workflow)")
   })
 })
 

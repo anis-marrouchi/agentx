@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest"
-import { renderLivePage } from "../src/daemon/ui/pages/live"
 import { VoiceTalkService } from "../src/daemon/voice-talk-api"
 import { VoiceIntroTracker } from "../src/voice/agent-voice"
 import { Channel, type LineModel } from "../src/voice/talk-model"
@@ -50,14 +49,5 @@ describe("the Live page and lessons", () => {
     expect(started.status).toBeLessThan(300)
     expect(svc.handle("GET", "/talk", {}).body).toMatchObject({ kind: "talk", topic: "Release notes", agents: ["secretary-agent", "reviewer"] })
     svc.handle("POST", "/talk/stop", {})
-  })
-
-  it("ships a script that parses, with the lesson row and its stop", () => {
-    const html = renderLivePage()
-    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    expect(scripts.length).toBeGreaterThan(0)
-    for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-    expect(html).toContain("data-action=\"voice-stop\"")
-    expect(html).toContain("/api/voice/stop?node=")
   })
 })

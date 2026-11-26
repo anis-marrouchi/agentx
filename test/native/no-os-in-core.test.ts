@@ -28,7 +28,6 @@ const BASELINE = [
   "src/daemon/index.ts",
   "src/daemon/restart-host.ts",
   "src/daemon/screen-buffer.ts",
-  "src/daemon/ui/pages/admin.ts",
   "src/decisions/seats/voice-narration.ts",
   "src/desktop/install.ts",
   "src/guard/confirm.ts",

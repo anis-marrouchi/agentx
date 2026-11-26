@@ -11,7 +11,6 @@ import { fetchDaemonAgents } from "../src/daemon/board-dashboard"
 import { handleAdminApi } from "../src/daemon/admin-panel"
 import { CRON_VALUE_SCRIPT, NO_VALUE_LINE } from "../src/daemon/ui/cron-value"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
-import { renderAdminPage } from "../src/daemon/ui/pages/admin"
 
 // Value line on a recurring job (#1183): `crons.<id>.value` says why the
 // job runs and the number that proves it. Optional; a job without one says
@@ -128,13 +127,10 @@ describe("the value line on the page", () => {
     expect(html({ why: "a" }, esc)).toContain(NO_VALUE_LINE)
   })
 
-  it("is on the Wall's Schedules page and on Settings › Schedules", () => {
+  it("is on the Wall's Schedules page", () => {
     const wall = renderWallPage()
     expect(wall).toContain('data-nav="jobs"')
     expect(wall).toContain('id="wall-jobs"')
     expect(wall).toContain("function axCronValueHtml")
-    const admin = renderAdminPage()
-    expect(admin).toContain("function axCronValueHtml")
-    expect(admin).toMatch(/axCronValueHtml\(c\.value/)
   })
 })

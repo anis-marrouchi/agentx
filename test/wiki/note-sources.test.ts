@@ -203,15 +203,12 @@ describe("agents.<id>.wiki.absorb.enabled", () => {
     expect(b).toEqual({ wiki: { contribute: { enabled: true } } })
   })
 
-  it("is on the agent page and the dashboard's Edit agent dialog", () => {
+  it("is on the agent page and in the admin API", () => {
     const page = readFileSync(resolve(__dirname, "../../src/daemon/ui/pages/agent.ts"), "utf-8")
     expect(page).toContain('data-field="wikiAbsorb"')
     expect(page).toContain("body.wikiAbsorb = $('f-wabs').value === 'on'")
     const agentPanel = readFileSync(resolve(__dirname, "../../src/daemon/agent-panel.ts"), "utf-8")
     expect(agentPanel).toContain("setWikiAbsorb(cfg.agents[agentId], body.wikiAbsorb)")
-    const ui = readFileSync(resolve(__dirname, "../../src/daemon/ui/pages/admin.ts"), "utf-8")
-    expect(ui).toContain('id="e-wiki-absorb"')
-    expect(ui).toContain("wikiAbsorb: $('e-wiki-absorb').checked")
     const panel = readFileSync(resolve(__dirname, "../../src/daemon/admin-panel.ts"), "utf-8")
     expect(panel).toContain("wikiAbsorb: a.wiki?.absorb?.enabled !== false")
   })
