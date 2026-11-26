@@ -146,7 +146,9 @@ export const HUB_STATUS_CSS = `
 .hsc__eng .ax-eng, .hs__eng .ax-eng { width: 15px; height: 15px; }
 .hs__eng { display: inline-flex; }
 .hsc__acts { margin: 8px 0; }
-@media (min-width: 641px) { body { padding-bottom: 30px; } .ax-wall__nav { height: calc(100vh - 30px); } }
+/* The status bar takes 30 px: the columns stop above it, so no page scrolls past the window (C23, #2352). */
+@media (min-width: 641px) { body { padding-bottom: 30px; } .ax-wall, .ax-wall__main { min-height: calc(100vh - 30px); } .ax-wall__nav, .hc { height: calc(100vh - 30px); } }
+@media (min-width: 1181px) { .wcx { height: calc(100vh - 30px); } }
 .hs__acct { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid var(--ax-border); border-radius: 999px; padding: 1px 10px; cursor: pointer; }
 .hs__acct[aria-expanded="true"] { border-color: var(--ax-accent); color: var(--ax-text); }
 .hsa__p legend small { color: var(--ax-muted); font-weight: 400; font-family: var(--ax-mono); }

@@ -1074,7 +1074,19 @@ ${HUB_NAV_SCRIPT}
     note = top + note + '<p class="ax-wall__count wag__note"><a href="/org">Open the org chart</a></p>';
     if (!list.length) return note + '<p class="ax-wall__empty">' + (S.live ? 'No node reports an agent.' : 'Loading…') + '</p>';
     var called = S.callNote ? '<p class="wdo__n wag__note" role="status">' + esc(S.callNote) + '</p>' : '';
-    return note + called + list.map(function (a) {
+    // One fold per machine, with its count; each shows 3 agents, then Show all (N) (#2352, hub-folds.ts).
+    var groups = [], byNode = {};
+    list.forEach(function (a) {
+      var n = a.nodes[0] || 'No machine answering';
+      (byNode[n] || (groups.push(n), byNode[n] = [])).push(a);
+    });
+    return note + called + groups.map(function (n) {
+      var key = 'agents.' + n;
+      return '<details class="axp-fold wag__grp" data-fold="' + esc(key) + '" open><summary class="axp-fold__h"><span class="axp-fold__t">' + esc(n) + '</span>' +
+        '<span class="axp-fold__n">' + byNode[n].length + '</span></summary><div data-cap="' + esc(key) + '">' + byNode[n].map(agentCardHtml).join('') + '</div></details>';
+    }).join('');
+  }
+  function agentCardHtml(a) {
       var s = a.stats || { open: 0, owner: 0, done: 0, runs: 0, posts: 0 };
       var meta = [
         a.nodes.length ? 'on ' + a.nodes.map(esc).join(', ') : 'no node answering',
@@ -1095,7 +1107,6 @@ ${HUB_NAV_SCRIPT}
         '<div class="wpf__links">' + (s.posts ? '<button type="button" class="wa-more" data-agent="' + esc(a.id) + '">' + s.posts + (s.posts === 1 ? ' post' : ' posts') + '</button>' : '<span class="ax-wall__count">No posts in 7 days</span>') +
           agentPageLink(a.id) + '<a href="' + esc(activityHref(a.id)) + '">Activity</a></div>' +
         agmTools(a) + '</div></article>';
-    }).join('');
   }
 
   // --- The nav: which page is on, and its counts (#1316) ---
@@ -1433,6 +1444,9 @@ ${HUB_NAV_SCRIPT}
     $('wall-views').hidden = !posts_;
     $('wall-switch').hidden = !posts_;
     $('wall-filters').hidden = !posts_;
+    // The "Filters" fold says how many are in use (#2352); the status tab and the search box show themselves.
+    var fn = FILTERS.filter(function (k) { return k !== 'status' && k !== 'q' && f[k]; }).length;
+    $('wall-fn').textContent = fn ? String(fn) : '';
     $('wall-compose').hidden = !(onWall && S.view === 'feed');
     document.querySelectorAll('[data-tab]').forEach(function (b) {
       var me = b.getAttribute('data-tab') === f.status;

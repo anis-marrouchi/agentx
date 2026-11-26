@@ -21,8 +21,8 @@ export const APP_AGENTS_SCRIPT = `
   var wait = panel.querySelector('.ax-af-loader');
   if (wait) wait.replaceWith(box); else panel.appendChild(box);
   box.innerHTML = '<p class="ha__empty">Loading the agents…</p>';
-  // open: the folds the reader opened (Needs you, Working Show all, idle); all start closed.
-  var S = { model: null, filter: 'all', open: { needs: false, working: false, idle: false }, loading: false };
+  // open: the folds the reader opened (haListHtml's HaOpen); Working starts open, the rest folded.
+  var S = { model: null, filter: 'all', open: { needs: false, working: false, idle: false, work: true, done: false, needsAll: false }, loading: false };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -84,7 +84,7 @@ export const APP_AGENTS_SCRIPT = `
     var chip = ev.target.closest('[data-ha-filter]');
     if (chip) { S.filter = chip.getAttribute('data-ha-filter'); paint(); return; }
     var more = ev.target.closest('[data-ha-more]');
-    if (more) { S.open.working = !S.open.working; paint(); return; }
+    if (more) { var mk = more.getAttribute('data-ha-more') === 'needs' ? 'needsAll' : 'working'; S.open[mk] = !S.open[mk]; paint(); return; }
     var a = ev.target.closest('[data-ha-agent]');
     if (!a || !S.model) return;
     ev.preventDefault();

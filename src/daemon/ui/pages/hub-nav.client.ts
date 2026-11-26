@@ -17,11 +17,12 @@
 export const HUB_NAV_SCRIPT = String.raw`
   // What the reader opened (Anis 2026-11-26, orca-design C21): saved like the
   // filter. A first visit starts with Needs you folded and Working at 3 rows.
-  var HA = { filter: 'all', open: { needs: false, working: false, idle: false }, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
+  // Every group folds (#2352): Working starts open, the others folded.
+  var HA = { filter: 'all', open: { needs: false, working: false, idle: false, work: true, done: false, needsAll: false }, last: '', model: null, cur: '', prev: '', k: { q: '', sel: 0, hits: null, back: null } };
   try { HA.filter = localStorage.getItem('ax.hub.agentFilter') || 'all'; } catch (e) { /* private mode */ }
   try {
     var haSaved = JSON.parse(localStorage.getItem('ax.hub.agentOpen') || '{}');
-    for (var hk in HA.open) if (haSaved[hk] === true) HA.open[hk] = true;
+    for (var hk in HA.open) if (typeof haSaved[hk] === 'boolean') HA.open[hk] = haSaved[hk];
   } catch (e) { /* private mode or bad value: keep the defaults */ }
   function haSaveOpen() { try { localStorage.setItem('ax.hub.agentOpen', JSON.stringify(HA.open)); } catch (e) { /* private mode */ } }
   // The agent in view: its chat, or the Task page of one of its runs (R26).
@@ -80,7 +81,10 @@ export const HUB_NAV_SCRIPT = String.raw`
       HA.last = ''; renderHubAgents(); return;
     }
     var more = t.closest('[data-ha-more]');
-    if (more) { HA.open.working = !HA.open.working; haSaveOpen(); HA.last = ''; renderHubAgents(); return; }
+    if (more) {
+      var mk = more.getAttribute('data-ha-more') === 'needs' ? 'needsAll' : 'working';
+      HA.open[mk] = !HA.open[mk]; haSaveOpen(); HA.last = ''; renderHubAgents(); return;
+    }
     if (t.closest('#hub-k')) { haOpenK(); return; }
     if (t.closest('[data-hk-close]')) { haCloseK(); return; }
     if (t.closest('#hub-k-dlg a[href]')) haCloseK(true);

@@ -288,12 +288,14 @@ export const WALL_SETTINGS_SCRIPT = String.raw`
     var menu = '<nav class="wst__menu" aria-label="Settings sections">' +
       '<p class="wst__lead">Only you, the owner, see this page. Changes save to this machine\'s agentx.json.</p>' +
       ST_GROUPS.map(function (g) {
-        return '<h3 class="wst__grp">' + esc(g[0]) + '</h3>' + g[1].map(function (s) {
+        // Each group folds from its header, with its count (#2352, hub-folds.ts).
+        return '<details class="axp-fold wst__fold" data-fold="settings.' + esc(g[0]) + '" open><summary class="axp-fold__h wst__grp"><span class="axp-fold__t">' + esc(g[0]) + '</span>' +
+          '<span class="axp-fold__n">' + g[1].length + '</span></summary>' + g[1].map(function (s) {
           var on = s[0] === sec, sub = s[0] === 'agents' ? n + (n === 1 ? ' agent' : ' agents') + ', their pictures, models and on/off' : s[3];
           return '<a href="' + esc(stHref(s[0])) + '" class="wst__sec' + (on ? ' is-on' : '') + (s[2] ? ' is-classic' : '') + '"' + (on ? ' aria-current="page"' : '') +
             (s[2] ? ' title="Opens its own page"' : '') + '>' +
             '<span>' + esc(s[1]) + '<small class="wst__sub">' + esc(sub) + '</small></span>' + stCountHtml(s[0], att) + '</a>';
-        }).join('');
+        }).join('') + '</details>';
       }).join('') + '</nav>';
     // On a phone the list is its own screen, with Health on top (§2).
     var phoneHealth = S.st.section ? '' : '<div class="wst__phonehealth" id="st-health-phone">' + stHealthHtml(true) + '</div>';
@@ -791,6 +793,7 @@ export const WALL_SETTINGS_CSS = `
 .wst__sec > span { display: flex; flex-direction: column; min-width: 0; }
 .wst__sub { display: none; color: var(--ax-muted); font-weight: 400; font-size: var(--ax-fs-xs); }
 .wst__sec.is-classic { font-weight: 400; color: var(--ax-text-2); }
+.wst .wst__fold > summary { margin: 14px 6px 4px; }
 .wst__grp { margin: 14px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
 .wst-owner { max-width: 520px; padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .wst-owner h2 { margin: 0; font-size: 20px; font-weight: 800; }
