@@ -8,7 +8,7 @@ AgentX now records each of them as a **failure signal**: one line with what happ
 
 | Signal | When it is recorded |
 |---|---|
-| `owner_reopened` | You reopen a request an agent had closed, for example with a comment on its post in the Hub. |
+| `owner_reopened` | You send back a request an agent had closed: a comment on its closed post in the Hub, or a reply (or hand-off) when you are asked whether an agent's close as superseded stands. Your words are kept with it. A new message in a chat after a close starts a new request and is not counted. |
 | `owner_check_mismatch` | The [owner-words check](./open-requests.md#when-someone-else-closes-your-request-the-owner-words-check) found that a close did not do what you asked, and reopened it. |
 | `request_stalled` | A request needs attention: its work failed, timed out, was cut off, or went quiet. |
 | `handoff_refused` | An agent's hand-off to another agent was refused: the [hand-off budget](./ask-another-agent.md) was used up, the hand-off would have looped back, or a person's permissions did not allow it. It is also recorded when the receiving agent was blocked by missing information (see [below](#what-is-counted-when-an-agent-did-not-know-or-was-not-clear)). |

@@ -7,6 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { pickupText } from "../src/requests/sweep"
 import { handleWallAction, isWallActionPath, redactTalk, type Reply, type WallActionDeps } from "../src/daemon/wall-actions"
 import { wallThread } from "../src/daemon/wall-api"
+import { readSignals } from "../src/improve/signals"
 
 // The Wall's writes (#1316): a comment reaches the post's agent, a call
 // asks it to ring the owner, a Space starts talk mode about the post.
@@ -70,6 +71,18 @@ describe("comment", () => {
     expect(picked.id).toBe("r1")
     const thread = wallThread(store.get("r1")!, { store, db: (store as any).db, now: T0 + 6000, staleAfterHours: 24 } as any)
     expect(thread.find((e) => e.kind === "comment")).toMatchObject({ text: "The footer link is still broken" })
+  })
+
+  it("writes owner_reopened once, with the comment, when it opens a closed post (#2126)", async () => {
+    store.close("r1", "done", "shipped", T0 + 2000, null, "coder")
+    await post("/comment", { id: "r1", text: "  The footer link is still broken  " })
+    const sent = readSignals((store as any).db, 0).filter((s) => s.kind === "owner_reopened")
+    expect(sent).toMatchObject([{ agentId: "coder", ref: "r1", detail: "The footer link is still broken" }])
+  })
+
+  it("writes no owner_reopened for a comment on an open post", async () => {
+    await post("/comment", { id: "r1", text: "Use the staging token" })
+    expect(readSignals((store as any).db, 0).filter((s) => s.kind === "owner_reopened")).toEqual([])
   })
 
   it("keeps a closed post closed when requests are off", async () => {
