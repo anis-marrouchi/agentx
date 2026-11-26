@@ -154,6 +154,50 @@ describe("POST /api/assistant/upload (#2101 R14)", () => {
     expect(queued[1]).toBe("Plain")
   })
 
+  it("drops a Task page follow-up file from another agent's uploads/ (#2365)", async () => {
+    const queued: string[] = []
+    const third = join(tmp, "third")
+    mkdirSync(join(third, "uploads"), { recursive: true })
+    const foreign = join(third, "uploads", "theirs.txt")
+    writeFileSync(foreign, "not yours")
+    const daemon = buildDaemon()
+    daemon.registry.list = () => [{ id: "helper", workspace, runningTasks: [{ id: "t2" }] }, { id: "third", workspace: third, runningTasks: [] }]
+    daemon.registry.queueFollowUp = (_id: string, message: string) => { queued.push(message); return { agentId: "helper", pending: 1 } }
+    const node = await serveDaemon(daemon, LOCAL)
+    // Naming the other agent in the body does not move the check: the run's own agent decides.
+    const res = await fetch(`${node}/api/tasks/t2/followup`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Read it", agent: "third", attachments: [{ name: "theirs.txt", path: foreign }] }),
+    })
+    expect(res.status).toBe(200)
+    expect(queued).toEqual(["Read it"])
+  })
+
+  it("continues a finished run with its own agent's files only, found by body.agent (#2365)", async () => {
+    const continued: Array<{ agentId: string, taskId: string, message: string }> = []
+    const daemon = buildDaemon()
+    daemon.registry.list = () => [{ id: "helper", workspace, runningTasks: [] }]
+    daemon.registry.queueFollowUp = () => null
+    daemon.registry.continueFinishedTask = async (agentId: string, taskId: string, message: string) => {
+      continued.push({ agentId, taskId, message })
+      return { ok: true, taskId: "t4", channel: "cron" }
+    }
+    daemon.cron = { list: () => [] }
+    const node = await serveDaemon(daemon, LOCAL)
+    const file = await (await up(node, "agent=helper&name=done.txt", "d")).json()
+    const res = await fetch(`${node}/api/tasks/t3/followup`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Go on", agent: "helper", attachments: [file, { name: "secrets", path: join(workspace, ".env") }] }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, resumed: true, taskId: "t4", fromTaskId: "t3" })
+    expect(continued).toEqual([{ agentId: "helper", taskId: "t3", message: withAttachedFiles("Go on", [{ name: "done.txt", path: file.path }]) }])
+    expect(continued[0].message).not.toContain(".env")
+    // Without body.agent a finished run cannot be found.
+    const lost = await fetch(`${node}/api/tasks/t3/followup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Go on" }) })
+    expect(lost.status).toBe(404)
+  })
+
   it("asks a spoken question for a short answer", async () => {
     const board = await serveBoard(await serveDaemon(buildDaemon(), LOCAL))
     await fetch(`${board}/api/assistant`, { method: "POST", headers: { ...owner, "Content-Type": "application/json" }, body: JSON.stringify({ agentId: "helper", message: "Status?", spoken: true }) })

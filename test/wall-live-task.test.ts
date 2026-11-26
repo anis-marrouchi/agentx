@@ -19,7 +19,7 @@ const LIVE = { nodes: [
   ] },
 ] }
 
-function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown>; wide?: boolean; win?: Record<string, unknown>; readyState?: string }) {
+function openWall(opts: { hash: string; live?: unknown; history?: unknown; thread?: unknown; action?: unknown; replies?: Record<string, unknown>; wide?: boolean; win?: Record<string, unknown>; readyState?: string; reject?: string }) {
   const page = renderWallPage()
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
   const els = new Map<string, any>()
@@ -72,6 +72,8 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
   const calls: Array<{ url: string; init: any }> = []
   const fetchStub = (url: string, init: any) => {
     calls.push({ url, init })
+    // The request never gets an answer (network down).
+    if (opts.reject && url.startsWith(opts.reject)) return Promise.reject(new TypeError("Failed to fetch"))
     const reply = Object.entries(opts.replies ?? {}).find(([k]) => url.startsWith(k))
     const body = reply ? reply[1]
       : url.startsWith("/api/admin/wall?") ? { node: "node-a", syncedAt: NOW, nodes: [{ name: "node-a", ok: true }], failures: [], posts: [] }
@@ -198,6 +200,34 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
     key({ key: "Enter" })
     await w.settle()
     expect(w.calls.filter((c) => c.url.startsWith("/api/task/action?")).map((c) => c.url)).toEqual(["/api/task/action?node=http%3A%2F%2Fnode-a&task=t9&kind=followup"])
+  })
+
+  it("sends a follow-up once on a quick double Enter (Hakim review of #2365)", async () => {
+    const w = openWall({ hash: LIVE_HASH })
+    await w.settle()
+    const key = () => w.el("task-text").on.keydown({ preventDefault() {}, key: "Enter" })
+    w.el("task-text").value = "Only once"
+    key()
+    key()
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.includes("kind=followup"))).toHaveLength(1)
+    // Once it is in, the next message sends again.
+    w.el("task-text").value = "Next one"
+    key()
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.includes("kind=followup"))).toHaveLength(2)
+  })
+
+  it("gives Send back and says why when the follow-up gets no answer (Hakim review of #2365)", async () => {
+    const w = openWall({ hash: LIVE_HASH, reject: "/api/task/action?" })
+    await w.settle()
+    w.el("task-text").value = "Lost words"
+    w.el("task-send").on.click()
+    await w.settle()
+    expect(w.el("task-send").disabled).toBe(false)
+    expect(w.el("task-voice").textContent).toBe("Not sent: Failed to fetch")
+    // The words stay in the box to send again.
+    expect(w.el("task-text").value).toBe("Lost words")
   })
 
   it("puts the Hub chat's ask box on the page, with Pause and Stop by the send arrow (#2306)", async () => {
@@ -471,6 +501,23 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="resume"')
     await w.settle()
     expect(JSON.parse(posts(w, "/api/admin/wall/live/resume")[0].init.body)).toEqual({ id: "t9-paused" })
+  })
+
+  it("turns files and the mic off while the run pauses, so the mic posts nothing (Hakim review of #2365)", async () => {
+    const w = openWall({ hash: "#page=task&task=t9&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram", live: OPS, readyState: "loading",
+      replies: { "/api/admin/wall/live/pause": { ok: true, id: "t9-paused", state: "winding-down" } } })
+    await w.settle()
+    let micSend: ((text: string) => Promise<boolean>) | null = null
+    w.win.AXComposerFiles = () => ({ attachments: () => [], uploading: () => false, clear() {} })
+    w.win.AXComposerVoice = (_p: string, api: { send: (t: string) => Promise<boolean> }) => { micSend = api.send }
+    for (const f of w.onDoc.DOMContentLoaded ?? []) f({})
+    expect(w.el("task-mic").disabled).toBe(false)
+    w.press(w.el("task-ctl").innerHTML, 'data-task-ctl="pause"')
+    await w.settle()
+    for (const id of ["task-attach", "task-mic", "task-mic-check", "task-mic-play"]) expect(w.el(id).disabled).toBe(true)
+    // A recording that ends now ("Check before sending" off) does not go in.
+    expect(await micSend!("spoken while pausing")).toBe(false)
+    expect(w.calls.filter((c) => c.url.includes("kind=followup"))).toHaveLength(0)
   })
 
   it("says why when the node refuses the pause, and keeps Pause (#2306)", async () => {
