@@ -10,7 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { allowsMedia, dashboardUrl, hubUrl, isDashboardOrigin, opensOutside } from "./hub.js"
 import { offlinePage } from "./offline.js"
-import { cliArgs, daemonTarget, managedService, readStatus, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
+import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
 import type { TrayActions, TrayState } from "./menu.js"
 import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
@@ -24,6 +24,7 @@ let win: BrowserWindow | null = null
 let quitting = false
 let settings: AppSettings
 const DAEMON = daemonTarget()
+const DAEMON_REMOTE = !isLoopbackUrl(DAEMON.url)
 // Open at login: Electron sets it on macOS and Windows only.
 const LOGIN_ITEM_SUPPORTED = process.platform === "darwin" || process.platform === "win32"
 let daemonStatus: DaemonStatus | null = null
@@ -140,6 +141,7 @@ function trayState(): TrayState {
     settings,
     loginItemSupported: LOGIN_ITEM_SUPPORTED,
     startRefusal: startRefusal(daemonStatus, DAEMON, daemonManaged),
+    remote: DAEMON_REMOTE,
   }
 }
 
@@ -204,7 +206,7 @@ async function confirmRestart(): Promise<boolean> {
 }
 
 async function daemonAction(action: "start" | "stop" | "restart"): Promise<void> {
-  if (daemonBusy) return
+  if (daemonBusy || DAEMON_REMOTE) return // the CLI acts on this machine's daemon, not the remote one
   if (action === "restart" && !(await confirmRestart())) return
   if (action === "start") {
     // Checked again now: launchd may have loaded the job since the last poll.

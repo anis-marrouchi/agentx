@@ -11,7 +11,7 @@ const actions = {
   onDaemon: (a) => calls.push(a),
   onSetting: (c) => calls.push(c),
 }
-const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, ...over })
+const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, remote: false, ...over })
 const items = (s) => menu.menuTemplate(s, actions).filter((i) => i.type !== "separator")
 const byLabel = (s, prefix) => items(s).find((i) => i.label.startsWith(prefix))
 
@@ -31,10 +31,6 @@ test("daemon buttons follow its status", () => {
   assert.equal(byLabel(kept, "Daemon").label, "Daemon: running (kept by launchd)")
   assert.equal(byLabel(kept, "Stop").enabled, false)
   assert.equal(byLabel(kept, "Restart").enabled, true)
-  const far = state({ daemon: { running: true, pid: 9, service: "none", remote: true } })
-  assert.equal(byLabel(far, "Stop").label, "Stop (on another machine)")
-  assert.equal(byLabel(far, "Stop").enabled, false)
-  assert.equal(byLabel(far, "Restart").enabled, true)
   const managed = state({ daemon: { running: false }, startRefusal: "kept by launchd tn.noqta.agentx" })
   assert.equal(byLabel(managed, "Start").label, "Start (kept by launchd tn.noqta.agentx)")
   assert.deepEqual([byLabel(managed, "Start").enabled, byLabel(managed, "Restart").enabled], [false, false])
@@ -42,6 +38,12 @@ test("daemon buttons follow its status", () => {
   assert.equal(byLabel(noCfg, "Start").enabled, false)
   // Running: the plain label, whatever startRefusal says.
   assert.equal(byLabel(state({ startRefusal: "already running" }), "Start").label, "Start")
+  const far = state({ remote: true, daemon: { running: true, pid: 9, service: "none", remote: true } })
+  assert.deepEqual([byLabel(far, "Start").label, byLabel(far, "Stop").label, byLabel(far, "Restart").label], ["Start (on another machine)", "Stop (on another machine)", "Restart (on another machine)"])
+  assert.deepEqual([byLabel(far, "Start").enabled, byLabel(far, "Stop").enabled, byLabel(far, "Restart").enabled], [false, false, false])
+  const farDown = state({ remote: true, daemon: { running: false } })
+  assert.equal(byLabel(farDown, "Daemon").label, "Daemon: stopped")
+  assert.deepEqual([byLabel(farDown, "Start").enabled, byLabel(farDown, "Stop").enabled, byLabel(farDown, "Restart").enabled], [false, false, false])
   const busy = state({ busy: "restarting" })
   assert.equal(byLabel(busy, "Daemon").label, "Daemon: restarting…")
   assert.ok(["Start", "Stop", "Restart"].every((l) => byLabel(busy, l).enabled === false))
