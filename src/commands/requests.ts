@@ -19,6 +19,9 @@ import { drift } from "./requests-drift"
 import { sprints } from "./requests-sprints"
 import { contract } from "./requests-contract"
 import { awaitingQa, describeQa, QA_FILTERS, type QaFilter } from "@/requests/qa"
+import { standingLine, standingRefusal, standingView } from "@/requests/standing"
+import { NumberStore } from "@/numbers/store"
+import { hasNumbersTable } from "@/numbers/hub-api"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
 //
@@ -82,6 +85,13 @@ function workLabel(work: string | null, minutes: number | null): string {
   return [work ?? "", minutes !== null ? `about ${Math.round(minutes)} minute(s)` : ""].filter(Boolean).join(", ")
 }
 
+/** The tracked numbers a standing order's line reads (#2383), from the
+ *  database store() already opened. */
+function numbers(): NumberStore | null {
+  const db = openDb({ quiet: true })
+  return db && hasNumbersTable(db) ? new NumberStore(db) : null
+}
+
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
@@ -101,6 +111,7 @@ function printRequest(r: RequestRecord): void {
   }
   if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
   if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
+  if (r.standing) console.log(chalk.cyan(`    ${standingLine(standingView(r.standing, numbers()))}`))
   if (r.closeWhen) {
     const v = r.verifyState ? ` [${r.verifyState}${r.verifyDetail ? `: ${r.verifyDetail}` : ""}]` : ""
     console.log((r.verifyState && r.verifyState !== "verified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
@@ -286,6 +297,11 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       if (by !== OWNER_BY && r.state === "waiting_owner" && r.ownerCheck === OWNER_ASKED) {
         console.error(chalk.red(`  Not changed: the owner is asked about your close as superseded ("${r.question ?? "Agree?"}"). Their close is the yes; their reply sends it back to you.`))
         process.exitCode = 1; return
+      }
+      // A standing order (noqta#807) is the owner's to end (#2383): say so,
+      // not "already closed", which store.close's refusal reads as.
+      if (by !== OWNER_BY && r.standing && r.closedAt === null) {
+        console.error(chalk.red(`  ${standingRefusal(r.standing)}`)); process.exitCode = 1; return
       }
       const now = Date.now()
       const proof = link ? { kind: "link" as const, value: link.slice(0, 500), ranAt: now } : null

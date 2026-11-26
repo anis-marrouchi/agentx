@@ -17,6 +17,9 @@ import { blockerOf, type WallBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { mergeGoals, wallGoalOf } from "./wall-goals"
 import type { RequestGoal } from "@/requests/goals"
+import { standingLine, standingView } from "@/requests/standing"
+import { NumberStore } from "@/numbers/store"
+import { hasNumbersTable } from "@/numbers/hub-api"
 
 // --- The Wall's data (#1180) ---
 //
@@ -203,6 +206,8 @@ export interface WallPost {
   /** Its open loop (#1039): who it is owed to, when it is due, what check
    *  closes it. Shown on the opened post since /approvals redirects (#1440). */
   loop: RequestCard["loop"]
+  /** A standing order's number and latest reading, in words (#2383). */
+  standing: string | null
 }
 
 /** One step of a post's plan, as the opened task shows it (#1355). */
@@ -664,7 +669,16 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     qa: r.qa ? { ...r.qa, note: r.qa.note ? redactSecrets(r.qa.note) : null } : null,
     awaitingQa: awaitingQa(r),
     loop: loopOfPost(r),
+    standing: r.standing ? standingLine(standingView(r.standing, numbersOf(deps.db))) : null,
   }
+}
+
+const numberStores = new WeakMap<object, NumberStore | null>()
+/** The tracked numbers of this database, read once per database. */
+function numbersOf(db: Database.Database | null): NumberStore | null {
+  if (!db) return null
+  if (!numberStores.has(db)) numberStores.set(db, safe(() => hasNumbersTable(db) ? new NumberStore(db) : null, null))
+  return numberStores.get(db) ?? null
 }
 
 /** loopOf, with what the check said redacted as the post's other words are. */

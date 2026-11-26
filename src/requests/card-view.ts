@@ -5,6 +5,7 @@ import { describeCloseWhen } from "./checkers"
 import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops"
 import { awaitingQa } from "./qa"
 import { wokenAgent } from "./owner-check"
+import { standingView, type StandingReadings, type StandingView } from "./standing"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -69,6 +70,8 @@ export interface RequestCard extends RequestRecord {
   awaitingQa: boolean
   /** Stalled, and what it waits on. Null: not stalled, or not asked. */
   stall: { group: StallGroup; who: string; why: string } | null
+  /** A standing order's number and latest reading (#2383). Null: not standing. */
+  standingView: StandingView | null
   /** Its tracked plan (#788), step by step. Null: no plan. */
   plan: {
     state: PlanState
@@ -114,6 +117,7 @@ export function requestCard(
   store: Pick<RequestStore, "lastAnswer">,
   plans?: Pick<PlanStore, "get" | "steps"> | null,
   stall?: StallLookup,
+  numbers?: StandingReadings | null,
 ): RequestCard {
   const plan = plans?.get(r.id)
   const why = stall ? stalledWhy(r, stall.staleAfterHours, stall.now) : null
@@ -131,6 +135,7 @@ export function requestCard(
     loop: loopOf(r),
     awaitingQa: awaitingQa(r),
     stall: stall && why ? { ...waitsOn(r, { isAgent: stall.isAgent, activeStepAgent: activeStepAgentOf(plans) }), why } : null,
+    standingView: r.standing ? standingView(r.standing, numbers ?? null) : null,
     plan: plan ? {
       state: plan.state,
       steps: plans!.steps(r.id).map((s) => ({

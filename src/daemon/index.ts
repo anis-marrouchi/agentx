@@ -3874,6 +3874,7 @@ export class AgentXDaemon {
       limitHeld: () => activeProviderHolds().length > 0,
       // That resend is the job's next run when its wake takes it (#1861 box 4).
       wakeJob: (id, note) => this.jobWake?.wakeFor(id, note) ?? false,
+      jobBusy: (id) => this.jobWake?.busy(id) ?? false,
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => this.tellRequestAgent(requests, agentId, text, r),

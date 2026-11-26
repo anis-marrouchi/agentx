@@ -6,6 +6,11 @@ import { CHECK_KINDS, type CheckKind } from "@/requests/checkers"
 import { STALL_GROUPS, type StallGroup } from "@/requests/loops"
 import { OWNER_BY } from "@/requests/store"
 import { findConfigPath } from "./config-mutator"
+import { resolve } from "path"
+import { openDb } from "@/storage/sqlite"
+import { NumberStore } from "@/numbers/store"
+import { hasNumbersTable } from "@/numbers/hub-api"
+import type { StandingReadings } from "@/requests/standing"
 
 // --- Dashboard API for open requests (#356) ---
 //
@@ -41,7 +46,16 @@ const list = (v: unknown): string[] | undefined =>
 /** The inbox, and the longest reply kept for this one call: the Diff view's
  *  batch of line comments (#2102, DIFF_BATCH_MAX) passes its own. Unset:
  *  the store's TEXT_MAX. Never read from the request body. */
-export type PanelContext = InboxContext & { textMax?: number }
+export type PanelContext = InboxContext & { textMax?: number; numbers?: StandingReadings | null }
+
+/** The tracked numbers a standing order's card reads (#2383), opened the
+ *  way the request store is. Null when there are none to read. */
+function numbersFor(ctx: PanelContext): StandingReadings | null {
+  if (ctx.numbers !== undefined) return ctx.numbers
+  if (ctx.requests || resolve(ctx.root) !== process.cwd() || !existsSync(resolve(ctx.root, ".agentx", "db.sqlite"))) return null
+  const db = openDb({ quiet: true })
+  return db && hasNumbersTable(db) ? new NumberStore(db) : null
+}
 
 export async function handleRequestsPanel(
   method: string,
@@ -68,7 +82,9 @@ async function route(
     const settings = readRequestSettings(ctx.configPath)
     const ids = new Set(agents.map((a) => a.id))
     const look = { staleAfterHours: settings.staleAfterHours, now: ctx.now ?? Date.now(), isAgent: (id: string) => ids.has(id) }
-    const items = store ? store.listOpen().map((r) => requestCard(r, store, planStoreFor(ctx), look)) : []
+    const open = store ? store.listOpen() : []
+    const numbers = open.some((r) => r.standing) ? numbersFor(ctx) : null
+    const items = open.map((r) => requestCard(r, store!, planStoreFor(ctx), look, numbers))
     const stalled = Object.fromEntries(STALL_GROUPS.map((g) => [g, 0])) as Record<StallGroup, number>
     for (const c of items) if (c.stall) stalled[c.stall.group]++
     return { status: 200, body: { items, agents, settings, stalled, goals: store ? store.goals() : [] } }

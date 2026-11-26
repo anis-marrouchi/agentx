@@ -317,6 +317,17 @@ export class JobWake {
    *  missing, a schedule's or another node's; it is blocked or stalled
    *  (its reason stands); it is at its cap of wakes or cost; or a run is
    *  on it or about to start (that run would never see `note`). */
+  /** A run is on the job now or about to start: why wakeFor refused, for
+   *  the sweep's words (#2383). */
+  busy(jobId: string): boolean {
+    try {
+      const job = this.deps.jobs.get(jobId)
+      return !!job && (this.startedAt.has(job.id) || !!this.factsOf(job).liveRun)
+    } catch {
+      return false
+    }
+  }
+
   wakeFor(jobId: string, note: string): boolean {
     const settings = this.deps.settings()
     if (!settings.enabled) return false
