@@ -22,6 +22,7 @@
 import { APP_REDESIGN_CSS } from "./app-redesign.css"
 import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
+import { AX_AFFECT_CSS } from "../affect.css"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_LIVE_CSS, APP_LIVE_SCRIPT } from "./app-live.client"
@@ -79,7 +80,7 @@ function head(title: string): string {
 <link rel="apple-touch-icon" href="/app/icon-192.png">
 <title>${title}</title>
 ${THEME_BOOT}
-<style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
+<style>${AX_TOKENS_CSS}${AX_AFFECT_CSS}${BASE_CSS}</style>`
 }
 
 const TAB_ICONS: Record<string, string> = {

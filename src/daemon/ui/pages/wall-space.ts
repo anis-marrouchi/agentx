@@ -9,6 +9,7 @@
 // (#2101, Orca look). This file defines no --ax-* values of its own.
 
 import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
+import { AX_AFFECT_CSS } from "../affect.css"
 
 /** Theme: the shared key; the boot in tokens.ts moves an old Hub choice. */
 const WALL_THEME_KEY = "ax-theme"
@@ -155,7 +156,7 @@ export function renderWallDocument(opts: WallDocumentOpts): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${opts.title.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] as string))}</title>
 ${WALL_SPACE_HEAD}
-<style>${AX_TOKENS_CSS}\n${WALL_SPACE_CSS}\n${opts.css}</style>
+<style>${AX_TOKENS_CSS}\n${AX_AFFECT_CSS}\n${WALL_SPACE_CSS}\n${opts.css}</style>
 ${opts.head ?? ""}
 </head>
 <body>

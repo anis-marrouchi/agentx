@@ -270,7 +270,7 @@ export const WALL_DECIDE_SCRIPT = String.raw`
     var errs = (v.errors || []).map(function (e) { return 'the ' + (DEC_BADGE[e.kind] || e.kind).toLowerCase() + ' items'; });
     if (D.reqs && D.reqs.error) errs.push('the requests');
     var err = errs.length ? '<div class="wdc__err is-part"><p>Could not read ' + esc(errs.join(', ')) + '. The rest is shown.</p><button type="button" class="ax-btn ax-btn--ghost" data-dreload>Try again</button></div>' : '';
-    // The count-led heading follows affectUI’s clean Decision Inbox (LICENSE.affectui).
+    // The count-led heading follows affectUI’s clean Decision Inbox (src/daemon/ui/LICENSE.affectui).
     var head = '<p class="ax-wall__count wdc__head"><strong>' + decideCount() + ' waiting for ' + (decOwner() ? 'you' : 'the owner') + (decLater() ? ', ' + decLater() + ' put off for later' : '') +
       '</strong></p>';
     var ro = decOwner() ? '' : '<p class="wdc__ro">Only the owner can answer these. You see them read only.</p>';
