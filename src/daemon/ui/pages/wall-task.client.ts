@@ -82,7 +82,9 @@ function mountTaskPage(root, opts) {
   // Follow the stream; scrolling up stops it and shows Jump to latest (#2101).
   // The React island keeps its own stick-to-bottom with the same 60 px rule,
   // so the button's jump puts it back to following too.
-  var follow = followAttach(outputEl, document.getElementById('task-jump'));
+  // At phone width (640 px, the CSS breakpoint) the page scrolls, not the
+  // output, so follow the page there (#2306 review C2).
+  var follow = followAttach(outputEl, document.getElementById('task-jump'), 640);
 
   // The Wall passes plainMarkerText (#1443): no internal marker in the text.
   var plain = opts.plain || function (s) { return s; };
@@ -1023,4 +1025,7 @@ export const WALL_TASK_CSS = `
 .wtask__jump { position: relative; height: 0; }
 .wtask__jump .ax-jump { bottom: 12px; }
 @media (max-width: 640px) { .wtask { padding: 10px 12px 18px; } .wtask__out { max-height: none; } .wsess__turn { padding: 8px 10px; } }
+/* On a phone the page scrolls, not the output (#2306 review C2): the button
+   stays on screen above the bottom edge while the reader is scrolled up. */
+@media (max-width: 640px) { .wtask__jump .ax-jump { position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); } }
 `

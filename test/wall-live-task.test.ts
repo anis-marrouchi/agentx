@@ -91,7 +91,8 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
     addEventListener(t: string, f: (ev: any) => void) { this.s.on[t] = f }
     close() { this.s.closed = true }
   }
-  const win: Record<string, any> = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f }, ...(opts.wide === undefined ? {} : { matchMedia: () => ({ matches: opts.wide, addEventListener() {} }) }), ...opts.win }
+  const win: Record<string, any> = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f },
+    removeEventListener: (t: string, f: () => void) => { if (onWindow[t] === f) delete onWindow[t] },...(opts.wide === undefined ? {} : { matchMedia: () => ({ matches: opts.wide, addEventListener() {} }) }), ...opts.win }
   new Function("document", "window", "fetch", "location", "history", "localStorage", "setInterval", "EventSource", "requestAnimationFrame", script)(
     doc, win, fetchStub, loc,
     { replaceState: (_: unknown, __: string, h: string) => { loc.hash = h } },

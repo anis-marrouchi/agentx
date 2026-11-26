@@ -72,6 +72,61 @@ describe("followAttach", () => {
     expect(() => { none.stick(); none.jump(); none.stop() }).not.toThrow()
   })
 
+  describe("a phone-width Task page, where the page scrolls (#2306 review C2)", () => {
+    function withPage(width: number, run: (page: ReturnType<typeof box>, win: ReturnType<typeof box>) => void) {
+      const page = box({ scrollHeight: 3000, clientHeight: 700, scrollTop: 2300 })
+      const win = Object.assign(box({ scrollHeight: 0, clientHeight: 0 }), { innerWidth: width })
+      const g = globalThis as Record<string, unknown>
+      const had = { window: g.window, document: g.document }
+      g.window = win; g.document = { scrollingElement: page }
+      try { run(page, win) } finally { g.window = had.window; g.document = had.document }
+    }
+
+    it("follows the page at 390 px when the output does not scroll itself", () => {
+      withPage(390, (page, win) => {
+        const out = box({ scrollHeight: 2400, clientHeight: 2400 })
+        const b = btn()
+        const f = followAttach(out as unknown as HTMLElement, b as unknown as HTMLElement, 640)
+        expect(win.count("scroll")).toBe(1)
+        // The reader scrolls the page up: following stops and ↓ shows.
+        page.scrollTop = 900; win.fire("scroll")
+        expect(f.following()).toBe(false)
+        expect(b.hidden).toBe(false)
+        // ↓ goes back to the page's bottom.
+        b.fire("click")
+        expect(page.scrollTop).toBe(3000)
+        expect(f.following()).toBe(true)
+        expect(b.hidden).toBe(true)
+        f.stop()
+        expect(win.count("scroll")).toBe(0)
+      })
+    })
+
+    it("keeps the output's own scroll when it has one, and ignores the page on a wide window", () => {
+      withPage(390, (page) => {
+        const out = box({ scrollHeight: 2000, clientHeight: 500, scrollTop: 1500 })
+        const f = followAttach(out as unknown as HTMLElement, null, 640)
+        out.scrollHeight = 2200; f.stick()
+        expect(out.scrollTop).toBe(2200)
+        expect(page.scrollTop).toBe(2300)
+      })
+      withPage(1440, (page, win) => {
+        const out = box({ scrollHeight: 300, clientHeight: 300 })
+        const f = followAttach(out as unknown as HTMLElement, null, 640)
+        page.scrollTop = 0; win.fire("scroll"); f.stick()
+        expect(f.following()).toBe(true)
+        expect(page.scrollTop).toBe(0)
+      })
+    })
+
+    it("never listens to the page without pageBelow (the Hub chat)", () => {
+      withPage(390, (_page, win) => {
+        followAttach(box({ scrollHeight: 10, clientHeight: 10 }) as unknown as HTMLElement, null)
+        expect(win.count("scroll")).toBe(0)
+      })
+    })
+  })
+
   it("stands alone when shipped to the browser", () => {
     const src = injectFns({ followAttach })
     const made = new Function(src + "; return followAttach")() as typeof followAttach
