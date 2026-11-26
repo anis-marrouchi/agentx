@@ -13,7 +13,8 @@ import { jobModelFor, type EdgeRouteResult } from "./edge-routing"
 //      session, warm or cold.
 //   3. Warm resume (idle under the cache lifetime): keep the stored model.
 //      A confident edge answer is held, unless the session sits on a cheap
-//      or triage model: then a new session starts on the edge model.
+//      or triage model: then a new session starts on the edge model, or,
+//      on an owner's turn, on the agent's own model (#2034).
 //   4. Cold resume: the seats are asked. When they answered, the model is
 //      `jobModelFor(...) ?? agent model`, and a new session starts if it
 //      differs. Any failure keeps the stored model.
@@ -146,6 +147,21 @@ export function warmEdgeRotates(
   if (canHoldUpgrade(stored, agentModel, edgeModel)) return undefined
   if (edge?.seat !== "answered" || !edge.model) return undefined
   return sameModel(edge.model, stored) ? undefined : edge.model
+}
+
+/** #2034 (COO ruling 2026-11-20): an owner's turn on a warm session that
+ *  sits on a cheap or triage model goes back to the agent's own model, even
+ *  though the prompt cache is lost. A session on the agent's model or the
+ *  edge model is left alone, and so is every turn that is not the owner's
+ *  (events, triage): they keep rule 3. Undefined: stay. */
+export function ownerWarmReturn(
+  stored: string,
+  agentModel: string | undefined,
+  edgeModel: string | undefined,
+  ownerTurn: boolean,
+): string | undefined {
+  if (!ownerTurn || !agentModel) return undefined
+  return canHoldUpgrade(stored, agentModel, edgeModel) ? undefined : agentModel
 }
 
 /** An edge answer with its model dropped: the implied-work line and the

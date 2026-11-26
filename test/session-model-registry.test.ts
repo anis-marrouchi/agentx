@@ -24,10 +24,10 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
   }
 })
 
-const seat = vi.hoisted(() => ({ route: vi.fn() }))
+const seat = vi.hoisted(() => ({ route: vi.fn(), on: true }))
 vi.mock("../src/agents/edge-routing", async (importOriginal) => {
   const real: any = await importOriginal()
-  return { ...real, edgeSeatOn: () => true, routeTaskEdge: seat.route }
+  return { ...real, edgeSeatOn: () => seat.on, routeTaskEdge: seat.route }
 })
 const gate = vi.hoisted(() => ({ slow: undefined as Record<string, unknown> | undefined }))
 vi.mock("../src/agents/request-planner", async (importOriginal) => {
@@ -77,6 +77,7 @@ beforeEach(() => {
   rotations = []
   seat.route.mockReset()
   seat.route.mockResolvedValue(keep())
+  seat.on = true
   getEventBus().on("session:rotated", listen)
 })
 afterEach(() => {
@@ -241,6 +242,63 @@ describe("one model per session (#2001)", () => {
     expect(modelRotations()).toHaveLength(0)
     expect(calls[0]).toMatchObject({ model: AGENT, resume: "native-1" })
     expect(calls[0].turnNote).toBeUndefined()
+  })
+
+  describe("#2034: an owner's turn on a warm cheap session", () => {
+    const ownerRegistry = () => {
+      const config = daemonConfigSchema.parse({
+        jobState: { enabled: false },
+        node: { id: "test", name: "test" },
+        agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, model: AGENT } },
+        decisions: { routing: { edgeModels: { "claude-code": EDGE } } },
+        session: { triage: { models: { "claude-code": CHEAP } } },
+        people: [{ id: "sam", name: "Sam", role: "owner", identities: ["gitlab:sam"] }],
+      })
+      return new AgentRegistry(config, (l: string) => { lines.push(l) })
+    }
+    const gitlab = (r: AgentRegistry, ctx: Record<string, unknown>) =>
+      r.execute({ message: "hello", agentId: "ops", context: { channel: "gitlab", chatId: "issue-7", ...ctx } } as any)
+    const labelEvent = (r: AgentRegistry) => gitlab(r, { sender: "bot", channelMeta: { eventActions: ["labeled"] } })
+    const ownerComment = (r: AgentRegistry) => gitlab(r, { sender: "Sam", senderUsername: "sam" })
+    const tenMinutesLater = (r: AgentRegistry) => {
+      ;(r as any).sessions.getSession("ops", "gitlab", "issue-7").updatedAt = new Date(Date.now() - 10 * MIN).toISOString()
+    }
+
+    for (const edgeOn of [true, false]) {
+      it(`label event on the cheap model, owner comment 10 min later runs on the agent's model (edge check ${edgeOn ? "on" : "off"})`, async () => {
+        seat.on = edgeOn
+        const r = ownerRegistry()
+        await labelEvent(r)
+        expect(calls[0]).toMatchObject({ model: CHEAP, resume: undefined })
+        tenMinutesLater(r)
+        await ownerComment(r)
+        expect(modelRotations()).toHaveLength(1)
+        expect(calls[1]).toMatchObject({ model: AGENT, resume: undefined })
+        expect((r as any).sessions.getSessionModel("ops", "gitlab", "issue-7")).toBe(AGENT)
+        // The next owner turn resumes on the agent's model: no second rotation.
+        await ownerComment(r)
+        expect(calls[2]).toMatchObject({ model: AGENT, resume: "native-new-2" })
+        expect(modelRotations()).toHaveLength(1)
+      })
+    }
+
+    it("a non-owner turn on the warm cheap session keeps the cheap model", async () => {
+      const r = ownerRegistry()
+      await labelEvent(r)
+      tenMinutesLater(r)
+      await gitlab(r, { sender: "Kim", senderUsername: "kim" })
+      expect(modelRotations()).toHaveLength(0)
+      expect(calls[1]).toMatchObject({ model: CHEAP, resume: "native-new-1" })
+    })
+
+    it("an owner turn on a warm session already on the agent's model keeps it, no cache loss", async () => {
+      const r = ownerRegistry()
+      await ownerComment(r)
+      tenMinutesLater(r)
+      await ownerComment(r)
+      expect(modelRotations()).toHaveLength(0)
+      expect(calls[1]).toMatchObject({ model: AGENT, resume: "native-new-1" })
+    })
   })
 
   it("a fresh session always names its model", async () => {
