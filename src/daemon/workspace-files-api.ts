@@ -1,5 +1,6 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from "fs"
-import { basename, dirname, join, relative, resolve, sep } from "path"
+import { basename, join, relative, resolve, sep } from "path"
+import { hasHiddenPart, isGhHosts, isGhHostsPath, isHiddenName, workspaceParts } from "@/daemon/workspace-path-guard"
 
 // --- GET /agents/:id/workspace?path=<rel>: an agent's workspace, read only (#2101 R17) ---
 //
@@ -17,7 +18,8 @@ import { basename, dirname, join, relative, resolve, sep } from "path"
 //   - a file is read only when it is text and at most WORKSPACE_FILE_MAX bytes;
 //   - names that usually hold secrets (.env, keys, tokens, .ssh, cloud and
 //     package-registry logins) are never listed or read, nor are .git and
-//     node_modules: checked on every part of the path as asked AND of the
+//     node_modules (the list and path checks are workspace-path-guard.ts's,
+//     shared with GET /agents/:id/workspace/<file>, #2316): checked on every part of the path as asked AND of the
 //     real path. The real path comes from realpathSync.native, which gives
 //     the names as stored on disk, so a case-insensitive or Unicode-folding
 //     file system (".SSH", ".ſſh" on APFS) or a link to a hidden folder
@@ -34,7 +36,6 @@ export const WORKSPACE_FILE_MAX = 256 * 1024
 const DIR_MAX = 500
 /** Names looked at in one folder before the list stops (each costs an lstat). */
 const DIR_SCAN_MAX = 5000
-const PATH_MAX = 1024
 
 export interface WorkspaceEntry { name: string; kind: "dir" | "file"; size: number }
 
@@ -42,49 +43,6 @@ export type WorkspaceRead =
   | { ok: true; kind: "dir"; root: string; path: string; entries: WorkspaceEntry[]; more: boolean }
   | { ok: true; kind: "file"; root: string; path: string; size: number; content: string }
   | { ok: false; status: number; error: string }
-
-/** Names never listed or read: version control, packages, and what usually holds secrets. */
-export function isHiddenName(name: string): boolean {
-  const n = name.toLowerCase()
-  return n === ".git" || n === "node_modules" ||
-    // .env, .env.local, .env-local, prod.env, and direnv's .envrc.
-    n === ".env" || /^\.env[-.]/.test(n) || /\.env$/.test(n) || n === ".envrc" ||
-    n === ".npmrc" || n === ".netrc" || n === ".pgpass" ||
-    /\.(pem|key|p12|pfx|keystore|jks)$/.test(n) || /^id_(rsa|dsa|ecdsa|ed25519)/.test(n) ||
-    // secrets.yaml, secrets.prod.json, credentials.yml.enc; any *credentials.json
-    // (gcloud's application_default_credentials.json).
-    /^(credentials|secrets?|tokens?)(\.[a-z0-9]+)*$/.test(n) || /credentials\.json$/.test(n) || n === "auth.json" ||
-    // Logins of git, Claude, MCP servers, Python packages; whole folders of
-    // SSH, Docker and Kubernetes logins (.docker/config.json, .kube/config).
-    n === ".git-credentials" || n === ".credentials.json" || n === ".mcp.json" || n === "settings.local.json" ||
-    n === ".pypirc" || n === ".ssh" || n === ".gnupg" || n === ".docker" || n === ".kube"
-}
-
-/** The gh CLI's login file: hosts.yml directly inside a folder named gh. */
-export function isGhHosts(name: string, parent: string): boolean {
-  return name.toLowerCase() === "hosts.yml" && parent.toLowerCase() === "gh"
-}
-
-/** Whether a real (absolute) path is the gh CLI's login file. */
-function isGhHostsPath(real: string): boolean {
-  return isGhHosts(basename(real), basename(dirname(real)))
-}
-
-/** Whether any part of a path relative to the workspace is a hidden name. */
-function hasHiddenPart(rel: string): boolean {
-  return rel.split(/[\\/]+/).some((s) => s && isHiddenName(s))
-}
-
-/** The relative path's parts, or why it is refused. "" or "." is the workspace itself. */
-export function workspaceParts(path: string): string[] | { status: number; error: string } {
-  const p = String(path ?? "")
-  if (p.length > PATH_MAX || p.includes("\0")) return { status: 400, error: "bad path" }
-  if (p.startsWith("/") || p.startsWith("\\") || /^[a-zA-Z]:/.test(p) || p.startsWith("~")) return { status: 400, error: "the path must be relative to the workspace" }
-  const parts = p.split(/[\\/]+/).filter((s) => s && s !== ".")
-  if (parts.includes("..")) return { status: 403, error: "the path leaves the workspace" }
-  if (parts.some(isHiddenName) || parts.some((s, i) => i > 0 && isGhHosts(s, parts[i - 1]))) return { status: 403, error: "this file is not shown" }
-  return parts
-}
 
 /** One folder's list or one text file, from an agent's workspace. */
 export function readWorkspace(workspace: string, path: string, cwd = process.cwd()): WorkspaceRead {

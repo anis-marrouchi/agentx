@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "os"
 import { join } from "path"
 import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, WALL_FILES_CSS, workspaceFileHtml, workspaceHtml, workspaceRel } from "../src/daemon/ui/pages/wall-files"
-import { isGhHosts, isHiddenName, readWorkspace, WORKSPACE_FILE_MAX, workspaceParts } from "../src/daemon/workspace-files-api"
+import { readWorkspace, WORKSPACE_FILE_MAX } from "../src/daemon/workspace-files-api"
+import { isGhHosts, isHiddenName, workspaceParts } from "../src/daemon/workspace-path-guard"
 
 // #2101 R17: the right panel's Files tab. What a run or a chat touched,
 // read from the run's record (its transcript's `→ Tool({json})` lines and
