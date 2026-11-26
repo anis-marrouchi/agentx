@@ -21,6 +21,8 @@
 // While Live or a Task is open, the Wall follows /api/live/stream (a
 // snapshot every two seconds) instead of its one-minute refresh.
 
+import { followBtnHtml } from "./wall-follow"
+
 // --- The run's stream, steer box and Stop ---
 //
 // Once the classic /tasks/<id> page's own code (task.ts); that page is gone
@@ -55,6 +57,7 @@ function mountTaskPage(root, opts) {
     clearInterval(timer);
     if (es) { try { es.close(); } catch (e) {} }
     if (conv) { try { conv.unmount(); } catch (e) {} conv = null; }
+    follow.stop();
   }
   var taskId  = root.getAttribute('data-task-id');
   var agentId = root.getAttribute('data-agent-id');
@@ -68,6 +71,10 @@ function mountTaskPage(root, opts) {
   var sendBtn   = document.getElementById('task-send');
   var stopBtn   = document.getElementById('task-stop');
   var composeEl = root.querySelector('.ax-task-page__compose');
+  // Follow the stream; scrolling up stops it and shows Jump to latest (#2101).
+  // The React island keeps its own stick-to-bottom with the same 60 px rule,
+  // so the button's jump puts it back to following too.
+  var follow = followAttach(outputEl, document.getElementById('task-jump'));
 
   // The Wall passes plainMarkerText (#1443): no internal marker in the text.
   var plain = opts.plain || function (s) { return s; };
@@ -190,13 +197,12 @@ function mountTaskPage(root, opts) {
   function flush() {
     raf = 0;
     if (!buffer) return;
-    var atBottom = outputEl.scrollHeight - outputEl.scrollTop - outputEl.clientHeight < 60;
     lineBuf += buffer;
     buffer = '';
     var lines = lineBuf.split('\\n');
     lineBuf = lines.pop();
     for (var i = 0; i < lines.length; i++) processLine(lines[i]);
-    if (atBottom) outputEl.scrollTop = outputEl.scrollHeight;
+    follow.stick();
   }
   function append(text) {
     if (!text) return;
@@ -473,6 +479,7 @@ export const WALL_TASK_SCRIPT = String.raw`
       '<div id="wtask-details"></div>' +
       '<h2 class="wtask__h" id="wtask-conv-h">Conversation</h2>' +
       '<div class="ax-task-page__output wtask__out" id="task-output" aria-live="polite"></div>' +
+      '<div class="wtask__jump">${followBtnHtml("task-jump")}</div>' +
       '<section class="wsess" id="wtask-after" aria-label="Later turns in this chat" hidden></section>' +
       '<footer class="ax-task-page__compose wtask__steer" id="wtask-steer"' + (t.done ? ' hidden' : '') + '>' +
         '<textarea id="task-input" class="ax-task-page__input" rows="2" aria-label="Steer ' + esc(who) + '" placeholder="Message ' + esc(who) + ': it goes in as the next turn, the current one keeps running. ⌘/Ctrl+Enter sends."></textarea>' +
@@ -535,7 +542,10 @@ export const WALL_TASK_SCRIPT = String.raw`
   function paintSession(want) {
     var s = S.taskSession;
     if (!s || s.key !== taskKey(want) || !$('wtask-before')) return;
-    var turn = function (t) { return sessionTurn(t, want); };
+    // Earlier turns fold to their ask; the newest turn stays open (#2101).
+    var newest = s.after.length ? s.after[s.after.length - 1].id : '';
+    var open = S.taskTurnOpen || (S.taskTurnOpen = {});
+    var turn = function (t) { var h = sessionTurn(t, want); return t.id === newest ? h : tsFoldHtml(t, h, !!open[t.id], plainMarkerText); };
     var before = tsBeforeHtml({ first: s.first, before: s.before, olderBefore: s.olderBefore, loading: s.loading, error: s.error }, turn);
     $('wtask-before').innerHTML = before ? '<h2 class="wtask__h">Earlier in this chat</h2>' + before : '';
     $('wtask-before').hidden = !before;
@@ -582,6 +592,12 @@ export const WALL_TASK_SCRIPT = String.raw`
         paintSession(want);
       });
   }
+  // A turn the reader opened stays open when the chat repaints.
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (!d || !d.hasAttribute || !d.hasAttribute('data-turn-fold')) return;
+    (S.taskTurnOpen || (S.taskTurnOpen = {}))[d.getAttribute('data-turn-fold')] = !!d.open;
+  }, true);
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest && ev.target.closest('[data-session-older]');
     if (!b || !S.task || !S.taskSession || S.taskSession.loading) return;
@@ -614,6 +630,7 @@ export const WALL_TASK_SCRIPT = String.raw`
       S.taskMounted = taskKey(want);
       S.taskDetail = null;
       S.taskSession = null;
+      S.taskTurnOpen = {};
       if (!want) { $('wall-task').innerHTML = ''; return; }
       $('wall-task').innerHTML = taskSkeleton(want);
       S.taskClose = mountTaskPage($('wtask-root'), {
@@ -837,5 +854,18 @@ export const WALL_TASK_CSS = `
 .wsess__open { align-self: flex-end; font-size: var(--ax-fs-xs); }
 .wsess__gap { display: flex; justify-content: center; padding: 2px 0; }
 .wsess__none { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
+/* An earlier turn folded to its ask (#2101): one click opens it. */
+.wsess__fold > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); background: var(--ax-surface); font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
+.wsess__fold > summary::-webkit-details-marker { display: none; }
+.wsess__fold > summary::before { content: "›"; color: var(--ax-muted); transition: transform .12s; }
+.wsess__fold[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent; }
+.wsess__fold[open] > summary::before { transform: rotate(90deg); }
+.wsess__fold[open] > .wsess__turn { border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0; }
+.wsess__foldask { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsess__foldn { flex: none; font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+/* Jump to latest sits on the output's bottom edge, centred (#2101). */
+.wtask__jump { position: relative; height: 0; }
+.wtask__jump .ax-jump { bottom: 12px; }
 @media (max-width: 640px) { .wtask { padding: 10px 12px 18px; } .wtask__out { max-height: none; } .wsess__turn { padding: 8px 10px; } }
 `

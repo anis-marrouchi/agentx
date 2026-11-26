@@ -34,6 +34,7 @@ import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "./wall
 import { cfBase, cfDuration, cfField, cfFoldHtml, cfParseLive, cfStepLine } from "./wall-chat-fold"
 import { WALL_CHAT_INPUT_SCRIPT, wallChatInputHtml } from "./wall-chat-input.client"
 import { WALL_CHAT_HEAD_SCRIPT, wallChatHeadHtml } from "./wall-chat-head.client"
+import { followAttach, followBtnHtml } from "./wall-follow"
 export { WALL_CHAT_CSS } from "./wall-chat.css"
 
 const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>'
@@ -72,6 +73,7 @@ export function wallChatPanelHtml(o: WallChatOpts): string {
     <div class="hc__log" id="hc-log" aria-live="polite"></div>
     <div class="hc__tabview" id="hc-tabview" role="tabpanel" hidden></div>
     <form class="hc__foot" id="hc-form">
+      ${followBtnHtml("hc-jump")}
       ${wallChatInputHtml()}
       <details class="hc__sends"><summary>Goes with it: <span id="hc-ctx">this page</span></summary><code id="hc-ctx-full"></code></details>
     </form>
@@ -90,7 +92,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var panel = $('hc'), wall = document.querySelector('.ax-wall');
   if (!panel || !wall) return;
-  ${injectFns({ markdownToHtml, chatContextLine, chatAttached, chatLiveHtml, chatLogHtml, cfBase, cfField, cfStepLine, cfDuration, cfParseLive, cfFoldHtml, chatHash })}
+  ${injectFns({ markdownToHtml, chatContextLine, chatAttached, chatLiveHtml, chatLogHtml, cfBase, cfField, cfStepLine, cfDuration, cfParseLive, cfFoldHtml, chatHash, followAttach })}
   var THREAD_KEY = 'ax-assistant-thread', NODE_KEY = 'ax-hub-chat-node', SEEN_KEY = 'ax-hub-chat-seen', AGENTS_KEY = 'ax-hub-chat-agents';
   var FOLD = { parse: cfParseLive, html: cfFoldHtml };
   var guest = !$('hc-form');
@@ -250,7 +252,9 @@ export const WALL_CHAT_SCRIPT = String.raw`
   // reads go there, and its run streams and stops from there.
   var threadId = read(THREAD_KEY), threadNode = read(NODE_KEY), thread = null, msgs = [], runs = {}, notSent = '', notSentWhy = '', sendError = '', poll = null, busy = false, loaded = false;
   // spoken: the conversation whose next answer is said aloud (the mic).
-  var spoken = null, openFolds = {};
+  var spoken = null, openFolds = {}, openTurns = {}, paintedThread = null;
+  // Follow the newest reply; scrolling up stops it and shows Jump to latest (#2101).
+  var follow = followAttach($('hc-log'), $('hc-jump'));
   function setThread(id, node) {
     if ((id || null) !== threadId) { closeStream(); runs = {}; }
     threadId = id || null; threadNode = (threadId && node) || null;
@@ -373,13 +377,19 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (!b) { paintLog(); return; }
     var p = pendingMsg();
     b.innerHTML = chatLiveHtml(live, { key: String((p && p.taskId) || ''), fold: FOLD, md: markdownToHtml, ms: p && p.createdAt ? Date.now() - p.createdAt : null, open: !!(p && openFolds[p.taskId]) }) || '<div class="b">Thinking…</div>';
-    log.scrollTop = log.scrollHeight;
+    follow.stick();
   }
   // A fold the reader opened stays open across repaints.
   document.addEventListener('toggle', function (ev) {
     var d = ev.target;
     if (!d || !d.getAttribute || !d.hasAttribute || !d.hasAttribute('data-hc-fold')) return;
     openFolds[d.getAttribute('data-hc-fold')] = !!d.open;
+  }, true);
+  // An earlier turn the reader opened stays open across repaints.
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (!d || !d.hasAttribute || !d.hasAttribute('data-hc-turn')) return;
+    openTurns[d.getAttribute('data-hc-turn')] = !!d.open;
   }, true);
   /** The pending answer's Task page on the Hub (wall-task.client.ts). */
   function runHref(m) {
@@ -401,8 +411,10 @@ export const WALL_CHAT_SCRIPT = String.raw`
     log.innerHTML = chatLogHtml(msgs, {
       agent: agentName(), md: markdownToHtml, notSent: notSent, notSentWhy: notSentWhy, live: p && p.taskId === streamed ? live : '', runHref: runHref(p),
       stopFailed: !!p && p.taskId === stopFailed, runs: runs, fold: FOLD, open: openFolds, now: Date.now(),
+      foldTurns: true, openTurns: openTurns,
     });
-    log.scrollTop = log.scrollHeight;
+    // Another conversation opens at its newest; the same one follows only when the reader is at the bottom.
+    if (threadId !== paintedThread) { paintedThread = threadId; openTurns = {}; follow.jump(); } else follow.stick();
     paintStrip();
     // The composer names who it goes to and offers that agent's models.
     var hub = window.AXHubChat, cur = currentAgent();
@@ -494,6 +506,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
     var agent = $('hc-agent').value;
     if (!agent && !threadId) { $('hc-agent').focus(); return Promise.resolve(false); }
     busy = true; notSent = ''; notSentWhy = ''; sendError = ''; $('hc-send').disabled = true; $('hc-text').value = '';
+    follow.jump();
     // A conversation stays on its node; a new one goes to the node picked.
     var node = threadId ? threadNode || undefined : ($('hc-node').hidden ? undefined : $('hc-node').value || undefined);
     var ok = false;
@@ -526,7 +539,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   }
   // The ask box's files and mic (wall-chat-input.client.ts) use these.
   var api = window.AXHubChat = {
-    send: send, headers: headers, agent: currentAgent,
+    send: send, headers: headers, agent: currentAgent, follow: follow,
     // Why the last send was not taken, '' when it was (the mic's status line, #2238).
     sendError: function () { return sendError; },
     node: function () { return threadId ? threadNode || '' : ($('hc-node').hidden ? '' : $('hc-node').value || ''); },

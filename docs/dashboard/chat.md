@@ -29,6 +29,10 @@ The question carries the page you're on and its tab. Some pages also send their 
 3. Pick who answers in **To**. A node list shows only when there is more than one machine to pick.
 4. Read the reply in the panel. Type again in **Message…** and select **Send**, or press Enter (Shift+Enter for a new line).
 
+The panel follows the answer as it is written. Scroll up to read something earlier and it stops following; a round **↓** button (**Jump to latest**) shows just above the message box. Select it to go back to the newest text and follow again. Sending a message, or opening another conversation, also goes to the newest text.
+
+Earlier turns of the conversation fold to one line each: what you asked and how many replies came back. Select a line to open that turn; it stays open while the answer streams. The newest turn is always open.
+
 Under the message box, **Goes with it** says what the Hub sends with your message: the page, the status tab, the filters that are set, the open post or run, and up to ten headlines in view. Select it to see the exact fields.
 
 The Hub and the classic pages share the open conversation: a question asked on `/monitor` continues on the Hub, and back. While the agent is answering, the panel says **is answering**. Once its run starts, the answer streams into the panel as the agent writes it. Beside **is answering**, **Stop** ends the run, and **Open the run** opens its Task page on the Hub with the full log. A conversation stays on the machine it started on, so its next messages go there too. When the panel is closed, the stream stops and the Hub checks every 10 seconds for the answer. Under the Chat box, the last conversation stays one tap away, with a blue dot while an answer is not opened yet (on the header's chat button too).
@@ -55,6 +59,7 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 1. **Browser:** open the panel. The **Agent** list shows your agents (not **Loading agents…**).
 2. Ask a question about the page. A reply appears in the panel.
 3. Select **History**. Your conversation is listed.
+4. Ask a second question that needs a long answer. Your first question folds to one line. While the answer streams, scroll up: the **↓** button shows. Select it: the panel is back at the newest text and keeps following.
 
 ## If something is wrong
 
@@ -67,4 +72,5 @@ The workflow editor has its own assistant, **Ask AI to build…**, which propose
 - **The chat says "Not sent" with a reason:** the machine got the message but could not take it; the reason is the machine's own error. Fix what it names (for example a full disk or a locked store), then send again. **Terminal:** run `agentx daemon status` on that machine. If it says **This node does not answer just now**, the machine cannot be reached: see [It's not answering](../help/its-not-answering.md).
 - **Stop says "Not stopped. Try again":** the machine running the answer did not take the stop. Select it again, or open the run with **Open the run** and stop it there.
 - **The answer only shows when it is finished, with no text arriving as it is written:** the panel can't reach the run's stream, so it falls back to checking every few seconds. The answer still lands. A Hub served by the daemon itself, rather than the dashboard, has no stream.
+- **The ↓ button does not show when you scroll up:** the conversation is shorter than the panel, so there is nothing below to jump to. On a phone's Task page the whole page scrolls instead of the conversation pane, so the button does not show there.
 - **Costs:** every question uses the chosen agent's normal model and billing.

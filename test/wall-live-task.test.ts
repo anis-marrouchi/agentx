@@ -41,6 +41,7 @@ function openWall(opts: { hash: string; live?: unknown; history?: unknown; threa
       getAttribute: (k: string) => e.attrs[k] ?? null, setAttribute: (k: string, v: string) => { e.attrs[k] = v },
       hasAttribute: (k: string) => k in e.attrs,
       addEventListener: (t: string, f: (ev?: unknown) => void) => { on[t] = f },
+      removeEventListener: (t: string, f: (ev?: unknown) => void) => { if (on[t] === f) delete on[t] },
       appendChild: (c: any) => { e.children.push(c); return c },
       querySelector: (sel: string) => {
         const cls = sel.replace(/^\./, "")
