@@ -34,7 +34,7 @@ The app is still in preview. Each change to it is built for all three systems by
 |---|---|
 | **Show AgentX** / **Hide AgentX** | Shows or hides the Hub window. |
 | **Daemon: running** / **stopped** | Whether the daemon answers. Checked every 5 seconds. |
-| **Start** | Runs `agentx daemon start --detach` in the folder of `AGENTX_CONFIG`. Off, with the reason in brackets, while a launchd job or systemd unit for the daemon is loaded (**Start (kept by launchd tn.noqta.agentx)**): the service starts it, and a second daemon would run next to it. Also off when `AGENTX_CONFIG` is not set (**Start (set AGENTX_CONFIG)**). |
+| **Start** | Runs `agentx daemon start --detach` in the folder of `AGENTX_CONFIG`. Off, with the reason in brackets, while a launchd job or systemd unit for the daemon is loaded (**Start (kept by launchd tn.noqta.agentx)**): the service starts it, and a second daemon would run next to it. Once the app has seen the daemon run under launchd or systemd, Start stays off while it is down (for example during an upgrade), until the app restarts. Also off when `AGENTX_CONFIG` is not set (**Start (set AGENTX_CONFIG)**). |
 | **Stop** | Stops the daemon. It finishes its running tasks first. Only for a daemon you started from a terminal: a daemon kept running by launchd or systemd would start again at once, so the menu says so and leaves Stop off. Use **Restart** for it. Stop is also off for a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.0.0.1, ::1 or localhost), and it refuses when the process the daemon names is not an `agentx` process on this computer (a port forwarded from another machine). |
 | **Restart…** | Asks first, then runs `agentx daemon restart --when-idle --abort-on-timeout`: it waits until no task is running (up to 30 minutes) and then restarts. If tasks are still running after 30 minutes, it does not restart. It works for both kinds. |
 | **Open at login** | Starts the app when you log in. macOS and Windows only. The first time the app starts, it shows what the system already has. |
@@ -56,7 +56,7 @@ On macOS, the AgentX Voice app keeps its floating pill and the ⌥Space shortcut
 |---|---|---|---|
 | `AGENTX_DASHBOARD_URL` | environment variable, read when the app starts | `http://127.0.0.1:4202` | The dashboard the app opens. Set it if your dashboard uses another port. |
 | `AGENTX_DAEMON_URL` | environment variable | `node.bind` of `AGENTX_CONFIG`, else `http://127.0.0.1:18800` | The daemon the menu checks and controls. |
-| `AGENTX_CONFIG` | environment variable | none | The daemon's `agentx.json`. Start and Restart use it, and run in its folder. |
+| `AGENTX_CONFIG` | environment variable | none | The daemon's `agentx.json`. Start and Restart use it, and run in its folder. Without it, Start is off and Restart uses the folder the running daemon reports; it never runs in your home folder. |
 | `AGENTX_CLI` | environment variable | `agentx` | The AgentX command. On macOS and Ubuntu it is found through your login shell. A login shell does not read `~/.zshrc` or `~/.bashrc`: if `agentx` or its Node.js comes from there (for example nvm), set the full path here. |
 | `AGENTX_SERVICE` | environment variable | none | The launchd label or systemd unit that runs your daemon, if its name does not end in `agentx` (such as `tn.noqta.agentx` or `agentx.service`). While it is loaded, Start is off. |
 

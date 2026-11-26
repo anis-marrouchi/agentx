@@ -96,3 +96,16 @@ test("Start: never next to a managed daemon, never without AGENTX_CONFIG", () =>
   assert.equal(startRefusal({ running: true }, withCfg, null), "already running")
   assert.equal(startRefusal(null, withCfg, null), "checking")
 })
+
+test("Restart runs in the daemon's own folder, never a guessed one", async () => {
+  const { restartTarget, runCli } = daemon
+  const T0 = { url: "http://127.0.0.1:1", cli: "agentx" }
+  assert.equal(restartTarget(T0, { running: true }), null)
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax" }), { ...T0, cwd: "/srv/ax" })
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/etc/ax" })
+  const pinned = { ...T0, config: "/a/agentx.json", cwd: "/a" }
+  assert.equal(restartTarget(pinned, { running: true, cwd: "/b" }), pinned)
+  await assert.rejects(runCli(T0, ["daemon", "restart"]), /AGENTX_CONFIG/)
+  const full = (url) => (url.endsWith("/health") ? reply(true, {}) : reply(true, { pid: 4, service: { kind: "launchd" }, cwd: "/srv/ax", configPath: "/srv/ax/agentx.json" }))
+  assert.deepEqual(await readStatus(T0, full), { running: true, pid: 4, service: "launchd", cwd: "/srv/ax", configPath: "/srv/ax/agentx.json" })
+})

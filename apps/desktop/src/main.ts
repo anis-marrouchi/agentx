@@ -10,7 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { allowsMedia, dashboardUrl, hubUrl, isDashboardOrigin, opensOutside } from "./hub.js"
 import { offlinePage } from "./offline.js"
-import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
+import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, restartTarget, runCli, startRefusal, stopDaemon, type DaemonStatus } from "./daemon.js"
 import type { TrayActions, TrayState } from "./menu.js"
 import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
@@ -31,6 +31,9 @@ let daemonStatus: DaemonStatus | null = null
 let daemonBusy: string | null = null
 // The launchd job / systemd unit that runs the daemon; checked while it is down.
 let daemonManaged: string | null = null
+// launchd/systemd seen running the daemon this session. Kept while it is down: during
+// `daemon upgrade` the job is booted out for a moment, and Start must stay off then too.
+let managedSeen: string | null = null
 
 function log(message: string, err?: unknown): void {
   process.stderr.write(`[agentx-desktop] ${message}${err ? `: ${String(err)}` : ""}\n`)
@@ -181,7 +184,8 @@ function applyLoginItem(): boolean {
 async function pollDaemon(): Promise<void> {
   if (daemonBusy) return
   const next = await readStatus(DAEMON)
-  const managed = next.running ? daemonManaged : managedService()
+  if (next.running && (next.service === "launchd" || next.service === "systemd")) managedSeen = next.service
+  const managed = next.running ? daemonManaged : managedService() ?? managedSeen
   const changed = JSON.stringify(next) !== JSON.stringify(daemonStatus) || managed !== daemonManaged
   daemonStatus = next
   daemonManaged = managed
@@ -210,7 +214,7 @@ async function daemonAction(action: "start" | "stop" | "restart"): Promise<void>
   if (action === "restart" && !(await confirmRestart())) return
   if (action === "start") {
     // Checked again now: launchd may have loaded the job since the last poll.
-    const refusal = startRefusal(await readStatus(DAEMON), DAEMON, managedService())
+    const refusal = startRefusal(await readStatus(DAEMON), DAEMON, managedService() ?? managedSeen)
     if (refusal) {
       dialog.showErrorBox("Could not start the daemon", `Not started: ${refusal}.`)
       await pollDaemon()
@@ -226,7 +230,10 @@ async function daemonAction(action: "start" | "stop" | "restart"): Promise<void>
       stopDaemon(await readStatus(DAEMON)) // throws with the reason when Stop is not allowed
       await waitFor(async () => !(await readStatus(DAEMON)).running)
     } else {
-      await runCli(DAEMON, cliArgs(action, DAEMON.config))
+      // Restart runs in the daemon's own folder (AGENTX_CONFIG, else what it reports); Start only with AGENTX_CONFIG.
+      const target = action === "restart" ? restartTarget(DAEMON, await readStatus(DAEMON)) : DAEMON
+      if (!target) throw new Error("the daemon did not say which folder it runs in; set AGENTX_CONFIG to its agentx.json")
+      await runCli(target, cliArgs(action, target.config))
       await waitFor(async () => (await readStatus(DAEMON)).running)
     }
   } catch (err) {
