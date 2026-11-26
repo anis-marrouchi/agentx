@@ -303,21 +303,6 @@ The Hub has no fixed column on the right. A panel opens there only when you ask 
 
 On a narrow window the panel slides over the page from the right. On a phone it covers the page, above the bottom bar.
 
-### Resize, collapse and expand the side menu and the panel
-
-On a window wider than 1,180 px you can size both side columns, and the Hub remembers what you set in this browser, also after a reload.
-
-1. **Browser:** drag the edge between the side menu and the page, or between the page and the right panel. The menu goes from 200 to 420 px wide. The panel goes from 320 px up to 70% of the window, and always leaves the page at least 480 px.
-2. To collapse the side menu to a column of icons, select the button at its top right, or press **⌘B** (**Ctrl+B** on Windows and Linux). Do the same again to expand it to its last width.
-3. To collapse the right panel, double-click its edge or press **⌘J** (**Ctrl+J**). Its tabs stay open; select the panel button at the top right of the page to bring it back.
-4. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it.
-
-Narrower windows keep the icon menu and the sliding panel, as above.
-
-### Go back to the previous page
-
-Select **‹** at the top left of the page to go back to the page you were on before, and **›** to go forward again. They follow your browser's history in this tab. A post opened from a link, with nothing before it, goes back to the feed.
-
 The panel reads the same pull or merge requests, with the same tokens, as the **Diff** view, and line comments in **Changes** work as described in [Comment on the lines of a pull or merge request](#comment-on-the-lines-of-a-pull-or-merge-request). A file longer than 3,000 lines shows its first 3,000.
 
 The top of the chat shows the agent's letter, the computer it runs on and its engine with the engine's own logo, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
@@ -327,6 +312,21 @@ The top of the chat shows the agent's letter, the computer it runs on and its en
 3. Select **Chat** to go back to the conversation.
 
 When the agent asks you something, the question shows at the end of the chat as a card. Select **Accept** (or one of the answers it offers), **Ask for changes** to write what to change, or **Later** to put it off. The answer is the same as on the Desk: an answered question leaves the Desk too.
+
+### Resize, collapse and expand the side menu and the panel
+
+On a window wider than 1,180 px you can size both side columns, and the Hub remembers what you set in this browser, also after a reload.
+
+1. **Browser:** drag the edge between the side menu and the page, or between the page and the right panel. The menu goes from 200 to 420 px wide. The panel goes from 320 px up to 70% of the window. The page in the middle always keeps at least 480 px: when the window is too narrow for the widths you set, the panel and then the menu are made narrower, and they get their widths back when the window is wide enough again.
+2. To collapse the side menu to a column of icons, select the button at its top right. Select it again to expand the menu to its last width.
+3. To collapse the right panel, double-click its edge. Its tabs stay open; select the panel button at the top right of the page to bring it back. Opening something new in the panel also brings it back.
+4. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it. On a Mac, **⌘B** collapses or expands the side menu and **⌘J** the right panel while it has tabs. Windows and Linux have no shortcut for this, because Ctrl+B and Ctrl+J belong to the browser.
+
+Narrower windows keep the icon menu and the sliding panel, as above.
+
+### Go back to the previous page
+
+Select **‹** at the top left of the page to go back to the page you were on before, and **›** to go forward again. They follow your browser's history in this tab. A post opened from a link, with nothing before it, goes back to the feed. On a phone these buttons are hidden and the post's own **←** goes back to the feed.
 
 ### See a run's files
 

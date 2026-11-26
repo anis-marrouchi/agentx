@@ -60,7 +60,7 @@ import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml 
 import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
-import { HUB_PANELS_CSS, HUB_PANELS_SCRIPT, hubHistoryHtml, hubNavFoldHtml, hubPanelClamp, hubPanelDrag, hubPanelGripHtml, hubPanelReopenHtml, hubPanelsApply, hubPanelsRead } from "./hub-panels"
+import { HUB_PANELS_CSS, HUB_PANELS_FNS, HUB_PANELS_SCRIPT, hubHistoryHtml, hubNavFoldHtml, hubPanelGripHtml, hubPanelReopenHtml } from "./hub-panels"
 import { HUB_USAGE_CSS } from "./hub-status-usage"
 import { HUB_LAYOUT_CSS, hubLayoutBoot } from "./hub-layout"
 import { resolveHubLayout, type HubLayoutView } from "../../../hub/layout"
@@ -343,7 +343,7 @@ ${HUB_STATUS_HTML}`
     body,
     css: WALL_PAGE_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS,
     head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns({ hubPanelClamp, hubPanelsRead, hubPanelsApply, hubPanelDrag })}\n${HUB_PANELS_SCRIPT}</script>`,
+    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns(HUB_PANELS_FNS)}\n${HUB_PANELS_SCRIPT}</script>`,
   })
 }
 
