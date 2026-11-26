@@ -107,7 +107,7 @@ import { HUB_USAGE_SCRIPT } from "./hub-status-usage.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml } from "./wall-tree"
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
-import { mtModel, mtCountWords, mtRowTitle, mtTreeHtml } from "./wall-machines"
+import { mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml } from "./wall-machines"
 import { engineIconKey, engineIcon } from "./engine-icons"
 
 export const WALL_PAGE_SCRIPT = String.raw`
@@ -139,7 +139,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml })}
   ${injectFns({ ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
-  ${injectFns({ mtModel, mtCountWords, mtRowTitle, mtTreeHtml })}
+  ${injectFns({ mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_KEEP_SCRIPT}
@@ -1395,8 +1395,9 @@ ${HUB_NAV_SCRIPT}
         return r.task ? wallTaskHref(r.task, r.agentId, m.url) : activityHref(r.agentId);
       }, mtClosed, {
         esc: ltEsc, fold: ltFold, row: ltRowHtml,
-        // The hand-offs and workflows the run started (#2145), each opening its chat.
-        under: function (r, m) { return ltWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge); },
+        // The hand-offs and workflows the run started (#2145), each opening its
+        // chat; a run listed on its own machine is a pointer there (C5).
+        under: function (r, m) { return mtWorkersHtml(r.workers, function (w) { return workerHref(w, m); }, ltEsc, ltAge, ltWorkerHtml); },
         icon: function (p) { return engineIcon(p, 'lt__prov'); },
       });
     if (html === mtLast) return;

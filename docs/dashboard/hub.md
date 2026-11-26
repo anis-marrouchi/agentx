@@ -216,7 +216,7 @@ The agent list shows *who* is working. **Machines**, under it, shows *where*: ea
 
 1. **Browser:** on a screen at least 1181 pixels wide, select **Machines** under the agent list. It starts folded, with the number of agents working on its heading. The Hub remembers whether you left it open.
 2. **Your mesh** comes first, with how many of its machines answer (for example **3/4**) and how many agents are working. Under it, every machine is listed, even when nothing runs on it.
-3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. Select a row to open that run live.
+3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. A hand-off whose run is going is one line that points to it, for example **→ Tester on Workshop**: the run itself is listed under its own machine. Select a row to open that run live.
 4. A machine that is slow says **checking…** and keeps its last rows, with **as of** and the time. A machine that does not answer says **not checked**, and its runs are not shown.
 5. An agent is shown on one machine only, and the machines' numbers add up to **Working** in the agent list.
 
