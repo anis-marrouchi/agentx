@@ -73,6 +73,17 @@ When the run belongs to a job in the jobs ledger, the state is written on that j
 
 The time the run was asked for a state is also stored on the job.
 
+### Close a job whose chat is gone
+
+`agentx_job_state` works only from a run in the job's own chat. When that chat is closed, no run can start there, so a stalled job could not be closed. Its requester or its assignee closes it from the install folder:
+
+```bash
+agentx requests close-job <job id> --proof "<what shows it is finished, a link where there is one>"
+agentx requests close-job <job id> --drop --proof "<why it is dropped>"
+```
+
+Run from an agent's shell, the close is that agent's (`AGENTX_AGENT_ID`); from your own shell it is `owner`. Anyone who is not the job's requester or assignee is refused. A job with a run on it (`working`) is refused too: that run states its own state. A request you asked for yourself closes with `agentx requests done` or `drop`. The job keeps who closed it (`closedBy` in `GET /jobs/<id>`), when, and the proof.
+
 ## Settings
 
 | Key | Default | What it does |
@@ -85,10 +96,12 @@ The time the run was asked for a state is also stored on the job.
 1. **Terminal:** send an agent a task from another agent, with `agentx daemon send` or `agentx_send_agent`. Ask it to end with `State: done — <a link>`. The answer that comes back ends with that line, and the daemon log shows `[job-state] <agent> a2a …: done — <the link>`. Then ask it to end with `State: blocked — <a reason>`: the log line for the hand-off ends with `error`, and the answer the asking agent gets says the work is not finished and starts with `[Job state] blocked`.
 2. **Terminal:** send a task and ask the agent not to state anything, twice. The log shows `ended with no state; asking once`, then `stalled`. The answer ends with `[Job stalled]`, and `agentx improve signals --kind job_stalled` lists one row.
 3. **Terminal:** send a person's chat message on Telegram. Its run gets no reminder line and no question.
+4. **Terminal:** for a stalled job, run `agentx requests close-job <job id> --proof "<link>"` as its requester or assignee. It prints `✓ <job id> closed as done by <you>`, and `curl -s localhost:<port>/jobs/<job id>` shows `"state":"done"` with your `closedBy` and proof.
 
 ## If something is wrong
 
 - **Every agent-to-agent answer ends with `[Job stalled]`:** the agents do not state a state yet. Check that `agentx_job_state` is in their tool list (`session.lean.agentxTools` keeps it), and that the daemon was restarted after the update.
+- **`Not closed: only its requester (…) or its assignee (…) may close`:** run the command from that agent's shell, or as `owner` when the job's requester is `owner`.
 - **An answer has an extra turn you did not expect:** that is the one question for a state. Ask the agent to end with a `State:` line, or turn the check off for that channel by removing it from `jobState.channels`.
 - **An answer comes back as failed, but the helper ran without an error:** the helper stated `blocked`, or stated nothing when asked. Read the first line of the answer: it starts with `[Job state] blocked` or `[Job stalled]`.
 - **The job in the ledger did not change:** the run belongs to no job. Only runs a door opened a job for are written; the answer still carries the state.

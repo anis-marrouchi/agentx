@@ -799,6 +799,15 @@ Drop a request you no longer want.
 | `--reason <text>` | — | Why it is dropped. |
 | `--superseded-by <link>` | — | Newer work or a later instruction replaced it: the http or https link to that. Kept like a done's proof. Run from an agent's own run, the owner-words check reads it as a match unless the owner asked for the old version, and asks the owner once instead of reopening it a second time. |
 
+### `agentx requests close-job <jobId>`
+
+Close a job whose chat is gone, so no run can state it (#2318). Only the job's requester or assignee may: run from an agent's shell, the caller is that agent (`AGENTX_AGENT_ID`), otherwise `owner`. A job with a run on it, and a request you asked for (use `done` or `drop`), are refused. The job keeps who closed it, when, and the proof. See [Close a job whose chat is gone](../jobs/end-of-run-state.md#close-a-job-whose-chat-is-gone).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--proof <text>` | required | What shows it is finished, or why it is dropped. |
+| `--drop` | off | Close it as dropped, not done. |
+
 ### `agentx requests due <id> <time>`
 
 Set or change the due time of an open request after the run that made it has ended. `<time>` is an ISO date such as `2030-01-31T17:00:00Z`, ahead of now. A wake stands behind it: the agent that owes it is woken at that time. When the request already had a wake for its old due time, that wake moves. An earlier wake stays. The command says which one happened. Nothing wakes at a due time you owe yourself.
