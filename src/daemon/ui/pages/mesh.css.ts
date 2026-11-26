@@ -128,6 +128,7 @@ export const MESH_CSS = `
 .mx-run{width:15px;height:15px;border-radius:3px;border:0;padding:0;cursor:pointer}
 .mx-run:focus-visible{outline:2px solid var(--ax-accent);outline-offset:2px}
 .mx-run[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ax-surface),0 0 0 4px var(--ax-text)}
+.mx-run[aria-pressed="true"]:focus-visible{box-shadow:0 0 0 2px var(--ax-surface),0 0 0 4px var(--ax-text),0 0 0 7px color-mix(in srgb,var(--ax-ring) 50%,transparent)}
 .mx-touch{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 0}
 .mx-touch span{border:1px solid var(--ax-border-2);border-radius:var(--ax-radius-pill);padding:2px 9px;font:10px var(--ax-mono);color:var(--ax-text-2)}
 .mx-touch span.is-zero{color:var(--ax-muted);opacity:.7}

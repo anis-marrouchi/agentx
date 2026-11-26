@@ -49,6 +49,7 @@ button, input, select { font-family: inherit; }
 .ax-wall__item { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-radius: var(--ax-radius-sm); color: var(--ax-text-2); font: inherit; font-size: 14px; text-decoration: none; background: none; border: 0; cursor: pointer; text-align: left; width: max-content; max-width: 100%; }
 .ax-wall__item:hover { background: var(--ax-surface-3); color: var(--ax-text); }
 .ax-wall__item.is-on { font-weight: 500; color: var(--ax-text); background: var(--ax-surface-3); box-shadow: inset 2px 0 0 var(--ax-accent); }
+.ax-wall__item.is-on:focus-visible { box-shadow: inset 2px 0 0 var(--ax-accent), var(--ax-focus-ring); }
 .ax-wall__item.is-on svg { color: var(--ax-accent); }
 .ax-wall__item svg { width: 18px; height: 18px; flex: none; }
 /* The nav's groups (#1451 frame 0): Work, Automation, Fleet, Owner. */

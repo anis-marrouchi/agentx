@@ -385,6 +385,7 @@ export const WALL_PAGES_CSS = `
 .wcr__agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .wcr__a { display: flex; gap: 8px; align-items: center; text-align: left; font: inherit; color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-lg); padding: 8px 10px; cursor: pointer; }
 .wcr__a.is-on { border-color: var(--ax-accent); box-shadow: 0 0 0 1px var(--ax-accent); }
+.wcr__a.is-on:focus-visible { box-shadow: 0 0 0 1px var(--ax-accent), var(--ax-focus-ring); }
 .wcr__a span { min-width: 0; display: flex; flex-direction: column; }
 .wcr__a small { color: var(--ax-muted); font-size: var(--ax-fs-xs); overflow: hidden; text-overflow: ellipsis; }
 .wcr__a .is-amber { color: var(--ax-amber-ink); }

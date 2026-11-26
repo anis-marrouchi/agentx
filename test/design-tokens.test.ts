@@ -87,4 +87,24 @@ describe("design tokens", () => {
       expect([...AX_TOKENS_CSS.matchAll(new RegExp(t + "\\s*:", "g"))]).toHaveLength(2)
     }
   })
+
+  it("keeps a focus ring on controls whose selected state sets its own box-shadow (Hakim B1 on #2378)", () => {
+    // :root :focus-visible draws the ring with box-shadow; a later state rule
+    // of equal specificity replaces it, so each needs a focused pair.
+    const pairs: [string, string][] = [
+      ["pages/wall-space.ts", ".ax-wall__item.is-on:focus-visible"],
+      ["pages/hub-layout.ts", '.whl__seg button[aria-checked="true"]:focus-visible'],
+      ["pages/wall-settings.client.ts", ".wsl__f.is-on:focus-visible"],
+      ["pages/wall-pages.client.ts", ".wcr__a.is-on:focus-visible"],
+      ["pages/wall-agent-templates.ts", ".wat__t.is-on:focus-visible"],
+      ["pages/mesh.css.ts", '.mx-run[aria-pressed="true"]:focus-visible'],
+    ]
+    for (const [file, sel] of pairs) {
+      const src = readFileSync(join(UI, file), "utf8")
+      const at = src.indexOf(sel)
+      expect(at, sel).toBeGreaterThan(-1)
+      const rule = src.slice(at, src.indexOf("}", at))
+      expect(rule, sel).toMatch(/box-shadow:[^;}]*(var\(--ax-focus-ring\)|var\(--ax-ring\))/)
+    }
+  })
 })

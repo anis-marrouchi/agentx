@@ -883,6 +883,7 @@ export const WALL_SETTINGS_CSS = `
 .wsl__f small { color: var(--ax-muted); font-size: 12px; }
 .wsl__f:hover, .wsl__f.is-on { background: var(--ax-surface); }
 .wsl__f.is-on { box-shadow: inset 3px 0 0 var(--ax-accent); }
+.wsl__f.is-on:focus-visible { box-shadow: inset 3px 0 0 var(--ax-accent), var(--ax-focus-ring); }
 .wsl li .ax-btn { font-size: var(--ax-fs-xs); padding: 2px 10px; }
 .wse { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .wse__p { margin: 0; font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
