@@ -49,6 +49,10 @@ describe("shell side menu per layout", () => {
     for (const item of all) if (item.id !== "search") expect(item.href).toBeTruthy()
     for (const id of Object.keys(SHELL_MORE)) expect(HUB_SHOW_IDS).toContain(id)
   })
+  it("Tasks names its view, so it never reopens the last page (the old Hub keeps S.view)", () => {
+    const tasks = SHELL_MAIN.find((i) => i.id === "tasks")!
+    expect(new URLSearchParams(tasks.href!.slice(1)).get("view")).toBe("feed")
+  })
 })
 
 describe("where /hub opens", () => {

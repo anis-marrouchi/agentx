@@ -9,7 +9,7 @@
 // The shell covers the old Hub's frame while it is open; every menu item is
 // a link to today's page, which the old Hub draws as before.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
 import { apiGet, apiPost } from "../api"
 import { readBoot } from "../boot"
 import type { HubLayoutView } from "../layout"
@@ -151,7 +151,10 @@ export function ShellChat({ agent, phoneBar }: { agent?: ShellAgent; phoneBar?: 
     queryFn: () => apiGet<{ threads?: { id: string }[] }>("/api/assistant/threads?agent=" + encodeURIComponent(agent!.id)),
     enabled: !!agent,
   })
-  useEffect(() => { setThreadId(latest.data?.threads?.[0]?.id ?? null); setError("") }, [agent?.id, latest.data])
+  // A send before the list loads picks the thread itself: the list must not overwrite it.
+  const sentHere = useRef(false)
+  useEffect(() => { sentHere.current = false; setThreadId(null); setError("") }, [agent?.id])
+  useEffect(() => { if (!sentHere.current) setThreadId(latest.data?.threads?.[0]?.id ?? null) }, [latest.data])
 
   const thread = useQuery({
     queryKey: ["assistant-thread", threadId],
@@ -166,6 +169,7 @@ export function ShellChat({ agent, phoneBar }: { agent?: ShellAgent; phoneBar?: 
       apiPost<{ threadId: string }>("/api/assistant", { agentId: agent?.id, threadId: threadId ?? undefined, message }),
     onSuccess: (d) => {
       setText("")
+      sentHere.current = true
       setThreadId(d.threadId)
       void client.invalidateQueries({ queryKey: ["assistant-thread", d.threadId] })
     },
