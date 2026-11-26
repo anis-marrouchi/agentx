@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.276.1](https://github.com/anis-marrouchi/agentx/compare/v0.276.0...v0.276.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **hub:** no "not known" text on Org, Projects, Jobs and Schedules pages ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C1) ([#2308](https://github.com/anis-marrouchi/agentx/issues/2308)) ([9f66906](https://github.com/anis-marrouchi/agentx/commit/9f66906c3c018dadf96cacd7c056c43c1b3ab456))
+* **requests:** wake the doer, then the PM, when a promised PR is late ([#2291](https://github.com/anis-marrouchi/agentx/issues/2291)) ([a408899](https://github.com/anis-marrouchi/agentx/commit/a4088990ab5c9901d982888a6fb298d9186bf970)), closes [#2279](https://github.com/anis-marrouchi/agentx/issues/2279)
+
 ## [0.276.0](https://github.com/anis-marrouchi/agentx/compare/v0.275.0...v0.276.0) (2026-11-26)
 
 
