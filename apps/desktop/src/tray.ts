@@ -1,4 +1,4 @@
-// The top-bar (macOS) / notification-area (Windows, Ubuntu) icon.
+// The top-bar (macOS) / notification-area (Windows, Ubuntu) icon and its menu.
 //
 // Adapted from Orca's src/main/tray/system-tray.ts
 // (https://github.com/stablyai/orca), Copyright (c) 2026 Lovecast Inc.,
@@ -8,12 +8,7 @@
 
 import { Menu, Tray, nativeImage, type NativeImage } from "electron"
 import { join } from "path"
-
-export interface TrayActions {
-  onOpen: () => void
-  onReload: () => void
-  onQuit: () => void
-}
+import { menuTemplate, type TrayActions, type TrayState } from "./menu.js"
 
 // Keep a live reference or Electron's GC removes the tray icon.
 let tray: Tray | null = null
@@ -33,19 +28,18 @@ function trayImage(resources: string): NativeImage {
   return nativeImage.createFromPath(join(resources, "tray.png")).resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE })
 }
 
-export function createTray(resources: string, actions: TrayActions): Tray {
-  if (tray && !tray.isDestroyed()) return tray
-  tray = new Tray(trayImage(resources))
-  tray.setToolTip("AgentX")
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Open AgentX", click: actions.onOpen },
-      { label: "Reload", click: actions.onReload },
-      { type: "separator" },
-      { label: "Quit AgentX", click: actions.onQuit },
-    ]),
-  )
-  // Windows and Ubuntu: a left click opens the window; the menu is on right click.
-  if (process.platform !== "darwin") tray.on("click", actions.onOpen)
+export function createTray(resources: string, actions: TrayActions, state: TrayState): Tray {
+  if (!tray || tray.isDestroyed()) {
+    tray = new Tray(trayImage(resources))
+    tray.setToolTip("AgentX")
+    // Windows and Ubuntu: a left click shows or hides the window; the menu is on right click.
+    if (process.platform !== "darwin") tray.on("click", actions.onToggleWindow)
+  }
+  updateTray(actions, state)
   return tray
+}
+
+export function updateTray(actions: TrayActions, state: TrayState): void {
+  if (!tray || tray.isDestroyed()) return
+  tray.setContextMenu(Menu.buildFromTemplate(menuTemplate(state, actions)))
 }
