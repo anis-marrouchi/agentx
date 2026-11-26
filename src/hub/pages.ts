@@ -19,6 +19,9 @@ export const HUB_REACT_PAGES: readonly HubReactPage[] = [
   // The component catalog (#2218 part 4): every part of src/hub/ui in light
   // and dark, plus the live stream's state. Owner only.
   { page: "catalog", ownerOnly: true },
+  // The simple shell (#2226 S3): side menu, chat, right tabs. Owner only,
+  // as the chat is; /hub opens on it in the simple layout (shell.ts).
+  { page: "home", ownerOnly: true },
 ]
 
 /** The React page ids this viewer gets, minus the ones sent back to the old

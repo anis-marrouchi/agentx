@@ -196,9 +196,11 @@ describe("the daemon's switch and tags", () => {
     expect(html).toContain(`<link rel="stylesheet" href="/assets/hub/vendor-def.css">`)
     expect(html).toContain(`<link rel="modulepreload" href="/assets/hub/vendor-def.js">`)
     expect(html).not.toContain("CatalogPage")
-    expect(html).toContain(`window.AX_HUB = {"pages":["catalog"],"owner":true}`)
+    expect(html).toContain(`window.AX_HUB = {"pages":["catalog","home"],"owner":true}`)
+    // The address as it came, before the old script turns a bare /hub into its chat (#2226 S3).
+    expect(html).toContain("window.AX_HUB_HASH = location.hash;")
     expect(hubReactHead({ owner: false }, manifest)).toContain(`{"pages":[],"owner":false}`)
-    expect(hubReactHead({ owner: true, legacyPages: ["catalog"] }, manifest)).toContain(`{"pages":[],"owner":true}`)
+    expect(hubReactHead({ owner: true, legacyPages: ["catalog", "home"] }, manifest)).toContain(`{"pages":[],"owner":true}`)
   })
   it("adds nothing when the app is not built", () => {
     expect(hubReactHead({ owner: true }, null)).toBe("")
