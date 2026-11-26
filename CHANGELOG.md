@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.287.2](https://github.com/anis-marrouchi/agentx/compare/v0.287.1...v0.287.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **hub:** Machines fold shows a cross-machine hand-off once, as a pointer ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2395](https://github.com/anis-marrouchi/agentx/issues/2395)) ([64eba88](https://github.com/anis-marrouchi/agentx/commit/64eba88b98855b2ffa4b89e0493874259affa9f2))
+* **hub:** runs today counts the runs still going ([#2145](https://github.com/anis-marrouchi/agentx/issues/2145)) ([#2391](https://github.com/anis-marrouchi/agentx/issues/2391)) ([e731fe1](https://github.com/anis-marrouchi/agentx/commit/e731fe1aa296b81b9c8d98fec2fee4696f115e5a))
+
 ## [0.287.1](https://github.com/anis-marrouchi/agentx/compare/v0.287.0...v0.287.1) (2026-11-26)
 
 
