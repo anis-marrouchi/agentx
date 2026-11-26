@@ -30,6 +30,11 @@ export interface CodexPlanUsage {
 const TAIL_BYTES = 256 * 1024
 /** How many of the newest session files are tried. */
 const MAX_FILES = 6
+/** How many of the newest day folders are walked: a home full of empty or
+ *  reading-less days (API-key runs) stops here instead of walking them all. */
+const MAX_DAYS = 14
+/** How long one reading is kept before the files are read again. */
+export const CODEX_USAGE_CACHE_MS = 60_000
 
 function windowName(minutes: unknown, fallback: string): string {
   if (minutes === 300) return "five_hour"
@@ -80,14 +85,16 @@ async function names(dir: string): Promise<string[]> {
 }
 
 /** The newest session files, newest first: walks YYYY/MM/DD from the end. */
-async function newestSessionFiles(sessions: string, max: number): Promise<string[]> {
+async function newestSessionFiles(sessions: string, max: number, maxDays = MAX_DAYS): Promise<string[]> {
   const out: string[] = []
+  let days = 0
   for (const y of await names(sessions)) {
     if (!/^\d{4}$/.test(y)) continue
     for (const m of await names(join(sessions, y))) {
       if (!/^\d{2}$/.test(m)) continue
       for (const d of await names(join(sessions, y, m))) {
         if (!/^\d{2}$/.test(d)) continue
+        if (++days > maxDays) return out
         const dir = join(sessions, y, m, d)
         const files = (await names(dir)).filter((f) => f.endsWith(".jsonl"))
         const timed = await Promise.all(files.map(async (f) => ({ f: join(dir, f), t: (await stat(join(dir, f)).catch(() => null))?.mtimeMs ?? 0 })))
@@ -117,8 +124,8 @@ async function tail(file: string): Promise<{ text: string; mtime: number }> {
  * recent session file has one (no Codex run yet, or an API-key login, which
  * has no plan limits).
  */
-export async function readCodexPlanUsage(codexHome: string, maxFiles = MAX_FILES): Promise<CodexPlanUsage | null> {
-  const files = await newestSessionFiles(join(codexHome, "sessions"), maxFiles)
+export async function readCodexPlanUsage(codexHome: string, maxFiles = MAX_FILES, maxDays = MAX_DAYS): Promise<CodexPlanUsage | null> {
+  const files = await newestSessionFiles(join(codexHome, "sessions"), maxFiles, maxDays)
   // Newest file first: the first one with a reading is the newest reading.
   for (const f of files) {
     const t = await tail(f).catch(() => null)
@@ -127,3 +134,21 @@ export async function readCodexPlanUsage(codexHome: string, maxFiles = MAX_FILES
   }
   return null
 }
+
+const cache = new Map<string, { at: number; value: Promise<CodexPlanUsage | null> }>()
+
+/**
+ * readCodexPlanUsage, kept CODEX_USAGE_CACHE_MS per Codex home: the Hub's
+ * footer polls GET /usage/plan, and each read walks folders and opens files.
+ * Calls that come while a read runs share it.
+ */
+export function readCodexPlanUsageCached(codexHome: string, now = Date.now()): Promise<CodexPlanUsage | null> {
+  const hit = cache.get(codexHome)
+  if (hit && now - hit.at < CODEX_USAGE_CACHE_MS) return hit.value
+  const value = readCodexPlanUsage(codexHome).catch(() => null)
+  cache.set(codexHome, { at: now, value })
+  return value
+}
+
+/** For tests. */
+export function clearCodexPlanUsageCache(): void { cache.clear() }

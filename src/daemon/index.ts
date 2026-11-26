@@ -255,7 +255,7 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
-import { readCodexPlanUsage } from "@/agents/codex-plan-usage"
+import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
 import { activeCliDir } from "@/agents/cli-accounts"
 import { NodeEnvironment } from "@/node-env"
 import { formatNode } from "@/node-env/format"
@@ -8287,9 +8287,10 @@ export class AgentXDaemon {
       if (PLAN_USAGE_API_PATHS.has(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
         // Codex's limits as its last run on this machine wrote them, for the
-        // account new runs use (#2101 R28b). Read only on the GET.
+        // account new runs use (#2101 R28b). Read only on the GET, at most
+        // once a minute (codex-plan-usage.ts CODEX_USAGE_CACHE_MS).
         const codex = path === "/usage/plan" && (req.method || "GET").toUpperCase() === "GET"
-          ? await readCodexPlanUsage(activeCliDir("codex")).catch(() => null)
+          ? await readCodexPlanUsageCached(activeCliDir("codex"))
           : undefined
         const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex })
         const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted

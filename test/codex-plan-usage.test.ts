@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { codexRateLimitsFromLine, codexRateLimitsFromText, readCodexPlanUsage } from "../src/agents/codex-plan-usage"
+import { clearCodexPlanUsageCache, CODEX_USAGE_CACHE_MS, codexRateLimitsFromLine, codexRateLimitsFromText, readCodexPlanUsage, readCodexPlanUsageCached } from "../src/agents/codex-plan-usage"
 
 // #2101 R28b: Codex's plan limits, read from its own session files.
 const at = "2026-11-25T06:50:00.000Z"
@@ -100,5 +100,23 @@ describe("readCodexPlanUsage", () => {
     put("2026/11/20/rollout-a.jsonl", line(limits(70, 80)) + "\n")
     put("2026/11/25/rollout-b.jsonl", "{}\n")
     expect(await readCodexPlanUsage(home, 1)).toBeNull()
+  })
+
+  it("walks only the newest day folders", async () => {
+    put("2026/11/20/rollout-a.jsonl", line(limits(70, 80)) + "\n")
+    put("2026/11/24/rollout-b.jsonl", "{}\n")
+    put("2026/11/25/rollout-c.jsonl", "{}\n")
+    expect(await readCodexPlanUsage(home, 6, 2)).toBeNull()
+    expect((await readCodexPlanUsage(home, 6, 3))?.windows[0].utilization).toBe(0.7)
+  })
+
+  it("keeps a reading for a minute, then reads the files again", async () => {
+    clearCodexPlanUsageCache()
+    put("2026/11/25/rollout-a.jsonl", line(limits(10, 20)) + "\n")
+    expect((await readCodexPlanUsageCached(home, 1_000))?.windows[0].utilization).toBe(0.1)
+    put("2026/11/25/rollout-a.jsonl", line(limits(50, 60)) + "\n")
+    expect((await readCodexPlanUsageCached(home, 1_000 + CODEX_USAGE_CACHE_MS - 1))?.windows[0].utilization).toBe(0.1)
+    expect((await readCodexPlanUsageCached(home, 1_000 + CODEX_USAGE_CACHE_MS))?.windows[0].utilization).toBe(0.5)
+    clearCodexPlanUsageCache()
   })
 })
