@@ -139,7 +139,8 @@ describe("page scripts parse", () => {
 
   it("the shell has five labelled tabs, safe-area padding and a theme toggle", () => {
     const html = renderAppPage()
-    for (const t of ["Chat", "Fleet", "Activity", "Alerts", "Desk"]) expect(html).toContain(`<span>${t}</span></button>`)
+    // #2101 C1a: Agents · Chat · Desk · Alerts · More; Fleet and Activity open from More.
+    for (const t of ["Agents", "Chat", "Desk", "Alerts", "More"]) expect(html).toContain(`<span>${t}</span></button>`)
     expect(html.match(/role="tab"/g)).toHaveLength(5)
     expect(html).toContain("grid-template-columns: repeat(5, 1fr)")
     expect(html).toContain("viewport-fit=cover")

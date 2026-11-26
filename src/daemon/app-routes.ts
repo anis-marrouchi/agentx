@@ -6,6 +6,7 @@ import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppDesk, type AppDeskDeps } from "./app-desk"
 import { handleAppChanges, type AppChangesDeps } from "./app-changes"
+import { handleAppAgents, type AppAgentsDeps } from "./hub-agents-api"
 import type { AppReachDeps } from "./app-reach"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
@@ -65,6 +66,8 @@ export interface AppRouteCtx {
   pins?: PinsDeps
   /** The Changes screen (#2101 C1b): the Hub's Diff view for the phone. */
   changes?: AppChangesDeps
+  /** The Agents tab (#2101 C1a): the Hub's agent rows for the phone. */
+  agents?: AppAgentsDeps
   /** Presence and read marks (#1138 step B). */
   reach?: AppReachDeps
   /** The statement served at /.well-known/assetlinks.json, or null for 404. */
@@ -176,6 +179,7 @@ export async function handleAppRequest(
   if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
   if (ctx.pins && await handleAppPins(req, res, path, method, ctx.pins)) return true
   if (ctx.changes && await handleAppChanges(req, res, path, method, ctx.changes)) return true
+  if (ctx.agents && await handleAppAgents(req, res, path, method, ctx.agents)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 
