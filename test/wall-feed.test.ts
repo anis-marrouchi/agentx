@@ -3199,7 +3199,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(body).toContain("Price fix")
     expect(body).toContain("2 changed · 1 read · 1 sent · 2 attached")
     expect(body).toContain("wrote</span><b>price.md</b><small>docs</small>")
-    expect(body).toContain("edited</span><b>price.ts</b><small>src · 2×</small>")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src</small>")
     expect(body).toContain("read</span><b>README.md</b>")
     expect(body).toContain("<b>report.csv</b>")
     expect(body).toContain("<b>spec.pdf</b>")
@@ -3209,7 +3209,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     w.click({ "data-cx": "wfile", "data-src": "chat:th1", "data-i": "1" })
     expect(w.el("wcx-tabs").innerHTML).toContain("<b>File</b> price.ts")
     const file = w.el("wcx-body").innerHTML
-    expect(file).toContain("<code>src/price.ts</code> · edited in 2 calls")
+    expect(file).toContain("<code>src/price.ts</code> · edited</p>")
     expect(file).toContain('<tr class="is-del"><td class="wdf__c">const p = 1</td></tr><tr class="is-add"><td class="wdf__c">const p = &lt;2&gt;</td></tr>')
 
     // A second press on Files while it is the tab in view closes it.

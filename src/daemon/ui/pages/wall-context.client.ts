@@ -120,7 +120,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
         (t.kind === 'files' ? wflIcon('files') : '') +
         '<b>' + esc(CX_NAME[t.kind]) + '</b>' + (t.path ? ' ' + esc(cxTitle(t)) : what ? ' ' + esc(cxShort(what)) : '') + '</button>' +
-        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '">×</button></span>';
+        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
     }).join('');
   }
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
@@ -396,7 +396,7 @@ export const WALL_CONTEXT_CSS = `
 .wcx__tab > button[role="tab"] b { font-weight: 600; color: var(--ax-text-2); }
 .wcx__tab.is-on > button[role="tab"] b { color: var(--ax-text); }
 .wcx__tab > button:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: -2px; }
-.wcx__x { font: inherit; font-size: 16px; line-height: 1; padding: 2px 8px 4px 4px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
+.wcx__x { display: inline-flex; align-items: center; padding: 3px 6px 3px 2px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
 .wcx__x:hover { color: var(--ax-text); }
 .wcx__body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
 .wcx__body #wdf > .wdf { margin-top: 0; padding-top: 0; border-top: 0; }
