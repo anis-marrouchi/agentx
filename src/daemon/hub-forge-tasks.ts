@@ -1,5 +1,6 @@
 import { execFile } from "child_process"
 import type { DaemonConfig } from "./config"
+import { withToolPath } from "@/utils/workspace-env"
 import { forgeCache, isForgeError, type ForgeAnswer, type ForgeCacheOptions } from "./wall-forge-cache"
 
 // --- The Hub's Tasks: open issues and PRs on the forges (#2226) ---
@@ -84,8 +85,15 @@ function bothKinds(got: PromiseSettledResult<ForgeTask[]>[]): ForgeAnswer<ForgeT
 /** Runs `gh` with these arguments and gives its stdout; rejects on failure. */
 export type GhRun = (args: string[]) => Promise<string>
 
+/** The env `gh` runs with. The daemon started by launchd has no login
+ *  shell's PATH, so `gh` in /opt/homebrew/bin was not found
+ *  ("spawn gh ENOENT", #2226 box 2). */
+export function ghEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return withToolPath({ ...base })
+}
+
 export const ghRun: GhRun = (args) => new Promise((resolve, reject) => {
-  execFile("gh", args, { timeout: TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+  execFile("gh", args, { timeout: TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: ghEnv() }, (err, stdout, stderr) => {
     if (err) reject(new Error(String(stderr || err.message).trim().split("\n")[0] || "gh failed"))
     else resolve(stdout)
   })
