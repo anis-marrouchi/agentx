@@ -800,6 +800,12 @@ const channelsConfigSchema = z.object({
     ci: z.object({
       fixAttempts: z.number().int().min(0).default(3),
       holdSeconds: z.number().min(0).max(3600).default(30),
+      /** The green-PR review wait (#2227): an agent-owned PR all green with
+       *  no review for `reviewWakeMinutes` wakes this agent; at
+       *  `reviewOwnerMinutes` the PR's owner agent is told. Unset: off. */
+      reviewer: z.string().min(1).optional(),
+      reviewWakeMinutes: z.number().min(0).default(15),
+      reviewOwnerMinutes: z.number().min(0).default(30),
     }).default({}),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
