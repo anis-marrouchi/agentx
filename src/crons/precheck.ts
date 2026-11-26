@@ -8,7 +8,9 @@ import { safeFetch } from "@/requests/checkers/fetch-guard"
 // decides whether there is work; it never does the job, and it must be
 // read-only. No model is called for it.
 //
-//   command: exit 0 = work, run the job; exit 1 = nothing to do, skip it.
+//   command: exit 0 = work, run the job; exit 1 with nothing on stderr =
+//            nothing to do, skip it. Exit 1 with stderr is a crash (Python
+//            and Node exit 1 on an uncaught error), so it counts as failed.
 //   url:     2xx with a body = run; 204 (or a 2xx with an empty body) = skip.
 //   Anything else (another exit code, a timeout, a fetch error, a non-2xx
 //   status) is a failed check: the job runs anyway (fail open). One run
@@ -112,11 +114,16 @@ function runCommand(line: string, ms: number, deps: PrecheckDeps): Promise<Prech
       args,
       { cwd: deps.cwd, env: deps.env, timeout: ms, maxBuffer: 1024 * 1024 },
       (err: any, stdout, stderr) => {
+        if (err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+          return resolve({ verdict: "error", detail: "output over 1 MB" })
+        }
         if (err?.killed) return resolve({ verdict: "error", detail: `timed out after ${Math.round(ms / 1000)}s` })
         if (!err) return resolve({ verdict: "run", found: capFound(String(stdout ?? "")) })
-        if (err.code === 1) return resolve({ verdict: "skip", detail: "exit 1" })
-        const why = typeof err.code === "number" ? `exit ${err.code}` : String(err.message ?? err.code ?? err)
         const tail = String(stderr ?? "").trim().slice(-200)
+        // A crashed Python or Node check also exits 1; it prints a trace on
+        // stderr. Treat it as failed so a broken check never skips forever.
+        if (err.code === 1 && !tail) return resolve({ verdict: "skip", detail: "exit 1" })
+        const why = typeof err.code === "number" ? `exit ${err.code}` : String(err.message ?? err.code ?? err)
         resolve({ verdict: "error", detail: tail ? `${why}: ${tail}` : why })
       },
     )

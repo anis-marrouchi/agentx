@@ -112,10 +112,10 @@ A `command` runs in the agent's workspace with the agent's environment. It is no
 | The check answers | What happens |
 | --- | --- |
 | `command` exits 0 | The job runs. |
-| `command` exits 1 | The run is skipped. |
+| `command` exits 1 and prints nothing on stderr | The run is skipped. |
 | `url` answers 2xx with a body | The job runs. |
 | `url` answers 204, or 2xx with an empty body | The run is skipped. |
-| any other exit code or HTTP status, a timeout, a fetch error | The job runs anyway, and the daemon log says the precheck failed. |
+| exit 1 with stderr (a crashed Python or Node check exits 1 too), any other exit code or HTTP status, a timeout, more than 1 MB of output, a fetch error | The job runs anyway, and the daemon log says the precheck failed. |
 
 When the job runs, what the check printed (or the URL's body), trimmed and cut at 2 KB, is put at the top of the prompt as `Precheck found: …`.
 

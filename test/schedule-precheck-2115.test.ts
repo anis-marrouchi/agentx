@@ -94,6 +94,25 @@ describe("precheck command", () => {
     expect(logs.some((l) => /precheck failed \(exit 2: oops\); running the job anyway/.test(l))).toBe(true)
   })
 
+  it("exit 1 with stderr is a crashed check: the job runs and a warning is logged", async () => {
+    const { s, registry, logs } = setup({ command: `sh -c "echo 'Traceback: boom' >&2; exit 1"` })
+    await s.executeJob("j")
+    expect(registry.execute).toHaveBeenCalledTimes(1)
+    expect(runRecords().some((r) => r.skipped === "precheck")).toBe(false)
+    expect(logs.some((l) => /precheck failed \(exit 1: Traceback: boom\); running the job anyway/.test(l))).toBe(true)
+  })
+
+  it("a crashing node check is an error, not a skip", async () => {
+    const out = await runPrecheck({ command: `${process.execPath} -e "throw new Error('broken check')"` })
+    expect(out.verdict).toBe("error")
+    expect(out.verdict === "error" && out.detail).toMatch(/^exit 1: /)
+  })
+
+  it("output over the buffer is an error named as such, not a timeout", async () => {
+    const out = await runPrecheck({ command: `sh -c "yes | head -c 2000000"` })
+    expect(out).toEqual({ verdict: "error", detail: "output over 1 MB" })
+  })
+
   it("a timeout fails open", async () => {
     const { s, registry, logs } = setup({ command: "sleep 5", timeoutSec: 1 })
     const t0 = Date.now()
