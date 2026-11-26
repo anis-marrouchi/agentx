@@ -148,7 +148,7 @@ export const WALL_FEED_SCRIPT = String.raw`
       '<button type="button" class="fp__mi" data-thread="' + esc(p.id) + '" data-fk="thread" aria-expanded="' + (shown ? 'true' : 'false') + '">' + fdIcon('message-circle') + (shown ? 'Hide thread' : 'Thread') + '</button>',
       '<span class="fp__mi" title="Runs that worked on it">' + fdIcon('repeat-2') + p.runs + (p.runs === 1 ? ' run' : ' runs') + '</span>',
       p.runMs ? '<span class="fp__mi" title="Minutes the runs took">' + fdIcon('timer') + mins(p.runMs) + ' min</span>' : '',
-      p.project ? '<span class="fp__mi" title="Project">' + fdIcon('folder') + esc(p.project) + '</span>' : '',
+      p.project ? '<span class="fp__mi fp__proj" title="Project">' + fdIcon('folder') + esc(p.project) + '</span>' : '',
       p.goal ? '<button type="button" class="fp__mi" data-goal="' + esc(p.goal.id) + '" title="Show every post for this goal">Goal: ' + esc(p.goal.title) + '</button>' : '',
     ].filter(Boolean).join('');
     var wait = s === 'waiting' || (s === 'needs' && !cardsOf(p).length) ? waitLine(p) : '';
@@ -268,7 +268,7 @@ export const WALL_FEED_SCRIPT = String.raw`
       return '<td class="num">' + mins(p.runMs) + (p.estimateMinutes ? ' / ' + p.estimateMinutes : '') + (over ? fdFlag('Over') : '') + '</td>';
     }
     if (k === 'node') return '<td class="fl__mono">' + esc(p.node.name) + '</td>';
-    if (k === 'runs') return '<td class="num">' + p.runs + (p.failedRuns ? ' <span class="fl__none">(' + p.failedRuns + ' failed)</span>' : '') + '</td>';
+    if (k === 'runs') return '<td class="num">' + p.runs + (p.failedRuns ? ' <span class="fl__sub">(' + p.failedRuns + ' failed)</span>' : '') + '</td>';
     return '<td class="fl__mono">' + esc(groupKey(p)) + '</td>';
   }
   function fdListRowHtml(p, cols) {
@@ -492,6 +492,9 @@ export const WALL_FEED_CSS = `
 .ax-wall.is-posts .ax-wall__head { position: static; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 0; }
 .ax-wall.is-posts .ax-wall__titlebar { padding: 24px 0 16px; gap: 8px; flex-wrap: wrap; }
 .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: var(--ax-fs-pane); font-weight: var(--ax-fw-strong); letter-spacing: -.01em; }
+/* The build line sits after the tools, so search, Filters and Chat stay one group on the right. */
+.ax-wall.is-posts .ax-wall__titlebar > .wbl { margin-left: 0; padding-left: 0; }
+.ax-wall.is-posts .ax-wall__titlebar > .wbl.is-wait { display: none; }
 
 /* Feed | List: a toggle group beside the title. */
 .fd-switch { display: inline-flex; gap: 2px; padding: 2px; margin-left: 4px; border-radius: var(--ax-radius-md); background: var(--ax-surface-3); }
@@ -507,7 +510,8 @@ export const WALL_FEED_CSS = `
 .fd-q input { flex: 1; min-width: 0; font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: none; border: 0; padding: 0; outline: none; }
 .fd-q input::-webkit-search-cancel-button { display: none; }
 .fd-q:focus-within { border-color: var(--ax-ring, var(--ax-accent)); box-shadow: var(--ax-focus-ring); }
-kbd, .fd-kbd { font-family: var(--ax-mono); font-size: 11px; line-height: 16px; padding: 0 5px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); background: var(--ax-surface-2); color: var(--ax-muted); }
+/* Key names, as in the mock: small, in the body font, on a quiet chip. */
+.fd-q kbd, .fd-hint kbd { font-family: inherit; font-size: 11px; line-height: 16px; padding: 0 5px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); background: var(--ax-surface-2); color: var(--ax-muted); }
 .fd-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; }
 .fd-btn svg { width: 16px; height: 16px; }
 .fd-btn b { font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -579,7 +583,7 @@ button[data-tab="failed"] .fd-n:not(:empty) { color: var(--ax-red-ink); }
 .ax-wall__feed { padding-bottom: 48px; }
 .fd-sec { margin: 0; }
 .fd-sec > summary.fd-sec__h { display: flex; align-items: center; gap: 8px; margin: 0; padding: 16px 0 10px; border-bottom: 1px solid var(--ax-border); border-radius: 0;
-  font-size: var(--ax-fs); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ax-text); }
+  font-size: var(--ax-fs-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ax-text); }
 .fd-sec > summary.fd-sec__h::before { content: none; display: none; }
 .fd-sec__chev { width: 16px; height: 16px; color: var(--ax-muted); transition: transform 150ms ease-out; }
 .fd-sec:not([open]) .fd-sec__chev { transform: rotate(-90deg); }
@@ -642,6 +646,8 @@ button.fp__mi { cursor: pointer; }
 .fd-card__exp.is-late { color: var(--ax-red-ink); }
 .fd-card__btns { margin-left: auto; display: inline-flex; gap: 8px; }
 .fd-card__btns .ax-btn { height: 32px; min-width: 0; padding: 0 12px; }
+/* Deny is the quiet choice beside Approve: no border at rest (C11). */
+.fd-card__btns .ax-btn--ghost { border-color: transparent; background: none; box-shadow: none; }
 .fd-card .wdc__confirm { margin-top: 8px; }
 
 /* A failed run: its reason, the run id, Retry. The one red. */
@@ -688,8 +694,9 @@ button.fp__mi { cursor: pointer; }
 @media (hover: hover) { .fl__task a:hover { text-decoration: underline; } }
 .fl__ref, .fl__mono { font-family: var(--ax-mono); font-size: 12px; color: var(--ax-muted); }
 .fl__own { white-space: nowrap; }
-.fl__own .av { width: 22px; height: 22px; font-size: 10px; vertical-align: middle; margin-right: 8px; cursor: default; }
-.fl__none { color: var(--ax-muted); }
+.fl__t td { line-height: 20px; }
+.fl__own .av { display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 10px; line-height: 1; vertical-align: top; margin-right: 8px; cursor: default; }
+.fl__none, .fl__sub { color: var(--ax-muted); }
 .fl__t .is-amber { color: var(--ax-amber-ink); font-weight: 400; }
 .fl__a { width: 1%; white-space: nowrap; text-align: right; }
 .fl__a .fd-acts { margin: -4px 0; }
@@ -706,11 +713,15 @@ button.fp__mi { cursor: pointer; }
   @media (min-width: 769px) { .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
   .fd-q { width: 160px; }
   .fd-hint { display: none; }
+  .fd-compose__row .fd-send { margin-left: auto; }
+  /* The tabs' hairline ends where the rows end. */
+  .ax-wall__main > .fd-bar { padding-left: 0; padding-right: 0; max-width: min(720px, calc(100% - 48px)); }
 }
 /* Phone: the title row, then Feed | List full width; search is an icon. */
 @media (max-width: 640px) {
   .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 16px; padding-right: 16px; }
   .ax-wall__main > .fd-compose { margin: 0 16px 12px; }
+  .ax-wall__main > .fd-bar { max-width: none; }
   .ax-wall.is-posts .ax-wall__titlebar { padding: 12px 0; }
   .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: 20px; }
   .fd-switch { order: 10; flex: 1 0 100%; margin: 4px 0 0; }
@@ -729,6 +740,10 @@ button.fp__mi { cursor: pointer; }
   .fd-bar .ax-wall__views button { padding: 0 8px; }
   .fp { gap: 12px; }
   .fp__h { display: none; }
+  /* The phone row keeps thread, runs and minutes, and the ... menu (mock). */
+  .fp__proj, .fd-hov[data-fd-copy] { display: none; }
+  .fp__m { flex-wrap: nowrap; }
+  .fp__m > .fp__mi { white-space: nowrap; }
   .fd-card__f { grid-template-columns: 80px 1fr; }
   .fd-pop { position: fixed; top: auto; left: 8px; right: 8px; width: auto; }
   .fd-pop .ax-wall__fset { grid-template-columns: 1fr; }
@@ -736,12 +751,16 @@ button.fp__mi { cursor: pointer; }
   .fl { border: 0; border-radius: 0; overflow: visible; margin-top: 0; }
   .fl__t thead { display: none; }
   .fl__t, .fl__t tbody { display: block; }
-  .fl__t tr.fl__r { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--ax-border); }
+  .fl__t tr.fl__r { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--ax-border); }
   .fl__t tr.fl__r td { display: block; padding: 0; border: 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
   .fl__t tr.fl__r td:first-child { padding-left: 0; }
-  .fl__t tr.fl__r td.fl__task { order: -1; flex: 1 0 100%; min-width: 0; font-size: var(--ax-fs-sm); }
-  .fl__t tr.fl__r td.fl__a { margin-left: auto; }
+  .fl__t tr.fl__r td.fl__task { order: -1; flex: 1 0 100%; min-width: 0; padding-right: 64px; font-size: var(--ax-fs-sm); }
+  /* The row's actions sit at the end of the title line. */
+  .fl__t tr.fl__r td.fl__a { position: absolute; top: 8px; right: 0; width: auto; }
   .fl__t tr.fl__r td.num { text-align: left; }
+  .fl__t tr.fl__r td.num .fd-flag { display: inline-flex; margin: 0 0 0 8px; vertical-align: top; }
+  /* An empty cell ("None") says nothing on a stacked row. */
+  .fl__t tr.fl__r td:has(> .fl__none:only-child) { display: none; }
   .fl__st .fd-st, .fd-flag { font-size: var(--ax-fs-xs); }
   .fl__st { display: flex !important; gap: 8px; align-items: center; }
   .fl__st .fd-flag { margin: 0; }

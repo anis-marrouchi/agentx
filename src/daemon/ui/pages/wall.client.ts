@@ -318,7 +318,7 @@ ${HUB_NAV_SCRIPT}
   function initials(name) {
     var words = String(name).replace(/[-_.@]+/g, ' ').trim().split(/\s+/).filter(Boolean);
     if (!words.length) return '?';
-    return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+    return (words.length > 1 ? words[0][0] + words[1][0] : words[0][0]).toUpperCase();
   }
   /** The picture set for an agent or a person on this node (#1425), or ''. */
   function pictureOf(id, person) {
