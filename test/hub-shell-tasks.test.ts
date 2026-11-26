@@ -9,7 +9,7 @@ import { resolveHubLayout } from "../src/hub/layout"
 import { SHELL_MAIN } from "../src/hub/shell"
 import { parseHash } from "../src/hub/router"
 import {
-  TASKS_VIEW_KEY, TASK_LANES, readTasksView, saveTasksView, shellPane, shortAgo, taskLane, taskPosts, taskProjects, taskStateLabel, taskTone, tasksByLane, tasksOfProject,
+  TASKS_VIEW_KEY, TASK_LANES, forgeLane, forgePosts, forgeUnread, mergeTasks, readTasksView, saveTasksView, shellPane, shortAgo, taskLane, taskPosts, taskProjects, taskStateLabel, taskTone, tasksByLane, tasksOfProject,
   type TaskPost,
 } from "../src/hub/tasks"
 import { OPEN_STATES, CLOSED_STATES } from "../src/requests/store"
@@ -27,8 +27,8 @@ const sample: TaskPost[] = [
 const html = (el: ReturnType<typeof createElement>) => renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(TooltipProvider, null, el)))
 
 describe("tasks as data", () => {
-  it("columns are the store's open states, in order, then Closed", () => {
-    expect(TASK_LANES.map((l) => l.id)).toEqual([...OPEN_STATES, "closed"])
+  it("columns: To do, the store's open states in order, then Closed", () => {
+    expect(TASK_LANES.map((l) => l.id)).toEqual(["todo", ...OPEN_STATES, "closed"])
   })
   it("every closed state goes to Closed", () => {
     for (const s of CLOSED_STATES) expect(taskLane(s)).toBe("closed")
@@ -37,7 +37,7 @@ describe("tasks as data", () => {
   it("groups posts by column, every column kept", () => {
     const g = tasksByLane(sample)
     expect(g.map((x) => [x.lane.id, x.posts.map((p) => p.id)])).toEqual([
-      ["in_progress", ["r1"]], ["waiting_owner", ["r2"]], ["waiting_other", []], ["needs_attention", []], ["closed", ["r3", "r4"]],
+      ["todo", []], ["in_progress", ["r1"]], ["waiting_owner", ["r2"]], ["waiting_other", []], ["needs_attention", []], ["closed", ["r3", "r4"]],
     ])
   })
   it("reads the Wall reply, newest move first, drops rows without an id", () => {
@@ -52,7 +52,8 @@ describe("tasks as data", () => {
     expect(taskTone("needs_attention")).toBe("err")
   })
   it("states in words", () => {
-    expect(taskStateLabel("waiting_owner")).toBe("Waiting on you")
+    // Not "Waiting on you": that is the side menu's own page (#2324 review, C4).
+    expect(taskStateLabel("waiting_owner")).toBe("In review")
     expect(taskStateLabel("dropped")).toBe("Dropped")
   })
   it("short time ago", () => {
@@ -115,7 +116,7 @@ describe("List and Kanban for sample tasks", () => {
     expect(out).toContain('data-tasks="kanban"')
     for (const l of TASK_LANES) expect(out).toContain(`data-lane="${l.id}"`)
     for (const p of sample) expect(out).toContain(`data-task="${p.id}"`)
-    expect(out.match(/>Empty</g)?.length).toBe(2)
+    expect(out.match(/>Empty</g)?.length).toBe(3)
     expect(out).toContain("Dropped") // a closed task that is not done says how it closed
   })
   it("the body follows the view", () => {
@@ -124,7 +125,7 @@ describe("List and Kanban for sample tasks", () => {
   })
   it("empty: says so, with a way back to the chat", () => {
     const out = html(createElement(TasksBody, { view: "kanban", posts: [] }))
-    expect(out).toContain("No tasks in the last 7 days")
+    expect(out).toContain("No tasks")
     expect(out).toContain('href="#page=home"')
     expect(out).not.toContain('data-tasks="kanban"')
   })
@@ -216,5 +217,77 @@ describe("the project filter (#2226 S5)", () => {
     expect(out).toContain('aria-label="List"')
     expect(out).toContain('aria-label="Kanban"')
     expect(out).not.toContain(">List<")
+  })
+})
+
+// Forge issues and PRs in Tasks (#2226: "Tasks lists issues and open PRs from
+// GitHub and GitLab"), and a failed poll that keeps the board (#2324 C3).
+describe("forge issues and PRs", () => {
+  const ft = (over: Record<string, unknown> = {}) => ({
+    id: "github:acme/shop#7", forge: "github" as const, kind: "issue" as const, project: "acme/shop", number: 7,
+    title: "Cart total is wrong", url: "https://github.example/acme/shop/issues/7", author: "sam", assignees: [] as string[],
+    labels: [] as string[], updatedAt: now - 60_000, ...over,
+  })
+  it("the column: To do, assigned, draft, sent back, in review, a GitLab Status:: label", () => {
+    expect(forgeLane(ft())).toBe("todo")
+    expect(forgeLane(ft({ assignees: ["coder"] }))).toBe("in_progress")
+    expect(forgeLane(ft({ kind: "pr", draft: true }))).toBe("in_progress")
+    expect(forgeLane(ft({ kind: "pr", review: "changes_requested" }))).toBe("in_progress")
+    expect(forgeLane(ft({ kind: "pr", review: "review_required" }))).toBe("waiting_owner")
+    expect(forgeLane(ft({ kind: "pr" }))).toBe("waiting_owner")
+    expect(forgeLane(ft({ labels: ["Status::Review"] }))).toBe("waiting_owner")
+    expect(forgeLane(ft({ labels: ["bug", "Status::On Hold"] }))).toBe("waiting_other")
+    expect(forgeLane(ft({ kind: "pr", labels: ["Status::Doing"] }))).toBe("in_progress")
+  })
+  it("as posts: who has it (else who opened it), its repo, its ref and link", () => {
+    const posts = forgePosts({ items: [ft(), ft({ id: "gitlab:grp/app!4", forge: "gitlab", kind: "pr", project: "grp/app", number: 4, url: "https://gitlab.example/grp/app/-/merge_requests/4", assignees: ["dev"] })], unread: [] })
+    expect(posts[0]).toMatchObject({ id: "github:acme/shop#7", state: "todo", owner: "sam", project: "acme/shop", forge: { kind: "issue", ref: "#7" } })
+    expect(posts[1]).toMatchObject({ owner: "dev", state: "waiting_owner", forge: { kind: "pr", ref: "!4" } })
+    expect(forgePosts(null)).toEqual([])
+  })
+  it("a request whose home is the issue stands for it; the rest are merged, newest first", () => {
+    const forge = forgePosts({ items: [ft(), ft({ id: "github:acme/shop#8", number: 8, url: "https://github.example/acme/shop/issues/8", updatedAt: now })], unread: [] })
+    const req: TaskPost = { ...sample[0], home: { kind: "github-issue", link: "https://github.example/acme/shop/issues/7" } }
+    expect(mergeTasks([req], forge).map((p) => p.id)).toEqual(["github:acme/shop#8", "r1"])
+  })
+  it("projects not read are named; one still being read is not", () => {
+    expect(forgeUnread({ items: [], unread: [{ forge: "gitlab", project: "grp/app", why: "HTTP 401" }, { forge: "github", project: "acme/shop", why: "still being read", late: true }] })).toBe("Not read: grp/app (HTTP 401)")
+    expect(forgeUnread({ items: [], unread: [] })).toBeNull()
+  })
+  it("an issue or PR opens on its forge, in a new tab, with its kind", () => {
+    const out = html(createElement(TaskList, { posts: forgePosts({ items: [ft(), ft({ id: "github:acme/shop#9", kind: "pr", number: 9, url: "https://github.example/acme/shop/pull/9" })], unread: [] }) }))
+    expect(out).toContain('href="https://github.example/acme/shop/issues/7" target="_blank" rel="noreferrer"')
+    expect(out).toContain('data-task-kind="issue"')
+    expect(out).toContain('data-task-kind="pr"')
+    expect(out).toContain("acme/shop#7")
+    expect(out).toContain('data-lane="todo"')
+    const board = html(createElement(TaskBoard, { posts: forgePosts({ items: [ft()], unread: [] }) }))
+    expect(board).toContain('href="https://github.example/acme/shop/issues/7"')
+  })
+})
+
+describe("a failed refresh keeps the tasks (#2324 C3)", () => {
+  it("with tasks shown: they stay, the reason is one line above with Try again", () => {
+    const out = html(createElement(TasksBody, { view: "kanban", posts: sample, error: "requests: HTTP 502" }))
+    expect(out).toContain('data-tasks="kanban"')
+    expect(out).toContain('data-tasks="notice"')
+    expect(out).toMatch(/role="alert"[^>]*>[\s\S]*Could not refresh: requests: HTTP 502/)
+    expect(out).toContain("Try again")
+    expect(out).not.toContain("Could not read the tasks")
+  })
+  it("with nothing read yet: the error fills the pane", () => {
+    const out = html(createElement(TasksBody, { view: "kanban", error: "HTTP 502" }))
+    expect(out).toContain("Could not read the tasks")
+    expect(out).not.toContain('data-tasks="kanban"')
+  })
+  it("projects not read are said quietly, the tasks stay", () => {
+    const out = html(createElement(TasksBody, { view: "list", posts: sample, notice: "Not read: grp/app (HTTP 401)" }))
+    expect(out).toContain('role="status"')
+    expect(out).toContain("Not read: grp/app (HTTP 401)")
+    expect(out).toContain('data-tasks="list"')
+    expect(out).not.toContain('role="alert"')
+  })
+  it("no notice line when all is well", () => {
+    expect(html(createElement(TasksBody, { view: "list", posts: sample }))).not.toContain('data-tasks="notice"')
   })
 })

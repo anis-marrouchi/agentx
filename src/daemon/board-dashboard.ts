@@ -93,6 +93,7 @@ import { handleWallApi, WALL_PREFIX, withForge, type WallDeps } from "./wall-api
 import { gitlabTimeReader, wallForgeTime, type WallForgeTimeSource } from "./wall-forge-time"
 import { wallForgeState, type WallForgeStateSource } from "./wall-forge-state"
 import { reportedReader, wallReported, withReported, type WallReportedSource } from "./wall-reported"
+import { forgeTaskSources, forgeTasks, forgeTasksReader, type ForgeTasksSource } from "./hub-forge-tasks"
 import { forgeReader } from "@/requests/checkers/issue"
 import { handlePortfolioRequest } from "./wall-portfolio"
 import { claimPost, projectOverview, wallProjects } from "./wall-projects"
@@ -1113,6 +1114,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       const node = { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" }
       sendJson(res, 200, hubAgentsFor(snap.nodes || [], node, now, dayStart))
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
+    return
+  }
+  // The Hub's Tasks (#2226): the open issues and pull/merge requests of the
+  // repositories this node works on (hub-forge-tasks.ts), cached a minute.
+  // Read only, with the `gh` login and the GitLab channel's token.
+  //   GET /api/admin/hub/tasks
+  if (method === "GET" && path === "/api/admin/hub/tasks") {
+    try { sendJson(res, 200, await hubForgeTasksSource(ctx.config).read()) }
+    catch (e: any) { sendJson(res, 502, { error: e.message || "forges not read" }) }
     return
   }
   // Read-only status for the Hub's status bar (#2101 P9a, R28): each plan
@@ -3769,6 +3779,17 @@ function wallReportedSource(config: DaemonConfig): WallReportedSource | null {
   const key = JSON.stringify([cfg, c])
   if (wallReportedCached?.key !== key) wallReportedCached = { key, source: wallReported(cfg, reportedReader(c)) }
   return wallReportedCached.source
+}
+
+/** The Hub's forge Tasks (#2226), kept across reads so the minute's cache
+ *  holds; rebuilt when the projects or the GitLab channel change. */
+let hubForgeTasksCached: { key: string; source: ForgeTasksSource } | null = null
+function hubForgeTasksSource(config: DaemonConfig): ForgeTasksSource {
+  const sources = forgeTaskSources(config)
+  const gl = config.channels?.gitlab
+  const key = JSON.stringify([sources, gl?.host ?? null, gl?.token ?? null])
+  if (hubForgeTasksCached?.key !== key) hubForgeTasksCached = { key, source: forgeTasks(sources, forgeTasksReader(config)) }
+  return hubForgeTasksCached.source
 }
 
 /** A quick fleet read waits this long for each peer (#1442); a peer still
