@@ -53,9 +53,11 @@ export interface HaRow {
   unread: number
   /** The run it is on, when working: for a link to its Task page. */
   taskId: string
-  /** How many runs it has going: its own and the workers it started (#2145). */
+  /** How many runs of its own it has going (#2145). The workers a run
+   *  started are their own agents' runs, so they count on those rows. */
   runs: number
-  /** Runs started today, from the snapshot's hourly counts (haRunsToday). */
+  /** Runs started today: the finished ones from the snapshot's hourly
+   *  counts (haRunsToday) plus the ones going that started since dayStart. */
   today: number
   /** Its other runs going, newest first, each shown under the row (#2328). */
   more?: HaRun[]
@@ -98,6 +100,13 @@ export function haRunAt(t: LtTask): number {
   const moved = Date.parse(t.lastActivity || "")
   if (Number.isFinite(moved)) return moved
   const started = Date.parse(t.startedAt || "")
+  return Number.isFinite(started) ? started : 0
+}
+
+/** When a run started, ms; 0 when unknown. `haRunAt` is when it last
+ *  moved, so "runs today" reads the start itself (#2145). */
+export function haRunStart(t: LtTask): number {
+  const started = Date.parse((t && t.startedAt) || "")
   return Number.isFinite(started) ? started : 0
 }
 
@@ -168,7 +177,9 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
         id: a.id, name: a.name || a.id, node: n.name || n.url || "", nodeUrl: n.url || "",
         color: a.color || null, face: haFace(a.name || a.id), state, line: line.slice(0, 140),
         ageMs: lastAt ? Math.max(0, now - lastAt) : -1, unread: q ? q.n : 0,
-        taskId: t ? t.id : "", runs: runs.length, today: haRunsToday(a.hourlyTasks, now, dayStart),
+        taskId: t ? t.id : "", runs: runs.length, // hourlyTasks holds only finished runs (persistTaskRecord), so the runs
+        // going now that started today are added: a first run shows 1 today.
+        today: haRunsToday(a.hourlyTasks, now, dayStart) + runs.filter((r) => haRunStart(r) >= dayStart).length,
         ...(sorted.length > 1 ? { more: sorted.slice(1).map((r) => ({ taskId: r.id, channel: haChannelLabel(r.channel), line: title(r).slice(0, 140) })) } : {}),
       })
     }
