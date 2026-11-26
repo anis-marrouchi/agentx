@@ -3,7 +3,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import daemon from "../dist/daemon.js"
 
 const { daemonTarget, cliArgs, shellQuote, readStatus, canStop, stopDaemon, isLoopbackUrl, isAgentxProcess, managedService, startRefusal, DEFAULT_DAEMON_URL } = daemon
@@ -106,8 +106,9 @@ test("Restart runs in the daemon's own folder, never a guessed one", async () =>
   assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/srv/ax" })
   assert.deepEqual(restartTarget(T0, { running: true, configPath: "/etc/ax/agentx.json" }), { ...T0, config: "/etc/ax/agentx.json", cwd: "/etc/ax" })
   // `daemon start -c agentx.json`: a relative config is read from the daemon's folder, not the app's ".".
-  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "agentx.json" }), { ...T0, config: "/srv/ax/agentx.json", cwd: "/srv/ax" })
-  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "conf/agentx.json" }), { ...T0, config: "/srv/ax/conf/agentx.json", cwd: "/srv/ax" })
+  // resolve() gives the platform's own form (a drive letter on Windows).
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "agentx.json" }), { ...T0, config: resolve("/srv/ax", "agentx.json"), cwd: "/srv/ax" })
+  assert.deepEqual(restartTarget(T0, { running: true, cwd: "/srv/ax", configPath: "conf/agentx.json" }), { ...T0, config: resolve("/srv/ax", "conf/agentx.json"), cwd: "/srv/ax" })
   assert.equal(restartTarget(T0, { running: true, configPath: "agentx.json" }), null)
   const pinned = { ...T0, config: "/a/agentx.json", cwd: "/a" }
   assert.equal(restartTarget(pinned, { running: true, cwd: "/b" }), pinned)
