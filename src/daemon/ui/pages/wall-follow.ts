@@ -5,13 +5,16 @@
 // the composer. Pressing it goes back to the bottom and follows again.
 // Used by the Hub chat (#hc-log) and the Task page (#task-output).
 //
-// Shipped to the browser through injectFns: each function stands alone.
+// followAttach is shipped to the browser through injectFns and stands alone;
+// followBtnHtml is drawn on the server.
+
+import { icon } from "../icons"
 
 /** The button, hidden until the reader scrolls up. */
 export function followBtnHtml(id: string): string {
   return '<button type="button" class="ax-jump" id="' + String(id).replace(/[^\w-]/g, "") +
     '" aria-label="Jump to latest" title="Jump to latest" hidden>' +
-    '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></button>'
+    icon("arrow-down") + "</button>"
 }
 
 export interface Follow {

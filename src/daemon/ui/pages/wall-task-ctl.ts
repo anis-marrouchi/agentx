@@ -16,7 +16,10 @@
 //
 // The page's clock is cfClock (wall-chat-fold.ts).
 //
-// Shipped to the browser through injectFns: it stands alone.
+// Shipped to the browser through injectFns: it stands alone, and its icons
+// ride on it as tcCtlHtml.svg.
+
+import { icon } from "../icons"
 
 /** What the controls show. `paused` is the run's paused record, from the
  *  live snapshot (stoppedTasks); `busy` a control at work ("Pausing…"). */
@@ -32,10 +35,9 @@ export interface TcState {
 export function tcCtlHtml(s: TcState): string {
   const esc = (x: unknown) => String(x == null ? "" : x).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
-  const icon = (d: string) => '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + d + "</svg>"
-  const PAUSE = icon('<rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/>')
-  const STOP = icon('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>')
-  const PLAY = icon('<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>')
+  const PAUSE = tcCtlHtml.svg.pause
+  const STOP = tcCtlHtml.svg.stop
+  const PLAY = tcCtlHtml.svg.play
   if (s.busy) return '<span class="hc__busy" role="status">' + esc(s.busy) + "</span>"
   const p = s.paused
   if (p && p.state === "winding-down") {
@@ -49,3 +51,6 @@ export function tcCtlHtml(s: TcState): string {
   return '<button type="button" class="hc__tool" data-task-ctl="pause" aria-label="Pause" title="Pause: stop at the next point and write a plan to resume from">' + PAUSE + "</button>" +
     '<button type="button" class="hc__stopb" data-task-ctl="stop" aria-label="Stop" title="Stop: end this turn now, with no plan">' + STOP + "</button>"
 }
+// Lucide (icons.ts). The page gets them with the function: injectFns writes
+// this property into the page (inject.ts).
+tcCtlHtml.svg = { pause: icon("pause"), stop: icon("square"), play: icon("play") }

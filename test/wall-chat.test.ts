@@ -1118,7 +1118,7 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     await w.settle()
     await w.fire("hc-btn", "click")
     const page = w.page
-    expect(page).toMatch(/<button type="button" class="hc__hb hc__files" id="hc-files" data-cx="files" data-src="chat" aria-pressed="false" title="[^"]+" hidden><svg class="wfl__ic"/)
+    expect(page).toMatch(/<button type="button" class="hc__hb hc__files" id="hc-files" data-cx="files" data-src="chat" aria-pressed="false" title="[^"]+" hidden><svg class="lucide lucide-files wfl__ic"/)
     expect(w.el("hc-files").hidden).toBe(false)
     expect(w.win.AXHubChat.files()).toEqual({
       key: "chat:t1", kind: "chat", label: "Restyle",

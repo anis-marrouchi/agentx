@@ -708,7 +708,7 @@ describe("The Task page's Files button (#2101 R17)", () => {
     const w = openWall({ hash: "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1", history })
     await w.settle()
     const head = w.el("wall-task").innerHTML
-    expect(head).toMatch(/<div class="wtask__meta">.*<button type="button" class="wtask__files" id="wtask-files" data-cx="files" data-src="task" aria-pressed="false" title="The files this run read, changed or was given, and the workspace"><svg class="wfl__ic"[^>]*>.*<\/svg>Files<\/button>/)
+    expect(head).toMatch(/<div class="wtask__meta">.*<button type="button" class="wtask__files" id="wtask-files" data-cx="files" data-src="task" aria-pressed="false" title="The files this run read, changed or was given, and the workspace"><svg class="lucide lucide-files wfl__ic"[^>]*>.*<\/svg>Files<\/button>/)
     expect(w.el("wall-ctx").hidden).toBe(true)
     w.press(head, 'data-cx="files"')
     await w.settle()
