@@ -346,9 +346,9 @@ Each wake-up that came with the due-time check has its own switch. All are on by
 
 | Setting in `agentx.json`, under `requests` | Default | When it is `false` |
 |---|---|---|
-| `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
+| `promises.duePush` | `true` | A promise that falls due is not pushed: its agent is not woken by the requests check and whoever waits on it is not told. For a late PR, both wakes are off: the agent that owes it is not woken, and the agent in `promises.prLead` is not woken 15 minutes later. The promise comes back to you as **needs attention** once it is past its due time with nothing done on it since, or after the usual quiet time. A wake-up the promise already had still runs. |
 | `promises.acceptWake` | `true` | A due time an agent accepts on your request is stored and shown, but no run is started at that time. |
-| `promises.prLead` | `"pm-agent"` | An agent id, not `true` or `false`. Set it to `""` and only the agent that owes a late PR is woken; nobody else is woken 15 minutes later. |
+| `promises.prLead` | `"pm-agent"` | An agent id, not `true` or `false`. Set it to `""` and only the agent that owes a late PR is woken; nobody else is woken 15 minutes later. With `promises.duePush` set to `false`, nobody is woken. |
 | `promises.leadMinutes` | `15` | Minutes, not `true` or `false`. `0`: the agent that owes a promise is not woken before its due time. |
 | `promises.graceMinutes` | `30` | Minutes, not `true` or `false`. `0`: a promise needs attention the same minute it falls due. |
 | `ownerCheck.wakeOnPlanMismatch` | `true` | When the [owner-words check](#when-someone-else-closes-your-request-the-owner-words-check) reopens a request that a plan closed, you are told and no agent is woken. |

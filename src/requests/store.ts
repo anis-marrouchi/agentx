@@ -339,6 +339,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // The due time the missed-PR follow-up ran for (#2279): the lead is
   // woken once per due time, 15 min after the agent was.
   ensureColumns(db, "requests", [["pr_lead_for", "INTEGER"]])
+  // Whether that push woke the agent (#2291 C1): 0 when nothing could, so
+  // the lead is not told it was. NULL (older rows) reads as woken.
+  ensureColumns(db, "requests", [["due_push_woken", "INTEGER"]])
   // The due time a promise's agent was woken ahead of, and the due time
   // its grace ran out for (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY): once each
   // per due time, so a new due time is woken and raised again.
@@ -613,19 +616,19 @@ export class RequestStore {
   /** The promise was pushed for the due time it has now. The mark holds
    *  that due time (#1912): a different one, whichever version set it, is
    *  not pushed yet. */
-  markDuePushed(id: string, now: number): void {
-    this.db.prepare("UPDATE requests SET due_pushed_at = ?, due_pushed_for = due_at WHERE id = ?").run(now, id)
+  markDuePushed(id: string, now: number, woken: boolean | null = null): void {
+    this.db.prepare("UPDATE requests SET due_pushed_at = ?, due_pushed_for = due_at, due_push_woken = ? WHERE id = ?").run(now, woken === null ? null : woken ? 1 : 0, id)
   }
 
   /** Open promises an agent owes, pushed for the due time they have now
    *  between `since` and `before`, whose missed-PR follow-up has not run
    *  for that due time (#2279). Each is read once: `markPrLead`. */
-  prLeadsDue(since: number, before: number): Array<RequestRecord & { duePushedAt: number }> {
+  prLeadsDue(since: number, before: number): Array<RequestRecord & { duePushedAt: number; dueWoken: boolean }> {
     return (this.db.prepare(
       `SELECT * FROM requests WHERE promise = 1 AND COALESCE(owed_by, '') != ? AND state IN (${placeholders(OPEN_STATES.length)})
          AND due_at IS NOT NULL AND due_pushed_for = due_at AND due_pushed_at >= ? AND due_pushed_at <= ?
          AND (pr_lead_for IS NULL OR pr_lead_for != due_at) ORDER BY due_pushed_at, rowid`,
-    ).all(OWED_TO_OWNER, ...OPEN_STATES, since, before) as any[]).map((row) => ({ ...toRecord(row), duePushedAt: row.due_pushed_at }))
+    ).all(OWED_TO_OWNER, ...OPEN_STATES, since, before) as any[]).map((row) => ({ ...toRecord(row), duePushedAt: row.due_pushed_at, dueWoken: row.due_push_woken !== 0 }))
   }
 
   /** The missed-PR follow-up ran for the due time it has now (#2279). */

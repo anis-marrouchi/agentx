@@ -486,7 +486,7 @@ describe("a promised PR past its due time", () => {
     expect(turns[0].to).toBe("pm-agent")
     expect(turns[0].text).toContain("[agentx:pr-due-lead")
     expect(turns[0].text).toContain(ISSUE)
-    expect(turns[0].text).toContain("coder")
+    expect(turns[0].text).toContain("coder was woken")
 
     // Once: later checks wake nobody again.
     for (let i = 0; i < 3; i++) {
@@ -509,6 +509,29 @@ describe("a promised PR past its due time", () => {
     expect(turns[0].text).toContain(`[agentx:pr-due id=${p.id}]`)
     expect(turns[0].text).toContain(ISSUE)
     expect(store.get(p.id)!.attentionReason).toContain("woken")
+  })
+
+  it("tells the PM the agent could not be woken when nothing woke it (#2291 C1)", async () => {
+    const p = prPromise()
+    jobTakes = false
+    const lines: string[] = []
+    const run = () => runRequestsSweep({
+      store, settings, log: (l) => { lines.push(l) }, now: clock,
+      hasAgent: (id) => id === "pm-agent",
+      wakeJob: () => false,
+      tellAgent: async (to, text) => { turns.push({ to, text }) },
+      notify: async () => {},
+    })
+    clock += 2 * HOUR + MIN
+    expect((await run()).duePushed).toBe(1)
+    expect(turns).toEqual([])
+    clock += 15 * MIN
+    expect((await run()).prLeads).toBe(1)
+    expect(turns).toHaveLength(1)
+    expect(turns[0].to).toBe("pm-agent")
+    expect(turns[0].text).toContain("coder could not be woken")
+    expect(turns[0].text).not.toContain("coder was woken")
+    expect(lines.some((l) => l.includes(`${p.id} still has no PR 15 min after coder could not be woken: pm-agent woken`))).toBe(true)
   })
 
   it("wakes nobody about a PR when one is linked", async () => {

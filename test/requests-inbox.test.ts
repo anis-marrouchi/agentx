@@ -144,6 +144,15 @@ describe("requests in the Approvals inbox", () => {
     expect(store.get("req-t1")?.state).toBe("in_progress")
   })
 
+  it("names the agent whose turn failed, not the request's agent (#2291 C2)", async () => {
+    failed("t1")
+    await decide(ctx(), "request:req-t1", "yes")
+    await sweep()
+    const r = store.get("req-t1")!
+    expect(pickupEnded(store, r, { error: "rate limited" }, clock, "pm-agent")).toBe(true)
+    expect(store.get("req-t1")?.attentionReason).toBe("Could not hand it back to pm-agent: rate limited")
+  })
+
   it("stays in progress when the hand-back was queued behind the agent's current turn (#392)", async () => {
     failed("t1")
     await decide(ctx(), "request:req-t1", "yes")
