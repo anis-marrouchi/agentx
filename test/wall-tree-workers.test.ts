@@ -79,7 +79,7 @@ describe("ltWorkersHtml", () => {
     expect(html).not.toContain("<build>")
     expect(html).toContain('href="#open=handoff:dlg-a"')
     expect(html).toContain("on Clawd Server")
-    expect(html).toContain('class="lt__wm is-done"')
+    expect(html).toContain('<span class="ax-af-state" data-state="done">done</span>')
     expect(html).toContain("<time>10m</time>")
     expect(ltWorkersHtml([], () => "", ltEsc, ltAge)).toBe("")
   })

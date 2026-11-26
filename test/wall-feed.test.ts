@@ -386,7 +386,7 @@ describe("The agents in the left column (#2101 P4, V1)", () => {
     await w.settle()
     const list = w.el("hub-agents").innerHTML
     expect(list).toContain('data-ha-filter="working"')
-    expect(list).toContain("Working <span>")
+    expect(list).toContain('Working <span class="ax-af-count"')
     expect(list).toContain('href="#page=chat&amp;agent=')
     expect(list).not.toContain("Loading the agents")
   })
@@ -681,7 +681,7 @@ describe("Capacity per owner on the Wall (#1191)", () => {
     expect(html).toContain("above 2.")
     const rows = html.split("Capacity per owner")[1].split("<tr").slice(2)
     expect(rows[0]).toContain('href="#load=cx&amp;view=list">cx</a>')
-    expect(rows[0]).toContain('<td class="num">2</td><td class="num">1</td><td><span class="chip chip--warn">over capacity</span>')
+    expect(rows[0]).toContain('<td class="num">2</td><td class="num">1</td><td><span class="ax-af-state" data-state="waiting">over capacity</span>')
     expect(rows[1]).toContain("<td>ok</td>")
   })
 
@@ -723,7 +723,7 @@ describe("Capacity per owner on the Wall (#1191)", () => {
   it("says so when no agent carries open work, or the node is older", async () => {
     const w = openWall({ data: WALL, hash: "#view=projects" })
     await w.settle()
-    expect(w.el("wall-projects").innerHTML).toContain("No agent carries open work.")
+    expect(w.el("wall-projects").innerHTML).toContain("No agent carries open work</strong>")
   })
 })
 
@@ -1295,13 +1295,13 @@ describe("Wall v2 live sessions, comments and calls (#1355)", () => {
     expect(w.el("nav-n-live").textContent).toBe("3")
     const html = w.el("wall-live").innerHTML
     // Spaces first; the runs after them open the Wall's Task page (#1381).
-    const order = [...html.matchAll(/<(?:article|a) class="wls is-(\w+)"/g)].map((m) => m[1])
+    const order = [...html.matchAll(/<(?:article|a) class="wls ax-af-card is-(\w+)"/g)].map((m) => m[1])
     expect(order).toEqual(["space", "space", "work"])
     expect(html).toContain("Release notes")
     expect(html).toContain("data-join-space")
     expect(html).toContain("Plays on node-b")
     expect(html).toContain('href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;ask=Answering+a+refund&amp;at=')
-    expect(html).toContain("<b>digest</b>")
+    expect(html).toContain('<span class="ax-af-row__name">digest</span>')
     w.click({ "data-join-space": "" })
     await w.settle()
     expect(w.calls.some((c) => c.url === "/api/admin/wall/space" && !c.init?.method)).toBe(false)
@@ -1756,8 +1756,8 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     expect(w.el("wall-decide").hidden).toBe(false)
     expect(w.el("wall-feed").hidden).toBe(true)
     const html = w.el("wall-decide").innerHTML
-    expect(html).toContain('<p class="ax-wall__count wdc__head"><strong>1 waiting for you</strong></p>')
-    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">1<\/span>[\s\S]*data-dtab="later"[^>]*>Put off<[\s\S]*data-dtab="answered"[^>]*>Answered</)
+    expect(html).toContain('<div class="ax-af-card__head wdc__head"><strong class="ax-af-card__title">Waiting for you</strong><span class="ax-af-count" data-tone="warn" data-n="1" title="1 waiting">1</span></div>')
+    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="ax-af-count n" data-n="1">1<\/span>[\s\S]*data-dtab="later"[^>]*>Put off<[\s\S]*data-dtab="answered"[^>]*>Answered</)
     expect(html).toContain('data-dkind="" class="wdc__chip is-on" aria-pressed="true">All <span class="n">1</span>')
     for (const chip of ["Decisions <span class=\"n\">1", "Schedules <span class=\"n\">0", "Memory", "Wiki", "Drafts", "Requests", "Reviews <span class=\"n\">0"]) expect(html).toContain(chip)
     expect(html).toContain("Send the newsletter?")
@@ -1846,7 +1846,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, items: [], desk: { count: 0, later: 0, items: [] },
       answered: [{ key: "card:x", kind: "card", title: "Old", raised_by: "cx", answer: "yes", by: "operator", at: new Date(NOW - 3600e3).toISOString() }] } })
     await w.settle()
-    expect(w.el("wall-decide").innerHTML).toContain("<h2>Nothing needs you</h2><p>When an agent asks you something, it shows here. 1 answered this week.</p>")
+    expect(w.el("wall-decide").innerHTML).toContain("<strong>Nothing needs you</strong><span>When an agent asks you something, it shows here. 1 answered this week.</span>")
     expect(w.el("nav-n-needs").textContent).toBe("0")
   })
 
@@ -1855,7 +1855,8 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     const w = openWall({ hash: "#status=open&view=decide", approvals: { ...APPROVALS, items: [APPROVALS.items[0], snoozed], desk: { count: 1, later: 1, items: [] },
       answered: [{ key: "memory:cx/f1", kind: "memory", title: "Invoices go out on the 1st", raised_by: "cx", answer: "yes", by: "operator (dashboard)", at: new Date(NOW - 60e3).toISOString() }] } })
     await w.settle()
-    expect(w.el("wall-decide").innerHTML).toContain("1 waiting for you, 1 put off for later")
+    expect(w.el("wall-decide").innerHTML).toContain('Waiting for you</strong><span class="ax-af-count" data-tone="warn" data-n="1"')
+    expect(w.el("wall-decide").innerHTML).toContain('Put off <span class="ax-af-count n" data-n="1">1</span>')
     expect(w.el("wall-decide").innerHTML).not.toContain("Renew the domain?")
     w.click({ "data-dtab": "later" })
     await w.settle()
@@ -1906,7 +1907,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     await w.settle()
     const html = w.el("wall-decide").innerHTML
     // The count the Desk, the digest and /approvals give: reviews are not in it.
-    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="n">2<\/span>/)
+    expect(html).toMatch(/data-dtab="waiting"[^>]*>Waiting <span class="ax-af-count n" data-n="2">2<\/span>/)
     expect(html).toContain("All <span class=\"n\">2</span>")
     expect(html).toContain("Reviews <span class=\"n\">3</span>")
     expect(w.el("nav-n-needs").textContent).toBe(String(approvals.desk.count))
@@ -1918,7 +1919,7 @@ describe("Needs you: answer on the Wall (#1440)", () => {
     await empty.settle()
     empty.click({ "data-dtab": "answered" })
     await empty.settle()
-    expect(empty.el("wall-decide").innerHTML).toMatch(/<h2>Nothing answered yet<\/h2><p>History starts 2026-10-2[89]\. /)
+    expect(empty.el("wall-decide").innerHTML).toMatch(/<strong>Nothing answered yet<\/strong><span>History starts 2026-10-2[89]\. /)
     // Reviews and request replies skip decide(), so the page does not promise them.
     expect(empty.el("wall-decide").innerHTML).toContain("Your yes and no answers show here, from this page, the Desk, the phone app and the Mac card. Reviews and request replies are not listed.")
     const closed = { key: "card:c9", kind: "card", title: "Book the room?", raised_by: "cx", answer: "closed", text: "Owner said yes in chat", by: "cx", at: new Date(NOW - 60e3).toISOString() }
@@ -2461,7 +2462,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
     // Failing first, the off one last.
     expect(html.indexOf("New support ticket")).toBeLessThan(html.indexOf("Weekly report"))
     expect(html.indexOf("Weekly report")).toBeLessThan(html.indexOf("Old onboarding"))
-    expect(html).toMatch(/New support ticket to reply draft<\/button><span class="chip chip--err">Last run failed<\/span>[\s\S]*role="switch" aria-checked="true"/)
+    expect(html).toMatch(/New support ticket to reply draft<\/button><span class="ax-af-state" data-state="error">Last run failed<\/span>[\s\S]*role="switch" aria-checked="true"/)
     expect(html).toMatch(/When a message arrives by email[\s\S]*Customer Desk, Reviewer[\s\S]*Support/)
     expect(html).toMatch(/stopped at &quot;Write reply&quot;: Reviewer was paused/)
     expect(html).toMatch(/aria-label="Last 7 runs: completed, completed, completed, completed, completed, completed, failed"/)
@@ -2499,7 +2500,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
   it("filters by tab, text and project, kept in the link", async () => {
     const w = openWall({ hash: "#page=workflows", workflows: WORKFLOWS, wfRuns: RUNS })
     await w.settle()
-    expect(w.el("wall-workflows").innerHTML).toMatch(/data-wf-tab="running"[^>]*>Running <b class="wac__n is-run">1<\/b>/)
+    expect(w.el("wall-workflows").innerHTML).toMatch(/data-wf-tab="running"[^>]*>Running <b class="ax-af-count" data-n="1">1<\/b>/)
     w.click({ "data-wf-tab": "failed" })
     await w.settle()
     let html = w.el("wall-workflows").innerHTML
@@ -2532,10 +2533,10 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(w.loc.hash).toContain("w-open=support-reply")
     expect(w.calls.map((c) => c.url)).toContain("/api/workflows/runs/s1")
     const html = w.el("wall-workflows").innerHTML
-    expect(html).toMatch(/<b>Run at \d\d:\d\d<\/b> <span class="chip chip--err">Failed<\/span> <small>took 1 min 40 s · started when a message arrives by email · on node-a/)
-    expect(html).toMatch(/class="is-ok">[\s\S]*<b>Read ticket<\/b><small>Customer Desk · 8 s<\/small>/)
-    expect(html).toMatch(/class="is-err">[\s\S]*<b>Write reply<\/b><small>Reviewer · stopped: Reviewer was paused<\/small>/)
-    expect(html).toMatch(/class="is-todo">[\s\S]*<b>Send to needs you<\/b><small>not reached<\/small>/)
+    expect(html).toMatch(/<b>Run at \d\d:\d\d<\/b> <span class="ax-af-state" data-state="error">Failed<\/span> <small>took 1 min 40 s · started when a message arrives by email · on node-a/)
+    expect(html).toMatch(/class="ax-af-row is-ok"><b class="ax-af-row__name">Read ticket<\/b><span class="ax-af-row__meta" title="Customer Desk · 8 s">Customer Desk · 8 s<\/span><span class="ax-af-state" data-state="done">done<\/span>/)
+    expect(html).toMatch(/class="ax-af-row is-err"><b class="ax-af-row__name">Write reply<\/b><span class="ax-af-row__meta"[^>]*>Reviewer · stopped: Reviewer was paused[^<]*<\/span><span class="ax-af-state" data-state="error">failed<\/span>/)
+    expect(html).toMatch(/class="ax-af-row is-todo"><b class="ax-af-row__name">Send to needs you<\/b><span class="ax-af-state">not reached<\/span>/)
     expect(html).toContain('data-wf-again="support-reply"')
     // The editor is a Wall page (#1524): same tab, no new window.
     expect(html).toContain('href="#page=editor&amp;e-wf=support-reply">Open in the editor</a>')
@@ -2596,7 +2597,7 @@ describe("The Workflows page on the Wall (#1445)", () => {
     expect(sent[0].body).toMatchObject({ id: "weekly", state: "disabled", nodes: WEEKLY.nodes })
     const html = w.el("wall-workflows").innerHTML
     expect(html).toContain("&quot;Weekly report&quot; is off. It takes no new runs; runs under way go on.")
-    expect(html).toMatch(/Weekly report<\/button><span class="chip chip--ghost wwf__offchip">Off<\/span>[\s\S]*role="switch" aria-checked="false"/)
+    expect(html).toMatch(/Weekly report<\/button><span class="ax-af-state wwf__offchip">Off<\/span>[\s\S]*role="switch" aria-checked="false"/)
   })
 
   it("says so when a write is refused, and when the list cannot be read; the rest of the Wall goes on", async () => {

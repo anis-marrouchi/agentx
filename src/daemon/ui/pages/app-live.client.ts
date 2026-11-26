@@ -24,7 +24,7 @@ export const APP_LIVE_SCRIPT = `
   sheet.innerHTML = '<form method="dialog"><div class="fx-row"><h3 id="lv-title"></h3><span id="lv-age" class="fx-muted"></span></div>' +
     '<p id="lv-where" class="fx-muted"></p>' +
     '<p id="lv-ask" class="lv-ask"></p>' +
-    '<p id="lv-state" class="lv-state" role="status" aria-live="polite"></p>' +
+    '<p id="lv-state" class="ax-af-state lv-state" role="status" aria-live="polite"></p>' +
     '<p id="lv-text" class="lv-text"></p>' +
     '<p id="lv-more" class="fx-muted" hidden></p>' +
     '<label id="lv-field"><span>Send to the agent</span><textarea id="lv-input" rows="2"></textarea></label>' +
@@ -41,7 +41,8 @@ export const APP_LIVE_SCRIPT = `
   function fresh() { return { phase: 'connecting', step: '', steps: 0, text: '', final: '', more: '' }; }
   function draw() {
     $('lv-state').textContent = liveLabel(view);
-    $('lv-state').className = 'lv-state lv-' + view.phase;
+    var st = { running: 'running', done: 'done', failed: 'error', lost: 'error' }[view.phase];
+    if (st) $('lv-state').setAttribute('data-state', st); else $('lv-state').removeAttribute('data-state');
     var over = view.phase === 'done' || view.phase === 'failed' || view.phase === 'ended';
     $('lv-text').textContent = over ? (view.final || view.text || '') : view.text;
     $('lv-more').hidden = !(over && view.more && view.phase !== 'ended');
@@ -141,9 +142,6 @@ export const APP_LIVE_SCRIPT = `
 
 export const APP_LIVE_CSS = `
 .lv-ask { color: var(--ax-text); }
-.lv-state { font-weight: 600; color: var(--ax-text); margin: 8px 0 4px; }
-.lv-running::before { content: "◔ "; color: var(--ax-accent); }
-.lv-done { color: var(--ax-green-ink, var(--ax-text)); }
-.lv-failed, .lv-lost { color: var(--ax-red-ink); }
+.lv-state { margin: 8px 0 4px; }
 .lv-text { min-height: 2.9em; white-space: normal; overflow-wrap: anywhere; color: var(--ax-text-2); }
 `

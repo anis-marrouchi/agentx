@@ -32,6 +32,7 @@
 // buttons of an agent's page and profile.
 
 import { HUB_NAME } from "../hub-name"
+import { afLoaderHtml } from "../affect.css"
 
 export const WALL_LIVE_SCRIPT = String.raw`
   // --- Live sessions, live ones first ---
@@ -79,8 +80,8 @@ export const WALL_LIVE_SCRIPT = String.raw`
   function workHtml(s) {
     var t = s.task, job = t.channel === 'cron';
     var jobId = job ? String(t.sender || t.chatId || '').replace(/^cron:/, '') : '';
-    return '<a class="wls is-work" href="' + esc(wallTaskHref(t, s.agent.id, s.node.url)) + '" title="Open this run: its conversation and a box to steer it">' +
-      '<div class="wls__h"><span class="ax-badge ax-badge--live">● ' + (job ? 'Job' : 'Session') + '</span><span class="wls__k">' +
+    return '<a class="wls ax-af-card is-work" href="' + esc(wallTaskHref(t, s.agent.id, s.node.url)) + '" title="Open this run: its conversation and a box to steer it">' +
+      '<div class="wls__h"><span class="ax-af-state" data-state="running">' + (job ? 'Job' : 'Session') + '</span><span class="wls__k">' +
         esc(s.node.name) + (t.channel && !job ? ' · ' + esc(t.channel) : '') + ' · <span class="wls__dur">for ' + esc(dur(Date.now() - s.at)) + '</span></span></div>' +
       '<div class="wls__ag">' + avatar(s.agent.id, 'sm') + '<b>' + esc(nameOf(s.agent.id)) + '</b><span class="h">@' + esc(s.agent.id) + '</span>' +
         (jobId ? '<span class="chip chip--ghost">' + esc(jobId) + '</span>' : '') + '</div>' +
@@ -96,7 +97,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     var join = s.kind === 'space'
       ? (s.here ? '<button type="button" class="ax-btn" data-join-space>Join</button>' : '<span class="wls__k">Plays on ' + esc(s.node.name) + '</span>')
       : '<span class="wls__k">On ' + esc(s.node.name) + '\'s screen</span>' + lvBtn('lesson', s.node.url, '', 'Stop', '', 'End the lesson and give the screen back', true);
-    return '<article class="wls is-' + s.kind + '"><div class="wls__h"><span class="ax-badge ax-badge--live">● ' + label + '</span><span class="wls__k">' + esc(s.node.name) +
+    return '<article class="wls ax-af-card is-' + s.kind + '"><div class="wls__h"><span class="ax-af-state" data-state="running">' + label + '</span><span class="wls__k">' + esc(s.node.name) +
       (s.at ? ' · since ' + esc(stamp(s.at).slice(11, 16)) : '') + '</span></div>' +
       '<p class="wls__t">' + esc(s.title) + '</p>' +
       '<div class="wls__f"><span class="wls__who">' + who + '<span>' + names + '</span></span>' + join + '</div></article>';
@@ -109,27 +110,29 @@ export const WALL_LIVE_SCRIPT = String.raw`
     return next.filter(function (x) { return x.at > Date.now(); }).sort(function (a, b) { return a.at - b.at; }).slice(0, 5);
   }
   function livePageHtml() {
-    if (!S.live) return '<p class="ax-wall__empty">Loading…</p>';
+    if (!S.live) return '<div class="wlv">${afLoaderHtml("Loading the live sessions…")}</div>';
     var all = liveSessions(), next = comingUp(), stopped = stoppedList();
     var live = all.filter(function (s) { return s.kind !== 'work'; }), work = all.filter(function (s) { return s.kind === 'work'; });
     var agents = allAgents().filter(function (a) { return a.nodes.length; });
     var opts = function (pick) { return agents.map(function (a, i) { return '<option value="' + esc(a.id) + '"' + (i === pick ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join(''); };
     return '<div class="wlv">' + lvNoteHtml() +
-      (live.length ? '<h3>Spaces and lessons <small>' + live.length + '</small></h3>' + live.map(sessionHtml).join('') : '') +
-      '<h3>Running now <small>' + work.length + '</small></h3>' +
-      (work.length ? '<div class="wlv__work">' + work.map(sessionHtml).join('') + '</div>' : '<p class="ax-wall__empty">No session or job is running.' + (live.length ? '' : ' Start a Space below, or open a post and start one about it.') + '</p>') +
-      (stopped.length ? '<h3>Paused <small>' + stopped.length + '</small></h3><p class="ax-wall__count">Tasks a stop paused. Each kept a plan to go on from.</p>' + stopped.map(function (x) { return stoppedHtml(x); }).join('') : '') +
+      (live.length ? '<h3>Spaces and lessons ' + cnt(live.length) + '</h3>' + live.map(sessionHtml).join('') : '') +
+      '<h3>Running now ' + cnt(work.length) + '</h3>' +
+      (work.length ? '<div class="wlv__work">' + work.map(sessionHtml).join('') + '</div>' : '<div class="ax-af-empty"><strong>No session or job is running</strong><span>' + (live.length ? 'A job runs here when its time comes.' : 'Start a Space below, or open a post and start one about it.') + '</span><a class="ax-btn ax-btn--ghost" href="#page=jobledger">Open Jobs</a></div>') +
+      (stopped.length ? '<h3>Paused ' + cnt(stopped.length) + '</h3><p class="ax-wall__count">Tasks a stop paused. Each kept a plan to go on from.</p>' + stopped.map(function (x) { return stoppedHtml(x); }).join('') : '') +
       machinesHtml() +
       '<div id="live-space">' + spaceHtml() + '</div>' +
-      '<h3>Coming up</h3>' + (next.length ? '<ul class="wlv__next">' + next.map(function (x) {
-        return '<li>' + avatar(x.j.agent, 'sm') + '<span><b>' + esc(x.j.id) + '</b> <small>@' + esc(x.j.agent) + ' on ' + esc(x.n.name) + '</small></span><span class="wls__k">' + esc(until(x.at)) + '</span></li>';
-      }).join('') + '</ul>' : '<p class="ax-wall__empty">No scheduled job is due.</p>') +
+      '<h3>Coming up ' + cnt(next.length) + '</h3>' + (next.length ? '<ul class="wlv__next ax-af-card">' + next.map(function (x) {
+        return '<li class="ax-af-row">' + avatar(x.j.agent, 'sm') + '<span class="ax-af-row__name">' + esc(x.j.id) + '</span><span class="ax-af-row__meta">@' + esc(x.j.agent) + ' on ' + esc(x.n.name) + '</span><span class="wls__k">' + esc(until(x.at)) + '</span></li>';
+      }).join('') + '</ul>' : '<div class="ax-af-empty"><strong>No scheduled job is due</strong><span>Jobs with a next run show here.</span><a class="ax-btn ax-btn--ghost" href="#page=jobledger">Open Jobs</a></div>') +
       (agents.length > 1 ? '<h3>Start a Space</h3><p class="ax-wall__count">Two agents talk out loud on this computer; you listen and can join in.</p>' +
         '<div class="wdo__row"><select id="lv-a" aria-label="First agent">' + opts(0) + '</select><select id="lv-b" aria-label="Second agent">' + opts(1) + '</select>' +
         '<input id="lv-topic" class="wdo__t" maxlength="200" placeholder="What should they talk about?">' +
         '<button type="button" class="ax-btn" data-live-start>Start</button></div><p class="wdo__n" id="lv-note" role="status"></p>' : '') +
     '</div>';
   }
+  /** A section's count (affect.css.ts), hidden at 0. */
+  function cnt(n) { return '<span class="ax-af-count" data-n="' + n + '">' + n + '</span>'; }
   function liveCount() { return S.live ? liveSessions().length : null; }
   async function joinSpace() {
     var r = await act('GET', '/api/admin/wall/space');
@@ -201,8 +204,8 @@ export const WALL_LIVE_SCRIPT = String.raw`
         : '') +
       (!winding ? lvBtn('drop', n.url, t.id, 'Drop', 'Drop it for good?', 'Forget this paused task and its plan: it can no longer be resumed', true) : '');
     var open = onTask ? '' : '<a class="wls__k" href="' + esc(wallTaskHref({ id: t.id, channel: t.channel, message: t.request }, t.agentId, n.url, true)) + '">Open the run</a>';
-    return '<article class="wls is-stopped" aria-label="Paused task of ' + esc(nameOf(t.agentId)) + '">' +
-      '<div class="wls__h"><span class="ax-badge ax-badge--warn">' + (winding ? 'Pausing…' : '❚❚ Paused') + '</span><span class="wls__k">' + esc(n.name) +
+    return '<article class="wls ax-af-card is-stopped" aria-label="Paused task of ' + esc(nameOf(t.agentId)) + '">' +
+      '<div class="wls__h"><span class="ax-af-state" data-state="waiting">' + (winding ? 'Pausing…' : 'Paused') + '</span><span class="wls__k">' + esc(n.name) +
         (t.channel ? ' · ' + esc(t.channel) : '') + ' · stopped by ' + esc(stopperName(t.stoppedBy)) + (at ? ' at ' + esc(hhmm(at)) + ' (' + esc(ago(at)) + ')' : '') + '</span></div>' +
       (onTask ? '' : '<div class="wls__ag">' + avatar(t.agentId, 'sm') + '<b>' + esc(nameOf(t.agentId)) + '</b><span class="h">@' + esc(t.agentId) + '</span></div>') +
       (onTask ? '' : '<p class="wls__t">' + esc(t.request || 'A task') + '</p>') +
@@ -216,28 +219,28 @@ export const WALL_LIVE_SCRIPT = String.raw`
   function machinesHtml() {
     var nodes = (S.live && S.live.nodes) || [];
     if (!nodes.length) return '';
-    return '<h3>Machines <small>' + nodes.length + '</small></h3><div class="wlv__mc">' + nodes.map(machineHtml).join('') + '</div>';
+    return '<h3>Machines ' + cnt(nodes.length) + '</h3><div class="wlv__mc">' + nodes.map(machineHtml).join('') + '</div>';
   }
   function machineHtml(n) {
     var down = !n.reachable || n.error;
     var badge = down
-      ? '<span class="ax-badge ax-badge--err">' + (n.stale ? 'not responding' : 'unreachable') + '</span>'
-      : '<span class="ax-badge ax-badge--live">up' + (n.uptimeSec ? ' ' + esc(dur(n.uptimeSec * 1000)) : '') + '</span>';
+      ? '<span class="ax-af-state" data-state="error">' + (n.stale ? 'not responding' : 'unreachable') + '</span>'
+      : '<span class="ax-af-state">up' + (n.uptimeSec ? ' ' + esc(dur(n.uptimeSec * 1000)) : '') + '</span>';
     var head = '<div class="wls__h"><b>' + esc(n.name) + '</b>' + badge + '</div>';
     if (down) {
-      return '<article class="wls wmc is-down">' + head + '<p class="wls__k">' + esc(n.error || 'It does not answer.') +
+      return '<article class="wls ax-af-card wmc is-down">' + head + '<p class="wls__k">' + esc(n.error || 'It does not answer.') +
         (n.stale ? ' Shown from its last answer, ' + esc(ago(Date.parse(n.staleSince) || Date.now())) + '.' : '') + ' Its controls come back when it answers.</p></article>';
     }
-    return '<article class="wls wmc" aria-label="Machine ' + esc(n.name) + '">' + head +
+    return '<article class="wls ax-af-card wmc" aria-label="Machine ' + esc(n.name) + '">' + head +
       '<div class="wmc__r">' + restartHtml(n) + '</div>' + attachedHtml(n) + connectHtml(n) + '</article>';
   }
   function restartHtml(n) {
     var r = n.restart;
     if (!r) return '<span class="wls__k">This machine does not say whether it can restart, so it cannot restart from here.</span>';
-    if (r.state === 'restarting') return '<span class="ax-badge ax-badge--warn" role="status">Restarting…</span>';
+    if (r.state === 'restarting') return '<span class="ax-af-state" data-state="waiting" role="status">Restarting…</span>';
     if (r.state === 'pending') {
       var dl = Date.parse(r.deadline || '') || 0;
-      return '<span class="ax-badge ax-badge--warn" role="status" title="It restarts as soon as no task runs">Restart waiting · ' +
+      return '<span class="ax-af-state" data-state="waiting" role="status" title="It restarts as soon as no task runs">Restart waiting · ' +
           (typeof n.inflight === 'number' ? n.inflight + ' running' : 'tasks running') + (dl ? ' · until ' + esc(hhmm(dl)) : '') + '</span>' +
         lvBtn('cancel', n.url, '', 'Cancel restart', '', 'Keep it running: forget the restart', true);
     }
@@ -259,7 +262,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
       return '<li><span class="wmc__who">' + who + '</span><span class="wmc__m"><b>' + esc(r.project || 'A session') + '</b> · ' + esc(time) +
         (ATTACH_MODE[r.mode] ? ' · ' + esc(ATTACH_MODE[r.mode]) : '') + (r.pending ? ' · ' + r.pending + ' waiting for it' : '') + '</span></li>';
     }).join('') + '</ul>' : '<p class="wls__k">None attached. Connect one below, or open Claude Code with the AgentX attach hooks.</p>';
-    return '<section class="wmc__s"><h4>' + engineIcon('claude-code', 'ax-eng') + ' Claude Code sessions <small>' + rows.length + '</small></h4>' + list + '</section>';
+    return '<section class="wmc__s"><h4>' + engineIcon('claude-code', 'ax-eng') + ' Claude Code sessions ' + cnt(rows.length) + '</h4>' + list + '</section>';
   }
   function connectHtml(n) {
     var c = lvState().cli[n.url], body = '';
@@ -267,7 +270,7 @@ export const WALL_LIVE_SCRIPT = String.raw`
     else if (c && c.items) {
       body = c.items.length ? '<ul class="wmc__l">' + c.items.map(function (x, j) {
         return '<li><span class="wmc__m"><b>' + esc(x.name) + '</b> · ' + esc(x.meta) + '</span>' +
-          (x.done ? '<span class="ax-badge ax-badge--live">Connected</span>' : lvBtn('reg', n.url, String(j), 'Connect', '', x.title)) + '</li>';
+          (x.done ? '<span class="ax-af-state" data-state="done">Connected</span>' : lvBtn('reg', n.url, String(j), 'Connect', '', x.title)) + '</li>';
       }).join('') + '</ul>' : '<p class="wls__k">No CLI found. Only the processes this machine\'s AgentX account runs show here.</p>';
     }
     return '<section class="wmc__s"><h4>Connect a CLI session</h4>' +
@@ -405,8 +408,7 @@ export const WALL_LIVE_CSS = `
 /* Live sessions (#1355), as Spaces on X: live first, with Join. */
 .wlv { padding: 4px 16px 24px; }
 .wlv h3 { font-size: var(--ax-fs); margin: 14px 0 8px; }
-.wlv h3 small { color: var(--ax-muted); font-weight: 400; }
-.wls { border: 1px solid var(--ax-border); border-radius: var(--ax-radius-lg); padding: 12px 14px; margin-bottom: 10px; background: var(--ax-bg-elev); }
+.wls { padding: 12px 14px; margin-bottom: 10px; }
 .wls.is-space { background: linear-gradient(120deg, color-mix(in srgb, var(--ax-accent) 14%, var(--ax-bg)), var(--ax-bg)); border-color: color-mix(in srgb, var(--ax-accent) 40%, var(--ax-border)); }
 .wls__h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .wls__k { color: var(--ax-muted); font-size: var(--ax-fs-xs); }
@@ -421,10 +423,8 @@ export const WALL_LIVE_CSS = `
 .wls__f { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .wls__who { display: inline-flex; align-items: center; gap: 4px; font-size: var(--ax-fs-sm); min-width: 0; }
 .wls__who > span { margin-left: 4px; color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wlv__next { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.wlv__next li { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--ax-border); font-size: var(--ax-fs-sm); }
-.wlv__next li > span:nth-child(2) { flex: 1; min-width: 0; }
-.wlv__next small { color: var(--ax-muted); }
+.wlv__next { list-style: none; margin: 0; padding: 0; }
+.wlv__next .wls__k { margin-left: auto; white-space: nowrap; }
 .wlv select { font: inherit; font-size: var(--ax-fs-sm); color: var(--ax-text); background: var(--ax-bg); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 10px; }
 /* The owner's controls (#1439): paused tasks and machines. */
 .wlv__note { margin: 8px 0 0; padding: 8px 12px; border-radius: var(--ax-radius-lg); background: var(--ax-bg-elev); border: 1px solid var(--ax-border); font-size: var(--ax-fs-sm); }
@@ -444,7 +444,6 @@ export const WALL_LIVE_CSS = `
 .wmc__r { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 2px; }
 .wmc__s { border-top: 1px solid var(--ax-border); margin-top: 10px; padding-top: 8px; }
 .wmc__s h4 { margin: 0 0 6px; font-size: var(--ax-fs-sm); }
-.wmc__s h4 small { color: var(--ax-muted); font-weight: 400; }
 .wmc__s p { margin: 0 0 6px; }
 .wmc__l { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .wmc__l li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--ax-fs-sm); min-width: 0; }

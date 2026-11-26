@@ -119,15 +119,15 @@ describe("Wall Live: sessions and jobs running now (#1381)", () => {
     const w = openWall({ hash: "#page=live" })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Running now <small>2</small></h3>")
+    expect(html).toContain('<h3>Running now <span class="ax-af-count" data-n="2">2</span></h3>')
     const cx = html.split("task=t9")[1].split("</a>")[0]
-    expect(cx).toContain("● Session")
+    expect(cx).toContain('data-state="running">Session</span>')
     expect(cx).toContain("<b>Customer Desk</b><span class=\"h\">@cx</span>")
     expect(cx).toContain("Answering a refund")
     expect(cx).toContain("for 2 min")
     expect(cx).toContain("Using Bash")
     const job = html.split("task=t5")[1].split("</a>")[0]
-    expect(job).toContain("● Job")
+    expect(job).toContain('data-state="running">Job</span>')
     expect(job).toContain('<span class="chip chip--ghost">digest</span>')
     expect(job).toContain("Step: agent")
   })
@@ -136,12 +136,12 @@ describe("Wall Live: sessions and jobs running now (#1381)", () => {
     const w = openWall({ hash: "#page=live" })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain('<a class="wls is-work" href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;trace=tr9&amp;ch=telegram&amp;ask=Answering+a+refund+for+order+47&amp;at=')
+    expect(html).toContain('<a class="wls ax-af-card is-work" href="#page=task&amp;task=t9&amp;agent=cx&amp;node=http%3A%2F%2Fnode-a&amp;trace=tr9&amp;ch=telegram&amp;ask=Answering+a+refund+for+order+47&amp;at=')
     const live = w.streams.find((s) => s.url === "/api/live/stream")!
     expect(live).toBeTruthy()
     // A snapshot with the run gone takes its card away.
     live.on.snapshot({ data: JSON.stringify({ nodes: [{ ...LIVE.nodes[0], agents: [{ id: "cx", name: "Customer Desk", runningTasks: [] }] }] }) })
-    expect(w.el("wall-live").innerHTML).toContain("No session or job is running.")
+    expect(w.el("wall-live").innerHTML).toContain("No session or job is running</strong>")
     w.go("#page=agents")
     await w.settle()
     expect(live.closed).toBe(true)
@@ -396,8 +396,8 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Paused <small>1</small></h3>")
-    const card = html.split('class="wls is-stopped"')[1].split("</article>")[0]
+    expect(html).toContain('<h3>Paused <span class="ax-af-count" data-n="1">1</span></h3>')
+    const card = html.split('class="wls ax-af-card is-stopped"')[1].split("</article>")[0]
     expect(card).toContain("stopped by you")
     expect(card).toContain("Update the price list")
     expect(card).toContain("Why: Waiting for the new price list")
@@ -434,7 +434,7 @@ describe("Wall Live: paused tasks, Resume and Drop (#1439)", () => {
     const w = openWall({ hash: "#page=task&task=t7&agent=cx&node=http%3A%2F%2Fnode-a&ch=telegram&done=1", live: OPS, history: { ok: true, channel: "telegram", message: "Update the price list" } })
     await w.settle()
     const ops = w.el("wtask-ops").innerHTML
-    expect(ops).toContain("❚❚ Paused")
+    expect(ops).toContain('data-state="waiting">Paused</span>')
     expect(ops).toContain("Resume plan, by Customer Desk")
     expect(ops).not.toContain('data-lv="resume"')
     // A read-only run's ask box opens for Resume alone.
@@ -503,7 +503,7 @@ describe("Wall Live: machines (#1439)", () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
     const html = w.el("wall-live").innerHTML
-    expect(html).toContain("<h3>Machines <small>2</small></h3>")
+    expect(html).toContain('<h3>Machines <span class="ax-af-count" data-n="2">2</span></h3>')
     w.press(html, 'data-lv="restart"')
     w.press(w.el("wall-live").innerHTML, 'data-lv="restart"')
     await w.settle()
@@ -522,7 +522,7 @@ describe("Wall Live: machines (#1439)", () => {
   it("lists the attached Claude Code sessions with their agent and start time", async () => {
     const w = openWall({ hash: "#page=live", live: OPS })
     await w.settle()
-    const s = w.el("wall-live").innerHTML.split("Claude Code sessions <small>1</small>")[1].split("</section>")[0]
+    const s = w.el("wall-live").innerHTML.split('Claude Code sessions <span class="ax-af-count" data-n="1">1</span>')[1].split("</section>")[0]
     expect(s).toContain("<b>Customer Desk</b>")
     expect(s).toContain("<b>demo-site</b>")
     expect(s).toMatch(/started \d\d:\d\d \(60 min ago\)/)
@@ -576,7 +576,7 @@ describe("The agent list in the nav (#2101 P4, R26)", () => {
     live.on.snapshot({ data: JSON.stringify(LIVE) })
     const agents = w.el("hub-agents").innerHTML
     expect(agents.match(/class="ha__row is-working/g)).toHaveLength(2)
-    expect(agents).toContain("Working <span>2</span>")
+    expect(agents).toContain('Working <span class="ax-af-count" data-n="2">2</span>')
     expect(w.el("wall-feed").innerHTML).toBe(feed)
     // R26: a working agent's row opens its live run on the Task page, not its chat.
     const row = /<a class="ha__row is-working[^"]*" href="([^"]*)" data-ha-agent="cx"/.exec(agents)

@@ -25,6 +25,7 @@
 import { APP_REDESIGN_CSS } from "./app-redesign.css"
 import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_THEME_BOOT, AX_TOKENS_CSS } from "../tokens"
+import { AX_AFFECT_CSS, afLoaderHtml } from "../affect.css"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_LIVE_CSS, APP_LIVE_SCRIPT } from "./app-live.client"
@@ -85,7 +86,7 @@ function head(title: string): string {
 <link rel="apple-touch-icon" href="/app/icon-192.png">
 <title>${title}</title>
 ${THEME_BOOT}
-<style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
+<style>${AX_TOKENS_CSS}${AX_AFFECT_CSS}${BASE_CSS}</style>`
 }
 
 const TAB_ICONS: Record<string, string> = {
@@ -122,13 +123,13 @@ export function renderAppPage(): string {
   const panels = TABS.map((t, i) =>
     `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
       <h2>${t.label}</h2>
-      ${t.id === "more" ? more : `<p class="soon">${t.soon}</p>`}
+      ${t.id === "more" ? more : afLoaderHtml(t.soon)}
     </section>`,
   ).join("") + MORE_PAGES.map((p) =>
     `<section role="tabpanel" id="panel-${p.id}" aria-labelledby="tab-more" tabindex="0" data-more-page hidden>
       <a class="more-back" href="#more">‹ More</a>
       <h2>${p.label}</h2>
-      <p class="soon">${p.soon}</p>
+      ${afLoaderHtml(p.soon)}
     </section>`,
   ).join("")
 

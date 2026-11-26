@@ -35,6 +35,7 @@
 // refreshWorkflows() is called from the Wall's own load().
 
 import { HUB_NAME } from "../hub-name"
+import { afLoaderHtml } from "../affect.css"
 
 export const WALL_WORKFLOWS_SCRIPT = String.raw`
   var WFP = { defs: null, runs: null, capped: false, error: '', note: '', bad: false, detail: {}, fu: null, req: null, busy: {}, dlg: null, loading: false };
@@ -109,10 +110,14 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     if (!last) return 'never';
     return last.status === 'failed' ? 'failed' : last.status === 'canceled' ? 'stopped' : 'done';
   }
+  /** Each state's word and its shared .ax-af-state (#2152): '' is idle grey. */
   var WF_CHIP = {
-    off: ['Off', 'chip--ghost'], held: ['Held', 'chip--warn'], running: ['Running', 'chip--done'], waiting: ['Waiting', 'chip--warn'],
-    failed: ['Last run failed', 'chip--err'], done: ['Done', 'chip--ghost'], stopped: ['Stopped', 'chip--ghost'], never: ['Never run', 'chip--ghost'],
+    off: ['Off', ''], held: ['Held', 'waiting'], running: ['Running', 'running'], waiting: ['Waiting', 'waiting'],
+    failed: ['Last run failed', 'error'], done: ['Done', 'done'], stopped: ['Stopped', ''], never: ['Never run', ''],
   };
+  function wfStateHtml(state, word, extra) {
+    return '<span class="ax-af-state' + (extra ? ' ' + extra : '') + '"' + (state ? ' data-state="' + state + '"' : '') + '>' + esc(word) + '</span>';
+  }
   function wfTab(st) { return st === 'running' || st === 'waiting' ? 'running' : st === 'failed' ? 'failed' : st === 'off' || st === 'held' ? 'off' : ''; }
   /** Off and quiet for 30 days. Unknown when the runs read was cut short. */
   function wfStale(wf, runs) {
@@ -203,19 +208,23 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
       var bad = h.status === 'failed' || h.status === 'timeout';
       var icon = bad ? 'err' : h.status === 'paused' ? 'wait' : h.status === 'skipped' ? 'skip' : 'ok';
       var tail = bad ? 'stopped: ' + (h.note ? String(h.note).replace(/\s+/g, ' ').slice(0, 200) : h.status === 'timeout' ? 'it ran out of time' : 'it failed')
-        : h.status === 'paused' ? 'waiting' + (h.note ? ': ' + String(h.note).slice(0, 120) : '')
-        : h.status === 'skipped' ? 'skipped' : typeof h.durationMs === 'number' ? wfDur(h.durationMs) : '';
-      return '<li class="is-' + icon + '"><span class="wwf__ic" aria-hidden="true"></span><span><b>' + esc(wfStepName(n, h.nodeId)) + '</b>' +
-        '<small>' + [who, tail].filter(Boolean).map(esc).join(' · ') + '</small><span class="wwf__sr"> (' + esc(bad ? 'failed' : h.status === 'ok' ? 'done' : h.status) + ')</span></span></li>';
+        : h.status === 'paused' ? (h.note ? String(h.note).slice(0, 120) : '')
+        : h.status !== 'skipped' && typeof h.durationMs === 'number' ? wfDur(h.durationMs) : '';
+      var st = { err: ['error', 'failed'], wait: ['waiting', 'waiting'], skip: ['', 'skipped'], ok: ['done', 'done'] }[icon];
+      return wfStepHtml(icon, wfStepName(n, h.nodeId), [who, tail].filter(Boolean).join(' · '), st[0], st[1]);
     });
     // Steps it did not reach, or is on now.
     (wf.nodes || []).forEach(function (n) {
       if (seen[n.id] || /^trigger\./.test(n.type) || n.type === 'end') return;
       var now = run.status === 'running' && (run.pending || []).indexOf(n.id) >= 0;
-      rows.push('<li class="is-' + (now ? 'run' : 'todo') + '"><span class="wwf__ic" aria-hidden="true"></span><span><b>' + esc(wfStepName(n, n.id)) + '</b>' +
-        '<small>' + (now ? 'running now' : 'not reached') + '</small></span></li>');
+      rows.push(wfStepHtml(now ? 'run' : 'todo', wfStepName(n, n.id), '', now ? 'running' : '', now ? 'running now' : 'not reached'));
     });
     return rows.length ? '<ol class="wwf__steps">' + rows.join('') + '</ol>' : '<p class="ax-wall__empty">No steps recorded.</p>';
+  }
+  /** One step as a folded row (#2152): its name, who and how long, its state. */
+  function wfStepHtml(cls, name, meta, state, word) {
+    return '<li class="ax-af-row is-' + cls + '"><b class="ax-af-row__name">' + esc(name) + '</b>' +
+      (meta ? '<span class="ax-af-row__meta" title="' + esc(meta) + '">' + esc(meta) + '</span>' : '') + wfStateHtml(state, word) + '</li>';
   }
   function wfOpenHtml(wf, runs) {
     var all = '<a class="ax-btn ax-btn--ghost" href="/workflows#' + encodeURIComponent(wf.id) + '">' + (WFP.capped || !runs.length ? 'All runs' : runs.length === 1 ? 'Its 1 run' : 'All ' + runs.length + ' runs') + '</a>';
@@ -230,11 +239,11 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
         : 'took ' + esc(wfDur(Date.parse(last.updatedAt) - Date.parse(last.createdAt)))) +
       ' · started ' + esc(last.entityRef && last.entityRef.backend === 'manual' ? 'by hand' : wfStarts(wf).replace(/^When/, 'when').replace(/^Started /, '')) +
       (last.homeNode ? ' · on ' + esc(last.homeNode) : '') + '</small></p>';
-    var body = !d ? '<p class="ax-wall__empty">Loading the steps…</p>' : d.error ? '<p class="ax-wall__empty">Could not read this run: ' + esc(d.error) + '.</p>' : wfStepsHtml(wf, d.run);
+    var body = !d ? '${afLoaderHtml("Loading the steps")}' : d.error ? '<p class="ax-wall__empty">Could not read this run: ' + esc(d.error) + '.</p>' : wfStepsHtml(wf, d.run);
     return '<div class="wwf__open">' + head + body + links + '</div>';
   }
   function wfRunState(r) { return r.status === 'running' ? 'running' : r.status === 'paused' ? 'waiting' : r.status === 'failed' ? 'failed' : r.status === 'canceled' ? 'stopped' : 'done'; }
-  function wfChip(st) { var c = WF_CHIP[st]; return '<span class="chip ' + c[1] + '">' + esc(st === 'failed' ? 'Failed' : c[0]) + '</span>'; }
+  function wfChip(st) { var c = WF_CHIP[st]; return wfStateHtml(c[1], st === 'failed' ? 'Failed' : c[0]); }
   function wfRowHtml(wf) {
     var runs = wfRunsOf(wf.id), st = wfState(wf, runs), stale = wfStale(wf, runs), open = S.wfv.open === wf.id, c = WF_CHIP[st];
     var agents = wfAgents(wf), on = wf.state === 'active', busy = !!WFP.busy[wf.id];
@@ -254,7 +263,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     var run = on && !open ? '<button type="button" class="ax-btn wwf__runbtn wwf__own" data-wf-run="' + esc(wf.id) + '"' + (busy ? ' disabled' : '') + '>Run…</button>' : '';
     return '<article class="wwf' + (open ? ' is-open' : '') + (on ? '' : ' is-off') + '" id="wf-' + esc(wf.id) + '">' +
       '<div class="wwf__top"><button type="button" class="wwf__name" data-wf-open="' + esc(wf.id) + '" aria-expanded="' + open + '" aria-controls="wf-body-' + esc(wf.id) + '">' + esc(wf.title || wf.id) + '</button>' +
-        '<span class="chip ' + c[1] + (st === 'off' ? ' wwf__offchip' : '') + '"' + (st === 'held' ? ' title="Held: it would clash with another route for the same events. Fix the clash, or turn it on again in the editor."' : '') + '>' + esc(c[0]) + '</span>' + sw + '</div>' +
+        (st === 'held' ? '<span title="Held: it would clash with another route for the same events. Fix the clash, or turn it on again in the editor.">' + wfStateHtml(c[1], c[0]) + '</span>' : wfStateHtml(c[1], c[0], st === 'off' ? 'wwf__offchip' : '')) + sw + '</div>' +
       '<div class="wp__meta wwf__meta">' + meta + '</div>' +
       (line ? '<p class="wwf__fail">' + esc(line) + '</p>' : '') + run +
       '<div id="wf-body-' + esc(wf.id) + '"' + (open ? '' : ' hidden') + '>' + (open ? wfOpenHtml(wf, runs) : '') + '</div>' +
@@ -276,13 +285,13 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
   }
   function workflowsPageHtml() {
     var note = WFP.note ? '<p class="wwf__note' + (WFP.bad ? ' is-bad' : '') + '" role="status">' + esc(WFP.note) + '</p>' : '';
-    if (WFP.error && !WFP.runs) return note + '<p class="ax-wall__empty wwf__empty">Could not read the workflows: ' + esc(WFP.error) + '. The rest of the ${HUB_NAME} still works. <button type="button" class="ax-btn ax-btn--ghost" data-wf-retry>Try again</button></p>';
-    if (!WFP.defs || !WFP.runs) return '<p class="ax-wall__empty wwf__empty">Loading…</p>';
+    if (WFP.error && !WFP.runs) return note + '<div class="ax-af-empty" role="alert"><strong>Could not read the workflows: ' + esc(WFP.error) + '.</strong><span>The rest of the ${HUB_NAME} still works.</span><button type="button" class="ax-btn ax-btn--ghost" data-wf-retry>Try again</button></div>';
+    if (!WFP.defs || !WFP.runs) return '<div aria-busy="true" aria-label="Loading the workflows"><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span></div>';
     var defs = WFP.defs, f = S.wfv, base = defs.filter(function (wf) { return wfMatch(wf, true); });
     var count = function (tab) { return base.filter(function (wf) { return wfTab(wfState(wf, wfRunsOf(wf.id))) === tab; }).length; };
     var tabs = '<div class="ax-wall__views wwf__tabs" role="tablist" aria-label="Show">' + WF_TABS.map(function (t) {
       var n = t[0] && t[0] !== 'off' ? count(t[0]) : 0, sel = f.tab === t[0];
-      return '<button type="button" role="tab" data-wf-tab="' + t[0] + '" aria-selected="' + sel + '"' + (sel ? ' class="is-on"' : '') + '>' + t[1] + (n ? ' <b class="wac__n' + (t[0] === 'running' ? ' is-run' : '') + '">' + n + '</b>' : '') + '</button>';
+      return '<button type="button" role="tab" data-wf-tab="' + t[0] + '" aria-selected="' + sel + '"' + (sel ? ' class="is-on"' : '') + '>' + t[1] + (n ? ' <b class="ax-af-count" data-n="' + n + '">' + n + '</b>' : '') + '</button>';
     }).join('') + '</div>';
     var projects = uniq(defs.map(function (wf) { return wf.project; }));
     if (defs.some(function (wf) { return !wf.project; }) && projects.length) projects.push(OTHER);
@@ -292,7 +301,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
         return '<option value="' + esc(p) + '"' + (p === f.project ? ' selected' : '') + '>' + esc(p === OTHER ? 'No project' : p) + '</option>';
       }).join('') + '</select>' : '') + '</div>';
     var owner = '<p class="wwf__owner">Only the owner can start, turn on or turn off a workflow.</p>';
-    if (!defs.length) return note + owner + '<div class="ax-wall__empty wwf__empty"><h3>No workflows yet</h3><p>A workflow is a set of steps your agents take, in order, each time something starts it.</p>' +
+    if (!defs.length) return note + owner + '<div class="ax-af-empty"><strong>No workflows yet</strong><span>A workflow is a set of steps your agents take, in order, each time something starts it.</span>' +
       '<a class="ax-btn wwf__ed" href="#page=editor&amp;e-new=1">New workflow</a></div>';
     var shown = base.filter(function (wf) { return wfMatch(wf); });
     // Failing and running first, then by name: the one to look at leads.
@@ -300,7 +309,7 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
     shown.sort(function (a, b) {
       return rank[wfState(a, wfRunsOf(a.id))] - rank[wfState(b, wfRunsOf(b.id))] || String(a.title || a.id).localeCompare(String(b.title || b.id));
     });
-    var list = shown.length ? shown.map(wfRowHtml).join('') : '<div class="ax-wall__empty wwf__empty"><p>No workflow matches.</p><button type="button" class="ax-btn ax-btn--ghost" data-wf-clear>Clear the filters</button></div>';
+    var list = shown.length ? shown.map(wfRowHtml).join('') : '<div class="ax-af-empty"><strong>No workflow matches</strong><span>Change or clear the filters to see more.</span><button type="button" class="ax-btn ax-btn--ghost" data-wf-clear>Clear the filters</button></div>';
     return tabs + bar + '<p class="ax-wall__count wac__note">' + esc(wfDefsSummary()) + '</p>' + workflowsLineHtml() + owner + note + list + '<p class="wwf__phone">The editor opens on a computer; it is not made for a phone.</p>';
   }
   /** What the side column said that the page does not (#2101 R24): the
@@ -498,7 +507,6 @@ export const WALL_WORKFLOWS_SCRIPT = String.raw`
 export const WALL_WORKFLOWS_CSS = `
 /* Workflows (#1445, design #1451 frame 7) */
 .wwf__tabs { border-bottom: 1px solid var(--ax-border); }
-.wwf__tabs .wac__n.is-run { background: var(--ax-blue-t, var(--ax-surface-2)); color: var(--ax-accent); }
 .wwf__q { flex: 1 1 220px; max-width: 320px; font: inherit; font-size: var(--ax-fs-sm); background: var(--ax-bg); color: var(--ax-text); border: 1px solid var(--ax-border-2); border-radius: var(--ax-radius-pill); padding: 5px 14px; min-height: 32px; }
 .wwf__bar .wac__sel { font-size: var(--ax-fs-sm); }
 .wwf { padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
@@ -523,26 +531,10 @@ export const WALL_WORKFLOWS_CSS = `
 .wwf__run { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .wwf__run small, .wwf__desc { color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
 .wwf__desc { margin: 0; }
-.wwf__steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.wwf__steps li { display: flex; gap: 10px; align-items: flex-start; font-size: var(--ax-fs-sm); }
-.wwf__steps li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.wwf__steps small { color: var(--ax-text-2); margin-left: 6px; }
-.wwf__steps small::before { content: "· "; }
-.wwf__ic { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: var(--ax-border-2); }
-.is-ok > .wwf__ic { background: var(--ax-green); } .is-ok > .wwf__ic::after { content: "✓"; }
-.is-err > .wwf__ic { background: var(--ax-red); } .is-err > .wwf__ic::after { content: "!"; }
-.is-wait > .wwf__ic { background: var(--ax-amber); } .is-wait > .wwf__ic::after { content: "…"; }
-.is-run > .wwf__ic { background: var(--ax-accent); } .is-run > .wwf__ic::after { content: "•"; }
-.is-skip > .wwf__ic::after { content: "–"; }
-.is-todo { color: var(--ax-muted); }
-.wwf__steps .is-err small { color: var(--ax-red-ink, var(--ax-err)); }
-.wwf__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wwf__steps { list-style: none; margin: 0; padding: 0; }
 .wwf__links { display: flex; flex-wrap: wrap; gap: 8px; }
 .wwf__links .ax-btn { font-size: var(--ax-fs-xs); padding: 4px 12px; }
 .wwf__note { margin: 8px 16px; font-size: var(--ax-fs-sm); } .wwf__note.is-bad { color: var(--ax-red-ink, var(--ax-err)); }
-.wwf__empty { padding: 32px 16px; text-align: center; }
-.wwf__empty h3 { margin: 0 0 6px; font-size: 20px; color: var(--ax-text); }
-.wwf__empty p { margin: 0 0 12px; }
 /* The owner's controls are on a computer; a phone reads (design frame 7). */
 .wwf__owner, .wwf__phone { display: none; }
 .ax-wall__titlebar .wwf__new { font-size: var(--ax-fs-xs); padding: 3px 12px; margin-left: 8px; white-space: nowrap; }
@@ -564,7 +556,7 @@ export const WALL_WORKFLOWS_CSS = `
 @media (max-width: 640px) {
   .wwf { padding: 12px; }
   .wwf__own, .wwf__ed, .ax-wall__titlebar .wwf__new { display: none !important; }
-  .wwf__offchip { display: inline-block; }
+  .wwf__offchip { display: inline-flex; }
   .wwf__owner { display: block; margin: 0; padding: 12px; background: var(--ax-blue-t, var(--ax-surface)); font-size: var(--ax-fs-sm); }
   .wwf__phone { display: block; margin: 0; padding: 12px; color: var(--ax-muted); font-size: var(--ax-fs-sm); }
   .wwf__bar .wwf__q { max-width: none; }

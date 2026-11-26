@@ -20,6 +20,7 @@
 // page's calls (agent-panel.ts) under the Settings prefix.
 
 import { HUB_NAME } from "../hub-name"
+import { afLoaderHtml } from "../affect.css"
 
 export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
   var ST_TABS = [['overview', 'Overview'], ['personality', 'Personality'], ['skills', 'Skills'], ['channels', 'Channels'], ['handovers', 'Handovers']];
@@ -95,7 +96,7 @@ export const WALL_SETTINGS_AGENT_SCRIPT = String.raw`
   function stHandoversHtml(a) {
     var h = S.st.ho && S.st.ho.agent === a.id ? S.st.ho : null, name = a.name || a.id;
     var head = '<section class="wsc"><h3>Handovers</h3><p class="wsf__hint">Pass a chat to another agent. Every message from that chat goes to the new agent until you release the handover.</p>';
-    if (!h || (!h.data && !h.error)) return head + '<p class="ax-wall__empty" aria-busy="true">Loading…</p></section>';
+    if (!h || (!h.data && !h.error)) return head + '${afLoaderHtml("Loading…")}</section>';
     if (h.error) return head + '<p class="wst__err">Could not read the handovers: ' + esc(h.error) + '</p><button type="button" class="ax-btn ax-btn--ghost" data-st-act="ho-load">Try again</button></section>';
     function rows(list, dir) {
       if (!list.length) return '<p class="ax-wall__empty">' + (dir === 'out' ? 'No chat is routed away from ' + esc(name) + '.' : 'No chat is routed to ' + esc(name) + '.') + '</p>';

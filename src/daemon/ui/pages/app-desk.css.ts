@@ -14,7 +14,6 @@ export const APP_DESK_CSS = `
   border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm);
   background: var(--ax-surface); color: var(--ax-text-2);
 }
-.dk-col span { display: block; font-size: 16px; color: var(--ax-text); }
 .dk-col[aria-pressed=true] { background: var(--ax-accent-t); border-color: var(--ax-accent); color: var(--ax-accent); }
 .dk-answers { display: grid; gap: 8px; margin-top: 12px; }
 .dk-opt { width: 100%; min-height: 48px; padding: 8px 14px; text-align: left; border-radius: var(--ax-radius-sm); overflow-wrap: anywhere; }

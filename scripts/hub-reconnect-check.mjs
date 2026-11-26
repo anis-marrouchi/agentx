@@ -68,7 +68,7 @@ const read = async () => JSON.parse((await cdp("Runtime.evaluate", { returnByVal
   mark: window.__hubMark || null,
   state: document.querySelector('[data-testid=live-state]')?.textContent || null,
   back: document.querySelector('[data-testid=live-reconnects]')?.textContent || null,
-  banner: !!document.querySelector('.ax-hub [role=status]'),
+  banner: !!document.querySelector('.ax-hub [data-testid=connection-line]'),
 })` })).result.result.value)
 const shot = async (name) => {
   await cdp("Runtime.evaluate", { expression: "document.querySelector('section[aria-label=Live]')?.scrollIntoView({block:'center'})" })

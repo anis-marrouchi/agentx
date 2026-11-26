@@ -148,7 +148,7 @@ describe("Wall Settings: the shell (#1428)", () => {
       : u === "/api/admin/org" ? { status: 200, body: { ...ORG, outside: [] } } : undefined })
     await calm.settle()
     expect(settingsHtml(calm)).not.toContain("wst__n-att")
-    expect(settingsHtml(calm)).toContain('<b class="wst__n-all" title="Agents on this machine">3</b>')
+    expect(settingsHtml(calm)).toContain('<b class="wst__n-all ax-af-count" data-n="3" title="Agents on this machine">3</b>')
     // cx misses a credential and new waits for approval; node-b does not answer, node-a waits for a restart.
     const w = openWall({ hash: "#page=settings", route: (u) => u.startsWith("/api/live?") ? { status: 200, body: { nodes: [
       { ...LIVE.nodes[0], restart: { state: "pending" } }, { name: "node-b", url: "http://node-b", reachable: false, agents: [] },
@@ -178,8 +178,8 @@ describe("Wall Settings: Health (#1428)", () => {
     expect(html).not.toContain('href="/admin"')
     const nums = [...html.matchAll(/<div class="wsh__s[^"]*"><b>([^<]+)<\/b><span>([^<]+)<\/span>/g)].map((m) => [m[1], m[2]])
     expect(nums).toEqual([["2 of 3", "agents online"], ["1 of 2", "channels on"], ["2", "need you"], ["1", "active tokens"]])
-    expect(html).toContain('<li class="is-up"><i aria-hidden="true"></i><b>node-a</b><span>answering · v1.2.3</span><span class="ax-badge ax-badge--warn">Restart pending</span></li>')
-    expect(html).toContain("<b>node-b</b><span>not answering</span>")
+    expect(html).toContain('<li class="is-up"><b>node-a</b><span class="ax-af-state" data-state="done">answering · v1.2.3</span><span class="ax-badge ax-badge--warn">Restart pending</span></li>')
+    expect(html).toContain('<b>node-b</b><span class="ax-af-state" data-state="error">not answering</span>')
     expect(html).toContain('node-b does not answer: timed out. <a href="#page=live">See it on Live</a>')
     expect(html).toContain('node-a waits for a restart (pending). <a href="#page=live">Restart it on Live</a>')
     expect(w.writes()).toEqual([])
