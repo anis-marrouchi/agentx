@@ -56,7 +56,7 @@ import { HUB_NAME, HUB_PATH } from "../hub-name"
 import { WALL_CONTEXT_CSS, wallContextHtml } from "./wall-context.client"
 import { WALL_FILES_CSS } from "./wall-files"
 import { WALL_CHAT_CSS, WALL_CHAT_SCRIPT, wallChatButtonHtml, wallChatPanelHtml } from "./wall-chat.client"
-import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml } from "./hub-nav"
+import { HUB_NAV_CSS, hubAgentsNavHtml, hubMobilePageHtml, hubNavFootHtml, hubSwitcherHtml } from "./hub-nav"
 import { HUB_OPERATIONS_CSS, hubOperationsPageHtml } from "./hub-operations"
 import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "./hub-status"
 import { HUB_USAGE_CSS } from "./hub-status-usage"
@@ -332,7 +332,8 @@ ${dashboard}
   ${wallContextHtml()}
   <div id="wall-wf-dialog" hidden></div>
 </div>
-${HUB_STATUS_HTML}`
+${HUB_STATUS_HTML}
+${hubSwitcherHtml()}`
 
   return renderWallDocument({
     title: `AgentX · ${HUB_NAME}`,

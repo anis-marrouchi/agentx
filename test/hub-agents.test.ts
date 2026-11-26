@@ -235,6 +235,18 @@ describe("the Hub page's left column", () => {
     expect(block).toMatch(/\.ax-wall__nav > \.ha__k \{ position: sticky;/)
     expect(block).toMatch(/\.ax-wall__nav > \.hf \{ position: sticky; bottom: 0;/)
   })
+  it("mounts the ⌘K dialog on <body>, above every page, not in the sticky side menu (#2353)", () => {
+    const nav = page.slice(page.indexOf('class="ax-wall__nav"'), page.indexOf("</nav>"))
+    expect(nav).toContain('aria-controls="hub-k-dlg"')
+    expect(nav).not.toContain('id="hub-k-dlg"')
+    expect(page.match(/id="hub-k-dlg"/g)).toHaveLength(1)
+    // After the whole .ax-wall wrapper and the status bar: a direct child of <body>.
+    const tail = page.slice(page.indexOf('id="wall-wf-dialog"'), page.indexOf("</body>"))
+    expect(tail).toMatch(/^id="wall-wf-dialog" hidden><\/div>\n<\/div>\n[^]*<div class="hk" id="hub-k-dlg"/)
+    // Above the floating assistant (assistant.ts, z-index up to 62).
+    const z = Number(/\.hk \{[^}]*z-index: (\d+)/.exec(HUB_NAV_CSS)?.[1])
+    expect(z).toBeGreaterThan(62)
+  })
   it("ends with Waiting on you (the Desk, #2226), Jobs, Workflows, Mobile app and Settings", () => {
     const foot = page.slice(page.indexOf('id="hub-foot"'), page.indexOf('id="wall-pagelinks"'))
     for (const w of ['data-nav="needs" href="#status=open&amp;view=decide"', ">Waiting on you<", ">Jobs<", ">Workflows<", 'href="#page=mobile"', 'data-nav="settings"']) expect(foot).toContain(w)
