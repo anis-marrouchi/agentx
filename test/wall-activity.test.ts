@@ -461,11 +461,25 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     await w.settle()
     expect(w.el("wall-build").innerHTML).toContain('wbl__asof">as of ')
     expect(w.el("hs-version").textContent).toBe("v0.182.0")
+    // #2343 C1: the bar's hover says so too.
+    expect(w.el("hs-version").parentNode.title).toMatch(/^v0\.182\.0 · 4f2c9a1 · since .+ · as of \d{1,2}:\d{2}( ?[AP]M)?\. The build the daemon is running/)
+  })
+
+  it("says as of on the bar's hover when a later ask fails, and drops it once an ask answers again", async () => {
+    const w = openWall({ hash: "#page=wall", build: BUILD })
+    await w.settle()
+    ;(w.opts as any).build = null
+    await w.tick()
+    expect(w.el("hs-version").parentNode.title).toContain(" · as of ")
+    ;(w.opts as any).build = BUILD
+    await w.tick()
+    expect(w.el("hs-version").parentNode.title).not.toContain("as of")
   })
 
   it("does not mark a fresh answer as of", async () => {
     const w = openWall({ hash: "#page=wall", build: BUILD })
     await w.settle()
     expect(w.el("wall-build").innerHTML).not.toContain("wbl__asof")
+    expect(w.el("hs-version").parentNode.title).not.toContain("as of")
   })
 })
