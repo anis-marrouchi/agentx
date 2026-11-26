@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.285.0](https://github.com/anis-marrouchi/agentx/compare/v0.284.0...v0.285.0) (2026-11-26)
+
+
+### Features
+
+* **hub:** affectUI treatments on every Hub page from one style source ([#2152](https://github.com/anis-marrouchi/agentx/issues/2152) stage 2) ([#2355](https://github.com/anis-marrouchi/agentx/issues/2355)) ([a2cdeff](https://github.com/anis-marrouchi/agentx/commit/a2cdeff65a9151b22b6216afad73eac4940ab8b8))
+* **hub:** Machines fold under the agent list: mesh, machine, run ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2374](https://github.com/anis-marrouchi/agentx/issues/2374)) ([9e10233](https://github.com/anis-marrouchi/agentx/commit/9e10233d6f4c828241f9d5204110c41d69a271bc))
+* **requests:** wake a promise's agent before its due time, raise it only after a grace window ([#2362](https://github.com/anis-marrouchi/agentx/issues/2362)) ([b11ed09](https://github.com/anis-marrouchi/agentx/commit/b11ed0997e2d776a2ec1d691c56d5891d0ebb155))
+
+
+### Bug Fixes
+
+* **ci:** a reviewed commit starts no review wait on a later green ([#2368](https://github.com/anis-marrouchi/agentx/issues/2368) C1, C2) ([#2377](https://github.com/anis-marrouchi/agentx/issues/2377)) ([8270ea6](https://github.com/anis-marrouchi/agentx/commit/8270ea69e6ba8b9144171878140d3d6396e0b8c6))
+* **hub:** mount the ⌘K switcher on body, above every page ([#2356](https://github.com/anis-marrouchi/agentx/issues/2356)) ([fbefece](https://github.com/anis-marrouchi/agentx/commit/fbefece5b60cd102480fe1439c139331ba076b55))
+
 ## [0.284.0](https://github.com/anis-marrouchi/agentx/compare/v0.283.1...v0.284.0) (2026-11-26)
 
 
