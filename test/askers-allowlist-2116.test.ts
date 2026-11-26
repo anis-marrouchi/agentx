@@ -30,7 +30,8 @@ const fromSara = { channel: "telegram", chatId: "c1", sender: "Sara", senderId: 
 const fromOmar = { channel: "telegram", chatId: "c2", sender: "Omar", senderId: "7" }
 const fromStranger = { channel: "telegram", chatId: "c3", sender: "Eve", senderId: "999" }
 const fromBoss = { channel: "telegram", chatId: "c4", sender: "Boss", senderId: "1" }
-const fromAgent = (id: string, extra: Record<string, unknown> = {}) => ({ channel: "a2a", chatId: `a2a:${id}:devops:d1`, sender: `agent:${id}`, ...extra })
+// The daemon vouches for an agent it resolved itself (senderVerified: true).
+const fromAgent = (id: string, extra: Record<string, unknown> = {}) => ({ channel: "a2a", chatId: `a2a:${id}:devops:d1`, sender: `agent:${id}`, senderVerified: true, ...extra })
 
 describe("askerRefusal", () => {
   const askers = { people: ["sara"], agents: ["pm"] }
@@ -70,13 +71,49 @@ describe("askerRefusal", () => {
     expect(askerRefusal(people, "devops", askers, fromAgent("coder", { initiator: sarasRoot }), local)).not.toBeNull()
   })
 
-  it("always lets the owner ask, directly or at the root of a chain", () => {
+  it("always lets the owner ask on their own turn", () => {
     const none = { people: [], agents: [] }
     expect(askerRefusal(people, "devops", none, fromBoss, local)).toBeNull()
-    const root = rootInitiatorOf({ ...fromBoss, person: "boss" }, "coder")
-    expect(askerRefusal(people, "devops", none, fromAgent("coder", { initiator: root }), local)).toBeNull()
     // With no owner listed, this machine's own surfaces are the built-in owner.
     expect(askerRefusal([sara], "devops", none, operatorContext({ channel: "dashboard", chatId: "d" }), local)).toBeNull()
+  })
+
+  // Review B1: "agent:" is trusted only on an agent channel, and only when
+  // the daemon vouched for the name.
+  it("B1: an agent-shaped display name on a person's channel is refused", () => {
+    const all = { people: ["*"], agents: ["*", "pm"] }
+    for (const channel of ["telegram", "slack", "whatsapp"]) {
+      expect(askerRefusal(people, "devops", all, { channel, chatId: "c", sender: "agent:pm", senderId: "555" }, local)).toMatchObject({ reason: "unverified agent" })
+      expect(askerRefusal(people, "devops", all, { channel, chatId: "c", sender: "agent:pm", senderVerified: true }, local)).toMatchObject({ reason: "unverified agent" })
+      // Any other software-shaped name there is still a person, and unknown.
+      expect(askerRefusal(people, "devops", all, { channel, chatId: "c", sender: "cron:nightly", senderId: "555" }, local)).toMatchObject({ reason: "sender not in people[]" })
+    }
+  })
+
+  it("B1: an agent sender the daemon did not vouch for is refused", () => {
+    const pm = { agents: ["pm"] }
+    expect(askerRefusal(people, "devops", pm, fromAgent("pm", { senderVerified: undefined }), local)).toMatchObject({ reason: "unverified agent" })
+    expect(askerRefusal(people, "devops", pm, fromAgent("pm", { channel: "mcp" }), local)).toBeNull()
+    expect(askerRefusal(people, "devops", pm, fromAgent("pm", { channel: "mesh" }), local)).toBeNull()
+  })
+
+  it("B2: work from another machine is refused, even under a local agent's name", () => {
+    const all = { people: ["*"], agents: ["*"] }
+    expect(askerRefusal(people, "devops", all, fromAgent("pm", { fromPeer: true }), local)).toMatchObject({ reason: "work from another machine" })
+    const root = rootInitiatorOf({ ...fromSara, person: "sara" }, "pm")
+    expect(askerRefusal(people, "devops", all, { channel: "api", initiator: root, fromPeer: true }, local)).toMatchObject({ reason: "work from another machine" })
+  })
+
+  it("B3: a root naming the owner does not make the turn the owner's", () => {
+    const none = { people: [], agents: [] }
+    const root = rootInitiatorOf({ ...fromBoss, person: "boss" }, "coder")
+    // A forwarded root, no agent sender: judged as the person, who is not listed.
+    expect(askerRefusal(people, "devops", none, { channel: "api", chatId: "x", initiator: root }, local)).toMatchObject({ sender: "boss", reason: "person not in askers.people" })
+    // A hand-off with the owner at its root is judged by the calling agent.
+    expect(askerRefusal(people, "devops", none, fromAgent("coder", { initiator: root }), local)).toMatchObject({ reason: "agent not in askers.agents" })
+    // The built-in owner id at a root gets nothing either.
+    const implicit = rootInitiatorOf({ ...fromBoss, person: "owner" }, "coder")
+    expect(askerRefusal([sara], "devops", none, { channel: "api", chatId: "x", initiator: implicit }, local)).not.toBeNull()
   })
 
   it("leaves the agent's own schedules alone", () => {
@@ -122,7 +159,7 @@ describe("through the registry", () => {
     expect(run.calls).toBe(0)
     expect(logs.some((l) => l.includes("[devops] refused: omar") && l.includes("person not in askers.people"))).toBe(true)
     expect((await registry.execute({ agentId: "devops", message: "deploy", context: { ...fromSara } })).content).toBe("ok")
-    expect((await registry.execute({ agentId: "devops", message: "deploy", context: { channel: "mcp", chatId: "mcp:pm:devops:1", sender: "agent:pm" } })).content).toBe("ok")
+    expect((await registry.execute({ agentId: "devops", message: "deploy", context: { channel: "mcp", chatId: "mcp:pm:devops:1", sender: "agent:pm", senderVerified: true } })).content).toBe("ok")
     expect((await registry.execute({ agentId: "coder", message: "fix", context: { ...fromStranger } })).content).toBe("ok")
     expect(run.calls).toBe(3)
   }, 15_000)

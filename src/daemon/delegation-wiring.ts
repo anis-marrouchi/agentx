@@ -260,8 +260,11 @@ export function hopRefusal(
   waits: SyncWaits,
 ): string | null {
   // The calling agent rides along for the callee's `askers` (#2116): a
-  // resolved turn names a running agent of this machine.
-  return caller ? registry.refusalFor(callee, { initiator: chainRootOf(caller, waits), sender: `agent:${caller.agentId}` }) : null
+  // resolved turn names a running agent of this machine, so the daemon
+  // vouches for the name.
+  return caller
+    ? registry.refusalFor(callee, { channel: "a2a", initiator: chainRootOf(caller, waits), sender: `agent:${caller.agentId}`, senderVerified: true })
+    : null
 }
 
 /**

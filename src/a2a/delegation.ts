@@ -864,8 +864,10 @@ export class DelegationManager {
       // cannot claim a different origin for work it hands on.
       initiator: root,
       // A labelled "?" sender's name is not checked (#2052): the callee
-      // is told so, and a caller cannot claim otherwise.
-      ...(label ? { senderVerified: false } : {}),
+      // is told so, and a caller cannot claim otherwise. A named caller is
+      // an agent of this machine (#2116: the callee's askers trust only
+      // this); a peer checks its own callers, so nothing is vouched there.
+      senderVerified: label ? false : record.peer ? undefined : true,
       // The callee's own sends count on from here (MAX_SEND_DEPTH).
       ...(record.kind === "send" ? { sendDepth: depth + 1 } : {}),
       ...(home ? { home } : {}),
