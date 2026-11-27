@@ -136,8 +136,13 @@ describe("the shell draws three columns", () => {
     expect(html).toContain('href="#page=workflows"')
     expect(html).not.toContain('data-shell-item="mobile"')
   })
-  it("lists the agents and chats with the one in view", () => {
+  it("without the grouped rows, lists the agents as not working today, folded", () => {
     const html = draw()
+    expect(html).toMatch(/data-shell-group="idle"[\s\S]*?aria-expanded="false"[\s\S]*?Not working today[\s\S]*?>1</)
+    expect(html).not.toContain('data-shell-agent="ada"')
+  })
+  it("lists the agents and chats with the one in view", () => {
+    const html = draw({ model: { rows: [{ id: "ada", name: "Ada", node: "", nodeUrl: "", color: null, face: "A", state: "working", line: "Writing", ageMs: 60_000, at: 0, unread: 0, taskId: "", runs: 1, today: 2 }], counts: { all: 1, working: 1, needs: 0, failed: 0, done: 0, idle: 0 } } })
     expect(html).toContain('data-shell-agent="ada"')
     expect(html).toContain('aria-pressed="true"')
     expect(html).toContain("Message Ada")
@@ -146,7 +151,7 @@ describe("the shell draws three columns", () => {
   })
   it("no agent: says to pick one, the box is off", () => {
     const html = draw({ agents: [], agent: undefined })
-    expect(html).toContain("No agents on this computer.")
+    expect(html).toContain("No agents yet.")
     expect(html).toContain("Pick an agent to chat with")
     expect(html).toMatch(/<textarea[^>]*disabled/)
   })

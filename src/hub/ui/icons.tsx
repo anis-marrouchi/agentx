@@ -3,12 +3,12 @@
 // hides it from screen readers (the control around it carries the name).
 import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowRightLeft, ArrowUp, ArrowUpRight, ArrowUpToLine, BellDot, Bookmark, BookOpen, Bot, Briefcase,
-  Building2, CalendarClock, ChartLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, CircleAlert, CircleCheck, CircleDollarSign,
+  Building2, CalendarClock, ChartLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleDollarSign,
   CircleDot, CircleX, Clock, Cog, Copy, Download, Ellipsis, ExternalLink, Eye, EyeOff, File, Files, FileText, Folder, FolderGit2, Gauge, GitBranch,
   GitMerge, GitPullRequest, Globe, GripVertical, Hash, Heading, History, House, Inbox, Info, Kanban, KeyRound, LayoutDashboard, LayoutList, Link, List, ListChecks,
   ListTodo, LoaderCircle, Mail, Megaphone, Menu, MessageCircle, MessageSquare, MessageSquareMore, Monitor, Network, PanelLeft, PanelRight, Pencil,
   Phone, Play, Plug, Plus, Radio, RefreshCw, RotateCcw, Search, Send, Settings, Settings2, Shapes, ShieldCheck, Smartphone, SquareKanban,
-  SquareTerminal, Star, Trash2, TriangleAlert, Undo2, User, UserRound, UserRoundPlus, Users, Webhook, Workflow, X, Zap,
+  SquareTerminal, Star, SunMoon, Trash2, TriangleAlert, Undo2, Unplug, User, UserRound, UserRoundPlus, Users, Webhook, Workflow, X, Zap,
 } from "lucide-static"
 import { cn } from "./cn"
 
@@ -16,7 +16,7 @@ const ICONS: Record<string, string> = {
   "activity": Activity, "arrow-down": ArrowDown, "arrow-left": ArrowLeft, "arrow-right": ArrowRight, "arrow-right-left": ArrowRightLeft,
   "arrow-up": ArrowUp, "arrow-up-right": ArrowUpRight, "arrow-up-to-line": ArrowUpToLine, "bell-dot": BellDot, "book-open": BookOpen,
   "bookmark": Bookmark, "bot": Bot, "briefcase": Briefcase, "building-2": Building2, "calendar-clock": CalendarClock, "chart-line": ChartLine,
-  "check": Check, "chevron-down": ChevronDown, "chevron-left": ChevronLeft, "chevron-right": ChevronRight, "chevrons-up-down": ChevronsUpDown,
+  "check": Check, "chevron-down": ChevronDown, "chevron-left": ChevronLeft, "chevron-right": ChevronRight, "chevrons-up-down": ChevronsUpDown, "circle": Circle,
   "circle-alert": CircleAlert, "circle-check": CircleCheck, "circle-dollar-sign": CircleDollarSign, "circle-dot": CircleDot, "circle-x": CircleX,
   "clock": Clock, "cog": Cog, "copy": Copy, "download": Download, "ellipsis": Ellipsis, "external-link": ExternalLink, "eye": Eye, "eye-off": EyeOff,
   "file": File, "file-text": FileText, "files": Files, "folder": Folder, "folder-git-2": FolderGit2, "gauge": Gauge, "git-branch": GitBranch,
@@ -27,7 +27,7 @@ const ICONS: Record<string, string> = {
   "network": Network, "panel-left": PanelLeft, "panel-right": PanelRight, "pencil": Pencil, "phone": Phone, "play": Play, "plug": Plug, "plus": Plus,
   "radio": Radio, "refresh-cw": RefreshCw, "rotate-ccw": RotateCcw, "search": Search, "send": Send, "settings": Settings, "settings-2": Settings2,
   "shapes": Shapes, "shield-check": ShieldCheck, "smartphone": Smartphone, "square-kanban": SquareKanban, "square-terminal": SquareTerminal,
-  "star": Star, "trash-2": Trash2, "triangle-alert": TriangleAlert, "undo-2": Undo2, "user": User, "user-round": UserRound,
+  "star": Star, "sun-moon": SunMoon, "trash-2": Trash2, "triangle-alert": TriangleAlert, "undo-2": Undo2, "unplug": Unplug, "user": User, "user-round": UserRound,
   "user-round-plus": UserRoundPlus, "users": Users, "webhook": Webhook, "workflow": Workflow, "x": X, "zap": Zap,
 }
 
