@@ -241,6 +241,7 @@ Restart the daemon through launchd, systemd or a plain stop + start; --when-idle
 | `--interval <seconds>` | `5` | How often --when-idle checks. |
 | `--reload-service` | — | Also re-read the service's settings file (launchd plist / systemd unit). |
 | `--boot-timeout <minutes>` | `5` | How long the new daemon may take to answer. |
+| `--keep-releases <n>` | `2` | Release folders kept beside the new one after an ok upgrade, live and rollback included (0 keeps all). |
 | `--dry-run` | — | Show what would run, without restarting. |
 
 ### `agentx daemon upgrade <release-dir>`

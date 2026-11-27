@@ -87,6 +87,8 @@ Once the new release answers `/health`, two more checks run (#2227):
 - **Version check.** Every mesh peer in `agentx.json` is asked for its `/health`. A peer on another version or commit, or one that doesn't answer, is logged as `VERSION SKEW` and listed under `peerSkew` in `last.json` and on the `RESULT` line. The upgrade is still `ok`: the peer is upgraded on its own. Whoever ran the upgrade tells DevOps.
 - **Hub check.** The dashboard's real page (`/`) must answer 200 with an HTML page, and the chat route (`/api/app/conversations`) must answer JSON below 500 (a `401` for an unpaired device counts as answering). The result is under `hub` in `last.json`. If either fails while `/health` is fine, the upgrade ends with `RESULT degraded`. It is not rolled back: only a failed `/health` rolls back.
 
+After a `RESULT ok` upgrade only, every symlink in the node's bin folder and global `node_modules` that points into another release folder (such as `agentx.target -> …/agentx-release-<sha>/dist/cli.js`, the global `agentx` CLI) is moved to the same path in the new folder, logged as `link moved: …` and listed in `cliLinks` in `last.json`; this runs also with `--keep-releases 0`. Then old release folders are deleted (#2495). A release folder is one beside the new one, with the same name up to its last `-` (such as `agentx-release-`), that holds `dist/cli.js` and has no `.git` entry (dev worktrees such as `agentx-2495` are never touched, and nothing is pruned when the new folder is itself a worktree). The new folder and the one it switched from are always kept, then the newest others up to `--keep-releases` (2 by default, so just those two). A folder named by any settings file in `~/Library/LaunchAgents`, by a running process or by a symlink that could not be moved is never deleted; this is checked again just before each delete, and the log says `release kept, in use: …`. Each delete is logged with its size (`release deleted: … (0.45 GiB)`), then one `releases: kept …, deleted …, freed …` line. `releases` in `last.json` lists `pruned` (folder and bytes), `keptInUse` and `freedBytes`; when pruning stopped, `error` says why (if the process list cannot be read, nothing is deleted). Nothing is deleted on `degraded`, `rolled-back`, `down` or `refused`.
+
 Options:
 
 | Option | What it does |
@@ -96,6 +98,7 @@ Options:
 | `--force` | When `--timeout` runs out, upgrade anyway. Running tasks still get the usual time to finish. |
 | `--people-only` | Wait only for runs a person is waiting on, such as a chat, an email or a call. Runs that are the agents' own work (one agent asking another, schedules, workflow steps, GitHub and GitLab events) are not waited for. They get the usual time to finish, then they are stopped. The log names each one, and so does `cut` in `.agentx/upgrade/last.json`. |
 | `--boot-timeout <minutes>` | How long the new daemon may take to answer before rolling back. The default is 5. |
+| `--keep-releases <n>` | Release folders kept after an ok upgrade, the new one and the one switched from included. The default is 2; `0` keeps every folder. |
 | `--no-follow` | Start the upgrade and return straight away. Read the log or `.agentx/upgrade/last.json` later. |
 | `--dry-run` | Show what would change, without changing anything. |
 

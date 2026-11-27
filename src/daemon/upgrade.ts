@@ -254,6 +254,18 @@ export interface UpgradeOutcome {
     keptAtSwitch?: number
     refusedAtSwitch?: number
   }
+  /** Symlinks (the global `agentx` CLI) moved to the live release after an
+   *  ok upgrade (#2495); absent when none pointed at another release. */
+  cliLinks?: { link: string; from: string; to: string }[]
+  /** Old release folders deleted after an ok upgrade (#2495); absent when
+   *  pruning did not run (not ok, or --keep-releases 0). */
+  releases?: {
+    keep: number
+    pruned: { dir: string; bytes: number }[]
+    keptInUse: string[]
+    freedBytes: number
+    error?: string
+  }
   reason?: string
   startedAt: string
   endedAt: string
