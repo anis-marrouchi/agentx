@@ -1,14 +1,12 @@
 import { handleError } from "@/utils/handle-error"
 import { logger } from "@/utils/logger"
 import { loadAuthConfig, runModelSetup, type AuthConfig } from "@/utils/auth-store"
+import { seedModels } from "@/agents/conventions/seed-models"
 import chalk from "chalk"
 import { Command } from "commander"
 
-const ANTHROPIC_MODELS = [
-  { id: "claude-sonnet-4-20250514", label: "anthropic/claude-sonnet-4", hint: "Claude Sonnet 4 · ctx 200k · recommended" },
-  { id: "claude-opus-4-20250514", label: "anthropic/claude-opus-4-5", hint: "Claude Opus 4.5 · ctx 200k · reasoning" },
-  { id: "claude-haiku-4-20250514", label: "anthropic/claude-haiku-4", hint: "Claude Haiku 4 · ctx 200k · fast" },
-]
+// Anthropic API ids: the sdk engine's list, not the claude-code CLI's (#2349).
+const ANTHROPIC_MODELS = seedModels("sdk")
 
 export const model = new Command()
   .name("model")

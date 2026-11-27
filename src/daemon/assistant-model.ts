@@ -7,10 +7,15 @@
 // registry already honours: a named model that differs from the session's
 // starts a new session on it (#2001, session-model.ts namedModelRotates).
 
-/** The choices per engine, as the CLI names them. Empty: no choice. */
-export const MODEL_CHOICES: Record<string, string[]> = {
-  "claude-code": ["opus", "sonnet", "haiku"],
-}
+import { SEED_MODELS } from "../agents/conventions/seed-models"
+
+/** The choices per engine, as the CLI names them, from the catalog's seed
+ *  lists (#2349). An engine with none is left out: no choice. */
+export const MODEL_CHOICES: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SEED_MODELS)
+    .map(([tier, models]) => [tier, models.flatMap((m) => (m.choice ? [m.choice] : []))] as const)
+    .filter(([, choices]) => choices.length > 0),
+)
 
 /** The choices for an agent on `tier`, in the order the picker shows them. */
 export function modelChoices(tier: string | undefined): string[] {

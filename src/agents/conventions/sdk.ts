@@ -6,8 +6,10 @@ import type { ConventionTier, RuntimeConventions } from "./types"
 // .claude/skills, .skills and skills into their prompt (agent/skills/
 // loader.ts). New skills go to .claude/skills, where the claude-code add
 // command puts them too.
+// They are not a CLI, so they take no `cli` facts from claude-code.
 const inAgentx = (tier: ConventionTier): RuntimeConventions => ({
   ...claudeCode,
+  cli: undefined,
   tier,
   skillDirs: (ws) => [join(ws, ".claude", "skills"), join(ws, ".skills"), join(ws, "skills")],
 })
