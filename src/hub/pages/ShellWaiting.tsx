@@ -58,7 +58,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** An opened item: the question, then what is known and what each answer does. */
-export function WaitingDetail({ item, now = Date.now() }: { item: WaitingItem; now?: number }) {
+export function WaitingDetail({ item, now = Date.now(), actions }: { item: WaitingItem; now?: number; actions?: ReactNode }) {
   const task = waitingTaskId(item)
   const soon = waitingSoon(item, now)
   return (
@@ -74,7 +74,7 @@ export function WaitingDetail({ item, now = Date.now() }: { item: WaitingItem; n
         {item.ask ? <p className="text-sm whitespace-pre-wrap">{item.ask}</p>
           : item.need ? <p className="text-sm">Needed from you: {item.need}</p> : null}
       </div>
-      {item.choices?.length ? (
+      {item.choices?.length && !actions ? (
         <ol className="flex flex-col gap-1 text-sm" data-waiting="choices">
           {item.choices.map((c, n) => <li key={n} className="rounded-md border border-border px-3 py-1.5">{c}</li>)}
         </ol>
@@ -93,13 +93,13 @@ export function WaitingDetail({ item, now = Date.now() }: { item: WaitingItem; n
         ) : null}
         {!item.said && !item.facts && !item.recommend && !item.yes && !item.no && !item.expires ? <Field label="Details">Nothing more on record.</Field> : null}
       </dl>
-      <div className="flex flex-wrap items-center gap-2">
+      {actions ?? <div className="flex flex-wrap items-center gap-2">
         <a href={NEEDS_YOU_PAGE} className={buttonVariants({ size: "sm" })} data-waiting="answer">
           Answer <Icon name="external-link" className="size-3.5" />
         </a>
         {task ? <a href={taskHref(task)} className={buttonVariants({ size: "sm", variant: "outline" })} data-waiting="task">Open the task</a> : null}
         <span className="text-xs text-muted-foreground">Answers open the old Hub's Waiting on you, where yes, no and later are given.</span>
-      </div>
+      </div>}
     </article>
   )
 }

@@ -1,13 +1,14 @@
 // #2505: a Needs you row opens on its questions, and says its numbers in words.
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 import { haAskWords, haRowHref, haRowHtml, hubAgentRows, type HaNeed } from "../src/daemon/ui/pages/hub-agents"
 import { HUB_NAV_CSS } from "../src/daemon/ui/pages/hub-nav"
 import { liveWorkCount, ltAge, ltEsc, ltPlain, ltTitle, type LtNode } from "../src/daemon/ui/pages/wall-tree"
 import { WALL_CONTEXT_SCRIPT } from "../src/daemon/ui/pages/wall-context.client"
 import { askWords } from "../src/hub/shell/menu"
-import { AgentQuestions, agentQuestions, openQuestion } from "../src/hub/shell/AgentQuestions"
+import { AgentQuestions, agentQuestions, answerBody, laterQuestion, openQuestion, rowsWithout } from "../src/hub/shell/AgentQuestions"
 import type { WaitingItem } from "../src/hub/waiting"
 
 const NOW = Date.parse("2026-11-27T12:00:00Z")
@@ -95,10 +96,10 @@ describe("the React chat's questions block, drawn (#2505)", () => {
     { key: "card:b", kind: "card", title: "Middle one" },
   ]
   const draw = (l: WaitingItem[] | undefined, whole = false) =>
-    renderToStaticMarkup(createElement(AgentQuestions, { agentId: "coder", list: l, whole, onWhole: () => {} }))
+    renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(AgentQuestions, { agentId: "coder", list: l, whole, onWhole: () => {} })))
   it("lists them oldest first, the first open with what is asked, and a Whole chat button", () => {
     const h = draw(list)
-    expect(h).toContain("Waiting on you · 2, oldest first")
+    expect(h).toContain("2 for you, oldest first")
     expect(h.indexOf('data-question="card:a"')).toBeLessThan(h.indexOf('data-question="card:b"'))
     expect(h).toContain('data-question="card:a" data-open="true"')
     expect(h).toContain("Ship the new sign-up copy?")
@@ -108,5 +109,42 @@ describe("the React chat's questions block, drawn (#2505)", () => {
   it("draws nothing once all are answered, and a placeholder while it reads", () => {
     expect(draw([])).toBe("")
     expect(draw(undefined)).toContain("animate-pulse")
+  })
+})
+
+describe("answering in place (#2505 C1)", () => {
+  const two: WaitingItem[] = [{ key: "card:a", kind: "card", title: "A" }, { key: "card:b", kind: "card", title: "B" }]
+  it("sends yes or no, with the 1-based choice only on yes", () => {
+    expect(answerBody("card:a", "yes", 1)).toEqual({ key: "card:a", action: "yes", choice: 2 })
+    expect(answerBody("card:a", "yes", null)).toEqual({ key: "card:a", action: "yes" })
+    expect(answerBody("card:a", "no", 1)).toEqual({ key: "card:a", action: "no" })
+  })
+  it("Later folds this one, keeps it, and opens the next; after the last, none is open", () => {
+    expect(laterQuestion(two, "card:a")).toBe("card:b")
+    expect(laterQuestion(two, "card:b")).toBe(false)
+    expect(openQuestion(two, false)).toBeNull()
+  })
+  it("counts the row down at once, and takes it out of Needs you at 0", () => {
+    const one = rowsWithout(m, "coder", "card:a")!
+    const r1 = one.rows.find((r) => r.id === "coder")!
+    expect([r1.unread, r1.state, r1.line]).toEqual([2, "needs", "Middle one"])
+    let left = rowsWithout(one, "coder", "card:b")!
+    left = rowsWithout(left, "coder", "request:r3")!
+    const r0 = left.rows.find((r) => r.id === "coder")!
+    expect([r0.unread, r0.state]).toEqual([0, "idle"])
+    expect(left.counts.needs).toBe(m.counts.needs - 1)
+    expect(rowsWithout(m, "coder", "card:nope")).toBe(m)
+  })
+  it("draws Yes, No and Later under the open question, and a task link for a request", () => {
+    const draw = (l: WaitingItem[]) => renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() },
+      createElement(AgentQuestions, { agentId: "coder", list: l, whole: false, onWhole: () => {} })))
+    const h = draw(two)
+    expect(h).toContain('data-question-act="yes"')
+    expect(h).toContain('data-question-act="no"')
+    expect(h).toContain('data-question-act="later"')
+    expect(h).not.toContain("old Hub")
+    const r = draw([{ key: "request:r3", kind: "request", title: "Reply" }])
+    expect(r).toContain('data-question-act="task"')
+    expect(r).not.toContain('data-question-act="yes"')
   })
 })
