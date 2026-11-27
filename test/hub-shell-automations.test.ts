@@ -254,7 +254,7 @@ describe("the Waiting on you pane", () => {
 
 describe("the menu opens both in the shell", () => {
   const draw = (p: Partial<SimpleShellProps> = {}) => html(createElement(SimpleShell, {
-    view: resolveHubLayout(), owner: true, agents: [{ id: "ada", name: "Ada" }], agent: "ada", ...p,
+    view: resolveHubLayout({ layout: "simple" }), owner: true, agents: [{ id: "ada", name: "Ada" }], agent: "ada", ...p,
   }))
   it("Automations and Waiting on you link to their panes, not the old Hub", () => {
     expect(SHELL_MAIN.find((i) => i.id === "automations")?.href).toBe("#page=home&pane=automations")

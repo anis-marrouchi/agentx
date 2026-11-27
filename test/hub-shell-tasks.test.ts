@@ -163,7 +163,7 @@ describe("an opened task", () => {
 
 describe("the shell with Tasks open", () => {
   const draw = (p: Partial<SimpleShellProps> = {}) => html(createElement(SimpleShell, {
-    view: resolveHubLayout(), owner: true, agents: [{ id: "ada", name: "Ada" }], agent: "ada", ...p,
+    view: resolveHubLayout({ layout: "simple" }), owner: true, agents: [{ id: "ada", name: "Ada" }], agent: "ada", ...p,
   }))
   it("the centre is Tasks, the menu marks Tasks and has the switch at its foot", () => {
     const out = draw({ pane: "tasks", tasksView: "kanban", onTasksView: () => {} })

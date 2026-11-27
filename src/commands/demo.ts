@@ -20,6 +20,7 @@ import { demoReportWorkflow } from "./demo-workflow"
 import { waitForHandoffReply } from "./demo-handoff"
 import { busyPorts, cliCommand, configStartupTimeout, ledgerHint, resolveStartupTimeout } from "./demo-startup"
 import { openBrowser } from "@/utils/open-browser"
+import { freshHubSetting } from "@/hub/layout"
 
 interface NodeSpec {
   dir: string
@@ -140,7 +141,8 @@ function writeNode(spec: NodeSpec, all: NodeSpec[], meshToken: string, dashboard
     // daemon's /mesh directory, so one dashboard shows the whole mesh.
     // A token only when asked for (the docs screenshots): it switches on the
     // dashboard's /api/* gate, and the portfolio opens only behind it (#1227).
-    dashboard: { enabled: true, port: spec.port + 10, bind: "127.0.0.1", daemonUrl: `http://127.0.0.1:${spec.port}`, ...(dashboardToken ? { token: dashboardToken } : {}) },
+    // A demo is a fresh install: the simple Hub (#2466).
+    dashboard: { enabled: true, port: spec.port + 10, bind: "127.0.0.1", daemonUrl: `http://127.0.0.1:${spec.port}`, ...(dashboardToken ? { token: dashboardToken } : {}), hub: freshHubSetting() },
     providers: { demo: { apiKey: "demo-mode" } },
     agents: {
       [spec.agentId]: {

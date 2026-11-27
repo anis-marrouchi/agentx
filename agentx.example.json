@@ -87,5 +87,11 @@
       "interval": 60,
       "timeout": 10
     }
+  },
+
+  "dashboard": {
+    "hub": {
+      "layout": "simple"
+    }
   }
 }

@@ -11,7 +11,7 @@ Waiting on you answers "what needs me?" Activity answers "what ran, where, and w
 ## See the runs
 
 1. **Browser:** open the dashboard. The Hub opens.
-2. In the nav on the left, select **Activity**, under **Work**. On a phone, select the search button at the top, type `activity` and pick **Activity**. With the simple layout, the default, Activity is not in the menus: turn **Activity page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=activity`, which always works. The page's address is `/hub#page=activity`.
+2. In the nav on the left, select **Activity**, under **Work**. On a phone, select the search button at the top, type `activity` and pick **Activity**. With the simple layout, the default on a new install, Activity is not in the menus: turn **Activity page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=activity`, which always works. The page's address is `/hub#page=activity`.
 3. Pick the result with the tabs under the title (**All**, **Done**, **Failed**, **Running**, **Stopped**) and the period with **24 h**, **7 d** or **30 d**.
 4. Select a row to open it in place: its result, what it was asked and where it ran. **Open the run** opens its Task page with the full conversation.
 

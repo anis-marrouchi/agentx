@@ -7,8 +7,17 @@
 //                           "show": { "<item>": true | false } } }
 //
 // `layout` sets every item's default: simple hides them all, full shows
-// them all. `show.<item>` overrides that default for one item. No key at all
-// (a new install, or one from before this change) is the simple layout.
+// them all. `show.<item>` overrides that default for one item.
+//
+// Who gets which (#2466, COO ruling under Anis's standing approval,
+// agentx#2313 comment 7186510516): a Hub that already existed keeps the full
+// layout on upgrade; only a fresh install opens simple. No `layout` key at
+// all (an install from before #2313, or one upgraded since without a choice)
+// is full. Every path that writes a fresh agentx.json (`agentx init`, the
+// setup wizard behind `agentx start` and the first-run page, `agentx demo`)
+// writes `layout: HUB_FRESH_LAYOUT` into it, so a fresh install opens
+// simple. A layout the owner picked in Settings › Layout is in the key, so
+// it is kept either way.
 //
 // Hide, never disable: a hidden item keeps running (schedules, gates and
 // workflows still run, a hidden page still opens from a link); only its
@@ -19,7 +28,14 @@
 
 export const HUB_LAYOUTS = ["simple", "full"] as const
 export type HubLayout = (typeof HUB_LAYOUTS)[number]
-export const HUB_DEFAULT_LAYOUT: HubLayout = "simple"
+/** No key (or an unknown one): a Hub from before the simple layout (#2466). */
+export const HUB_DEFAULT_LAYOUT: HubLayout = "full"
+/** What a fresh install's agentx.json is written with (#2466). */
+export const HUB_FRESH_LAYOUT: HubLayout = "simple"
+/** The `dashboard.hub` block a fresh agentx.json starts with. */
+export function freshHubSetting(): { layout: HubLayout } {
+  return { layout: HUB_FRESH_LAYOUT }
+}
 
 export interface HubShowItemDef {
   /** The key under `dashboard.hub.show`. */
@@ -77,7 +93,7 @@ export function isHubShowItem(v: unknown): v is HubShowItem {
   return typeof v === "string" && (HUB_SHOW_IDS as readonly string[]).includes(v)
 }
 
-/** The layout this setting gives: simple unless it says full; each item
+/** The layout this setting gives: full unless it says simple; each item
  *  its own switch when set, else the layout's default. */
 export function resolveHubLayout(setting?: HubLayoutSetting | null): HubLayoutView {
   const layout: HubLayout = isHubLayout(setting?.layout) ? setting!.layout as HubLayout : HUB_DEFAULT_LAYOUT

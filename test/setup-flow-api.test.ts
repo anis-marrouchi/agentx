@@ -98,6 +98,17 @@ describe("setup API: from nothing to a first answer", () => {
     expect(r.body).toEqual({ status: "done", answer: "Hello! I can help." })
   })
 
+  it("a fresh install is written with the simple Hub layout; adding an agent later leaves the layout alone (#2466)", () => {
+    runWizard(firstAgentPayload("box", true), dir)
+    const cfg = JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8"))
+    expect(cfg.dashboard.hub).toEqual({ layout: "simple" })
+    // An existing install with no key: the wizard adds an agent, not a layout.
+    cfg.dashboard.hub = {}
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify(cfg))
+    runWizard({ ...firstAgentPayload("box", true), agent: { ...firstAgentPayload("box", true).agent, id: "second", name: "Second" } }, dir)
+    expect(JSON.parse(readFileSync(join(dir, "agentx.json"), "utf-8")).dashboard.hub).toEqual({})
+  })
+
   it("shows a failed run as a plain sentence, not the raw error", async () => {
     runWizard(firstAgentPayload("box", true), dir)
     const f: Fake = { state: "ours", loaded: ["assistant"], restartRequired: [], calls: [], thread: [], startOk: true }

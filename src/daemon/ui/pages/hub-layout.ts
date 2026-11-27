@@ -96,7 +96,7 @@ export const HUB_LAYOUT_SCRIPT = String.raw`
 
   // --- Settings › Layout ---
   function stLayoutHtml() {
-    var v = (S.st.data && S.st.data.hubLayout) || HL.view || { layout: 'simple', show: {}, overrides: [] };
+    var v = (S.st.data && S.st.data.hubLayout) || HL.view || { layout: 'full', show: {}, overrides: [] };
     var own = v.overrides || [];
     // A radio group: one tab stop (the chosen one), arrow keys move the choice.
     var seg = function (id, name) {

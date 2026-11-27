@@ -256,7 +256,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
     // The Task page conversation's bundle (#2101 R16), by its hashed URL.
     + `<script>window.AX_TASK_CONVERSATION_SRC = ${JSON.stringify(assetUrl("task-conversation.global.js"))};</script>`
   // The React Hub (#2218): its tags, or "" when off or not built here.
-  // Simple or full (#2226 S1): no setting is the simple layout.
+  // Simple or full (#2226 S1): no setting is the full layout (#2466).
   const layout = opts.hub?.layout ?? resolveHubLayout()
   const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages, layout }) : ""
   const groups = wallNavGroups(owner)
