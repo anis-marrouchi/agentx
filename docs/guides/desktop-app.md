@@ -56,8 +56,8 @@ A small round orb floats above your other windows, on every desktop, also over f
 - Hold the orb (or the talk key) to talk. Your words show under the orb as you speak. Let go to send.
 - The words go to the agent named in the icon's menu under **Orb talks to** (until you pick one: the node's default agent, else its first). They join one Hub conversation, so you can read it in the Hub later.
 - While the agent works, the orb turns and shows what it writes. Then it says the answer in the agent's voice, with its first words under the orb. Tap the orb (or press Escape) to stop it.
-- Live words come from the node's own speech to text, one pass at a time, on the first 30 seconds of a recording only. Past 30 seconds the orb shows your voice level, and the whole recording is written down when you let go. A recording stops by itself after two minutes.
-- The first time, the system asks for the microphone for AgentX.
+- Live words come from the node's own speech to text, one pass at a time, on the first 30 seconds of a recording only. Past 30 seconds the orb shows your voice level, and the whole recording is written down when you let go. A recording stops by itself after two minutes. The last writing-down waits for a live pass that is still running, so the two never run at once. A pass that takes more than 60 seconds is stopped.
+- The first time, the system asks for the microphone for AgentX. If you let go before the microphone opens (for example while that question is on screen), the orb goes back to rest and sends nothing. If the recording cannot be read when you let go, the orb says so.
 - It shows five states: idle, listening, thinking, speaking, and call-back. Call-back is not fed yet.
 - **Global talk key**: on macOS the system asks you to allow AgentX under **Privacy & Security › Accessibility** the first time you turn it on. AgentX looks at that one key only. It does not keep or send any other key. Until you allow it, and on Ubuntu with Wayland, the key works as press once to start and press again to send. The menu says which.
 - On Ubuntu with Wayland, the app runs through XWayland so the orb can stay on top.
