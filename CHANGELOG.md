@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.297.2](https://github.com/anis-marrouchi/agentx/compare/v0.297.1...v0.297.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **hub:** existing Hubs keep the full layout on upgrade ([#2466](https://github.com/anis-marrouchi/agentx/issues/2466)) ([#2468](https://github.com/anis-marrouchi/agentx/issues/2468)) ([598d850](https://github.com/anis-marrouchi/agentx/commit/598d85044b18a2b3edb1ab96172827382965eb89))
+* **hub:** shell chat uses the approved composer card ([#2453](https://github.com/anis-marrouchi/agentx/issues/2453)) ([#2462](https://github.com/anis-marrouchi/agentx/issues/2462)) ([46694ca](https://github.com/anis-marrouchi/agentx/commit/46694ca19afb547c6dcc0079a829270c57dc7243))
+
 ## [0.297.1](https://github.com/anis-marrouchi/agentx/compare/v0.297.0...v0.297.1) (2026-11-27)
 
 
