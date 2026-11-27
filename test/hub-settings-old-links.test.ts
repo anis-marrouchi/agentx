@@ -72,6 +72,12 @@ describe("#page=settings opens the new Settings (#2101)", () => {
     expect(w.wall.classList.contains("is-settings")).toBe(false)
   })
 
+  it("tells the React Hub, which read #page=settings before load() answered", async () => {
+    const w = openWall({ hash: "#page=settings&section=channels", hubPages: PAGES })
+    await w.settle()
+    expect(w.dispatched).toContainEqual({ type: "hashchange", hash: `#page=${SETTINGS_PAGE}&section=channels` })
+  })
+
   it("from a link in the page, with the agent", async () => {
     const w = openWall({ hash: "", hubPages: PAGES })
     await w.settle()

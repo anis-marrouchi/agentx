@@ -381,6 +381,11 @@ ${HUB_NAV_SCRIPT}
     if (q.get('page') === 'settings' && q.get('old') !== '1' && HUB_PAGES.indexOf(newSettingsHref.page) >= 0) {
       history.replaceState(null, '', newSettingsHref({ section: q.get('section'), agent: q.get('agent'), under: q.get('under') }));
       q = new URLSearchParams(location.hash.slice(1));
+      // replaceState fires no hashchange, and on a first load this runs
+      // after load() answers, when React has already read #page=settings
+      // and drawn nothing. Tell it; this script skips its own copy (S.applied).
+      S.applied = location.hash;
+      window.dispatchEvent(new Event('hashchange'));
     }
     var f = {};
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });

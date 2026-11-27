@@ -100,7 +100,13 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
         : { status: 200, body: { runs: [] } })
     return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body, text: async () => (typeof r.body === "string" ? r.body : JSON.stringify(r.body)) })
   }
-  const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
+  // dispatched: the events the script fires on window, with the hash at
+  // that moment (the React Hub reads location.hash on hashchange).
+  const dispatched: Array<{ type: string; hash: string }> = []
+  const win: any = {
+    addEventListener: (t: string, f: () => void) => { onWindow[t] = f },
+    dispatchEvent: (e: Event) => { dispatched.push({ type: e.type, hash }); onWindow[e.type]?.(); return true },
+  }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
   // The React Hub's pages for this viewer (window.AX_HUB, hub-react.ts).
   if (opts.hubPages) win.AX_HUB = { pages: opts.hubPages }
@@ -159,7 +165,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     return prevented
   }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc, hash: () => hash }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc, dispatched, hash: () => hash }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
