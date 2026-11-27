@@ -3296,7 +3296,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
   ].join("\n"), responseText: 'Done.<agentx-artifact>{"filename":"report.csv","mime":"text/csv"}</agentx-artifact>' }
   const RUN2 = { ok: true, message: "And the docs", transcript: '→ Write({"file_path":"docs/price.md","content":"# Price"})', responseText: "Written." }
   const chatSrc = { key: "chat:th1", kind: "chat", label: "Price fix", runs: [{ node: "http://node-a", agent: "cx", task: "k1" }, { node: "http://node-a", agent: "cx", task: "k2" }], attached: ["shot.png"] }
-  const history = (url: string) => url.endsWith("&task=k1") ? { status: 200, body: RUN1 } : url.endsWith("&task=k2") ? { status: 200, body: RUN2 } : { status: 404, body: { error: "not found" } }
+  const history = (url: string) => url.endsWith("&task=k1&live=1") ? { status: 200, body: RUN1 } : url.endsWith("&task=k2&live=1") ? { status: 200, body: RUN2 } : { status: 404, body: { error: "not found" } }
 
   it("the chat's Files opens a Files tab, listed first, with what its runs read, changed, sent and were given (R17)", async () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [] }, chatFiles: () => chatSrc, history })
@@ -3307,8 +3307,8 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     w.click({ "data-cx": "files", "data-src": "chat" })
     await w.settle()
     expect(w.calls.filter((c) => c.url.startsWith("/api/task/history?")).map((c) => c.url)).toEqual([
-      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k1",
-      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k2",
+      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k1&live=1",
+      "/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k2&live=1",
     ])
     expect(w.el("wall-ctx").hidden).toBe(false)
     const tabs = w.el("wcx-tabs").innerHTML
@@ -3350,6 +3350,19 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     w.click({ "data-cx": "freload", "data-src": "chat:th1" })
     await w.settle()
     expect(w.el("wcx-body").innerHTML).toContain("<b>price.md</b>")
+  })
+
+  it("a run still going lists its files so far, and says so (#2101 R17b)", async () => {
+    const LIVE = { live: true, message: "Fix it", transcript: '→ Edit({"file_path":"src/price.ts","old_string":"1","new_string":"2"})', responseText: "" }
+    const w = openWall({ data, chatAgent: "cx", chatFiles: () => ({ ...chatSrc, runs: [{ node: "http://node-a", agent: "cx", task: "k9" }] }), history: () => ({ status: 200, body: LIVE }) })
+    await w.settle()
+    w.click({ "data-cx": "files", "data-src": "chat" })
+    await w.settle()
+    expect(w.calls.filter((c) => c.url.startsWith("/api/task/history?")).map((c) => c.url)).toEqual(["/api/task/history?node=http%3A%2F%2Fnode-a&agent=cx&task=k9&live=1"])
+    const body = w.el("wcx-body").innerHTML
+    expect(body).not.toContain("Files not available")
+    expect(body).toContain("Still running: the files so far. Reload for more.")
+    expect(body).toContain("edited</span><b>price.ts</b><small>src</small>")
   })
 
   it("shows the agent's workspace under the run's files: folders open in place, a file in its own tab (R17)", async () => {

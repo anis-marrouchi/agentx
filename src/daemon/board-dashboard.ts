@@ -1385,6 +1385,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Cross-node JSON proxy for the persisted task history (Recent Activities panel).
   // GET /api/task/history?node=<url>&agent=<id>&limit=N      → list
   // GET /api/task/history?node=<url>&agent=<id>&task=<tid>   → single record
+  //   (&live=1: a run still going answers with its output so far, live: true; #2101 R17b)
   // GET /api/task/history?node=<url>&agent=<id>&task=<tid>&session=1[&before=<tid>&limit=N]
   //   → the run's session, its chat's turns in order (#2101 R4)
   if (method === "GET" && path === "/api/task/history") {
@@ -1400,7 +1401,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const session = u.searchParams.get("session") === "1" && taskId
       ? { before: u.searchParams.get("before"), limit: u.searchParams.get("limit") }
       : null
-    await proxyTaskHistory(res, ctx, nodeUrl, agentId, taskId, limit, session)
+    await proxyTaskHistory(res, ctx, nodeUrl, agentId, taskId, limit, session, u.searchParams.get("live") === "1")
     return
   }
 
@@ -2956,6 +2957,8 @@ async function proxyTaskHistory(
   taskId: string | null,
   limit: string,
   session: { before: string | null; limit: string | null } | null = null,
+  /** One run: a run still going answers with its output so far (#2101 R17b). */
+  live = false,
 ): Promise<void> {
   const sq = new URLSearchParams()
   if (session?.before) sq.set("before", session.before)
@@ -2963,7 +2966,7 @@ async function proxyTaskHistory(
   const upstreamPath = session && taskId
     ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}/session${sq.size ? "?" + sq : ""}`
     : taskId
-    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}`
+    ? `/agents/${encodeURIComponent(agentId)}/tasks/${encodeURIComponent(taskId)}${live ? "?live=1" : ""}`
     : `/agents/${encodeURIComponent(agentId)}/tasks?limit=${encodeURIComponent(limit)}`
   await proxyNodeGet(res, ctx, nodeUrl, upstreamPath)
 }
