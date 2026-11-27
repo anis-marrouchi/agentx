@@ -656,6 +656,15 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
     resendAfterRestart: cfg.resendAfterRestart,
+    holdOnUsageLimit: cfg.holdOnUsageLimit,
+    limitHoldMaxMs: cfg.limitHoldMaxHours * 60 * 60_000,
+    // A hand-off held for its callee's usage limit (#2467 item 2): one
+    // notice to the asking agent on its next run.
+    holdNotice: (rec, text) => {
+      if (!w.registry.getAgent(rec.caller)) return
+      w.registry.notices.add(rec.caller, rec.callee, text)
+      w.log(`[delegation ${rec.id}] ${rec.caller} told of the usage limit hold`)
+    },
     coalesceMs: cfg.coalesceSeconds * 1000,
     // The hand-off journal is the table (#1861); no file is written (#1961).
     store,
