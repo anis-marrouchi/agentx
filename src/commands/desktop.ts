@@ -7,7 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
 import { type VoiceWarning, appVersion, macVoiceWarnings, startedApp } from '@/desktop/voice-checks'
 import { DESKTOP_APP, HELPER_APP, OLD_DESKTOP_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
-import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, retiredLoginItem } from '@/desktop/orb-switch'
+import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, restoredLoginItem, retiredLoginItem, undoOrbSettings } from '@/desktop/orb-switch'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -125,10 +125,62 @@ desktop.command('install').description('build, install, and start voice and comp
       console.log('AgentX Voice is running. Hold Option–Space to speak; Command–Option–V for smart paste.\nAllow Microphone for the app and Accessibility / Screen Recording for the helper when macOS asks.\nThe AgentX daemon and a speech transcription backend must also be available. Run agentx desktop status to inspect the login service.')
     } finally { rmSync(stage, { recursive: true, force: true }) }
   })
+/** Quits the installed orb app, matched by its full executable path so the
+ *  Electron helpers and AgentX Voice are left alone, and waits until it is gone. */
+async function quitOrbApp(dest: string) {
+  const exe = join(dest, 'Contents/MacOS/AgentX')
+  try { execFileSync('pkill', ['-f', exe], { stdio: 'pipe' }) } catch { return /* not running */ }
+  for (let i = 0; i < 25; i++) {
+    try { execFileSync('pgrep', ['-f', exe], { stdio: 'pipe' }) } catch { return }
+    await sleep(200)
+  }
+  throw new Error(`${dest} did not quit. Quit AgentX from its menu, then retry.`)
+}
+function readOrbSettings(file: string): unknown {
+  try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null /* first run: defaults */ }
+}
+function writeOrbSettings(file: string, settings: Record<string, unknown>) {
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify(settings, null, 2) + '\n')
+}
+/** `agentx desktop orb --undo`: AgentX Voice back at login, the orb app's own
+ *  login item off, so only one of them starts. */
+async function undoOrb(home: string, dest: string, dryRun: boolean) {
+  const dir = join(home, 'Library/LaunchAgents')
+  let names: string[] = []
+  try { names = readdirSync(dir) } catch { /* no LaunchAgents folder */ }
+  const retired = names.flatMap(name => {
+    const back = restoredLoginItem(join(dir, name))
+    return back ? [{ file: join(dir, name), back }] : []
+  })
+  const installed = existsSync(dest)
+  console.log(`${installed ? `Desktop app ${dest}: Open at login off, orb hidden, quit (the app stays installed)` : `No desktop app at ${dest}`}${retired.map(r => `\nWidget login item back on → ${r.back}${existsSync(r.back) ? ' (already there: left as it is)' : ''}`).join('')}\nThen: agentx desktop start`)
+  if (dryRun) return
+  if (installed) {
+    writeOrbSettings(orbSettingsFile(home), undoOrbSettings(readOrbSettings(orbSettingsFile(home))))
+    await quitOrbApp(dest)
+    // Only the app can remove its own login item (macOS keeps it for the app,
+    // not in a file): it applies the saved Open at login when it starts.
+    // Start it once in the background with the orb hidden, then quit it.
+    execFileSync('open', ['-g', dest], { stdio: 'pipe' })
+    await sleep(6000)
+    await quitOrbApp(dest)
+  }
+  for (const r of retired) if (!existsSync(r.back)) renameSync(r.file, r.back)
+  const { keep } = loginItems()
+  if (!existsSync(keep.file)) {
+    console.log('The orb app is off at login. No AgentX Voice login item was found: run agentx desktop install to put it back.')
+    return
+  }
+  start(keep)
+  console.log('AgentX Voice is back and starts at login; the orb app no longer does. Check it under System Settings → General → Login Items if you want to be sure.')
+}
 desktop.command('orb').description('switch this Mac from the AgentX Voice widget to the desktop app with the orb (#2265)')
   .option('--dry-run', 'show what changes without building or moving anything')
+  .option('--undo', 'go back: AgentX Voice starts at login again and the orb app does not')
   .action(async opts => {
     checkPlatform()
+    if (opts.undo) return undoOrb(homedir(), join(homedir(), 'Applications', ORB_APP), !!opts.dryRun)
     const root = packageRoot()
     if (!root || !existsSync(join(root, 'apps/desktop/package.json'))) throw new Error('apps/desktop is missing from this installation. Update AgentX to a release containing it.')
     const home = homedir()
@@ -136,7 +188,7 @@ desktop.command('orb').description('switch this Mac from the AgentX Voice widget
     const { keep, remove } = loginItems()
     const widgets = [keep, ...remove].filter(item => existsSync(item.file))
     const now = new Date()
-    console.log(`Desktop app with the orb → ${dest} (starts at login, orb shown, no window)\nSettings → ${orbSettingsFile(home)}${widgets.map(w => `\nWidget login item off → ${retiredLoginItem(w.file, now)}`).join('')}\nKept: ${join(home, 'Applications', DESKTOP_APP)} and ${HELPER_APP} (undo: rename the plist back, then agentx desktop start)`)
+    console.log(`Desktop app with the orb → ${dest} (starts at login, orb shown, no window)\nSettings → ${orbSettingsFile(home)}${widgets.map(w => `\nWidget login item off → ${retiredLoginItem(w.file, now)}`).join('')}\nKept: ${join(home, 'Applications', DESKTOP_APP)} and ${HELPER_APP} (undo: agentx desktop orb --undo)`)
     if (opts.dryRun) return
     const stage = mkdtempSync(join(tmpdir(), 'agentx-orb-'))
     try {
@@ -148,24 +200,19 @@ desktop.command('orb').description('switch this Mac from the AgentX Voice widget
       const built = builtOrbApp(stage)
       if (!existsSync(built)) throw new Error(`The build left no app at ${built}.`)
       // Quit a running copy before it is replaced; it may not be running.
-      // Only this copy: matched by its full executable path.
-      try { execFileSync('pkill', ['-f', join(dest, 'Contents/MacOS/AgentX')], { stdio: 'pipe' }) } catch { /* not running */ }
+      await quitOrbApp(dest)
       rmSync(dest, { recursive: true, force: true })
       mkdirSync(dirname(dest), { recursive: true })
       cpSync(built, dest, { recursive: true })
     } finally { rmSync(stage, { recursive: true, force: true }) }
-    const settingsFile = orbSettingsFile(home)
-    let existing: unknown = null
-    try { existing = JSON.parse(readFileSync(settingsFile, 'utf8')) } catch { /* first run: defaults */ }
-    mkdirSync(dirname(settingsFile), { recursive: true })
-    writeFileSync(settingsFile, JSON.stringify(orbSettings(existing), null, 2) + '\n')
+    writeOrbSettings(orbSettingsFile(home), orbSettings(readOrbSettings(orbSettingsFile(home))))
     // Never both: the widget's login items go off before the app starts.
     for (const item of widgets) {
       await stop(item)
       renameSync(item.file, retiredLoginItem(item.file, now))
     }
     execFileSync('open', [dest], { stdio: 'pipe' })
-    console.log('The orb is running and starts at login. Allow Microphone when macOS asks (and Input Monitoring if you turn on the talk key).\nIncoming agent calls ring on the phone until the orb answers them (#2523).')
+    console.log('The orb is running and starts at login. Allow Microphone when macOS asks.\nOption–Space is off for now: hold the orb to talk, or turn on the talk key in the AgentX menu (macOS then asks for Input Monitoring).\nIncoming agent calls ring on the phone until the orb answers them (#2523).\nTo go back: agentx desktop orb --undo')
   })
 desktop.command('start').description('start the installed AgentX Voice').action(() => { checkPlatform(); start(loginItems().keep); console.log('AgentX Voice started.') })
 desktop.command('stop').description('stop AgentX Voice until started again or next login').action(async () => { checkPlatform(); await stop(loginItems().keep); console.log('AgentX Voice stopped.') })

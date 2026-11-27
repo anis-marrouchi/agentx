@@ -28,3 +28,16 @@ export function orbSettings(existing: unknown): Record<string, unknown> {
 export function retiredLoginItem(file: string, now: Date): string {
   return `${file}.disabled-orb-${now.toISOString().slice(0, 10).replace(/-/g, '')}`
 }
+const RETIRED = /^(.+\.plist)\.disabled-orb-\d{8}$/
+/** The original name of a login item `retiredLoginItem` moved, or null for
+ *  any other file. `agentx desktop orb --undo` renames it back. */
+export function restoredLoginItem(file: string): string | null {
+  return RETIRED.exec(file)?.[1] ?? null
+}
+/** The app's settings after the undo: it no longer starts at login, and the
+ *  orb stays hidden so the one launch that turns the login item off shows
+ *  nothing. A new switch turns both back on. */
+export function undoOrbSettings(existing: unknown): Record<string, unknown> {
+  const kept = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing as Record<string, unknown> : {}
+  return { ...kept, openAtLogin: false, orbVisible: false, showOnLaunch: false }
+}

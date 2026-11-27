@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isVoiceLoginItemFile } from '../src/desktop/install'
-import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, retiredLoginItem } from '../src/desktop/orb-switch'
+import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, restoredLoginItem, retiredLoginItem, undoOrbSettings } from '../src/desktop/orb-switch'
 
 const desktopPkg = JSON.parse(readFileSync(resolve(fileURLToPath(new URL('.', import.meta.url)), '../apps/desktop/package.json'), 'utf8'))
 
@@ -29,5 +29,19 @@ describe('agentx desktop orb (#2265)', () => {
     expect(moved).toBe(`${file}.disabled-orb-20261127`)
     expect(moved.endsWith('.plist')).toBe(false)
     expect(isVoiceLoginItemFile('tn.noqta.agentx.voice.plist.disabled-orb-20261127')).toBe(false)
+  })
+  it('undo finds the retired login item and gives back the name desktop start uses', () => {
+    const file = '/Users/a/Library/LaunchAgents/tn.noqta.agentx.voice.plist'
+    const back = restoredLoginItem(retiredLoginItem(file, new Date('2026-11-27T23:00:00Z')))
+    expect(back).toBe(file)
+    expect(isVoiceLoginItemFile('tn.noqta.agentx.voice.plist')).toBe(true)
+    expect(restoredLoginItem(file)).toBeNull()
+    expect(restoredLoginItem('/Users/a/Library/LaunchAgents/tn.noqta.agentx.plist.bak')).toBeNull()
+    expect(restoredLoginItem(`${file}.disabled-orb-2026`)).toBeNull()
+  })
+  it('undo turns Open at login off and hides the orb, and keeps the other choices', () => {
+    expect(undoOrbSettings(orbSettings({ orbAgent: 'cx', globalKey: true })))
+      .toEqual({ orbAgent: 'cx', globalKey: true, openAtLogin: false, orbVisible: false, showOnLaunch: false })
+    expect(undoOrbSettings(null)).toEqual({ openAtLogin: false, orbVisible: false, showOnLaunch: false })
   })
 })
