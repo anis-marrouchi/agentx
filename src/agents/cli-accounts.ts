@@ -17,14 +17,15 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
+import { accountClis, type CliProvider } from "./conventions"
 
-export type CliProvider = "claude" | "codex"
+export type { CliProvider }
 
-/** Each provider's config-directory variable and its default directory. */
-export const CLI_PROVIDERS: Record<CliProvider, { label: string; envVar: string; defaultDir: (home: string) => string; signIn: string }> = {
-  claude: { label: "Claude Code", envVar: "CLAUDE_CONFIG_DIR", defaultDir: (h) => join(h, ".claude"), signIn: "CLAUDE_CONFIG_DIR=<dir> claude, then /login" },
-  codex: { label: "Codex", envVar: "CODEX_HOME", defaultDir: (h) => join(h, ".codex"), signIn: "CODEX_HOME=<dir> codex login" },
-}
+/** Each provider's config-directory variable and its default directory,
+ *  read from the CLI catalog's entries that have an account (#2349). */
+export const CLI_PROVIDERS = Object.fromEntries(
+  accountClis().map((c) => [c.account.provider, { label: c.label, envVar: c.account.envVar, defaultDir: c.account.defaultDir, signIn: c.account.signIn }]),
+) as Record<CliProvider, { label: string; envVar: string; defaultDir: (home: string) => string; signIn: string }>
 
 export interface CliProfile { name: string; dir: string }
 export interface CliProviderState { profiles: CliProfile[]; active: string }
@@ -132,7 +133,7 @@ export function changeCliAccounts(
   home = homedir(),
 ): CliAccounts {
   const p = body.provider
-  if (!isProvider(p)) throw Object.assign(new Error("provider must be claude or codex"), { status: 400 })
+  if (!isProvider(p)) throw Object.assign(new Error(`provider must be ${Object.keys(CLI_PROVIDERS).join(" or ")}`), { status: 400 })
   const name = typeof body.name === "string" ? body.name.trim() : ""
   const state = readCliAccounts(file)
   const s: CliProviderState = state[p] ?? { profiles: [], active: DEFAULT_PROFILE }
