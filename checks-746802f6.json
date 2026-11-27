@@ -1,0 +1,74 @@
+{
+  "shots": {
+    "1440-ready": true,
+    "01-mobile-1440-light.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": "More\n\n  \n  \n\nMobile app\n\n  \n  \n  \n\nWorkflows\n\n  \n  \n\nWiki\n\n  \n\nActivity\n\n  \n  \n  \n  \n  \n\nOrg\n\n  \n  \n  \n  \n  \n\nSessions\n\n  \n  \n\nUsage",
+      "copied": false,
+      "scrollTop": 0
+    },
+    "02-mobile-1440-dark.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": "More\n\n  \n  \n\nMobile app\n\n  \n  \n  \n\nWorkflows\n\n  \n  \n\nWiki\n\n  \n\nActivity\n\n  \n  \n  \n  \n  \n\nOrg\n\n  \n  \n  \n  \n  \n\nSessions\n\n  \n  \n\nUsage",
+      "copied": false,
+      "scrollTop": 0
+    },
+    "390-ready": true,
+    "03-mobile-390-light.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": null,
+      "copied": false,
+      "scrollTop": 0
+    },
+    "04-mobile-390-dark.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": null,
+      "copied": false,
+      "scrollTop": 0
+    },
+    "05-mobile-1440-light-install.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": "More\n\n  \n  \n\nMobile app\n\n  \n  \n  \n\nWorkflows\n\n  \n  \n\nWiki\n\n  \n\nActivity\n\n  \n  \n  \n  \n  \n\nOrg\n\n  \n  \n  \n  \n  \n\nSessions\n\n  \n  \n\nUsage",
+      "copied": false,
+      "scrollTop": 52
+    },
+    "06-mobile-390-light-copied.png": {
+      "pane": true,
+      "h2": [
+        "Your agents, in your pocket",
+        "Install it in five minutes"
+      ],
+      "commands": 2,
+      "more": null,
+      "copied": true,
+      "scrollTop": 249
+    }
+  },
+  "copied": true,
+  "more_has_mobile": true
+}
