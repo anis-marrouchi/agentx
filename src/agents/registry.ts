@@ -117,7 +117,7 @@ import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./unt
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
 import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
 import { TASK_WORKTREE_DEFAULTS, hasTargetWorktree, pickCheckout, prepareChangeWorktree, prepareTaskWorktree, pruneTaskWorktrees, requestMarkerInstruction, worktreeBranch, worktreeInstructions, worktreeTarget } from "./task-worktrees"
-import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
+import { buildAgentEnv, claudeBillingEnv, cliAccountOfWorkspace } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
  *  deadline is minutes; these are seconds, and a best-effort step that
@@ -3132,6 +3132,11 @@ export class AgentRegistry {
     runningTask.traceId = traceTaskId
     const abortEntry = this.taskAborts.get(runningTask.id)
     if (abortEntry) abortEntry.traceId = traceTaskId
+    // The Claude account this run uses (#2113 C1): its plan signals and
+    // holds are kept under that account's name.
+    const claudeAccount = state.def.tier === "claude-code"
+      ? cliAccountOfWorkspace("claude", state.def.workspace, task.agentId)
+      : undefined
 
     // Per-task tool-use tally (improvement plan #3). Counts each
     // assistant tool_use block by tool name so we can compare against
@@ -3186,7 +3191,7 @@ export class AgentRegistry {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
-        recordRateLimitEvent(event, undefined, task.model || state.def.model)
+        recordRateLimitEvent(event, undefined, task.model || state.def.model, claudeAccount?.account)
         recordSessionInit(event, undefined, task.agentId)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
         // Fire after internal capture so a subscriber crash never breaks
@@ -3210,7 +3215,7 @@ export class AgentRegistry {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
-        recordRateLimitEvent(event, undefined, task.model || state.def.model)
+        recordRateLimitEvent(event, undefined, task.model || state.def.model, claudeAccount?.account)
         recordSessionInit(event, undefined, task.agentId)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
@@ -4834,7 +4839,7 @@ export class AgentRegistry {
         const hasWarmSession = Boolean(resumeSessionId) || hasLiveProcess
         const gates = [
           preflightOverageGate(hasWarmSession),
-          preflightQuotaGate(hasWarmSession, undefined, task.model || state.def.model, priorityOfTask(task)),
+          preflightQuotaGate(hasWarmSession, undefined, task.model || state.def.model, priorityOfTask(task), claudeAccount?.account),
         ]
         const abort = gates.find((g) => g && g.abort)
         if (abort) {
@@ -4859,7 +4864,10 @@ export class AgentRegistry {
         // a warning if we've crossed warnRatio so the operator sees pressure
         // building before it turns into rejections.
         recordClaudeCodeDispatch()
-        const warning = warnIfNearingCap()
+        // One line per dispatch: the account and its folder (#2113 C3), so a
+        // run after a switch can be checked against its session file.
+        if (claudeAccount) this.log(`[${task.agentId}] claude account ${claudeAccount.account} (${claudeAccount.dir})`)
+        const warning = warnIfNearingCap(undefined, claudeAccount?.account)
         if (warning) this.log(`[${task.agentId}] ${warning}`)
         return null
       }

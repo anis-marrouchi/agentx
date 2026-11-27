@@ -31,7 +31,6 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPanelApi } from "./approvals-panel"
 import { hubAgentsFor, hubDayStart } from "./hub-agents-api"
-import { liftProviderHolds } from "@/agents/claude-code-quota"
 import { fetchHubUsage, hubSpendToday, type HubSpend } from "./hub-usage-api"
 import type { LtNode } from "./ui/pages/wall-tree"
 import { handlePeoplePanel } from "./people-panel"
@@ -1160,11 +1159,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     try {
       if (method === "POST") {
         const body = await readJson(req)
+        // Holds are kept per account (#2113 C1), so a switch needs no lift:
+        // the new account's runs are judged on the new account's holds.
         changeCliAccounts(body)
-        // Holds are kept per window, not per account: after a switch the
-        // old account's used-up window must not hold the new one's runs.
-        // If the new account is used up too, its first refusal sets it again.
-        if (body?.action === "use" && body?.provider === "claude") liftProviderHolds()
       }
       sendJson(res, 200, { providers: cliAccountsView() })
     } catch (e: any) { sendJson(res, e.status || 500, { error: e.message }) }

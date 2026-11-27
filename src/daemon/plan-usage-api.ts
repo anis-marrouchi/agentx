@@ -1,4 +1,4 @@
-import { activeProviderHolds, getClaudeCodeUsage, liftProviderHolds, planWindowUse } from "@/agents/claude-code-quota"
+import { accountHolds, activeProviderHolds, getClaudeCodeUsage, liftProviderHolds, planWindowUse } from "@/agents/claude-code-quota"
 import { planUsageReader } from "@/agents/claude-plan-usage"
 import { RUN_PRIORITIES, getPlanPriority, planPriorityHold } from "@/agents/plan-priority"
 import type { CodexPlanUsage } from "@/agents/codex-plan-usage"
@@ -17,13 +17,15 @@ import type { Reply } from "./restart-api"
 //                          daemon passes one, and each added CLI
 //                          account's reading (#2101 R28d), when it has any
 //   POST /usage/plan/lift  drop the active holds; the next cold dispatch
-//                          asks Claude again
+//                          asks Claude again. ?account=<name> lifts that
+//                          account's holds; without it, the active account's
+//                          (#2113 C1). GET also lists holds per account.
 //
 // Pure request → reply mapping over the in-memory gate state.
 
 export const PLAN_USAGE_API_PATHS = new Set(["/usage/plan", "/usage/plan/lift"])
 
-export function handlePlanUsageApi(method: string, path: string, now: number = Date.now(), extra: { codex?: CodexPlanUsage | null; accounts?: AccountsPlanUsage } = {}): Reply {
+export function handlePlanUsageApi(method: string, path: string, now: number = Date.now(), extra: { codex?: CodexPlanUsage | null; accounts?: AccountsPlanUsage; account?: string } = {}): Reply {
   const m = method.toUpperCase()
   if (path === "/usage/plan" && m === "GET") {
     const windows = planWindowUse(now)
@@ -34,6 +36,7 @@ export function handlePlanUsageApi(method: string, path: string, now: number = D
         now,
         ...getClaudeCodeUsage(now),
         holds: activeProviderHolds(now),
+        accountHolds: accountHolds(now).map((a) => ({ account: a.account, active: a.active, holds: a.holds })),
         reader: planUsageReader.getState(),
         ...(extra.codex !== undefined && { codex: extra.codex }),
         ...(extra.accounts !== undefined && { accounts: extra.accounts }),
@@ -49,7 +52,7 @@ export function handlePlanUsageApi(method: string, path: string, now: number = D
     }
   }
   if (path === "/usage/plan/lift" && m === "POST") {
-    return { status: 200, body: { lifted: liftProviderHolds(now) } }
+    return { status: 200, body: { ...(extra.account && { account: extra.account }), lifted: liftProviderHolds(now, extra.account || undefined) } }
   }
   return { status: 405, body: { error: "method not allowed" } }
 }

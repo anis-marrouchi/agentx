@@ -8386,7 +8386,8 @@ export class AgentXDaemon {
           ? await readAccountsPlanUsage({ enabled: planUsageSettings(this.config).enabled, log: (m) => this.log(m) })
             .catch((e: any) => { this.log(`[plan-usage] account readings failed: ${e?.message ?? e}`); return undefined })
           : undefined
-        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex, accounts })
+        const account = new URL(req.url || "/", "http://local").searchParams.get("account") || undefined
+        const reply = handlePlanUsageApi(req.method || "GET", path, Date.now(), { codex, accounts, account })
         const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted
         if (lifted) this.log(`  Claude plan holds lifted by operator: ${lifted.map((s) => s.window).join(", ") || "none active"}`)
         this.json(res, reply.status, reply.body)
@@ -10684,7 +10685,7 @@ export class AgentXDaemon {
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
               "GET  /usage/plan  — Claude plan windows, cold-dispatch counters, active holds",
-              "POST /usage/plan/lift  — drop the active Claude plan holds",
+              "POST /usage/plan/lift[?account=<name>]  — drop the Claude plan holds of the active (or named) account",
               "GET  /daemon/restart  — in-flight count, service manager, pending restart",
               "POST /daemon/restart  — restart when idle { timeoutMinutes?, onTimeout? }",
               "POST /daemon/restart/cancel",

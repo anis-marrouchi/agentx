@@ -14,7 +14,7 @@
 //
 // State: ~/.agentx/cli-accounts.json, written only by the Hub's owner API.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 
@@ -89,6 +89,27 @@ export function activeCliDir(provider: CliProvider, state: CliAccounts = readCli
   const s = state[provider]
   const prof = s && s.active !== DEFAULT_PROFILE ? s.profiles.find((x) => x.name === s.active) : undefined
   return prof?.dir || env[CLI_PROVIDERS[provider].envVar]?.trim() || CLI_PROVIDERS[provider].defaultDir(home)
+}
+
+/** The active profile's name for `provider` (default when none is picked). */
+export function activeCliAccountName(provider: CliProvider, state: CliAccounts = readCliAccounts()): string {
+  return state[provider]?.active ?? DEFAULT_PROFILE
+}
+
+function realDir(dir: string, home: string): string {
+  const r = resolve(dir.replace(/^~(?=$|\/)/, home))
+  try { return realpathSync(r) } catch { return r }
+}
+
+/**
+ * The account a config folder belongs to (#2113 C1): the profile whose folder
+ * is the same, compared by resolved path, so two agents pinned to one folder
+ * share one account. A folder no profile has is `fallback`.
+ */
+export function cliAccountForDir(provider: CliProvider, dir: string, fallback: string, state: CliAccounts = readCliAccounts(), home = homedir()): string {
+  const want = realDir(dir, home)
+  const all = [{ name: DEFAULT_PROFILE, dir: CLI_PROVIDERS[provider].defaultDir(home) }, ...(state[provider]?.profiles ?? [])]
+  return all.find((x) => realDir(x.dir, home) === want)?.name ?? fallback
 }
 
 /** What the Hub shows: per provider, its profiles (default first), the active one and whether each dir exists. */
