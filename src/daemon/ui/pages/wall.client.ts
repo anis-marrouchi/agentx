@@ -434,11 +434,12 @@ ${HUB_NAV_SCRIPT}
     if (S.post && S.post !== was) {
       // Opened from the feed in this tab: Back returns there, where it was.
       if (S.booted && !was) { S.pushed = true; S.backY = window.scrollY || 0; }
-      loadThread(S.post);
     } else if (!S.post && was) {
       S.pushed = false;
       back = S.backY;
     }
+    // A post opened by its link before the posts arrive loads its thread once they do.
+    if (S.post && (S.post !== was || !S.threads[S.post])) loadThread(S.post);
     S.booted = true;
     setView(S.view, true);
     if (S.post && S.post !== was && window.scrollTo) window.scrollTo(0, 0);
@@ -1743,6 +1744,12 @@ ${HUB_NAV_SCRIPT}
     return c;
   };
 
+  // The link's page and view apply before any read answers (#2101): the
+  // first frame has the final layout (column, gutters, composer), and the
+  // posts fill it in place when they arrive. Only on the feed itself: the
+  // other pages (Settings, a Task) draw once their own reads answer.
+  var firstPage = new URLSearchParams(location.hash.replace(/^#/, '')).get('page');
+  if (!firstPage || firstPage === 'wall') applyHash();
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
   load().then(function () {
