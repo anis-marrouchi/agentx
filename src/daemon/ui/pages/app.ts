@@ -57,7 +57,9 @@ import { APP_VOICE_SCRIPT } from "./app-voice.client"
 import { APP_VOICE_CSS } from "./app-voice.css"
 import { APP_DICTATE_CSS, APP_DICTATE_SCRIPT } from "./app-dictate.client"
 import { dictateLabel, parseOpenHash } from "./app-voice-reply-logic"
-import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
+import { LOCKED_BODY, LOCKED_SCRIPT } from "./app-locked.client"
+import { PAIR_CSS, PHONE_BASE_CSS } from "./phone-base.css"
+import { icon, type IconName } from "../icons"
 import { injectFns } from "../inject"
 import { formatPairInput, mayBounce, parsePairScan } from "./app-pair-logic"
 import { SCAN_BODY, SCAN_CSS, SCAN_SCRIPT } from "./app-scan.client"
@@ -90,14 +92,16 @@ ${THEME_BOOT}
 <style>${AX_TOKENS_CSS}${AX_AFFECT_CSS}${BASE_CSS}</style>`
 }
 
-const TAB_ICONS: Record<string, string> = {
-  agents: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
-  chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z',
-  fleet: 'M3 3h18v13H3zM8 21h8M12 16v5',
-  activity: 'M3 12h4l3-8 4 16 3-8h4',
-  alerts: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
-  desk: 'M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5',
+// lucide, the same icon for the same meaning as the Hub's side menu
+// (hub-nav.ts HUB_PAGE_ICON: agents "bot", Desk "inbox").
+const TAB_ICONS: Record<string, IconName> = {
+  agents: "bot",
+  more: "ellipsis",
+  chat: "message-square",
+  fleet: "monitor",
+  activity: "activity",
+  alerts: "bell",
+  desk: "inbox",
 }
 
 // The bottom tabs (#2101 C1a): Agents · Chat · Desk · Alerts · More.
@@ -117,10 +121,10 @@ const MORE_PAGES = [
 
 export function renderAppPage(): string {
   const tabs = TABS.map((t, i) =>
-    `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TAB_ICONS[t.id]}"/></svg></span><span>${t.label}</span></button>`,
+    `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}"><span class="tab-icon">${icon(TAB_ICONS[t.id])}</span><span>${t.label}</span></button>`,
   ).join("")
   const more = `<ul class="more-list">${MORE_PAGES.map((p) =>
-    `<li><a href="#${p.id}" data-more="${p.id}"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TAB_ICONS[p.id]}"/></svg></span><span><b>${p.label}</b><small>${p.hint}</small></span></a></li>`).join("")}</ul>`
+    `<li><a href="#${p.id}" data-more="${p.id}"><span class="tab-icon">${icon(TAB_ICONS[p.id])}</span><span><b>${p.label}</b><small>${p.hint}</small></span></a></li>`).join("")}</ul>`
   const panels = TABS.map((t, i) =>
     `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
       <h2>${t.label}</h2>
@@ -128,7 +132,7 @@ export function renderAppPage(): string {
     </section>`,
   ).join("") + MORE_PAGES.map((p) =>
     `<section role="tabpanel" id="panel-${p.id}" aria-labelledby="tab-more" tabindex="0" data-more-page hidden>
-      <a class="more-back" href="#more">‹ More</a>
+      <a class="more-back" href="#more">${icon("chevron-left")}More</a>
       <h2>${p.label}</h2>
       ${afLoaderHtml(p.soon)}
     </section>`,
@@ -143,7 +147,7 @@ export function renderAppPage(): string {
     <h1>AgentX</h1>
     <p id="who" class="who">Connecting…</p>
   </div>
-  <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/></svg></button></div>
+  <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme">${icon("moon", 20, "th-moon")}${icon("sun", 20, "th-sun")}</button></div>
 </header>
 ${APP_PINS_BAR}
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
@@ -181,11 +185,12 @@ ${CAMERA_BODY}
 export function renderAppPairPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Pair · AgentX")}</head>
+<head>${head("Pair · AgentX")}<style>${PAIR_CSS}</style></head>
 <body>
 <main class="card">
   <h1>Pairing this phone…</h1>
   <p id="msg" role="status">One moment.</p>
+  <form id="retry" class="pair-form" hidden><button type="submit">Try again</button></form>
 </main>
 <script>${PAIR_SCRIPT}</script>
 </body>
@@ -197,7 +202,7 @@ export function renderAppPairPage(): string {
 export function renderAppLockedPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Not paired · AgentX")}<style>${LOCKED_CSS}${SCAN_CSS}</style></head>
+<head>${head("Not paired · AgentX")}<style>${PAIR_CSS}${SCAN_CSS}</style></head>
 <body>${LOCKED_BODY}${SCAN_BODY}
 <script>${injectFns({ mayBounce, formatPairInput, parsePairScan })}</script>
 <script>${LOCKED_SCRIPT}</script>
@@ -312,30 +317,40 @@ const PAIR_SCRIPT = `
   var m = /(?:^#|&)token=([^&]+)/.exec(location.hash);
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
   if (!m) { msg.textContent = 'This link has no pairing key. Run agentx app pair again and scan the new QR code.'; return; }
-  fetch('/api/app/session', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Authorization': 'Bearer ' + decodeURIComponent(m[1]) },
-  }).then(function (r) {
-    if (r.ok) { location.replace('/app'); return; }
-    msg.textContent = r.status === 401
-      ? 'This pairing link is not valid any more. Run agentx app pair again and scan the new QR code.'
-      : 'Pairing failed (HTTP ' + r.status + '). Try again.';
-  }).catch(function () { msg.textContent = 'Could not reach AgentX. Check this phone is on your tailnet, then try again.'; });
+  // The key left the address bar above, so Try again re-sends the one kept here.
+  var key = decodeURIComponent(m[1]);
+  var retry = document.getElementById('retry');
+  function pair() {
+    retry.hidden = true;
+    msg.textContent = 'One moment.';
+    fetch('/api/app/session', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Authorization': 'Bearer ' + key },
+    }).then(function (r) {
+      if (r.ok) { location.replace('/app'); return; }
+      if (r.status === 401) { msg.textContent = 'This pairing link is not valid any more. Run agentx app pair again and scan the new QR code.'; return; }
+      msg.textContent = 'Pairing failed (HTTP ' + r.status + ').';
+      retry.hidden = false;
+    }).catch(function () {
+      msg.textContent = 'Could not reach AgentX. Check this phone is on your tailnet.';
+      retry.hidden = false;
+    });
+  }
+  retry.addEventListener('submit', function (ev) { ev.preventDefault(); pair(); });
+  pair();
 })();
 `
 
-const BASE_CSS = `
-html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); }
-body { min-height: 100dvh; -webkit-text-size-adjust: 100%; }
-code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; }
+// The one phone set (phone-base.css.ts), plus the column of the pair and
+// "not paired" pages.
+const BASE_CSS = PHONE_BASE_CSS + `
 .card {
   max-width: 460px; margin: 0 auto;
   padding: calc(40px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
   line-height: 1.55;
 }
-.card h1 { font-size: 22px; margin: 0 0 12px; }
-.muted { color: var(--ax-text-2); }
+.card h1 { font-size: 22px; font-weight: 600; margin: 0 0 12px; }
 `
 
 const APP_CSS = `
@@ -345,7 +360,8 @@ body { display: flex; flex-direction: column; }
   padding: calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left));
   background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border);
 }
-.bar h1 { font-size: 18px; margin: 0; font-weight: 700; }
+.bar h1 { margin: 0; }
+[data-theme="dark"] .th-moon, :root:not([data-theme="dark"]) .th-sun { display: none; }
 .bar-btns { display: flex; gap: 8px; }
 .who { margin: 2px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .icon-btn {
@@ -380,7 +396,7 @@ main h2 { font-size: 20px; margin: 4px 0 8px; }
 .more-list a:active { background: var(--ax-surface-2); }
 .more-list b { display: block; font-size: 15px; }
 .more-list small { display: block; color: var(--ax-text-2); font-size: var(--ax-fs-sm); }
-.more-list .tab-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.more-back { display: inline-block; min-height: 44px; line-height: 44px; color: var(--ax-accent-2); text-decoration: none; font-weight: 600; }
+.more-list .tab-icon svg { width: 22px; height: 22px; stroke-width: 1.8; }
+.more-back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin-left: -4px; color: var(--ax-accent-2); text-decoration: none; font-weight: 600; }
 [data-theme="dark"] .tabs [role=tab][aria-selected=true] { color: var(--ax-text); }
 `

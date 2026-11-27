@@ -16,6 +16,7 @@ import ArrowUp from "lucide-static/dist/esm/icons/arrow-up.js"
 import ArrowUpRight from "lucide-static/dist/esm/icons/arrow-up-right.js"
 import AtSign from "lucide-static/dist/esm/icons/at-sign.js"
 import Ban from "lucide-static/dist/esm/icons/ban.js"
+import Bell from "lucide-static/dist/esm/icons/bell.js"
 import Bot from "lucide-static/dist/esm/icons/bot.js"
 import CalendarClock from "lucide-static/dist/esm/icons/calendar-clock.js"
 import ChartLine from "lucide-static/dist/esm/icons/chart-line.js"
@@ -57,6 +58,7 @@ import MessageSquare from "lucide-static/dist/esm/icons/message-square.js"
 import MessageSquareCheck from "lucide-static/dist/esm/icons/message-square-check.js"
 import MessageSquareText from "lucide-static/dist/esm/icons/message-square-text.js"
 import Monitor from "lucide-static/dist/esm/icons/monitor.js"
+import Moon from "lucide-static/dist/esm/icons/moon.js"
 import Network from "lucide-static/dist/esm/icons/network.js"
 import Package from "lucide-static/dist/esm/icons/package.js"
 import PanelLeft from "lucide-static/dist/esm/icons/panel-left.js"
@@ -78,6 +80,7 @@ import SlidersHorizontal from "lucide-static/dist/esm/icons/sliders-horizontal.j
 import Smartphone from "lucide-static/dist/esm/icons/smartphone.js"
 import Square from "lucide-static/dist/esm/icons/square.js"
 import SquarePen from "lucide-static/dist/esm/icons/square-pen.js"
+import Sun from "lucide-static/dist/esm/icons/sun.js"
 import SunMoon from "lucide-static/dist/esm/icons/sun-moon.js"
 import Table from "lucide-static/dist/esm/icons/table.js"
 import Tag from "lucide-static/dist/esm/icons/tag.js"
@@ -98,6 +101,7 @@ const SVG = {
   "arrow-up-right": ArrowUpRight,
   "at-sign": AtSign,
   "ban": Ban,
+  "bell": Bell,
   "bot": Bot,
   "calendar-clock": CalendarClock,
   "chart-line": ChartLine,
@@ -139,6 +143,7 @@ const SVG = {
   "message-square-check": MessageSquareCheck,
   "message-square-text": MessageSquareText,
   "monitor": Monitor,
+  "moon": Moon,
   "network": Network,
   "package": Package,
   "panel-left": PanelLeft,
@@ -160,6 +165,7 @@ const SVG = {
   "smartphone": Smartphone,
   "square": Square,
   "square-pen": SquarePen,
+  "sun": Sun,
   "sun-moon": SunMoon,
   "table": Table,
   "tag": Tag,

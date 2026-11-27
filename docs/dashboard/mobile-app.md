@@ -74,7 +74,7 @@ Removing the app from the home screen also removes its pairing.
 - Swipe the page left or right to go to the next or the previous tab. The page follows your finger. At the first and the last tab it gives a little and stays.
 - A swipe that starts on something that scrolls sideways by itself scrolls that instead: the row of conversations, a wide code block or a wide table. A swipe that starts on the voice orb stays with the orb. Scrolling up or down never changes the tab.
 - If the phone is set to reduce motion, the page doesn't slide: the tab changes as soon as you lift your finger.
-- Tap **◐** in the top-right corner to switch between light and dark themes.
+- Tap the moon (light theme) or the sun (dark theme) in the top-right corner of **Chat** to switch themes.
 - The app still opens without a connection. A yellow bar says it's offline, and live information returns when the phone reconnects.
 
 ![The phone app in the dark theme](/screenshots/mobile-app/app-dark.png)
@@ -129,6 +129,7 @@ The pairing code gives the phone the same key. The computer keeps only a scrambl
   ![The "Too many attempts" message on the pairing page](/screenshots/mobile-app/pair-code-too-many.png)
 - **"You're offline. Pairing needs a connection"** — the phone has no connection to your tailnet. Turn on Wi-Fi or mobile data, and turn on Tailscale in its app, then tap **Pair** again.
 - **"This pairing link is not valid any more"** — the phone was removed after the QR code was made. Run `agentx app pair` again and scan the new code.
+- **"Pairing failed" or "Could not reach AgentX" after scanning the QR code** — the computer did not answer. Check that Tailscale is on, then tap **Try again** under the message. It sends the same link again, so you don't need a new QR code.
 - **"tailscale serve publishes the whole dashboard"** — `agentx app pair` found an earlier `tailscale serve --bg 4202`, or another dashboard path it lists. Run `tailscale serve reset`, then repeat step 1 of [Install](#install). The Android app's `/.well-known/assetlinks.json` line does not trigger this; add it back after the reset if you use it. The check counts a path that points to the dashboard through any of the computer's own addresses (its home network or Tailscale address, not only `127.0.0.1`) and through `https+insecure://` as well. It also catches a target with a user name before the address (`http://user@127.0.0.1:4202`) and an address written in a longer form (`[0:0:0:0:0:0:0:1]`, `[::ffff:7f00:1]`, `127.1`). It also counts a TCP forward to the dashboard's port (`tailscale serve --tcp=<port>` or `--tls-terminated-tcp=<port>`, listed as `TCP port <port>`) and a Tailscale Service that shares it (`tailscale serve --service=svc:<name>`, listed with the `svc:<name>` in front). `tailscale serve reset` removes those too.
 - **The address without `/app` opens the dashboard** — the whole dashboard is shared on your tailnet. On the computer, run `tailscale serve reset`, then repeat step 1 of [Install](#install).
 - **Agents stays on "Loading your agents…"** — the computer runs a version before 0.286.0, where the **Agents** tab never filled in. Upgrade AgentX on the computer, then close the app completely and open it again. The list shows within a few seconds and refreshes every 15 seconds.

@@ -1,8 +1,8 @@
 // --- Styles of the member pages (/member) (#443) ---
 //
 // Drawn from the approved concept (branch 443-member-page-concept). Only
-// token values: --link and --tick are names for existing tokens, chosen so
-// small text keeps its contrast (plain blue on white is under 4.5:1).
+// token values. The base rules and the pairing form are the one phone set
+// in phone-base.css.ts (Hub review S7), shared with the phone app.
 //
 // Lists drawn without bullets carry role="list" in the markup: Safari, and
 // so VoiceOver, drops list semantics from a list-style: none list. The
@@ -10,17 +10,13 @@
 // reads the button's words only; a browser without the "/ alt" syntax keeps
 // the first declaration.
 
-export const BASE_CSS = `
-:root { --link: var(--ax-blue-d); --tick: var(--ax-green-d); }
-[data-theme="dark"] { --link: var(--ax-blue); --tick: var(--ax-green); }
-* { box-sizing: border-box; }
-html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); }
-body { min-height: 100dvh; font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+import { PHONE_BASE_CSS } from "./phone-base.css"
+
+export const BASE_CSS = PHONE_BASE_CSS + `
+body { font-size: 16px; line-height: 1.5; }
 h1, h2, p, ul, ol { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 a { color: var(--link); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
-code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border); }
 .mark { flex: none; width: 36px; height: 36px; border-radius: 10px; }
 .bar h1 { font-size: 20px; font-weight: 600; line-height: 1.2; }
@@ -33,7 +29,7 @@ code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surf
 .steps li.now { border-color: var(--ax-blue); color: var(--ax-text); font-weight: 600; }
 .narrow { max-width: 480px; margin: 0 auto; padding: 28px 20px 48px; }
 .narrow .steps { margin-bottom: 24px; }
-.card { padding: 24px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow-lg); }
+.card { padding: 24px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow-xs); }
 .card h2 { font-size: var(--ax-fs-pane); font-weight: 600; line-height: 1.2; margin-bottom: 8px; }
 .card p { color: var(--ax-text-2); }
 .help { margin-top: 20px; font-size: 14px; color: var(--ax-text-2); }
@@ -114,20 +110,6 @@ export const WORK_CSS = `
 .blank { padding: 28px 24px; border: var(--ax-border-w) dashed var(--ax-border-2); border-radius: var(--ax-radius-lg); }
 .blank p + p { margin-top: 8px; color: var(--ax-text-2); }
 .foot { margin-top: 28px; font-size: 14px; color: var(--ax-text-2); }
-`
-
-export const LOCKED_CSS = `
-.pair-form { display: grid; gap: 8px; margin-top: 20px; }
-.pair-form label { font-weight: 600; margin-top: 8px; }
-.pair-form input { width: 100%; min-height: 52px; padding: 10px 14px; font: inherit; font-size: 17px; color: var(--ax-text); background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-text-2); border-radius: var(--ax-radius-sm); }
-.pair-form input#pair-code { min-height: 64px; font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
-.pair-form input:focus { border-color: var(--ax-blue); outline: none; }
-.pair-form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-md); font: inherit; font-size: 19px; font-weight: 600; color: var(--ax-primary-fg); background: var(--ax-primary); cursor: pointer; }
-.pair-form button:disabled { opacity: 0.55; cursor: default; }
-.pair-msg { min-height: 1.5em; }
-.card .pair-msg.bad { color: var(--ax-red-ink); }
-[data-theme="dark"] .card .pair-msg.bad { color: var(--ax-red); }
-.card .pair-offline { padding: 8px 12px; border-radius: var(--ax-radius-sm); font-size: 14px; background: var(--ax-amber-t); color: var(--ax-amber-ink); border: 1px solid var(--ax-amber-e); }
 `
 
 export const WAITING_CSS = `

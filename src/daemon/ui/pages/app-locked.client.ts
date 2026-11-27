@@ -8,6 +8,7 @@
 //
 // The service worker keeps a copy of this page for offline starts, so the
 // script says plainly when there is no connection instead of failing.
+// The form's style is PAIR_CSS (phone-base.css.ts), shared with /member.
 // No backslashes, backticks or dollar-brace in the script: it sits inside a
 // TS template literal.
 
@@ -26,30 +27,6 @@ export const LOCKED_BODY = `
   </form>
   <p class="muted">If this phone was paired before, it may have been removed with <code>agentx app revoke</code>.</p>
 </main>`
-
-export const LOCKED_CSS = `
-.pair-form { display: grid; gap: 10px; margin: 20px 0 24px; }
-.pair-form label { font-weight: 600; }
-.pair-form input {
-  box-sizing: border-box; width: 100%; min-height: 60px; padding: 10px 14px;
-  font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase;
-  color: var(--ax-text); background: var(--ax-surface); border: 2px solid var(--ax-border); border-radius: var(--ax-radius-sm);
-}
-.pair-form input::placeholder { color: var(--ax-text-3, var(--ax-text-2)); opacity: 0.6; }
-.pair-form input:focus { border-color: var(--ax-accent); outline: none; }
-.pair-form button {
-  min-height: 52px; border: 0; border-radius: var(--ax-radius-pill);
-  font: inherit; font-size: 17px; font-weight: 700; color: #fff; background: var(--ax-accent); cursor: pointer;
-}
-.pair-form button:disabled { opacity: 0.55; cursor: default; }
-.pair-msg { margin: 0; min-height: 1.5em; }
-.pair-msg.bad { color: var(--ax-red-ink); }
-[data-theme="dark"] .pair-msg.bad { color: var(--ax-red); }
-.pair-offline {
-  margin: 0; padding: 8px 12px; border-radius: var(--ax-radius-sm); font-size: var(--ax-fs-sm);
-  background: var(--ax-amber-t); color: var(--ax-amber-ink); border: 1px solid var(--ax-amber-e);
-}
-`
 
 export const LOCKED_SCRIPT = `
 (function () {
