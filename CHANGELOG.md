@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.308.0](https://github.com/anis-marrouchi/agentx/compare/v0.307.0...v0.308.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** Mobile app page shows a tilting phone with the app's screens ([#2459](https://github.com/anis-marrouchi/agentx/issues/2459)) ([#2520](https://github.com/anis-marrouchi/agentx/issues/2520)) ([13bee1e](https://github.com/anis-marrouchi/agentx/commit/13bee1e40ab3a758fb6ebc51f5af81e1f50e68fb))
+
 ## [0.307.0](https://github.com/anis-marrouchi/agentx/compare/v0.306.0...v0.307.0) (2026-11-27)
 
 
