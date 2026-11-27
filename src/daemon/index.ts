@@ -190,7 +190,7 @@ import { handleJobsApi, type JobView } from "@/jobs/api"
 import { JobMesh } from "@/jobs/mesh"
 import { jobsOn } from "@/jobs/doors"
 import { dbFacts } from "@/jobs/facts"
-import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, wakeContext } from "@/jobs/wake"
+import { DEFAULT_WAKE_SETTINGS, JobWake, markWake, markWakeKind, wakeContext, type WakeKind } from "@/jobs/wake"
 import { MAX_NOTICES } from "@/agents/notices"
 import { DEFAULT_CHECKER_SETTINGS, runCheck, type CheckContext } from "@/requests/checkers"
 import { forgeCommitReader, forgeReader } from "@/requests/checkers/issue"
@@ -3431,13 +3431,13 @@ export class AgentXDaemon {
   /** A turn on a plan step, in the request's own chat. Fire and forget,
    *  like a pick-up. A turn that could not start comes back as { error }:
    *  the step is blocked and the owner told. */
-  private async planTurn(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord, step: PlanStep): Promise<void> {
+  private async planTurn(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord, step: PlanStep, kind: WakeKind): Promise<void> {
     const fail = (error: string) => {
       const cur = requests.plans.step(step.requestId, step.idx)
       if (cur?.state === "active") blockStep(requests.store, requests.plans, cur, `could not hand it to ${agentId}: ${error}`, Date.now())
       this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} failed: ${error}`)
     }
-    void this.registry.execute({ agentId, message: text, context: pickupContext(r.id) })
+    void this.registry.execute({ agentId, message: text, context: markWakeKind(pickupContext(r.id), kind) })
       .then((res) => {
         if (!res?.error || isQueued(res.error)) return
         // Cut by a daemon restart: the step goes back to its agent when the
@@ -3480,7 +3480,7 @@ export class AgentXDaemon {
         requests: requests.store,
         plans: requests.plans,
         settings: plans.continue ?? DEFAULT_CONTINUE_SETTINGS,
-        tellAgent: (agentId, text, r, step) => this.planTurn(requests, agentId, text, r, step),
+        tellAgent: (agentId, text, r, step) => this.planTurn(requests, agentId, text, r, step, "plan-continue"),
         notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
         counter: forgeCounter(forgeConnectorsOf(this.config)),
         started: this.planContinued,
@@ -3556,7 +3556,7 @@ export class AgentXDaemon {
         requests: requests.store,
         plans: requests.plans,
         settings: this.config.requests.plans ?? DEFAULT_PLAN_SETTINGS,
-        tellAgent: (agentId, text, r, step) => this.planTurn(requests, agentId, text, r, step),
+        tellAgent: (agentId, text, r, step, kind) => this.planTurn(requests, agentId, text, r, step, kind),
         counter: forgeCounter(forgeConnectorsOf(this.config)),
         // Keyed by the step: a retry within a day never sends it twice.
         send: async (step, text) => {
@@ -3740,7 +3740,7 @@ export class AgentXDaemon {
       plan,
       // A close judged a mismatch wakes the agent that closed it, or the
       // request's agent (#1908, noqta#876).
-      wake: (r, text, agentId) => this.tellRequestAgent(requests, agentId ?? r.agentId, text, r),
+      wake: (r, text, agentId) => this.tellRequestAgent(requests, agentId ?? r.agentId, text, r, "owner-words"),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // A close kept after the reopen limit (#2056).
       tellOwner: (r, title, text) => this.notifyRequestOwner(title, text, r),
@@ -3889,7 +3889,7 @@ export class AgentXDaemon {
       jobBusy: (id) => this.jobWake?.busy(id) ?? false,
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
-      tellAgent: async (agentId, text, r) => this.tellRequestAgent(requests, agentId, text, r),
+      tellAgent: async (agentId, text, r, kind) => this.tellRequestAgent(requests, agentId, text, r, kind),
       // An agent that waits on a promise reads that it fell due as a
       // notice, at the head of its next run (#1908).
       tellRequester: (agentId, text) => {
@@ -3929,13 +3929,13 @@ export class AgentXDaemon {
   /** Starts a turn on `agentId` for request `r`, in the request's own
    *  pick-up chat, so the run is linked to it and a failure brings it
    *  back. Fire and forget: the check never waits on a model. */
-  private tellRequestAgent(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord): void {
+  private tellRequestAgent(requests: AttachedRequests, agentId: string, text: string, r: RequestRecord, kind: WakeKind = "pickup"): void {
     // execute() does not reject: a turn that could not start comes
     // back as { error } with no run events, so it is read here.
     void this.registry.execute({
       agentId,
       message: text,
-      context: pickupContext(r.id),
+      context: markWakeKind(pickupContext(r.id), kind),
     }).then((res) => {
       if (pickupEnded(requests.store, r, res, Date.now(), agentId)) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
     }).catch((e: any) => {

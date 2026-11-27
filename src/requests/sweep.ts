@@ -15,6 +15,7 @@ import { JOB_NOTE_MAX } from "@/jobs/store"
 import { DEFAULT_PROMISE_SETTINGS } from "./promise"
 import { DEFAULT_PROOF_CHECK, type ProofChecker } from "./proof-check"
 import { missedPr, PR_LEAD_AFTER_MS, PR_LEAD_WINDOW_MS, prDueText, prLeadText } from "./pr-due"
+import type { WakeKind } from "@/jobs/wake"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -79,7 +80,7 @@ export interface RequestSweepDeps {
   noticeFor?: (r: RequestRecord) => { title: string; text: string; kind?: "notice"; told?: (now: number) => void } | null
   /** Start a turn on the agent for a request the owner said to pick up
    *  again. Fire and forget: the check never waits on a model. */
-  tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
+  tellAgent?: (agentId: string, text: string, request: RequestRecord, kind?: WakeKind) => Promise<void>
   hasAgent?: (agentId: string) => boolean
   /** The request has an active tracked plan (#788): never settled here. */
   inPlan?: (requestId: string) => boolean
@@ -258,7 +259,7 @@ function wakeOverdue(deps: RequestSweepDeps, r: RequestRecord): string | null {
   const text = overdueText(r)
   if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
   if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
-  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its due time: ${e?.message ?? e}`))
+  void deps.tellAgent(r.agentId, text, r, "overdue").catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its due time: ${e?.message ?? e}`))
   return "turn"
 }
 
@@ -281,7 +282,7 @@ function wakeNoProof(deps: RequestSweepDeps, r: RequestRecord): string | null {
   const text = noProofText(r)
   if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
   if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
-  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its missing proof: ${e?.message ?? e}`))
+  void deps.tellAgent(r.agentId, text, r, "no-proof").catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its missing proof: ${e?.message ?? e}`))
   return "turn"
 }
 
@@ -292,7 +293,7 @@ function wakePrDue(deps: RequestSweepDeps, r: RequestRecord, lead: string | null
   const text = prDueText(r, lead)
   if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
   if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
-  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its PR: ${e?.message ?? e}`))
+  void deps.tellAgent(r.agentId, text, r, "pr-due").catch((e: any) => deps.log(`[requests] ${r.id}: could not wake ${r.agentId} for its PR: ${e?.message ?? e}`))
   return "turn"
 }
 
@@ -314,7 +315,7 @@ function wakeNoDue(deps: RequestSweepDeps, r: RequestRecord): string | null {
   const text = noDueText(r)
   if (text.length <= JOB_NOTE_MAX && deps.wakeJob?.(r.id, text)) return "job wake"
   if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) return null
-  void deps.tellAgent(r.agentId, text, r).catch((e: any) => deps.log(`[requests] ${r.id}: could not ask ${r.agentId} for a due time: ${e?.message ?? e}`))
+  void deps.tellAgent(r.agentId, text, r, "no-due").catch((e: any) => deps.log(`[requests] ${r.id}: could not ask ${r.agentId} for a due time: ${e?.message ?? e}`))
   return "turn"
 }
 
@@ -449,7 +450,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         continue
       }
       try {
-        await deps.tellAgent(r.agentId, pickupText(r, resent.get(r.id) ?? null), r)
+        await deps.tellAgent(r.agentId, pickupText(r, resent.get(r.id) ?? null), r, "pickup")
         result.pickedUp++
         if (resent.has(r.id)) result.resent++
       } catch (e: any) {
@@ -509,7 +510,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           store.markChecked(r.id, "failed", why, now)
           log(`[requests] ${r.id} not settled (proofCheck block): ${links.refuse}`)
           if (deps.tellAgent && deps.hasAgent?.(r.agentId) !== false) {
-            await deps.tellAgent(r.agentId, `${why} Give the right link, or say what is still left.`, r)
+            await deps.tellAgent(r.agentId, `${why} Give the right link, or say what is still left.`, r, "proof-block")
               .catch((e: any) => log(`[requests] ${r.id}: could not tell ${r.agentId}: ${e?.message ?? e}`))
           }
           continue
@@ -607,7 +608,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           log(`[requests] ${r.id} still has no PR: ${lead} could not be woken (not on this node)`)
           continue
         }
-        void deps.tellAgent(lead, prLeadText(r, r.duePushedAt, r.dueWoken), r).catch((e: any) => log(`[requests] ${r.id}: could not wake ${lead} for the missing PR: ${e?.message ?? e}`))
+        void deps.tellAgent(lead, prLeadText(r, r.duePushedAt, r.dueWoken), r, "pr-lead").catch((e: any) => log(`[requests] ${r.id}: could not wake ${lead} for the missing PR: ${e?.message ?? e}`))
         result.prLeads++
         log(`[requests] ${r.id} still has no PR ${Math.round(PR_LEAD_AFTER_MS / 60_000)} min after ${r.agentId} ${r.dueWoken ? "was woken" : "could not be woken"}: ${lead} woken`)
       }

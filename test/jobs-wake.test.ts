@@ -6,7 +6,7 @@ import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { JobStore, type JobRecord } from "../src/jobs/store"
 import { JobDoors } from "../src/jobs/doors"
-import { BACKGROUND_WAITER, DEFAULT_WAKE_SETTINGS, JobWake, wakeContext, wakeText, wokenJobId, type JobWakeSettings } from "../src/jobs/wake"
+import { BACKGROUND_WAITER, DEFAULT_WAKE_SETTINGS, JobWake, markWakeKind, wakeContext, wakeKindOf, wakeText, wokenJobId, type JobWakeSettings } from "../src/jobs/wake"
 import type { JobFacts } from "../src/jobs/status"
 import { requestsConfigSchema } from "../src/daemon/config"
 
@@ -87,6 +87,10 @@ describe("the wake", () => {
     // A JSON body cannot carry the mark.
     expect(wokenJobId(JSON.parse(JSON.stringify(ctx)))).toBeUndefined()
     expect(wokenJobId({ jobId: "job-1" })).toBeUndefined()
+    // Its run is saved as wake kind "job" (#2012 C1); a JSON body cannot set a kind.
+    expect(wakeKindOf(ctx)).toBe("job")
+    expect(wakeKindOf(JSON.parse(JSON.stringify(markWakeKind({}, "overdue"))))).toBeUndefined()
+    expect(wakeKindOf({ wakeKind: "overdue" })).toBeUndefined()
     jobs.declare("job-1", { state: "continue", wakeAt: clock, note: "x" }, { now: clock })
     doors.taskStarted({ agentId: "coder", channel: "a2a", chatId: "pm", taskId: "w1", messagePreview: "wake", at: "", jobId: "job-1" } as any)
     expect(jobs.byRun("w1")!.id).toBe("job-1")

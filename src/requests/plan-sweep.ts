@@ -8,6 +8,7 @@ import { cardWords } from "./card-view"
 import { closingRecord, uncoveredText, type BeforeCloseCtx } from "./before-close"
 import { PLAN_BY, type OwnerVerdict } from "./owner-check"
 import { FINISHED_STEP_STATES, type PlanRecord, type PlanStep, type PlanStore } from "./plan-store"
+import type { WakeKind } from "@/jobs/wake"
 import {
   approvalCardInput, blockedText, dispatchText, MESSAGE_KIND, nudgeText, planEvidence, summaryText, type PlanSettings,
 } from "./plans"
@@ -40,7 +41,7 @@ export interface PlanSweepDeps {
   settings: PlanSettings
   /** Start a turn on an agent. Fire and forget: the check never waits on
    *  a model. Throws when the turn could not even be asked for. */
-  tellAgent?: (agentId: string, text: string, request: RequestRecord, step: PlanStep) => Promise<void>
+  tellAgent?: (agentId: string, text: string, request: RequestRecord, step: PlanStep, kind: WakeKind) => Promise<void>
   /** Send an approved message to its channel and chat. */
   send?: (step: PlanStep, text: string) => Promise<void>
   /** Tell the owner, through the daemon's notify path. */
@@ -409,7 +410,7 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
     if (!deps.tellAgent) return false
     plans.updateStep(r.id, s.idx, { dispatchedAt: now, updatedAt: now })
     try {
-      await deps.tellAgent(s.agentId, dispatchText(r, steps, s), r, s)
+      await deps.tellAgent(s.agentId, dispatchText(r, steps, s), r, s, "plan-dispatch")
       plans.event(r.id, s.idx, "dispatched", s.agentId, now)
       requests.touch(r.id, now)
       result.dispatched++
@@ -439,7 +440,7 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
   plans.updateStep(r.id, s.idx, { nudges: nudge, lastNudgeAt: now })
   const quietMinutes = (now - quietSince) / MINUTE
   try {
-    await deps.tellAgent(s.agentId, nudgeText(r, steps, s, quietMinutes, nudge, settings.maxNudges), r, s)
+    await deps.tellAgent(s.agentId, nudgeText(r, steps, s, quietMinutes, nudge, settings.maxNudges), r, s, "plan-nudge")
     plans.event(r.id, s.idx, "nudged", `${s.agentId}, nudge ${nudge} of ${settings.maxNudges}, quiet ${Math.round(quietMinutes)} min`, now)
     // The plan is followed: the request is not quiet.
     requests.touch(r.id, now)
@@ -545,7 +546,7 @@ function holdPlan(deps: PlanSweepDeps, r: RequestRecord, v: OwnerVerdict, now: n
     "Do what is still missing now. Do not repeat an outside action you already took: check first.",
     `When it is really done, close it with agentx_request {action:"done", id:"${r.id}"${workHint(r)}, evidence:"<link>", proofs:[{deliverable:<number>, link:"<url>"}]}. The owner sees it as needing attention until then.`,
   ].join("\n")
-  deps.tellAgent(r.agentId, text, r, last).catch((e: any) => plans.event(r.id, null, "owner-words-wake-failed", `${r.agentId}: ${e?.message ?? e}`, now))
+  deps.tellAgent(r.agentId, text, r, last, "owner-words").catch((e: any) => plans.event(r.id, null, "owner-words-wake-failed", `${r.agentId}: ${e?.message ?? e}`, now))
 }
 
 /** Step 5: one summary per finished plan. */

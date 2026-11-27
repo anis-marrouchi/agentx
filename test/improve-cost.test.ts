@@ -177,9 +177,9 @@ describe("subagent calls (B3)", () => {
 
 describe("job type (B1, B4)", () => {
   it("is agent + channel + workflow id or cron job id, never the run id", () => {
-    expect(jobTypeOf("builder", "workflow", "workflow:run-1", "release-notes")).toEqual({ agentId: "builder", channel: "workflow", workflowId: "release-notes", cronId: null })
-    expect(jobTypeOf("builder", "cron", "cron:nightly-report", null)).toEqual({ agentId: "builder", channel: "cron", workflowId: null, cronId: "nightly-report" })
-    expect(jobTypeOf("builder", "telegram", "12345", null)).toEqual({ agentId: "builder", channel: "telegram", workflowId: null, cronId: null })
+    expect(jobTypeOf("builder", "workflow", "workflow:run-1", "release-notes")).toEqual({ agentId: "builder", channel: "workflow", workflowId: "release-notes", cronId: null, wakeKind: null })
+    expect(jobTypeOf("builder", "cron", "cron:nightly-report", null)).toEqual({ agentId: "builder", channel: "cron", workflowId: null, cronId: "nightly-report", wakeKind: null })
+    expect(jobTypeOf("builder", "telegram", "12345", null)).toEqual({ agentId: "builder", channel: "telegram", workflowId: null, cronId: null, wakeKind: null })
     expect(jobKey(jobTypeOf("builder", "telegram", "12345", null))).toBe("job telegram chat")
   })
 
@@ -306,6 +306,61 @@ describe("task_traces.workflow_id (B1)", () => {
       const [t] = listTraces(db, { agentId: "builder" })
       expect(t.workflowRunId).toBe("run-7")
       expect(db.prepare("SELECT workflow_id AS w FROM task_traces WHERE task_id = ?").get(t.taskId)).toEqual({ w: "release-notes" })
+    } finally {
+      dispose()
+      bus.removeAllListeners()
+    }
+  })
+})
+
+describe("task_traces.wake_kind (#2012 C1)", () => {
+  /** A finished requests-channel run, with or without a wake kind. */
+  function wakeTrace(kind: string | null, chat: string, total = 100_000): string {
+    const id = recordTraceStart(db, { agentId: "builder", channel: "requests", chatId: chat, wakeKind: kind })
+    recordTraceEnd(db, id, { status: "ok", inputTokens: 10, outputTokens: 0, cacheReadTokens: total - 10, cacheCreateTokens: 0, model: OPUS, finalSessionId: null })
+    db.prepare("UPDATE task_traces SET started_at = ?, finished_at = ? WHERE task_id = ?").run(NOW - 2 * MIN, NOW - MIN, id)
+    return id
+  }
+  const ids = (kind: string | null) => {
+    const q = jobRunsQuery(jobTypeOf("builder", "requests", "req-x", null, kind), NOW - 3_600_000, NOW)
+    return (db.prepare(q.sql).all(...q.args) as Array<{ taskId: string }>).map((r) => r.taskId).sort()
+  }
+
+  it("a wake kind is a job type of its own; a cron or workflow wins over it", () => {
+    const jt = jobTypeOf("builder", "requests", "req-1", null, "overdue")
+    expect(jt).toEqual({ agentId: "builder", channel: "requests", workflowId: null, cronId: null, wakeKind: "overdue" })
+    expect(jobKey(jt)).toBe("job requests wake:overdue")
+    expect(jobTypeOf("builder", "cron", "cron:x", null, "job").wakeKind).toBeNull()
+    expect(jobTypeOf("builder", "workflow", "workflow:r", "flow", "job").wakeKind).toBeNull()
+  })
+
+  it("the runs of one wake kind are counted apart from other kinds and from chat runs", () => {
+    const a = wakeTrace("overdue", "req-1")
+    const b = wakeTrace("overdue", "req-2")
+    const c = wakeTrace("job", "req-3")
+    const chat = wakeTrace(null, "req-4")
+    expect(ids("overdue")).toEqual([a, b].sort())
+    expect(ids("job")).toEqual([c])
+    expect(ids(null)).toEqual([chat])
+  })
+
+  it("the held check reads the wake kind back from the trace", async () => {
+    const { jobTypesOfTraces } = await import("../src/improve/cost")
+    const id = wakeTrace("pr-lead", "req-9")
+    expect(jobTypesOfTraces(db, [id]).map(jobKey)).toEqual(["job requests wake:pr-lead"])
+  })
+
+  it("a daemon wake's task:started writes its kind; any other run leaves it NULL", async () => {
+    const { attachSqliteSubscribers } = await import("../src/storage/subscribers")
+    const { getEventBus } = await import("../src/events/bus")
+    const bus = getEventBus()
+    bus.removeAllListeners()
+    const dispose = attachSqliteSubscribers(db)
+    try {
+      bus.emit("task:started", { agentId: "builder", channel: "requests", chatId: "req-5", messagePreview: "due", at: new Date().toISOString(), taskId: "01WAKE", wakeKind: "no-due" })
+      bus.emit("task:started", { agentId: "builder", channel: "telegram", chatId: "123", messagePreview: "hi", at: new Date().toISOString(), taskId: "01CHAT" })
+      const kinds = db.prepare("SELECT task_id AS id, wake_kind AS k FROM task_traces ORDER BY task_id").all()
+      expect(kinds).toEqual([{ id: "01CHAT", k: null }, { id: "01WAKE", k: "no-due" }])
     } finally {
       dispose()
       bus.removeAllListeners()

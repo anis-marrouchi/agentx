@@ -433,7 +433,7 @@ describe("a promised PR past its due time", () => {
   // As before the grace window: raised the minute it falls due, no early wake.
   const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90, promises: { leadMinutes: 0, graceMinutes: 0 } }
   const ISSUE = "https://github.com/acme/app/issues/12"
-  let turns: Array<{ to: string; text: string }>
+  let turns: Array<{ to: string; text: string; kind?: string }>
   let notes: Array<{ id: string; note: string }>
   let jobTakes: boolean
 
@@ -445,7 +445,7 @@ describe("a promised PR past its due time", () => {
       notes.push({ id, note })
       return wake.wakeFor(id, note)
     },
-    tellAgent: async (to, text) => { turns.push({ to, text }) },
+    tellAgent: async (to, text, _r, kind) => { turns.push({ to, text, kind }) },
     notify: async () => {},
   })
 
@@ -484,6 +484,8 @@ describe("a promised PR past its due time", () => {
     expect((await check()).prLeads).toBe(1)
     expect(turns).toHaveLength(1)
     expect(turns[0].to).toBe("pm-agent")
+    // Its run is saved as wake kind pr-lead (#2012 C1).
+    expect(turns[0].kind).toBe("pr-lead")
     expect(turns[0].text).toContain("[agentx:pr-due-lead")
     expect(turns[0].text).toContain(ISSUE)
     expect(turns[0].text).toContain("coder was woken")
@@ -506,6 +508,7 @@ describe("a promised PR past its due time", () => {
     expect((await check()).duePushed).toBe(1)
     expect(turns).toHaveLength(1)
     expect(turns[0].to).toBe("coder")
+    expect(turns[0].kind).toBe("pr-due")
     expect(turns[0].text).toContain(`[agentx:pr-due id=${p.id}]`)
     expect(turns[0].text).toContain(ISSUE)
     expect(store.get(p.id)!.attentionReason).toContain("woken")
