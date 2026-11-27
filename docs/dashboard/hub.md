@@ -284,7 +284,9 @@ When an agent waits on you, selecting its row in **Needs you** opens its questio
 
    ![An agent's questions on a phone](/screenshots/hub-needs/phone.png)
 
-In the old Hub, the row opens the agent's chat with its first question named in the address (`ask=`), and **Working on** names the request of that question, as one link, with no list to pick from.
+In the old Hub, the row opens the agent's chat with its first question named in the address (`ask=`), and **Working on** names the request of that question, as one link, with no list to pick from. A question that is on no request (a draft, for example) leaves **Working on** out. At the end of the chat, the agent's questions are listed, the one the row opened last, next to the writing box. A Desk card has its buttons there; a request has **Reply in Waiting on you** and **See the request**; anything else has **Answer in Waiting on you**.
+
+**Check it worked:** select a **Needs you** row whose question is a request. The address still ends in `ask=request…`, **Working on** names that request, and its question is the last one above the writing box. The row's **3 for you** stays whole while the row is selected, at 1280 pixels and wider.
 
 ### See where the work runs: Machines
 
