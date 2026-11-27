@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Chevron } from "./Chevron"
 
 // AI Elements' Reasoning: the agent's thinking, folded to one line.
 export function Reasoning({ text }: { text: string }) {
@@ -7,7 +8,7 @@ export function Reasoning({ text }: { text: string }) {
   return (
     <div className="axc-reason">
       <button type="button" className="axc-reason__head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="axc-tool__chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <Chevron open={open} />
         <span className="axc-reason__label">Thought</span>
         {!open ? <span className="axc-reason__peek">{first}</span> : null}
       </button>

@@ -93,6 +93,16 @@ describe("followTaskStream", () => {
     h.sources[0].emit("chunk", { text: "world" })
     expect(h.texts).toEqual(["Hel", "Hello ", "Hello world"])
   })
+  it("gives the start event and each chunk's time to the Task page (#2101 T2)", () => {
+    const starts: unknown[] = []
+    const seen: [string, { text: string; at: number } | undefined][] = []
+    const s = new FakeSource()
+    followTaskStream("/u", (t, c) => seen.push([t, c]), () => {}, { open: () => s, onStart: (d) => starts.push(d) })
+    s.emit("start", { initial: "a", stamps: [[0, 5]], message: "Fix it" })
+    s.emit("chunk", { text: "b", at: 9 })
+    expect(starts).toEqual([{ initial: "a", stamps: [[0, 5]], message: "Fix it" }])
+    expect(seen).toEqual([["a", undefined], ["ab", { text: "b", at: 9 }]])
+  })
   it("skips the finish marker and ends on 'end'", () => {
     const h = harness()
     h.sources[0].emit("chunk", { text: "a" })

@@ -269,12 +269,6 @@ export function taskFlags(p: TaskPost): string[] {
 
 export interface TaskLink { kind: "home" | "proof" | "comment" | "run"; label: string; href: string | null; title?: string }
 
-/** The old run page's address (wall-task.client.ts wallTaskHref), until T2
- *  draws runs here. */
-export function oldRunHref(taskId: string, agentId: string, nodeUrl?: string | null): string {
-  return buildHash({ page: "task", task: taskId, agent: agentId, node: nodeUrl })
-}
-
 const web = (s: string) => /^https?:\/\//.test(s)
 
 /** Its home (issue or PR), its proof and the comments agents posted there. */
@@ -349,15 +343,6 @@ export function allAgents(live: LiveSnapshot | undefined): (LiveAgent & { peer: 
     out.push({ ...a, peer: i === 0 ? null : n.url ?? null })
   }))
   return out
-}
-
-/** Where the owner works now: its first running task, on its node. */
-export function liveRunOf(live: LiveSnapshot | undefined, agentId: string): { taskId: string; nodeUrl: string | null } | null {
-  for (const n of live?.nodes ?? []) {
-    const a = (n.agents ?? []).find((x) => x.id === agentId && (x.runningTasks ?? []).length)
-    if (a) return { taskId: a.runningTasks![0].id, nodeUrl: n.url ?? null }
-  }
-  return null
 }
 
 /** The agents a comment names with @ (id or name, a name of several words

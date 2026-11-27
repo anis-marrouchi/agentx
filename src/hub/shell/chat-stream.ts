@@ -13,6 +13,7 @@
 // {"answer":"…"}; that wrapper is never shown, not even while it arrives.
 import { useEffect, useRef, useState } from "react"
 import { cfParseLive } from "../../daemon/ui/pages/wall-chat-fold"
+import type { OutStamp } from "../../agents/output-stamps"
 import type { SourceLike } from "../live"
 
 /** The run's end marker in its output; 'end' follows it. */
@@ -78,18 +79,26 @@ export function liveAnswer(raw: string): string {
 
 const openEventSource = (u: string): SourceLike => new EventSource(u, { withCredentials: true })
 
+/** The start event, as the node sends it: the whole output so far and when
+ *  each of its lines came in, the ask, and whether the run already ended. */
+export interface TaskStreamStart {
+  initial?: string; stamps?: OutStamp[]; message?: string; sender?: string; startedAt?: string; done?: boolean; endedAt?: string
+}
+
 export interface FollowOpts {
+  /** Each start event (the first open and every reopen), before its text. */
+  onStart?: (d: TaskStreamStart) => void
   open?: (url: string) => SourceLike
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (t: unknown) => void
 }
 
 /** Reads one run's stream: `onText` gets the raw output so far (start's
- *  `initial`, then each chunk added). A dropped connection opens again
+ *  `initial`, then each chunk added, with the chunk and when it came). A dropped connection opens again
  *  after 1, 2, 4 and 8 s; the node's own error (an unknown run) ends it,
  *  and the thread read settles the answer. `onEnd` runs when the stream
  *  says the run is over. Returns the call that stops reading. */
-export function followTaskStream(url: string, onText: (raw: string) => void, onEnd: () => void, opts: FollowOpts = {}): () => void {
+export function followTaskStream(url: string, onText: (raw: string, chunk?: { text: string; at: number }) => void, onEnd: () => void, opts: FollowOpts = {}): () => void {
   const open = opts.open ?? openEventSource
   const setTimer = opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
   const clearTimer = opts.clearTimer ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>))
@@ -105,7 +114,8 @@ export function followTaskStream(url: string, onText: (raw: string) => void, onE
       if (src !== s) return
       tries = 0
       try {
-        const d = JSON.parse(ev.data)
+        const d = JSON.parse(ev.data) as TaskStreamStart
+        opts.onStart?.(d)
         if (typeof d.initial === "string") { text = d.initial; onText(text) }
         if (d.done) { close(); onEnd() }
       } catch { /* not JSON: skip */ }
@@ -114,10 +124,11 @@ export function followTaskStream(url: string, onText: (raw: string) => void, onE
       if (src !== s) return
       tries = 0
       try {
-        const t = JSON.parse(ev.data).text || ""
+        const d = JSON.parse(ev.data)
+        const t = d.text || ""
         if (!t || t === TASK_FINISHED) return
         text += t
-        onText(text)
+        onText(text, { text: t, at: typeof d.at === "number" ? d.at : Date.now() })
       } catch { /* not JSON: skip */ }
     })
     s.addEventListener("end", () => { if (src !== s) return; close(); onEnd() })

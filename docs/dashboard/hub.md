@@ -595,7 +595,7 @@ The Hub is getting one **Task page** per request, in the new look. It shows the 
     - where it stands: **Asked**, **Working**, **Waits** (only while it waits) and **Done**, as on the old page, with one amber line that says why it waits;
     - **Plan**, with "1 of 3" for how many steps are done: each step with its state, the agent that owns it, what proves it done, and **Proof** when there is one;
     - **Result**: the agent's answer, formatted (bold, lists, code);
-    - **Join live** while the agent works on it, or **Last run**: each opens that run on the run page;
+    - **Live run** while an agent works on it, and **Past runs**: see [Watch and steer a run](#watch-and-steer-a-run);
     - **Facts**: who asked, the chat, the project, the goal, the times, the run time against the estimate, the machine and the request id;
     - **Links**: its issue or pull request, its proof, and the comments agents posted there;
     - **Thread**: every step of its history, then the comment box.
@@ -622,6 +622,29 @@ Open the same request on the old page (`#post=` and its id) and on the Task page
 - **No request for this run**: the address names a run that nobody tracks as a request; open the run on the run page instead.
 - The page opens the old Hub: you are not signed in as the owner, or `dashboard.hub.legacyPages` lists `task-preview` (see [Configuration › Operations](../reference/config-operations.md)).
 - The action buttons are missing: only the owner sees **Call**, **Hand to…**, **Done** and **Drop**; Hand to, Done and Drop show only while the request is open.
+
+### Watch and steer a run
+
+The Task page shows the request's runs in place, so you do not need the run page to follow one.
+
+1. **Browser:** open the request's Task page (see [Open the new Task page](#open-the-new-task-page)).
+2. While an agent works on it, **Live run** shows the run as a conversation: what was asked on the right, then each step the agent takes (folded to one line; select it to see its input and result), its thinking, and its reply as it is written. **Working** turns at the top right of the section, with the agent's name and when the run started. The run scrolls on its own while you are at its end; scroll up to read and it stays where you are.
+3. **Browser:** to steer it, type in the box under the run and press **Enter** (or select the arrow). Your words go in as the run's next turn. The line under the box says what happened: queued as the next turn, sent as a new run of the same chat (that run then shows here), or why it was not sent.
+4. **Browser:** to stop it, select the square **Stop** button next to the arrow. The turn ends now; the line under the box says **Stop asked** or why it did not stop.
+5. When the run ends, it stays in place with its state (**Done**, **Failed**, **Cancelled**), and the steer box goes away. To ask more, use the comment box at the bottom of the page.
+6. **Browser:** **Past runs** lists the request's other runs, newest first: the agent, its state, how long it took, its reply on one line and when it ran. The first three show; select **Show all** for the rest. Select a run to open it in place, read-only: what was asked, each step and the reply. Select it again to fold it. The page's address then ends in `&run=` and the run's id, so a link opens the page with that run open.
+
+#### Check the run panel worked
+
+Give the agent of an open request a task in its chat, then open the request's Task page. **Live run** shows the steps as they come, within a second or two of the run page. Type `Also list what you changed` in the box and press **Enter**: the line under the box says **Queued**, and the run's next turn answers it. When it ends, reload the page: the run is in **Past runs**, and selecting it shows the same steps.
+
+#### If the run panel is wrong
+
+- **No Live run while the agent works**: the run is not linked to this request yet (it shows in **Thread** once it is). Wait for the next refresh (about 15 seconds) or reload the page.
+- **Waiting for the first words…** stays: the machine that runs it did not answer the stream. Check that the machine shows as reachable; the page opens the stream again by itself after a drop.
+- **Could not read this run** under a past run: the machine that keeps it did not answer, or it no longer keeps the run. Select **Retry**.
+- **Failed: cut off** on a past run: the run was still going when its machine restarted, so it has no end.
+- **Not sent** or **Not stopped**: the line says why (the run already ended, or the machine is unreachable).
 
 ## Post a task
 
