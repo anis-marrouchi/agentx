@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.296.0](https://github.com/anis-marrouchi/agentx/compare/v0.295.0...v0.296.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** post page in orca-design, no shift on load ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2447](https://github.com/anis-marrouchi/agentx/issues/2447)) ([5af8d18](https://github.com/anis-marrouchi/agentx/commit/5af8d183e92094609c2961d738b12b6d95582e1f))
+* **hub:** React shell side menu, ⌘K, Sheet, Agents fold, Files ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2445](https://github.com/anis-marrouchi/agentx/issues/2445)) ([cf331f0](https://github.com/anis-marrouchi/agentx/commit/cf331f0a21389575fb23ce6b6dee2fb874e319c4))
+* **memory:** fact cleanups keep a run log that can be undone ([#2117](https://github.com/anis-marrouchi/agentx/issues/2117) PR 1) ([#2429](https://github.com/anis-marrouchi/agentx/issues/2429)) ([e27d6ff](https://github.com/anis-marrouchi/agentx/commit/e27d6ffdc4b5f5684db37477a6b4c1b281037a50))
+
+
+### Bug Fixes
+
+* **hub:** a phone-width Task page opens at its top ([#2405](https://github.com/anis-marrouchi/agentx/issues/2405) review C1) ([#2448](https://github.com/anis-marrouchi/agentx/issues/2448)) ([1299692](https://github.com/anis-marrouchi/agentx/commit/1299692fdd4282676f887ab5119fd4ef419ff0f1))
+* **hub:** feed and List keep their frame while the posts load ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2442](https://github.com/anis-marrouchi/agentx/issues/2442)) ([85ae441](https://github.com/anis-marrouchi/agentx/commit/85ae4412eacff7e59a4a5f83c83eaf3980e99615))
+
 ## [0.295.0](https://github.com/anis-marrouchi/agentx/compare/v0.294.0...v0.295.0) (2026-11-27)
 
 
