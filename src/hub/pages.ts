@@ -26,6 +26,10 @@ export const HUB_REACT_PAGES: readonly HubReactPage[] = [
   // are built; ST4 moves it to `settings`. Owner only, and like every page
   // here `dashboard.hub.legacyPages` sends it back to the old code.
   { page: "settings-preview", ownerOnly: true },
+  // The one Task page per request (#2101 T1), on a review id while the old
+  // post page (`#post=`) and run page (`#page=task`) keep their addresses;
+  // T3 sends them here. Owner only, like the old post page's actions.
+  { page: "task-preview", ownerOnly: true },
 ]
 
 /** The React page ids this viewer gets, minus the ones sent back to the old

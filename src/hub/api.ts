@@ -12,6 +12,8 @@ function headers(extra?: HeadersInit): Headers {
   const h = new Headers(extra)
   const token = typeof window !== "undefined" ? window.AX_LOCAL_TOKEN : undefined
   if (token && !h.has("Authorization")) h.set("Authorization", "Bearer " + token)
+  // The daemon refuses a write without it (board-dashboard.ts), as for the old Hub.
+  if (!h.has("X-Requested-With")) h.set("X-Requested-With", "agentx-board")
   return h
 }
 
@@ -26,8 +28,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 }
 
 export const apiGet = <T,>(path: string) => apiFetch<T>(path)
-export const apiPost = <T,>(path: string, body: unknown) =>
-  apiFetch<T>(path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
+/** A write; `peer` sends it to the mesh node that keeps the item. */
+export const apiPost = <T,>(path: string, body: unknown, peer?: string | null) =>
+  apiFetch<T>(path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json", ...(peer ? { "X-Agentx-Peer": peer } : {}) } })
 
 /** A text reply, such as an SVG to draw as an image; "" when there is none (204). */
 export async function apiText(path: string): Promise<string> {

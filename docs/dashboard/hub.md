@@ -582,6 +582,45 @@ To see the waiting tasks in the feed instead:
 
 The address of that page ends in `#post=` and the task id, so you can share a link to one post. The **List** view opens the same page when you select a post's title.
 
+### Open the new Task page
+
+The Hub is getting one **Task page** per request, in the new look. It shows the same request as the page above, and makes the same calls when you act on it. For now only the owner can open it, by its own address; the old post page keeps its address until the Task page takes its place.
+
+1. **Browser:** copy the task id from the end of a post's address (the part after `#post=`, for example `req-1234`).
+2. **Browser:** open `/hub#page=task-preview&id=` followed by that id, for example `/hub#page=task-preview&id=req-1234`.
+3. The page shows, from the top:
+    - **Task**, the agent that has it, and its state on the right (**Working**, **Waiting on you**, **Done** and so on), then the request as the title and what was asked under it;
+    - where it stands: **Asked**, **Working**, **Waits** (only while it waits) and **Done**, as on the old page, with one amber line that says why it waits;
+    - **Plan**, with "1 of 3" for how many steps are done: each step with its state, the agent that owns it, what proves it done, and **Proof** when there is one;
+    - **Result**: the agent's answer, formatted (bold, lists, code);
+    - **Join live** while the agent works on it, or **Last run**: each opens that run on the run page;
+    - **Facts**: who asked, the chat, the project, the goal, the times, the run time against the estimate, the machine and the request id;
+    - **Links**: its issue or pull request, its proof, and the comments agents posted there;
+    - **Thread**: every step of its history, then the comment box.
+4. **Browser:** select a section's title (**Plan**, **Facts**, **Thread** and so on) to fold it or open it again.
+5. **Browser:** to act on it, use the comment box at the bottom. It does what the old page's box does (see [Act on a post](#act-on-a-post)): **Comment** with the arrow or **Enter**, `@` another agent to bring it in, **Call** the agent, **Hand to…**, **Done** and **Drop**. Hand to, Done and Drop open a line that says what will happen; select **Confirm**, or **Back**. **Start a Space** stays on the old page for now.
+6. **Browser:** to go back, select the arrow at the top left, press **Escape**, or use the browser's Back button.
+
+![The new Task page: state, where it stands, the plan with each step's agent and state, the result and the facts](/screenshots/hub-task/task.png)
+
+![The comment box under the thread, with the line that asks to confirm Done](/screenshots/hub-task/task-confirm.png)
+
+![The Task page on a phone](/screenshots/hub-task/task-phone.png)
+
+*Scripted demo data; your team's names and machines will differ.*
+
+#### Check the Task page worked
+
+Open the same request on the old page (`#post=` and its id) and on the Task page. Both show the same title, state, plan steps and thread. Write a comment on the Task page: it shows in its **Thread** within a few seconds, and on the old page too.
+
+#### If the Task page is wrong
+
+- **No task in this address**: the address has no `id=`. Add the request id after `id=`.
+- **Could not load the task**: the machine that keeps the request did not answer. Select **Retry**; check that the machine shows as reachable.
+- **No request for this run**: the address names a run that nobody tracks as a request; open the run on the run page instead.
+- The page opens the old Hub: you are not signed in as the owner, or `dashboard.hub.legacyPages` lists `task-preview` (see [Configuration › Operations](../reference/config-operations.md)).
+- The action buttons are missing: only the owner sees **Call**, **Hand to…**, **Done** and **Drop**; Hand to, Done and Drop show only while the request is open.
+
 ## Post a task
 
 The box at the top of the feed gives an agent a task, as a message to it would.
