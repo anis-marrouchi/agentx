@@ -16,8 +16,19 @@ import { readWorkspace, type WorkspaceRead } from "@/daemon/workspace-files-api"
 //   2. a run still going has no record yet: the agent's newest finished runs;
 //   3. else the agent's workspace, when it is itself a Git repo.
 // Each file's nearest folder with a `.git` (a clone or a worktree) is a
-// candidate; the one most files sit in wins. The home folder and the file
-// system's top are never a project, whatever they hold.
+// candidate; the one most files sit in wins. A candidate counts only when
+// its real path is below home and no folder on the way down from home
+// starts with a dot (#2460 review B1): a plugin clone under ~/.claude, or
+// /opt/homebrew, is never a project. Home itself never is either.
+//
+// The root found for a run is kept for a minute (ROOT_TTL_MS), so clicking
+// through folders does not read and parse the transcripts again (C1).
+//
+// Known limit (accepted in the #2460 review, C2): the paths come from the
+// `→ Tool(...)` lines of the run's transcript. A file's text echoed into the
+// transcript can look like such a line and point the root at another repo
+// below home. It stays owner-only and read only, and the dot-folder and
+// home rules above still hold for that repo.
 //
 // The listing is readWorkspace's with the repo as its root, so the same
 // guards hold (links out of the repo, secret names, .git, node_modules,
@@ -27,13 +38,23 @@ import { readWorkspace, type WorkspaceRead } from "@/daemon/workspace-files-api"
 /** Newest finished runs looked at when the run in view has no record yet. */
 const RECENT_RUNS = 5
 
-/** The nearest folder at or above `dir` that holds a `.git`, below home. */
+/** Whether a folder may be a project: really below home, no dot folder on the way. */
+export function isProjectPlace(root: string, home = homedir()): boolean {
+  let real: string, realHome: string
+  try { real = realpathSync.native(root); realHome = realpathSync.native(home) } catch { return false }
+  const rel = relative(realHome, real)
+  if (!rel || isAbsolute(rel)) return false
+  const parts = rel.split(sep)
+  return parts[0] !== ".." && !parts.some((s) => !s || s.startsWith("."))
+}
+
+/** The nearest folder at or above `dir` that holds a `.git`, when it may be a project. */
 export function gitRootOf(dir: string, home = homedir()): string | null {
   const stop = new Set([resolve("/"), resolve(home)])
   let d = resolve(dir)
   for (let i = 0; i < 64; i++) {
     if (stop.has(d)) return null
-    if (existsSync(join(d, ".git"))) return d
+    if (existsSync(join(d, ".git"))) return isProjectPlace(d, home) ? d : null
     const up = dirname(d)
     if (up === d) return null
     d = up
@@ -67,17 +88,33 @@ export interface ProjectRuns {
 
 /** The repo the agent works in, for the run in view (see the head of this file). */
 export function findProjectRoot(workspace: string, taskId: string, runs: ProjectRuns, cwd = process.cwd(), home = homedir()): string | null {
-  const pathsOf = (id: string) => runFilesOf(runs.record(id)?.transcript || "", "").files.map((f) => f.path)
-  if (taskId) {
-    const root = runs.record(taskId) ? projectRootOf(pathsOf(taskId), workspace, cwd, home) : null
+  const pathsIn = (transcript: string | undefined) => runFilesOf(transcript || "", "").files.map((f) => f.path)
+  const own = taskId ? runs.record(taskId) : null
+  if (own) {
+    const root = projectRootOf(pathsIn(own.transcript), workspace, cwd, home)
     if (root) return root
-  }
-  if (!taskId || !runs.record(taskId)) {
-    const paths = runs.recent().slice(0, RECENT_RUNS).flatMap(pathsOf)
+  } else {
+    const paths = runs.recent().slice(0, RECENT_RUNS).flatMap((id) => pathsIn(runs.record(id)?.transcript))
     const root = projectRootOf(paths, workspace, cwd, home)
     if (root) return root
   }
   return workspace ? gitRootOf(resolve(cwd, workspace), home) : null
+}
+
+/** How long a run's root is kept, so folder clicks do not parse transcripts again. */
+export const ROOT_TTL_MS = 60_000
+const ROOT_CACHE_MAX = 200
+const rootCache = new Map<string, { root: string | null; at: number }>()
+
+/** The run's root from the cache when it is fresh, else found and kept. */
+export function cachedProjectRoot(key: string, find: () => string | null, now = Date.now()): string | null {
+  const hit = rootCache.get(key)
+  if (hit && now - hit.at < ROOT_TTL_MS) return hit.root
+  const root = find()
+  rootCache.delete(key)
+  rootCache.set(key, { root, at: now })
+  while (rootCache.size > ROOT_CACHE_MAX) rootCache.delete(rootCache.keys().next().value as string)
+  return root
 }
 
 /** Whether a name is a dot file or folder. */

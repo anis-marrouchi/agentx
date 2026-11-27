@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { findProjectRoot, gitRootOf, projectName, projectRootOf, readProject } from "../src/daemon/project-files-api"
+import { cachedProjectRoot, findProjectRoot, gitRootOf, ROOT_TTL_MS, projectName, projectRootOf, readProject } from "../src/daemon/project-files-api"
 
 // The Hub's Project tab (#2455): the Git repo an agent works in, found from
 // its runs' files, listed read only without dot names.
@@ -36,6 +36,34 @@ describe("the project a run works in", () => {
     mkdirSync(join(home, ".git"))
     expect(gitRootOf(ws, home)).toBeNull()
     rmSync(join(home, ".git"), { recursive: true })
+  })
+  it("never a repo inside a dot folder, or outside home (#2460 B1)", () => {
+    const hidden = join(home, ".x", "repo")
+    mkdirSync(join(hidden, ".git"), { recursive: true })
+    mkdirSync(join(hidden, "src"))
+    expect(gitRootOf(join(hidden, "src"), home)).toBeNull()
+    expect(projectRootOf([join(hidden, "src/a.ts"), join(repo, "README.md")], ws, "/", home)).toBe(repo)
+    const outside = mkdtempSync(join(tmpdir(), "ax-project-out-"))
+    try {
+      mkdirSync(join(outside, ".git"))
+      mkdirSync(join(outside, "src"))
+      expect(gitRootOf(join(outside, "src"), home)).toBeNull()
+      expect(projectRootOf([join(outside, "src/a.ts")], ws, "/", home)).toBeNull()
+    } finally { rmSync(outside, { recursive: true, force: true }) }
+    rmSync(join(home, ".x"), { recursive: true })
+  })
+  it("reads the run's record once, and keeps the root for a while (#2460 C1)", () => {
+    let reads = 0
+    const runs = { record: (id: string) => { reads++; return id === "r1" ? { transcript: tx(join(repo, "src/a.ts")) } : null }, recent: () => [] }
+    expect(findProjectRoot(ws, "r1", runs, "/", home)).toBe(repo)
+    expect(reads).toBe(1)
+    let finds = 0
+    const find = () => { finds++; return repo }
+    expect(cachedProjectRoot("a\0r1", find, 1_000)).toBe(repo)
+    expect(cachedProjectRoot("a\0r1", find, 1_000 + ROOT_TTL_MS - 1)).toBe(repo)
+    expect(finds).toBe(1)
+    expect(cachedProjectRoot("a\0r1", find, 1_000 + ROOT_TTL_MS)).toBe(repo)
+    expect(finds).toBe(2)
   })
   it("the repo most of the run's files sit in; relative paths are the workspace's", () => {
     expect(projectRootOf([join(repo, "src/a.ts"), join(repo, "README.md"), join(other, "src/x.ts")], ws, "/", home)).toBe(repo)

@@ -238,7 +238,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { readWorkspace } from "@/daemon/workspace-files-api"
-import { findProjectRoot, projectName, readProject } from "@/daemon/project-files-api"
+import { cachedProjectRoot, findProjectRoot, projectName, readProject } from "@/daemon/project-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
@@ -7857,10 +7857,11 @@ export class AgentXDaemon {
         const agentId = decodeURIComponent(projectMatch[1])
         const ws = this.registry.getAgent(agentId)?.workspace
         if (!ws) { this.json(res, 404, { error: "agent not found" }); return }
-        const root = findProjectRoot(ws, url.searchParams.get("task") || "", {
+        const taskId = url.searchParams.get("task") || ""
+        const root = cachedProjectRoot(`${agentId}\0${taskId}`, () => findProjectRoot(ws, taskId, {
           record: (id) => this.registry.getTaskRecord(agentId, id),
           recent: () => this.registry.listTaskHistory(agentId, 5).map((r) => r.id),
-        })
+        }))
         const out = readProject(root, url.searchParams.get("path") || "")
         if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
         const { ok: _ok, ...body } = out
