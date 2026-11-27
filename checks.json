@@ -1,0 +1,144 @@
+{
+  "shots": {
+    "feed-1440-ready": true,
+    "01-feed-1440-light.png": {
+      "view": "feed",
+      "rows": 19,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "19 runs, 1 failed in the last 24 h · 59m 30s of agent time · $3.52 (14 unpriced), newest first",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n24 h7 d30 dAllDoneFailed1RunningStoppedAll agents\n\n  \n  \n\nAll projects\n\n  \n  \n\nAny source\n\n  \n  \n\n19 runs, 1 faile"
+    },
+    "02-feed-1440-dark.png": {
+      "view": "feed",
+      "rows": 19,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "19 runs, 1 failed in the last 24 h · 59m 30s of agent time · $3.52 (14 unpriced), newest first",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n24 h7 d30 dAllDoneFailed1RunningStoppedAll agents\n\n  \n  \n\nAll projects\n\n  \n  \n\nAny source\n\n  \n  \n\n19 runs, 1 faile"
+    },
+    "timeline-1440-ready": true,
+    "03-timeline-1440-light.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChannel\n\n  \n  \n\nPerson\n\n "
+    },
+    "04-timeline-1440-dark.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChannel\n\n  \n  \n\nPerson\n\n "
+    },
+    "map-1440-ready": true,
+    "05-map-1440-light.png": {
+      "view": "map",
+      "rows": 0,
+      "lanes": 0,
+      "bars": 0,
+      "map": true,
+      "open": false,
+      "summary": "",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap6h24h3d7dProjects are lines, agents are stations, work in flight is a train. Live.● active only⚙ show systemLive · streaming5 dis"
+    },
+    "06-map-1440-dark.png": {
+      "view": "map",
+      "rows": 0,
+      "lanes": 0,
+      "bars": 0,
+      "map": true,
+      "open": false,
+      "summary": "",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap6h24h3d7dProjects are lines, agents are stations, work in flight is a train. Live.● active only⚙ show systemLive · streaming5 dis"
+    },
+    "feed-390-ready": true,
+    "07-feed-390-light.png": {
+      "view": "feed",
+      "rows": 19,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "19 runs, 1 failed in the last 24 h · 59m 30s of agent time · $3.52 (14 unpriced), newest first",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n24 h7 d30 dAllDoneFailed1RunningStoppedAll agents\n\n  \n  \n\nAll projects\n\n  \n  \n\nAny source\n\n  "
+    },
+    "08-feed-390-dark.png": {
+      "view": "feed",
+      "rows": 19,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "19 runs, 1 failed in the last 24 h · 59m 30s of agent time · $3.52 (14 unpriced), newest first",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n24 h7 d30 dAllDoneFailed1RunningStoppedAll agents\n\n  \n  \n\nAll projects\n\n  \n  \n\nAny source\n\n  "
+    },
+    "timeline-390-ready": true,
+    "09-timeline-390-light.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChan"
+    },
+    "10-timeline-390-dark.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChan"
+    },
+    "map-390-ready": false,
+    "11-map-390-light.png": {
+      "view": "map",
+      "rows": 0,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap6h24h3d7dProjects are lines, agents are stations, work in flight is a train. Live.● active only⚙ show system"
+    },
+    "12-map-390-dark.png": {
+      "view": "map",
+      "rows": 0,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap6h24h3d7dProjects are lines, agents are stations, work in flight is a train. Live.● active only⚙ show system"
+    },
+    "13-feed-row-open-1440-light.png": {
+      "view": "feed",
+      "rows": 19,
+      "lanes": 0,
+      "bars": 0,
+      "map": false,
+      "open": true,
+      "summary": "19 runs, 1 failed in the last 24 h · 59m 30s of agent time · $3.52 (14 unpriced), newest first",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n24 h7 d30 dAllDoneFailed1RunningStoppedAll agents\n\n  \n  \n\nAll projects\n\n  \n  \n\nAny source\n\n  \n  \n\n19 runs, 1 faile"
+    }
+  },
+  "opened": true,
+  "soft_fail": [
+    "map-390-ready"
+  ]
+}
