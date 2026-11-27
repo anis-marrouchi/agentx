@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.310.0](https://github.com/anis-marrouchi/agentx/compare/v0.309.1...v0.310.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** status bar and side panel follow orca-design (Hub review batch 6) ([#2522](https://github.com/anis-marrouchi/agentx/issues/2522)) ([c997d17](https://github.com/anis-marrouchi/agentx/commit/c997d1728202b3590bc9f3d71e8a6e05e0cfbcb7))
+
 ## [0.309.1](https://github.com/anis-marrouchi/agentx/compare/v0.309.0...v0.309.1) (2026-11-27)
 
 
