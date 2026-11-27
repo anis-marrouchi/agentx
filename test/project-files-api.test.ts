@@ -52,6 +52,29 @@ describe("the project a run works in", () => {
     } finally { rmSync(outside, { recursive: true, force: true }) }
     rmSync(join(home, ".x"), { recursive: true })
   })
+  it("AgentX's own task worktrees are a project; other dot folders are not (#2460 B2)", () => {
+    const wt = join(home, "code", ".agentx-worktrees", "app", "branch-x")
+    mkdirSync(join(wt, "src"), { recursive: true })
+    writeFileSync(join(wt, ".git"), "gitdir: /elsewhere\n")
+    const hidden = join(home, ".x", "repo")
+    mkdirSync(join(hidden, ".git"), { recursive: true })
+    try {
+      expect(gitRootOf(join(wt, "src"), home)).toBe(wt)
+      expect(gitRootOf(hidden, home)).toBeNull()
+      // A configured worktrees root (worktrees.root), outside home: its repos count, dot folders below it do not.
+      const top = mkdtempSync(join(tmpdir(), "ax-project-wt-"))
+      try {
+        mkdirSync(join(top, "issue-1", ".git"), { recursive: true })
+        mkdirSync(join(top, ".y", "issue-2", ".git"), { recursive: true })
+        expect(gitRootOf(join(top, "issue-1"), home)).toBeNull()
+        expect(gitRootOf(join(top, "issue-1"), home, [top])).toBe(join(top, "issue-1"))
+        expect(gitRootOf(join(top, ".y", "issue-2"), home, [top])).toBeNull()
+        // A root at or above home opens nothing more.
+        expect(gitRootOf(hidden, home, ["/"])).toBeNull()
+        expect(gitRootOf(hidden, home, [home])).toBeNull()
+      } finally { rmSync(top, { recursive: true, force: true }) }
+    } finally { rmSync(join(home, "code", ".agentx-worktrees"), { recursive: true }); rmSync(join(home, ".x"), { recursive: true }) }
+  })
   it("reads the run's record once, and keeps the root for a while (#2460 C1)", () => {
     let reads = 0
     const runs = { record: (id: string) => { reads++; return id === "r1" ? { transcript: tx(join(repo, "src/a.ts")) } : null }, recent: () => [] }

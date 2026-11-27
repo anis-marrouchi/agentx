@@ -16,6 +16,7 @@ import { closeSync, constants as fsConstants, createReadStream, fstatSync, openS
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
 import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize } from "path"
+import { homedir } from "os"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { describeJobState, jobStateFrom, needsJobState } from "@/agents/run-state"
@@ -7861,7 +7862,7 @@ export class AgentXDaemon {
         const root = cachedProjectRoot(`${agentId}\0${taskId}`, () => findProjectRoot(ws, taskId, {
           record: (id) => this.registry.getTaskRecord(agentId, id),
           recent: () => this.registry.listTaskHistory(agentId, 5).map((r) => r.id),
-        }))
+        }, process.cwd(), homedir(), Object.values(this.config.agents ?? {}).map((a: { worktrees?: { root?: string } }) => a.worktrees?.root).filter((r): r is string => !!r)))
         const out = readProject(root, url.searchParams.get("path") || "")
         if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
         const { ok: _ok, ...body } = out

@@ -20,6 +20,11 @@ import { readWorkspace, type WorkspaceRead } from "@/daemon/workspace-files-api"
 // its real path is below home and no folder on the way down from home
 // starts with a dot (#2460 review B1): a plugin clone under ~/.claude, or
 // /opt/homebrew, is never a project. Home itself never is either.
+// AgentX's own task worktrees are the one exception (#2460 review B2): a
+// `.agentx-worktrees` folder may be on the way (task-worktrees.ts
+// worktreeRoot, ssh-run.ts), and so may a folder an agent's
+// `worktrees.root` names, where any dot folder below that root is still
+// refused. Every other dot folder (~/.claude, ~/.x) stays refused.
 //
 // The root found for a run is kept for a minute (ROOT_TTL_MS), so clicking
 // through folders does not read and parse the transcripts again (C1).
@@ -38,23 +43,43 @@ import { readWorkspace, type WorkspaceRead } from "@/daemon/workspace-files-api"
 /** Newest finished runs looked at when the run in view has no record yet. */
 const RECENT_RUNS = 5
 
-/** Whether a folder may be a project: really below home, no dot folder on the way. */
-export function isProjectPlace(root: string, home = homedir()): boolean {
-  let real: string, realHome: string
-  try { real = realpathSync.native(root); realHome = realpathSync.native(home) } catch { return false }
-  const rel = relative(realHome, real)
-  if (!rel || isAbsolute(rel)) return false
+/** The folder AgentX puts task worktrees in, beside a checkout (task-worktrees.ts). */
+export const TASK_WORKTREES_DIR = ".agentx-worktrees"
+
+/** The parts of `real` below `top`, or null when it is not strictly below. */
+function partsBelow(top: string, real: string): string[] | null {
+  const rel = relative(top, real)
+  if (!rel || isAbsolute(rel)) return null
   const parts = rel.split(sep)
-  return parts[0] !== ".." && !parts.some((s) => !s || s.startsWith("."))
+  return parts[0] === ".." ? null : parts
+}
+
+/** Whether a folder may be a project: really below home with no dot folder on
+ *  the way but `.agentx-worktrees`, or below an agent's configured worktrees
+ *  root with no dot folder under it. */
+export function isProjectPlace(root: string, home = homedir(), worktreeRoots: string[] = []): boolean {
+  let real: string
+  try { real = realpathSync.native(root) } catch { return false }
+  let realHome: string
+  try { realHome = realpathSync.native(home) } catch { return false }
+  const clean = (parts: string[] | null, allowed = "") => !!parts && !parts.some((s) => !s || (s.startsWith(".") && s !== allowed))
+  for (const top of worktreeRoots) {
+    let realTop: string
+    try { realTop = realpathSync.native(top) } catch { continue }
+    // A root at or above home (say "/" or "~") would open everything: skip it.
+    if (realTop === realHome || partsBelow(realTop, realHome)) continue
+    if (clean(partsBelow(realTop, real))) return true
+  }
+  return clean(partsBelow(realHome, real), TASK_WORKTREES_DIR)
 }
 
 /** The nearest folder at or above `dir` that holds a `.git`, when it may be a project. */
-export function gitRootOf(dir: string, home = homedir()): string | null {
+export function gitRootOf(dir: string, home = homedir(), worktreeRoots: string[] = []): string | null {
   const stop = new Set([resolve("/"), resolve(home)])
   let d = resolve(dir)
   for (let i = 0; i < 64; i++) {
     if (stop.has(d)) return null
-    if (existsSync(join(d, ".git"))) return isProjectPlace(d, home) ? d : null
+    if (existsSync(join(d, ".git"))) return isProjectPlace(d, home, worktreeRoots) ? d : null
     const up = dirname(d)
     if (up === d) return null
     d = up
@@ -63,7 +88,7 @@ export function gitRootOf(dir: string, home = homedir()): string | null {
 }
 
 /** The repo most of these paths sit in. Relative paths are the workspace's. */
-export function projectRootOf(paths: string[], workspace: string, cwd = process.cwd(), home = homedir()): string | null {
+export function projectRootOf(paths: string[], workspace: string, cwd = process.cwd(), home = homedir(), worktreeRoots: string[] = []): string | null {
   const ws = workspace ? resolve(cwd, workspace) : ""
   const count = new Map<string, number>()
   for (const p of paths) {
@@ -71,7 +96,7 @@ export function projectRootOf(paths: string[], workspace: string, cwd = process.
     if (!s || s.includes("\0")) continue
     const abs = isAbsolute(s) ? s : ws ? resolve(ws, s) : ""
     if (!abs) continue
-    const root = gitRootOf(dirname(abs), home)
+    const root = gitRootOf(dirname(abs), home, worktreeRoots)
     if (root) count.set(root, (count.get(root) ?? 0) + 1)
   }
   let best: string | null = null
@@ -87,18 +112,18 @@ export interface ProjectRuns {
 }
 
 /** The repo the agent works in, for the run in view (see the head of this file). */
-export function findProjectRoot(workspace: string, taskId: string, runs: ProjectRuns, cwd = process.cwd(), home = homedir()): string | null {
+export function findProjectRoot(workspace: string, taskId: string, runs: ProjectRuns, cwd = process.cwd(), home = homedir(), worktreeRoots: string[] = []): string | null {
   const pathsIn = (transcript: string | undefined) => runFilesOf(transcript || "", "").files.map((f) => f.path)
   const own = taskId ? runs.record(taskId) : null
   if (own) {
-    const root = projectRootOf(pathsIn(own.transcript), workspace, cwd, home)
+    const root = projectRootOf(pathsIn(own.transcript), workspace, cwd, home, worktreeRoots)
     if (root) return root
   } else {
     const paths = runs.recent().slice(0, RECENT_RUNS).flatMap((id) => pathsIn(runs.record(id)?.transcript))
-    const root = projectRootOf(paths, workspace, cwd, home)
+    const root = projectRootOf(paths, workspace, cwd, home, worktreeRoots)
     if (root) return root
   }
-  return workspace ? gitRootOf(resolve(cwd, workspace), home) : null
+  return workspace ? gitRootOf(resolve(cwd, workspace), home, worktreeRoots) : null
 }
 
 /** How long a run's root is kept, so folder clicks do not parse transcripts again. */
