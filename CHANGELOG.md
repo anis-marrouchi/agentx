@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.309.0](https://github.com/anis-marrouchi/agentx/compare/v0.308.0...v0.309.0) (2026-11-27)
+
+
+### Features
+
+* **desktop:** orb records, shows live words and says the answer ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265) PR 3) ([#2524](https://github.com/anis-marrouchi/agentx/issues/2524)) ([d8700a8](https://github.com/anis-marrouchi/agentx/commit/d8700a83919a3600d3f1f6c57b7bd23767e4628d))
+
+
+### Bug Fixes
+
+* **daemon:** keep release folders newer than live when pruning ([#2517](https://github.com/anis-marrouchi/agentx/issues/2517)) ([#2518](https://github.com/anis-marrouchi/agentx/issues/2518)) ([bb0a6e6](https://github.com/anis-marrouchi/agentx/commit/bb0a6e61415aa5b276e696b09039729b4076a4a5))
+
 ## [0.308.0](https://github.com/anis-marrouchi/agentx/compare/v0.307.0...v0.308.0) (2026-11-27)
 
 
