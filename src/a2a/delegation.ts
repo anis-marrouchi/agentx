@@ -96,6 +96,31 @@ export interface DelegationRecord {
    *  its id and a named sender gets a notice (`origin` is NONE_ORIGIN).
    *  Absent: a callback. */
   wayHome?: WayHome
+  /** A local hand-off on a node that sends it again after a restart
+   *  (#2467): the full message and the run's settings, kept while open. */
+  resend?: ResendSpec
+  /** It was sent again after a restart already: never a second time. */
+  resent?: true
+}
+
+/** What sending a local hand-off again after a restart needs (#2467). */
+export interface ResendSpec {
+  message: string
+  calleeContext?: Record<string, unknown>
+  timeoutMs?: number
+  slotWaitMs?: number
+}
+
+/** The first line of a hand-off sent again after a restart: the callee
+ *  may find work its stopped run already did. */
+export const RESEND_NOTE = "[Sent again after a restart: an earlier run of this hand-off was stopped by a daemon restart before it answered. Check what it already did before you redo it.]\n\n"
+
+/** Did a restart stop this callee run (#2467)? The registry refuses new
+ *  runs while the daemon stops ("not started: the daemon is restarting"),
+ *  the drain kills the ones still going ("killed by daemon restart") and
+ *  the process registry stops live turns (`registry-stop`). */
+export function handoffCutByRestart(error: string | undefined): boolean {
+  return !!error && /not started: the daemon is restarting|killed by daemon restart|\bregistry-stop\b/.test(error)
 }
 
 /** How a hand-off's answer goes home, besides a callback (#2007). */
@@ -270,6 +295,10 @@ export interface DelegationDeps {
   /** Default true: a callback turn a restart stopped before it answered
    *  (`registry-stop`, empty reply) runs once more after the next start. */
   requeueRelayOnRestart?: boolean
+  /** On (#2467): a local hand-off a restart stopped, or one still open
+   *  when this process starts, is sent to its callee once more after boot
+   *  instead of ending as error or lost. Needs the table. Absent: off. */
+  resendAfterRestart?: boolean
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
   /** Default true: a person-started delegation goes async on its own. */
@@ -595,6 +624,9 @@ export class DelegationManager {
    *  run mid-turn; now each starts beside it. Counted since this process
    *  began; no store. */
   private midTurnCount = 0
+  /** Hand-offs sent again after a restart (#2467), since this process
+   *  began. No store. */
+  private resentCount = 0
   private readonly now: () => number
   private readonly store: HandoffStore | null
 
@@ -720,6 +752,16 @@ export class DelegationManager {
       ...(home ? { home } : {}),
       ...(key ? { joinKey: key } : {}),
       ...(opts.wayHome ? { wayHome: opts.wayHome } : {}),
+      // A local run this node starts itself can be sent again after a
+      // restart (#2467): never a peer's, nor a call made by `run`.
+      ...(this.deps.resendAfterRestart && this.store && !opts.peer && !opts.run
+        ? { resend: {
+            message: opts.message,
+            ...(opts.calleeContext ? { calleeContext: opts.calleeContext } : {}),
+            ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
+            ...(opts.slotWaitMs ? { slotWaitMs: opts.slotWaitMs } : {}),
+          } }
+        : {}),
     }
     // The row first, before anything in memory is touched: a duplicate
     // leaves no trace.
@@ -837,7 +879,7 @@ export class DelegationManager {
   }
 
   /** The run of a hand-off whose row is written. */
-  private launchStarted(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0]): { taskId: string; record: DelegationRecord } {
+  private launchStarted(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0], again = false): { taskId: string; record: DelegationRecord } {
     const { id, root, origin } = record
     const home = record.home
     // A "?" sender that gave a name it is not an agent of this machine by
@@ -851,7 +893,9 @@ export class DelegationManager {
     // A deliver row is not an open request's hand-off nor a job: nobody
     // waits on it in a turn, so the request and job listeners stay out.
     // A none row has no caller turn either (#2007 piece 2).
-    if (!record.wayHome) {
+    // Sent again after a restart (#2467): the listeners heard of it at its
+    // first start, and its request and job rows are still open.
+    if (!record.wayHome && !again) {
       try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
     }
 
@@ -1034,6 +1078,13 @@ export class DelegationManager {
         // A run that said it ends to wait (markWaiting) is not done
         // (#1100), nor is one whose job continues, is blocked or stalled
         // (#1861).
+        // A restart stopped it (#2467): the row stays open and the next
+        // start sends it again, once. The time limit still runs, in case
+        // this process does not stop after all.
+        if (record.resend && !record.resent && this.store && handoffCutByRestart(r.error)) {
+          this.deps.log(`[delegation ${id}] ${who} was stopped by a restart (${clip(r.error ?? "", 120)}); kept open to send again after the restart`)
+          return
+        }
         const said = this.waiting.get(id)
         this.waiting.delete(id)
         const wrote = !!this.answered.get(id)?.length
@@ -1213,7 +1264,9 @@ export class DelegationManager {
    *  the restart stopped runs once more (see requeueRelays). */
   async recover(): Promise<number> {
     const relays = this.requeueRelays()
-    const lost = [...this.pendingById.values()]
+    // A local hand-off that keeps its message is sent again, once
+    // (#2467); every other one is reported lost, as before.
+    const lost = [...this.pendingById.values()].filter((rec) => !this.resendAfterBoot(rec))
     for (const rec of lost) {
       this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt, origin: rec.origin, ...(rec.depth ? { depth: rec.depth } : {}) })
     }
@@ -1223,6 +1276,48 @@ export class DelegationManager {
     })))
     await relays
     return lost.length
+  }
+
+  /** Hand-offs sent again after the last restart (#2467), since this
+   *  process began. */
+  resentAfterRestart(): number {
+    return this.resentCount
+  }
+
+  /**
+   * Send a hand-off still open at start to its callee once more (#2467).
+   * True when it was sent, or another process on this database took it;
+   * false when it is to be reported lost: resend off, a peer's, kept no
+   * message (a row from before this change) or sent again once already.
+   */
+  private resendAfterBoot(rec: DelegationRecord): boolean {
+    if (!this.deps.resendAfterRestart || !this.store || !rec.resend || rec.resent || rec.peer) return false
+    if (!this.journal("claim the resend", (s) => s.claimResend(rec.id, this.now()), false)) {
+      if (this.journal("read the hand-off", (s) => s.statusOf(rec.id), null)) return false
+      this.pendingById.delete(rec.id)
+      this.deps.log(`[delegation ${rec.id}] resend to ${rec.callee} after the restart already taken by another process`)
+      return true
+    }
+    const again: DelegationRecord = { ...rec, resent: true }
+    this.resentCount++
+    this.deps.log(`[delegation ${rec.id}] ${rec.caller} -> ${rec.callee}: sent again after the restart (once)`)
+    try {
+      this.launchStarted(again, {
+        caller: { agentId: rec.caller, context: {} },
+        callee: rec.callee,
+        message: RESEND_NOTE + rec.resend.message,
+        ...(rec.resend.calleeContext ? { calleeContext: rec.resend.calleeContext } : {}),
+        ...(rec.resend.timeoutMs ? { timeoutMs: rec.resend.timeoutMs } : {}),
+        ...(rec.resend.slotWaitMs ? { slotWaitMs: rec.resend.slotWaitMs } : {}),
+        ...(rec.kind ? { kind: rec.kind } : {}),
+        ...(rec.home ? { home: rec.home } : {}),
+        ...(rec.wayHome ? { wayHome: rec.wayHome } : {}),
+      }, true)
+    } catch (e: any) {
+      this.deps.log(`[delegation ${rec.id}] could not send it again after the restart: ${e?.message ?? e}`)
+      return false
+    }
+    return true
   }
 
   /**
