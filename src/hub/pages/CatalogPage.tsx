@@ -8,6 +8,8 @@
 import { Fragment, useState } from "react"
 import { useLiveSnapshot, useLiveStatus } from "../live-react"
 import type { HubPageProps } from "../registry"
+import { MODEL_GROUPS } from "../settings/agent-data"
+import { engineName } from "../settings/data"
 import {
   AfCard, AfCount, AfLoader, AfRow, AfSkeletonRows, AfStateLabel, Badge, Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
   Collapsible, CollapsibleContent, CollapsibleTrigger,
@@ -93,10 +95,6 @@ function ThemeSwitch() {
   return <Button variant="outline" size="sm" onClick={flip}>Show in {theme === "dark" ? "light" : "dark"}</Button>
 }
 
-const MODEL_GROUPS = [
-  { engine: "Claude Code", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] },
-  { engine: "Codex", models: ["gpt-5.1-codex", "gpt-5.1-codex-mini"] },
-]
 
 function ModelPicker() {
   const [open, setOpen] = useState(false)
@@ -115,9 +113,9 @@ function ModelPicker() {
           <CommandList>
             <CommandEmpty>No model found.</CommandEmpty>
             {MODEL_GROUPS.map((g, i) => (
-              <Fragment key={g.engine}>
+              <Fragment key={g.tier}>
                 {i > 0 && <CommandSeparator />}
-                <CommandGroup heading={g.engine}>
+                <CommandGroup heading={engineName(g.tier)}>
                   {g.models.map((m) => (
                     <CommandItem key={m} value={m} onSelect={() => { setModel(m); setOpen(false) }} className="font-mono text-xs">
                       {m}
