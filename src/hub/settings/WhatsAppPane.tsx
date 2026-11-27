@@ -11,7 +11,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { apiGet, apiText } from "../api"
 import { Badge, Button, Icon, Switch } from "../ui"
-import { oldSettingsHash } from "./address"
+import { settingsHash } from "./address"
 import type { ChannelsState } from "./channels-data"
 import { CopyButton, STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
 import { ErrorLine, PaneHeader, SettingsGroup, SettingsRow, SkeletonRows, ToneDot } from "./parts"
@@ -46,7 +46,7 @@ export default function WhatsAppPane() {
             />
             <SettingsRow
               pane={PANE} row="wa-routes"
-              control={<Button asChild variant="ghost" size="sm"><a href={oldSettingsHash("advanced")}>Open agentx.json<Icon name="chevron-right" className="size-3.5" /></a></Button>}
+              control={<Button asChild variant="ghost" size="sm"><a href={settingsHash("machine", "cfg")}>Open agentx.json<Icon name="chevron-right" className="size-3.5" /></a></Button>}
             />
           </SettingsGroup>
 

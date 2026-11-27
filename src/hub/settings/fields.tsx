@@ -42,9 +42,10 @@ export function useWrite(invalidate: QueryKey) {
   const write = (method: string, path: string, body: unknown, done?: string) =>
     m.mutateAsync({ method, path, body, done }).then(() => true, () => false)
   /** The same write for a ConfirmDialog's `run`: it throws, so the dialog
-   *  stays open with the server's reason. */
+   *  stays open with the server's reason. It hands back the server's reply
+   *  (a new token, shown once). */
   const run = (method: string, path: string, body: unknown, done?: string) =>
-    m.mutateAsync({ method, path, body, done }).then(() => undefined)
+    m.mutateAsync({ method, path, body, done })
   return { write, run, busy: m.isPending, note, setNote }
 }
 
@@ -65,14 +66,15 @@ function useCommit(value: string, commit: (v: string) => void) {
   return { value: text, onChange: (e: { target: { value: string } }) => setText(e.target.value), onBlur: done, onKeyDown }
 }
 
-/** A number with its unit. `check` returns why a value is refused. */
-export function NumberField({ value, unit, label, check, onCommit, disabled, step }: {
+/** A number with its unit. `check` returns why a value is refused.
+ *  `grouped` shows thousands with commas in a wider box (a pixel budget). */
+export function NumberField({ value, unit, label, check, onCommit, disabled, step, grouped }: {
   value: number | undefined; unit?: string; label: string; check?: (n: number) => string | null
-  onCommit: (n: number) => void; disabled?: boolean; step?: string
+  onCommit: (n: number) => void; disabled?: boolean; step?: string; grouped?: boolean
 }) {
   const [bad, setBad] = useState("")
-  const f = useCommit(value == null ? "" : String(value), (t) => {
-    const n = Number(t)
+  const f = useCommit(value == null ? "" : grouped ? value.toLocaleString("en-US") : String(value), (t) => {
+    const n = Number(grouped ? t.replace(/[,\s]/g, "") : t)
     const why = t.trim() === "" || !Number.isFinite(n) ? "Type a number." : check?.(n) ?? null
     setBad(why ?? "")
     if (!why) onCommit(n)
@@ -81,7 +83,7 @@ export function NumberField({ value, unit, label, check, onCommit, disabled, ste
     <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
       <input
         {...f} inputMode={step ? "decimal" : "numeric"} aria-label={label} aria-invalid={!!bad} title={bad || undefined} disabled={disabled}
-        className={cn(INPUT, "w-16 text-right tabular-nums")}
+        className={cn(INPUT, grouped ? "w-24" : "w-16", "text-right tabular-nums")}
       />
       {unit}
     </span>

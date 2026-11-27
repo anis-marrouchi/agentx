@@ -33,6 +33,9 @@ const PANES: Record<string, ComponentType> = {
   channels: lazy(() => import("./ChannelsPane")),
   whatsapp: lazy(() => import("./WhatsAppPane")),
   menu: lazy(() => import("./MenuPane")),
+  mesh: lazy(() => import("./MeshPane")),
+  machine: lazy(() => import("./MachinePane")),
+  diagnostics: lazy(() => import("./DiagnosticsPane")),
 }
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)

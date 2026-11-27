@@ -11,7 +11,7 @@ import { AddScheduleDialog } from "./JobsDialogs"
 import JobsHooks from "./JobsHooks"
 import JobsWiki from "./JobsWiki"
 import { InlineFold, STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
-import { Ago, ConfirmDialog, DisclosureContext, ErrorLine, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
+import { Ago, ConfirmDialog, DisclosureContext, ErrorLine, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SkeletonRows, TAB_TRIGGER } from "./parts"
 import { paneDef } from "./panes"
 import { cronHuman, valueLine, type Cron, type Sensor } from "./work-data"
 
@@ -29,15 +29,15 @@ export default function JobsPane() {
   const pick = (t: string) => TABS.forEach((x) => setOpen("jobs-tab-" + x, x === t))
   const crons = state.data?.crons ?? [], hooks = state.data?.webhooks ?? []
   const n = (k: number) => state.data ? <span className="ml-1.5 text-[11.5px] font-normal tabular-nums text-muted-foreground">{k}</span> : null
-  const trigger = "relative rounded-none bg-transparent px-2.5 pb-2.5 pt-1 text-[13px] font-medium text-muted-foreground shadow-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:bg-foreground"
+
   return (
     <>
       <PaneHeader pane={pane} />
       <Tabs value={tab} onValueChange={pick} className="flex flex-col gap-8">
         <TabsList aria-label="Jobs" className="-mt-2 h-auto w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
-          <TabsTrigger value="schedules" className={trigger}>Schedules{n(crons.length)}</TabsTrigger>
-          <TabsTrigger value="webhooks" className={trigger}>Webhooks{n(hooks.length)}</TabsTrigger>
-          <TabsTrigger value="wiki" className={trigger}>Wiki notes</TabsTrigger>
+          <TabsTrigger value="schedules" className={TAB_TRIGGER}>Schedules{n(crons.length)}</TabsTrigger>
+          <TabsTrigger value="webhooks" className={TAB_TRIGGER}>Webhooks{n(hooks.length)}</TabsTrigger>
+          <TabsTrigger value="wiki" className={TAB_TRIGGER}>Wiki notes</TabsTrigger>
         </TabsList>
         <TabsContent value="schedules" className="mt-0 flex flex-col gap-8"><Schedules state={state} /></TabsContent>
         <TabsContent value="webhooks" className="mt-0 flex flex-col gap-8"><JobsHooks state={state} /></TabsContent>

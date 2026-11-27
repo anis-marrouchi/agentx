@@ -20,6 +20,11 @@ export { ConfirmDialog, FormDialog, useConfirm, type ConfirmSpec, type Invalid }
 export const INPUT =
   "h-8 rounded-md border border-input bg-background px-2.5 text-base shadow-xs md:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50"
 
+/** A pane's tab under its header (Jobs, Channels, Diagnostics): a line
+ *  under the one that is open. */
+export const TAB_TRIGGER =
+  "relative rounded-none bg-transparent px-2.5 pb-2.5 pt-1 text-[13px] font-medium text-muted-foreground shadow-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:bg-foreground"
+
 export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
   return (
     <header data-slot="settings-pane-header" className="flex items-start justify-between gap-4 border-b border-border/60 pb-5 max-sm:flex-col max-sm:gap-3">

@@ -10,13 +10,13 @@
 // (wall-actions.ts). A secret is never shown or sent: each field takes the
 // NAME of the .env variable that holds it (channels-data.ts secretName).
 import { useContext } from "react"
-import { Icon, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui"
+import { Icon, Tabs, TabsContent, TabsList, TabsTrigger, cn } from "../ui"
 import { settingsHash } from "./address"
 import { CHANNEL_TABS, channelsOn, type ChannelTab, type ChannelsState } from "./channels-data"
 import { DiscordTab, EmailTab, SlackTab, TelegramTab } from "./ChannelsChat"
 import { CallsTab, GitHubTab, GitLabTab } from "./ChannelsDev"
 import { Choice, STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
-import { DisclosureContext, ErrorLine, PaneHeader, SkeletonRows } from "./parts"
+import { DisclosureContext, ErrorLine, PaneHeader, SkeletonRows, TAB_TRIGGER } from "./parts"
 import { paneDef } from "./panes"
 
 const PANE = "channels"
@@ -24,7 +24,7 @@ const TABS = CHANNEL_TABS.map(([id]) => id)
 /** An Advanced fold inside a tab opens that tab too. */
 const INSIDE: Record<string, ChannelTab> = { "sl-adv": "slack", "gl-adv": "gitlab" }
 
-const trigger = "relative gap-1.5 rounded-none bg-transparent px-2.5 pb-2.5 pt-1 text-[13px] font-medium text-muted-foreground shadow-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full hover:text-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none data-[state=active]:after:bg-foreground"
+const trigger = cn(TAB_TRIGGER, "gap-1.5")
 
 export default function ChannelsPane() {
   const pane = paneDef(PANE)
