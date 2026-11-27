@@ -19,6 +19,9 @@ if (existsSync("agentx.json")) {
     dashboard: {
       enabled: true, bind: "0.0.0.0", port: 4202,
       daemonUrl: "http://daemon:18800", token: "${MESH_TOKEN}",
+      // A fresh install opens the simple Hub; no key means full (#2466).
+      // Keep in step with HUB_FRESH_LAYOUT in src/hub/layout.ts.
+      hub: { layout: "simple" },
     },
   }, null, 2) + "\n", { flag: "wx", mode: 0o600 })
   console.log("Created Docker configuration. Open http://127.0.0.1:4202/setup to add an agent.")
