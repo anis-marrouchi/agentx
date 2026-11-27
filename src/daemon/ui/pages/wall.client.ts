@@ -425,9 +425,6 @@ ${HUB_NAV_SCRIPT}
       else el.value = f[k];
     });
     var back = null;
-    // A post linked straight to is read before the posts load (its thread
-    // waits for them), so its page draws at once, in grey (#2101).
-    if (S.post && (S.post !== was || !S.threads[S.post])) loadThread(S.post);
     if (S.post && S.post !== was) {
       // Opened from the feed in this tab: Back returns there, where it was.
       if (S.booted && !was) { S.pushed = true; S.backY = window.scrollY || 0; }
@@ -1621,8 +1618,6 @@ ${HUB_NAV_SCRIPT}
   if (!firstPage || firstPage === 'wall') applyHash();
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
-  // A link to a post opens on the post page from the first paint (#2101).
-  if (new URLSearchParams(location.hash.slice(1)).get('post')) applyHash();
   load().then(function () {
     if (!fromTask || !S.data) return;
     fetch('/api/admin/wall/thread?task=' + encodeURIComponent(fromTask), { headers: headers() }).then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
