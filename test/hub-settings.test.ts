@@ -16,7 +16,7 @@ import {
 } from "../src/hub/settings/menu-model"
 import InboxPane from "../src/hub/settings/InboxPane"
 import JobsPane from "../src/hub/settings/JobsPane"
-import { DisclosureContext } from "../src/hub/settings/parts"
+import { DisclosureContext, SettingsRow } from "../src/hub/settings/parts"
 import { cronHuman, hookState, hookUrl, inboxBody, inboxChanged, inboxForm, valueLine } from "../src/hub/settings/work-data"
 import { SETTINGS_GROUPS, SETTINGS_PANES, paneDef, rowDef } from "../src/hub/settings/panes"
 import { buildSettingsIndex, searchSettings } from "../src/hub/settings/search"
@@ -348,7 +348,7 @@ describe("Settings › Jobs", () => {
     expect(html).toContain("No value line · no goal")
     expect(html).toContain("Change log (1)")
     expect(html).toContain("disk-free")
-    expect(html).toContain("More actions for daily-standup")
+    expect(html).toContain("More for daily-standup")
     // C4: the … shows on hover or focus with a pointer, always on touch.
     expect(html).toContain("can-hover:opacity-0")
   })
@@ -604,5 +604,23 @@ describe("Settings › Guests", () => {
     expect(tokensShort(410_000)).toBe("410k")
     expect(tokensShort(1_900_000)).toBe("1.9M")
     expect(tokensShort(12)).toBe("12")
+  })
+})
+
+// #2418 B1: an inline row keeps its control on the line on desktop; only a
+// phone (below 640 px) wraps it under the label.
+describe("SettingsRow wrap", () => {
+  const row = (layout?: "inline" | "stack") => renderToStaticMarkup(createElement(SettingsRow, {
+    pane: "general", row: SETTINGS_PANES.find((p) => p.id === "general")!.rows[0].id, control: createElement("button", null, "x"), layout,
+  }))
+  it("wraps an inline row on phones only", () => {
+    const html = row()
+    expect(html).toContain("max-sm:flex-wrap")
+    expect(html).toContain("max-sm:ml-auto")
+    expect(html).not.toMatch(/class="[^"]*(?<![:\w-])(flex-wrap|ml-auto)\b/)
+  })
+  it("leaves a stacked row as it was", () => {
+    expect(row("stack")).toContain('data-layout="stack"')
+    expect(row("stack")).toContain("flex-col gap-2")
   })
 })

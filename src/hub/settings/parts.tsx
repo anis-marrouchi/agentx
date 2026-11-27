@@ -12,8 +12,10 @@ import {
 } from "../ui"
 import { rowDef, type SettingsPaneDef } from "./panes"
 
-/** A text field in a row or a dialog; `text-base` on phones so they do not zoom. */
-export const INPUT = "h-8 rounded-md border border-input bg-background px-2.5 text-base shadow-xs md:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+/** A text field in a row or a dialog; `text-base` on phones so they do not
+ *  zoom. The one input class of every pane (fields.tsx uses it too). */
+export const INPUT =
+  "h-8 rounded-md border border-input bg-background px-2.5 text-base shadow-xs md:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50"
 
 export function PaneHeader({ pane, action }: { pane: SettingsPaneDef; action?: ReactNode }) {
   return (
@@ -52,8 +54,9 @@ export function SettingsGroup({ pane, row, title, help, action, children }: {
 }
 
 /** One row from its definition: label and help on the left, the control on
- *  the right, or under them, still right-aligned, when both do not fit (a
- *  phone). `label` replaces the text only (a status dot, a mono name). */
+ *  the right. On a phone (below 640 px) the control wraps under them, still
+ *  right-aligned, when both do not fit; on wider screens long help wraps in
+ *  its own column and the control stays on the line. `label` replaces the text only (a status dot, a mono name). */
 export function SettingsRow({ pane, row, label, help, control, layout = "inline" }: {
   pane: string; row: string; label?: ReactNode; help?: ReactNode; control?: ReactNode
   /** `stack` puts the control under the label (a list of chips, checks). */
@@ -61,12 +64,12 @@ export function SettingsRow({ pane, row, label, help, control, layout = "inline"
 }) {
   const def = rowDef(pane, row)
   return (
-    <div data-slot="settings-row" data-row={def.id} data-layout={layout} className={cn("flex min-h-11 scroll-mt-6 py-[9px]", layout === "stack" ? "flex-col gap-2" : "flex-wrap items-center justify-between gap-x-4 gap-y-2")}>
+    <div data-slot="settings-row" data-row={def.id} data-layout={layout} className={cn("flex min-h-11 scroll-mt-6 py-[9px]", layout === "stack" ? "flex-col gap-2" : "items-center justify-between gap-x-4 gap-y-2 max-sm:flex-wrap")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm">{label ?? def.label}</span>
         {(help ?? def.help) && <span className="text-[12.5px] text-muted-foreground">{help ?? def.help}</span>}
       </div>
-      {control && <div className={layout === "stack" ? "flex min-w-0 flex-wrap items-center gap-2" : "ml-auto flex shrink-0 items-center gap-2"}>{control}</div>}
+      {control && <div className={layout === "stack" ? "flex min-w-0 flex-wrap items-center gap-2" : "flex shrink-0 items-center gap-2 max-sm:ml-auto"}>{control}</div>}
     </div>
   )
 }

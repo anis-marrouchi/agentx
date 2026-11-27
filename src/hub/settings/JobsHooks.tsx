@@ -7,8 +7,8 @@
 import { useState } from "react"
 import { Badge, Button, Icon, Switch, cn } from "../ui"
 import { AddWebhookDialog } from "./JobsDialogs"
-import { ChipList, ConfirmDialog, CopyButton, InlineFold, RowMenu, STATE_KEY, TextField, WriteNote, inputClass, type useWorkState, useWrite } from "./fields"
-import { ErrorLine, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
+import { ChipList, CopyButton, InlineFold, STATE_KEY, TextField, WriteNote, type useWorkState, useWrite } from "./fields"
+import { ConfirmDialog, ErrorLine, INPUT, RowMenu, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
 import { hookState, hookUrl, sourceName, type Webhook } from "./work-data"
 
 const PANE = "jobs"
@@ -36,9 +36,9 @@ export default function JobsHooks({ state }: { state: ReturnType<typeof useWorkS
       </p>
       <AddWebhookDialog open={adding} onOpenChange={setAdding} agents={state.data?.agents ?? []} taken={hooks.map((h) => h.id)} />
       <ConfirmDialog
-        open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)} busy={w.busy}
-        title={`Delete ${deleting}?`} body="Calls to its address stop working." action="Delete webhook"
-        onConfirm={() => { const id = deleting!; w.write("DELETE", "webhooks", { id }, `Deleted ${id}`).then(() => setDeleting(null)) }}
+        open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}
+        title={`Delete ${deleting}?`} text="Calls to its address stop working." yes="Delete webhook"
+        run={() => w.run("DELETE", "webhooks", { id: deleting! }, `Deleted ${deleting}`)}
       />
     </>
   )
@@ -76,7 +76,7 @@ function HookItem({ hook: h, url, busy, write, onDelete }: { hook: Webhook; url:
       </span>}
       control={<Switch checked={h.enabled} disabled={busy} aria-label={(h.enabled ? "Turn off " : "Turn on ") + h.id}
         onCheckedChange={(v) => write("PATCH", "webhooks", { id: h.id, patch: { enabled: v } }, v ? `${h.id} is on: it receives calls` : `${h.id} is off: calls to it are refused`)} />}
-      menu={<RowMenu name={h.id} items={[
+      menu={<RowMenu label={h.id} items={[
         { label: "Copy address", icon: "copy", onSelect: () => void navigator.clipboard?.writeText(url) },
         { label: "Delete webhook", icon: "trash-2", destructive: true, onSelect: onDelete },
       ]} />}
@@ -103,8 +103,8 @@ function Routing({ hook: h, busy, write, setTriggers, trig }: {
         />
       ) : <span className="text-[12.5px]">No triggers: every event runs the default workflow.</span>}
       <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); addTrigger() }}>
-        <input value={ev} onChange={(e) => setEv(e.target.value)} placeholder="issues.opened" aria-label="Event type" className={cn(inputClass, "w-44 font-mono")} />
-        <input value={wf} onChange={(e) => setWf(e.target.value)} placeholder="Workflow id" aria-label="Workflow id" className={cn(inputClass, "w-36 font-mono")} />
+        <input value={ev} onChange={(e) => setEv(e.target.value)} placeholder="issues.opened" aria-label="Event type" className={cn(INPUT, "w-44 font-mono")} />
+        <input value={wf} onChange={(e) => setWf(e.target.value)} placeholder="Workflow id" aria-label="Workflow id" className={cn(INPUT, "w-36 font-mono")} />
         <Button type="submit" variant="outline" size="sm" disabled={busy || !ev.trim() || !wf.trim()}>Add trigger</Button>
       </form>
       <label className="flex flex-wrap items-center gap-2 text-[12.5px]">Default workflow

@@ -9,8 +9,8 @@
 // .env variable that holds it.
 import { useState, type ReactNode } from "react"
 import { Badge, Button, Icon, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch, cn } from "../ui"
-import { STATE_KEY, inputClass, useWorkState, useWrite, WriteNote } from "./fields"
-import { Disclosure, ErrorLine, PaneHeader, SettingsGroup, SettingsRow, SkeletonRows } from "./parts"
+import { STATE_KEY, useWorkState, useWrite, WriteNote } from "./fields"
+import { Disclosure, ErrorLine, INPUT, PaneHeader, SettingsGroup, SettingsRow, SkeletonRows } from "./parts"
 import { paneDef } from "./panes"
 import { NTFY_KEYS, SOUNDS, inboxBody, inboxChanged, inboxForm, type InboxForm } from "./work-data"
 
@@ -37,11 +37,11 @@ export default function InboxPane() {
   }
 
   const text = (k: keyof InboxForm, label: string, placeholder: string, w = "w-[200px]") => (
-    <input value={String(f[k])} onChange={(e) => set(k, e.target.value as never)} aria-label={label} placeholder={placeholder} autoComplete="off" spellCheck={false} className={cn(inputClass, w, "max-w-full font-mono")} />
+    <input value={String(f[k])} onChange={(e) => set(k, e.target.value as never)} aria-label={label} placeholder={placeholder} autoComplete="off" spellCheck={false} className={cn(INPUT, w, "max-w-full font-mono")} />
   )
   const num = (k: "long" | "volume", label: string, unit?: string) => (
     <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <input value={f[k]} onChange={(e) => set(k, e.target.value)} inputMode="decimal" aria-label={label} className={cn(inputClass, "w-16 text-right tabular-nums")} />{unit}
+      <input value={f[k]} onChange={(e) => set(k, e.target.value)} inputMode="decimal" aria-label={label} className={cn(INPUT, "w-16 text-right tabular-nums")} />{unit}
     </span>
   )
   const sw = (k: "done" | "failed" | "queued" | "banner" | "sound" | "ntfy", label: string) => <Switch checked={f[k]} onCheckedChange={(v) => set(k, v)} aria-label={label} />

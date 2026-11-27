@@ -1,16 +1,15 @@
 // --- Settings: the controls the Work panes share (#2101 ST2b) ---
 //
 // A write with its one status line, the number and text fields that save
-// when you leave them (Enter or blur), a list of chips, a row's `…` menu,
-// a confirm dialog and a copy button. Every save goes through the old
+// when you leave them (Enter or blur), a list of chips and a copy button.
+// The row's `…` menu, the confirm dialog and the input class are the ones
+// in parts.tsx, so every pane draws them alike. Every save goes through the old
 // Settings' endpoints (/api/admin/wall/settings/*), so the owner guard holds.
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { apiFetch, apiGet } from "../api"
-import {
-  Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Icon,
-  Popover, PopoverContent, PopoverTrigger, Tooltip, TooltipContent, TooltipTrigger, cn,
-} from "../ui"
+import { Button, Icon, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
+import { INPUT } from "./parts"
 import type { WorkState } from "./work-data"
 
 export const SETTINGS_API = "/api/admin/wall/settings/"
@@ -39,16 +38,17 @@ export function useWrite(invalidate: QueryKey) {
   })
   const write = (method: string, path: string, body: unknown, done?: string) =>
     m.mutateAsync({ method, path, body, done }).then(() => true, () => false)
-  return { write, busy: m.isPending, note, setNote }
+  /** The same write for a ConfirmDialog's `run`: it throws, so the dialog
+   *  stays open with the server's reason. */
+  const run = (method: string, path: string, body: unknown, done?: string) =>
+    m.mutateAsync({ method, path, body, done }).then(() => undefined)
+  return { write, run, busy: m.isPending, note, setNote }
 }
 
 export function WriteNote({ note }: { note: Note }) {
   if (!note) return null
   return <p role="status" className={cn("py-2.5 text-xs", note.tone === "err" ? "text-destructive" : "text-muted-foreground")}>{note.text}</p>
 }
-
-export const inputClass =
-  "h-8 rounded-md border border-input bg-background px-2.5 text-base md:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[invalid=true]:border-destructive disabled:opacity-50"
 
 /** Leave the field (Enter or blur) to save; Esc puts the saved value back. */
 function useCommit(value: string, commit: (v: string) => void) {
@@ -78,7 +78,7 @@ export function NumberField({ value, unit, label, check, onCommit, disabled, ste
     <span className="flex items-center gap-2 text-[13px] text-muted-foreground">
       <input
         {...f} inputMode={step ? "decimal" : "numeric"} aria-label={label} aria-invalid={!!bad} title={bad || undefined} disabled={disabled}
-        className={cn(inputClass, "w-16 text-right tabular-nums")}
+        className={cn(INPUT, "w-16 text-right tabular-nums")}
       />
       {unit}
     </span>
@@ -90,7 +90,7 @@ export function TextField({ value, label, placeholder, onCommit, mono, disabled,
   value: string; label: string; placeholder?: string; onCommit: (v: string) => void; mono?: boolean; disabled?: boolean; className?: string
 }) {
   const f = useCommit(value, (t) => onCommit(t.trim()))
-  return <input {...f} aria-label={label} placeholder={placeholder} disabled={disabled} autoComplete="off" spellCheck={false} className={cn(inputClass, "w-[200px] max-w-full", mono && "font-mono", className)} />
+  return <input {...f} aria-label={label} placeholder={placeholder} disabled={disabled} autoComplete="off" spellCheck={false} className={cn(INPUT, "w-[200px] max-w-full", mono && "font-mono", className)} />
 }
 
 /** A list as chips: x removes one, Add opens a field (Enter adds, Esc closes). */
@@ -120,7 +120,7 @@ export function ChipList({ values, label, onChange, addLabel = "Add", mono = tru
         <input
           autoFocus value={text} onChange={(e) => setText(e.target.value)} onBlur={add} aria-label={`${addLabel}: ${label}`}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setText(""); setAdding(false) } }}
-          className={cn(inputClass, "h-6 w-36 px-2 text-xs md:text-xs", mono && "font-mono")}
+          className={cn(INPUT, "h-6 w-36 px-2 text-xs md:text-xs", mono && "font-mono")}
         />
       ) : addLabel !== false && (
         <button type="button" disabled={disabled} onClick={() => setAdding(true)} className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border border-dashed border-border px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -128,56 +128,6 @@ export function ChipList({ values, label, onChange, addLabel = "Add", mono = tru
         </button>
       )}
     </div>
-  )
-}
-
-export interface MenuItem { label: string; icon: string; onSelect: () => void; destructive?: boolean }
-
-/** A row's `…` menu: the rare actions of one item. */
-export function RowMenu({ name, items }: { name: string; items: MenuItem[] }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-7" aria-label={`More actions for ${name}`}><Icon name="ellipsis" className="size-3.5" /></Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>More actions</TooltipContent>
-      </Tooltip>
-      <PopoverContent align="end" className="w-48 p-1" role="menu" aria-label={`Actions for ${name}`}>
-        {items.map((it, i) => (
-          <button
-            key={it.label} type="button" role="menuitem"
-            onClick={() => { setOpen(false); it.onSelect() }}
-            className={cn(
-              "flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-[13px] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
-              it.destructive && "text-destructive", it.destructive && i > 0 && "mt-1 border-t border-border pt-1",
-            )}
-          >
-            <Icon name={it.icon} className="size-3.5" />{it.label}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/** Ask before a destructive step: Cancel quiet, the action red. */
-export function ConfirmDialog({ open, onOpenChange, title, body, action, busy, onConfirm }: {
-  open: boolean; onOpenChange: (v: boolean) => void; title: string; body: ReactNode; action: string; busy?: boolean; onConfirm: () => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{body}</DialogDescription></DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" disabled={busy} onClick={onConfirm}>{action}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
