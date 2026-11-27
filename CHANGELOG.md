@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.310.1](https://github.com/anis-marrouchi/agentx/compare/v0.310.0...v0.310.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **upgrade:** answer widget /ask at once during the upgrade start hold ([#2529](https://github.com/anis-marrouchi/agentx/issues/2529)) ([ce0c909](https://github.com/anis-marrouchi/agentx/commit/ce0c9099471ca54ee88462aeb55e0cc638ad3b15)), closes [#2502](https://github.com/anis-marrouchi/agentx/issues/2502)
+
 ## [0.310.0](https://github.com/anis-marrouchi/agentx/compare/v0.309.1...v0.310.0) (2026-11-27)
 
 
