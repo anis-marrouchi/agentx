@@ -18,7 +18,8 @@ import { HUB_NAME } from "../hub-name"
 import { formatPairInput } from "./app-pair-logic"
 import { agentLine, connectionNote, freedAgents, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
-import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
+import { BASE_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
+import { PAIR_CSS } from "./phone-base.css"
 
 const THEME_BOOT = AX_THEME_BOOT
 
@@ -140,7 +141,7 @@ ${bar("Connecting…", `
 export function renderMemberLockedPage(signIn = false): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Pair this machine · AgentX")}<style>${LOCKED_CSS}</style></head>
+<head>${head("Pair this machine · AgentX")}<style>${PAIR_CSS}</style></head>
 <body>
 ${bar("This machine is not paired yet")}
 <main class="narrow">
@@ -212,7 +213,7 @@ export function renderMemberSignInPage(enabled: boolean, provider: string | null
     <p class="help">Have a pairing code instead? <a href="/member">Pair this machine</a>.</p>`
   return `<!doctype html>
 <html lang="en">
-<head>${head("Sign in · AgentX")}<style>${LOCKED_CSS}</style></head>
+<head>${head("Sign in · AgentX")}<style>${PAIR_CSS}</style></head>
 <body>
 ${bar("Sign in")}
 <main class="narrow">
