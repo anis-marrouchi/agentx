@@ -2504,6 +2504,17 @@ Mark facts about billing, accounts, outages or deploys that name no source as un
 | `--agent <id>` | — | One agent (default: all). |
 | `--apply` | — | Flag them (default: list only). |
 
+### `agentx memory tidy [action] [run]`
+
+Merge duplicate facts and notes, drop expired and stale facts (preview unless --commit). With an action: `list` shows the latest runs, `show <run>` lists one run's changes, `undo <run>` puts them back. See [Tidy an agent's memory](../jobs/agent-memory.md#12-tidy-an-agent-s-memory-each-night).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | One agent (default: all). |
+| `--commit` | — | Make the changes (default: list what would change). |
+| `--change <n>` | — | Undo only this change of the run. |
+| `--force` | — | Undo even a change whose kept fact or note changed since, or an over-cap drop. |
+
 ## procedure (advanced)
 
 `agentx procedure`: Procedures (SOPs) — extract from activity, review drafts, match, schedule. **Advanced.**

@@ -5,6 +5,7 @@ import { openDb } from "@/storage/sqlite"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { readSignals, SIGNAL_KINDS, SIGNAL_MEANING, summarizeSignals, type SignalKind } from "@/improve/signals"
 import { improvePass, type ImprovePassResult } from "@/improve/nightly"
+import type { TidyStageResult } from "@/improve/tidy-stage"
 import { checkHeld, costLine, HELD_WINDOW_DAYS } from "@/improve/held"
 import { KIND_WEIGHT } from "@/improve/rank"
 import { COST_KIND_SET } from "@/improve/cost"
@@ -115,6 +116,20 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
       else if (o.result === "would-try") console.log(`  → would retro problem ${o.key} with run ${o.taskId}`)
       else console.log(chalk.dim(`  ✗ problem ${o.key}: ${o.why}`))
     }
+  }
+  if (r.tidy) printTidy(r.tidy)
+}
+
+/** Stage 5, the memory tidy (#2117): one line per agent with changes. */
+export function printTidy(t: TidyStageResult): void {
+  if (!t.ran) { console.log(chalk.dim(`  Memory tidy: not run (${t.why}).`)); return }
+  const busy = t.agents.filter((a) => a.facts || a.notes || a.notePairs || a.error)
+  if (busy.length === 0) { console.log(chalk.dim("  Memory tidy: nothing to change.")); return }
+  for (const a of busy) {
+    if (a.error) { console.log(chalk.yellow(`  tidy ${a.agent}: failed: ${a.error}`)); continue }
+    const notes = a.notes ? `${a.notes} note merge(s)` : a.notePairs ? `${a.notePairs} note pair(s) not merged${a.notesWhy ? ` (${a.notesWhy})` : ""}` : ""
+    const line = `  tidy ${a.agent}: ${a.facts} fact change(s)${notes ? `, ${notes}` : ""}${a.runId ? `, run ${a.runId}` : ""}`
+    console.log(a.runId ? chalk.green(line) : line)
   }
 }
 

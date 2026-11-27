@@ -10,31 +10,60 @@
 // already in the file is not added again. A merge's kept fact that changed
 // after the run (its etag differs) is left alone unless `force`.
 //
-// Bounded: at most MAX_RUNS logs (oldest go first) and, per agent and
-// cleanup kind, at most MAX_BACKUPS backups.
+// Bounded, per agent (C1, #2117 review): a log goes when it is older than
+// RUN_KEEP_DAYS, so a tidy log always outlives its 7-day approvals item.
+// Prune logs are also capped at MAX_RUNS per agent, oldest first, but never
+// one younger than RUN_FLOOR_HOURS: a night's logs are still there for the
+// next morning's review. Per agent and cleanup kind, at most MAX_BACKUPS
+// backups.
+//
+// Note changes (store "note") are put back through AgentMemory.save, so the
+// note's own history keeps the merged version too.
 
 import { createHash } from "crypto"
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { basename, dirname, resolve } from "path"
 import type { MemoryFact, MemoryStore } from "@/agents/memory-store"
+import { MAX_MEMORIES } from "@/agents/memory-limits"
+import type { AgentMemory, MemoryRecord } from "@/agents/agent-memory"
 
+/** Prune logs kept per agent, past RUN_FLOOR_HOURS. */
 export const MAX_RUNS = 500
 export const MAX_BACKUPS = 10
+/** A run log older than this goes: longer than an approvals item lives (7 days). */
+export const RUN_KEEP_DAYS = 14
+/** No log younger than this goes for the count cap: one night's logs wait
+ *  for the next morning's review. */
+export const RUN_FLOOR_HOURS = 36
+const HOUR_MS = 3_600_000
 
-export interface TidyChange {
+interface ChangeBase {
   /** 1-based, the number `undo --change <n>` takes. */
   n: number
-  store: "fact"
   action: "merge" | "drop"
-  /** Why, in a word or two: "expired", "over-cap", "duplicate". */
+  /** Why, in a word or two: "expired", "over-cap", "duplicate", "stale". */
   reason?: string
+  afterEtag: string | null
+  undoneAt?: string
+}
+
+export interface FactChange extends ChangeBase {
+  store: "fact"
   /** The full records before the change. */
   before: MemoryFact[]
   /** The record kept by a merge; null for a drop. */
   after: MemoryFact | null
-  afterEtag: string | null
-  undoneAt?: string
 }
+
+export interface NoteChange extends ChangeBase {
+  store: "note"
+  /** The notes as they were, etag left out. */
+  before: MemoryRecord[]
+  /** The note a merge kept, as saved; its etag is afterEtag. */
+  after: MemoryRecord | null
+}
+
+export type TidyChange = FactChange | NoteChange
 
 export interface TidyRun {
   runId: string
@@ -87,25 +116,69 @@ export function backupFacts(
   return backup
 }
 
-/** Write a run log. Call it before the facts file is rewritten. */
+type NewChange =
+  | Omit<FactChange, "n" | "afterEtag">
+  | (Omit<NoteChange, "n" | "afterEtag"> & { afterEtag: string | null })
+
+const safeAgent = (agent: string) => agent.replace(/[^A-Za-z0-9_-]/g, "_")
+
+/** Write a run log. Call it before the facts file is rewritten. A note
+ *  change brings its own afterEtag (the note's etag as saved). */
 export function recordRun(
   store: MemoryStore, agent: string, by: TidyRun["by"],
-  changes: Array<Omit<TidyChange, "n" | "afterEtag">>,
-  opts: { at?: string; backup?: string } = {},
+  changes: NewChange[],
+  opts: { at?: string; backup?: string; now?: number } = {},
 ): TidyRun {
   const at = opts.at ?? new Date().toISOString()
-  const runId = `${stampOf(at)}-${agent.replace(/[^A-Za-z0-9_-]/g, "_")}-${Math.random().toString(36).slice(2, 6)}`
+  const runId = `${stampOf(at)}-${safeAgent(agent)}-${Math.random().toString(36).slice(2, 6)}`
   const run: TidyRun = {
     runId, agent, at, by,
     ...(opts.backup ? { backup: opts.backup } : {}),
-    changes: changes.map((c, i) => ({ ...c, n: i + 1, afterEtag: c.after ? factEtag(c.after) : null })),
+    changes: changes.map((c, i) => c.store === "note"
+      ? { ...c, n: i + 1 }
+      : { ...c, n: i + 1, afterEtag: c.after ? factEtag(c.after) : null }),
   }
   const dir = tidyDir(store)
   mkdirSync(dir, { recursive: true })
   writeFileSync(resolve(dir, `${runId}.json`), JSON.stringify(run, null, 2) + "\n")
-  const all = readdirSync(dir).filter((f) => f.endsWith(".json")).sort()
-  for (const f of all.slice(0, Math.max(0, all.length - MAX_RUNS))) rmSync(resolve(dir, f), { force: true })
+  trimRuns(store, agent, opts.now ?? Date.now())
   return run
+}
+
+/** `<stamp>-<agent>-<4 chars>` → its time and agent. */
+function parseRunFile(f: string): { at: number; agent: string } | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z-(.+)-[a-z0-9]+\.json$/.exec(f)
+  if (!m) return null
+  return { at: Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +m[7]), agent: m[8] }
+}
+
+/** Drop one agent's run logs past their keep (C1 and the floor, above). */
+export function trimRuns(store: MemoryStore, agent: string, now = Date.now()): string[] {
+  const dir = tidyDir(store)
+  let files: string[] = []
+  try { files = readdirSync(dir).filter((f) => f.endsWith(".json")) } catch { return [] }
+  const own = files
+    .map((f) => ({ f, p: parseRunFile(f) }))
+    .filter((x): x is { f: string; p: { at: number; agent: string } } => x.p !== null && x.p.agent === safeAgent(agent))
+    .sort((a, b) => b.p.at - a.p.at) // newest first
+  const gone: string[] = []
+  let prunes = 0
+  for (const { f, p } of own) {
+    const age = now - p.at
+    if (age > RUN_KEEP_DAYS * 24 * HOUR_MS) { gone.push(f); continue }
+    // The count cap is for prune logs only: a tidy log stays its full keep,
+    // since its approvals item points at it.
+    if (own.length <= MAX_RUNS) continue // under the cap: no need to read the log
+    if (runBy(dir, f) !== "prune") continue
+    prunes++
+    if (prunes > MAX_RUNS && age > RUN_FLOOR_HOURS * HOUR_MS) gone.push(f)
+  }
+  for (const f of gone) rmSync(resolve(dir, f), { force: true })
+  return gone
+}
+
+function runBy(dir: string, f: string): TidyRun["by"] | null {
+  try { return (JSON.parse(readFileSync(resolve(dir, f), "utf-8")) as TidyRun).by } catch { return null }
 }
 
 /** One run log, or null when there is none by that id. */
@@ -137,9 +210,24 @@ function placeByAge(facts: MemoryFact[], back: MemoryFact[]): MemoryFact[] {
   return out
 }
 
-/** Undo a run, or one change of it. Each change is undone at most once. */
+/** Why an over-cap drop is not put back (C2, #2117 review): the file is
+ *  still at its cap, so the next prune would drop the same fact again. */
+export const OVER_CAP_SKIP = `the facts file is at its ${MAX_MEMORIES}-fact cap: the next prune would drop it again (--force puts it back anyway)`
+
+/** The note shown next to an over-cap drop in `show` and in the review item. */
+export function changeNote(c: TidyChange): string | undefined {
+  if (c.store === "fact" && c.reason === "over-cap" && !c.undoneAt) {
+    return `undo skips it while the agent has ${MAX_MEMORIES} facts or more`
+  }
+  return undefined
+}
+
+/** Undo a run, or one change of it. Each change is undone at most once.
+ *  Facts are read and rewritten under the agent's facts lock. A note
+ *  change needs `notes`, the agents' AgentMemory. */
 export function undoRun(
-  store: MemoryStore, runId: string, opts: { change?: number; force?: boolean; now?: number } = {},
+  store: MemoryStore, runId: string,
+  opts: { change?: number; force?: boolean; now?: number; notes?: AgentMemory } = {},
 ): UndoResult {
   const run = showRun(store, runId)
   if (!run) throw new Error(`no tidy run ${runId}`)
@@ -148,16 +236,36 @@ export function undoRun(
   }
   const result: UndoResult = { runId, restored: [], skipped: [] }
   const undoneAt = new Date(opts.now ?? Date.now()).toISOString()
-  let facts = store.getAll(run.agent)
-  let changed = false
+  const picked = run.changes.filter((c) => opts.change === undefined || c.n === opts.change)
 
-  for (const c of run.changes) {
-    if (opts.change !== undefined && c.n !== opts.change) continue
+  const facts = picked.filter((c): c is FactChange => c.store === "fact")
+  if (facts.length > 0) {
+    store.withFactsLock(run.agent, () => undoFacts(store, run.agent, facts, result, undoneAt, !!opts.force))
+  }
+  for (const c of picked) {
+    if (c.store !== "note") continue
+    if (!opts.notes) { result.skipped.push({ n: c.n, why: "a note change needs the agents' memory" }); continue }
+    undoNote(opts.notes, run.agent, c, result, undoneAt, !!opts.force)
+  }
+  result.restored.sort((a, b) => a - b)
+  result.skipped.sort((a, b) => a.n - b.n)
+  if (result.restored.length > 0) {
+    writeFileSync(resolve(tidyDir(store), `${runId}.json`), JSON.stringify(run, null, 2) + "\n")
+  }
+  return result
+}
+
+function undoFacts(
+  store: MemoryStore, agent: string, changes: FactChange[], result: UndoResult, undoneAt: string, force: boolean,
+): void {
+  let facts = store.getAll(agent)
+  let changed = false
+  for (const c of changes) {
     if (c.undoneAt) { result.skipped.push({ n: c.n, why: "already undone" }); continue }
     const byId = new Map(facts.map((f) => [f.id, f]))
     if (c.after) {
       const now = byId.get(c.after.id)
-      if (!opts.force && (!now || factEtag(now) !== c.afterEtag)) {
+      if (!force && (!now || factEtag(now) !== c.afterEtag)) {
         result.skipped.push({ n: c.n, why: now ? "the kept fact changed after the tidy" : "the kept fact is gone" })
         continue
       }
@@ -166,19 +274,42 @@ export function undoRun(
     const keepId = c.after?.id
     const back = c.before.filter((b) => b.id === keepId || !byId.has(b.id))
     if (back.length === 0) { result.skipped.push({ n: c.n, why: "the facts are already there" }); continue }
+    if (!force && c.reason === "over-cap" && facts.length + back.length > MAX_MEMORIES) {
+      result.skipped.push({ n: c.n, why: OVER_CAP_SKIP })
+      continue
+    }
     const replaced = new Set(back.map((b) => b.id))
     facts = placeByAge(facts.filter((f) => !replaced.has(f.id) && f.id !== keepId), back)
     c.undoneAt = undoneAt
     result.restored.push(c.n)
     changed = true
   }
-
-  if (changed) {
-    if (existsSync(store.fileFor(run.agent))) {
-      backupFacts(store, run.agent, { at: undoneAt, tag: "undo", keep: MAX_BACKUPS })
-    }
-    store.rewrite(run.agent, facts)
-    writeFileSync(resolve(tidyDir(store), `${runId}.json`), JSON.stringify(run, null, 2) + "\n")
+  if (!changed) return
+  if (existsSync(store.fileFor(agent))) {
+    backupFacts(store, agent, { at: undoneAt, tag: "undo", keep: MAX_BACKUPS })
   }
-  return result
+  store.rewrite(agent, facts)
+}
+
+/** Put a merge's notes back: the kept note as it was, the removed one(s)
+ *  again. Skipped when the kept note changed since, unless `force`; a
+ *  removed note whose name is taken again is left alone. */
+function undoNote(
+  notes: AgentMemory, agent: string, c: NoteChange, result: UndoResult, undoneAt: string, force: boolean,
+): void {
+  if (c.undoneAt) { result.skipped.push({ n: c.n, why: "already undone" }); return }
+  if (c.after) {
+    const now = notes.get(agent, c.after.name)
+    if (!force && (!now || now.etag !== c.afterEtag)) {
+      result.skipped.push({ n: c.n, why: now ? "the kept note changed after the tidy" : "the kept note is gone" })
+      return
+    }
+  }
+  const back = c.before.filter((b) => b.name === c.after?.name || !notes.get(agent, b.name))
+  if (back.length === 0) { result.skipped.push({ n: c.n, why: "the notes are already there" }); return }
+  for (const b of back) {
+    notes.save({ agentId: agent, type: b.type, name: b.name, description: b.description, body: b.body, author: "tidy-undo" })
+  }
+  c.undoneAt = undoneAt
+  result.restored.push(c.n)
 }

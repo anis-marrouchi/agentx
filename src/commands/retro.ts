@@ -7,6 +7,7 @@ import { readApprovalSettings } from "@/approvals/settings"
 import { reviewWithClaude, reviewWithClaudeCost } from "@/daemon/session-monitor"
 import { improvePass } from "@/improve/nightly"
 import { AgentMemory } from "@/agents/agent-memory"
+import { MemoryStore } from "@/agents/memory-store"
 import { printRanking } from "@/commands/improve"
 import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
 import { DEFAULT_RETRO_PER_DAY, DEFAULT_SWEEP_HOURS, sweepRetros } from "@/retro/sweep"
@@ -133,6 +134,7 @@ retro
         call: (input, m, prompt) => reviewWithClaudeCost(input, m, undefined, prompt),
         retro: { root, approvals: readApprovalSettings(), retroMax: max, propose: (input) => reviewWithClaudeCost(input, model, undefined, RETRO_PROMPT) },
         rules: { memory: new AgentMemory({ baseDir: resolve(root, ".agentx") }) },
+        tidy: { store: new MemoryStore(root), notes: new AgentMemory({ baseDir: resolve(root, ".agentx") }) },
       }), 5)
       console.log("")
     } catch (e: any) {

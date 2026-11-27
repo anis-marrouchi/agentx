@@ -2181,6 +2181,18 @@ export const improveConfigSchema = z.object({
   /** A group must come from at least this many separate requests,
    *  hand-offs or runs to be ranked. */
   minRefs: z.number().int().min(2).max(50).default(3),
+  /** The nightly memory tidy (#2117): stage 5 of the same pass. It merges
+   *  near-duplicate facts and notes and drops expired and long-unverified
+   *  facts, then lists the changes for review; each can be undone. Off by
+   *  default. Note merges are model calls: they also need `enabled` and
+   *  count against `dailyUsd`. */
+  tidy: z.object({
+    enabled: z.boolean().default(false),
+    /** A fact flagged unverified this many days ago is dropped. */
+    staleDays: z.number().int().min(7).max(3650).default(90),
+    /** At most this many changes per agent per night. */
+    maxChangesPerAgent: z.number().int().min(1).max(200).default(20),
+  }).default({}),
 }).default({})
 
 export const approvalsConfigSchema = z.object({
