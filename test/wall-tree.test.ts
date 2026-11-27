@@ -252,10 +252,11 @@ describe("a machine still being asked keeps its rows (#2292)", () => {
   const html = liveTreeHtml(model, () => "#x", {})
   const macHtml = html.slice(html.indexOf("MacBook-Local"), html.indexOf("Gone Box"))
 
-  it("draws a checking machine's last good rows, with the badge and an as-of time", () => {
+  it("draws a checking machine's last good rows, with its number and an as-of time (#2101-state)", () => {
     expect(model[1].state).toBe("checking")
     expect(model[1].asOf).toBe(since)
-    expect(macHtml).toContain("checking…")
+    expect(macHtml).not.toContain("checking…")
+    expect(macHtml).toContain('title="1 agent working now">1</span>')
     expect(macHtml).toContain("as of " + since.slice(11, 16) + "Z")
     expect(macHtml).toContain('aria-label="working"')
     expect(macHtml).toContain('title="Coder, working: ')
@@ -274,12 +275,12 @@ describe("a machine still being asked keeps its rows (#2292)", () => {
     expect(empty).toContain("Slow to answer; asking again.")
     expect(empty).not.toContain("as of")
   })
-  it("keeps the Working count on up machines only, so the badges agree (#2260)", () => {
+  it("counts a checking machine's last good runs too, so Working does not flicker (#2260, #2101-state)", () => {
     const work = tree.liveWorkCount([up, slow, silent])
-    expect(work.agents).toBe(1)
-    expect(work.byNode["http://mac"]).toBeUndefined()
+    expect(work.agents).toBe(2) // Both on Clawd, Coder on the slow Mac
+    expect(work.byNode["http://mac"]).toEqual({ agents: 1, runs: 1 })
     expect(model[0].working).toBe(1)
-    expect(model[1].working).toBe(0)
+    expect(model[1].working).toBe(1)
   })
 })
 

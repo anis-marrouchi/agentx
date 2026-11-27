@@ -172,3 +172,28 @@ describe("the side menu", () => {
     expect(nav).not.toContain("Machines and runs")
   })
 })
+
+// #2101-state: Hakim saw "0/2 checking…" over rows of runs going now.
+describe("a slow machine with its last answer (#2101-state)", () => {
+  const slow: LtNode[] = [{ ...NODES[0], checking: true, staleSince: ago(20_000) }, NODES[2]]
+  const [mesh] = build(slow)
+
+  it("counts as answering, and its runs add up to the Working count", () => {
+    expect(mesh.online).toBe(2)
+    expect(mesh.working).toBe(liveWorkCount(slow).agents)
+    expect(mesh.machines[0]).toMatchObject({ state: "checking", working: 2, runs: 3 })
+  })
+
+  it("shows its number and as of, not checking…", () => {
+    const html = mtTreeHtml([mesh], () => "#r", {}, deps)
+    expect(html).not.toContain("checking…")
+    expect(html).toContain('<span class="lt__badge is-live" title="2 working, 3 runs">2</span>')
+    expect(html).toContain("as of ")
+  })
+
+  it("still says checking… when it has no answer yet", () => {
+    const [m] = build([{ id: "http://mac", name: "MacBook-Local", url: "http://mac", reachable: false, checking: true, agents: [] }])
+    expect(m.online).toBe(0)
+    expect(mtTreeHtml([m], () => "#r", {}, deps)).toContain("checking…")
+  })
+})

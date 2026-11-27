@@ -288,7 +288,11 @@ export const MESH_ANALYTICS_SCRIPT = `<script>
       +' · '+(d.windowDays===0?'today so far':'last '+d.windowDays+' days')
       +' · '+MX.num(d.totals.runs)+' runs, '+MX.num(d.totals.errors)+' failed'
       +' · steps retained for '+MX.num(d.retention.tracesWithSteps)+' of '+MX.num(d.retention.traces)+' runs';
-    if(down.length)txt+=' · UNREACHABLE: '+down.map(function(n){return n.name+' ('+(n.error||'no answer')+')'}).join(', ');
+    // A node out of time is slow, not down (#1442, #2101-state): the whole
+    // merge waits 6 s, and a busy primary used to read as UNREACHABLE.
+    var slow=down.filter(function(n){return n.error==='timeout'}),gone=down.filter(function(n){return n.error!=='timeout'});
+    if(slow.length)txt+=' · Slow to answer, history not merged: '+slow.map(function(n){return n.name}).join(', ');
+    if(gone.length)txt+=' · UNREACHABLE: '+gone.map(function(n){return n.name+' ('+(n.error||'no answer')+')'}).join(', ');
     el('mx-analytics-updated').textContent=txt;
     var attention=d.jobs.filter(function(j){return j.verdict!=='healthy'}).length;
     MX.setHealth(3,attention,attention?'warn':'ok','Jobs needing review');

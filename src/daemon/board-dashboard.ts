@@ -2629,7 +2629,7 @@ function buildLiveSnapshot(
   const build = (async () => {
     const targets = await resolveNodeTargets(daemon, AbortSignal.timeout(TARGETS_TIMEOUT_MS))
     const nodes = await Promise.all(targets.map(async (d) => {
-      if (day) return fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day)
+      if (day) return fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS), day).then((node) => dayWithLastGood(d.url, node))
       let asking = inflightNodes.get(d.url)
       if (!asking) {
         asking = fetchDaemonAgents(d.url, d.token, AbortSignal.timeout(NODE_TIMEOUT_MS))
@@ -2669,9 +2669,29 @@ export function withLastGood(url: string, node: NodeLive, now: number = Date.now
   return { ...good.node, stale: true, staleSince: new Date(good.at).toISOString(), error: node.error, ...(node.checking ? { checking: true } : {}) }
 }
 
+/** A day snapshot (/api/mesh) of a node that did not answer in time: its own
+ *  row (the day's schedules stay empty), with the agents and runs of its last
+ *  good live answer, marked checking. Without it a slow primary read as
+ *  "0 Tasks running" on /mesh while the Hub listed its runs (#2101-state).
+ *  Never stored as last good: a day's schedules are not the live ones. */
+export function dayWithLastGood(url: string, node: NodeLive, now: number = Date.now()): NodeLive {
+  if (node.reachable && !node.error) {
+    lastGoodDayAgents.set(url, { node, at: now })
+    return node
+  }
+  // The newer of the live view's last good answer and the day view's.
+  const live = lastGoodNode.get(url), dayGood = lastGoodDayAgents.get(url)
+  const good = !live ? dayGood : !dayGood ? live : live.at >= dayGood.at ? live : dayGood
+  if (!good || now - good.at > STALE_NODE_TTL_MS) return node
+  return { ...node, id: good.node.id, name: good.node.name, reachable: true, agents: good.node.agents, stale: true, staleSince: new Date(good.at).toISOString(), checking: true }
+}
+/** The day view's last good answer per node; only its agents are reused. */
+const lastGoodDayAgents = new Map<string, { node: NodeLive; at: number }>()
+
 /** Test-only. */
 export function resetLiveCaches(): void {
   lastGoodNode.clear()
+  lastGoodDayAgents.clear()
   nodeIdentity.clear()
   inflightSnapshots.clear()
   recentSnapshots.clear()
