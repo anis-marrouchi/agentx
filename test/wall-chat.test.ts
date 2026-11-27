@@ -895,13 +895,23 @@ describe("Hub chat composer script (#2101 P7)", () => {
     expect(JSON.parse(c.ls.get("ax-hub-chat-model")!)).toEqual({ scout: "haiku" })
   })
 
-  it("shows a codex agent's own model, with nothing to pick", () => {
+  it("offers Codex's seed models to a codex agent (#2349)", () => {
     const c = composer()
     c.setAgent("forge")
     c.api.onAgent("forge", "Forge", { tier: "codex-cli", model: "gpt-6.2-sol" })
+    expect(c.el("hc-model").hidden).toBe(false)
+    expect(c.el("hc-model").innerHTML).toContain('<option value="gpt-5.6-luna">')
+    expect(c.el("hc-model").innerHTML).toContain('<option value="">Gpt-6.2-sol (own)</option>')
+    expect(c.api.model()).toBe("")
+  })
+
+  it("shows an opencode agent's own model, with nothing to pick", () => {
+    const c = composer()
+    c.setAgent("forge")
+    c.api.onAgent("forge", "Forge", { tier: "opencode", model: "openrouter/some-model" })
     expect(c.el("hc-model").hidden).toBe(true)
     expect(c.el("hc-model-own").hidden).toBe(false)
-    expect(c.el("hc-model-own").textContent).toBe("gpt-6.2-sol")
+    expect(c.el("hc-model-own").textContent).toBe("openrouter/some-model")
     expect(c.api.model()).toBe("")
   })
 })
