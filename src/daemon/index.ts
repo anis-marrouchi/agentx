@@ -16,6 +16,7 @@ import { closeSync, constants as fsConstants, createReadStream, fstatSync, openS
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
 import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize } from "path"
+import { randomBytes } from "crypto"
 import { homedir } from "os"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
@@ -259,6 +260,8 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { writeQueueAtClose } from "@/daemon/upgrade-queue-record"
+import { drainAsk, keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
+import { UPGRADE_KEEP_MS } from "@/daemon/voice-requests-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
 import { readAccountsPlanUsage } from "@/agents/plan-usage-accounts"
@@ -484,6 +487,16 @@ export class AgentXDaemon {
   private calls?: CallService
   /** AgentX Voice's open-requests list (#1455); needs SQLite. */
   private voiceRequests: VoiceRequestStore | null = null
+  /** Rows kept by the last daemon's upgrade drain, being sent at boot
+   *  (#2502). New widget rows wait for it, so the kept ones go first. */
+  private voiceReplay: Promise<unknown> | null = null
+  /** Kept rows the replay has sent, by request id: /ask calls it once the row has started (#2502 B1). */
+  private readonly replaySent = new Map<string, () => void>()
+  /** Marks the boot replay's own /ask calls, which must not wait for it. */
+  private readonly replayToken = randomBytes(16).toString("hex")
+  /** When the shutdown began, and when its drain gives up (#2502). */
+  private shutdownAt: number | null = null
+  private drainEndsAt: number | null = null
   /** Watched WhatsApp chats (src/whatsapp-triage). Null without SQLite. */
   private waTriage: TriageService | null = null
   private assistantStore(): AssistantStore | undefined { return this._assistant }
@@ -1675,9 +1688,62 @@ export class AgentXDaemon {
     process.on("SIGTERM", () => shutdown("SIGTERM"))
   }
 
+  /** POST /ask during the drain: keep the widget's row, or null (#2502). */
+  private keepAskForUpgrade(body: Record<string, unknown>): { status: number; body: unknown } | null {
+    const now = Date.now()
+    const endsAt = this.drainEndsAt ?? now + drainLimitMs({
+      configSeconds: this.config.shutdown?.drainTimeoutSeconds,
+      env: process.env,
+      agentSeconds: this.registry.runningAgentDrainSeconds(),
+    })
+    const kept = keepAskForUpgrade({ store: this.voiceRequests, body, msLeft: endsAt - now, now })
+    if (!kept) return null
+    this.log(`[upgrade-keep] kept widget request ${String(body.request)} for the next daemon`)
+    try {
+      writeWidgetKeep(resolve(process.cwd(), ".agentx"), new Date(this.shutdownAt ?? now).toISOString(), { kept: 1 })
+    } catch (err) {
+      this.log(`[upgrade-keep] could not record the kept count: ${(err as Error).message}`)
+    }
+    return kept
+  }
+
+  /** Send the rows the last daemon kept during its upgrade drain, once,
+   *  oldest first, through this daemon's own /ask (#2502). */
+  private replayKeptAsks(port: number, host?: string): void {
+    const store = this.voiceRequests
+    if (!store) return
+    const rows = store.keptForUpgrade()
+    const agentxDir = resolve(process.cwd(), ".agentx")
+    try {
+      writeWidgetKeep(agentxDir, new Date(Date.now() - UPGRADE_KEEP_MS).toISOString(), { replayed: rows.length })
+    } catch (err) {
+      this.log(`[upgrade-keep] could not record the replay count: ${(err as Error).message}`)
+    }
+    if (!rows.length) return
+    this.log(`[upgrade-keep] sending ${rows.length} widget request(s) kept during the upgrade`)
+    const target = host && host !== "0.0.0.0" && host !== "::" ? host : "127.0.0.1"
+    this.voiceReplay = replayKept({
+      store,
+      log: (line) => this.log(line),
+      ask: async (row, sent) => {
+        this.replaySent.set(row.id, sent)
+        try {
+          await postKeptAsk(
+            `http://${target}:${port}/ask`,
+            { "content-type": "application/json", "user-agent": "AgentXVoice/replay", "x-agentx-replay": this.replayToken },
+            { message: row.question, agent: row.agentId, request: row.id, ...(row.session ? { session: row.session } : {}) },
+          )
+        } finally {
+          this.replaySent.delete(row.id)
+        }
+      },
+    }).finally(() => { this.voiceReplay = null })
+  }
+
   async stop(): Promise<void> {
     const start = Date.now()
     this.shuttingDown = true
+    this.shutdownAt ??= start
     this.delegations.stop()
     planUsageReader.stop()
     this.voiceTalk.close()
@@ -1742,6 +1808,7 @@ export class AgentXDaemon {
         agentSeconds: this.registry.runningAgentDrainSeconds(),
       })
       const drainStart = Date.now()
+      this.drainEndsAt = drainStart + drainTimeoutMs
       const inflightCount = () => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
       let active = inflightCount()
       if (active > 0) {
@@ -5102,6 +5169,17 @@ export class AgentXDaemon {
       // Draining for a restart: nothing new starts; in-flight work still
       // reaches what it needs (shutdown.ts startsNewWork).
       if (this.shuttingDown && startsNewWork(req.method, (req.url || "/").split("?")[0])) {
+        // A widget message is kept on its open-requests row and runs on the
+        // next daemon; the widget hears that at once (#2502).
+        if (req.method === "POST" && (req.url || "/").split("?")[0] === "/ask") {
+          const kept = await drainAsk({
+            authorized: () => this.checkMeshAuth(req, res, "/ask"),
+            readBody: () => readBody(req),
+            keep: (body) => this.keepAskForUpgrade(body),
+          })
+          if (kept === "refused") return
+          if (kept) { this.json(res, kept.status, kept.body); return }
+        }
         res.setHeader("Retry-After", "30")
         this.json(res, 503, { error: "daemon is restarting; retry shortly" })
         return
@@ -5130,6 +5208,7 @@ export class AgentXDaemon {
 
     this.httpServer.listen(port, host || "0.0.0.0", () => {
       this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
+      this.replayKeptAsks(port, host)
       // Surface a mis-declared inbox at boot rather than at the first
       // foreign message, when the sender would just see a 503.
       const broken = unresolvableInboxes(this.config, (id) => !!this.registry.getAgent(id))
@@ -9881,7 +9960,11 @@ export class AgentXDaemon {
           }
           // The row follows the turn: thinking now, then answered or failed
           // with what is sent back, so any client can read it later.
+          // Rows kept by the last daemon's upgrade go first, in order (#2502).
+          if (requestId && this.voiceReplay && req.headers["x-agentx-replay"] !== this.replayToken) await this.voiceReplay
           if (requestId) this.voiceRequests?.start(requestId)
+          // A kept row has started: the replay sends the next one (#2502 B1).
+          if (requestId && req.headers["x-agentx-replay"] === this.replayToken) this.replaySent.get(requestId)?.()
           // A throw after start() would skip reply() and leave the row
           // thinking until the next restart: settle it with the error.
           let settled = false

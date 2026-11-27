@@ -32,6 +32,15 @@ enum AgentClient {
         var dropped = false
         /// Files the agent declared (#1670), shown under the text.
         var artifacts: [Artifact] = []
+        /// The daemon was upgrading and kept the request for the next one
+        /// (#2502): `text` says so, and the real answer comes later.
+        var kept = false
+    }
+
+    /// The daemon could not be reached at all (down, or restarting).
+    static func unreachable(_ error: Error) -> Bool {
+        guard let e = error as? URLError else { return false }
+        return [.cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .networkConnectionLost].contains(e.code)
     }
 
     /// What, if anything, to say about the step now running.
@@ -113,7 +122,7 @@ enum AgentClient {
                 ["text": text, "agentId": agentID, "kind": kind, "wait": true], timeout: 900)
             guard let http = response as? HTTPURLResponse else { return false }
             return (200..<300).contains(http.statusCode)
-        } catch let e as URLError where [.cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .networkConnectionLost].contains(e.code) {
+        } catch let e where unreachable(e) {
             return false
         } catch {
             // Cancelled or timed out after the daemon took the line:
@@ -311,6 +320,7 @@ enum AgentClient {
             let duration: Int?
             let dropped: String?
             let artifacts: [Artifact]?
+            let kept: Bool?
         }
         let reply = try? JSONDecoder().decode(Reply.self, from: data)
         let voice = reply?.voice
@@ -326,7 +336,8 @@ enum AgentClient {
         if status == 202,
            let queuedText = reply?.text, !queuedText.isEmpty {
             return Answer(text: queuedText, written: nil, buttons: [], imageURL: nil,
-                          durationMs: reply?.duration, agentID: reply?.agentId, voice: voice)
+                          durationMs: reply?.duration, agentID: reply?.agentId, voice: voice,
+                          kept: reply?.kept == true)
         }
 
         if let status, !(200..<300).contains(status) {
@@ -381,10 +392,13 @@ enum AgentClient {
     }
 
     /// A new row on the daemon: its id, or nil when the daemon has none.
-    static func openRequest(agentID: String, question: String, waiting: Bool) async -> String? {
+    /// `clientKey`: the app's id for the message; sent again, it is the
+    /// same row on the daemon (#2502).
+    static func openRequest(agentID: String, question: String, waiting: Bool, clientKey: String) async -> String? {
         struct Reply: Decodable { let request: RemoteRow? }
         guard let (data, _) = try? await post("/voice/requests",
-                                              ["agentId": agentID, "question": question, "waiting": waiting], timeout: 3)
+                                              ["agentId": agentID, "question": question, "waiting": waiting,
+                                               "clientKey": clientKey], timeout: 3)
         else { return nil }
         return (try? JSONDecoder().decode(Reply.self, from: data))?.request?.id
     }

@@ -54,6 +54,12 @@ struct OpenRequests {
         /// From the daemon while it thinks: why its turn has not started
         /// yet (the computer has no room). Nil once the turn runs.
         var held: String? = nil
+        /// This app's own id for the message, sent with it to the daemon:
+        /// sent again after the daemon was down, it is still one row (#2502).
+        var clientKey: String = UUID().uuidString
+        /// The daemon could not be reached: the words wait here and go
+        /// once AgentX answers again, oldest first (#2502).
+        var awaitsDaemon = false
 
         /// Thinking, but its turn has not started: it waits for room.
         var isHeld: Bool { phase == .thinking && held != nil }
@@ -155,10 +161,34 @@ struct OpenRequests {
         update(id) { $0.phase = .failed(reason); $0.since = now; $0.held = nil }
     }
 
+    /// The daemon kept the row during an upgrade (#2502): the next daemon
+    /// runs it, so the answer is the daemon's to report, through `sync`.
+    mutating func keptForUpgrade(_ id: Int, line: String, at now: Date) {
+        update(id) { $0.phase = .thinking; $0.since = now; $0.local = false; $0.held = line }
+    }
+
+    /// The daemon could not be reached: the row waits here until it is back.
+    mutating func awaitDaemon(_ id: Int, at now: Date) {
+        update(id) { $0.phase = .waiting; $0.since = now; $0.held = nil; $0.awaitsDaemon = true }
+    }
+
+    /// AgentX answers again: rows that waited for it may go. Their ids,
+    /// oldest first.
+    mutating func daemonBack() -> [Int] {
+        var ids: [Int] = []
+        for i in requests.indices where requests[i].awaitsDaemon {
+            requests[i].awaitsDaemon = false
+            ids.append(requests[i].id)
+        }
+        return ids
+    }
+
     /// The oldest request waiting for `agentID`, now thinking, if there is
-    /// one and nothing else for that agent is. This app runs it.
+    /// one and nothing else for that agent is. This app runs it. A row
+    /// waiting for the daemon to come back does not go yet.
     mutating func startNext(for agentID: String, at now: Date) -> Int? {
         guard !requests.contains(where: { $0.agentID == agentID && $0.phase == .thinking }),
+              !requests.contains(where: { $0.agentID == agentID && $0.awaitsDaemon }),
               let i = requests.firstIndex(where: { $0.agentID == agentID && $0.phase == .waiting }) else { return nil }
         requests[i].phase = .thinking
         requests[i].since = now
@@ -511,6 +541,8 @@ struct OpenRequests {
 
     /// The pill's line when the daemon stops answering.
     static let unreachableNote = "AgentX isn’t answering · Requests come back when it does"
+    /// Said when a message cannot reach the daemon (#2502).
+    static let restartingLine = "AgentX is restarting. Your message is kept and goes as soon as it is back."
 
     /// The list shows placeholder rows only when the daemon has not
     /// answered the first read after this long.
