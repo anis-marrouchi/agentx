@@ -49,3 +49,15 @@ export const SheetContent = React.forwardRef<
   </DialogPrimitive.Portal>
 ))
 SheetContent.displayName = "SheetContent"
+
+// S4: a header and footer for a Sheet that shows content, not a menu.
+// The title stays main's plain Radix Title (the phone menu gives it sr-only).
+export const SheetHeader = ({ className, ...p }: React.HTMLAttributes<HTMLDivElement>) =>
+  <div data-slot="sheet-header" className={cn("flex flex-col gap-1 p-4 pr-10", className)} {...p} />
+export const SheetFooter = ({ className, ...p }: React.HTMLAttributes<HTMLDivElement>) =>
+  <div data-slot="sheet-footer" className={cn("mt-auto flex flex-col gap-2 p-4", className)} {...p} />
+
+export const SheetDescription = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Description>, React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
+>(({ className, ...props }, ref) => <DialogPrimitive.Description ref={ref} data-slot="sheet-description" className={cn("text-sm text-muted-foreground", className)} {...props} />)
+SheetDescription.displayName = "SheetDescription"

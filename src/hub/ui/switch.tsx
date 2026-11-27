@@ -11,7 +11,7 @@ export const Switch = React.forwardRef<
     data-slot="switch"
     className={cn(
       "peer inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent shadow-xs transition-colors cursor-pointer",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+      "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
       "disabled:cursor-not-allowed disabled:opacity-50",
       "data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
       className,

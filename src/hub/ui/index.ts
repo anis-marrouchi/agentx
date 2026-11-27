@@ -6,7 +6,6 @@ export { Badge, badgeVariants, type BadgeProps } from "./badge"
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "./card"
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs"
 export { Dialog, DialogTrigger, DialogClose, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "./dialog"
-export { Sheet, SheetTrigger, SheetClose, SheetTitle, SheetContent } from "./sheet"
 export { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./tooltip"
 export { Skeleton, Kbd, StatusDot, EmptyState, type DotState } from "./misc"
 export { Icon, ICON_NAMES } from "./icons"
@@ -15,3 +14,10 @@ export { Switch } from "./switch"
 export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from "./popover"
 export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectLabel, SelectItem, SelectSeparator } from "./select"
 export { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator, CommandShortcut } from "./command"
+export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetFooter, SheetTitle, SheetDescription } from "./sheet"
+export {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent,
+} from "./dropdown-menu"
+export { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./collapsible"
+export { Toaster, toast } from "./sonner"

@@ -1,12 +1,13 @@
 # Third-party notices for src/hub/ui
 
-Button, Badge, Card, Tabs, Dialog, Sheet, Tooltip, Skeleton, Switch,
-Popover, Select and Command start from
+Button, Badge, Card, Tabs, Dialog, Sheet, Tooltip, Skeleton, Switch, Popover,
+Select, Command, DropdownMenu, Collapsible and Toaster start from
 [shadcn/ui](https://github.com/shadcn-ui/ui) components, copied in and
 restyled on the AgentX tokens (`src/daemon/ui/tokens.ts`). Behaviour comes
 from [Radix UI Primitives](https://github.com/radix-ui/primitives) (MIT),
 used as a package; Command is built on [cmdk](https://github.com/pacocoursey/cmdk)
-(MIT), also used as a package.
+(MIT) and Toaster on [Sonner](https://github.com/emilkowalski/sonner) (MIT),
+also used as packages.
 
 shadcn/ui is under the MIT licence:
 

@@ -20,7 +20,7 @@ export const PopoverContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         "z-50 w-72 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-float outline-none",
-        "origin-(--radix-popover-content-transform-origin)",
+        "origin-(--radix-popover-content-transform-origin) data-[state=open]:animate-ax-pop-in data-[state=closed]:animate-ax-pop-out",
         className,
       )}
       {...props}
