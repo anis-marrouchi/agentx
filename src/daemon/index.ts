@@ -238,6 +238,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { readWorkspace } from "@/daemon/workspace-files-api"
+import { findProjectRoot, projectName, readProject } from "@/daemon/project-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
@@ -7845,6 +7846,25 @@ export class AgentXDaemon {
         if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
         const { ok: _ok, ...body } = out
         this.json(res, 200, body)
+        return
+      }
+      // The Git project the agent works in, read only, for the Hub's Project
+      // tab (#2455): found from the run's own files, never named by the
+      // caller (project-files-api.ts). { kind: "none" } when there is none.
+      // GET /agents/:agentId/project?task=<id>&path=<relative>. Mesh-gated (mesh-auth.ts).
+      const projectMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/project$/)
+      if (projectMatch) {
+        const agentId = decodeURIComponent(projectMatch[1])
+        const ws = this.registry.getAgent(agentId)?.workspace
+        if (!ws) { this.json(res, 404, { error: "agent not found" }); return }
+        const root = findProjectRoot(ws, url.searchParams.get("task") || "", {
+          record: (id) => this.registry.getTaskRecord(agentId, id),
+          recent: () => this.registry.listTaskHistory(agentId, 5).map((r) => r.id),
+        })
+        const out = readProject(root, url.searchParams.get("path") || "")
+        if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
+        const { ok: _ok, ...body } = out
+        this.json(res, 200, root ? { ...body, name: projectName(root) } : body)
         return
       }
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)

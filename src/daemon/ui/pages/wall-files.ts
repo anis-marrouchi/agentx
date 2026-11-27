@@ -166,7 +166,7 @@ export function wflLoader(label: string): string {
 }
 
 /** The Files tab: changed files, then read ones, artifacts, attachments, and the PR when there is one. */
-export function filesTabHtml(r: RunFiles, o: { key: string; changes?: { id: string; ref: string } | null }): string {
+export function filesTabHtml(r: RunFiles, o: { key: string; changes?: { id: string; ref: string } | null; noRead?: boolean }): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   const word: Record<string, string> = { wrote: "wrote", edited: "edited", read: "read" }
   const name = (p: string) => p.replace(/^.*\//, "")
@@ -180,7 +180,8 @@ export function filesTabHtml(r: RunFiles, o: { key: string; changes?: { id: stri
   for (const a of r.attached) rows.push(`<li><span class="wfl__i"><span class="wfl__op is-att">${wflIcon("att")}attached</span><b>${esc(a)}</b><small>you attached it</small></span></li>`)
   if (!rows.length) return `<div class="ax-af-empty"><strong>No files yet</strong>The runs here read, wrote or attached none.<button type="button" class="wcx__re" data-cx="freload" data-src="${esc(o.key)}">Reload</button></div>`
   const changed = r.files.filter((f) => f.op !== "read").length
-  const sum = [`${changed} changed`, `${r.files.length - changed} read`]
+  // noRead: a list of what a run made, its reads kept apart (#2455).
+  const sum = o.noRead ? [`${changed} changed`] : [`${changed} changed`, `${r.files.length - changed} read`]
   if (r.artifacts.length) sum.push(`${r.artifacts.length} sent`)
   if (r.attached.length) sum.push(`${r.attached.length} attached`)
   return `<p class="wcx__at">${sum.join(" · ")}</p><ul class="wfl">${rows.join("")}</ul>`
@@ -210,30 +211,37 @@ export interface WorkspaceView {
   error: string
 }
 
-/** The Files tab's Workspace part: the folder in view, its parents as a path to climb, its folders and files. */
-export function workspaceHtml(w: WorkspaceView | null | undefined, key: string): string {
+/** The Files tab's Workspace part: the folder in view, its parents as a path to climb, its folders and files.
+ *  `o` draws another folder tree the same way (the Hub's Project tab, #2455):
+ *  its heading (none when ""), the name of its top, and the data-cx its
+ *  folder and file buttons carry. */
+export function workspaceHtml(
+  w: WorkspaceView | null | undefined, key: string,
+  o: { title?: string; top?: string; dirCx?: string; fileCx?: string } = {},
+): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   if (!w) return ""
+  const title = o.title ?? "Workspace", top = o.top ?? "workspace", dirCx = o.dirCx ?? "wsdir", fileCx = o.fileCx ?? "wsfile"
   const kb = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
   const parts = w.dir ? w.dir.split("/") : []
-  const crumbs = [`<button type="button" class="wfl__cr" data-cx="wsdir" data-src="${esc(key)}" data-path="">workspace</button>`]
-  parts.forEach((p, i) => crumbs.push(`<button type="button" class="wfl__cr" data-cx="wsdir" data-src="${esc(key)}" data-path="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`))
-  const head = `<h4 class="wfl__h">${wflIcon("dir")}Workspace</h4><nav class="wfl__crs" aria-label="Folder">${crumbs.join('<span aria-hidden="true">/</span>')}</nav>`
-  if (w.error) return head + `<p class="ax-wall__empty">Workspace not available: ${esc(w.error)}.</p>`
-  if (!w.list) return head + wflLoader("Reading the workspace…")
+  const crumbs = [`<button type="button" class="wfl__cr" data-cx="${dirCx}" data-src="${esc(key)}" data-path="">${esc(top)}</button>`]
+  parts.forEach((p, i) => crumbs.push(`<button type="button" class="wfl__cr" data-cx="${dirCx}" data-src="${esc(key)}" data-path="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`))
+  const head = (title ? `<h4 class="wfl__h">${wflIcon("dir")}${esc(title)}</h4>` : "") + `<nav class="wfl__crs" aria-label="Folder">${crumbs.join('<span aria-hidden="true">/</span>')}</nav>`
+  if (w.error) return head + `<p class="ax-wall__empty">${esc(title || top)} not available: ${esc(w.error)}.</p>`
+  if (!w.list) return head + wflLoader(`Reading the ${esc(title ? title.toLowerCase() : top)}…`)
   const at = (n: string) => (w.dir ? `${w.dir}/${n}` : n)
   const rows = (w.list.entries || []).map((e) => e.kind === "dir"
-    ? `<li><button type="button" class="wfl__i wfl__ws" data-cx="wsdir" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op is-dir">${wflIcon("dir")}folder</span><b>${esc(e.name)}</b></button></li>`
-    : `<li><button type="button" class="wfl__i wfl__ws" data-cx="wsfile" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op">${wflIcon("file")}file</span><b>${esc(e.name)}</b><small>${kb(e.size)}</small></button></li>`)
+    ? `<li><button type="button" class="wfl__i wfl__ws" data-cx="${dirCx}" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op is-dir">${wflIcon("dir")}folder</span><b>${esc(e.name)}</b></button></li>`
+    : `<li><button type="button" class="wfl__i wfl__ws" data-cx="${fileCx}" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op">${wflIcon("file")}file</span><b>${esc(e.name)}</b><small>${kb(e.size)}</small></button></li>`)
   if (!rows.length) return head + `<p class="ax-wall__empty">This folder is empty.</p>`
   return head + `<ul class="wfl">${rows.join("")}</ul>` + (w.list.more ? `<p class="wcx__at">Only the first 500 are listed.</p>` : "")
 }
 
 /** One workspace file, as it is now, in the panel. */
-export function workspaceFileHtml(f: { path: string; content?: string; size?: number; error?: string; loading?: boolean } | null | undefined): string {
+export function workspaceFileHtml(f: { path: string; content?: string; size?: number; error?: string; loading?: boolean } | null | undefined, where = "the workspace"): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   if (!f) return `<p class="ax-wall__empty">Nothing to show here any more.</p>`
-  const head = `<p class="wcx__at"><code>${esc(f.path)}</code> · as it is now in the workspace</p>`
+  const head = `<p class="wcx__at"><code>${esc(f.path)}</code> · as it is now in ${esc(where)}</p>`
   if (f.error) return head + `<p class="ax-wall__empty">Not shown: ${esc(f.error)}.</p>`
   if (f.loading || typeof f.content !== "string") return head + wflLoader("Reading the file…")
   const lines = f.content.split("\n").map((l, i) => `<tr><td class="wdf__n">${i + 1}</td><td class="wdf__c">${esc(l)}</td></tr>`).join("")

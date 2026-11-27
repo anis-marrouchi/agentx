@@ -51,12 +51,21 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
    **Check it worked:** ask an agent for a long answer, for example "List ten things you can do, with a short line each". Words appear within a few seconds, before the run ends, and **bold** words show bold, with no asterisks.
 
    **If something is wrong:** if the whole answer lands at once at the end, the browser could not open the run's live output (a machine that does not answer, or a proxy that holds streams back); the answer still shows when the run ends. Reload the page and try again, and check that the machine shows as reachable in the side menu.
-4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
+4. **Right, the tabs:** the files of the chat in view, in three tabs.
+   - **Run artifacts** (always first): what the agent's current run writes, edits or sends. While the run works, each new file shows as soon as the agent touches it, under **Running**. **Files it only read** opens the files it read. **Other runs in this chat** lists the chat's earlier runs by what you asked; pick one to see its files, and **Current run** brings you back. Select a file to see what the run changed in it.
+   - **Project**: the files of the Git repository (GitHub or GitLab) the agent works in, found from the files its runs touch. The tab is hidden when the agent works in no repository.
+   - **Workspace**: the agent's workspace, one folder at a time.
+
+   Project and Workspace are read only. Files and folders whose name starts with a dot (`.git`, `.github`, `.claude`, ...), `node_modules` and files that usually hold secrets are never listed.
+
+   **Check it worked:** ask an agent to write a short file, for example "Write a file notes/hello.md with one line". While it works, **hello.md** appears under **Run artifacts** with **wrote**. Pick an earlier run under **Other runs in this chat**: the list changes to that run's files.
+
+   **If something is wrong:** if **Run artifacts** stays on **Nothing yet** until the run ends, the browser could not open the run's live output; the files still show when the run ends (press the reload button at the top right of the tabs). If **Project** is missing, the agent's runs touched no file inside a Git repository and its workspace is not one.
 5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
-6. **Phone:** the chat takes the screen. The menu button at the top left opens the side menu; the panel button at the top right opens the Files tab.
+6. **Phone:** the chat takes the screen. The menu button at the top left opens the side menu; the panel button at the top right opens the files tabs.
 
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)

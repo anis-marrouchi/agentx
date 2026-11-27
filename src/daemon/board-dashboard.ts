@@ -1408,6 +1408,21 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // The Git project the agent works in, read only, for the Hub's Project
+  // tab (#2455, project-files-api.ts on the node). Owner only, like the
+  // workspace above.
+  //   GET /api/task/project?node=<url>&agent=<id>&task=<id>&path=<relative>
+  if (method === "GET" && path === "/api/task/project") {
+    if (!isDashboardOwner(req, ctx)) { sendJson(res, 401, { error: "unauthorized" }); return }
+    const u = new URL(req.url || "/", "http://localhost")
+    const nodeUrl = u.searchParams.get("node")
+    const agentId = u.searchParams.get("agent")
+    if (!nodeUrl || !agentId) { sendJson(res, 400, { error: "node and agent query params required" }); return }
+    const up = new URLSearchParams({ task: u.searchParams.get("task") || "", path: u.searchParams.get("path") || "" })
+    await proxyNodeGet(res, ctx, nodeUrl, `/agents/${encodeURIComponent(agentId)}/project?${up}`, "application/json; charset=utf-8")
+    return
+  }
+
   // Cross-node action proxy: stop / follow-up a running task on any daemon
   // in the dashboard's allowlist. The browser talks to the dashboard origin
   // (same as /api/task/stream), and the dashboard forwards to the daemon's
