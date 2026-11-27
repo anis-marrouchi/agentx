@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.301.0](https://github.com/anis-marrouchi/agentx/compare/v0.300.1...v0.301.0) (2026-11-27)
+
+
+### Features
+
+* **a2a:** hold a hand-off while its callee is over its usage limit ([#2485](https://github.com/anis-marrouchi/agentx/issues/2485)) ([316bf2d](https://github.com/anis-marrouchi/agentx/commit/316bf2dc14eb37521f5534a10e6e124730e19e7b)), closes [#2467](https://github.com/anis-marrouchi/agentx/issues/2467)
+* **a2a:** send a hand-off again after a restart instead of failing it ([#2482](https://github.com/anis-marrouchi/agentx/issues/2482)) ([5f6f163](https://github.com/anis-marrouchi/agentx/commit/5f6f163d5b1b06a146d38fb00595da8640eabce8)), closes [#2467](https://github.com/anis-marrouchi/agentx/issues/2467)
+
 ## [0.300.1](https://github.com/anis-marrouchi/agentx/compare/v0.300.0...v0.300.1) (2026-11-27)
 
 
