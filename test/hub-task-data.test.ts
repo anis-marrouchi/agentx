@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  allAgents, closeCall, closeConfirmText, foldEvents, hm, isOpen, liveRunOf, mentionedAgents, mentionText, nodeAgents, oldRunHref,
+  allAgents, closeCall, closeConfirmText, foldEvents, hm, isOpen, mentionedAgents, mentionText, nodeAgents,
   planCount, proofOf, shortAgo, stateWord, stepState, taskAddress, taskFacts, taskFlags, taskLinks, taskPageHref, taskRead,
   taskStages, taskThreadPath, waitReason, waitsOn, type TaskEvent, type TaskPlanStep, type TaskPost,
 } from "../src/hub/task/task-data"
@@ -131,7 +131,6 @@ describe("facts, flags and links", () => {
       ["proof", "Proof: tests pass", null],
       ["comment", "Comment by coder", "https://c/1"], ["comment", "Comment by coder", "https://c/2"], ["comment", "Comment by coder", "https://c/3"],
     ])
-    expect(oldRunHref("t1", "coder", "http://n")).toBe("#page=task&task=t1&agent=coder&node=http%3A%2F%2Fn")
   })
 })
 
@@ -165,8 +164,6 @@ describe("actions", () => {
     expect(nodeAgents(live, { name: "here" }).map((a) => a.id)).toEqual(["coder", "qa"])
     expect(nodeAgents(live, { name: "far", peer: "http://far" }).map((a) => a.id)).toEqual(["coder", "scout"])
     expect(allAgents(live).map((a) => [a.id, a.peer])).toEqual([["coder", null], ["qa", null], ["scout", "http://far"]])
-    expect(liveRunOf(live, "qa")).toEqual({ taskId: "t7", nodeUrl: "http://here" })
-    expect(liveRunOf(live, "coder")).toBeNull()
   })
   it("finds @mentions by id or name, in order, at word boundaries, not the owner", () => {
     const agents = allAgents(live)

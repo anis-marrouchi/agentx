@@ -7,7 +7,8 @@
 //   Stands   Asked, Working, Waits (only while it waits), Done; why it waits.
 //   Plan     each step with its owner, state and proof ("2 of 5").
 //   Result   the agent's answer, Markdown.
-//   Runs     the slot for the live run and the past runs (T2: TaskRuns).
+//   Runs     the live run with its steer box and Stop, then the past runs,
+//            each opening in place (TaskRuns.tsx, T2).
 //   Facts    who asked, chat, project, goal, times, estimate.
 //   Links    home, proof, comments posted there.
 //   Thread   the timeline, then the comment box and the actions.
@@ -17,7 +18,7 @@
 // Reads and writes are the old post page's (task-data.ts), sent to the node
 // that keeps the request.
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { Suspense, lazy, useEffect, useMemo, useState, type FormEvent } from "react"
 import { HUB_NAME } from "../../daemon/ui/hub-name"
 import { apiFetch, apiPost } from "../api"
 import { readBoot } from "../boot"
@@ -25,14 +26,17 @@ import { useLiveSnapshot } from "../live-react"
 import type { HubPageProps } from "../registry"
 import {
   Button, EmptyState, Icon, Kbd, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-  Tooltip, TooltipContent, TooltipTrigger, cn,
+  Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn,
 } from "../ui"
 import { Ago, FactList, LinkRow, PlanSteps, Prose, StageStrip, TaskSection, TaskSkeleton, Thread, planLabel } from "./parts"
 import {
-  allAgents, closeCall, closeConfirmText, isOpen, liveRunOf, mentionText, mentionedAgents, nodeAgents, oldRunHref, stateWord,
+  allAgents, closeCall, closeConfirmText, isOpen, mentionText, mentionedAgents, nodeAgents, stateWord,
   taskAddress, taskFacts, taskFlags, taskLinks, taskRead, taskStages, taskThreadPath, waitReason,
   type CloseKind, type LiveSnapshot, type TaskRead, type TaskThreadReply,
 } from "./task-data"
+import { requestRuns } from "./runs"
+
+const TaskRuns = lazy(() => import("./TaskRuns"))
 
 const STATE_ICON: Record<string, { icon: string; tone: string }> = {
   in_progress: { icon: "loader-circle", tone: "text-primary" },
@@ -144,7 +148,7 @@ function TaskBody({ read, live, now, run }: { read: TaskRead; live: LiveSnapshot
         </TaskSection>
       )}
 
-      <RunsSlot read={read} live={live} run={run} />
+      <RunsSlot read={read} live={live} run={run} now={now} nameOf={nameOf} />
 
       <TaskSection id="facts" title="Facts">
         <FactList facts={facts} now={now} />
@@ -164,30 +168,15 @@ function TaskBody({ read, live, now, run }: { read: TaskRead; live: LiveSnapshot
   )
 }
 
-/**
- * The run panel's slot: the live run and the past runs. T2 (#2101) replaces
- * this body with `<TaskRuns events={read.events} nodeUrl={read.post.node?.daemonUrl ?? null} run={run} />`
- * from ./TaskRuns, which reserves its own height while it loads. Until then
- * it links to the old run page.
- */
-function RunsSlot({ read, live, run: _run }: { read: TaskRead; live: LiveSnapshot | undefined; run: string | null }) {
-  const p = read.post
-  const now = isOpen(p.state) ? liveRunOf(live, p.owner) : null
-  const last = p.lastRun
-  if (!now && !last) return null
+/** The live run and the past runs (TaskRuns.tsx), loaded on their own; a
+ *  block shaped like the run holds the place while they load. */
+function RunsSlot({ read, live, run, now, nameOf }: { read: TaskRead; live: LiveSnapshot | undefined; run: string | null; now: number; nameOf: (id: string) => string }) {
+  const runs = useMemo(() => requestRuns(read.events), [read.events])
+  if (!runs.length) return null
   return (
-    <section data-slot="task-runs" aria-label="Runs" className="flex flex-wrap gap-1.5">
-      {now && (
-        <a href={oldRunHref(now.taskId, p.owner, now.nodeUrl)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring can-hover:hover:bg-muted">
-          <Icon name="radio" className="size-3.5 text-primary" />Join live
-        </a>
-      )}
-      {last && (!now || now.taskId !== last.taskId) && (
-        <a href={oldRunHref(last.taskId, last.agentId, p.node?.daemonUrl)} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring can-hover:hover:bg-muted">
-          <Icon name="history" className="size-3.5 text-muted-foreground" />Last run
-        </a>
-      )}
-    </section>
+    <Suspense fallback={<Skeleton aria-label="Loading the runs" className="h-40 w-full rounded-xl" />}>
+      <TaskRuns runs={runs} taskNode={read.post.node} live={live} run={run} now={now} nameOf={nameOf} />
+    </Suspense>
   )
 }
 
