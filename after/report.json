@@ -1,0 +1,114 @@
+{
+  "target": "http://127.0.0.1:18931",
+  "checkedAt": "2026-11-27T19:23:09.164Z",
+  "results": [
+    {
+      "view": "jobledger",
+      "size": "1440-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-1440-light.png",
+      "problems": []
+    },
+    {
+      "view": "jobledger",
+      "size": "1180-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-1180-light.png",
+      "problems": []
+    },
+    {
+      "view": "jobledger",
+      "size": "390-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-390-light.png",
+      "problems": []
+    },
+    {
+      "view": "jobledger",
+      "size": "1440-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-1440-dark.png",
+      "problems": []
+    },
+    {
+      "view": "jobledger",
+      "size": "1180-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-1180-dark.png",
+      "problems": []
+    },
+    {
+      "view": "jobledger",
+      "size": "390-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/jobledger-390-dark.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "1440-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-1440-light.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "1180-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-1180-light.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "390-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-390-light.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "1440-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-1440-dark.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "1180-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-1180-dark.png",
+      "problems": []
+    },
+    {
+      "view": "needs-you",
+      "size": "390-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/needs-you-390-dark.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "1440-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-1440-light.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "1180-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-1180-light.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "390-light",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-390-light.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "1440-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-1440-dark.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "1180-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-1180-dark.png",
+      "problems": []
+    },
+    {
+      "view": "settings-agents",
+      "size": "390-dark",
+      "screenshot": "/Users/macbookpro/Developer/coder-workspace/.tmp/orca-shots/b3-box/out/after/settings-agents-390-dark.png",
+      "problems": []
+    }
+  ]
+}
