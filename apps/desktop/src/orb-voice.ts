@@ -12,7 +12,7 @@
 // audio, words or token are logged.
 
 import { ipcMain, type IpcMainEvent } from "electron"
-import { answerOf, caption, opening, MIN_TALK_MS, pageTokenOf, pickAgent, type AgentLike, type ThreadMessage } from "./orb-flow.js"
+import { answerOf, caption, opening, MIN_TALK_MS, oneAtATime, pageTokenOf, pickAgent, type AgentLike, type ThreadMessage } from "./orb-flow.js"
 import type { OrbView } from "./orb-preload.js"
 
 export interface OrbVoiceOptions {
@@ -31,11 +31,13 @@ export interface OrbVoiceOptions {
 const POLL_MS = 1_500
 const ANSWER_LIMIT_MS = 10 * 60_000
 const NOTE_MS = 6_000
+const STT_LIMIT_MS = 60_000
 
 let o: OrbVoiceOptions
 let token: string | null = null
 let thread: { id: string; node?: string; agent: string } | null = null
-let partialBusy = false
+// C11: one speech-to-text pass at a time, rolling or final.
+const stt = oneAtATime()
 // Each turn has a number; a newer press (or a stop) makes older work drop its result.
 let turn = 0
 let noteTimer: NodeJS.Timeout | null = null
@@ -45,14 +47,15 @@ async function authHeaders(extra: Record<string, string> = {}): Promise<Record<s
     try {
       const r = await fetch(`${o.base}/hub`)
       token = r.ok ? pageTokenOf(await r.text()) : ""
-    } catch {
+    } catch (err) {
+      o.log("orb: could not read the Hub page for its token; trying again next time", err)
       return extra // the dashboard is down; try again next time
     }
   }
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
 }
 
-async function call(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}): Promise<Response> {
+async function call(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit; signal?: AbortSignal } = {}): Promise<Response> {
   let r = await fetch(o.base + path, { ...init, headers: await authHeaders(init.headers) })
   if (r.status === 401 && token !== null) {
     token = null // rotated: read it again once
@@ -72,6 +75,8 @@ async function transcribe(bytes: ArrayBuffer, type: string, ms: number): Promise
     method: "POST",
     headers: { "Content-Type": type.split(";")[0] || "audio/webm", "X-Audio-Duration-Ms": String(Math.round(ms)) },
     body: Buffer.from(bytes),
+    // A stuck pass must not hold the final one back for ever (one at a time, C11).
+    signal: AbortSignal.timeout(STT_LIMIT_MS),
   })
   if (!r.ok) throw new Error(await errorOf(r))
   const d = (await r.json()) as { text?: string }
@@ -98,7 +103,8 @@ export async function nodeDefault(): Promise<string> {
     const r = await fetch(`${o.daemonUrl}/health`)
     const d = (await r.json()) as { node?: { defaultAgent?: unknown } }
     return typeof d.node?.defaultAgent === "string" ? d.node.defaultAgent : ""
-  } catch {
+  } catch (err) {
+    o.log("orb: the daemon's /health did not answer; no node default agent", err)
     return ""
   }
 }
@@ -107,12 +113,16 @@ export async function nodeDefault(): Promise<string> {
 export async function orbAgents(): Promise<{ id: string; name: string }[]> {
   try {
     const r = await call("/api/agents")
-    if (!r.ok) return []
+    if (!r.ok) {
+      o.log(`orb: the dashboard's agent list answered HTTP ${r.status}`)
+      return []
+    }
     const d = (await r.json()) as AgentLike[] | { agents?: AgentLike[] }
     return (Array.isArray(d) ? d : d.agents || [])
       .map((a) => ({ id: a.id || a.name || "", name: a.name || a.id || "" }))
       .filter((a) => a.id)
-  } catch {
+  } catch (err) {
+    o.log("orb: could not read the dashboard's agent list", err)
     return []
   }
 }
@@ -132,7 +142,8 @@ async function finalTake(bytes: ArrayBuffer, type: string, ms: number): Promise<
   if (ms < MIN_TALK_MS) return note("Hold the orb while you speak, then let go.")
   o.show({ state: "thinking", text: "Writing it down…" })
   try {
-    const words = await transcribe(bytes, type, ms)
+    // Waits for a rolling pass still running, so two never run at once (C11).
+    const words = await stt.run(() => transcribe(bytes, type, ms))
     if (!live()) return
     if (!words) return note("Nothing was heard.", "Try again a little closer to the microphone.")
     const agent = await agentNow()
@@ -194,19 +205,22 @@ async function speak(name: string, text: string, live: () => boolean): Promise<v
 
 export function setupOrbVoice(opts: OrbVoiceOptions): void {
   o = opts
-  // A rolling pass (C11): the page asks at most one at a time; one in flight here drops the next.
-  ipcMain.on("orb:partial", (e, bytes: unknown, type: unknown, ms: unknown) => {
-    if (!o.isOrb(e) || partialBusy || !(bytes instanceof ArrayBuffer) || typeof type !== "string" || !Number.isFinite(ms)) return
-    partialBusy = true
+  // A rolling pass (C11). Every ask gets one reply, with the page's pass id,
+  // so the page is never left waiting: the words, or null when the pass was
+  // dropped (another pass still runs), failed, or belongs to an older turn.
+  ipcMain.on("orb:partial", (e, bytes: unknown, type: unknown, ms: unknown, id: unknown) => {
+    if (!o.isOrb(e)) return
+    if (!(bytes instanceof ArrayBuffer) || typeof type !== "string" || !Number.isFinite(ms)) return o.send("orb:partial", null, id)
     const mine = turn
-    transcribe(bytes, type, ms as number)
-      .then((text) => {
-        if (mine === turn) o.send("orb:partial", caption(text))
-      })
-      .catch(() => o.send("orb:partial", null)) // a failed pass: the page keeps the meter
-      .finally(() => {
-        partialBusy = false
-      })
+    const pass = stt.tryRun(() => transcribe(bytes, type, ms as number))
+    if (!pass) return o.send("orb:partial", null, id)
+    pass.then(
+      (text) => o.send("orb:partial", mine === turn ? caption(text) : null, id),
+      (err) => {
+        o.log("orb: a rolling pass failed", err)
+        o.send("orb:partial", null, id) // the page keeps the meter
+      },
+    )
   })
   ipcMain.on("orb:final", (e, bytes: unknown, type: unknown, ms: unknown) => {
     if (!o.isOrb(e) || !(bytes instanceof ArrayBuffer) || typeof type !== "string" || !Number.isFinite(ms)) return
