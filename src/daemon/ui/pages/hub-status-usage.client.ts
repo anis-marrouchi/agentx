@@ -14,16 +14,31 @@
 // drop-down; a click pins it open (touch, keyboard), Escape or a click
 // outside closes it. A hidden tab does not poll.
 export const HUB_USAGE_SCRIPT = String.raw`
-  var HSU = { use: null, open: '', pinned: false, closeT: 0, last: '', chips: null, note: '', noteAt: 0, orgAsked: false };
+  var HSU = { use: null, open: '', pinned: false, closeT: 0, last: '', chips: null, note: '', noteAt: 0, orgAsked: false, retryT: 0, retries: 0 };
   function hsuIcon(k) { return engineIcon(k, 'ax-eng'); }
   function hsuLoad() {
     // A hidden tab reads nothing; it reads again when it shows (#2314 review).
     if (document.hidden) return;
+    clearTimeout(HSU.retryT);
     fetch('/api/admin/hub/usage', { headers: headers() })
       .then(function (r) { if (!r.ok) throw new Error('usage read failed'); return r.json(); })
-      .then(function (d) { HSU.use = d; hsuPaint(); })
+      .then(function (d) {
+        HSU.use = d;
+        if (d && d.engines && d.engines.length) HSU.retries = 0; else hsuRetry();
+        hsuPaint();
+      })
       // Not read: the engines in use keep their item, with no bars (R28g).
-      .catch(function () { HSU.use = null; hsuPaint(); });
+      .catch(function () { HSU.use = null; hsuRetry(); hsuPaint(); });
+  }
+  /** No engine read (a busy daemon, a restart): asked again in 10 s, up to 3 times, then each minute (R5). */
+  function hsuRetry() {
+    if (HSU.retries >= 3) return;
+    HSU.retries++;
+    HSU.retryT = setTimeout(hsuLoad, 10e3);
+  }
+  /** The plan engines with a reading to draw: each keeps its item with no agent on it (R5). */
+  function hsuRead(now) {
+    return ((HSU.use && HSU.use.engines) || []).filter(function (e) { return hubUsageRows(e.rows, now).length > 0; }).map(function (e) { return e.engine; });
   }
   function hsuUse(engine) {
     return ((HSU.use && HSU.use.engines) || []).filter(function (e) { return e.engine === engine; })[0] || null;
@@ -37,11 +52,11 @@ export const HUB_USAGE_SCRIPT = String.raw`
     var box = $('hs-engines');
     if (!box) return;
     var now = Date.now();
-    var html = hubEnginesInUse(hsuNodes()).map(function (e) {
+    var html = hubEnginesInUse(hsuNodes(), hsuRead(now)).map(function (e) {
       var u = hsuUse(e.engine), rows = hubUsageRows(u && u.rows, now), tone = hubEngineTone(rows);
       // R28i: an engine at or near its limit is marked on the bar itself.
       return '<button type="button" class="hs__btn hsu__eng" data-hsu-pop="' + esc(e.engine) + '"' + (tone ? ' data-tone="' + tone + '"' : '') + ' aria-haspopup="true" aria-controls="hsu-pop" aria-expanded="false">' +
-        hubEngineChipHtml(e.engine, rows, esc, hsuIcon, hsuSpend(e)) + '</button>';
+        hubEngineChipHtml(e.engine, rows, esc, hsuIcon, hsuSpend(e), now) + '</button>';
     }).join('');
     // Repainted only on a change, so a hover or focus on an item survives.
     if (html !== HSU.chips) { box.innerHTML = HSU.chips = html; }
@@ -69,7 +84,7 @@ export const HUB_USAGE_SCRIPT = String.raw`
       if (!note && HSU.lvAt && now - HSU.lvAt < 20000) note = lvState().msg || '';
       html = hubAgentsPopHtml(hsuAgents(), !!window.AX_WALL_SETTINGS, note, esc, hsuIcon);
     } else {
-      var e = hubEnginesInUse(hsuNodes()).filter(function (x) { return x.engine === HSU.open; })[0];
+      var e = hubEnginesInUse(hsuNodes(), hsuRead(now)).filter(function (x) { return x.engine === HSU.open; })[0];
       if (!e) { hsuOpen(''); return; }
       var u = hsuUse(e.engine);
       // Add account opens the accounts form (#2206), which is the owner's.
