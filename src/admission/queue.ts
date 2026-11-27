@@ -185,6 +185,12 @@ export interface AdmissionRequest {
   signal?: AbortSignal
 }
 
+/** The runs a start hold keeps waiting (#2360): chat messages, which are
+ *  replayed on boot. Delegated helpers start, their parent waits on them. */
+function heldByStartHold(e: Entry): boolean {
+  return !!e.req.keepOnClose && !e.delegated
+}
+
 /** A start hold (#2360) as GET /daemon/restart and /api/queue show it. */
 export interface StartHold {
   by: string
@@ -473,14 +479,15 @@ export class AdmissionQueue {
     return false
   }
 
-  /** The held time does not count toward maxWaitMinutes: each run's node
-   *  clock moves forward by it. */
+  /** The held time does not count toward maxWaitMinutes: the node clock of
+   *  each run the hold keeps waiting moves forward by it. Runs it does not
+   *  hold (waiting on the cap or memory) keep their clock. */
   private endHold(now: number, how: "released" | "expired"): void {
     const h = this.hold
     if (!h) return
     this.hold = null
     const heldMs = Math.max(0, Math.min(now, h.until) - h.since)
-    for (const e of this.waiting) if (e.nodeHeldSince !== null) e.nodeHeldSince = Math.min(now, e.nodeHeldSince + heldMs)
+    for (const e of this.waiting) if (heldByStartHold(e) && e.nodeHeldSince !== null) e.nodeHeldSince = Math.min(now, e.nodeHeldSince + heldMs)
     this.log(`[admission] start hold for ${h.by} ${how} after ${Math.round(heldMs / 1000)}s; ${this.waiting.length} waiting`)
   }
 
@@ -576,7 +583,7 @@ export class AdmissionQueue {
       const waitedMs = now - e.enqueuedAt
       // Start hold (#2360): a chat message, replayed on boot if the switch
       // comes first, stays in the queue with its node clock stopped.
-      if (hold && e.req.keepOnClose && !e.delegated) {
+      if (hold && heldByStartHold(e)) {
         e.blockedBy = [`start hold: ${hold.by}`]
         this.noticeLongWait(e, waitedMs)
         continue
