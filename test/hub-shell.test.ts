@@ -110,13 +110,13 @@ function draw(p: Partial<SimpleShellProps> = {}): string {
 }
 
 describe("the shell draws three columns", () => {
-  it("side menu, chat and the right tabs, Files first", () => {
+  it("side menu, chat and the right tabs, Run artifacts first (#2455)", () => {
     const html = draw()
     expect(html).toContain('data-shell="simple"')
     expect(html).toContain('data-shell="menu"')
     expect(html).toContain('data-shell="chat"')
     expect(html).toContain('data-shell="tabs"')
-    expect(html).toMatch(/role="tab"[^>]*>[\s\S]*?Files<\/button>/)
+    expect(html).toMatch(/role="tab"[^>]*>[\s\S]*?Run artifacts<\/button>/)
   })
   it("simple: the default items, no hidden item", () => {
     const html = draw()

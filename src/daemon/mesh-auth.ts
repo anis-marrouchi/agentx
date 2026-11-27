@@ -45,6 +45,8 @@ export function isMeshGatedPath(path: string): boolean {
     /^\/agents\/[^/]+\/tasks\/[^/]+\/session$/.test(path) ||
     // An agent's workspace, read only (#2101 R17): its folders and text files.
     /^\/agents\/[^/]+\/workspace$/.test(path) ||
+    // The Git project an agent works in, read only (#2455).
+    /^\/agents\/[^/]+\/project$/.test(path) ||
     // An agent sets its own profile picture (#1425): it shows on every page.
     path === "/api/agent-picture" ||
     // Approvals list held memory facts and draft wiki articles, and a card

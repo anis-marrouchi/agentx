@@ -16,6 +16,7 @@ import { closeSync, constants as fsConstants, createReadStream, fstatSync, openS
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
 import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize } from "path"
+import { homedir } from "os"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, DEFAULT_SLOT_WAIT_MS, setGlobalRegistry } from "@/agents/registry"
 import { describeJobState, jobStateFrom, needsJobState } from "@/agents/run-state"
@@ -238,6 +239,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { readWorkspace } from "@/daemon/workspace-files-api"
+import { cachedProjectRoot, findProjectRoot, projectName, readProject } from "@/daemon/project-files-api"
 import { voiceArtifacts } from "@/daemon/voice-artifacts"
 import { prepareOutbox } from "@/utils/app-outbox"
 import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
@@ -7845,6 +7847,26 @@ export class AgentXDaemon {
         if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
         const { ok: _ok, ...body } = out
         this.json(res, 200, body)
+        return
+      }
+      // The Git project the agent works in, read only, for the Hub's Project
+      // tab (#2455): found from the run's own files, never named by the
+      // caller (project-files-api.ts). { kind: "none" } when there is none.
+      // GET /agents/:agentId/project?task=<id>&path=<relative>. Mesh-gated (mesh-auth.ts).
+      const projectMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/project$/)
+      if (projectMatch) {
+        const agentId = decodeURIComponent(projectMatch[1])
+        const ws = this.registry.getAgent(agentId)?.workspace
+        if (!ws) { this.json(res, 404, { error: "agent not found" }); return }
+        const taskId = url.searchParams.get("task") || ""
+        const root = cachedProjectRoot(`${agentId}\0${taskId}`, () => findProjectRoot(ws, taskId, {
+          record: (id) => this.registry.getTaskRecord(agentId, id),
+          recent: () => this.registry.listTaskHistory(agentId, 5).map((r) => r.id),
+        }, process.cwd(), homedir(), Object.values(this.config.agents ?? {}).map((a: { worktrees?: { root?: string } }) => a.worktrees?.root).filter((r): r is string => !!r)))
+        const out = readProject(root, url.searchParams.get("path") || "")
+        if (!out.ok) { this.json(res, out.status, { error: out.error }); return }
+        const { ok: _ok, ...body } = out
+        this.json(res, 200, root ? { ...body, name: projectName(root) } : body)
         return
       }
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)

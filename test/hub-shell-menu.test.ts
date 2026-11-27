@@ -11,7 +11,9 @@ import { SideMenu, SideRail, type SideMenuProps } from "../src/hub/shell/SideMen
 import {
   MENU_FOLDS_KEY, firstHit, menuGroups, readMenuFolds, saveMenuFolds, shellShortcut, type HaModel, type HaRow,
 } from "../src/hub/shell/menu"
-import { chatFilesSource } from "../src/hub/shell/FilesPanel"
+import { askLine, chatFilesSource, runArtifactsHtml, splitRunFiles, treeView } from "../src/hub/shell/FilesPanel"
+import { streamStep } from "../src/hub/shell/run-stream"
+import { runFilesOf, workspaceHtml } from "../src/daemon/ui/pages/wall-files"
 import { SimpleShell, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
 
@@ -157,7 +159,7 @@ describe("phone menu and right tabs open as a Sheet", () => {
 })
 
 describe("the Files tab", () => {
-  it("a chat's runs, attachments and workspace, as the old chat hands them to the panel", () => {
+  it("a chat's runs, each with what was asked and attached, and the workspace", () => {
     const src = chatFilesSource({
       node: "http://node-a:4200",
       thread: { id: "t1", agentId: "ada", title: "Pricing page" },
@@ -169,10 +171,68 @@ describe("the Files tab", () => {
     })
     expect(src).toEqual({
       key: "chat:t1", label: "Pricing page",
-      runs: [{ node: "http://node-a:4200", agent: "ada", task: "run-1" }],
-      attached: ["brief.pdf", "logo.png"],
+      runs: [{ node: "http://node-a:4200", agent: "ada", task: "run-1", live: false, ask: "Look at this", attached: ["brief.pdf", "logo.png"] }],
       ws: { node: "http://node-a:4200", agent: "ada" },
     })
+  })
+  it("the newest run is last, live while its answer is pending (#2455)", () => {
+    const thread = (last: { taskId: string | null; status: string }) => chatFilesSource({
+      node: "http://node-a:4200",
+      thread: { id: "t1", agentId: "ada" },
+      messages: [
+        { role: "user", content: "First" },
+        { role: "assistant", content: "One", taskId: "run-1", status: "done" },
+        { role: "assistant", content: "Two", taskId: "run-2", status: "done" },
+        { role: "user", content: "Make the report" },
+        { role: "assistant", content: "", ...last },
+      ],
+    })!
+    const going = thread({ taskId: "run-3", status: "pending" })
+    expect(going.runs.map((r) => r.task)).toEqual(["run-1", "run-2", "run-3"])
+    expect(going.runs[2]).toMatchObject({ task: "run-3", live: true, ask: "Make the report" })
+    // Asked, not started yet: the newest run has no task.
+    expect(thread({ taskId: null, status: "pending" }).runs[2]).toMatchObject({ task: "", live: true })
+  })
+  it("what was asked, in one short line", () => {
+    expect(askLine("\nAttached: a.pdf\n  Fix the header  \nmore")).toBe("Fix the header")
+    expect(askLine("x".repeat(100))).toHaveLength(80)
+  })
+  it("Run artifacts lists what the run made; its reads are kept apart", () => {
+    expect(runArtifactsHtml(null, "run:r", true)).toContain("show here as it works")
+    expect(runArtifactsHtml(null, "run:r", false)).toContain("This run made no files.")
+    const out = '→ Read({"file_path":"/w/brief.md"})\n→ Write({"file_path":"/w/out/report.pdf","content":"x"})\n'
+    const { made, read } = splitRunFiles(runFilesOf(out, out))
+    expect(read.files.map((f) => f.path)).toEqual(["/w/brief.md"])
+    const html = runArtifactsHtml(made, "run:r", true)
+    expect(html).toContain("report.pdf")
+    expect(html).not.toContain("brief.md")
+    expect(html).toContain('data-src="run:r"')
+    expect(html).toContain("1 changed")
+    expect(html).not.toContain("· 1 read")
+    // Only reads: nothing made yet.
+    const onlyRead = splitRunFiles(runFilesOf('→ Read({"file_path":"/w/a.md"})\n', "")).made
+    expect(runArtifactsHtml(onlyRead, "run:r", false)).toContain("This run made no files.")
+  })
+  it("Project and Workspace never list dot files or dot folders (#2455)", () => {
+    const v = treeView("src", { isFetching: false, error: null, data: { kind: "dir", root: "/r", entries: [
+      { name: ".github", kind: "dir", size: 0 }, { name: ".eslintrc", kind: "file", size: 3 }, { name: "lib", kind: "dir", size: 0 }, { name: "a.ts", kind: "file", size: 9 },
+    ] } })
+    expect(v.list?.entries.map((e) => e.name)).toEqual(["lib", "a.ts"])
+    expect(treeView("", { isFetching: false, error: null, data: { kind: "file" } }).error).toBe("not a folder")
+    const html = workspaceHtml(v, "chat:t1", { title: "", top: "agentx", dirCx: "pjdir", fileCx: "pjfile" })
+    expect(html).toContain('data-cx="pjdir"')
+    expect(html).toContain('data-cx="pjfile"')
+    expect(html).toContain(">agentx</button>")
+    expect(html).not.toContain("wfl__h")
+  })
+  it("the run's stream: start brings the output so far, chunks add to it, end closes it", () => {
+    let t = streamStep("", "start", JSON.stringify({ initial: "→ Read({})\n" }))!
+    t = streamStep(t, "chunk", JSON.stringify({ text: "more\n" }))!
+    expect(t).toBe("→ Read({})\nmore\n")
+    expect(streamStep(t, "chunk", JSON.stringify({ text: "\n[task finished]\n" }))).toBe(t)
+    expect(streamStep(t, "chunk", "not json")).toBe(t)
+    expect(streamStep(t, "end", "")).toBeNull()
+    expect(streamStep("", "start", JSON.stringify({ done: true }))).toBeNull()
   })
   it("no conversation: no source", () => {
     expect(chatFilesSource(null)).toBeNull()

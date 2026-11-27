@@ -3,8 +3,8 @@
 // Three columns, as #2226 lays them out: the side menu on the left
 // (shell/SideMenu.tsx, the approved orca mock of #2101; its items from
 // shell.ts, so it follows Settings › Layout), the chat with the agent in
-// view in the centre, and the right column's tabs (Files first, the old
-// Hub's Files panel for the chat in view, shell/FilesPanel.tsx; the issue
+// view in the centre, and the right column's tabs (Run artifacts, Project,
+// Workspace for the chat in view, shell/FilesPanel.tsx, #2455; the issue
 // leaves the other tabs for a follow-up). At 641-1180 px the menu is an
 // icon rail and Files a Sheet; on a phone the chat takes the screen and
 // the menu and the tabs open as Sheets from its bar. ⌘K puts the cursor
@@ -34,7 +34,7 @@ import { AutomationsPane } from "./ShellAutomations"
 import { WaitingPane } from "./ShellWaiting"
 import {
   AfSkeletonRows, AfStateLabel, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
-  Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, TooltipContent, TooltipTrigger, cn,
+  Tooltip, TooltipContent, TooltipTrigger, cn,
 } from "../ui"
 
 export { SideMenu, type SideMenuProps } from "../shell/SideMenu"
@@ -187,19 +187,10 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
 
 // --- Right column ---
 
-/** The right column's tabs. Files is first: the old Hub's Files panel
- *  (#2315) for the chat in view. #2226 leaves the rest for later. */
-export function RightTabs({ threadId = null }: { threadId?: string | null }) {
-  return (
-    <Tabs defaultValue="files" className="flex h-full min-h-0 flex-col px-3 py-2" data-shell="tabs">
-      <TabsList aria-label="Panels" className="self-start">
-        <TabsTrigger value="files"><Icon name="files" className="mr-1.5" />Files</TabsTrigger>
-      </TabsList>
-      <TabsContent value="files" className="min-h-0 flex-1 overflow-y-auto">
-        <FilesPanel threadId={threadId} />
-      </TabsContent>
-    </Tabs>
-  )
+/** The right column: Run artifacts, Project and Workspace tabs for the
+ *  chat in view (shell/FilesPanel.tsx, #2455). */
+export function RightTabs({ threadId = null, inSheet = false }: { threadId?: string | null; inSheet?: boolean }) {
+  return <FilesPanel threadId={threadId} inSheet={inSheet} />
 }
 
 // --- The shell ---
@@ -316,7 +307,7 @@ export function SimpleShell(props: SimpleShellProps & { width?: ShellWidth }) {
           onOpenAutoFocus={(e) => { e.preventDefault(); if (sheet !== "search") (e.currentTarget as HTMLElement).focus() }}
         >
           <SheetTitle className="sr-only">{sheet === "tabs" ? "Files" : "Menu"}</SheetTitle>
-          {sheet === "tabs" ? <RightTabs threadId={chatThread} /> : <SideMenu {...menu} focusSearch={sheet === "search" ? kTick : 0} onDone={() => setSheet(null)} />}
+          {sheet === "tabs" ? <RightTabs threadId={chatThread} inSheet /> : <SideMenu {...menu} focusSearch={sheet === "search" ? kTick : 0} onDone={() => setSheet(null)} />}
         </SheetContent>
       </Sheet>
     </div>
