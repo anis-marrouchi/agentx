@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.305.0](https://github.com/anis-marrouchi/agentx/compare/v0.304.0...v0.305.0) (2026-11-27)
+
+
+### Features
+
+* **daemon,mac-voice:** widget says AgentX is upgrading and keeps the message ([#2502](https://github.com/anis-marrouchi/agentx/issues/2502), PR A) ([#2504](https://github.com/anis-marrouchi/agentx/issues/2504)) ([adfdcef](https://github.com/anis-marrouchi/agentx/commit/adfdceff4e8383c86bf2af4612a108a361e179c2))
+
 ## [0.304.0](https://github.com/anis-marrouchi/agentx/compare/v0.303.0...v0.304.0) (2026-11-27)
 
 
