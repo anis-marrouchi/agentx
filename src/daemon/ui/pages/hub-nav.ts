@@ -210,6 +210,7 @@ details[open] > summary > .ha__chev { transform: rotate(90deg); }
 .ha__stats svg { width: 12px; height: 12px; }
 .ha__line { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ax-text-2); }
 .ha__lt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ha__n.is-words { font-family: inherit; }
 .ha__since { display: block; min-width: 0; font-size: 11.5px; color: var(--ax-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .ha__n { flex: none; margin-right: 8px; }
 /* The one state set (orca-design recipes §9): icon + word, colour for state only. */

@@ -43,10 +43,10 @@ describe("the agent's questions on its row (#2505)", () => {
   })
   it("says the numbers in words: how many for you, and since when the oldest waits", () => {
     expect(coder.askMs).toBe(40 * 60_000)
-    expect(haAskWords(coder, ltAge)).toEqual({ count: "3 for you", since: "Waiting on you · asked 40m" })
-    expect(haAskWords({ ...coder, askMs: -1 }, ltAge)).toEqual({ count: "3 for you", since: "Waiting on you" })
+    expect(haAskWords(coder, ltAge)).toEqual({ count: "3 for you", since: "asked 40m" })
+    expect(haAskWords({ ...coder, askMs: -1 }, ltAge)).toEqual({ count: "3 for you", since: "" })
     expect(haAskWords({ ...coder, state: "working" }, ltAge)).toEqual({ count: "", since: "" })
-    expect(askWords(coder)).toEqual({ count: "3 for you", since: "Waiting on you · asked 40m" })
+    expect(askWords(coder)).toEqual({ count: "3 for you", since: "asked 40m" })
   })
 })
 
@@ -54,7 +54,7 @@ describe("the old Hub's Needs you row (#2505)", () => {
   const h = haRowHtml(coder, "", ltEsc, ltAge)
   it("draws '3 for you' and the waiting line, without the run numbers or the age", () => {
     expect(h).toContain(">3 for you</b>")
-    expect(h).toContain('<span class="ha__since">Waiting on you · asked 40m</span>')
+    expect(h).toContain('<span class="ha__since">asked 40m</span>')
     expect(h).not.toContain("ha__stats")
     expect(h).not.toContain("<time")
     expect(h).toContain('href="#page=chat&amp;agent=coder&amp;ask=card%3Aa"')
@@ -101,7 +101,7 @@ describe("the React chat's questions block, drawn (#2505)", () => {
     const h = draw(list)
     expect(h).toContain("2 for you, oldest first")
     expect(h.indexOf('data-question="card:a"')).toBeLessThan(h.indexOf('data-question="card:b"'))
-    expect(h).toContain('data-question="card:a" data-open="true"')
+    expect(h).toContain('data-question="card:a" data-question-open="true"')
     expect(h).toContain("Ship the new sign-up copy?")
     expect(h).toContain(">Whole chat</button>")
     expect(draw(list, true)).toContain(">Hide the chat</button>")

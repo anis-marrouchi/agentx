@@ -160,7 +160,7 @@ export function AgentQuestions({ agentId, list, whole, onWhole, onAnswered, now 
   const open = openQuestion(list, want)
   if (!list.length) return null
   return (
-    <section aria-label="Waiting on you" data-shell="questions" data-agent={agentId} className="flex flex-col gap-2">
+    <section aria-label="Waiting on you" data-shell="questions" data-question-agent={agentId} className="flex flex-col gap-2">
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <Icon name="circle-alert" className="size-3.5 text-warn-ink" />
         <span data-shell="questions-count">{list.length} for you{list.length > 1 ? ", oldest first" : ""}</span>
@@ -173,7 +173,7 @@ export function AgentQuestions({ agentId, list, whole, onWhole, onAnswered, now 
       </p>
       <ol className="flex flex-col divide-y divide-border rounded-md border border-border">
         {list.map((i, n) => (
-          <li key={i.key} data-question={i.key} data-open={i.key === open ? "true" : undefined}>
+          <li key={i.key} data-question={i.key} data-question-open={i.key === open ? "true" : undefined}>
             {i.key === open ? (
               <div className="p-3">
                 <WaitingDetail item={i} now={now} actions={<QuestionAnswer item={i} onAnswered={onAnswered} onLater={() => setWant(laterQuestion(list, i.key))} />} />

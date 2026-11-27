@@ -105,7 +105,7 @@ export function rowStats(r: HaRow): string {
 }
 
 /** A Needs you row's words (#2505), as the old Hub's row says them
- *  (hub-agents.ts haAskWords): "4 for you" and "Waiting on you · asked 40m". */
+ *  (hub-agents.ts haAskWords): "4 for you" and "asked 40m". */
 export function askWords(r: HaRow): { count: string; since: string } {
   return haAskWords(r, (ms) => shortAgo(0, ms))
 }

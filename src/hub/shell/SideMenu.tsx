@@ -117,9 +117,9 @@ export function AgentFace({ r, rail }: { r: HaRow; rail?: boolean }) {
 function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: () => void }) {
   const word = haStateWord(r.state)
   // A Needs you row says its numbers in words (#2505): "4 for you" and
-  // "Waiting on you · asked 40m"; its run numbers and age are left out.
+  // "asked 40m"; its run numbers and age are left out.
   const ask = askWords(r)
-  const stats = ask.since ? "" : rowStats(r)
+  const stats = ask.count ? "" : rowStats(r)
   return (
     <div data-slot="menu-agent" data-state={r.state} className={cn("flex min-h-11 items-center rounded-sm pointer-coarse:min-h-12", current ? "bg-accent" : "hover:bg-(--ax-surface-2)")}>
       <button type="button" data-shell-agent={r.id} aria-pressed={current} onClick={onPick} className={cn("flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2 py-1.5 text-left font-normal cursor-pointer", ring)}>
@@ -134,7 +134,7 @@ function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: 
                 <span className="sr-only">{stats}</span>
               </span>
             ) : null}
-            {!ask.since && r.ageMs >= 0 ? (
+            {!ask.count && r.ageMs >= 0 ? (
               <time dateTime={r.at ? new Date(r.at).toISOString() : undefined} title={r.at ? new Date(r.at).toLocaleString() : undefined} className="ml-auto shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
                 {shortAgo(Date.now() - r.ageMs)}
               </time>
@@ -151,7 +151,7 @@ function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: 
       {r.unread ? (
         <span className="mr-2 shrink-0" data-slot="menu-for-you">
           {ask.count
-            ? <span data-slot="af-count" className="ax-af-count whitespace-nowrap" data-n={r.unread} data-tone="warn">{ask.count}</span>
+            ? <span data-slot="af-count" className="ax-af-count whitespace-nowrap" style={{ fontFamily: "inherit" }} data-n={r.unread} data-tone="warn">{ask.count}</span>
             : <AfCount n={r.unread} tone="warn" label={r.unread + (r.unread === 1 ? " question" : " questions") + " for you"} />}
         </span>
       ) : null}

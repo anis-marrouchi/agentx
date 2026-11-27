@@ -276,11 +276,12 @@ export function haRowHref(r: HaRow, runHref?: (r: HaRow) => string): string {
 }
 
 /** A Needs you row's words (#2505): "4 for you", and since when the oldest
- *  question waits ("Waiting on you · asked 40m"). Empty for other rows. */
+ *  question waits ("asked 40m"; the group and the icon already say it waits
+ *  on you, and the menu is narrow). Empty for other rows. */
 export function haAskWords(r: HaRow, age: (ms: number) => string): { count: string; since: string } {
   if (r.state !== "needs" || !r.unread) return { count: "", since: "" }
   const ms = r.askMs === undefined ? -1 : r.askMs
-  return { count: r.unread + " for you", since: "Waiting on you" + (ms >= 0 ? " · asked " + age(ms) : "") }
+  return { count: r.unread + " for you", since: ms >= 0 ? "asked " + age(ms) : "" }
 }
 
 /** One agent row: two lines (name and age; state icon and what it is
@@ -297,17 +298,17 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
     ? (r.at ? '<time datetime="' + new Date(r.at).toISOString() + '">' : "<time>") + esc(age(r.ageMs)) + "</time>"
     : ""
   // A Needs you row says its numbers in words (#2505): "4 for you" in the
-  // chip, and "Waiting on you · asked 40m" under its question.
+  // chip, and "asked 40m" under its question.
   // haAskWords, written out: an injected function cannot call one not injected.
   const askOn = r.state === "needs" && !!r.unread, askMs = r.askMs === undefined ? -1 : r.askMs
-  const ask = { count: askOn ? r.unread + " for you" : "", since: askOn ? "Waiting on you" + (askMs >= 0 ? " · asked " + age(askMs) : "") : "" }
-  const unread = r.unread ? '<b class="ax-af-count ha__n" data-tone="warn" data-n="' + r.unread + '">' + (ask.count ? esc(ask.count) : r.unread + '<span class="ax-sr">' + (r.unread === 1 ? " question" : " questions") + " for you</span>") + "</b>" : ""
+  const ask = { count: askOn ? r.unread + " for you" : "", since: askOn && askMs >= 0 ? "asked " + age(askMs) : "" }
+  const unread = r.unread ? '<b class="ax-af-count ha__n' + (ask.count ? " is-words" : "") + '" data-tone="warn" data-n="' + r.unread + '">' + (ask.count ? esc(ask.count) : r.unread + '<span class="ax-sr">' + (r.unread === 1 ? " question" : " questions") + " for you</span>") + "</b>" : ""
   const tip = (s: string) => ' data-tip="' + esc(s) + '"'
   // Its numbers next to its name (#2145): runs going now and runs today,
   // each left out at zero; the words are in the tooltip and for screen
   // readers, so the name keeps its room. A Needs you row leaves them out:
   // what counts there is what waits on the owner (#2505).
-  const going = ask.since ? 0 : r.runs || 0, today = ask.since ? 0 : r.today || 0
+  const going = askOn ? 0 : r.runs || 0, today = askOn ? 0 : r.today || 0
   const words = [going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")
   const stats = going || today
     ? '<span class="ha__stats"' + tip(words) + ">" +
@@ -323,7 +324,7 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   return '<div class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" data-key="a:' + esc(r.id) + '" data-ha-agent="' + esc(r.id) + '">' +
     '<a class="ha__link" href="' + esc(href) + '"' + (isRun ? " data-ha-run" : "") + (r.id === cur ? ' aria-current="true"' : "") + ">" +
     '<span class="ha__face" aria-hidden="true">' + esc(r.face) + "</span>" +
-    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + stats + (ask.since ? "" : when) + "</span>" +
+    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + stats + (askOn ? "" : when) + "</span>" +
     '<span class="ha__line">' + haStateIcon(r.state, ic) + '<span class="ha__lt">' + esc(r.line || (r.state === "idle" ? "Nothing going" : word)) + "</span></span>" +
     (ask.since ? '<span class="ha__since">' + esc(ask.since) + "</span>" : "") + "</span>" +
     '<span class="ax-sr"> (' + word + ")</span></a>" + unread + acts + "</div>" +
