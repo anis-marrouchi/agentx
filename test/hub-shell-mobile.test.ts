@@ -8,6 +8,7 @@ import { SHELL_MORE } from "../src/hub/shell"
 import { parseHash } from "../src/hub/router"
 import { shellPane } from "../src/hub/tasks"
 import { MOBILE_GUIDE, MOBILE_PAIR, MOBILE_SERVE, MOBILE_WHY, MobilePane } from "../src/hub/pages/ShellMobile"
+import { PHONE_SCREEN_MS, PHONE_SCREENS } from "../src/hub/pages/PhonePreview"
 import { hubMobilePageHtml } from "../src/daemon/ui/pages/hub-nav"
 
 const html = renderToStaticMarkup(createElement(MobilePane, {}))
@@ -28,6 +29,18 @@ describe("the Mobile app pane", () => {
     expect(decode(html)).toContain(MOBILE_SERVE)
     expect(decode(html)).toContain(MOBILE_PAIR)
     expect(html.match(/aria-label="Copy the command"/g)).toHaveLength(2)
+  })
+
+  it("shows the phone preview (#2459): the first screen, the others hidden, a slow tilt that stops with reduced motion", () => {
+    expect(html).toContain('data-mobile="phone"')
+    expect(html.match(/<img /g)).toHaveLength(PHONE_SCREENS.length)
+    expect(decode(html)).toContain(`alt="${PHONE_SCREENS[0].alt}"`)
+    expect(html.match(/aria-hidden="true" loading=/g)).toHaveLength(PHONE_SCREENS.length - 1)
+    expect(html).toContain("animate-ax-phone-tilt reduce-effects:animate-none")
+    expect(PHONE_SCREEN_MS).toBeGreaterThanOrEqual(3000)
+    // The phone sits after the why and before the steps (narrow window order).
+    expect(html.indexOf('data-mobile="why"')).toBeLessThan(html.indexOf('data-mobile="phone"'))
+    expect(html.indexOf('data-mobile="phone"')).toBeLessThan(html.indexOf('data-mobile="install"'))
   })
 
   it("keeps the old page's commands and guide", () => {

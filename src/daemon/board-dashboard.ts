@@ -1231,21 +1231,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // without another route registration.
   if (method === "GET" && path.startsWith("/assets/")) {
     const rel = path.slice("/assets/".length)
-    // Allow dotted stems (e.g. "activity-graph.global.js") but keep the
-    // whitelist narrow to script/map/style files, plus the self-hosted
-    // Geist fonts and their licence (#2101). The React Hub's files sit one
-    // folder down, in hub/ (#2218, vite.hub.config.ts).
-    if (!/^(hub\/)?[a-zA-Z0-9_-][a-zA-Z0-9._-]*\.(js|map|css|woff2|txt)$/.test(rel)) {
+    // The allowed names and their types: assetContentType, below.
+    const ct = assetContentType(rel)
+    if (!ct) {
       sendJson(res, 400, { error: "invalid asset name" }); return
     }
     const assetPath = resolveFromHere("web/" + rel)
     try {
       const buf = await readAsset(assetPath)
-      const ct = rel.endsWith(".map") ? "application/json; charset=utf-8"
-        : rel.endsWith(".css") ? "text/css; charset=utf-8"
-        : rel.endsWith(".woff2") ? "font/woff2"
-        : rel.endsWith(".txt") ? "text/plain; charset=utf-8"
-        : "application/javascript; charset=utf-8"
       // A hashed URL names exactly one build, so it can be cached hard; a bare
       // one must keep revalidating because its bytes change under it.
       // The React Hub's file names carry their hash, lazy pages included.
@@ -3548,6 +3541,23 @@ async function hubAgentsNow(config: DaemonConfig, dayStart: number, now: number)
 
 async function readAsset(path: string): Promise<Buffer> {
   return readFile(path)
+}
+
+/** The Content-Type for a file under /assets/, or null when the name is not
+ *  allowed. Dotted stems are fine (e.g. "activity-graph.global.js"); the list
+ *  stays narrow: script/map/style files, the self-hosted Geist fonts and their
+ *  licence (#2101), and in the React Hub's hub/ folder (#2218) its .webp
+ *  pictures too, the Mobile app page's phone screens (#2459). */
+export function assetContentType(rel: string): string | null {
+  const m = /^(hub\/)?[a-zA-Z0-9_-][a-zA-Z0-9._-]*\.(js|map|css|woff2|txt|webp)$/.exec(rel)
+  if (!m) return null
+  const ext = m[2]
+  if (ext === "webp") return m[1] ? "image/webp" : null
+  return ext === "map" ? "application/json; charset=utf-8"
+    : ext === "css" ? "text/css; charset=utf-8"
+    : ext === "woff2" ? "font/woff2"
+    : ext === "txt" ? "text/plain; charset=utf-8"
+    : "application/javascript; charset=utf-8"
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

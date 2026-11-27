@@ -3,8 +3,9 @@
 // The old Hub's #page=mobile (hub-nav.ts hubMobilePageHtml, Anis
 // 2026-11-24): why to try the phone app, then how to install it. Same
 // words, drawn in the shell's centre; a static page, no read.
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Button, Icon, cn } from "../ui"
+import { PhonePreview } from "./PhonePreview"
 
 // The docs website page, never the raw .md on GitHub (Anis 2026-11-25).
 export const MOBILE_GUIDE = "https://agentx-docs.pages.dev/dashboard/mobile-app"
@@ -24,8 +25,15 @@ const ring = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring
 /** A command with a Copy button; the button says Copied for 2 s. */
 function Command({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
   const copy = () => {
-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }, () => setCopied(false))
+    // No clipboard on an http page that is not localhost (#2514 C2).
+    if (!navigator.clipboard) return
+    navigator.clipboard.writeText(text).then(() => setCopied(true), () => setCopied(false))
   }
   return (
     <div data-mobile="command" className="mt-2 flex items-start gap-1 rounded-md border border-border bg-muted pr-1">
@@ -60,7 +68,7 @@ export function MobilePane({ phoneBar }: { phoneBar?: ReactNode }) {
         </a>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
+        <div className="mx-auto grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-6 sm:px-6 sm:py-8 lg:max-w-5xl lg:grid-cols-[minmax(0,42rem)_15rem] lg:justify-between lg:gap-x-12">
           <div data-mobile="why">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">Your agents, in your pocket</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">The same agents and the same chats as here, on your phone. Hold to talk to the agent you are with, answer what waits for you on the Desk with one tap, and get a note when a run ends or an agent asks you something.</p>
@@ -72,6 +80,10 @@ export function MobilePane({ phoneBar }: { phoneBar?: ReactNode }) {
                 </li>
               ))}
             </ul>
+          </div>
+          {/* Between the why and the steps on a narrow window, beside them on a wide one. */}
+          <div className="lg:col-start-2 lg:row-span-4 lg:row-start-1">
+            <PhonePreview className="lg:sticky lg:top-4" />
           </div>
           <div data-mobile="install">
             <h2 className="text-sm font-medium text-foreground">Install it in five minutes</h2>
