@@ -1,0 +1,218 @@
+{
+  "shots": {
+    "01-phone-1440-light.png": {
+      "ready": true,
+      "phone": true,
+      "caption": "Chat",
+      "imgs": [
+        {
+          "w": 390,
+          "op": "1"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        }
+      ],
+      "animation": "ax-phone-tilt",
+      "transform": "matrix3d(0.994868, 0, 0.101178, 0, -0.00523854, 0.998659, 0.0515097, 0, -0.101043, -0.0517754, 0.993534, 0, 0, 0, 0, 1)",
+      "reduced": false,
+      "inView": true,
+      "imgsLoaded": 4,
+      "visibleImgW": 390,
+      "innerWidth": 1440,
+      "docScrollWidth": 1440,
+      "paneScrollWidths": [
+        {
+          "sw": 1160,
+          "cw": 1160
+        },
+        {
+          "sw": 1160,
+          "cw": 1160
+        }
+      ]
+    },
+    "02-phone-1440-dark.png": {
+      "ready": true,
+      "phone": true,
+      "caption": "Chat",
+      "imgs": [
+        {
+          "w": 390,
+          "op": "1"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        }
+      ],
+      "animation": "ax-phone-tilt",
+      "transform": "matrix3d(0.99485, 0, 0.101355, 0, -0.00525072, 0.998657, 0.0515382, 0, -0.101219, -0.051805, 0.993514, 0, 0, 0, 0, 1)",
+      "reduced": false,
+      "inView": true,
+      "imgsLoaded": 4,
+      "visibleImgW": 390,
+      "innerWidth": 1440,
+      "docScrollWidth": 1440,
+      "paneScrollWidths": [
+        {
+          "sw": 1160,
+          "cw": 1160
+        },
+        {
+          "sw": 1160,
+          "cw": 1160
+        }
+      ]
+    },
+    "03-phone-390-light.png": {
+      "ready": true,
+      "phone": true,
+      "caption": "Chat",
+      "imgs": [
+        {
+          "w": 390,
+          "op": "1"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        }
+      ],
+      "animation": "ax-phone-tilt",
+      "transform": "matrix3d(0.995496, 0, 0.0947989, 0, -0.0048071, 0.998714, 0.05048, 0, -0.0946769, -0.0507084, 0.994216, 0, 0, 0, 0, 1)",
+      "reduced": false,
+      "inView": true,
+      "imgsLoaded": 4,
+      "visibleImgW": 390,
+      "innerWidth": 390,
+      "docScrollWidth": 390,
+      "paneScrollWidths": [
+        {
+          "sw": 390,
+          "cw": 390
+        },
+        {
+          "sw": 390,
+          "cw": 390
+        }
+      ]
+    },
+    "04-phone-390-dark.png": {
+      "ready": true,
+      "phone": true,
+      "caption": "Chat",
+      "imgs": [
+        {
+          "w": 390,
+          "op": "1"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        }
+      ],
+      "animation": "ax-phone-tilt",
+      "transform": "matrix3d(0.995497, 0, 0.0947978, 0, -0.00480703, 0.998714, 0.0504799, 0, -0.0946759, -0.0507082, 0.994216, 0, 0, 0, 0, 1)",
+      "reduced": false,
+      "inView": true,
+      "imgsLoaded": 4,
+      "visibleImgW": 390,
+      "innerWidth": 390,
+      "docScrollWidth": 390,
+      "paneScrollWidths": [
+        {
+          "sw": 390,
+          "cw": 390
+        },
+        {
+          "sw": 390,
+          "cw": 390
+        }
+      ]
+    },
+    "05-phone-1440-light-reduced-motion.png": {
+      "ready": true,
+      "phone": true,
+      "caption": "Chat",
+      "imgs": [
+        {
+          "w": 390,
+          "op": "1"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        },
+        {
+          "w": 390,
+          "op": "0"
+        }
+      ],
+      "animation": "none",
+      "transform": "none",
+      "reduced": true,
+      "inView": true,
+      "imgsLoaded": 4,
+      "visibleImgW": 390,
+      "innerWidth": 1440,
+      "docScrollWidth": 1440,
+      "paneScrollWidths": [
+        {
+          "sw": 1160,
+          "cw": 1160
+        },
+        {
+          "sw": 1160,
+          "cw": 1160
+        }
+      ]
+    }
+  },
+  "recording": {
+    "ready": true,
+    "captions": [
+      "Chat",
+      "Desk",
+      "Fleet",
+      "Alerts"
+    ]
+  }
+}
