@@ -110,9 +110,9 @@ describe("Files tab: what it draws (#2101 R17)", () => {
     const html = filesTabHtml(r, { key: "task:n|cx|t1", changes: { id: "r1", ref: "acme/shop#12" } })
     expect(html).toContain('<p class="wcx__at">1 changed · 1 read · 1 sent · 1 attached</p>')
     expect(html.indexOf('data-kind="changes" data-id="r1"')).toBeLessThan(html.indexOf('data-cx="wfile"'))
-    expect(html).toContain('data-cx="wfile" data-src="task:n|cx|t1" data-i="0" title="src/&lt;app&gt;.ts"><span class="wfl__op is-edited"><svg class="lucide lucide-pencil-line wfl__ic"')
+    expect(html).toContain('data-cx="wfile" data-src="task:n|cx|t1" data-i="0" data-tip="src/&lt;app&gt;.ts"><span class="wfl__op is-edited"><svg class="lucide lucide-pencil-line wfl__ic"')
     expect(html).toContain("edited</span><b>&lt;app&gt;.ts</b><small>src</small>")
-    expect(html).toContain('data-i="1" title="README.md"')
+    expect(html).toContain('data-i="1" data-tip="README.md"')
     expect(html).toContain("<b>report.pdf</b><small>application/pdf · sent with the answer</small>")
     expect(html).toContain("<b>shot.png</b><small>you attached it</small>")
     expect(html).not.toContain("<script")
@@ -327,6 +327,23 @@ describe("Workspace files: in the panel (#2101 R17)", () => {
     expect(html).toContain('<tr><td class="wdf__n">1</td><td class="wdf__c">a &lt;b&gt;</td></tr><tr><td class="wdf__n">2</td><td class="wdf__c">c</td></tr>')
     expect(workspaceFileHtml({ path: "x", error: "the file is too big" })).toContain("Not shown: the file is too big.")
     expect(workspaceFileHtml({ path: "x", loading: true })).toContain("Reading the file…")
+  })
+
+  it("loads as grey lines and fails with Retry when the panel asks for it (Hub review batch 6)", () => {
+    // Loading: the Hub's skeleton lines, the words for a screen reader only.
+    const skel = workspaceFileHtml({ path: "x", loading: true })
+    expect(skel).toContain('<div class="wfl__skel" role="status" aria-busy="true"><span class="ax-sr">Reading the file…</span><span class="ax-af-skeleton"></span>')
+    expect(skel).not.toContain("ax-af-loader")
+    expect(workspaceHtml({ dir: "", loading: true, error: "", list: null }, "k")).toContain('class="wfl__skel"')
+    // Failing: Retry only when the caller names what it re-reads.
+    const err = workspaceFileHtml({ path: "a.ts", error: "node down" }, undefined, 'data-cx="wsfile" data-src="k" data-path="a.ts"')
+    expect(err).toContain('<div class="wfl__err" role="alert"><span>Not shown: node down.</span><button type="button" class="wcx__re" data-cx="wsfile" data-src="k" data-path="a.ts">')
+    expect(err).toContain("lucide-refresh-cw")
+    expect(workspaceFileHtml({ path: "a.ts", error: "node down" })).not.toContain("Retry")
+    const dir = workspaceHtml({ dir: "src", loading: false, error: "node down", list: null }, "k", { retry: true })
+    expect(dir).toContain('data-cx="wsdir" data-src="k" data-path="src">')
+    expect(dir).toContain("Retry</button>")
+    expect(workspaceHtml({ dir: "src", loading: false, error: "node down", list: null }, "k")).not.toContain("Retry")
   })
 
   it("maps a run's path into the workspace, or not", () => {

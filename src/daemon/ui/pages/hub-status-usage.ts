@@ -194,9 +194,9 @@ export function hubClock(ms: number, now: number): string {
 export function hubEngineChipHtml(engine: string, rows: HubUseView[], esc: (s: unknown) => string, icon: (tier: string) => string, spend?: HubSpendView | null, now?: number): string {
   // With `now`, each bar also says when its window resets (#2101 R5).
   const reset = (r: HubUseView): string => now && r.resetsAt
-    ? '<span class="hsu__rs hs__long">resets <time datetime="' + new Date(r.resetsAt).toISOString() + '" title="' + esc(new Date(r.resetsAt).toLocaleString()) + '">' + esc(hubClock(r.resetsAt, now)) + "</time></span>" : ""
+    ? '<span class="hsu__rs hs__long">resets <time datetime="' + new Date(r.resetsAt).toISOString() + '" data-tip="' + esc(new Date(r.resetsAt).toLocaleString()) + '">' + esc(hubClock(r.resetsAt, now)) + "</time></span>" : ""
   const bars = rows.filter((r) => r.short && r.pct !== undefined).map((r) =>
-    '<span class="hsu__w" data-tone="' + r.tone + '"><span class="hsu__k">' + r.short + '</span><span class="hsu__m" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="width:' + r.pct + '%"></i></span><b>' + r.pct + "%</b>" + reset(r) + "</span>").join("")
+    '<span class="hsu__w" data-tone="' + r.tone + '"><span class="hsu__k">' + r.short + '</span><span class="hsu__m" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="transform:scaleX(' + (r.pct || 0) / 100 + ')"></i></span><b>' + r.pct + "%</b>" + reset(r) + "</span>").join("")
   // No percentage, but a run said the limit is reached or near: a dot says so.
   const tone = hubEngineTone(rows)
   const flag = !bars && tone ? '<i class="hsu__flag" data-tone="' + tone + '" aria-hidden="true"></i>' : ""
@@ -222,10 +222,10 @@ export function hubRowsHtml(rows: HubUseView[], source: string, now: number, esc
     : source === "runs" ? "As the last run reported it, " + hubAgo(now - newest)
     : "Read " + hubAgo(now - newest)
   const list = rows.map((r) => {
-    const reset = r.resetsAt ? '<span class="hsu__reset" title="Resets ' + esc(new Date(r.resetsAt).toLocaleString()) + '">resets ' + esc(hubClock(r.resetsAt, now)) + " · " + hubIn(r.resetsAt - now) + "</span>" : ""
+    const reset = r.resetsAt ? '<span class="hsu__reset" data-tip="Resets ' + esc(new Date(r.resetsAt).toLocaleString()) + '">resets ' + esc(hubClock(r.resetsAt, now)) + " · " + hubIn(r.resetsAt - now) + "</span>" : ""
     return '<li class="hsu__row" data-tone="' + r.tone + '"><span class="hsu__l">' + esc(r.label) + "</span>" +
       (r.pct !== undefined
-        ? '<span class="hsu__bar" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="width:' + r.pct + '%"></i></span><b class="hsu__pct">' + r.pct + "%</b>"
+        ? '<span class="hsu__bar" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="transform:scaleX(' + r.pct / 100 + ')"></i></span><b class="hsu__pct">' + r.pct + "%</b>"
         : '<span class="hsu__st">' + esc(hubStatusWord(r.status)) + "</span>") +
       reset + "</li>"
   }).join("")
@@ -248,7 +248,7 @@ export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows:
   if (api) {
     // R28e: what its runs cost today, here; nothing summed that is not known.
     const n = spend ? spend.unpriced : 0, away = spend ? spend.elsewhere : 0
-    body = (spend && spend.usd !== undefined ? '<p class="hsu__spend" title="Since 00:00 UTC, from each run\'s recorded cost">Spent today <b>' + hubUsd(spend.usd) + "</b></p>" : "") +
+    body = (spend && spend.usd !== undefined ? '<p class="hsu__spend" data-tip="Since 00:00 UTC, from each run\'s recorded cost">Spent today <b>' + hubUsd(spend.usd) + "</b></p>" : "") +
       (n ? '<p class="hsu__read">' + n + (n === 1 ? " run" : " runs") + " on a model with no price, such as a local model</p>" : "") +
       (away ? '<p class="hsu__read">' + (away === 1 ? "1 agent runs on another machine; its" : away + " agents run on other machines; their") + " spend is kept there</p>" : "")
   } else if (use && use.accounts && use.accounts.length > 1) {
@@ -263,11 +263,11 @@ export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows:
     ? '<p class="hsu__h">Used by ' + agents.length + (agents.length === 1 ? " agent" : " agents") + '</p><ul class="hsu__who">' +
       agents.map((a) => {
         const usd = spend && spend.byAgent[a.id] ? " · " + hubUsd(spend.byAgent[a.id]) : ""
-        return '<li><a href="#page=chat&amp;agent=' + esc(encodeURIComponent(a.id)) + '" title="Open ' + esc(a.name) + '\'s chat">' + esc(a.name) + usd + "</a></li>"
+        return '<li><a href="#page=chat&amp;agent=' + esc(encodeURIComponent(a.id)) + '" data-tip="Open ' + esc(a.name) + '\'s chat">' + esc(a.name) + usd + "</a></li>"
       }).join("") + "</ul>"
     : ""
   const foot = api
-    ? '<div class="hsu__foot"><a class="ax-btn ax-btn--ghost hsu__add" href="#status=open&amp;view=cost" title="Spend and caps for every agent">Cost</a></div>'
+    ? '<div class="hsu__foot"><a class="ax-btn ax-btn--ghost hsu__add" href="#status=open&amp;view=cost" data-tip="Spend and caps for every agent">Cost</a></div>'
     : canAdd ? '<div class="hsu__foot"><button type="button" class="ax-btn ax-btn--ghost hsu__add" data-hsu-add="' + (engine === "codex-cli" ? "codex" : "claude") + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add account</button></div>' : ""
   return '<header class="hsu__hd">' + icon(engine) + "<b>" + esc(hubEngineFull(engine)) + "</b>" + (plan ? '<span class="hsu__plan">' + esc(plan) + "</span>" : "") + "</header>" +
     body + who + foot
@@ -293,10 +293,10 @@ export function hubAgentsPopHtml(list: HubPopAgent[], owner: boolean, note: stri
   const word: Record<string, string> = { working: "Working", needs: "Needs you", done: "Done today", idle: "Idle" }
   const rows = list.map((a) => {
     const state = a.paused ? (a.state === "working" ? "Working · paused" : "Paused") : word[a.state] || a.state
-    const hold = owner ? '<button type="button" class="hsg__a" data-hsu-hold="' + (a.paused ? "resume" : "pause") + '" data-id="' + esc(a.id) + '" title="' + (a.paused ? "Let it start new runs again" : "Start no new run until you resume it; a run going now goes on") + '">' + (a.paused ? "Resume" : "Pause") + "</button>" : ""
+    const hold = owner ? '<button type="button" class="hsg__a" data-hsu-hold="' + (a.paused ? "resume" : "pause") + '" data-id="' + esc(a.id) + '" data-tip="' + (a.paused ? "Let it start new runs again" : "Start no new run until you resume it; a run going now goes on") + '">' + (a.paused ? "Resume" : "Pause") + "</button>" : ""
     return '<li class="hsg__r is-' + esc(a.paused && a.state !== "working" ? "paused" : a.state) + '">' +
       '<span class="hsg__face" style="--ha-c:' + esc(a.color || "var(--ax-accent)") + '">' + esc(a.face) + '<i class="hsg__dot"></i></span>' +
-      '<span class="hsg__t"><span class="hsg__top"><b>' + esc(a.name) + '</b><span class="hsg__eng" title="' + esc(a.tier) + '">' + icon(a.tier) + '</span><span class="hsg__st">' + esc(state) + "</span></span>" +
+      '<span class="hsg__t"><span class="hsg__top"><b>' + esc(a.name) + '</b><span class="hsg__eng" data-tip="' + esc(a.tier) + '">' + icon(a.tier) + '</span><span class="hsg__st">' + esc(state) + "</span></span>" +
       (a.line ? '<span class="hsg__line">' + esc(a.line) + "</span>" : "") + "</span>" +
       '<span class="hsg__acts"><a class="hsg__a" href="#page=chat&amp;agent=' + esc(encodeURIComponent(a.id)) + '">Chat</a>' +
       (a.runHref ? '<a class="hsg__a" href="' + esc(a.runHref) + '">Open run</a>' : "") + hold + (a.stopHtml || "") + "</span></li>"
@@ -318,9 +318,9 @@ export const HUB_USAGE_CSS = `
 .hsu__w b { font-weight: 600; color: var(--ax-text-2); }
 .hsu__rs { color: var(--ax-muted); font-size: 11px; white-space: nowrap; }
 .hsu__m { position: relative; width: 26px; height: 4px; border-radius: 2px; background: var(--ax-border); overflow: hidden; }
-.hsu__m i, .hsu__bar i { display: block; height: 100%; border-radius: inherit; background: var(--hsu-c); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
-[data-tone="warn"] { --hsu-c: var(--ax-amber, #f59e0b); }
-[data-tone="high"] { --hsu-c: var(--ax-red, #e40014); }
+.hsu__m i, .hsu__bar i { display: block; width: 100%; height: 100%; background: var(--hsu-c); transform-origin: left; transition: transform 200ms cubic-bezier(.2, .8, .2, 1); }
+[data-tone="warn"] { --hsu-c: var(--ax-amber); }
+[data-tone="high"] { --hsu-c: var(--ax-red); }
 .hsu__flag { width: 7px; height: 7px; border-radius: 50%; background: var(--hsu-c); }
 /* R28i: an engine at or near its limit: the item takes the state colour. */
 .hsu__eng[data-tone="warn"], .hsu__eng[data-tone="high"] { border-color: color-mix(in oklch, var(--hsu-c) 45%, transparent); background: color-mix(in oklch, var(--hsu-c) 10%, transparent); }
@@ -330,18 +330,17 @@ export const HUB_USAGE_CSS = `
 .hsu__spend b { color: var(--ax-text); font-variant-numeric: tabular-nums; }
 .hsu__acct { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12px; }
 .hsu__acct ~ .hsu__acct { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ax-border); }
-.hsu__in { color: var(--ax-muted); font-size: 11px; padding: 0 6px; border: 1px solid var(--ax-border); border-radius: 999px; }
-.hsu-pop { position: fixed; z-index: 11; bottom: 36px; left: 8px; width: 300px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow: auto; padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); color: var(--ax-text); box-shadow: var(--ax-shadow-lg); font-size: 12.5px; transform-origin: bottom left; animation: hsu-in .14s cubic-bezier(.2, .8, .2, 1); }
+.hsu__in { color: var(--ax-muted); font-size: 11px; padding: 0 6px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); }
+.hsu-pop { position: fixed; z-index: 11; bottom: 36px; left: 8px; width: 300px; max-width: calc(100vw - 16px); max-height: min(70vh, 520px); overflow: auto; padding: 10px 12px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); color: var(--ax-text); box-shadow: var(--ax-shadow-lg); font-size: 12.5px; transform-origin: bottom left; }
 .hsu-pop.is-agents { width: 440px; }
-@keyframes hsu-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .hsu-pop { animation: none; } .hsu__m i, .hsu__bar i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .hsu__m i, .hsu__bar i { transition: none; } }
 .hsu__hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .hsu__hd b { font-size: 13px; }
 .hsu__plan { margin-left: auto; color: var(--ax-muted); font-size: 11.5px; }
 .hsu__rows, .hsu__who, .hsg { list-style: none; margin: 0; padding: 0; }
 .hsu__row { display: grid; grid-template-columns: 86px 1fr 38px; align-items: center; gap: 4px 8px; padding: 5px 0; --hsu-c: var(--ax-accent); }
-.hsu__row[data-tone="warn"] { --hsu-c: var(--ax-amber, #f59e0b); }
-.hsu__row[data-tone="high"] { --hsu-c: var(--ax-red, #e40014); }
+.hsu__row[data-tone="warn"] { --hsu-c: var(--ax-amber); }
+.hsu__row[data-tone="high"] { --hsu-c: var(--ax-red); }
 .hsu__l { color: var(--ax-text-2); }
 .hsu__bar { height: 6px; border-radius: 3px; background: var(--ax-border); overflow: hidden; }
 .hsu__pct { text-align: right; font-variant-numeric: tabular-nums; }
@@ -350,16 +349,16 @@ export const HUB_USAGE_CSS = `
 .hsu__read { margin: 6px 0 0; color: var(--ax-muted); font-size: 11.5px; }
 .hsu__h { margin: 10px 0 4px; color: var(--ax-muted); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
 .hsu__who { display: flex; flex-wrap: wrap; gap: 4px; }
-.hsu__who a { display: inline-block; padding: 1px 8px; border: 1px solid var(--ax-border); border-radius: 999px; color: var(--ax-text-2); text-decoration: none; }
-.hsu__who a:hover { border-color: var(--ax-accent); color: var(--ax-text); }
+.hsu__who a { display: inline-block; padding: 1px 8px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); color: var(--ax-text-2); text-decoration: none; }
+@media (hover: hover) { .hsu__who a:hover { border-color: var(--ax-muted); color: var(--ax-text); } }
 .hsu__foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ax-border); }
 .hsu__add { display: inline-flex; align-items: center; gap: 6px; }
 .hsu__add svg { width: 13px; height: 13px; }
 .hsg__r { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: var(--ax-radius-sm); --ha-s: var(--ax-muted); }
-.hsg__r:hover { background: var(--ax-surface-2); }
+@media (hover: hover) { .hsg__r:hover { background: var(--ax-surface-3); } }
 .hsg__r.is-working { --ha-s: var(--ax-accent); }
-.hsg__r.is-needs { --ha-s: var(--ax-amber, #f5a524); }
-.hsg__r.is-done { --ha-s: var(--ax-green, #2fbf71); }
+.hsg__r.is-needs { --ha-s: var(--ax-amber); }
+.hsg__r.is-done { --ha-s: var(--ax-green); }
 .hsg__face { position: relative; flex: none; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; background: var(--ha-c); color: #fff; font: 600 11.5px/1 var(--ax-font-head, inherit); }
 .hsg__dot { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--ha-s); border: 2px solid var(--ax-bg); }
 .hsg__r.is-working .hsg__dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--ha-s); opacity: 0; animation: ha-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
@@ -370,10 +369,10 @@ export const HUB_USAGE_CSS = `
 .hsg__eng { display: inline-flex; }
 .hsg__st { color: var(--ax-muted); font-size: 11px; white-space: nowrap; }
 .hsg__line { color: var(--ax-text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hsg__acts { flex: none; display: inline-flex; gap: 2px; opacity: .55; transition: opacity .12s; }
-.hsg__r:hover .hsg__acts, .hsg__r:focus-within .hsg__acts { opacity: 1; }
+.hsg__acts { flex: none; display: inline-flex; gap: 2px; }
+@media (hover: hover) { .hsg__acts { opacity: 0; transition: opacity 150ms; } .hsg__r:hover .hsg__acts, .hsg__r:focus-within .hsg__acts { opacity: 1; } }
 .hsg__a { font: inherit; font-size: 11.5px; color: var(--ax-text-2); background: none; border: 1px solid transparent; border-radius: var(--ax-radius-sm); padding: 2px 6px; cursor: pointer; text-decoration: none; white-space: nowrap; }
-.hsg__a:hover { background: var(--ax-surface-3); color: var(--ax-text); }
+@media (hover: hover) { .hsg__a:hover { background: var(--ax-surface-3); color: var(--ax-text); } }
 .hsg__acts .wlv__b { font-size: 11.5px; padding: 2px 6px; min-height: 0; }
 /* Up to 1180 px the engine items keep their logo and bars, not their names;
    the agents item says "3 running" (#2101 "fits 900 px"). */

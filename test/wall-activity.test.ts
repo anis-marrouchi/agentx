@@ -39,7 +39,7 @@ function openWall(opts: { hash: string; runs?: Record<string, unknown[]>; posts?
     const e: any = {
       on, id, attrs: attrsOf(tag), hidden: /\shidden[\s>]/.test(tag), textContent: "", value: id === "f-status" ? "open" : "", checked: false,
       type: /type="checkbox"/.test(tag) ? "checkbox" : "select", style: {}, disabled: false, children: [] as any[],
-      classList: classes(), parentNode: { classList: classes() },
+      classList: classes(), parentNode: { classList: classes(), attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v } },
       get innerHTML() { return html },
       set innerHTML(v: string) {
         html = v
@@ -450,7 +450,7 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     expect(w.el("wall-build").innerHTML).toContain('wbl__asof">as of ')
     expect(w.el("hs-version").textContent).toBe("v0.182.0")
     // #2343 C1: the bar's hover says so too.
-    expect(w.el("hs-version").parentNode.title).toMatch(/^v0\.182\.0 · 4f2c9a1 · since .+ · as of \d{1,2}:\d{2}( ?[AP]M)?\. The build the daemon is running/)
+    expect(w.el("hs-version").parentNode.attrs["data-tip"]).toMatch(/^v0\.182\.0 · 4f2c9a1 · since .+ · as of \d{1,2}:\d{2}( ?[AP]M)?\. The build the daemon is running/)
   })
 
   it("says as of on the bar's hover when a later ask fails, and drops it once an ask answers again", async () => {
@@ -458,16 +458,16 @@ describe("Wall build line, design #1451 frame 0 (#1444)", () => {
     await w.settle()
     ;(w.opts as any).build = null
     await w.tick()
-    expect(w.el("hs-version").parentNode.title).toContain(" · as of ")
+    expect(w.el("hs-version").parentNode.attrs["data-tip"]).toContain(" · as of ")
     ;(w.opts as any).build = BUILD
     await w.tick()
-    expect(w.el("hs-version").parentNode.title).not.toContain("as of")
+    expect(w.el("hs-version").parentNode.attrs["data-tip"]).not.toContain("as of")
   })
 
   it("does not mark a fresh answer as of", async () => {
     const w = openWall({ hash: "#page=wall", build: BUILD })
     await w.settle()
     expect(w.el("wall-build").innerHTML).not.toContain("wbl__asof")
-    expect(w.el("hs-version").parentNode.title).not.toContain("as of")
+    expect(w.el("hs-version").parentNode.attrs["data-tip"]).not.toContain("as of")
   })
 })

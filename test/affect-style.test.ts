@@ -7,7 +7,6 @@ import { AX_AFFECT_CSS, afLoaderHtml } from "../src/daemon/ui/affect.css"
 import { renderWallDocument } from "../src/daemon/ui/pages/wall-space"
 import { renderShell } from "../src/daemon/ui/shell"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
-import { wflLoader } from "../src/daemon/ui/pages/wall-files"
 
 const ROOT = join(__dirname, "..")
 const SOURCE = "src/daemon/ui/affect.css.ts"
@@ -55,10 +54,6 @@ describe("affectUI style source (#2152)", () => {
     const html = afLoaderHtml("<b>Loading</b>")
     expect(html).toContain("&lt;b&gt;Loading&lt;/b&gt;")
     expect(count(html, "<span style=")).toBe(8)
-  })
-
-  it("the Files tab's shipped loader is the same markup", () => {
-    expect(wflLoader("Reading the file…")).toBe(afLoaderHtml("Reading the file…"))
   })
 
   it("ships the MIT notice with the package", () => {

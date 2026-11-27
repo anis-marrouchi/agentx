@@ -18,7 +18,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var up = nodes.filter(function (n) { return n.reachable !== false; }).length;
     t.textContent = nodes[0].name + (nodes.length > 1 ? ' +' + (nodes.length - 1) : '');
     $('hs-node').hidden = false;
-    $('hs-node').title = nodes.map(function (n) { return n.name + (n.reachable === false ? ' (not reachable)' : ''); }).join(', ') + ' · ' + up + ' of ' + nodes.length + ' reachable';
+    $('hs-node').setAttribute('data-tip', nodes.map(function (n) { return n.name + (n.reachable === false ? ' (not reachable)' : ''); }).join(', ') + ' · ' + up + ' of ' + nodes.length + ' reachable');
   }
   window.addEventListener('online', hsPaintConn);
   window.addEventListener('offline', hsPaintConn);
@@ -97,7 +97,13 @@ export const HUB_STATUS_SCRIPT = String.raw`
     var t = ev.target;
     if (t && t.matches && t.matches('[data-hsc-agent]')) { HSC.agent = t.value; HSC.note = { kind: '', text: '' }; HSC.last = ''; hsPaintCli(); }
   });
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && HSC.open) { hsCliOpen(false); $('hs-cli').focus(); } });
+  // Esc closes either bar popover and gives focus back to its button (C16).
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if (HSC.open) { hsCliOpen(false); $('hs-cli').focus(); return; }
+    var pop = $('hs-acct-pop');
+    if (pop && !pop.hidden) { pop.hidden = true; $('hs-acct').setAttribute('aria-expanded', 'false'); $('hs-acct').focus(); }
+  });
 
   function hsPaintRunning() {
     hsPaintConn();
@@ -121,7 +127,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     el.parentNode.hidden = false;
     // An old answer (the dashboard or this page could not reach the daemon) says as of when (#2343 C1).
     var asOf = typeof buildAsOf !== 'undefined' && buildAsOf ? ' · as of ' + buildAsOf.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    el.parentNode.title = 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + asOf + '. ' + buildTitle(buildLast);
+    el.parentNode.setAttribute('data-tip', 'v' + buildLast.version + (buildLast.commit ? ' · ' + buildLast.commit : '') + (buildLast.startedAt ? ' · since ' + buildWhen(new Date(buildLast.startedAt)) : '') + asOf + '. ' + buildTitle(buildLast));
   }
   // CLI accounts (#2101 P9b): owner only; a 403 leaves the button hidden.
   var hsAcct = null;
@@ -130,7 +136,7 @@ export const HUB_STATUS_SCRIPT = String.raw`
     if (!b || !hsAcct) return;
     b.hidden = false;
     var said = hubAccountsText(hsAcct);
-    b.title = 'Accounts · ' + said;
+    b.setAttribute('data-tip', 'Accounts · ' + said);
     b.innerHTML = 'Accounts<span class="hs__acct-s"> · ' + esc(said) + '</span>';
     if (!pop.hidden) pop.innerHTML = hubAccountsHtml(hsAcct, esc);
   }

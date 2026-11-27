@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest"
 import { hubCliHtml, hubCliSavedText, hubCliText, hubCliWaitText, hubConnState, hubEngineName, HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { HUB_STATUS_SCRIPT } from "../src/daemon/ui/pages/hub-status.client"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 describe("Hub bottom status", () => {
+
+  it("follows orca-design in the bar (Hub review batch 6)", () => {
+    // P1: healthy says nothing; only a problem gets the (token) dot.
+    expect(HUB_STATUS_CSS).toContain('.hs__conn[data-state="ok"] { display: none; }')
+    expect(HUB_STATUS_CSS).toContain('.hs__conn[data-state="err"] .hs__dot, .hs__conn[data-state="off"] .hs__dot { display: block; }')
+    // C10: no raw colours, tokens only.
+    expect(HUB_STATUS_CSS.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/#[0-9a-f]{3,6}\b/i)
+    // C14: tooltips, not title; the theme button keeps its spoken name.
+    expect(HUB_STATUS_HTML).not.toContain("title=")
+    expect(HUB_STATUS_HTML).toContain('data-tip="Light / dark" aria-label="Switch light or dark"')
+    // C21: Reset layout sits in the bar.
+    expect(HUB_STATUS_HTML).toContain("data-panel-reset")
+    // C16: Esc closes the Accounts popover too and gives the focus back.
+    expect(HUB_STATUS_SCRIPT).toContain("if (pop && !pop.hidden) { pop.hidden = true; $('hs-acct').setAttribute('aria-expanded', 'false'); $('hs-acct').focus(); }")
+    expect(HUB_STATUS_SCRIPT).not.toContain(".title =")
+  })
 
   it("names the connection from the last live read (#2101 R25)", () => {
     expect(hubConnState({ live: true, error: false, online: true })).toEqual({ state: "ok", text: "Connected" })
