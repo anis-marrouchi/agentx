@@ -110,7 +110,8 @@ type Tab = "run" | "project" | "workspace"
 type Open = { kind: "list" } | { kind: "run"; list: "made" | "read"; path: string } | { kind: "tree"; tab: "project" | "workspace"; path: string }
 
 /** The right column's tabs for one chat thread (null: no conversation yet). */
-export function FilesPanel({ threadId }: { threadId: string | null }) {
+/** `inSheet`: drawn in the phone's Sheet, whose close button sits top right. */
+export function FilesPanel({ threadId, inSheet = false }: { threadId: string | null; inSheet?: boolean }) {
   // The chat's own read (ShellPage.tsx ShellChat): one cache, no second
   // request. The chat reads it again while an answer is pending, so a run
   // that starts or ends shows here too.
@@ -175,17 +176,17 @@ export function FilesPanel({ threadId }: { threadId: string | null }) {
   if (!threadId || (!thread.isLoading && !src)) {
     // Run artifacts is always there (#2455), even before a conversation.
     return (
-      <Tabs value="run" className="flex h-full min-h-0 flex-col px-3 py-2" data-shell="tabs">
-        <TabsList aria-label="Files" className="self-start">
-          <TabsTrigger value="run"><Icon name="files" className="mr-1.5" />Run artifacts</TabsTrigger>
+      <Tabs value="run" className="flex h-full min-h-0 flex-col px-3 pb-2" data-shell="tabs">
+        <TabsList variant="line" aria-label="Files" className={cn("shrink-0", inSheet && "pr-8")}>
+          <TabsTrigger value="run" className="px-2 text-[13px]">Run artifacts</TabsTrigger>
         </TabsList>
-        <TabsContent value="run" className="min-h-0 flex-1 overflow-y-auto">
+        <TabsContent value="run" className="min-h-0 flex-1 overflow-y-auto pt-3">
           <EmptyState title="No files yet">What this chat's runs write or send shows here.</EmptyState>
         </TabsContent>
       </Tabs>
     )
   }
-  if (!src) return <div className="px-3 py-2" data-shell="tabs"><AfLoader>Reading the chat…</AfLoader></div>
+  if (!src) return <div className="px-3 py-3" data-shell="tabs"><AfLoader>Reading the chat…</AfLoader></div>
 
   const reload = () => {
     if (run?.task && !run.live) void rec.refetch()
@@ -262,19 +263,15 @@ export function FilesPanel({ threadId }: { threadId: string | null }) {
   const others = runs.filter((r) => r !== run && r.task).reverse()
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex h-full min-h-0 flex-col px-3 py-2" data-shell="tabs">
-      <div className="flex items-center gap-2">
-        <TabsList aria-label="Files" className="self-start">
-          <TabsTrigger value="run"><Icon name="files" className="mr-1.5" />Run artifacts</TabsTrigger>
-          {hasProject ? <TabsTrigger value="project"><Icon name="folder-git-2" className="mr-1.5" />Project</TabsTrigger> : null}
-          <TabsTrigger value="workspace"><Icon name="folder" className="mr-1.5" />Workspace</TabsTrigger>
-        </TabsList>
-        <Button variant="ghost" size="icon-xs" className="ml-auto" aria-label="Reload" title="Reload" onClick={reload}>
-          <Icon name="refresh-cw" className="size-3.5" />
-        </Button>
-      </div>
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="flex h-full min-h-0 flex-col px-3 pb-2" data-shell="tabs">
+      {/* Line tabs, text only: the three fit the right column (orca-design). */}
+      <TabsList variant="line" aria-label="Files" className={cn("shrink-0", inSheet && "pr-8")}>
+        <TabsTrigger value="run" className="px-2 text-[13px]">Run artifacts</TabsTrigger>
+        {hasProject ? <TabsTrigger value="project" className="px-2 text-[13px]">Project</TabsTrigger> : null}
+        <TabsTrigger value="workspace" className="px-2 text-[13px]">Workspace</TabsTrigger>
+      </TabsList>
 
-      <TabsContent value="run" className="min-h-0 flex-1 overflow-y-auto" data-shell="files">
+      <TabsContent value="run" className="min-h-0 flex-1 overflow-y-auto pt-2" data-shell="files">
         <section data-files="run" aria-label="Run artifacts" className="flex flex-col gap-2">
           {run ? (
             <div className="flex min-h-8 items-center gap-2">
@@ -283,6 +280,9 @@ export function FilesPanel({ threadId }: { threadId: string | null }) {
               {!isCurrent ? (
                 <Button variant="outline" size="xs" onClick={() => setPicked(null)}>Current run</Button>
               ) : null}
+              <Button variant="ghost" size="icon-xs" aria-label="Reload" title="Reload" onClick={reload}>
+                <Icon name="refresh-cw" className="size-3.5" />
+              </Button>
             </div>
           ) : null}
           {runBody}
@@ -308,12 +308,12 @@ export function FilesPanel({ threadId }: { threadId: string | null }) {
       </TabsContent>
 
       {hasProject ? (
-        <TabsContent value="project" className="min-h-0 flex-1 overflow-y-auto" data-shell="files">
+        <TabsContent value="project" className="min-h-0 flex-1 overflow-y-auto pt-2" data-shell="files">
           {markup(workspaceHtml(treeView(dirs.project, project), src.key, { title: "", top: projectName, dirCx: "pjdir", fileCx: "pjfile" }))}
         </TabsContent>
       ) : null}
 
-      <TabsContent value="workspace" className="min-h-0 flex-1 overflow-y-auto" data-shell="files">
+      <TabsContent value="workspace" className="min-h-0 flex-1 overflow-y-auto pt-2" data-shell="files">
         {src.ws ? markup(workspaceHtml(treeView(dirs.workspace, ws), src.key, { title: "" })) : <p className="ax-wall__empty text-[13px]">No workspace for this chat.</p>}
       </TabsContent>
     </Tabs>

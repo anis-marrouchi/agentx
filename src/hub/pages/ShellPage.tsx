@@ -189,8 +189,8 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
 
 /** The right column: Run artifacts, Project and Workspace tabs for the
  *  chat in view (shell/FilesPanel.tsx, #2455). */
-export function RightTabs({ threadId = null }: { threadId?: string | null }) {
-  return <FilesPanel threadId={threadId} />
+export function RightTabs({ threadId = null, inSheet = false }: { threadId?: string | null; inSheet?: boolean }) {
+  return <FilesPanel threadId={threadId} inSheet={inSheet} />
 }
 
 // --- The shell ---
@@ -307,7 +307,7 @@ export function SimpleShell(props: SimpleShellProps & { width?: ShellWidth }) {
           onOpenAutoFocus={(e) => { e.preventDefault(); if (sheet !== "search") (e.currentTarget as HTMLElement).focus() }}
         >
           <SheetTitle className="sr-only">{sheet === "tabs" ? "Files" : "Menu"}</SheetTitle>
-          {sheet === "tabs" ? <RightTabs threadId={chatThread} /> : <SideMenu {...menu} focusSearch={sheet === "search" ? kTick : 0} onDone={() => setSheet(null)} />}
+          {sheet === "tabs" ? <RightTabs threadId={chatThread} inSheet /> : <SideMenu {...menu} focusSearch={sheet === "search" ? kTick : 0} onDone={() => setSheet(null)} />}
         </SheetContent>
       </Sheet>
     </div>
