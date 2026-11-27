@@ -25,8 +25,9 @@ import { SHELL_PAGE, currentLayout } from "../shell"
 import { SideMenu, SideRail, type SideMenuProps } from "../shell/SideMenu"
 import { Composer, sayAnswer, type ComposerSend } from "../shell/Composer"
 import { FilesPanel } from "../shell/FilesPanel"
+import { AgentQuestions, useAgentQuestions } from "../shell/AgentQuestions"
 import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
-import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaModel } from "../shell/menu"
+import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaAsk, type HaModel } from "../shell/menu"
 import { readTasksView, saveTasksView, shellPane, type TasksView } from "../tasks"
 import { WAITING_URL, waitingList, type WaitingReply } from "../waiting"
 import { MENU_API, MENU_QUERY_KEY, type MenuReply } from "../settings/menu-model"
@@ -87,8 +88,15 @@ function PendingAnswer({ text }: { text: string }) {
 }
 
 /** The centre: the agent in view's newest conversation and the writing box. */
-export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; phoneBar?: ReactNode; onThread?: (id: string | null) => void }) {
+export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAgent; asks?: HaAsk[]; phoneBar?: ReactNode; onThread?: (id: string | null) => void }) {
   const client = useQueryClient()
+  // An agent that waits on the owner opens on its questions (#2505); its
+  // thread is about something else and opens with "Whole chat".
+  const questions = useAgentQuestions(asks)
+  const [whole, setWhole] = useState(false)
+  useEffect(() => { setWhole(false) }, [agent?.id])
+  const asking = !!agent && (questions === undefined || questions.length > 0)
+  const showThread = !asking || whole
   const [threadId, setThreadId] = useState<string | null>(null)
   const [error, setError] = useState("")
 
@@ -161,9 +169,10 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-4 py-6">
+          {agent && asking ? <AgentQuestions agentId={agent.id} list={questions} whole={whole} onWhole={setWhole} /> : null}
           {!agent ? (
             <EmptyState title="Pick an agent to chat with">Your agents are in the side menu.</EmptyState>
-          ) : thread.isLoading ? (
+          ) : !showThread ? null : thread.isLoading ? (
             <AfSkeletonRows />
           ) : messages.length === 0 ? (
             <p className="pt-16 text-center text-sm text-muted-foreground">Ask {agent.name} anything. The answer shows here.</p>
@@ -219,7 +228,7 @@ function Centre({ props, bar, onThread }: { props: SimpleShellProps; bar: ReactN
     case "waiting": return <WaitingPane open={props.openTask ?? null} phoneBar={bar} />
     case "projects": return <ProjectsPane owner={props.owner} phoneBar={bar} />
     case "activity": return <ActivityPane phoneBar={bar} />
-    default: return <ShellChat agent={current} phoneBar={bar} onThread={onThread} />
+    default: return <ShellChat agent={current} asks={row?.state === "needs" ? row.asks : undefined} phoneBar={bar} onThread={onThread} />
   }
 }
 

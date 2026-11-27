@@ -7,9 +7,11 @@
 //
 // Plain data and pure functions, so the tests check them without a browser.
 
-import { haFace, haGroups, type HaModel, type HaOpen, type HaRow, type HaState } from "../../daemon/ui/pages/hub-agents"
+import { haAskWords, haFace, haGroups, type HaModel, type HaOpen, type HaRow, type HaState } from "../../daemon/ui/pages/hub-agents"
 
-export { haStateWord, type HaModel, type HaOpen, type HaRow, type HaState } from "../../daemon/ui/pages/hub-agents"
+import { shortAgo } from "../tasks"
+
+export { haStateWord, type HaAsk, type HaModel, type HaOpen, type HaRow, type HaState } from "../../daemon/ui/pages/hub-agents"
 
 /** The agent rows, grouped by state (board-dashboard.ts). */
 export const HUB_AGENTS_URL = "/api/admin/hub/agents"
@@ -100,6 +102,12 @@ export function rowLine(r: HaRow, word: string): string {
 export function rowStats(r: HaRow): string {
   const going = r.runs || 0, today = r.today || 0
   return [going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")
+}
+
+/** A Needs you row's words (#2505), as the old Hub's row says them
+ *  (hub-agents.ts haAskWords): "4 for you" and "Waiting on you · asked 40m". */
+export function askWords(r: HaRow): { count: string; since: string } {
+  return haAskWords(r, (ms) => shortAgo(0, ms))
 }
 
 // --- The search box: ⌘K and Enter ---

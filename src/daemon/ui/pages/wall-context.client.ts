@@ -33,8 +33,9 @@
 //
 // The chat's work line (#hc-work, under the agent strip): the open request
 // the agent in view works on (it owns it, or owns its active plan step),
-// newest first, with Changes when it has a forge home and Plan. With more
-// than one, a picker. The chat script asks for it through window.AXCtx.
+// newest first, with Changes when it has a forge home and Plan. One request,
+// named, never a picker: the one of the question a Needs you row opened
+// (ask=request:<id>, #2505), else the newest. The chat script asks for it through window.AXCtx.
 
 import { HUB_NAME } from "../hub-name"
 import { hubPanelGripHtml } from "./hub-panels"
@@ -47,7 +48,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
   ${injectFns({ chAgo, chDate, chReqMetaHtml })}
   ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, wflLoader, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
-  S.cx = { tabs: [], on: 0, painted: '', files: {}, pick: {}, src: {} };
+  S.cx = { tabs: [], on: 0, painted: '', files: {}, src: {} };
   var CX_MAX = 6;
   var CX_NAME = { files: 'Files', wfile: 'File', wsfile: 'File', changes: 'Changes', plan: 'Plan', file: 'File' };
   /** A tab whose source is a run or a chat (S.cx.src), not a post. */
@@ -133,11 +134,6 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   /** When it started, its last move, its project, its home and History (#2101). */
   function cxMetaHtml(p) {
     return chReqMetaHtml({ id: p.id, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project || null, repo: p.repo, home: p.home }, Date.now());
-  }
-  /** " · 12m ago", or nothing when the time is not known (no empty separator). */
-  function cxAgoBit(t) {
-    var a = chAgo(t, Date.now());
-    return a ? ' · ' + esc(a) : '';
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
@@ -334,11 +330,15 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var w = $('hc-work');
     if (!w) return;
     var agent = chat.agent(), list = cxWorkOf(agent);
-    if (!list.length) { w.hidden = true; w.innerHTML = ''; return; }
-    var id = S.cx.pick[agent], p = list.filter(function (x) { return x.id === id; })[0] || list[0];
-    var what = list.length > 1
-      ? '<select data-cx="pick" aria-label="The request in view">' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === p.id ? ' selected' : '') + '>' + esc(x.headline) + (x.project || x.repo ? ' · ' + esc(x.project || x.repo) : '') + cxAgoBit(x.lastMoveAt || x.updatedAt) + '</option>'; }).join('') + '</select>'
-      : '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
+    // A Needs you row opens on its question (#2505, ask=request:<id> in the
+    // hash): Working on names that question's request. No select: one
+    // request, named, as a link to its post; else the newest open one.
+    var ask = /[#&]ask=([^&]*)/.exec(location.hash || ''), askId = '';
+    try { askId = ask ? decodeURIComponent(ask[1]) : ''; } catch (e) { askId = ''; }
+    askId = askId.indexOf('request:') === 0 ? askId.slice(8) : '';
+    var p = (askId && (list.filter(function (x) { return x.id === askId; })[0] || findPost(askId))) || list[0];
+    if (!p) { w.hidden = true; w.innerHTML = ''; return; }
+    var what = '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
     w.innerHTML = '<span class="hc__worklbl">Working on</span>' + what +
       (p.mergeRef ? '<button type="button" class="hc__ib" data-cx="open" data-kind="changes" data-id="' + esc(p.id) + '"' + on('changes') + ' title="The changes in ' + esc(p.mergeRef) + '">Changes</button>' : '') +
@@ -351,6 +351,8 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     return p ? { project: p.project, repo: p.repo, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
   }
   window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost, files: function (src) { cxFiles(src); } };
+  // Another Needs you row of the same agent: the work line follows its question (#2505).
+  window.addEventListener('hashchange', function () { if (/[#&]ask=/.test(location.hash || '')) cxPaintWork(); });
 
   document.addEventListener('click', function (ev) {
     var t = ev.target && ev.target.closest && ev.target.closest('[data-cx]');
@@ -378,13 +380,6 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       var did = diffPostId(), d = did && diffOf(did);
       cxOpen('file', did, { path: t.getAttribute('data-path'), pr: d && d.data && d.data.ref || '' });
     }
-  });
-  document.addEventListener('change', function (ev) {
-    var t = ev.target;
-    if (!t || !t.getAttribute || t.getAttribute('data-cx') !== 'pick') return;
-    var chat = window.AXHubChat;
-    if (chat && chat.agent) S.cx.pick[chat.agent()] = t.value;
-    cxPaintWork();
   });
 `
 
