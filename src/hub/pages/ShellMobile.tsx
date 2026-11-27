@@ -68,7 +68,7 @@ export function MobilePane({ phoneBar }: { phoneBar?: ReactNode }) {
         </a>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid max-w-2xl gap-8 px-4 py-6 sm:px-6 sm:py-8 lg:max-w-5xl lg:grid-cols-[minmax(0,42rem)_15rem] lg:justify-between lg:gap-x-12">
+        <div className="mx-auto grid max-w-2xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-6 sm:px-6 sm:py-8 lg:max-w-5xl lg:grid-cols-[minmax(0,42rem)_15rem] lg:justify-between lg:gap-x-12">
           <div data-mobile="why">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">Your agents, in your pocket</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">The same agents and the same chats as here, on your phone. Hold to talk to the agent you are with, answer what waits for you on the Desk with one tap, and get a note when a run ends or an agent asks you something.</p>
