@@ -6,6 +6,7 @@
 // agent's edit fields, its integrations and the actions; /api/workflows
 // says which workflow runs an action (an `action.run` or poll node's
 // `config.actionId`).
+import { seedModels } from "../../agents/conventions/seed-models"
 import type { AdminState, StateAgent } from "./data"
 
 export interface Integration {
@@ -128,12 +129,11 @@ export function money(n?: number): string {
   return "$" + (v >= 100 ? String(Math.round(v)) : v.toFixed(2))
 }
 
-/** The models the picker offers, by engine. A typed name not in the list is
- *  offered too, so a new model needs no release. */
-export const MODEL_GROUPS: readonly { tier: string; models: readonly string[] }[] = [
-  { tier: "claude-code", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"] },
-  { tier: "codex-cli", models: ["gpt-5.1-codex", "gpt-5.1-codex-mini"] },
-]
+/** The models the picker offers, by engine, from the CLI catalog's seed
+ *  lists (#2349). A typed name not in the list is offered too, so a new
+ *  model needs no release. */
+export const MODEL_GROUPS: readonly { tier: string; models: readonly string[] }[] = (["claude-code", "codex-cli"] as const)
+  .map((tier) => ({ tier, models: seedModels(tier).map((m) => m.id) }))
 
 /** The engine a listed model belongs to; undefined for one typed by hand. */
 export function modelTier(model: string): string | undefined {

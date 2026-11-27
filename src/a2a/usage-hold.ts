@@ -109,6 +109,8 @@ export function codexDate(text: string, now: number): number | undefined {
   const h = +m[4]
   if (month < 0 || h < 1 || h > 12 || +m[5] > 59) return undefined
   const hour = (h % 12) + (m[6].toUpperCase() === "PM" ? 12 : 0)
+  // Codex gives no zone: this reads the time in this machine's zone
+  // (the Codex CLI prints its local time; clawd runs on UTC).
   return valid(new Date(+m[3], month, +m[2], hour, +m[5], 0, 0).getTime(), now)
 }
 

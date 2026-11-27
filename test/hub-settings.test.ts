@@ -502,7 +502,8 @@ describe("Settings › Agent (#2101 ST2a)", () => {
     ])
     expect(showValue("tier", "codex-cli", engineName)).toBe("Codex")
     expect(showValue("model", "", engineName)).toBe("the engine's default")
-    expect(modelTier("gpt-5.1-codex")).toBe("codex-cli")
+    // The picker's Codex list is the catalog's seed list (#2349).
+    expect(modelTier("gpt-6.2-sol")).toBe("codex-cli")
     expect(modelTier("claude-fable-5-2")).toBe("claude-code")
     expect(modelTier("my-own")).toBeUndefined()
   })

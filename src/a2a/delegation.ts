@@ -1102,8 +1102,10 @@ export class DelegationManager {
         // (#1861).
         // A restart stopped it (#2467): the row stays open and the next
         // start sends it again, once. The time limit still runs, in case
-        // this process does not stop after all.
-        if (record.resend && !record.resent && this.store && handoffCutByRestart(r.error)) {
+        // this process does not stop after all. Only with
+        // resendAfterRestart on: holdOnUsageLimit alone also stores the
+        // message, and then a restart ends it as an error, as before.
+        if (this.deps.resendAfterRestart && record.resend && !record.resent && this.store && handoffCutByRestart(r.error)) {
           this.deps.log(`[delegation ${id}] ${who} was stopped by a restart (${clip(r.error ?? "", 120)}); kept open to send again after the restart`)
           return
         }

@@ -1,7 +1,8 @@
 // --- The status bar's engines and agents, with hover drop-downs (#2101 R5, R28) ---
 //
 // R28a: an item only for the plan engines an agent runs on now (its tier):
-//   Claude Code and Codex. An engine no agent uses has no item.
+//   Claude Code and Codex. An engine no agent uses has no item, unless
+//   this machine has a reading of its plan (R5: one bar per plan).
 // R28b: each item has a small bar per limit window (5 hours and week) with
 //   the % used. Hovering opens a drop-down with a bar per window, the reset
 //   time and when it was read. A reading taken before its window reset says
@@ -74,9 +75,12 @@ export function hubEngineShort(engine: string): string {
  * agents, from the live snapshot's nodes. An agent listed by two machines
  * counts once.
  */
-export function hubEnginesInUse(nodes: Array<{ name?: string; agents?: Array<{ id?: string; name?: string; tier?: string }> }>): Array<{ engine: string; agents: HubUseAgent[] }> {
+export function hubEnginesInUse(nodes: Array<{ name?: string; agents?: Array<{ id?: string; name?: string; tier?: string }> }>, read?: string[]): Array<{ engine: string; agents: HubUseAgent[] }> {
   const plan = hubPlanEngines().concat(hubApiEngines())
   const by: Record<string, HubUseAgent[]> = {}
+  // A plan this machine has a reading for keeps its item with no agent on it
+  // (#2101 R5: one bar per plan, Claude and Codex), so its limit stays in view.
+  for (const e of read || []) if (hubPlanEngines().indexOf(e) >= 0) by[e] = []
   const seen: Record<string, boolean> = {}
   for (const n of nodes || []) {
     for (const a of (n && n.agents) || []) {
@@ -187,9 +191,12 @@ export function hubClock(ms: number, now: number): string {
 /** The bar item's inside: the engine's logo, its name, and a small bar per
  *  5-hour and week window that has a percentage; for an API engine, its
  *  spend today in place of a bar (R28e). */
-export function hubEngineChipHtml(engine: string, rows: HubUseView[], esc: (s: unknown) => string, icon: (tier: string) => string, spend?: HubSpendView | null): string {
+export function hubEngineChipHtml(engine: string, rows: HubUseView[], esc: (s: unknown) => string, icon: (tier: string) => string, spend?: HubSpendView | null, now?: number): string {
+  // With `now`, each bar also says when its window resets (#2101 R5).
+  const reset = (r: HubUseView): string => now && r.resetsAt
+    ? '<span class="hsu__rs hs__long">resets <time datetime="' + new Date(r.resetsAt).toISOString() + '" title="' + esc(new Date(r.resetsAt).toLocaleString()) + '">' + esc(hubClock(r.resetsAt, now)) + "</time></span>" : ""
   const bars = rows.filter((r) => r.short && r.pct !== undefined).map((r) =>
-    '<span class="hsu__w" data-tone="' + r.tone + '"><span class="hsu__k">' + r.short + '</span><span class="hsu__m" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="width:' + r.pct + '%"></i></span><b>' + r.pct + "%</b></span>").join("")
+    '<span class="hsu__w" data-tone="' + r.tone + '"><span class="hsu__k">' + r.short + '</span><span class="hsu__m" role="progressbar" aria-label="' + esc(r.label) + ' used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + r.pct + '"><i style="width:' + r.pct + '%"></i></span><b>' + r.pct + "%</b>" + reset(r) + "</span>").join("")
   // No percentage, but a run said the limit is reached or near: a dot says so.
   const tone = hubEngineTone(rows)
   const flag = !bars && tone ? '<i class="hsu__flag" data-tone="' + tone + '" aria-hidden="true"></i>' : ""
@@ -309,6 +316,7 @@ export const HUB_USAGE_CSS = `
 .hsu__w { display: inline-flex; align-items: center; gap: 4px; --hsu-c: var(--ax-accent); }
 .hsu__k { color: var(--ax-muted); font-size: 10.5px; }
 .hsu__w b { font-weight: 600; color: var(--ax-text-2); }
+.hsu__rs { color: var(--ax-muted); font-size: 11px; white-space: nowrap; }
 .hsu__m { position: relative; width: 26px; height: 4px; border-radius: 2px; background: var(--ax-border); overflow: hidden; }
 .hsu__m i, .hsu__bar i { display: block; height: 100%; border-radius: inherit; background: var(--hsu-c); transition: width .5s cubic-bezier(.2, .8, .2, 1); }
 [data-tone="warn"] { --hsu-c: var(--ax-amber, #f59e0b); }

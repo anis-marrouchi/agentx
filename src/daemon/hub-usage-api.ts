@@ -198,10 +198,30 @@ export function resetHubSpendCache(): void { spendSums = null }
  * guard, which takes MESH_TOKEN (or loopback), not the dashboard token, so
  * MESH_TOKEN goes first.
  */
-export async function fetchHubUsage(config: Pick<DaemonConfig, "dashboard">, fetchImpl: typeof fetch = fetch, env: Record<string, string | undefined> = process.env, now: number = Date.now()): Promise<HubUsage> {
+export async function fetchHubUsage(config: Pick<DaemonConfig, "dashboard">, fetchImpl: typeof fetch = fetch, env: Record<string, string | undefined> = process.env, now: number = Date.now(), log: (msg: string) => void = (m) => console.warn(m)): Promise<HubUsage> {
   const base = config.dashboard.daemonUrl.replace(/\/+$/, "")
   const token = env.MESH_TOKEN || dashboardTokenForNode(config.dashboard as any, base, env)
-  const r = await fetchImpl(base + "/usage/plan", { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(5000) })
-  if (!r.ok) throw new Error(`daemon usage read answered ${r.status}`)
-  return hubUsageFromPlan(await r.json(), now)
+  let plan: unknown
+  try {
+    const r = await fetchImpl(base + "/usage/plan", { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(5000) })
+    if (!r.ok) throw new Error(`daemon usage read answered ${r.status}`)
+    plan = await r.json()
+    lastPlan = { plan, at: now }
+  } catch (e: any) {
+    // A busy or restarting daemon used to blank the bar until the next poll
+    // (#2101 R5). Its last answer is shaped again with today's clock, so each
+    // reading still ages out as it would have (READING_MAX_AGE_MS, resets).
+    const last = lastPlan && now - lastPlan.at <= LAST_PLAN_MAX_AGE_MS ? lastPlan : null
+    log(`[hub] daemon usage not read${last ? ", last answer used" : ""}: ${e?.message ?? e}`)
+    if (!last) throw e
+    plan = last.plan
+  }
+  return hubUsageFromPlan(plan, now)
 }
+
+/** How long the daemon's last /usage/plan answer stands in when it does not answer. */
+const LAST_PLAN_MAX_AGE_MS = 15 * 60_000
+let lastPlan: { plan: unknown; at: number } | null = null
+
+/** For tests. */
+export function resetHubUsageCache(): void { lastPlan = null }

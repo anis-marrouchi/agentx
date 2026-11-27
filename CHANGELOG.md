@@ -2,6 +2,26 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.303.0](https://github.com/anis-marrouchi/agentx/compare/v0.302.0...v0.303.0) (2026-11-27)
+
+
+### Features
+
+* **agents:** CLI catalog owns CLI facts and seed model lists ([#2349](https://github.com/anis-marrouchi/agentx/issues/2349) PR 1) ([#2486](https://github.com/anis-marrouchi/agentx/issues/2486)) ([e366c64](https://github.com/anis-marrouchi/agentx/commit/e366c649948c2641561637eba1c5eb626e1bdff1))
+
+
+### Bug Fixes
+
+* **a2a:** restart keeps a hand-off open only with resendAfterRestart on ([#2488](https://github.com/anis-marrouchi/agentx/issues/2488)) ([e8f15a9](https://github.com/anis-marrouchi/agentx/commit/e8f15a9cd0b46605233e6b6abf936a90abe47b53))
+* **hub:** status bar draws a bar, % and reset for each plan ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R5) ([#2500](https://github.com/anis-marrouchi/agentx/issues/2500)) ([d73a0e8](https://github.com/anis-marrouchi/agentx/commit/d73a0e8c863c0d7878f940c72b461e0de700e9ff))
+
+## [0.302.0](https://github.com/anis-marrouchi/agentx/compare/v0.301.0...v0.302.0) (2026-11-27)
+
+
+### Features
+
+* **desktop:** floating orb window, tray toggle and global talk key ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265) PR 2) ([#2493](https://github.com/anis-marrouchi/agentx/issues/2493)) ([5173e0d](https://github.com/anis-marrouchi/agentx/commit/5173e0de8d07d6ce6432f722a26286d745bfeb6e))
+
 ## [0.301.0](https://github.com/anis-marrouchi/agentx/compare/v0.300.1...v0.301.0) (2026-11-27)
 
 
