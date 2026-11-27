@@ -148,7 +148,8 @@ desktop.command('orb').description('switch this Mac from the AgentX Voice widget
       const built = builtOrbApp(stage)
       if (!existsSync(built)) throw new Error(`The build left no app at ${built}.`)
       // Quit a running copy before it is replaced; it may not be running.
-      try { execFileSync('osascript', ['-e', 'quit app "AgentX"'], { stdio: 'pipe' }) } catch { /* not running */ }
+      // Only this copy: matched by its full executable path.
+      try { execFileSync('pkill', ['-f', join(dest, 'Contents/MacOS/AgentX')], { stdio: 'pipe' }) } catch { /* not running */ }
       rmSync(dest, { recursive: true, force: true })
       mkdirSync(dirname(dest), { recursive: true })
       cpSync(built, dest, { recursive: true })
