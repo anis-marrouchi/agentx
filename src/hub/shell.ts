@@ -51,7 +51,7 @@ export const SHELL_MORE: Readonly<Partial<Record<HubShowItem, ShellNavItem>>> = 
   mobile: { id: "mobile", label: "Mobile app", icon: "smartphone", href: "#page=mobile" },
   workflows: { id: "workflows", label: "Workflows", icon: "workflow", href: "#page=workflows" },
   wiki: { id: "wiki", label: "Wiki", icon: "book-open", href: "/admin/wiki/" },
-  activity: { id: "activity", label: "Activity", icon: "activity", href: "#page=activity" },
+  activity: { id: "activity", label: "Activity", icon: "activity", href: "#page=home&pane=activity" },
   org: { id: "org", label: "Org", icon: "network", href: "#page=org" },
   sessions: { id: "sessions", label: "Sessions", icon: "radio", href: "#page=live" },
   usage: { id: "usage", label: "Usage", icon: "gauge", href: "#view=cost" },

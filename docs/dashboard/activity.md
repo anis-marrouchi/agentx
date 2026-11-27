@@ -11,15 +11,15 @@ Waiting on you answers "what needs me?" Activity answers "what ran, where, and w
 ## See the runs
 
 1. **Browser:** open the dashboard. The Hub opens.
-2. In the nav on the left, select **Activity**, under **Work**. On a phone, select the search button at the top, type `activity` and pick **Activity**. With the simple layout, the default on a new install, Activity is not in the menus: turn **Activity page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=activity`, which always works. The page's address is `/hub#page=activity`.
-3. Pick the result with the tabs under the title (**All**, **Done**, **Failed**, **Running**, **Stopped**) and the period with **24 h**, **7 d** or **30 d**.
-4. Select a row to open it in place: its result, what it was asked and where it ran. **Open the run** opens its Task page with the full conversation.
+2. In the side menu, select **Activity**. It opens in the middle of the page, with **Feed** picked at the top. On a phone, open the menu with the button at the top left first. With the simple layout, the default on a new install, Activity is not in the menu: turn **Activity page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=home&pane=activity`, which always works.
+3. Pick the period with **24 h**, **7 d** or **30 d**, and the result with the tabs (**All**, **Done**, **Failed**, **Running**, **Stopped**). **Failed** shows how many runs failed. Narrow the list with **All agents**, **All projects** and **Any source**.
+4. Select **+** at the end of a row to open it in place: its result, what it was asked, where it ran and its review findings. **Open the run**, or the row's title, opens its Task page with the full conversation.
 
 One agent's runs are on its profile, under **Activity**. Old links to an agent's classic history page open that tab. The full steps are in [Hub › See what the agents ran](./hub.md#see-what-the-agents-ran).
 
 ## The timeline and the Map
 
-The lane timeline and the Map are not on the Hub yet. They are still on the classic Activity page: on the Hub's Activity page, select **Timeline** next to **Feed** beside the title. The rest of this page describes them.
+The lane timeline and the Map are the two other views of the Hub's Activity: select **Timeline** or **Map** next to **Feed** at the top. The rest of this page describes them. The classic page, `/activity`, still shows the same two views.
 
 Each bar on the timeline is one run. Small marks on a run show what it recorded: a **decision**, a **warning**, **friction** (something that slowed it down), or something to **do later**. A cross marks a **canceled** run.
 
@@ -29,11 +29,11 @@ Each bar on the timeline is one run. Small marks on a run show what it recorded:
 
 ### Find a run on the timeline
 
-1. **Browser:** on the Hub's **Activity** page, select **Timeline** beside the title.
+1. **Browser:** on the Hub's **Activity** page, select **Timeline** at the top.
 2. Pick how far back to look: **6h**, **24h**, **3d** or **7d**.
 3. Next to **Lanes by**, pick how to group the runs: **Agent**, **Client**, **Project**, **Channel**, **Person** or **Node** (machine).
 4. Find the lane you care about and the bar at the time you expect.
-5. Select the bar. Its details open below the timeline: the route the message took and the outcome.
+5. Select the bar. Its details open below the timeline: when it ran, which agent and computer, where the message came from, the client, and its review findings.
 6. To pick up runs that finished since you opened the page, select **Refresh**.
 
 ![Activity grouped by client](/screenshots/activity-by-client.png)
@@ -117,8 +117,8 @@ The line board, **active only**, and the idle stations switch still apply. Selec
 ## Check it worked
 
 1. **Browser:** send an agent a small task, and wait for it to finish.
-2. On the Hub, select **Activity** in the nav, with **24 h** picked. The run is the first row, marked **Done**.
-3. Select **Timeline** beside the title. A new bar appears in that agent's lane. Select **Refresh** if the page was already open.
+2. On the Hub, select **Activity** in the side menu, with **24 h** picked. The run is the first row, marked **Done**.
+3. Select **Timeline** at the top. A new bar appears in that agent's lane. Select **Refresh** if the page was already open.
 4. Select the bar. Its details show the channel it came from and its result.
 5. Select **Map**, then select the train for that task. Its route starts with who started it, then the channel you used, and lists every agent that worked on it.
 
