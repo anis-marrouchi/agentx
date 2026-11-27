@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.297.0](https://github.com/anis-marrouchi/agentx/compare/v0.296.0...v0.297.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** Settings Mesh, Machine and Diagnostics panes ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST3b) ([#2450](https://github.com/anis-marrouchi/agentx/issues/2450)) ([a6ccef2](https://github.com/anis-marrouchi/agentx/commit/a6ccef25e2ef7744a6fba1cc8fe29b017f1c5d20))
+* **memory:** nightly memory tidy, one facts lock, logs kept by age ([#2117](https://github.com/anis-marrouchi/agentx/issues/2117) PR 2) ([e1be603](https://github.com/anis-marrouchi/agentx/commit/e1be603d7491760eacc7a46bbca49b52a8649af6))
+* **memory:** nightly memory tidy, one facts lock, logs kept by age ([#2117](https://github.com/anis-marrouchi/agentx/issues/2117) PR 2) ([b1c511b](https://github.com/anis-marrouchi/agentx/commit/b1c511b0f33318ee1a17441810a642fe7ba38535))
+
 ## [0.296.0](https://github.com/anis-marrouchi/agentx/compare/v0.295.0...v0.296.0) (2026-11-27)
 
 
