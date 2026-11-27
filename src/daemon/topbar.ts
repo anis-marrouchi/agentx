@@ -11,6 +11,7 @@
 
 import { HUB_NAME, HUB_NEEDS_YOU, HUB_PATH } from "./ui/hub-name"
 import { AX_THEME_BOOT } from "./ui/tokens"
+import { newSettingsHref } from "../hub/settings/old-sections"
 
 export type TopbarTab = "wall" | "monitor" | "activity" | "live" | "mesh" | "admin" | "graph" | "workflows" | "health" | "cost" | "wiki" | "inbox" | "projects" | "approvals" | "people" | "org"
 
@@ -498,10 +499,9 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
-        // The new React Settings (#2101); same page id as SETTINGS_PAGE in
-        // src/hub/settings/address.ts (that file pulls in React, so it is not
-        // imported here; test/topbar-settings-link.test.ts keeps them equal).
-        { id: "admin", label: "Settings", href: `${HUB_PATH}#page=settings-preview` },
+        // The new React Settings (#2101), by the one page id (old-sections.ts,
+        // plain data the daemon may import).
+        { id: "admin", label: "Settings", href: `${HUB_PATH}${newSettingsHref()}` },
       ],
     },
   ]
