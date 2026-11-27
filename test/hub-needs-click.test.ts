@@ -148,3 +148,12 @@ describe("answering in place (#2505 C1)", () => {
     expect(r).not.toContain('data-question-act="yes"')
   })
 })
+
+describe("the old Hub's Needs you chip keeps its width (#2505 C5)", () => {
+  it("marks a row with words, and its actions take their own room after the chip instead of covering it", () => {
+    expect(haRowHtml(coder, "coder", ltEsc, ltAge, { acts: true })).toContain('class="ha__row is-needs is-asks is-cur"')
+    expect(haRowHtml({ ...coder, state: "done", unread: 0, asks: undefined }, "", ltEsc, ltAge)).not.toContain("is-asks")
+    expect(HUB_NAV_CSS).toMatch(/\.ha__row\.is-asks \.ha__acts \{[^}]*position: static/)
+    expect(HUB_NAV_CSS).toMatch(/\.ha__n \{ flex: none;/)
+  })
+})

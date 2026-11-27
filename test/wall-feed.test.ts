@@ -3250,6 +3250,12 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("hc-work").innerHTML).not.toContain('data-kind="changes"')
     expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r2"')
   })
+  it("a question on no request hides the work line, never the newest request in its place (#2505 Q1)", async () => {
+    const w = openWall({ data, chatAgent: "cx", diff: route, hash: "#page=chat&agent=cx&ask=inbox%3Adraft-1" })
+    await w.settle()
+    expect(w.el("hc-work").hidden).toBe(true)
+    expect(w.el("hc-work").innerHTML).not.toContain("#post=r1")
+  })
   it("the chat's work line names the open request the agent in view works on, with Changes and Plan", async () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [{ idx: 0, name: "Build the fix", agentId: "cx", state: "active", doneWhen: "PR open" }] } })
     await w.settle()

@@ -115,8 +115,10 @@ export const WALL_CHAT_SCRIPT = String.raw`
   }
   function routeTo(agent) {
     if (!hist || panel.hidden) return;
-    var h = chatHash(agent || '');
-    if (location.hash === h) return;
+    var h = chatHash(agent || ''), on = chatRoute(location.hash);
+    // Already on this agent's chat: the hash stays as it is, so a Needs you
+    // row's ask=<key> (#2505) is still there for the work line and the questions.
+    if (location.hash === h || (on && on.agent === (agent || ''))) return;
     if (chatRoute(location.hash)) hist.replaceState(null, '', h);
     else { fromHash = location.hash; hist.pushState(null, '', h); pushed = true; }
   }

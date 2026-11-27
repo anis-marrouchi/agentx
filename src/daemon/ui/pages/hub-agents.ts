@@ -321,7 +321,7 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
       (r.state === "working" && r.runs ? '<button type="button" class="ha__act" data-ha-stop="' + esc(r.id) + '" aria-label="' + esc("Stop " + (r.runs === 1 ? "the run" : r.runs + " runs") + " of " + r.name) + '"' + tip(r.runs === 1 ? "Stop the run" : "Stop " + r.runs + " runs") + ">" + (ic.square || "") + "</button>" : "") +
       '<button type="button" class="ha__act" data-ha-menu="' + esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="' + esc("More for " + r.name) + '"' + tip("More") + ">" + (ic.ellipsis || "") + "</button></span>"
     : ""
-  return '<div class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" data-key="a:' + esc(r.id) + '" data-ha-agent="' + esc(r.id) + '">' +
+  return '<div class="ha__row is-' + r.state + (ask.count ? " is-asks" : "") + (r.id === cur ? " is-cur" : "") + '" data-key="a:' + esc(r.id) + '" data-ha-agent="' + esc(r.id) + '">' +
     '<a class="ha__link" href="' + esc(href) + '"' + (isRun ? " data-ha-run" : "") + (r.id === cur ? ' aria-current="true"' : "") + ">" +
     '<span class="ha__face" aria-hidden="true">' + esc(r.face) + "</span>" +
     '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + stats + (askOn ? "" : when) + "</span>" +
