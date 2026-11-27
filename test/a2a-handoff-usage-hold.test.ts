@@ -198,6 +198,9 @@ describe("a hand-off whose callee is over its usage limit", () => {
   })
 
   it("held when the daemon restarts: sent again at boot, still open", async () => {
+    // Fixed clock: on the real one, after 6pm Tunis the reset is a day
+    // away, past the hold limit, and the hand-off ends as an error.
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW })
     const db = database()
     const before = proc(db, {}, [{ content: "", error: LIMIT_6PM }])
     const { taskId } = before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Job" })
