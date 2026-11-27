@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { Agent, fetch as undiciFetch, type Dispatcher } from "undici"
 import type { Reply } from "@/daemon/voice-talk-api"
 import type { VoiceRequest, VoiceRequestStore } from "@/daemon/voice-requests-api"
 
@@ -43,26 +44,43 @@ export function keepAskForUpgrade(input: {
 }
 
 /** Run each kept row once, oldest first. `ask` sends it as the widget
- *  would (POST /ask with its row) and resolves when /ask has answered.
+ *  would (POST /ask with its row), calls `sent()` once /ask has taken the
+ *  row, and resolves when /ask has answered. The next row starts once the
+ *  one before it is sent (or its send ended), not answered, and the
+ *  returned promise resolves when every row has started (#2502 B1): one
+ *  slow kept run does not hold the rows behind it.
  *  The row stops being "kept" before its run starts, so a daemon that
  *  dies mid-run fails it at the next boot instead of running it twice. */
 export async function replayKept(input: {
   store: VoiceRequestStore
-  ask: (row: VoiceRequest & { session: string | null }) => Promise<void>
+  ask: (row: VoiceRequest & { session: string | null }, sent: () => void) => Promise<void>
   log: (line: string) => void
 }): Promise<number> {
   const rows = input.store.keptForUpgrade()
   for (const row of rows) {
     input.store.started(row.id)
-    try {
-      await input.ask(row)
-      input.log(`[upgrade-keep] replayed ${row.id} to ${row.agentId}`)
-    } catch (err) {
-      input.store.settle(row.id, 500, { error: `Kept during an AgentX upgrade, but sending it failed: ${(err as Error).message}` })
-      input.log(`[upgrade-keep] replay of ${row.id} failed: ${(err as Error).message}`)
-    }
+    let sent!: () => void
+    const taken = new Promise<void>((r) => { sent = r })
+    const run = input.ask(row, sent).then(
+      () => input.log(`[upgrade-keep] replayed ${row.id} to ${row.agentId}`),
+      (err) => {
+        input.store.settle(row.id, 500, { error: `Kept during an AgentX upgrade, but sending it failed: ${(err as Error).message}` })
+        input.log(`[upgrade-keep] replay of ${row.id} failed: ${(err as Error).message}`)
+      },
+    )
+    await Promise.race([taken, run])
   }
   return rows.length
+}
+
+// Node's fetch gives up on headers after 300 s, and a kept run can be
+// longer: the replay's own /ask has no header or body time limit (#2502 B2).
+const replayDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 })
+
+/** POST one kept row to this daemon's /ask and read the whole answer. */
+export async function postKeptAsk(url: string, headers: Record<string, string>, body: unknown, dispatcher: Dispatcher = replayDispatcher): Promise<void> {
+  const res = await undiciFetch(url, { method: "POST", headers, body: JSON.stringify(body), dispatcher })
+  await res.text()
 }
 
 export interface WidgetKeep {

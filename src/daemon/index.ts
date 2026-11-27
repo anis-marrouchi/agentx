@@ -260,7 +260,7 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { writeQueueAtClose } from "@/daemon/upgrade-queue-record"
-import { keepAskForUpgrade, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
+import { keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
 import { UPGRADE_KEEP_MS } from "@/daemon/voice-requests-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
@@ -490,6 +490,8 @@ export class AgentXDaemon {
   /** Rows kept by the last daemon's upgrade drain, being sent at boot
    *  (#2502). New widget rows wait for it, so the kept ones go first. */
   private voiceReplay: Promise<unknown> | null = null
+  /** Kept rows the replay has sent, by request id: /ask calls it once the row has started (#2502 B1). */
+  private readonly replaySent = new Map<string, () => void>()
   /** Marks the boot replay's own /ask calls, which must not wait for it. */
   private readonly replayToken = randomBytes(16).toString("hex")
   /** When the shutdown began, and when its drain gives up (#2502). */
@@ -1723,13 +1725,17 @@ export class AgentXDaemon {
     this.voiceReplay = replayKept({
       store,
       log: (line) => this.log(line),
-      ask: async (row) => {
-        const res = await fetch(`http://${target}:${port}/ask`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "user-agent": "AgentXVoice/replay", "x-agentx-replay": this.replayToken },
-          body: JSON.stringify({ message: row.question, agent: row.agentId, request: row.id, ...(row.session ? { session: row.session } : {}) }),
-        })
-        await res.text()
+      ask: async (row, sent) => {
+        this.replaySent.set(row.id, sent)
+        try {
+          await postKeptAsk(
+            `http://${target}:${port}/ask`,
+            { "content-type": "application/json", "user-agent": "AgentXVoice/replay", "x-agentx-replay": this.replayToken },
+            { message: row.question, agent: row.agentId, request: row.id, ...(row.session ? { session: row.session } : {}) },
+          )
+        } finally {
+          this.replaySent.delete(row.id)
+        }
       },
     }).finally(() => { this.voiceReplay = null })
   }
@@ -1803,7 +1809,7 @@ export class AgentXDaemon {
       })
       const drainStart = Date.now()
       this.drainEndsAt = drainStart + drainTimeoutMs
-      const inflightCount =() => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
+      const inflightCount = () => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
       let active = inflightCount()
       if (active > 0) {
         this.log(`  Draining ${active} in-flight task(s) — local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()} (max ${Math.round(drainTimeoutMs / 1000)}s)...`)
@@ -9952,6 +9958,8 @@ export class AgentXDaemon {
           // Rows kept by the last daemon's upgrade go first, in order (#2502).
           if (requestId && this.voiceReplay && req.headers["x-agentx-replay"] !== this.replayToken) await this.voiceReplay
           if (requestId) this.voiceRequests?.start(requestId)
+          // A kept row has started: the replay sends the next one (#2502 B1).
+          if (requestId && req.headers["x-agentx-replay"] === this.replayToken) this.replaySent.get(requestId)?.()
           // A throw after start() would skip reply() and leave the row
           // thinking until the next restart: settle it with the error.
           let settled = false

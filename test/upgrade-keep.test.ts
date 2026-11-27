@@ -2,12 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
+import { createServer, type Server } from "http"
+import type { AddressInfo } from "net"
+import { Agent } from "undici"
 import type Database from "better-sqlite3"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import {
   HELD_UPGRADE, RESTART_REASON, UPGRADE_HELD_LINE, UPGRADE_KEEP_MS, UPGRADE_TOO_OLD, VoiceRequestStore, handleVoiceRequests,
 } from "../src/daemon/voice-requests-api"
-import { keepAskForUpgrade, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
+import { keepAskForUpgrade, postKeptAsk, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
 
 // #2502: a widget message sent while the daemon drains for an upgrade is
 // kept on its row, answered at once, and sent once by the next daemon.
@@ -117,23 +120,70 @@ describe("next daemon's boot", () => {
     expect(store.get(r.id)?.error).toContain("connection refused")
   })
 
-  // C1: a kept row (window A) answers before a row the widget sends once
-  // the daemon is back (window B). The daemon's /ask waits on the replay
-  // promise for every widget row that is not the replay's own; modelled here.
-  it("a row sent after boot waits for the kept rows", async () => {
+  // C1 + B1: a kept row (window A) starts before a row the widget sends
+  // once the daemon is back (window B), but B does not wait for A's answer.
+  // The daemon's /ask waits on the replay promise for every widget row that
+  // is not the replay's own; modelled here.
+  it("a row sent after boot waits until the kept rows have started, not answered", async () => {
     const old = new VoiceRequestStore(db, T0)
     const a = old.create("pm-agent", "kept during drain", false, T0)
+    const c = old.create("pm-agent", "also kept", false, T0 + 1)
     old.keepForUpgrade(a.id, null, T0)
+    old.keepForUpgrade(c.id, null, T0 + 1)
     const store = new VoiceRequestStore(db, T0 + 60_000)
     const order: string[] = []
     let release!: () => void
     const slow = new Promise<void>((r) => { release = r })
-    const replay = replayKept({ store, log: () => {}, ask: async (row) => { await slow; order.push(row.question); store.settle(row.id, 200, { text: "a" }) } })
+    const replay = replayKept({ store, log: () => {}, ask: async (row, sent) => {
+      order.push(`start ${row.question}`)
+      sent()
+      await slow
+      order.push(`answer ${row.question}`)
+      store.settle(row.id, 200, { text: "a" })
+    } })
     const b = store.create("pm-agent", "sent after boot", false, T0 + 61_000, "client-key-b-0001")
-    const askB = (async () => { await replay; order.push(store.get(b.id)!.question) })()
+    await replay
+    order.push(`start ${store.get(b.id)!.question}`)
+    expect(order).toEqual(["start kept during drain", "start also kept", "start sent after boot"])
     release()
-    await askB
-    expect(order).toEqual(["kept during drain", "sent after boot"])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(store.get(a.id)?.state).toBe("answered")
+  })
+
+  it("a send that ends before sent() still lets the next row start", async () => {
+    const old = new VoiceRequestStore(db, T0)
+    const a = old.create("pm-agent", "one", false, T0)
+    const c = old.create("pm-agent", "two", false, T0 + 1)
+    old.keepForUpgrade(a.id, null, T0)
+    old.keepForUpgrade(c.id, null, T0 + 1)
+    const store = new VoiceRequestStore(db, T0 + 60_000)
+    const seen: string[] = []
+    expect(await replayKept({ store, log: () => {}, ask: async (row) => {
+      seen.push(row.question)
+      if (row.question === "one") throw new Error("refused")
+    } })).toBe(2)
+    expect(seen).toEqual(["one", "two"])
+    expect(store.get(a.id)?.state).toBe("failed")
+  })
+})
+
+// B2: a kept run can take longer than fetch's 300 s header limit. The
+// replay's fetch has none; shown with a short limit and a slow reply.
+describe("postKeptAsk", () => {
+  let server: Server
+  let url: string
+  beforeEach(async () => {
+    server = createServer((_req, res) => { setTimeout(() => res.end("ok"), 2000) })
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()))
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/ask`
+  })
+  afterEach(async () => { await new Promise((r) => server.close(r)) })
+
+  it("waits for a reply slower than a header time limit", { timeout: 15_000 }, async () => {
+    const short = new Agent({ headersTimeout: 300 })
+    await expect(postKeptAsk(url, {}, {}, short)).rejects.toThrow()
+    await short.close()
+    await expect(postKeptAsk(url, {}, {})).resolves.toBeUndefined()
   })
 })
 
