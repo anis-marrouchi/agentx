@@ -33,6 +33,9 @@ The app is still in preview. Each change to it is built for all three systems by
 | Item | What it does |
 |---|---|
 | **Show AgentX** / **Hide AgentX** | Shows or hides the Hub window. |
+| **Show orb** / **Hide orb** | Shows or hides the floating orb (see [The orb](#the-orb)). |
+| **Talk: …** | Says how the talk key works now: off, hold to talk, or press twice, with the reason. |
+| **Global talk key** | Turns on ⌥Space (Alt+Space on Windows and Ubuntu) from any app. Off by default. |
 | **Daemon: running** / **stopped** | Whether the daemon answers. Checked every 5 seconds. |
 | **Start** | Runs `agentx daemon start --detach` in the folder of `AGENTX_CONFIG`. Off, with the reason in brackets, while a launchd job or systemd unit for the daemon is loaded (**Start (kept by launchd tn.noqta.agentx)**): the service starts it, and a second daemon would run next to it. Once the app has seen the daemon run under launchd or systemd, Start stays off while it is down (for example during an upgrade), until the app restarts. Also off when `AGENTX_CONFIG` is not set (**Start (set AGENTX_CONFIG)**). |
 | **Stop** | Stops the daemon. It finishes its running tasks first. Only for a daemon you started from a terminal: a daemon kept running by launchd or systemd would start again at once, so the menu says so and leaves Stop off. Use **Restart** for it. Stop is also off for a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.0.0.1, ::1 or localhost), and it refuses when the process the daemon names is not an `agentx` process on this computer (a port forwarded from another machine). |
@@ -44,7 +47,17 @@ The app is still in preview. Each change to it is built for all three systems by
 
 Start, Stop and Restart act on this computer only. When the app points at a daemon on another machine (`AGENTX_DAEMON_URL` not on 127.x.x.x, ::1 or localhost; `0.0.0.0` counts as another machine), all three are off and say **(on another machine)**, whether that daemon is up or down.
 
-The last three choices are kept in `settings.json` in the app's data folder and survive a restart.
+### The orb
+
+A small round orb floats above your other windows, on every desktop, also over full-screen apps on macOS. It is not in the taskbar or the Dock.
+
+- Drag the orb to move it. It comes back to the same place next launch. If that screen is gone, it goes to the bottom right of the main screen.
+- Hold the orb to talk. Let go to send.
+- It shows five states: idle, listening, thinking, speaking, and call-back (with **Answer**, **Later** and **Decline**). In this version the orb shows listening while you hold it or the talk key; recording and the live states come in the next version.
+- **Global talk key**: on macOS the system asks you to allow AgentX under **Privacy & Security › Accessibility** the first time you turn it on. AgentX looks at that one key only. It does not keep or send any other key. Until you allow it, and on Ubuntu with Wayland, the key works as press once to start and press again to send. The menu says which.
+- On Ubuntu with Wayland, the app runs through XWayland so the orb can stay on top.
+
+The orb, the talk key and the last three choices are kept in `settings.json` in the app's data folder and survive a restart.
 
 Links to other websites open in your usual browser, not in the app. The app lets only the dashboard's own pages use the microphone. It never lets any page use the camera.
 
@@ -74,6 +87,7 @@ The window remembers its size and position between launches.
 - The window shows the Hub with your agents, not a sign-in page.
 - The icon's menu shows **Daemon: running**. If launchd or systemd runs your daemon, it says **(kept by launchd)** or **(kept by systemd)**, and **Stop** is off.
 - After you allow the microphone, the Hub's microphone button records.
+- The orb floats at the bottom right of the screen. Drag it, quit the app and start it again: it is where you left it.
 
 ## If something is wrong
 
@@ -85,4 +99,8 @@ The window remembers its size and position between launches.
 - **Start is off and says "set AGENTX_CONFIG"**: set `AGENTX_CONFIG` to your `agentx.json` before you start the app, or start the daemon in a terminal.
 - **Restart stays on "restarting when idle…"**: tasks are still running. The daemon restarts when they finish. After 30 minutes it gives up and says so.
 - **Start or Restart says `agentx: command not found`**: set `AGENTX_CLI` to the full path of `agentx` (run `which agentx` in a terminal).
+- **No orb**: choose **Show orb** in the icon's menu.
+- **The menu says "Talk: press ⌥Space, press again to send (macOS permission not given)"**: open **System Settings › Privacy & Security › Accessibility**, turn on **AgentX**, then turn **Global talk key** off and on.
+- **⌥Space does two things on a Mac**: the AgentX Voice app also uses ⌥Space. Turn off **Global talk key** here, or quit AgentX Voice.
+- **The menu says "is taken by another app"**: another app holds Alt+Space. Free it there, then turn **Global talk key** off and on.
 - **No icon in the Ubuntu top bar**: some GNOME versions hide notification-area icons. Install the **AppIndicator and KStatusNotifierItem Support** extension.
