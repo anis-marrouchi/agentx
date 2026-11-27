@@ -7,6 +7,8 @@ import {
   recordRateLimitEvent, setActiveAccountResolver,
 } from "../src/agents/claude-code-quota"
 import { changeCliAccounts, cliAccountForDir, readCliAccounts, withCliAccountEnv } from "../src/agents/cli-accounts"
+import { PlanUsageReader } from "../src/agents/claude-plan-usage"
+import { clearAccountsPlanUsage, readAccountsPlanUsage } from "../src/agents/plan-usage-accounts"
 import { handlePlanUsageApi } from "../src/daemon/plan-usage-api"
 import { cliAccountOfWorkspace } from "../src/utils/workspace-env"
 
@@ -131,5 +133,22 @@ describe("per-vendor default (A1)", () => {
     expect(s.claude?.active).toBe("cw")
     expect(withCliAccountEnv({}, [], s).CLAUDE_CONFIG_DIR).toBe("/tmp/claude-cw")
     expect(withCliAccountEnv({}, [], s).CODEX_HOME).toBeUndefined()
+  })
+})
+
+describe("priority holds for an account not in use (#2347 reading)", () => {
+  afterEach(() => clearAccountsPlanUsage())
+
+  it("a background run on a non-active account is held by that account's own reading", async () => {
+    const reader = () => new PlanUsageReader({
+      now: () => T0,
+      readLogin: async () => ({ token: "t", source: "keychain", renewable: true }),
+      fetchUsage: async () => [{ window: "five_hour", utilization: 0.9, resetsAt: T0 + 3600_000 }],
+    })
+    const state = { claude: { profiles: [{ name: "work", dir: "/w" }, { name: "side", dir: "/s" }], active: "work" } }
+    expect(preflightQuotaGate(false, T0, undefined, "background", "side")).toBeNull()
+    await readAccountsPlanUsage({ state, env: {}, home: "/h", now: T0, claudeReader: reader, codex: async () => null })
+    expect(preflightQuotaGate(false, T0 + 60_000, undefined, "background", "side")?.reason).toBe("plan_priority")
+    expect(preflightQuotaGate(false, T0 + 60_000, undefined, "person", "side")).toBeNull()
   })
 })

@@ -45,6 +45,7 @@
 // writing first, cron jobs last. See agents/plan-priority.ts.
 
 import { planUsageReader } from "./claude-plan-usage"
+import { claudeAccountReading } from "./plan-usage-accounts"
 import { activeCliAccountName } from "./cli-accounts"
 import { planPriorityHold, type RunPriority, type WindowUse } from "./plan-priority"
 
@@ -383,8 +384,9 @@ const PRIORITY_RECHECK_MS = 15 * 60_000
  * How full each plan window is, for the priority gate: the usage reader's
  * reading (agents/claude-plan-usage.ts) when it is recent, else the
  * utilization Claude Code last reported with a run. The newer one wins.
- * The reader reads the active account only, so another account goes by
- * what its own runs reported.
+ * The main reader reads the active account; another account uses its own
+ * reader's reading (plan-usage-accounts.ts) when recent, else what its own
+ * runs reported.
  */
 export function planWindowUse(now: number = Date.now(), account: string = activeAccount()): WindowUse[] {
   const out = new Map<string, WindowUse & { at: number }>()
@@ -392,7 +394,7 @@ export function planWindowUse(now: number = Date.now(), account: string = active
     if (s.utilization === undefined) continue
     out.set(s.window, { window: s.window, utilization: s.utilization, ...(s.resetsAt && { resetsAt: s.resetsAt }), at: s.seenAt })
   }
-  const reading = account === activeAccount() ? planUsageReader.freshReading(now) : null
+  const reading = account === activeAccount() ? planUsageReader.freshReading(now) : claudeAccountReading(account, now)
   for (const w of reading?.windows ?? []) {
     const seen = out.get(w.window)
     if (!seen || reading!.readAt >= seen.at) out.set(w.window, { ...w, at: reading!.readAt })
