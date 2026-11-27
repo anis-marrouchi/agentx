@@ -30,6 +30,10 @@ export const HUB_REACT_PAGES: readonly HubReactPage[] = [
   // post page (`#post=`) and run page (`#page=task`) keep their addresses;
   // T3 sends them here. Owner only, like the old post page's actions.
   { page: "task-preview", ownerOnly: true },
+  // The feed (#2101), drawn to the approved orca mock of #2387, on a review
+  // id until Anis accepts it; the old feed stays on `#status=open`. Owner
+  // only, and `dashboard.hub.legacyPages` sends it back like the rest.
+  { page: "feed-preview", ownerOnly: true },
 ]
 
 /** The React page ids this viewer gets, minus the ones sent back to the old

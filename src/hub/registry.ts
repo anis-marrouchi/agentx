@@ -21,6 +21,9 @@ export interface HubRoute {
   page: string
   title: string
   load: Loader<HubPageProps>
+  /** Drawn while `load` runs: the page's own skeleton, in the main bundle,
+   *  so the page takes the same space when it arrives (no jump). */
+  fallback?: ComponentType
 }
 
 export interface HubPageProps {

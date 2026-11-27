@@ -5,7 +5,7 @@
 // mins(), isOpen(), idleDays(), act(), load(), render(), openPost(),
 // threadHtml(), wsCopiesHtml(), forgeClosedOpen(), forgeName(), sortVal()
 // and the decide helpers (decAttrs, decBtn, decConfirmHtml, decOwner). The
-// pure half (states, tab counts, time, keyed patching) is
+// pure half (states, groups, excerpt, tab counts, time, keyed patching) is
 // wall-feed-model.ts, injected beside it.
 //
 // From the mocks Anis approved (hub-feed-mock-1440, hub-list-view-mock-1440,
@@ -82,22 +82,8 @@ export const WALL_FEED_SCRIPT = String.raw`
     t.innerHTML = html.trim();
     return t.content.firstElementChild;
   }
-  /** Posts in groups, in the state order; newest move first inside each. */
-  function fdGroups(posts) {
-    var st = fdStates(), by = {};
-    posts.forEach(function (p) {
-      var g = fdGroupOf(fdStateOf(p));
-      (by[g] = by[g] || []).push(p);
-    });
-    return Object.keys(by).sort(function (a, b) { return st[a].order - st[b].order; }).map(function (g) {
-      return { key: g, title: fdGroupTitle(g), posts: by[g].slice().sort(function (x, y) { return y.lastMoveAt - x.lastMoveAt; }) };
-    });
-  }
-  /** What a post said, as plain words for two lines. */
-  function fdExcerpt(p) {
-    var t = (p.result && p.result.text) || p.need || '';
-    return String(t).replace(/\[agentx:[^\]\n]*\]?/g, '').replace(/^\s*>+/gm, '').replace(/[#*_\x60]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim();
-  }
+  /** Posts in groups, in the state order (wall-feed-model.ts fdGroupPosts). */
+  function fdGroups(posts) { return fdGroupPosts(posts, fdStateOf); }
   /** "#2258" from the post's issue or PR home, or "". */
   function fdRef(p) {
     var r = p.home && ltIssueRef(p.home.link);

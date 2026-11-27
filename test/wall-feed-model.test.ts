@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fdAgo, fdClock, fdCounts, fdGroupOf, fdInTab, fdPatch, fdSortBy, fdState, fdStates, type FdEl } from "../src/daemon/ui/pages/wall-feed-model"
+import { fdAgo, fdClock, fdCounts, fdExcerpt, fdGroupOf, fdGroupPosts, fdGroupTitle, fdInTab, fdPatch, fdSortBy, fdState, fdStates, type FdEl } from "../src/daemon/ui/pages/wall-feed-model"
 import { injectFns } from "../src/daemon/ui/inject"
 
 // The feed's model (#2101): one state set, tabs whose counts follow the
@@ -32,6 +32,21 @@ describe("fdState: one state set (orca-design recipes §9)", () => {
   it("puts Failed under Needs you", () => {
     expect(fdGroupOf("failed")).toBe("needs")
     expect(fdGroupOf("working")).toBe("working")
+  })
+})
+
+describe("fdGroupPosts and fdExcerpt: the groups and the two lines (shared with the React feed)", () => {
+  const p = (id: string, state: string, lastMoveAt: number) => ({ id, state, lastMoveAt })
+  it("groups in the state order, Failed under Needs you, newest move first", () => {
+    const g = fdGroupPosts([p("a", "working", 1), p("b", "failed", 2), p("c", "needs", 1), p("d", "working", 5), p("e", "done", 9)], (x) => x.state)
+    expect(g.map((x) => [x.key, x.posts.map((y) => y.id)])).toEqual([["needs", ["b", "c"]], ["working", ["d", "a"]], ["done", ["e"]]])
+    expect(g[0].title).toBe(fdGroupTitle("needs"))
+    expect(fdGroupPosts([], (x: { lastMoveAt: number }) => "done")).toEqual([])
+  })
+  it("says the result, else the ask, without markers or markdown", () => {
+    expect(fdExcerpt({ result: { text: "## Done\n> **Shipped** [the PR](https://x.test/1) [agentx:ref abc]" }, need: "Ship it" })).toBe("Done Shipped the PR")
+    expect(fdExcerpt({ result: null, need: "Fix  the\nlogin" })).toBe("Fix the login")
+    expect(fdExcerpt({})).toBe("")
   })
 })
 
@@ -160,10 +175,12 @@ describe("fdPatch: live lists patch rows by key (C28)", () => {
     expect(fdPatch(box, [row("a", "A changed")], make).changed).toBe(1)
   })
   it("runs as injected into the page script", () => {
-    const src = injectFns({ fdState, fdInTab, fdCounts, fdAgo, fdPatch, fdSortBy })
+    const src = injectFns({ fdStates, fdState, fdGroupOf, fdGroupTitle, fdGroupPosts, fdExcerpt, fdInTab, fdCounts, fdAgo, fdPatch, fdSortBy })
     const g: Record<string, any> = {}
     new Function("globalThis", src.replace(/globalThis/g, "g").replace(/^/, "const g = globalThis;"))(g)
     expect(g.fdCounts(["working"], ["open"])).toEqual({ open: 1 })
+    expect(g.fdGroupPosts([{ id: "a", s: "failed", lastMoveAt: 1 }], (x: { s: string }) => x.s)[0].key).toBe("needs")
+    expect(g.fdExcerpt({ need: "**Hi**" })).toBe("Hi")
     const box = new El()
     expect(g.fdPatch(box, [row("a", "A")], make).added).toBe(1)
   })
