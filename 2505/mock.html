@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>#2505 Needs you click-through mock v1</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{
+  --background:#fff;--foreground:#0a0a0a;--card:#fff;--popover:#fff;
+  --primary:#171717;--primary-foreground:#fafafa;--secondary:#f5f5f5;
+  --muted:#f5f5f5;--muted-foreground:#696969;--accent:#f5f5f5;
+  --border:#e5e5e5;--input:#e5e5e5;--ring:#a1a1a1;--destructive:#e40014;
+  --side:#f5f5f5;--side-accent:#eaeaea;--status-success:#147638;--status-warning:#ca8a04;
+  --warn-bg:#fef9c3;--warn-ink:#854d0e;--link:#2563eb;
+  --radius:10px;--shadow-xs:0 1px 2px 0 rgb(0 0 0/.05);--shadow-floating:0 10px 24px rgb(0 0 0/.18);
+  --font-sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'SF Mono',SFMono-Regular,ui-monospace,Menlo,Consolas,monospace;
+}
+.dark{
+  --background:#0a0a0a;--foreground:#f0f0f0;--card:#171717;--popover:#171717;
+  --primary:#e5e5e5;--primary-foreground:#171717;--secondary:#262626;
+  --muted:#262626;--muted-foreground:#acacac;--accent:#404040;
+  --border:rgb(255 255 255/.07);--input:rgb(255 255 255/.15);--ring:#737373;--destructive:#ff6568;
+  --side:#2a2a2a;--side-accent:#353535;--status-success:#86efac;--status-warning:#eab308;
+  --warn-bg:rgb(234 179 8/.14);--warn-ink:#fde047;--link:#60a5fa;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--font-sans);letter-spacing:.01em;-webkit-font-smoothing:antialiased;background:var(--background);color:var(--foreground);font-size:14px}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.s{width:14px;height:14px}
+.frame{display:none;height:100vh;min-height:0}
+.frame.on{display:flex}
+/* shell */
+.side{width:280px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 8px;gap:2px}
+.side .search{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--muted-foreground);font-size:13px;margin-bottom:10px}
+.side .search kbd{margin-left:auto;font:11px var(--font-mono);color:var(--muted-foreground)}
+.side .grp{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);padding:12px 10px 4px}
+.side a{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:10px;color:var(--foreground);text-decoration:none;font-size:13px}
+.side a.on{background:var(--side-accent);font-weight:500}
+.side a .n{margin-left:auto;font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.bar{height:48px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px}
+.bar h1{font-size:14px;font-weight:500;margin:0}
+.bar .sub{font-size:12px;color:var(--muted-foreground)}
+.bar .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.scroll{flex:1;min-height:0;overflow:auto}
+.col{max-width:760px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:16px}
+/* parts */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;font:500 13px var(--font-sans);border:1px solid transparent;cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn.p{background:var(--primary);color:var(--primary-foreground)}
+.btn.o{background:var(--background);color:var(--foreground);border-color:var(--border);box-shadow:var(--shadow-xs)}
+.btn.g{background:transparent;color:var(--muted-foreground)}
+.btn.xs{height:24px;padding:0 8px;font-size:12px;border-radius:6px}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+.badge.warn{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}
+.list{border:1px solid var(--border);border-radius:8px;list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-top:1px solid var(--border)}
+.list li:first-child{border-top:0}
+.list li.sel{background:var(--muted)}
+.list .k{width:72px;justify-content:center;margin-top:1px}
+.list .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.list .t b{font-weight:400;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list .t span{font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list .w{font-size:12px;color:var(--muted-foreground);display:flex;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
+.help{font-size:12px;color:var(--muted-foreground);margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)}
+h2{font-size:16px;font-weight:500;margin:0}
+p{margin:0;line-height:1.5}
+dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:12px 0;margin:0;font-size:13px}
+dt{color:var(--muted-foreground)} dd{margin:0}
+.choices{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.choice{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer}
+.choice .dot{width:16px;height:16px;border-radius:999px;border:1px solid var(--ring);margin-top:1px;flex:none}
+.choice.on{border-color:var(--foreground)}
+.choice.on .dot{border:5px solid var(--foreground)}
+.choice small{display:block;color:var(--muted-foreground);font-size:12px;margin-top:2px}
+.sugg{font-size:11px;color:var(--muted-foreground);margin-left:auto;white-space:nowrap}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.progress{height:4px;border-radius:999px;background:var(--muted);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--foreground);width:33%}
+.kbdrow{display:flex;gap:14px;font-size:12px;color:var(--muted-foreground)}
+kbd{font:11px var(--font-mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;background:var(--muted);color:var(--foreground)}
+.mono{font-family:var(--font-mono);font-size:12px}
+/* panel */
+.panel{width:420px;flex:none;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--background)}
+.panel .head{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border)}
+.face{width:24px;height:24px;border-radius:999px;background:var(--muted);display:grid;place-items:center;font-size:12px;font-weight:600}
+.pin{margin:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-xs)}
+.pin .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);display:flex;align-items:center;gap:6px}
+.thread{flex:1;min-height:0;overflow:auto;padding:4px 16px 12px;display:flex;flex-direction:column;gap:14px;font-size:13px}
+.u{align-self:flex-end;max-width:80%;background:var(--muted);border-radius:10px;padding:8px 12px}
+.a{line-height:1.55}
+.a ul{margin:6px 0 0;padding-left:18px}
+.composer{margin:0 12px 12px;border:1px solid var(--border);border-radius:14px;padding:8px 8px 8px 12px;display:flex;flex-direction:column;gap:6px}
+.composer .ph{color:var(--muted-foreground);font-size:13px;min-height:20px}
+.composer .tools{display:flex;align-items:center;gap:6px}
+.send{margin-left:auto;width:28px;height:28px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);display:grid;place-items:center}
+.sugpills{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+.pill{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:3px 10px;color:var(--foreground)}
+/* returned card */
+.notice{border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.strike{text-decoration:line-through;color:var(--muted-foreground)}
+.sec{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;padding-top:4px}
+.sec .c{color:var(--muted-foreground);font-weight:400}
+.lab{font-size:11px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.04em}
+.tag{position:fixed;right:10px;bottom:8px;font:11px var(--font-mono);color:var(--muted-foreground)}
+/* #2505 additions */
+.side{overflow:auto}
+.ha{display:flex;flex-direction:column}
+.side a.hrow{height:auto}
+.hrow{position:relative;display:flex;gap:8px;padding:6px 8px;border-radius:10px;color:var(--foreground);text-decoration:none;font-size:13px;align-items:flex-start}
+.hrow:hover,.hrow.on{background:var(--side-accent)}
+.hrow .face{margin-top:1px}
+.hrow .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.hrow .top{display:flex;align-items:center;gap:6px}
+.hrow .top b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .top time,.hrow .top .st{margin-left:auto;font-size:11.5px;color:var(--muted-foreground);white-space:nowrap;font-variant-numeric:tabular-nums}
+.hrow .ln{display:flex;align-items:center;gap:6px;color:var(--muted-foreground);font-size:12.5px;min-width:0}
+.hrow .ln span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .ln .w{color:var(--status-warning)}
+.hrow .sub{font-size:11.5px;color:var(--muted-foreground);display:flex;gap:6px;align-items:center}
+.cnt{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:999px;background:var(--warn-bg);color:var(--warn-ink);font-size:11px;font-weight:500;white-space:nowrap}
+.more{position:absolute;right:6px;top:6px;width:24px;height:24px;border-radius:6px;display:none;place-items:center;color:var(--muted-foreground);background:var(--side-accent)}
+.hrow.on .more{display:grid}
+.grph{display:flex;align-items:center;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);padding:12px 8px 4px}
+.grph .c{margin-left:auto;font-variant-numeric:tabular-nums}
+/* callouts on the before frame */
+.co{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:999px;background:var(--destructive);color:#fff;font:600 10px var(--font-sans);flex:none}
+.legend{border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.legend div{display:flex;gap:10px;align-items:flex-start;line-height:1.45}
+.fake-sel{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;max-width:320px;white-space:nowrap;overflow:hidden}
+/* pane */
+.workl{display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-bottom:1px solid var(--border);font-size:13px;flex:none;min-width:0}
+.workl .lbl{color:var(--muted-foreground);white-space:nowrap}
+.workl a{color:var(--foreground);text-decoration:underline;text-decoration-color:var(--border);text-underline-offset:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.workl .r{margin-left:auto;display:flex;gap:6px}
+.asks{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.asks .h{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;font-weight:500;border-bottom:1px solid var(--border)}
+.asks .h .c{color:var(--muted-foreground);font-weight:400}
+.q{border-top:1px solid var(--border)}
+.q:first-of-type{border-top:0}
+.q .qh{display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:13px;cursor:pointer}
+.q .qh .n{width:18px;color:var(--muted-foreground);font-size:12px;font-variant-numeric:tabular-nums}
+.q .qh b{font-weight:400;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q .qh time{font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.q.open{background:var(--card)}
+.q.open .qh b{font-weight:500}
+.q .qb{padding:0 12px 12px 40px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.q:not(.open) .qb{display:none}
+.q.open .qh{background:var(--muted)}
+.tl{display:flex;flex-direction:column;gap:12px;font-size:13px}
+.tl .ev{display:flex;gap:10px;align-items:flex-start}
+.tl .ev .face{width:20px;height:20px;font-size:10px}
+.tl .ev .b{flex:1;min-width:0;line-height:1.5}
+.tl .ev .b small{display:block;color:var(--muted-foreground);font-size:12px}
+.note{margin-bottom:24px;border:1px dashed var(--ring);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--muted-foreground);line-height:1.5}
+.note b{color:var(--foreground);font-weight:500}
+/* phone */
+.phone{width:390px;margin:0 auto;border-left:1px solid var(--border);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh}
+.phone .top{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px;border-bottom:1px solid var(--border);flex:none}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+ <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+ <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+ <symbol id="i-ell" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+ <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+ <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+ <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+ <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+ <symbol id="i-msg" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+ <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+ <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 12h16M4 6h16M4 18h16"/></symbol>
+ <symbol id="i-plan" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
+ <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+</svg>
+
+<!-- ============ F1: today, as the owner saw it (invented names) ============ -->
+<section class="frame" data-f="1">
+ <nav class="side" aria-label="Side menu">
+  <div class="search"><svg class="i s"><use href="#i-search"/></svg>Search<kbd>⌘K</kbd></div>
+  <div class="grph">Needs you<span class="c">3</span></div>
+  <div class="ha">
+   <a class="hrow on" href="#">
+    <span class="face">C</span>
+    <span class="tx">
+     <span class="top"><b>Coder</b><span class="st" style="margin-left:6px;display:inline-flex;gap:3px;align-items:center"><span class="co">1</span><svg class="i s"><use href="#i-history"/></svg>76</span><time style="margin-left:auto"><span class="co" style="display:inline-grid;margin-right:3px">2</span>40m</time></span>
+     <span class="ln"><span class="co">3</span><svg class="i s w"><use href="#i-alert"/></svg><span>Sign-up page: keep the old form or the new one?</span></span>
+    </span>
+    <span style="display:flex;align-items:center;gap:3px;align-self:center"><span class="co">4</span><span class="cnt">4</span><span class="co">7</span><svg class="i s" style="color:var(--muted-foreground)"><use href="#i-ell"/></svg></span>
+   </a>
+   <a class="hrow" href="#"><span class="face">H</span><span class="tx"><span class="top"><b>Hakim</b><time>2h</time></span><span class="ln"><svg class="i s w"><use href="#i-alert"/></svg><span>Release notes for 0.300: ship tonight?</span></span></span></a>
+  </div>
+  <div class="grph">Working<span class="c">2</span></div>
+  <div class="ha"><a class="hrow" href="#"><span class="face">D</span><span class="tx"><span class="top"><b>DevOps</b><time>now</time></span><span class="ln"><svg class="i s"><use href="#i-loader"/></svg><span>Backup check on the build box</span></span></span></a></div>
+ </nav>
+ <main class="main">
+  <div class="bar"><span class="face">C</span><h1>Coder</h1></div>
+  <div class="workl"><span class="lbl">Working on</span><span class="fake-sel"><span class="co">5</span>Release holder: 0.301 notes · agentx<svg class="i s"><use href="#i-down"/></svg></span><span class="r"><span class="btn o xs">Plan</span></span></div>
+  <div class="scroll"><div class="col">
+   <div class="tl">
+    <div class="ev"><span class="co">6</span><span class="b"><b>You</b> Check the Lumen staging deploy<small>3d</small></span></div>
+    <div class="ev"><span class="face">C</span><span class="b">Done: Lumen staging is up, 2 migrations ran.<small>3d</small></span></div>
+    <div class="ev"><span class="face">C</span><span class="b">Orchard: the export job is fixed.<small>2d</small></span></div>
+    <div class="ev"><span class="face">C</span><span class="b">Northwind: three tests still red, looking.<small>1d</small></span></div>
+   </div>
+   <div class="legend">
+    <div><span class="co">1</span><span><b>Clock + 76</b> = runs today. The words are only in the tooltip.</span></div>
+    <div><span class="co">2</span><span><b>40m</b> = since the agent last moved, not since it asked.</span></div>
+    <div><span class="co">3</span><span><b>Title</b> = the agent's <i>oldest</i> question to you (hubAgentRows).</span></div>
+    <div><span class="co">4</span><span><b>4</b> = questions waiting on you. No word.</span></div>
+    <div><span class="co">5</span><span><b>Working on</b> = the agent's <i>newest</i> open request, not the question. Changing it only picks which Plan/Changes tab opens.</span></div>
+    <div><span class="co">7</span><span><b>Row menu</b> and the "!" icon: the icon means Waiting on you, said only to screen readers.</span></div>
+    <div><span class="co">6</span><span><b>Chat</b> = the agent's whole thread, every project mixed. The question is not in it.</span></div>
+   </div>
+  </div></div>
+ </main>
+</section>
+
+<!-- ============ F2/F3/F4: after ============ -->
+<template id="after">
+ <nav class="side" aria-label="Side menu">
+  <div class="search"><svg class="i s"><use href="#i-search"/></svg>Search<kbd>⌘K</kbd></div>
+  <div class="grph">Needs you<span class="c">3</span></div>
+  <div class="ha">
+   <a class="hrow on" href="#page=chat&amp;agent=coder&amp;ask=request:r1" aria-current="true">
+    <span class="face">C</span>
+    <span class="tx">
+     <span class="top"><b>Coder</b><span class="cnt" style="margin-left:auto">4 for you</span></span>
+     <span class="ln"><svg class="i s w"><use href="#i-alert"/></svg><span>Sign-up page: keep the old form or the new one?</span></span>
+     <span class="sub">Waiting on you · asked <time datetime="2026-11-27T18:20:00Z">40m</time></span>
+    </span>
+    <span class="more" style="top:auto;bottom:6px" aria-label="More for Coder"><svg class="i s"><use href="#i-ell"/></svg></span>
+   </a>
+   <a class="hrow" href="#"><span class="face">H</span><span class="tx"><span class="top"><b>Hakim</b><span class="cnt" style="margin-left:auto">1 for you</span></span><span class="ln"><svg class="i s w"><use href="#i-alert"/></svg><span>Release notes for 0.300: ship tonight?</span></span><span class="sub">Waiting on you · asked <time>2h</time></span></span></a>
+   <a class="hrow" href="#"><span class="face">N</span><span class="tx"><span class="top"><b>Nadia</b><span class="cnt" style="margin-left:auto">1 for you</span></span><span class="ln"><svg class="i s w"><use href="#i-alert"/></svg><span>Post for Monday: pick one of two pictures</span></span><span class="sub">Waiting on you · asked <time>3h</time></span></span></a>
+  </div>
+  <div class="grph">Working<span class="c">2</span></div>
+  <div class="ha"><a class="hrow" href="#"><span class="face">D</span><span class="tx"><span class="top"><b>DevOps</b><span class="st">1 running · 12 today</span></span><span class="ln"><svg class="i s"><use href="#i-loader"/></svg><span>Backup check on the build box</span></span></span></a></div>
+ </nav>
+ <main class="main">
+  <div class="bar"><span class="face">C</span><h1>Coder</h1><span class="sub">· 4 questions for you</span><span class="r"><a class="btn g xs" href="#"><svg class="i s"><use href="#i-msg"/></svg>Whole chat</a></span></div>
+  <div class="workl"><span class="lbl">Working on</span><a href="#post=r1" data-slot="work-req" class="wreq">Sign-up page for Brightpath</a><span class="sub" style="font-size:12px;color:var(--muted-foreground);white-space:nowrap">· brightpath-web</span><span class="r"><span class="btn o xs">Changes</span><span class="btn o xs">Plan</span></span></div>
+  <div class="scroll"><div class="col">
+   <section class="asks" aria-label="Waiting on you">
+    <div class="h"><svg class="i s" style="color:var(--status-warning)"><use href="#i-alert"/></svg>Waiting on you<span class="c">4, oldest first</span></div>
+    <div class="q" data-q="1">
+     <div class="qh"><span class="n">1</span><svg class="i s chev"><use href="#i-right"/></svg><b>Sign-up page: keep the old form or the new one?</b><time>40m</time></div>
+     <div class="qb">
+      <p>The new form asks for the company name on step 1. The old one asks it after the email is checked. Which one ships?</p>
+      <ul class="choices">
+       <li class="choice on"><span class="dot"></span><span>New form<small>Company first, one screen less</small></span></li>
+       <li class="choice"><span class="dot"></span><span>Old form<small>Email checked first, as today</small></span></li>
+      </ul>
+      <div class="row"><span class="btn p">Answer</span><span class="btn g">Later</span><a class="btn g" href="#post=r1" style="margin-left:auto">Open the request<svg class="i s"><use href="#i-ext"/></svg></a></div>
+     </div>
+    </div>
+    <div class="q" data-q="2">
+     <div class="qh"><span class="n">2</span><svg class="i s chev"><use href="#i-right"/></svg><b>Invoice export: may I drop the old CSV column order?</b><time>35m</time></div>
+     <div class="qb">
+      <p>Two clients import the CSV by column number. The new order breaks them unless they change their import.</p>
+      <ul class="choices">
+       <li class="choice on"><span class="dot"></span><span>Keep the old order<small>Add new columns at the end</small></span></li>
+       <li class="choice"><span class="dot"></span><span>Use the new order<small>Tell both clients first</small></span></li>
+      </ul>
+      <div class="row"><span class="btn p">Answer</span><span class="btn g">Later</span><a class="btn g" href="#post=r2" style="margin-left:auto">Open the request<svg class="i s"><use href="#i-ext"/></svg></a></div>
+     </div>
+    </div>
+    <div class="q" data-q="3"><div class="qh"><span class="n">3</span><svg class="i s chev"><use href="#i-right"/></svg><b>Merge PR 412 now or after the release?</b><time>20m</time></div><div class="qb"><p>…</p></div></div>
+    <div class="q" data-q="4"><div class="qh"><span class="n">4</span><svg class="i s chev"><use href="#i-right"/></svg><b>Can I use the paid map key on staging?</b><time>5m</time></div><div class="qb"><p>…</p></div></div>
+   </section>
+
+   <div class="sec">On this request<span class="c" id="onreq">Sign-up page for Brightpath</span></div>
+   <div class="tl" id="tl"></div>
+
+   <div class="note" data-note>
+    <b>What changed.</b> The row says what opens: its title is question 1 and the click goes to
+    <span class="mono">#page=chat&amp;agent=coder&amp;ask=request:r1</span>. The questions sit on top, oldest first, the first open with its answer buttons.
+    <b>Working on</b> is no longer a select: it names the request of the open question; opening question 2 moves it and the list below.
+    Below is that request's own timeline (what its #post page shows), not the agent's whole chat. The whole chat is one click away (Whole chat).
+    On a Needs you row the run counts and "last moved" are dropped; the words "4 for you" and "asked 40m" replace them.
+   </div>
+  </div></div>
+  <div class="composer" style="max-width:760px;width:calc(100% - 32px);margin:0 auto 12px">
+   <div class="ph">Reply to Coder about Sign-up page for Brightpath…</div>
+   <div class="tools"><span class="send" aria-label="Send"><svg class="i s"><use href="#i-up"/></svg></span></div>
+  </div>
+ </main>
+</template>
+<section class="frame" data-f="2"></section>
+<section class="frame" data-f="3"></section>
+
+<!-- ============ F4: phone 390 ============ -->
+<section class="frame" data-f="4">
+ <div class="phone">
+  <div class="top"><span class="btn g xs" aria-label="Back"><svg class="i s"><use href="#i-left"/></svg></span><span class="face">C</span><b style="font-size:14px;font-weight:500">Coder</b><span class="cnt" style="margin-left:auto">4 for you</span></div>
+  <div class="workl" style="padding:0 12px"><span class="lbl">Working on</span><a href="#">Sign-up page for Brightpath</a></div>
+  <div class="scroll"><div class="col" id="phonecol" style="padding:12px"></div></div>
+  <div class="composer"><div class="ph">Reply to Coder…</div><div class="tools"><span class="send"><svg class="i s"><use href="#i-up"/></svg></span></div></div>
+ </div>
+</section>
+
+<span class="tag" id="tag"></span>
+<script>
+var TL = {
+ 1: [['Y','You','Add a sign-up page to Brightpath, like the mock in the brief.','2h'],
+     ['C','Coder','Plan: 1 build the form, 2 tests, 3 PR. Step 1 done.','1h'],
+     ['C','Coder','Asked you: keep the old form or the new one?','40m']],
+ 2: [['Y','You','The invoice export misses the VAT column.','3h'],
+     ['C','Coder','Fixed on a branch; the column order changes.','50m'],
+     ['C','Coder','Asked you: may I drop the old CSV column order?','35m']]
+};
+var REQ = {1:['Sign-up page for Brightpath','brightpath-web','r1'],2:['Invoice export VAT column','billing-api','r2']};
+function paintAfter(sec, open){
+  sec.innerHTML = document.getElementById('after').innerHTML;
+  sec.querySelectorAll('.q').forEach(function(q){ q.classList.toggle('open', +q.dataset.q===open); var c=q.querySelector('.chev use'); if(c) c.setAttribute('href', +q.dataset.q===open?'#i-down':'#i-right'); });
+  var r = REQ[open]; var w = sec.querySelector('.wreq'); w.textContent = r[0]; w.href='#post='+r[2];
+  sec.querySelector('.workl .sub').textContent = '· '+r[1];
+  sec.querySelector('#onreq').textContent = r[0];
+  sec.querySelector('.composer .ph').textContent = 'Reply to Coder about '+r[0]+'…';
+  sec.querySelector('#tl').innerHTML = TL[open].map(function(e){return '<div class="ev"><span class="face">'+e[0]+'</span><span class="b"><b>'+e[1]+'</b> '+e[2]+'<small>'+e[3]+'</small></span></div>';}).join('');
+  if (open===2) sec.querySelector('.hrow.on .ln span').textContent = 'Sign-up page: keep the old form or the new one?';
+}
+var q = new URLSearchParams(location.search), f = q.get('f')||'1';
+if (q.has('dark')) document.documentElement.classList.add('dark');
+paintAfter(document.querySelector('[data-f="2"]'), 1);
+paintAfter(document.querySelector('[data-f="3"]'), 2);
+// phone: the questions block and the timeline, no side menu
+var tmp = document.createElement('div'); paintAfter(tmp, 1);
+document.getElementById('phonecol').innerHTML = tmp.querySelector('.asks').outerHTML + tmp.querySelector('.sec').outerHTML + tmp.querySelector('#tl').outerHTML;
+document.querySelector('[data-f="'+f+'"]').classList.add('on');
+document.getElementById('tag').textContent = '#2505 mock v1 · frame '+f+(q.has('dark')?' · dark':'');
+</script>
+</body></html>
