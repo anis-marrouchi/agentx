@@ -37,32 +37,76 @@ export function badge(label: string, kind?: BadgeKind, extraClass = ""): string 
 
 // --- Buttons ---
 
+/** Sizes (orca-design C24): `sm` is h-8, `xs` h-6; `icon-9/8/7/6` are square
+ *  icon buttons of that Tailwind size. An icon size shows only `icon`; the
+ *  label stays on the button for screen readers and becomes its tooltip. */
+export type BtnSize = "sm" | "xs" | "icon-9" | "icon-8" | "icon-7" | "icon-6"
+
 export interface BtnOpts {
   type?: "button" | "submit"
   primary?: boolean
   ghost?: boolean
   danger?: boolean
+  size?: BtnSize
+  /** A lucide SVG drawn before the label. */
+  icon?: string
+  /** Shortcut letter for an icon button's tooltip chip ("K" shows ⌘K or Ctrl+K). */
+  shortcut?: string
   id?: string
   disabled?: boolean
   extraClass?: string
   onclick?: string
+  /** Raw attributes, already escaped by the caller. */
+  extraAttrs?: string
 }
 
 export function btn(label: string, opts: BtnOpts = {}): string {
+  const iconOnly = !!opts.size && opts.size.indexOf("icon") === 0
   const classes = ["ax-btn",
     opts.primary ? "ax-btn--primary" : "",
     opts.ghost ? "ax-btn--ghost" : "",
     opts.danger ? "ax-btn--danger" : "",
+    opts.size ? "ax-btn--" + opts.size : "",
     opts.extraClass || "",
   ].filter(Boolean).join(" ")
   const attrs = [
     `type="${opts.type || "button"}"`,
     `class="${classes}"`,
+    `data-slot="button"`,
+    opts.size ? `data-size="${opts.size}"` : "",
+    iconOnly ? tip(label, opts.shortcut) : "",
     opts.id ? `id="${esc(opts.id)}"` : "",
     opts.disabled ? "disabled" : "",
     opts.onclick ? `onclick="${esc(opts.onclick)}"` : "",
+    opts.extraAttrs || "",
   ].filter(Boolean).join(" ")
-  return `<button ${attrs}>${esc(label)}</button>`
+  const text = iconOnly ? `<span class="ax-sr">${esc(label)}</span>` : esc(label)
+  return `<button ${attrs}>${opts.icon || ""}${text}</button>`
+}
+
+// --- Tooltip (orca-design C14) ---
+//
+// Attributes for any control: components.client.ts shows the label above it
+// after 600ms (at once on keyboard focus), with an optional shortcut chip.
+// The tooltip only names the control; its accessible name stays on the
+// control itself (an sr-only label or its own text).
+
+export function tip(label: string, shortcut?: string): string {
+  return `data-tip="${esc(label)}"` + (shortcut ? ` data-tip-key="${esc(shortcut)}"` : "")
+}
+
+// --- Lucide icons these helpers draw (lucide-static, ISC) ---
+//
+// Inline, so the helpers here stay self-contained: a page that draws in the
+// browser can ship them with injectFns() (with esc and the helpers they
+// call). The test checks the paths against lucide-static. The rest of the
+// set: pages/hub-lucide.ts.
+
+export function axIcon(name: "refresh-cw" | "ellipsis", size = 16): string {
+  const body = name === "refresh-cw"
+    ? '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'
+    : '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'
+  return `<svg class="lucide lucide-${name}" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`
 }
 
 // --- Stat cards (the "NUMBER + label" strip) ---
@@ -237,11 +281,13 @@ export function sectionHead(opts: SectionHeadOpts): string {
   </div>`
 }
 
-/** Coloured-initial avatar — pass 1-2 letters; variant sets the tint. */
-export type AvatarVariant = "plain" | "teal" | "coral" | "amber" | "blue"
-export function avatar(initials: string, variant: AvatarVariant = "plain"): string {
-  const cls = variant === "plain" ? "ax-avatar" : `ax-avatar ax-avatar--${variant}`
-  return `<div class="${cls}">${esc(initials)}</div>`
+/** One avatar (orca-design recipe 2, C6): a 28px muted square with the
+ *  initials of `name`. It sits beside the name, so it is hidden from
+ *  screen readers. */
+export function avatar(name: string): string {
+  const words = String(name || "").trim().split(/[\s._-]+/).filter(Boolean)
+  const initials = words.slice(0, 2).map((w) => w.charAt(0)).join("").toUpperCase()
+  return `<span class="ax-avatar" data-slot="avatar" aria-hidden="true">${esc(initials)}</span>`
 }
 
 /**
@@ -327,18 +373,81 @@ export function connector(opts: ConnectorOpts): string {
   </div>`
 }
 
-/** Empty state used when a tab has nothing yet. */
+/** Empty state used when a tab has nothing yet. It always offers the
+ *  next step (orca-design C15): `actionHtml` is required. */
 export interface EmptyOpts {
   title: string
   desc?: string
-  actionHtml?: string
+  actionHtml: string
 }
 export function emptyState(opts: EmptyOpts): string {
-  return `<div class="ax-empty-card" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">
+  return `<div class="ax-empty-card" data-slot="empty" style="text-align:center;padding:42px 22px;background:var(--ax-surface);border:1px dashed var(--ax-border-2);border-radius:var(--ax-radius-lg);color:var(--ax-muted)">
     <h3 style="margin:0 0 4px;color:var(--ax-text);font-size:15px;font-weight:600">${esc(opts.title)}</h3>
     ${opts.desc ? `<p style="margin:0 0 16px;font-size:13px;line-height:1.55;max-width:380px;margin-left:auto;margin-right:auto">${esc(opts.desc)}</p>` : ""}
-    ${opts.actionHtml || ""}
+    ${opts.actionHtml}
   </div>`
+}
+
+/** A failed load, said where it happened, with Retry beside it (C15).
+ *  `retry` is the Retry button's attributes, e.g. `data-act="reload"`. */
+export function errorLine(message: string, retry: string): string {
+  return `<div class="ax-error" data-slot="error" role="alert"><span>${esc(message)}</span>` +
+    btn("Retry", { ghost: true, size: "sm", icon: axIcon("refresh-cw", 14), extraAttrs: retry }) + "</div>"
+}
+
+/** Grey shapes of the content while it loads (P8): `rows` (avatar and two
+ *  lines) or `cards`. CSS shows them only after 400ms, so a fast load
+ *  never flashes them. */
+export function skeleton(kind: "rows" | "cards", count = 3): string {
+  const lines = '<span class="ax-skel__line"></span><span class="ax-skel__line ax-skel__line--short"></span>'
+  const one = kind === "rows"
+    ? `<div class="ax-skel__row"><span class="ax-skel__av"></span><span class="ax-skel__lines">${lines}</span></div>`
+    : `<div class="ax-skel__card">${lines}</div>`
+  let items = ""
+  for (let i = 0; i < count; i++) items += one
+  return `<div class="ax-skel ax-skel--${kind}" data-slot="skeleton" role="status" aria-busy="true"><span class="ax-sr">Loading</span>${items}</div>`
+}
+
+/** One item of a row's `...` menu. `attrs` are its raw attributes. */
+export interface MenuItem {
+  label: string
+  attrs?: string
+  danger?: boolean
+}
+
+/** A row's rare actions behind `...` (C12). Destructive items go last,
+ *  after a separator. components.client.ts opens it, moves focus with the
+ *  arrow keys and closes it on Esc, a pick or a click outside. */
+export function rowMenu(label: string, items: MenuItem[]): string {
+  const item = (m: MenuItem) => `<button type="button" role="menuitem" tabindex="-1" class="ax-menu__item${m.danger ? " ax-menu__item--danger" : ""}"${m.attrs ? " " + m.attrs : ""}>${esc(m.label)}</button>`
+  const safe = items.filter((m) => !m.danger).map(item).join("")
+  const risky = items.filter((m) => m.danger).map(item).join("")
+  return `<div class="ax-menu" data-slot="dropdown-menu">` +
+    btn(label, { ghost: true, size: "icon-7", icon: axIcon("ellipsis", 14), extraAttrs: 'aria-haspopup="menu" aria-expanded="false"' }) +
+    `<div class="ax-menu__content" data-slot="dropdown-menu-content" role="menu" aria-label="${esc(label)}" hidden>` +
+    safe + (safe && risky ? '<div class="ax-menu__sep" role="separator"></div>' : "") + risky + "</div></div>"
+}
+
+/** One tab of {@link tabs}. `controls` is the id of the panel it shows. */
+export interface TabItem {
+  value: string
+  label: string
+  count?: number
+  selected?: boolean
+  controls?: string
+}
+
+/** The one tabs / segmented control (E2, C16): `aria-selected`, one tab
+ *  in the Tab order, arrow keys, Home and End (components.client.ts). On a
+ *  change the list fires `ax-tab` with `detail.value`. */
+export function tabs(label: string, items: TabItem[]): string {
+  let on = items.findIndex((t) => t.selected)
+  if (on < 0) on = 0
+  return `<div class="ax-tabs" data-slot="tabs-list" role="tablist" aria-label="${esc(label)}">` + items.map((t, i) =>
+    `<button type="button" role="tab" class="ax-tabs__tab" data-slot="tabs-trigger" data-value="${esc(t.value)}" aria-selected="${i === on}" tabindex="${i === on ? 0 : -1}"` +
+    (t.controls ? ` aria-controls="${esc(t.controls)}"` : "") + `>${esc(t.label)}` +
+    (typeof t.count === "number" ? `<span class="ax-tabs__n">${t.count}</span>` : "") + "</button>",
+  ).join("") + "</div>"
 }
 
 /** Mini-label used to divide sections inside a tab. */

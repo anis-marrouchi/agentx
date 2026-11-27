@@ -13,7 +13,8 @@
 //   - Page-specific CSS appended after
 //   - renderTopbar() at the top
 //   - <main> with the page body
-//   - TOPBAR_SCRIPT (theme toggle + mesh selector) at the end
+//   - TOPBAR_SCRIPT (theme toggle + mesh selector) at the end, then
+//     AX_COMPONENTS_SCRIPT (tooltips, menus, tabs, confirm dialog)
 //   - Page-specific <script> appended after
 //
 // Pages that want a slimmer header (e.g. /setup, which has its own simplified
@@ -24,6 +25,7 @@ import { ASSISTANT_CSS, ASSISTANT_HTML, ASSISTANT_SCRIPT } from "./assistant"
 import { injectFns } from "./inject"
 import { markdownToHtml } from "@/utils/markdown-html"
 import { AX_COMPONENTS_CSS } from "./components.css"
+import { AX_COMPONENTS_SCRIPT } from "./components.client"
 import { AX_AFFECT_CSS } from "./affect.css"
 import {
   TOPBAR_HEAD,
@@ -111,6 +113,7 @@ ${main}
 ${opts.noAssistant ? "" : ASSISTANT_HTML}
 ${opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${scriptJson(opts.localToken)};</script>` : ""}
 ${TOPBAR_SCRIPT}
+${AX_COMPONENTS_SCRIPT}
 ${opts.scripts || ""}
 ${opts.noAssistant ? "" : `<script>${injectFns({ markdownToHtml })}${ASSISTANT_SCRIPT}</script>`}
 </body>

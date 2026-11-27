@@ -23,6 +23,7 @@
 // The side menu keeps its own fold state (ax.hub.agentOpen), as it redraws
 // its groups from its own model; Reset layout clears it with the rest.
 
+import { HUB_CHEVRON_MASK } from "./hub-nav"
 import { HUB_PANELS_KEY } from "./hub-panels"
 
 export const HUB_FOLDS_KEY = "ax.hub.folds"
@@ -114,11 +115,12 @@ export function hubFoldHtml(key: string, title: string, count: number | null, bo
 export const HUB_FOLDS_FNS = { hubFoldsRead, hubFoldIsOpen, hubCapLabel, hubLayoutReset, hubScrollKey, hubScrollKeep, hubFoldHtml }
 
 export const HUB_FOLDS_CSS = `
-/* Sections that fold, lists capped at 3 (#2352, hub-folds.ts). Same look as the side menu's folds. */
+/* Sections that fold, lists capped at 3 (#2352, hub-folds.ts). Same look as the side menu's folds:
+   a leading lucide chevron-right that turns 90deg over 150ms (none under reduced motion). */
 .axp-fold > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; padding: 6px; margin: 8px 0 4px; border-radius: var(--ax-radius-sm);
   font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ax-muted); }
 .axp-fold > summary::-webkit-details-marker { display: none; }
-.axp-fold > summary::before { content: "›"; flex: none; width: 10px; font-size: 15px; font-weight: 400; line-height: 1; letter-spacing: 0; text-align: center; transition: transform 180ms ease-out; }
+.axp-fold > summary::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; -webkit-mask: ${HUB_CHEVRON_MASK} center / contain no-repeat; mask: ${HUB_CHEVRON_MASK} center / contain no-repeat; transition: transform 150ms ease-out; }
 .axp-fold[open] > summary::before { transform: rotate(90deg); }
 .axp-fold__n { margin-left: auto; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .axp-fold > summary:focus-visible { outline: 2px solid var(--ax-ring, var(--ax-accent)); outline-offset: 1px; }

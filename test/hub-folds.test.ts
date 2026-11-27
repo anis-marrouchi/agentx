@@ -54,9 +54,12 @@ describe("Hub folds: the header", () => {
     expect(h).toBe('<details class="axp-fold" data-fold="agents.Mac" data-fold-start="closed" open><summary class="axp-fold__h"><span class="axp-fold__t">Mac &lt;b&gt;</span><span class="axp-fold__n">34</span></summary><p>x</p></details>')
     expect(hubFoldHtml("k", "T", null, "")).not.toContain("axp-fold__n")
   })
-  it("draws the chevron in CSS and turns it when open", () => {
-    expect(HUB_FOLDS_CSS).toContain('.axp-fold > summary::before { content: "›"')
+  it("draws the lucide chevron in CSS and turns it over 150ms when open, still under reduced motion", () => {
+    expect(HUB_FOLDS_CSS).toContain('.axp-fold > summary::before { content: ""')
+    expect(HUB_FOLDS_CSS).toContain("lucide-chevron-right")
+    expect(HUB_FOLDS_CSS).toContain("transition: transform 150ms ease-out")
     expect(HUB_FOLDS_CSS).toContain(".axp-fold[open] > summary::before { transform: rotate(90deg); }")
+    expect(HUB_FOLDS_CSS).toContain("@media (prefers-reduced-motion: reduce) { .axp-fold > summary::before { transition: none; } }")
   })
 })
 
