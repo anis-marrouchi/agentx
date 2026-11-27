@@ -1002,7 +1002,8 @@ final class App: NSObject, NSApplicationDelegate {
         // client sees it. Without the daemon the app's own list goes on.
         requestsEpoch += 1
         Task { @MainActor in
-            if let key = await AgentClient.openRequest(agentID: agent, question: heard, waiting: waits) {
+            if let key = await AgentClient.openRequest(agentID: agent, question: heard, waiting: waits,
+                                                       clientKey: requests.request(id)?.clientKey ?? UUID().uuidString) {
                 requests.setKey(id, key)
             }
             if !waits, requests.request(id)?.phase == .thinking { run(id) }
@@ -1057,6 +1058,24 @@ final class App: NSObject, NSApplicationDelegate {
             switch result {
             case .success(let answer) where answer.dropped:
                 break // the row already left in requests.dropped
+            case .success(let answer) where answer.kept:
+                // The daemon is upgrading and kept it (#2502): say so now;
+                // the next daemon answers it and the list's sync brings it.
+                Log.info("request \(id) kept for the upgrade (\(r.agentID)): \(answer.text)")
+                requests.keptForUpgrade(id, line: answer.text, at: now)
+                requestsChanged()
+                note(answer.text)
+                await Speech.say(answer.text, agentID: r.agentID, kind: "line", voice: answer.voice)
+                return
+            case .failure(let error) where AgentClient.unreachable(error):
+                // No daemon at all: the words wait here and go once it is
+                // back, in the order they were said (#2502).
+                Log.info("request \(id) waits for AgentX (\(r.agentID)): unreachable")
+                requests.awaitDaemon(id, at: now)
+                requestsChanged()
+                note(OpenRequests.restartingLine)
+                await Speech.say(OpenRequests.restartingLine, agentID: r.agentID, kind: "line", voice: nil)
+                return
             case .success(let answer):
                 Log.info("request \(id) answered (\(answer.agentID ?? r.agentID)): \(answer.text)")
                 answers[id] = answer
@@ -1426,6 +1445,16 @@ final class App: NSObject, NSApplicationDelegate {
 
     // --- The daemon's list ---
 
+    /// A row that waited for the daemon gets its daemon row now: the same
+    /// one if it had reached the daemon before (its client key).
+    private func resend(_ id: Int) async {
+        guard let r = requests.request(id), r.key == nil else { return }
+        if let key = await AgentClient.openRequest(agentID: r.agentID, question: r.question, waiting: true, clientKey: r.clientKey) {
+            requests.setKey(id, key)
+        }
+        Log.info("request \(id): AgentX is back, sending it (\(r.agentID))")
+    }
+
     /// Read the daemon's list and merge it: rows heard or closed on another
     /// client, and rows kept across a restart of the app or the daemon.
     private func syncRequests() async {
@@ -1441,7 +1470,19 @@ final class App: NSObject, NSApplicationDelegate {
             requestsWindow.model.status = reachable ? .ready : .unreachable
             requestsWindow.reload()
         }
-        guard case .rows(let remote) = read, epoch == requestsEpoch else { return }
+        guard case .rows(let remote) = read else { return }
+        // Back after being down: what waited for it goes, oldest first (#2502).
+        let back = requests.daemonBack()
+        if !back.isEmpty {
+            requestsEpoch += 1
+            for id in back { await resend(id) }
+            for agent in Set(back.compactMap { requests.request($0)?.agentID }) {
+                if let next = requests.startNext(for: agent, at: Date()) { run(next) }
+            }
+            requestsChanged()
+            return
+        }
+        guard epoch == requestsEpoch else { return }
         let before = requests.requests
         requests.sync(remote)
         // A row found waiting its turn goes once its agent is free.

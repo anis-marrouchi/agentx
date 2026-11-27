@@ -303,6 +303,36 @@ check(!OpenRequests.keepsHover(pointer: CGPoint(x: 600, y: 300), list: listBox, 
         && !OpenRequests.keepsHover(pointer: CGPoint(x: 1100, y: 500), list: listBox, pill: pillBox),
       "away from both: it goes")
 
+// --- AgentX upgrading or down (#2502) ---
+
+var up = OpenRequests()
+let kept = up.add(agentID: "pm", question: "are we on 300?", at: t0)
+up.keptForUpgrade(kept, line: "AgentX is upgrading, back in about 5 minutes. Your message is kept.", at: at(1))
+check(up.request(kept)?.phase == .thinking && up.request(kept)?.local == false && up.request(kept)?.isHeld == true,
+      "kept by an upgrading daemon: still thinking, the daemon's to answer, shown as held")
+check(up.request(kept)?.held?.contains("upgrading") == true, "the list says why it waits")
+
+var down = OpenRequests()
+let a = down.add(agentID: "pm", question: "first", at: t0)
+let b = down.add(agentID: "coder", question: "second", at: at(2))
+down.awaitDaemon(a, at: at(3))
+down.awaitDaemon(b, at: at(4))
+let c = down.add(agentID: "pm", question: "third", at: at(5))
+check(down.request(c)?.phase == .waiting, "said while the first waits for AgentX: it waits too")
+check(down.startNext(for: "pm", at: at(6)) == nil && down.startNext(for: "coder", at: at(6)) == nil,
+      "nothing goes while AgentX is down")
+check(down.request(a)?.clientKey != down.request(b)?.clientKey && (down.request(a)?.clientKey.count ?? 0) >= 8,
+      "each message has its own client key")
+let keyA = down.request(a)?.clientKey
+check(down.daemonBack() == [a, b], "AgentX back: the waiting rows, oldest first")
+check(down.daemonBack().isEmpty, "only once")
+check(down.startNext(for: "pm", at: at(7)) == a && down.startNext(for: "coder", at: at(7)) == b,
+      "the first said goes first for each agent")
+check(down.request(a)?.clientKey == keyA, "the same key when sent again")
+check(down.startNext(for: "pm", at: at(8)) == nil, "the third waits for the first's answer")
+down.answered(a, at: at(9))
+check(down.startNext(for: "pm", at: at(9)) == c, "then the third goes")
+
 if failures > 0 {
     print("\(failures) failed")
     exit(1)
