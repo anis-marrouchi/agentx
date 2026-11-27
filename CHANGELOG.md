@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.309.1](https://github.com/anis-marrouchi/agentx/compare/v0.309.0...v0.309.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **desktop:** orb rests when let go before the mic opens; one speech pass at a time ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265)) ([#2527](https://github.com/anis-marrouchi/agentx/issues/2527)) ([c84e54b](https://github.com/anis-marrouchi/agentx/commit/c84e54b1baf81a218e96da4b1755298e76d1297c))
+
 ## [0.309.0](https://github.com/anis-marrouchi/agentx/compare/v0.308.0...v0.309.0) (2026-11-27)
 
 
