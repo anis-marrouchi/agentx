@@ -3,7 +3,7 @@
 // hides it from screen readers (the control around it carries the name).
 import {
   Activity, ArrowDown, ArrowLeft, ArrowRight, ArrowRightLeft, ArrowUp, ArrowUpRight, ArrowUpToLine, Ban, BellDot, Bookmark, BookOpen, Bot, Briefcase,
-  Building2, CalendarClock, ChartLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleDollarSign,
+  Building2, CalendarClock, ChartLine, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleDashed, CircleDollarSign,
   CircleDot, CircleX, Clock, Cog, Copy, Download, Ellipsis, ExternalLink, Eye, EyeOff, File, FilePenLine, Files, FileText, Folder, FolderGit2, Gauge, GitBranch,
   GitMerge, GitPullRequest, Globe, GripVertical, Hash, Heading, History, House, Inbox, Info, Kanban, KeyRound, LayoutDashboard, LayoutList, Link, List, ListChecks,
   ListTodo, LoaderCircle, Mail, Megaphone, Menu, MessageCircle, MessageSquare, MessageSquareMore, Mic, Monitor, Moon, Network, OctagonX, PanelLeft, PanelRight, Pause, Pencil, PencilLine,
@@ -17,7 +17,7 @@ const ICONS: Record<string, string> = {
   "arrow-up": ArrowUp, "arrow-up-right": ArrowUpRight, "arrow-up-to-line": ArrowUpToLine, "ban": Ban, "bell-dot": BellDot, "book-open": BookOpen,
   "bookmark": Bookmark, "bot": Bot, "briefcase": Briefcase, "building-2": Building2, "calendar-clock": CalendarClock, "chart-line": ChartLine,
   "check": Check, "chevron-down": ChevronDown, "chevron-left": ChevronLeft, "chevron-right": ChevronRight, "chevrons-up-down": ChevronsUpDown, "circle": Circle,
-  "circle-alert": CircleAlert, "circle-check": CircleCheck, "circle-dollar-sign": CircleDollarSign, "circle-dot": CircleDot, "circle-x": CircleX,
+  "circle-alert": CircleAlert, "circle-check": CircleCheck, "circle-dashed": CircleDashed, "circle-dollar-sign": CircleDollarSign, "circle-dot": CircleDot, "circle-x": CircleX,
   "clock": Clock, "cog": Cog, "copy": Copy, "download": Download, "ellipsis": Ellipsis, "external-link": ExternalLink, "eye": Eye, "eye-off": EyeOff,
   "file": File, "file-pen-line": FilePenLine, "file-text": FileText, "files": Files, "folder": Folder, "folder-git-2": FolderGit2, "gauge": Gauge, "git-branch": GitBranch,
   "git-merge": GitMerge, "git-pull-request": GitPullRequest, "globe": Globe, "grip-vertical": GripVertical, "hash": Hash, "heading": Heading, "history": History, "house": House,
