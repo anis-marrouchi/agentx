@@ -99,10 +99,16 @@ export function memoryKeyring(initial: Record<string, string> = {}): KeyringStor
 // AgentX never writes or renews that login. Elsewhere Claude Code keeps it
 // in a file, so there is nothing to read here.
 
-export function readClaudeCodeKeychainEntry(service: string, platform: NodeJS.Platform = process.platform): Promise<string | null> {
+/**
+ * One item of `service`; with `account`, the item of that account only. A
+ * Mac can hold two items of the same service (#2101 R5): `security` without
+ * an account returns the first it finds, which may be an old one.
+ */
+export function readClaudeCodeKeychainEntry(service: string, account?: string, platform: NodeJS.Platform = process.platform): Promise<string | null> {
   if (platform !== "darwin") return Promise.resolve(null)
+  const args = ["find-generic-password", "-s", service, ...(account ? ["-a", account] : []), "-w"]
   return new Promise((resolve) => {
-    execFile("security", ["find-generic-password", "-s", service, "-w"], { timeout: 3000 }, (err, stdout) => {
+    execFile("security", args, { timeout: 3000 }, (err, stdout) => {
       resolve(err ? null : String(stdout).trim() || null)
     })
   })

@@ -37,7 +37,7 @@ export interface HubUseRow { window: string; utilization?: number; resetsAt?: nu
 export interface HubAccountUse { name: string; active: boolean; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string; signedOut?: boolean }
 
 /** One engine's usage, as /api/admin/hub/usage gives it. */
-export interface HubEngineUse { engine: string; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string; accounts?: HubAccountUse[] }
+export interface HubEngineUse { engine: string; rows: HubUseRow[]; readAt: number | null; source: string; plan?: string; accounts?: HubAccountUse[]; unread?: string }
 
 /** Today's run cost on this machine (R28e), as /api/admin/hub/usage gives it. */
 export interface HubSpendUse { since: number; byAgent: Record<string, number>; unpriced: Record<string, number>; agentIds: string[] }
@@ -225,6 +225,13 @@ export function hubRowsHtml(rows: HubUseView[], source: string, now: number, esc
   return (list ? '<ul class="hsu__rows">' + list + "</ul>" : "") + (read ? '<p class="hsu__read">' + esc(read) + "</p>" : "")
 }
 
+/** #2101 R5: why there is no plan %, in a line the owner can act on; nothing when it is read. */
+export function hubUnreadHtml(unread: string | undefined): string {
+  return unread === "login"
+    ? '<p class="hsu__read">Plan usage not read: the Claude login on this machine has run out. Sign in again with <code>claude /login</code>.</p>'
+    : unread === "rate-limited" ? '<p class="hsu__read">Plan usage not read yet: Claude\'s usage service asked to wait. It is read again by itself.</p>' : ""
+}
+
 /** The engine's hover drop-down (R28b, c, d, e, g, h). `spend` is for an API engine. */
 export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows: HubUseView[], agents: HubUseAgent[], now: number,
   esc: (s: unknown) => string, icon: (tier: string) => string, canAdd: boolean, spend?: HubSpendView | null): string {
@@ -243,7 +250,7 @@ export function hubEnginePopHtml(engine: string, use: HubEngineUse | null, rows:
     body = accts.map((a) => '<p class="hsu__acct"><b>' + esc(a.name) + "</b>" + (a.active ? '<span class="hsu__in">In use</span>' : "") + "</p>" +
       (a.signedOut ? '<p class="hsu__read">Signed out</p>' : hubRowsHtml(a.active ? rows : hubUsageRows(a.rows, now), a.source, now, esc))).join("")
   } else {
-    body = hubRowsHtml(rows, use ? use.source : "plan", now, esc)
+    body = hubRowsHtml(rows, use ? use.source : "plan", now, esc) + hubUnreadHtml(use ? use.unread : undefined)
   }
   const who = agents.length
     ? '<p class="hsu__h">Used by ' + agents.length + (agents.length === 1 ? " agent" : " agents") + '</p><ul class="hsu__who">' +

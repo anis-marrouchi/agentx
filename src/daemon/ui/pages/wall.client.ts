@@ -105,7 +105,7 @@ import { HUB_NAV_SCRIPT } from "./hub-nav.client"
 import { HUB_LAYOUT_SCRIPT } from "./hub-layout"
 import { hubAccountsText, hubAccountsHtml, hubConnState, hubCliText, hubCliHtml, hubEngineName, hubEngines, hubRunsWord, hubCliSavedText, hubCliWaitText } from "./hub-status"
 import { HUB_STATUS_SCRIPT } from "./hub-status.client"
-import { hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
+import { hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubUnreadHtml, hubEnginePopHtml, hubAgentsPopHtml } from "./hub-status-usage"
 import { HUB_USAGE_SCRIPT } from "./hub-status-usage.client"
 import { HUB_OPERATIONS_SCRIPT } from "./hub-operations"
 import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, ltNodeCounts, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml } from "./wall-tree"
@@ -139,7 +139,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haStateIcon, haStateWord, haRowHref, haGroups, haRowHtml, haListHtml, haRailHtml, haDownHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunStart, haRunsHtml, haRunsToday })}
   ${injectFns({ engineIconKey, engineIcon })}
-  ${injectFns({ hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubEnginePopHtml, hubAgentsPopHtml })}
+  ${injectFns({ hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubUnreadHtml, hubEnginePopHtml, hubAgentsPopHtml })}
   ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, ltNodeCounts, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml })}
   ${injectFns({ ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
