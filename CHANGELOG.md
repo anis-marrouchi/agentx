@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.306.0](https://github.com/anis-marrouchi/agentx/compare/v0.305.1...v0.306.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** simple shell panes follow orca-design (Hub review batch 5) ([7c0422c](https://github.com/anis-marrouchi/agentx/commit/7c0422c2a1dee6a1c38bb9dcb6f22952dc3911cc))
+* **hub:** simple shell panes follow orca-design (Hub review batch 5) ([72d3126](https://github.com/anis-marrouchi/agentx/commit/72d3126396cdcef06f6ea805f74f5516dc182313))
+
 ## [0.305.1](https://github.com/anis-marrouchi/agentx/compare/v0.305.0...v0.305.1) (2026-11-27)
 
 
