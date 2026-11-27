@@ -276,7 +276,7 @@ describe("createDelegations wiring", () => {
 
   it("reads the delegation settings", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true, resendAfterRestart: true, callbackSends: true, coalesceSeconds: 120, agentChains: { perAgentHour: 15, perChainDay: 40 }, topicSessions: false })
+    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true, resendAfterRestart: true, holdOnUsageLimit: true, limitHoldMaxHours: 12, callbackSends: true, coalesceSeconds: 120, agentChains: { perAgentHour: 15, perChainDay: 40 }, topicSessions: false })
   })
 })
 

@@ -28,6 +28,12 @@ Each answer is passed on at most once more, never in a loop.
 
 Older versions of AgentX kept this list in a file, `.agentx/a2a/delegations.jsonl`. AgentX no longer writes that file. If a machine still has one, AgentX copies it into the database once at start, then renames it to `delegations.jsonl.imported`. The renamed file is never read again. Keep it: it is what you need to roll back to an older AgentX (see **If something is wrong**). If the file cannot be renamed, AgentX removes it instead.
 
+## When the helper is over its usage limit
+
+A helper on this machine can stop because its plan is over its usage limit (for example "You've hit your 5-hour limit · resets 6pm", or "Claude plan limit reached"). The work is not reported as failed. AgentX reads the reset time from the limit message and sends the helper the same message again a couple of minutes after it, with a first line saying an earlier run stopped on the limit. When the message gives no time, it tries again after 30 minutes. Your agent gets one short notice saying the work is held and when it goes again; the helper's answer then comes back as usual.
+
+The work is held at most three times, and never longer than `limitHoldMaxHours` (12 hours unless you change it). A limit that resets later than that, such as a weekly limit with days to go, or a fourth stop on the limit, ends the work as failed, as before, and your agent tells you. If AgentX restarts while the work is held, it is sent again right after the restart (see above). Work handed to an agent on another machine is not held. Turn this off with `holdOnUsageLimit` below.
+
 ## Which chats this applies to
 
 It applies when a person started the conversation on one of these: Telegram, WhatsApp, a GitLab or GitHub comment, the phone app, voice, or the dashboard chat.
@@ -55,6 +61,8 @@ These settings live under `mesh.delegation` in `agentx.json`. They apply to help
 | `mesh.delegation.timeoutMinutes` | `30` | How long a helper has to answer. After this, your agent is told it timed out, and a helper on this machine is stopped. |
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. With it off, an answer your agent had not started passing on is not passed on after a restart either. |
 | `mesh.delegation.resendAfterRestart` | `true` | If AgentX restarts while a helper on this machine is working on, or waiting to start, a message from your agent, the helper gets the message once more after the restart. Turn it off (`false`) to have such work reported as lost or failed, as in older versions. |
+| `mesh.delegation.holdOnUsageLimit` | `true` | If a helper on this machine stops because its plan is over its usage limit, the work waits for the limit to reset and is sent again, and your agent is told once. Turn it off (`false`) to have such work reported as failed, as in older versions. |
+| `mesh.delegation.limitHoldMaxHours` | `12` | The longest work waits for a helper's usage limit to reset. From 1 to 168. A later reset ends the work as failed. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 | `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
 | `mesh.delegation.topicSessions` | `false` | Turn it on (`true`) so a message that names one issue or merge request, but no `home`, continues the helper's last run on that issue while it is still fresh (see **One issue named in the message** below). Read at start: restart AgentX after changing it. |

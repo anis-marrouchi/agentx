@@ -1243,6 +1243,15 @@ const meshConfigSchema = z.object({
      *  to its callee once more after the restart instead of ending as an
      *  error or lost. Off: it ends as before. */
     resendAfterRestart: z.boolean().default(true),
+    /** A hand-off to an agent on this machine whose run failed because
+     *  the agent's plan is over its usage limit (#2467 item 2) stays open
+     *  and is sent again after the limit resets (read from the limit
+     *  message; 30 min when it gives no time), at most 3 times. The asking
+     *  agent is told once. Off: it ends as an error, as before. */
+    holdOnUsageLimit: z.boolean().default(true),
+    /** The longest such a hand-off is held. A reset further away (a weekly
+     *  limit) ends it as an error, as before. From 1 to 168. */
+    limitHoldMaxHours: z.number().min(1).max(168).default(12),
     /** An agent's send_agent from a turn no person waits on (#1100): the
      *  answer, failure or timeout comes back as a turn in the asking
      *  agent's own chat, and a message the callee writes back to it lands

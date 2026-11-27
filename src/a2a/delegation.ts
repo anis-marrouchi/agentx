@@ -28,6 +28,7 @@ import { emitSignal } from "@/improve/signals"
 import { createHash, randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
+import { LIMIT_NOTE, MAX_LIMIT_HOLDS, limitRetryAt, usageLimitHold } from "./usage-hold"
 import { taskTypeOf } from "@/agents/task-context"
 import { homeRefsOf, normalizeHome } from "./home"
 import { CACHE_TTL_MS } from "@/agents/prompt-cache"
@@ -145,6 +146,10 @@ export interface DelegationResult {
 export interface CalleeRun {
   content: string
   error?: string
+  /** The registry's kind for the error (AgentResponse.errorKind), and for
+   *  a dispatch_hold when it can go again (#2467 item 2). */
+  errorKind?: string
+  retryAt?: number
   /** Set by the registry on a run it checked (local runs only). */
   jobState?: EndState
 }
@@ -299,6 +304,17 @@ export interface DelegationDeps {
    *  when this process starts, is sent to its callee once more after boot
    *  instead of ending as error or lost. Needs the table. Absent: off. */
   resendAfterRestart?: boolean
+  /** On (#2467 item 2): a local hand-off whose callee run failed on a
+   *  usage limit stays open and is sent again after the limit resets, up
+   *  to MAX_LIMIT_HOLDS times, instead of ending as an error. Needs the
+   *  table. Absent: off. */
+  holdOnUsageLimit?: boolean
+  /** The longest a hand-off is held for a usage limit (ms); a reset
+   *  further away ends it as an error, as before. */
+  limitHoldMaxMs?: number
+  /** A hand-off was held for its callee's usage limit (#2467 item 2):
+   *  tell the caller once, with a notice on its next run. */
+  holdNotice?(rec: DelegationRecord, text: string): void
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
   /** Default true: a person-started delegation goes async on its own. */
@@ -627,6 +643,12 @@ export class DelegationManager {
   /** Hand-offs sent again after a restart (#2467), since this process
    *  began. No store. */
   private resentCount = 0
+  /** Hand-offs held for a usage limit (#2467 item 2): holds so far, and
+   *  the timer that sends each again. In memory: a restart sends an open
+   *  one again at boot (resendAfterBoot). */
+  private limitHolds = new Map<string, number>()
+  private holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private heldCount = 0
   private readonly now: () => number
   private readonly store: HandoffStore | null
 
@@ -754,7 +776,7 @@ export class DelegationManager {
       ...(opts.wayHome ? { wayHome: opts.wayHome } : {}),
       // A local run this node starts itself can be sent again after a
       // restart (#2467): never a peer's, nor a call made by `run`.
-      ...(this.deps.resendAfterRestart && this.store && !opts.peer && !opts.run
+      ...((this.deps.resendAfterRestart || this.deps.holdOnUsageLimit) && this.store && !opts.peer && !opts.run
         ? { resend: {
             message: opts.message,
             ...(opts.calleeContext ? { calleeContext: opts.calleeContext } : {}),
@@ -1085,6 +1107,9 @@ export class DelegationManager {
           this.deps.log(`[delegation ${id}] ${who} was stopped by a restart (${clip(r.error ?? "", 120)}); kept open to send again after the restart`)
           return
         }
+        // The callee's plan is over its limit (#2467 item 2): the row
+        // stays open and the run goes again after the reset.
+        if (this.holdForLimit(record, opts, r)) return
         const said = this.waiting.get(id)
         this.waiting.delete(id)
         const wrote = !!this.answered.get(id)?.length
@@ -1122,6 +1147,10 @@ export class DelegationManager {
     const timer = this.timers.get(id)
     if (timer) clearTimeout(timer)
     this.timers.delete(id)
+    const held = this.holdTimers.get(id)
+    if (held) clearTimeout(held)
+    this.holdTimers.delete(id)
+    this.limitHolds.delete(id)
     this.localRuns.delete(id)
     this.waiting.delete(id)
     this.answered.delete(id)
@@ -1284,6 +1313,69 @@ export class DelegationManager {
     return this.resentCount
   }
 
+  /** Hand-offs held for their callee's usage limit (#2467 item 2), since
+   *  this process began. */
+  heldForLimit(): number {
+    return this.heldCount
+  }
+
+  /**
+   * Hold a hand-off whose callee run failed on a usage limit (#2467 item
+   * 2) and send it again after the reset. True when it is held; false when
+   * it ends as before: holding off, not a limit, a peer's or a `run` call
+   * (no message kept), held MAX_LIMIT_HOLDS times already, or a reset
+   * further away than limitHoldMaxMs. The caller hears it once.
+   */
+  private holdForLimit(record: DelegationRecord, opts: Parameters<DelegationManager["start"]>[0], r: CalleeRun): boolean {
+    if (!this.deps.holdOnUsageLimit || !this.store || !record.resend || record.peer) return false
+    const id = record.id
+    if (!this.pendingById.has(id)) return false
+    const now = this.now()
+    const hold = usageLimitHold(r, now)
+    if (!hold) return false
+    const holds = this.limitHolds.get(id) ?? 0
+    const who = record.callee
+    if (holds >= MAX_LIMIT_HOLDS) {
+      this.deps.log(`[delegation ${id}] ${who} still over its usage limit after ${holds} holds; ends as an error`)
+      return false
+    }
+    const at = limitRetryAt(hold, now)
+    const max = this.deps.limitHoldMaxMs ?? 12 * 60 * 60_000
+    if (at - now > max) {
+      this.deps.log(`[delegation ${id}] ${who}'s usage limit resets ${whenText(at)}, past the ${Math.round(max / 60_000)} min hold limit; ends as an error`)
+      return false
+    }
+    // The time limit counts from each send: the wait is not the callee's.
+    const timer = this.timers.get(id)
+    if (timer) clearTimeout(timer)
+    this.timers.delete(id)
+    this.localRuns.delete(id)
+    this.limitHolds.set(id, holds + 1)
+    this.heldCount++
+    const when = hold.until !== undefined ? `after its limit resets, at ${whenText(at)}` : `at ${whenText(at)} (the limit message gave no reset time)`
+    this.deps.log(`[delegation ${id}] ${record.caller} -> ${who}: ${who} is over its usage limit (${clip(r.error ?? "", 120)}); held, sent again ${when}`)
+    if (holds === 0 && record.caller !== UNNAMED_CALLER) {
+      try {
+        this.deps.holdNotice?.(record, `Your hand-off ${id} to ${who} is held: ${who} is over its usage limit. It is sent to ${who} again ${when}, and its answer comes back to you as usual. Nothing to do unless it is urgent; then ask another agent.`)
+      } catch (e: any) {
+        this.deps.log(`[delegation ${id}] could not tell ${record.caller} of the hold: ${e?.message ?? e}`)
+      }
+    }
+    const t = setTimeout(() => {
+      this.holdTimers.delete(id)
+      if (!this.pendingById.has(id)) return
+      this.deps.log(`[delegation ${id}] ${record.caller} -> ${who}: sent again after the usage limit hold (${holds + 1} of ${MAX_LIMIT_HOLDS})`)
+      try {
+        this.launchStarted(record, { ...opts, message: LIMIT_NOTE + record.resend!.message }, true)
+      } catch (e: any) {
+        void this.complete(id, { status: "error", text: `could not send it again after the usage limit: ${e?.message ?? e}` })
+      }
+    }, Math.max(0, at - now))
+    ;(t as any).unref?.()
+    this.holdTimers.set(id, t)
+    return true
+  }
+
   /**
    * Send a hand-off still open at start to its callee once more (#2467).
    * True when it was sent, or another process on this database took it;
@@ -1428,6 +1520,8 @@ export class DelegationManager {
   stop(): void {
     for (const t of this.timers.values()) clearTimeout(t)
     this.timers.clear()
+    for (const t of this.holdTimers.values()) clearTimeout(t)
+    this.holdTimers.clear()
   }
 
   /** One turn for the caller, passing on every answer in `items` (all for
