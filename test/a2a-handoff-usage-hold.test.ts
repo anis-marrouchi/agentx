@@ -175,6 +175,20 @@ describe("a hand-off whose callee is over its usage limit", () => {
     expect(p.notices).toHaveLength(0)
   })
 
+  it("with resendAfterRestart off, a run stopped by a restart ends as an error, not lost at boot", async () => {
+    const db = database()
+    const before = proc(db, { resendAfterRestart: false }, [{ content: "", error: "killed by daemon restart (drain limit 300s)" }])
+    const { taskId } = before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Job" })
+    await flush()
+    expect(new HandoffStore(db).statusOf(taskId)).toBe("error")
+    before.mgr.stop()
+    const after = proc(db, { resendAfterRestart: false }, [{ content: "Done." }])
+    expect(await after.mgr.recover()).toBe(0)
+    await flush()
+    expect(after.runs).toHaveLength(0)
+    expect(new HandoffStore(db).statusOf(taskId)).toBe("error")
+  })
+
   it("other errors end as before", async () => {
     const db = database()
     const p = proc(db, {}, [{ content: "", error: "API Error: 500 boom" }])
