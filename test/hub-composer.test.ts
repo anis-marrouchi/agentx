@@ -11,7 +11,7 @@ import { TooltipProvider } from "../src/hub/ui"
 import { ICON_NAMES } from "../src/hub/ui/icons"
 
 const card = (agent?: ComposerAgent) =>
-  renderToStaticMarkup(createElement(Composer, { agent, onSend: async () => true }))
+  renderToStaticMarkup(createElement(TooltipProvider, null, createElement(Composer, { agent, onSend: async () => true })))
 
 function shell(p: Partial<SimpleShellProps> = {}): string {
   const props: SimpleShellProps = { view: resolveHubLayout({ layout: "simple" }), owner: true, agents: [{ id: "ada", name: "Ada", model: "claude-opus-4-6", tier: "claude-code" }], agent: "ada", ...p }

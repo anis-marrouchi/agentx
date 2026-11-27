@@ -9,7 +9,7 @@ import { PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLan
 import { hubMenuCatalog } from "../src/daemon/ui/pages/wall"
 import { presetItems, type MenuItem } from "../src/daemon/hub-menu"
 import { HUB_REACT_PAGES, hubReactPageIds } from "../src/hub/pages"
-import { SimpleShell, shellAgents, type SimpleShellProps } from "../src/hub/pages/ShellPage"
+import { ChatTurn, RightTabs, SimpleShell, shellAgents, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
 import { ICON_NAMES } from "../src/hub/ui/icons"
 
@@ -112,13 +112,16 @@ function draw(p: Partial<SimpleShellProps> = {}): string {
 }
 
 describe("the shell draws three columns", () => {
-  it("side menu, chat and the right tabs, Run artifacts first (#2455)", () => {
+  it("side menu and chat; the right tabs, Run artifacts first, once there is a thread (#2455)", () => {
     const html = draw()
     expect(html).toContain('data-shell="simple"')
     expect(html).toContain('data-shell="menu"')
     expect(html).toContain('data-shell="chat"')
-    expect(html).toContain('data-shell="tabs"')
-    expect(html).toMatch(/role="tab"[^>]*>[\s\S]*?Run artifacts<\/button>/)
+    // No thread yet: no third column on a computer (E3).
+    expect(html).not.toContain('data-shell="tabs"')
+    const tabs = renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(RightTabs, { threadId: null })))
+    expect(tabs).toContain('data-shell="tabs"')
+    expect(tabs).toMatch(/role="tab"[^>]*>[\s\S]*?Run artifacts<\/button>/)
   })
   it("simple: the default items, no hidden item", () => {
     const html = draw()
@@ -150,6 +153,28 @@ describe("the shell draws three columns", () => {
     expect(html).toContain("Message Ada")
     expect(html).toContain("model-x")
     expect(html).toContain('data-shell="machine"')
+  })
+  it("the message list is announced politely (A17)", () => {
+    expect(draw()).toMatch(/aria-live="polite"[^>]*data-shell="messages"/)
+  })
+  it("an empty chat greets and offers suggestion pills (A14)", () => {
+    const html = draw()
+    expect(html).toContain("Ask Ada anything")
+    const pills = html.match(/data-shell="suggestion"/g) ?? []
+    expect(pills.length).toBeGreaterThanOrEqual(2)
+    expect(pills.length).toBeLessThanOrEqual(4)
+    expect(html).toMatch(/rounded-full[^"]*"[^>]*data-shell="suggestion"/)
+  })
+  it("a failed answer shows its error with Try again (P10)", () => {
+    const turn = (onRetry?: () => void) => renderToStaticMarkup(createElement(ChatTurn, { m: { seq: 2, role: "assistant", content: "The run timed out.", status: "error" }, onRetry }))
+    expect(turn(() => {})).toMatch(/data-shell="turn-error"[\s\S]*?The run timed out\.[\s\S]*?<button[^>]*data-variant="outline"[^>]*data-size="sm"[^>]*>[\s\S]*?Try again<\/button>/)
+    expect(turn()).not.toContain("Try again")
+  })
+  it("the last answer has Copy; a pending one shows the Working line", () => {
+    const wrapT = (el: ReturnType<typeof createElement>) => renderToStaticMarkup(createElement(TooltipProvider, null, el))
+    expect(wrapT(createElement(ChatTurn, { m: { seq: 2, role: "assistant", content: "Hi", status: "done" }, last: true }))).toContain('aria-label="Copy"')
+    expect(wrapT(createElement(ChatTurn, { m: { seq: 2, role: "assistant", content: "Hi", status: "done" } }))).not.toContain('aria-label="Copy"')
+    expect(wrapT(createElement(ChatTurn, { m: { seq: 3, role: "assistant", content: "", status: "pending" } }))).toMatch(/role="status"[^>]*>Working…/)
   })
   it("no agent: says to pick one, the box is off", () => {
     const html = draw({ agents: [], agent: undefined })

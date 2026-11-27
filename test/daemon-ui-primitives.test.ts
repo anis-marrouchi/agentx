@@ -57,7 +57,7 @@ describe("skeleton (P8)", () => {
     expect(skeleton("cards", 2).match(/class="ax-skel__card"/g)).toHaveLength(2)
   })
   it("shows only after 400ms", () => {
-    expect(AX_COMPONENTS_CSS).toContain(".ax-skel { display: grid; gap: 8px; animation: ax-fade 150ms ease-out 400ms both; }")
+    expect(AX_COMPONENTS_CSS).toContain(".ax-skel { display: grid; gap: 8px; animation: ax-fade-flat 150ms ease-out 400ms both; }")
   })
 })
 
@@ -135,6 +135,6 @@ describe("behaviour script and motion", () => {
     expect(body).toContain("d.showModal()")
   })
   it("drops movement under reduced motion", () => {
-    expect(AX_COMPONENTS_CSS).toContain("@media (prefers-reduced-motion: reduce) {\n  .ax-tip, .ax-menu__content, .ax-dialog[open] { animation-name: ax-fade; }\n}")
+    expect(AX_COMPONENTS_CSS).toContain("@media (prefers-reduced-motion: reduce) {\n  .ax-tip, .ax-menu__content, .ax-dialog[open] { animation-name: ax-fade-flat; }\n}")
   })
 })

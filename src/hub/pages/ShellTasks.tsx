@@ -15,7 +15,10 @@ import {
   type TaskEvent, type TaskLane, type TaskPost, type TaskThreadReply, type TasksReply, type TasksView,
 } from "../tasks"
 import type { ForgeTasksReply } from "../../daemon/hub-forge-tasks"
-import { Badge, Button, EmptyState, Icon, Skeleton, StatusDot, cn } from "../ui"
+import {
+  Badge, Button, Collapsible, CollapsibleContent, CollapsibleTrigger, EmptyState, Icon, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Skeleton, StatusDot, Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn,
+} from "../ui"
 
 /** A task's address in the shell; the project filter goes along. */
 export const taskHref = (id?: string, project?: string | null) => buildHash({ page: "home", pane: "tasks", project, open: id })
@@ -27,10 +30,11 @@ const LANE_TOP: Record<TaskLane["tone"], string> = {
 
 /** List or Kanban: two pressed-state buttons, the choice kept by the caller. */
 export function TasksViewSwitch({ view, onView, className, compact }: { view: TasksView; onView: (v: TasksView) => void; className?: string; compact?: boolean }) {
-  const item = (v: TasksView, label: string, icon: string) => (
+  const item = (v: TasksView, label: string, icon: string) => {
+    const b = (
     <button
       type="button" aria-pressed={view === v} data-tasks-view={v} onClick={() => onView(v)}
-      aria-label={compact ? label : undefined} title={compact ? label : undefined}
+      aria-label={compact ? label : undefined}
       className={cn(
         "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm text-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         view === v ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
@@ -38,12 +42,27 @@ export function TasksViewSwitch({ view, onView, className, compact }: { view: Ta
     >
       <Icon name={icon} className="size-3.5" />{compact ? null : label}
     </button>
-  )
+    )
+    return compact ? <Tip key={v} label={label}>{b}</Tip> : b
+  }
   return (
     <div role="group" aria-label="Tasks view" data-shell="tasks-switch" className={cn("flex gap-0.5 rounded-md bg-muted p-0.5", className)}>
       {item("list", "List", "list")}
       {item("kanban", "Kanban", "kanban")}
     </div>
+  )
+}
+
+/** Radix Select has no empty value: "all projects" is this one. */
+const ALL = "__all__"
+
+/** An icon or a link that names itself in a Tooltip (orca-design C14). */
+function Tip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -53,17 +72,16 @@ export function TasksProjectFilter({ projects, project, className }: { projects:
   // A project picked from a link that no task names now still shows, so the filter says what is applied.
   const list = project && !projects.includes(project) ? [project, ...projects] : projects
   return (
-    <label className={cn("relative inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground focus-within:ring-2 focus-within:ring-ring", className)}>
-      <Icon name="folder" className="size-3.5" />
-      <select
-        aria-label="Project" data-shell="tasks-project" value={project ?? ""}
-        onChange={(e) => navigate({ page: "home", pane: "tasks", project: e.target.value || null })}
-        className="max-w-[96px] cursor-pointer sm:max-w-[160px] appearance-none truncate bg-transparent pr-1 text-foreground outline-none"
-      >
-        <option value="">All projects</option>
-        {list.map((p) => <option key={p} value={p}>{p}</option>)}
-      </select>
-    </label>
+    <Select value={project ?? ALL} onValueChange={(v) => navigate({ page: "home", pane: "tasks", project: v === ALL ? null : v })}>
+      <SelectTrigger aria-label="Project" data-shell="tasks-project" className={cn("max-w-[128px] text-xs sm:max-w-[200px]", className)}>
+        <Icon name="folder" className="size-3.5 text-muted-foreground" />
+        <SelectValue placeholder="All projects">{project ?? "All projects"}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL}>All projects</SelectItem>
+        {list.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -78,7 +96,7 @@ const KIND: Record<string, { icon: string; label: string }> = {
 /** What the task is: an issue, a pull request, or a request to an agent. */
 function TaskKind({ post }: { post: TaskPost }) {
   const k = KIND[post.forge?.kind ?? "request"]
-  return <span data-task-kind={post.forge?.kind ?? "request"} title={k.label} className="inline-flex text-muted-foreground"><Icon name={k.icon} className="size-3.5" /><span className="sr-only">{k.label}</span></span>
+  return <Tip label={k.label}><span data-task-kind={post.forge?.kind ?? "request"} className="inline-flex text-muted-foreground"><Icon name={k.icon} className="size-3.5" /><span className="sr-only">{k.label}</span></span></Tip>
 }
 
 function TaskMeta({ post }: { post: TaskPost }) {
@@ -91,19 +109,25 @@ function TaskMeta({ post }: { post: TaskPost }) {
   )
 }
 
-/** One row per task, under its column's heading; empty columns left out. */
+/** One row per task, under its column's heading; empty columns left out.
+ *  Each heading folds its rows (orca-design C22); Closed starts folded. */
 export function TaskList({ posts, project }: { posts: TaskPost[]; project?: string | null }) {
   return (
     <div data-tasks="list" className="flex flex-col gap-4">
       {tasksByLane(posts).filter((g) => g.posts.length).map(({ lane, posts: rows }) => (
-        <section key={lane.id} aria-label={lane.label} data-lane={lane.id}>
-          <h2 className="flex items-center gap-2 px-1 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {lane.label}<span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{rows.length}</span>
+        <Collapsible key={lane.id} defaultOpen={lane.id !== "closed"} asChild>
+          <section aria-label={lane.label} data-lane={lane.id} className="group/lane">
+          <h2 className="pb-1">
+            <CollapsibleTrigger className="flex cursor-pointer items-center gap-2 rounded-sm px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground can-hover:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Icon name="chevron-right" className="size-3.5 group-data-[state=open]/lane:rotate-90" />
+              {lane.label}<span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{rows.length}</span>
+            </CollapsibleTrigger>
           </h2>
+          <CollapsibleContent>
           <ul className="divide-y divide-border rounded-md border border-border">
             {rows.map((p) => (
               <li key={p.id}>
-                <a {...taskLink(p, project)} data-task={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <a {...taskLink(p, project)} data-task={p.id} className="flex items-center gap-3 px-3 py-2 can-hover:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                   <StatusDot state={taskTone(p.state)} label={taskStateLabel(p.state)} />
                   <TaskKind post={p} />
                   <span className="min-w-0 flex-1 truncate text-[13px]">{p.headline || p.id}</span>
@@ -112,7 +136,9 @@ export function TaskList({ posts, project }: { posts: TaskPost[]; project?: stri
               </li>
             ))}
           </ul>
-        </section>
+          </CollapsibleContent>
+          </section>
+        </Collapsible>
       ))}
     </div>
   )
@@ -131,7 +157,7 @@ export function TaskBoard({ posts, project }: { posts: TaskPost[]; project?: str
             {cards.length === 0 ? (
               <p className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/70 text-[11px] text-muted-foreground">Empty</p>
             ) : cards.map((p) => (
-              <a key={p.id} {...taskLink(p, project)} data-task={p.id} className="flex flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 shadow-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <a key={p.id} {...taskLink(p, project)} data-task={p.id} className="flex flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2 shadow-xs can-hover:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <span className="flex items-start gap-1.5"><span className="mt-0.5"><TaskKind post={p} /></span><span className="line-clamp-2 text-[13px]">{p.headline || p.id}</span></span>
                 {lane.id === "closed" && p.state !== "done" ? <Badge variant="outline" className="self-start text-[11px]">{taskStateLabel(p.state)}</Badge> : null}
                 <TaskMeta post={p} />
@@ -187,11 +213,11 @@ export function TasksBody({ view, posts, error, notice, onRetry, project = null 
   if (!posts) return <div className="flex flex-col gap-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-2/3" /></div>
   const shown = tasksOfProject(posts, project)
   const body = project && shown.length === 0 ? (
-    <EmptyState title={`No tasks in ${project}`} action={<a className="text-sm text-link hover:underline" href={taskHref()}>All projects</a>}>
+    <EmptyState title={`No tasks in ${project}`} action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={taskHref()}>All projects</a>}>
       No open issue or PR, and no request in the last 7 days. Pick another project, or all of them.
     </EmptyState>
   ) : posts.length === 0 ? (
-    <EmptyState title="No tasks" action={<a className="text-sm text-link hover:underline" href={buildHash({ page: "home" })}>Ask an agent</a>}>
+    <EmptyState title="No tasks" action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={buildHash({ page: "home" })}>Ask an agent</a>}>
       Open issues and PRs of your repositories, and requests you give an agent, show here.
     </EmptyState>
   ) : view === "kanban" ? <TaskBoard posts={shown} project={project} /> : <TaskList posts={shown} project={project} />
@@ -204,7 +230,7 @@ const EVENT_WORD: Record<string, string> = {
 }
 
 /** An opened task: its state, then its timeline, oldest first. */
-export function TaskThread({ post, events, error }: { post: TaskPost; events?: TaskEvent[]; error?: string | null }) {
+export function TaskThread({ post, events, error, onRetry }: { post: TaskPost; events?: TaskEvent[]; error?: string | null; onRetry?: () => void }) {
   return (
     <article data-tasks="open" data-task={post.id} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
@@ -220,7 +246,12 @@ export function TaskThread({ post, events, error }: { post: TaskPost; events?: T
           </a>
         </p>
       </div>
-      {error ? <p role="alert" className="text-sm text-err-ink">{error}</p>
+      {error ? (
+        <p role="alert" className="flex items-center gap-2 text-sm text-err-ink">
+          <span className="min-w-0 flex-1">{error}</span>
+          {onRetry ? <Button size="sm" variant="outline" onClick={onRetry}>Try again</Button> : null}
+        </p>
+      )
         : !events ? <Skeleton className="h-16 w-full" />
         : events.length === 0 ? <p className="text-sm text-muted-foreground">Nothing recorded on this task yet.</p>
         : (
@@ -275,9 +306,11 @@ export function TasksPane({ view, onView, open, project = null, phoneBar }: { vi
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         {phoneBar}
         {open ? (
-          <a href={taskHref(undefined, project)} aria-label="Back to the tasks" title="Back to the tasks" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-            <Icon name="arrow-left" />
-          </a>
+          <Tip label="Back to the tasks">
+            <a href={taskHref(undefined, project)} aria-label="Back to the tasks" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground can-hover:hover:bg-accent can-hover:hover:text-foreground">
+              <Icon name="arrow-left" />
+            </a>
+          </Tip>
         ) : null}
         <h1 className="truncate text-sm font-medium">Tasks</h1>
         {!open && posts ? <span className="text-xs tabular-nums text-muted-foreground">{tasksOfProject(posts, project).length}</span> : null}
@@ -288,8 +321,8 @@ export function TasksPane({ view, onView, open, project = null, phoneBar }: { vi
         {open ? (
           error && !posts ? <TasksBody view={view} error={error} onRetry={retry} />
             : !posts ? <Skeleton className="h-16 w-full" />
-            : !post ? <EmptyState title="Task not found" action={<a className="text-sm text-link hover:underline" href={taskHref()}>All tasks</a>}>It is closed for more than 7 days, or on a computer that is not answering.</EmptyState>
-            : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post } : post} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} />
+            : !post ? <EmptyState title="Task not found" action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={taskHref()}>All tasks</a>}>It is closed for more than 7 days, or on a computer that is not answering.</EmptyState>
+            : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post } : post} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} onRetry={() => void thread.refetch()} />
         ) : (
           <TasksBody view={view} posts={posts} project={project} error={error} notice={forgeUnread(forge.data)} onRetry={retry} />
         )}

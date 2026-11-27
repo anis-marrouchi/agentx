@@ -15,7 +15,10 @@ import {
 } from "../automations"
 import { buildHash } from "../router"
 import { shortAgo } from "../tasks"
-import { Badge, Button, EmptyState, Icon, Skeleton, StatusDot, cn } from "../ui"
+import {
+  Badge, Button, Collapsible, CollapsibleContent, CollapsibleTrigger, EmptyState, Icon, Skeleton, StatusDot,
+  Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn,
+} from "../ui"
 
 const SQUARE: Record<RunTone | "none", string> = {
   ok: "bg-ok", err: "bg-destructive", idle: "bg-muted-foreground/40", work: "bg-primary", none: "bg-muted-foreground/15",
@@ -27,7 +30,12 @@ export function RunStrip({ recent }: { recent: string[] }) {
   const cells: (string | null)[] = [...Array(Math.max(0, 7 - runs.length)).fill(null), ...runs]
   return (
     <span className="inline-flex gap-0.5" role="img" aria-label={"Last seven runs: " + (runs.length ? runs.join(", ") : "none")} data-automation="strip">
-      {cells.map((s, i) => <span key={i} className={cn("size-2 rounded-[2px]", SQUARE[s ? runTone(s) : "none"])} title={s ? runWord(s) : "No run"} />)}
+      {cells.map((s, i) => (
+        <Tooltip key={i}>
+          <TooltipTrigger asChild><span className={cn("size-2 rounded-[2px]", SQUARE[s ? runTone(s) : "none"])} /></TooltipTrigger>
+          <TooltipContent>{s ? runWord(s) : "No run"}</TooltipContent>
+        </Tooltip>
+      ))}
     </span>
   )
 }
@@ -40,7 +48,7 @@ export function AutomationRow({ a, now = Date.now() }: { a: Automation; now?: nu
   const failed = !!a.last && runTone(a.last.status) === "err"
   return (
     <details data-automation={a.id} className="group border-b border-border last:border-b-0">
-      <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_88px_120px_64px_112px] [&::-webkit-details-marker]:hidden">
+      <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2 can-hover:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_88px_120px_64px_112px] [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <Icon name="chevron-right" className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90 motion-reduce:transition-none" />
@@ -65,7 +73,10 @@ export function AutomationRow({ a, now = Date.now() }: { a: Automation; now?: nu
           ) : <span className="text-muted-foreground">No run yet</span>}
         </span>
         <span className="hidden sm:block"><RunStrip recent={a.recent} /></span>
-        <Badge variant={BADGE[st.tone]} className="justify-self-end text-[11px]">{st.label}</Badge>
+        {/* Only a warning or an error is coloured; a healthy row stays quiet (orca-design P1). */}
+        {st.tone === "warn" || st.tone === "err"
+          ? <Badge variant={BADGE[st.tone]} className="justify-self-end text-[11px]">{st.label}</Badge>
+          : <span className="justify-self-end text-xs text-muted-foreground">{st.label}</span>}
       </summary>
       <dl className="grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 px-3 pb-3 pl-[56px] text-xs" data-automation="detail">
         <dt className="text-muted-foreground">{a.starts === "event" ? "Starts on" : "Schedule"}</dt>
@@ -97,16 +108,22 @@ export function AutomationRow({ a, now = Date.now() }: { a: Automation; now?: nu
 
 const NODE_NOTE: Record<AutomationGroup["state"], string> = { ok: "", checking: "checking…", down: "does not answer", stale: "as of" }
 
-/** One machine: its name, how it answered, its rows (or why there are none). */
+/** One machine: its name, how it answered, its rows (or why there are none).
+ *  The heading folds the machine's rows (orca-design C22). */
 export function AutomationMachine({ group, now }: { group: AutomationGroup; now?: number }) {
   const note = group.state === "stale" && group.staleSince ? "as of " + new Date(group.staleSince).toLocaleString() : NODE_NOTE[group.state]
   return (
-    <section aria-label={group.node} data-node={group.node} className="flex flex-col gap-1">
+    <Collapsible defaultOpen asChild>
+    <section aria-label={group.node} data-node={group.node} className="group/machine flex flex-col gap-1">
       <h2 className="flex items-center gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon name="monitor" className="size-3.5" />{group.node}
-        <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{group.rows.length}</span>
+        <CollapsibleTrigger className="flex cursor-pointer items-center gap-2 rounded-sm uppercase can-hover:hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Icon name="chevron-right" className="size-3.5 group-data-[state=open]/machine:rotate-90" />
+          <Icon name="monitor" className="size-3.5" />{group.node}
+          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{group.rows.length}</span>
+        </CollapsibleTrigger>
         {note ? <span className="normal-case tracking-normal">{note}</span> : null}
       </h2>
+      <CollapsibleContent>
       {group.rows.length ? (
         <div className="rounded-md border border-border">
           <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_88px_120px_64px_112px] gap-x-3 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:grid">
@@ -119,7 +136,9 @@ export function AutomationMachine({ group, now }: { group: AutomationGroup; now?
           {group.state === "checking" ? "Checking this machine…" : group.state === "down" ? "This machine does not answer, so its automations are not shown." : "Nothing runs on its own here."}
         </p>
       )}
+      </CollapsibleContent>
     </section>
+    </Collapsible>
   )
 }
 
@@ -143,7 +162,7 @@ export function AutomationsBody({ groups, error, onRetry, now }: AutomationsBody
   const t = automationTotals(groups)
   if (t.total === 0 && groups.every((g) => g.state === "ok")) {
     return (
-      <EmptyState title="Nothing runs on its own yet" action={<a className="text-sm text-link hover:underline" href={buildHash({ page: "home" })}>Ask an agent to schedule something</a>}>
+      <EmptyState title="Nothing runs on its own yet" action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={buildHash({ page: "home" })}>Ask an agent to schedule something</a>}>
         A scheduled job, or a workflow a schedule or an event starts, shows here with its last runs.
       </EmptyState>
     )

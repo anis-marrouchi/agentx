@@ -14,7 +14,7 @@ import {
 import { askLine, chatFilesSource, runArtifactsHtml, splitRunFiles, treeView } from "../src/hub/shell/FilesPanel"
 import { streamStep } from "../src/hub/shell/run-stream"
 import { runFilesOf, workspaceHtml } from "../src/daemon/ui/pages/wall-files"
-import { SimpleShell, type SimpleShellProps } from "../src/hub/pages/ShellPage"
+import { RightTabs, SimpleShell, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
 
 const row = (id: string, state: HaRow["state"], extra: Partial<HaRow> = {}): HaRow => ({
@@ -238,9 +238,14 @@ describe("the Files tab", () => {
     expect(chatFilesSource(null)).toBeNull()
     expect(chatFilesSource({ messages: [] })).toBeNull()
   })
-  it("the right column draws Files with no thread as an empty state, not a placeholder link", () => {
-    const html = wrap(createElement(SimpleShell, { view: simple, owner: true, agents: [], width: "wide" }))
+  it("Files with no thread is an empty state, not a placeholder link (the rail's and phone's Sheet)", () => {
+    const html = wrap(createElement(RightTabs, { threadId: null, inSheet: true }))
     expect(html).toContain("No files yet")
     expect(html).not.toContain("Open Projects")
+  })
+  it("a computer shows no right column until the chat in view has a thread (E3)", () => {
+    const html = wrap(createElement(SimpleShell, { view: simple, owner: true, agents: [], width: "wide" }))
+    expect(html).not.toContain('aria-label="Right column"')
+    expect(html).not.toContain("No files yet")
   })
 })

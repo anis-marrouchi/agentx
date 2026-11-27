@@ -139,7 +139,10 @@ describe("the Automations pane", () => {
   })
   it("read only: no button that changes a job", () => {
     const out = html(createElement(AutomationsBody, { groups, now }))
-    expect(out).not.toMatch(/<button/)
+    // The only buttons fold a machine's rows (orca-design C22).
+    const buttons = out.match(/<button[^>]*>/g) ?? []
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const b of buttons) expect(b).toContain('data-slot="collapsible-trigger"')
   })
   it("a row folds open for its schedule, project and last run", () => {
     const out = html(createElement(AutomationRow, { a: groups[0].rows[0], now }))
