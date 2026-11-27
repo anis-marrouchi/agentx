@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.305.1](https://github.com/anis-marrouchi/agentx/compare/v0.305.0...v0.305.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **hub:** Needs you row keeps its question in the old Hub chat; chip stays whole ([#2505](https://github.com/anis-marrouchi/agentx/issues/2505)) ([#2513](https://github.com/anis-marrouchi/agentx/issues/2513)) ([6c1ce55](https://github.com/anis-marrouchi/agentx/commit/6c1ce553df4ce1a0bdb8d52fd78f51454f971ade))
+
 ## [0.305.0](https://github.com/anis-marrouchi/agentx/compare/v0.304.0...v0.305.0) (2026-11-27)
 
 
