@@ -1,0 +1,43 @@
+{
+  "shots": {
+    "feed-1440-ready": true,
+    "timeline-1440-ready": true,
+    "03-timeline-1440-light.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "Activity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChannel\n\n  \n  \n\nPerson\n\n "
+    },
+    "map-1440-ready": true,
+    "feed-390-ready": true,
+    "timeline-390-ready": true,
+    "09-timeline-390-light.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChan"
+    },
+    "10-timeline-390-dark.png": {
+      "view": "timeline",
+      "rows": 0,
+      "lanes": 8,
+      "bars": 19,
+      "map": false,
+      "open": false,
+      "summary": "",
+      "text": "\n\n  \n  \n  \n\n\n\n  \n  \n\nActivity\n\n  \n  \n  \n  \n  \n  \n\nFeed\n\n  \n  \n\nTimeline\n\n  \n  \n  \n  \n  \n\nMap\n\n  \n  \n  \n  \n\n6h24h3d7dLanes by\n\n  \n  \n  \n  \n  \n  \n\nAgent\n\n  \n  \n\nClient\n\n  \n\nProject\n\n  \n  \n  \n  \n  \n\nChan"
+    },
+    "map-390-ready": false
+  },
+  "soft_fail": [
+    "map-390-ready"
+  ]
+}
