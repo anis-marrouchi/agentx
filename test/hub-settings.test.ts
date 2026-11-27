@@ -99,7 +99,7 @@ describe("Settings search: made from the row definitions (condition 1)", () => {
   })
   it("ranks a label that starts with the words first, and needs every word", () => {
     expect(searchSettings(index, "curator")[0]).toMatchObject({ pane: "general", row: "curator", open: "general-advanced" })
-    expect(searchSettings(index, "telegram")[0]).toMatchObject({ row: "channels" })
+    expect(searchSettings(index, "telegram")[0]).toMatchObject({ pane: "channels", row: "ch-telegram", open: "ch-tab-telegram" })
     expect(searchSettings(index, "jobs")[0]).toMatchObject({ pane: "jobs", row: "" })
     expect(searchSettings(index, "wiki zebra")).toEqual([])
     expect(searchSettings(index, "  ")).toEqual([])
