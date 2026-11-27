@@ -24,13 +24,19 @@ export function useOrgSetup() {
   return useQuery({ queryKey: ["settings", "org"], queryFn: () => apiGet<OrgSetupReply>("/api/admin/org") })
 }
 
+/** The undo after a refused step failed too: the chart is half changed. */
+export class OrgUndoFailed extends Error {}
+
 /** Sends the steps in order; when a later one is refused, the undo steps
- *  put back what the earlier ones changed. */
-async function apply(steps: OrgChange[], undo: OrgChange[]) {
+ *  put back what the earlier ones changed. If an undo is refused as well,
+ *  it throws OrgUndoFailed so the dialog says to reload (#2443 review C2). */
+export async function applyOrgSteps(steps: OrgChange[], undo: OrgChange[], send: (c: OrgChange) => Promise<unknown> = post) {
   let done = 0
-  try { for (; done < steps.length; done++) await post(steps[done]) }
+  try { for (; done < steps.length; done++) await send(steps[done]) }
   catch (e) {
-    if (done > 0) for (const u of undo) await post(u).catch(() => undefined)
+    let undone = true
+    if (done > 0) for (const u of undo) await send(u).catch(() => { undone = false })
+    if (!undone) throw new OrgUndoFailed(`Not saved, and the old line could not be put back: reload. The server said: ${(e as Error).message}`)
     throw e
   }
 }
@@ -149,7 +155,8 @@ function MemberDialog({ reply, member: m, onClose, onDone, nameOf }: {
     const p = plan()
     if (p.moves.length && !moves) { setMoves(p.moves.map((x) => x.text).filter(Boolean)); return { text: "" } }
     for (const c of p.now) await post(c)
-    for (const x of p.moves) await apply(x.steps, x.undo)
+    try { for (const x of p.moves) await applyOrgSteps(x.steps, x.undo) }
+    catch (e) { if (e instanceof OrgUndoFailed) return { text: e.message }; throw e }
     await onDone(p.now.length + p.moves.length ? `Saved ${m.name}.` : `Nothing changed for ${m.name}.`)
   }
   const roles = reply.choices?.roles ?? []
