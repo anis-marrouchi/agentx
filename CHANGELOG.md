@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.302.0](https://github.com/anis-marrouchi/agentx/compare/v0.301.0...v0.302.0) (2026-11-27)
+
+
+### Features
+
+* **desktop:** floating orb window, tray toggle and global talk key ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265) PR 2) ([#2493](https://github.com/anis-marrouchi/agentx/issues/2493)) ([5173e0d](https://github.com/anis-marrouchi/agentx/commit/5173e0de8d07d6ce6432f722a26286d745bfeb6e))
+
 ## [0.301.0](https://github.com/anis-marrouchi/agentx/compare/v0.300.1...v0.301.0) (2026-11-27)
 
 
