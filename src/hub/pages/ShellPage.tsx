@@ -16,7 +16,7 @@
 // you (S5) open in the centre too (ShellAutomations.tsx, ShellWaiting.tsx).
 // Every other item is a link to today's page, which the old Hub draws.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
 import { apiGet, apiPost } from "../api"
 import { readBoot } from "../boot"
 import type { HubPageProps } from "../registry"
@@ -24,6 +24,7 @@ import { navigate } from "../router"
 import { SHELL_PAGE, currentLayout } from "../shell"
 import { SideMenu, SideRail, type SideMenuProps } from "../shell/SideMenu"
 import { FilesPanel } from "../shell/FilesPanel"
+import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
 import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaModel } from "../shell/menu"
 import { readTasksView, saveTasksView, shellPane, type TasksView } from "../tasks"
 import { WAITING_URL, waitingList, type WaitingReply } from "../waiting"
@@ -52,10 +53,34 @@ export function shellAgents(reply: RawAgent[] | AgentsReply | null | undefined):
 
 // --- Chat ---
 
-interface ChatMessage { seq: number; role: "user" | "assistant"; content: string; status: "pending" | "done" | "error" }
+interface ChatMessage { seq: number; role: "user" | "assistant"; content: string; status: "pending" | "done" | "error"; taskId?: string | null }
+/** `node`: the daemon that holds the thread, added by the dashboard. */
 interface ChatThread { node?: string; thread?: { id: string; agentId: string; node: string | null }; messages?: ChatMessage[] }
 
 const pending = (t?: ChatThread) => !!t?.messages?.some((m) => m.status === "pending")
+
+// The answer renderer (Streamdown) loads on its own, the first time an answer shows.
+const ChatMarkdown = lazy(() => import("../shell/ChatMarkdown"))
+
+/** An answer, rendered as markdown; plain text until the renderer has loaded. */
+export function ChatAnswer({ md, streaming }: { md: string; streaming: boolean }) {
+  return (
+    <Suspense fallback={<div className="whitespace-pre-wrap" data-shell="answer">{md}</div>}>
+      <ChatMarkdown md={md} streaming={streaming} />
+    </Suspense>
+  )
+}
+
+/** A pending answer: the label, then the words so far from the run's live
+ *  output, read as the old panel reads it, without any {"answer":"…"} wrapper. */
+function PendingAnswer({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col gap-2" data-shell="live">
+      <AfStateLabel state="running" label="Working…" />
+      {text ? <ChatAnswer md={text} streaming /> : null}
+    </div>
+  )
+}
 
 /** The centre: the agent in view's newest conversation and the writing box. */
 export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; phoneBar?: ReactNode; onThread?: (id: string | null) => void }) {
@@ -81,9 +106,18 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
     queryKey: ["assistant-thread", threadId],
     queryFn: () => apiGet<ChatThread>("/api/assistant/thread?id=" + encodeURIComponent(threadId!)),
     enabled: !!threadId,
-    // The answer is written to the thread when the run ends: read again until it is.
+    // The answer is written to the thread when the run ends: read again until
+    // it is. The words come sooner, from the run's stream below.
     refetchInterval: (q) => (pending(q.state.data as ChatThread | undefined) ? 1500 : false),
   })
+
+  // The pending answer, live (Anis, req-01M83KYQ: show whatever it has, do
+  // not wait until everything is done). The stored answer replaces it once
+  // the thread read has it; the stream's end asks for that read at once.
+  const waiting = [...(thread.data?.messages ?? [])].reverse().find((m) => m.status === "pending")
+  const settle = useCallback(() => { void client.invalidateQueries({ queryKey: ["assistant-thread", threadId] }) }, [client, threadId])
+  const raw = useTaskStream({ node: thread.data?.node, agentId: thread.data?.thread?.agentId, taskId: waiting?.taskId }, settle)
+  const live = liveAnswer(raw)
 
   const send = useMutation({
     mutationFn: (message: string) =>
@@ -125,9 +159,10 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
           ) : messages.length === 0 ? (
             <p className="pt-16 text-center text-sm text-muted-foreground">Ask {agent.name} anything. The answer shows here.</p>
           ) : messages.map((m) => (
-            <div key={m.seq} data-role={m.role} className={cn("text-sm whitespace-pre-wrap", m.role === "user" ? "self-end max-w-[85%] rounded-lg bg-muted px-3 py-2" : "")}>
-              {m.status === "pending" ? <AfStateLabel state="running" label="Working…" />
-                : m.status === "error" ? <span className="text-err-ink">{m.content || "The run ended with an error."}</span>
+            <div key={m.seq} data-role={m.role} className={cn("text-sm", m.role === "user" ? "self-end max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-2" : "min-w-0")}>
+              {m.status === "pending" ? <PendingAnswer text={m === waiting ? live : ""} />
+                : m.status === "error" ? <span className="whitespace-pre-wrap text-err-ink">{m.content || "The run ended with an error."}</span>
+                : m.role === "assistant" ? <ChatAnswer md={storedAnswer(m.content)} streaming={false} />
                 : m.content}
             </div>
           ))}

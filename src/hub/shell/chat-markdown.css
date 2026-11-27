@@ -1,0 +1,12 @@
+/* The Task page's answer styles (task-conversation/styles.css) inside the
+   React Hub: its preflight (styles.css, under .ax-hub) takes list markers
+   and heading sizes away, so they are given back here, for answers only. */
+.ax-hub .axc-md ul { list-style: disc; }
+.ax-hub .axc-md ol { list-style: decimal; }
+.ax-hub .axc-md ul ul { list-style: circle; }
+.ax-hub .axc-md :is(h1, h2, h3, h4) { font-weight: 600; }
+.ax-hub .axc-md h1 { font-size: 1.25em; }
+.ax-hub .axc-md h2 { font-size: 1.15em; }
+.ax-hub .axc-md :is(h3, h4) { font-size: 1em; }
+.ax-hub .axc-md a { color: var(--ax-accent); text-decoration: underline; text-underline-offset: 2px; }
+.ax-hub .axc-md :is(strong, b) { font-weight: 600; }
