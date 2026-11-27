@@ -232,7 +232,7 @@ The agent list shows *who* is working. **Machines**, under it, shows *where*: ea
 1. **Browser:** on a screen at least 1181 pixels wide, select **Machines** under the agent list. It starts folded, with the number of agents working on its heading. The Hub remembers whether you left it open.
 2. **Your mesh** comes first, with how many of its machines answer (for example **3/4**) and how many agents are working. Under it, every machine is listed, even when nothing runs on it.
 3. Under each machine, one row for each run going now: its title, the agent, the model and how long ago it last moved. A run started by a schedule says **Job:** before its name. The hand-offs and workflows a run started are listed under it. A hand-off whose run is going is one line that points to it, for example **→ Tester on Workshop**: the run itself is listed under its own machine. Select a row to open that run live.
-4. A machine that is slow says **checking…** and keeps its last rows, with **as of** and the time. A machine that does not answer says **not checked**, and its runs are not shown.
+4. A machine that is slow keeps its last rows and its number, with **as of** and the time, and still counts in **3/4**. A slow machine with no answer yet says **checking…**. A machine that does not answer says **not checked**, and its runs are not shown.
 5. An agent is shown on one machine only, and the machines' numbers add up to **Working** in the agent list.
 
 Idle agents and the work that finished are not in **Machines**: they are in the agent list (**Done today**, **Not working today**) and on Activity.
@@ -1340,7 +1340,7 @@ When a machine does not answer, its card turns red and the Hub still shows every
 
 A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
 
-In the side menu's machine tree, a machine on **checking…** keeps the agents of its last answer, with **as of** and the time of that answer (UTC, hours and minutes) next to the badge. Its rows do not disappear while it is asked again. A machine that has not answered in five minutes says **not checked** and shows no agents. The **At work now** and **Working** counts take only machines that are up.
+In the side menu's machine tree, a slow machine keeps the agents of its last answer, with its number and **as of** and the time of that answer (UTC, hours and minutes) next to it. Its rows do not disappear while it is asked again. A slow machine with no answer yet says **checking…**. A machine that has not answered in five minutes says **not checked** and shows no agents. **At work now**, **Working**, the status bar, **Machines** and **Tasks running** on `/mesh` count the machines that are up and the slow ones with their last answer, so the numbers do not drop to 0 and back while runs go on. On `/mesh`, a machine too slow for the history says **Slow to answer, history not merged**, not **UNREACHABLE**.
 
 ![Happening now on a phone: one machine answered, the other is still checking](/screenshots/wall/checking-phone.png)
 
