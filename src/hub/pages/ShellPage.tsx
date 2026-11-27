@@ -29,6 +29,7 @@ import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
 import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaModel } from "../shell/menu"
 import { readTasksView, saveTasksView, shellPane, type TasksView } from "../tasks"
 import { WAITING_URL, waitingList, type WaitingReply } from "../waiting"
+import { MENU_API, MENU_QUERY_KEY, type MenuReply } from "../settings/menu-model"
 import { TasksPane } from "./ShellTasks"
 import { AutomationsPane } from "./ShellAutomations"
 import { WaitingPane } from "./ShellWaiting"
@@ -351,9 +352,14 @@ export default function ShellPage({ params }: HubPageProps) {
   // Waiting on you's count: the same read as its pane (ShellWaiting.tsx).
   const waiting = useQuery({ queryKey: ["shell-waiting"], queryFn: () => apiGet<WaitingReply>(WAITING_URL), refetchInterval: 15_000 })
   const needs = waiting.data ? waitingList(waiting.data).items.length : undefined
+  // The Hub's menu (#2149): the owner's, so only the owner reads it (the
+  // route is the owner's too). Until it is saved, or while the request
+  // fails, the side menu is the default list. A saved menu.json that can't
+  // be parsed reads back as the "everything" preset (hub-menu.ts read()).
+  const menu = useQuery({ queryKey: MENU_QUERY_KEY, queryFn: () => apiGet<MenuReply>(MENU_API), enabled: boot.owner })
   return (
     <SimpleShell
-      view={view} owner={boot.owner} agents={list} model={rows.data} needs={needs} agent={agent} onAgent={onAgent}
+      view={view} owner={boot.owner} agents={list} model={rows.data} needs={needs} agent={agent} onAgent={onAgent} menu={menu.data}
       pane={pane} openTask={open} project={project} tasksView={tasksView} onTasksView={onTasksView}
     />
   )

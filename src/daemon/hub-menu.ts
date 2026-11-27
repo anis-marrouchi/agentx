@@ -32,7 +32,14 @@ export const MENU_VERSION = 1
 export const MENU_VIEW_KEYS = ["view", "owner", "asker", "load", "status", "idle", "project", "goal", "node", "group", "by", "grp", "time", "conc", "qa", "q"] as const
 
 /** One built-in page, as the catalog gives it. */
-export interface MenuCatalogPage { key: string; label: string; icon?: string }
+export interface MenuCatalogPage {
+  key: string
+  label: string
+  icon?: string
+  /** Where the old Hub opens it (a hash on /hub): the React shell links
+   *  pages it has no item of its own for (#2149 M2). */
+  href?: string
+}
 export type MenuCatalog = Array<{ label: string; items: MenuCatalogPage[] }>
 
 export type MenuItem =

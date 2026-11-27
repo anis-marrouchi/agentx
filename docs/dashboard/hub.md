@@ -65,6 +65,8 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 
    ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
 
+   **Your own menu:** once you save a change in **Settings › Menu**, the side menu shows that menu instead, in your order, with your names, group headers, saved views and links (links open in a new tab). **Search agents and pages** and the agent list stay at the top. A page you take out of the menu is not gone: type its name in the search and it shows under **Other pages**. The Hub feed is **Tasks** there, and **Schedules** is **Automations**. The menu is the owner's: anyone else who opens the Hub sees the default list, without your links. Until you first save, nothing changes.
+
 6. **Phone:** the chat takes the screen. The menu button at the top left opens the side menu; the panel button at the top right opens the files tabs.
 
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)

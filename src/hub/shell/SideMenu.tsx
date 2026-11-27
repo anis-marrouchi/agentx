@@ -10,7 +10,11 @@
 //                                  each group folds from its header with its
 //                                  count, live ones show 3 then Show all (N)
 //   WORKSPACE                      the shell's items (shell.ts), Waiting on
-//                                  you with its count; More under it
+//                                  you with its count; More under it. Once
+//                                  the owner saves Settings › Menu (#2149),
+//                                  the saved items, in their order, with
+//                                  group headers; the pages left out are
+//                                  found by search, under Other pages
 //   Settings · Light / dark        pinned at the foot; Light / dark on a
 //                                  phone only (it has no status bar)
 //
@@ -19,7 +23,7 @@
 // bar opens the same menu as a left Sheet (ShellPage.tsx).
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import type { HubLayoutView } from "../layout"
-import { shellNav, type ShellNavItem } from "../shell"
+import { shellNav, type ShellMenu, type ShellNavItem } from "../shell"
 import { shortAgo, type ShellPane, type TasksView } from "../tasks"
 import { TasksViewSwitch } from "../pages/ShellTasks"
 import { AfCount, AfSkeletonRows, Icon, Kbd, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
@@ -57,6 +61,8 @@ export interface SideMenuProps {
   action?: ReactNode
   /** Bumped by ⌘K: each new value puts the cursor in the search box. */
   focusSearch?: number
+  /** The Hub's saved menu (#2149, owner only); without it, the default list. */
+  menu?: ShellMenu
 }
 
 function GroupLabel({ children }: { children: ReactNode }) {
@@ -65,7 +71,10 @@ function GroupLabel({ children }: { children: ReactNode }) {
 
 function MenuLink({ item, onOpen, active, count }: { item: ShellNavItem; onOpen?: () => void; active?: boolean; count?: number }) {
   return (
-    <a href={item.href} data-shell-item={item.id} onClick={onOpen} aria-current={active ? "page" : undefined} className={cn(itemCls, active ? itemOn : itemIdle)}>
+    <a
+      href={item.href} data-shell-item={item.id} onClick={onOpen} aria-current={active ? "page" : undefined} className={cn(itemCls, active ? itemOn : itemIdle)}
+      {...(item.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+    >
       <Icon name={item.icon} />
       <span className="flex-1 truncate">{item.label}</span>
       {count ? <AfCount n={count} tone="warn" label={count + (count === 1 ? " thing waits" : " things wait") + " on you"} /> : null}
@@ -171,25 +180,28 @@ function flipTheme() {
 
 /** The full side menu: header, search, the agents by state, Workspace,
  *  More (the items switched on in Settings › Layout) and the foot. */
-export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pane = "chat", tasksView = "list", onTasksView, action, focusSearch }: SideMenuProps) {
+export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pane = "chat", tasksView = "list", onTasksView, action, focusSearch, menu }: SideMenuProps) {
   const [q, setQ] = useState("")
   const box = useRef<HTMLInputElement>(null)
   useEffect(() => { if (focusSearch) { box.current?.focus(); box.current?.select() } }, [focusSearch])
   const [folds, setFolds] = useState<HaOpen>(() => readMenuFolds())
   const setFold = (k: keyof HaOpen, v: boolean) => setFolds((o) => { const n = { ...o, [k]: v }; saveMenuFolds(n); return n })
-  const nav = shellNav(view, { owner })
+  const nav = shellNav(view, { owner, menu })
   const needle = q.trim().toLowerCase()
   const hit = (label: string) => !needle || label.toLowerCase().includes(needle)
   const groups = model ? menuGroups(model, folds, needle) : []
-  // Search is the box; Agents is the list above Workspace.
-  const workspace = nav.main.filter((i) => i.id !== "search" && i.id !== "agents" && hit(i.label))
+  // Search is the box; Agents is the list above Workspace. A search shows
+  // no group headers (#2149): only the items that match.
+  const workspace = nav.main.filter((i) => i.id !== "search" && i.id !== "agents" && (needle ? !i.group && hit(i.label) : true))
   const more = nav.more.filter((i) => hit(i.label))
+  // The pages the saved menu leaves out show only while searching.
+  const pages = needle ? nav.hidden.filter((i) => hit(i.label)) : []
   const pick = (id: string) => { onAgent?.(id); onDone?.() }
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); return }
     if (e.key !== "Enter") return
     e.preventDefault()
-    const hit = firstHit(onAgent ? groups : [], [...workspace, ...more])
+    const hit = firstHit(onAgent ? groups : [], [...workspace, ...more, ...pages])
     if (!hit) return
     if ("agent" in hit) { pick(hit.agent); return }
     location.href = hit.href
@@ -241,7 +253,9 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
           <section aria-label="Workspace" data-shell-group="workspace" className="mt-3.5 border-t border-border pt-3.5">
             <GroupLabel>Workspace</GroupLabel>
             <div className="flex flex-col gap-px">
-              {workspace.map((item) => (
+              {workspace.map((item) => item.group ? (
+                <div key={item.id} data-shell-menu-group={item.id} className="mt-2"><GroupLabel>{item.label}</GroupLabel></div>
+              ) : (
                 <MenuLink key={item.id} item={item} onOpen={onDone} active={PANE_OF[item.id] !== undefined && PANE_OF[item.id] === pane} count={item.id === "needs" ? needs : undefined} />
               ))}
             </div>
@@ -251,6 +265,12 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
           <section aria-label="More" data-shell-group="more" className="mt-3.5">
             <GroupLabel>More</GroupLabel>
             <div className="flex flex-col gap-px">{more.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} />)}</div>
+          </section>
+        ) : null}
+        {pages.length ? (
+          <section aria-label="Other pages" data-shell-group="pages" className="mt-3.5">
+            <GroupLabel>Other pages</GroupLabel>
+            <div className="flex flex-col gap-px">{pages.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} />)}</div>
           </section>
         ) : null}
       </div>
@@ -282,7 +302,7 @@ function RailTip({ label, children }: { label: string; children: ReactNode }) {
 
 const railBtn = "relative grid size-9 place-items-center rounded-sm text-(--ax-text-2) hover:bg-(--ax-surface-2) hover:text-foreground cursor-pointer " + ring
 
-export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "model" | "needs" | "agent" | "onAgent" | "pane"> {
+export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "model" | "needs" | "agent" | "onAgent" | "pane" | "menu"> {
   /** Opens the full menu: unfolds it on a computer, as a Sheet below 1181 px. */
   onExpand: () => void
   /** Opens the full menu with the cursor in its search box (⌘K). */
@@ -293,10 +313,11 @@ export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "m
  *  its face with its state icon, in the menu's groups and order with a
  *  hairline between them, then Workspace's icons and Settings. Names,
  *  states and lines are in the tooltips. */
-export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "chat", onExpand, onSearch }: SideRailProps) {
-  const nav = shellNav(view, { owner })
+export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "chat", onExpand, onSearch, menu }: SideRailProps) {
+  const nav = shellNav(view, { owner, menu })
   const rows = model ? menuRows(model) : []
-  const workspace = [...nav.main.filter((i) => i.id !== "search" && i.id !== "agents"), ...nav.more]
+  // The rail has no room for group headers: their items follow each other.
+  const workspace = [...nav.main.filter((i) => i.id !== "search" && i.id !== "agents" && !i.group), ...nav.more]
   return (
     <nav aria-label="Side menu" data-shell="rail" className="flex h-full min-h-0 flex-col items-center py-2.5">
       <RailTip label="Expand menu (⌘B)">
@@ -331,7 +352,10 @@ export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "ch
             const n = item.id === "needs" ? needs ?? 0 : 0
             return (
               <RailTip key={item.id} label={item.label}>
-                <a href={item.href} data-shell-item={item.id} aria-label={item.label} aria-current={active ? "page" : undefined} className={cn(railBtn, "font-normal", active && "bg-accent text-foreground")}>
+                <a
+                  href={item.href} data-shell-item={item.id} aria-label={item.label} aria-current={active ? "page" : undefined} className={cn(railBtn, "font-normal", active && "bg-accent text-foreground")}
+                  {...(item.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                >
                   <Icon name={item.icon} />
                   {n ? <span className="absolute -top-0.5 -right-1"><AfCount n={n} tone="warn" /></span> : null}
                 </a>
