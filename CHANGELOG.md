@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.300.0](https://github.com/anis-marrouchi/agentx/compare/v0.299.0...v0.300.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** live run and past runs on the Task page ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) T2) ([#2478](https://github.com/anis-marrouchi/agentx/issues/2478)) ([4656e42](https://github.com/anis-marrouchi/agentx/commit/4656e42c17c2d9ae9cc7966b53549420aa7d8bbc))
+* **hub:** React feed page on feed-preview ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R2) ([#2479](https://github.com/anis-marrouchi/agentx/issues/2479)) ([6774322](https://github.com/anis-marrouchi/agentx/commit/6774322e1cc61a78471497e57bdba4547244b68f))
+* **hub:** side menu follows the saved Hub menu ([#2149](https://github.com/anis-marrouchi/agentx/issues/2149) M2) ([db124e8](https://github.com/anis-marrouchi/agentx/commit/db124e862812f9278584855dc8e1958aded48304))
+* **quota:** keep Claude plan holds per account ([#2113](https://github.com/anis-marrouchi/agentx/issues/2113) PR 1) ([#2470](https://github.com/anis-marrouchi/agentx/issues/2470)) ([684cb98](https://github.com/anis-marrouchi/agentx/commit/684cb98b4d262204fb611465e03148c49485cec2))
+
+
+### Bug Fixes
+
+* **hub:** keep Wiki and Mobile app under More after the menu is saved ([#2149](https://github.com/anis-marrouchi/agentx/issues/2149) M2) ([aca4e5c](https://github.com/anis-marrouchi/agentx/commit/aca4e5c2f3d8cdabca005a864386f8dbd02f111b))
+
 ## [0.299.0](https://github.com/anis-marrouchi/agentx/compare/v0.298.0...v0.299.0) (2026-11-27)
 
 
