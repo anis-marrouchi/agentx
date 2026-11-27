@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.297.1](https://github.com/anis-marrouchi/agentx/compare/v0.297.0...v0.297.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **hub:** shell chat streams the answer and renders markdown ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2452](https://github.com/anis-marrouchi/agentx/issues/2452)) ([59673fb](https://github.com/anis-marrouchi/agentx/commit/59673fb275199d8ca26082a37f50f5db8fd6251f))
+
 ## [0.297.0](https://github.com/anis-marrouchi/agentx/compare/v0.296.0...v0.297.0) (2026-11-27)
 
 
