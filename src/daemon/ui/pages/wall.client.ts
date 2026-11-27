@@ -112,6 +112,7 @@ import { ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, lt
 import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml } from "./wall-tree-workers"
 import { mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml } from "./wall-machines"
 import { engineIconKey, engineIcon } from "./engine-icons"
+import { newSettingsHref } from "@/hub/settings/old-sections"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -132,7 +133,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
   ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml, followAttach })}
-  ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp })}
+  ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp, newSettingsHref })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
   ${injectFns({ fdStates, fdState, fdGroupOf, fdGroupTitle, fdGroupPosts, fdExcerpt, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch })}
@@ -373,6 +374,14 @@ ${HUB_NAV_SCRIPT}
   // --- Filters in the URL hash ---
   function readHash() {
     var q = new URLSearchParams(location.hash.slice(1));
+    // The old Settings opens the new one when React draws it (#2101, Anis
+    // 2026-11-27: only the Settings menu on Settings). Its section becomes
+    // the new pane. old=1 is the new Settings' own link to a pane it does
+    // not draw yet, and stays here.
+    if (q.get('page') === 'settings' && q.get('old') !== '1' && HUB_PAGES.indexOf(newSettingsHref.page) >= 0) {
+      history.replaceState(null, '', newSettingsHref({ section: q.get('section'), agent: q.get('agent'), under: q.get('under') }));
+      q = new URLSearchParams(location.hash.slice(1));
+    }
     var f = {};
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
     if (!q.has('status')) f.status = 'open';
@@ -1351,6 +1360,9 @@ ${HUB_NAV_SCRIPT}
     $('wall-settings').hidden = page !== 'settings';
     document.querySelector('.ax-wall').classList.toggle('is-settings', page === 'settings');
     document.querySelector('.ax-wall').classList.toggle('is-hub', HUB_PAGES.indexOf(page) >= 0);
+    // The new Settings has its own menu and Back to app (#2101): the old
+    // side menu steps aside, so the page has one menu (src/hub/styles.css).
+    document.querySelector('.ax-wall').classList.toggle('is-hub-own-menu', page === newSettingsHref.page && HUB_PAGES.indexOf(page) >= 0);
     if (page === 'settings') settingsShow();
     $('wall-activity').hidden = page !== 'activity';
     $('wall-act-switch').hidden = page !== 'activity';

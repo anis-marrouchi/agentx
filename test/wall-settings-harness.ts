@@ -37,7 +37,7 @@ export const LIVE = { nodes: [{ name: "node-a", url: "http://node-a", reachable:
 export type Reply = { status: number; body: unknown }
 export type Route = (url: string, init: any) => Reply | undefined
 
-export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; signIn?: boolean; route?: Route }) {
+export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; signIn?: boolean; route?: Route; hubPages?: string[] }) {
   const page = renderWallPage({ owner: opts.owner ?? true, business: opts.business, signIn: opts.signIn })
   const cfg = /<script>window\.AX_WALL_SETTINGS = (.*?);<\/script>/.exec(page)
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -102,6 +102,8 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
   }
   const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
+  // The React Hub's pages for this viewer (window.AX_HUB, hub-react.ts).
+  if (opts.hubPages) win.AX_HUB = { pages: opts.hubPages }
   if (page.includes("<script>window.AX_WALL_SIGN_IN = true;</script>")) win.AX_WALL_SIGN_IN = true
   const sources: FakeEventSource[] = []
   class FakeEventSource {
@@ -157,7 +159,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     return prevented
   }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc, hash: () => hash }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string
