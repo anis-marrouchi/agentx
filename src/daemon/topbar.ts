@@ -498,7 +498,10 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "org", label: "Org", href: "/org" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
-        { id: "admin", label: "Settings", href: `${HUB_PATH}#page=settings` },
+        // The new React Settings (#2101); same page id as SETTINGS_PAGE in
+        // src/hub/settings/address.ts (that file pulls in React, so it is not
+        // imported here; test/topbar-settings-link.test.ts keeps them equal).
+        { id: "admin", label: "Settings", href: `${HUB_PATH}#page=settings-preview` },
       ],
     },
   ]
