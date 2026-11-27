@@ -240,7 +240,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     s.loading = true; s.error = '';
     var why = '';
     var reads = s.runs.map(function (r) {
-      return fetch('/api/task/history?node=' + encodeURIComponent(r.node || '') + '&agent=' + encodeURIComponent(r.agent) + '&task=' + encodeURIComponent(r.task), { headers: headers() })
+      return fetch('/api/task/history?node=' + encodeURIComponent(r.node || '') + '&agent=' + encodeURIComponent(r.agent) + '&task=' + encodeURIComponent(r.task) + '&live=1', { headers: headers() })
         .then(function (res) { return res.json().catch(function () { return {}; }).then(function (b) { if (res.ok) return b; why = why || b.error || ('HTTP ' + res.status); return null; }); })
         .catch(function (e) { why = why || String(e && e.message || e); return null; });
     });
@@ -254,6 +254,8 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
         attachedOf(got.map(function (rec) { return rec.message || ''; })).concat(s.attached).forEach(function (a) { if (all.attached.indexOf(a) < 0) all.attached.push(a); });
         s.data = all;
       }
+      // A run still going is read as far as it got (#2101 R17b): Reload reads more.
+      s.live = got.some(function (rec) { return rec.live; });
       S.cx.painted = '';
       cxPaint();
     });
@@ -299,14 +301,15 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       (t.kind === 'files' ? '<button type="button" class="wcx__re" data-cx="freload" data-src="' + esc(s.key) + '"' + (s.loading ? ' disabled' : '') + '>Reload</button>' : '') + '</div>';
     if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path]);
     if (!s.data && s.loading) return head + '${afLoaderHtml("Reading the runs…")}' + workspaceHtml(s.ws, s.key);
-    if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '. A run still going has its record when it ends.</p>' + workspaceHtml(s.ws, s.key);
+    if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '.</p>' + workspaceHtml(s.ws, s.key);
     if (t.kind === 'wfile') {
       // The file as it is now, from the workspace, when the path is in it.
       var rel = s.ws && s.ws.list ? workspaceRel(t.path, s.ws.list.root) : null;
       var now = rel ? '<p class="wcx__now"><button type="button" class="wcx__re" data-cx="wsfile" data-src="' + esc(s.key) + '" data-path="' + esc(rel) + '">Open it as it is now</button></p>' : '';
       return head + now + runFileHtml(s.data.files.filter(function (f) { return f.path === t.path; })[0]);
     }
-    return head + filesTabHtml(s.data, { key: s.key, changes: s.changes }) + workspaceHtml(s.ws, s.key);
+    var so = s.live ? '<p class="wcx__now">Still running: the files so far. Reload for more.</p>' : '';
+    return head + so + filesTabHtml(s.data, { key: s.key, changes: s.changes }) + workspaceHtml(s.ws, s.key);
   }
   /** The Files buttons say whether their tab is open. */
   function cxPressed() {

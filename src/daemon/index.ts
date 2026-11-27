@@ -375,6 +375,7 @@ import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 import { channelPushKind, isPushHeldBySetting } from "@/channels/push"
 import { startLoopWatch, type LoopWatch } from "@/daemon/loop-watch"
+import { liveTaskRecord } from "@/daemon/live-task-record"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -7872,6 +7873,9 @@ export class AgentXDaemon {
       const taskRecordMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/tasks\/([^/]+)$/)
       if (taskRecordMatch) {
         const rec = this.registry.getTaskRecord(taskRecordMatch[1], taskRecordMatch[2])
+        // ?live=1: a run still going has no record yet; answer with its output so far (#2101 R17b).
+        const live = !rec && url.searchParams.get("live") === "1" ? liveTaskRecord(this.registry, taskRecordMatch[1], taskRecordMatch[2]) : null
+        if (live) { this.json(res, 200, live); return }
         if (!rec) { this.json(res, 404, { error: "not found" }); return }
         this.json(res, 200, rec)
         return
