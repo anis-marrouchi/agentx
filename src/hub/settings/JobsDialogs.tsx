@@ -10,11 +10,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue, cn,
 } from "../ui"
 import type { StateAgent } from "./data"
-import { SETTINGS_API, inputClass } from "./fields"
+import { SETTINGS_API } from "./fields"
+import { INPUT } from "./parts"
 import { CRON_PRESETS, ENV_NAME, WEBHOOK_SOURCES } from "./work-data"
 
 const ID = /^[a-z0-9][a-z0-9_-]*$/
-const field = cn(inputClass, "h-9 w-full")
+const field = cn(INPUT, "h-9 w-full")
 
 const post = (path: string, body: unknown) =>
   apiFetch<{ summary?: string; human?: string; next?: string[]; timezone?: string }>(SETTINGS_API + path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })

@@ -10,8 +10,8 @@ import { Button, Icon, Tabs, TabsContent, TabsList, TabsTrigger, cn } from "../u
 import { AddScheduleDialog } from "./JobsDialogs"
 import JobsHooks from "./JobsHooks"
 import JobsWiki from "./JobsWiki"
-import { ConfirmDialog, InlineFold, RowMenu, STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
-import { Ago, DisclosureContext, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
+import { InlineFold, STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
+import { Ago, ConfirmDialog, DisclosureContext, ErrorLine, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SkeletonRows } from "./parts"
 import { paneDef } from "./panes"
 import { cronHuman, valueLine, type Cron, type Sensor } from "./work-data"
 
@@ -50,7 +50,7 @@ export default function JobsPane() {
 function Schedules({ state }: { state: ReturnType<typeof useWorkState> }) {
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const { write, busy, note } = useWrite(STATE_KEY)
+  const { run, note } = useWrite(STATE_KEY)
   const crons = state.data?.crons ?? [], sensors = state.data?.sensors ?? [], hostJobs = state.data?.hostJobs ?? []
   const add = <Button variant="outline" size="sm" onClick={() => setAdding(true)} data-row="add-schedule"><Icon name="plus" className="size-3.5" />Add schedule</Button>
   return (
@@ -75,9 +75,9 @@ function Schedules({ state }: { state: ReturnType<typeof useWorkState> }) {
       )}
       <AddScheduleDialog open={adding} onOpenChange={setAdding} agents={state.data?.agents ?? []} taken={crons.map((c) => c.id)} />
       <ConfirmDialog
-        open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)} busy={busy}
-        title={`Delete ${deleting}?`} body="It stops running. The agent and its work are kept." action="Delete schedule"
-        onConfirm={() => { const id = deleting!; write("DELETE", "crons", { id }, `Deleted ${id}`).then(() => setDeleting(null)) }}
+        open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}
+        title={`Delete ${deleting}?`} text="It stops running. The agent and its work are kept." yes="Delete schedule"
+        run={() => run("DELETE", "crons", { id: deleting! }, `Deleted ${deleting}`)}
       />
     </>
   )
@@ -129,7 +129,7 @@ function CronItem({ cron: c, onDelete }: { cron: Cron; onDelete: () => void }) {
           </InlineFold>
         )}
       </span>}
-      menu={<RowMenu name={c.id} items={[{ label: "Delete schedule", icon: "trash-2", destructive: true, onSelect: onDelete }]} />}
+      menu={<RowMenu label={c.id} items={[{ label: "Delete schedule", icon: "trash-2", destructive: true, onSelect: onDelete }]} />}
     />
   )
 }
