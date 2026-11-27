@@ -71,6 +71,19 @@ export interface HaRow {
   today: number
   /** Its other runs going, newest first, each shown under the row (#2328). */
   more?: HaRun[]
+  /** Its questions for the owner, oldest first (#2505): the row's title is
+   *  the first, its link opens the first, the chat lists them all. */
+  asks?: HaAsk[]
+  /** ms the oldest of them has waited; -1 when its time is unknown (#2505). */
+  askMs?: number
+}
+
+/** One question an agent has for the owner (#2505): the Needs you key
+ *  (an inbox key or `request:<id>`), its title and when it was asked (ms). */
+export interface HaAsk {
+  key: string
+  title: string
+  at: number
 }
 
 /** A run of a working agent besides the one its row names (#2328). */
@@ -151,13 +164,18 @@ export function haFace(name: unknown): string {
  */
 export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayStart: number,
   title: (t: LtTask) => string, plain: (s: unknown) => string, work: LtWorkCount): HaModel {
-  const asked: Record<string, { n: number; title: string; at: number }> = {}
+  // Each agent's questions, oldest first (an unknown time last), so the
+  // row's title, its link and the chat's list name the same question (#2505).
+  const asked: Record<string, { n: number; title: string; at: number; list: HaAsk[] }> = {}
   for (const q of needs || []) {
     if (!q || q.snoozed || !q.agent) continue
-    const a = asked[q.agent] || (asked[q.agent] = { n: 0, title: "", at: 0 })
-    a.n++
-    const at = q.at || 0
-    if (!a.title || (at && (!a.at || at < a.at))) { a.title = String(q.title || "A question"); a.at = at }
+    const a = asked[q.agent] || (asked[q.agent] = { n: 0, title: "", at: 0, list: [] })
+    a.list.push({ key: String(q.key || ""), title: String(q.title || "A question"), at: q.at || 0 })
+  }
+  for (const id in asked) {
+    const a = asked[id]
+    a.list.sort((x, y) => (x.at || Infinity) - (y.at || Infinity))
+    a.n = a.list.length; a.title = a.list[0].title; a.at = a.list[0].at
   }
   const seen: Record<string, boolean> = {}
   const rows: HaRow[] = []
@@ -202,6 +220,7 @@ export function hubAgentRows(nodes: LtNode[], needs: HaNeed[], now: number, dayS
         // going now that started today are added: a first run shows 1 today.
         today: haRunsToday(a.hourlyTasks, now, dayStart) + runs.filter((r) => haRunStart(r) >= dayStart).length,
         ...(sorted.length > 1 ? { more: sorted.slice(1).map((r) => ({ taskId: r.id, channel: haChannelLabel(r.channel), line: title(r).slice(0, 140) })) } : {}),
+        ...(q ? { asks: q.list.map((x) => ({ key: x.key, title: x.title.slice(0, 140), at: x.at })), askMs: q.at ? Math.max(0, now - q.at) : -1 } : {}),
       })
     }
   }
@@ -251,7 +270,18 @@ export interface HaDraw {
  *  row, and a working row whose run has no link, the agent's chat. */
 export function haRowHref(r: HaRow, runHref?: (r: HaRow) => string): string {
   const run = r.state === "working" && r.taskId && runHref ? runHref(r) : ""
-  return run || "#page=chat&agent=" + encodeURIComponent(r.id)
+  // A Needs you row opens its first question in the chat (#2505).
+  const ask = r.state === "needs" && r.asks && r.asks.length && r.asks[0].key ? "&ask=" + encodeURIComponent(r.asks[0].key) : ""
+  return run || "#page=chat&agent=" + encodeURIComponent(r.id) + ask
+}
+
+/** A Needs you row's words (#2505): "4 for you", and since when the oldest
+ *  question waits ("asked 40m"; the group and the icon already say it waits
+ *  on you, and the menu is narrow). Empty for other rows. */
+export function haAskWords(r: HaRow, age: (ms: number) => string): { count: string; since: string } {
+  if (r.state !== "needs" || !r.unread) return { count: "", since: "" }
+  const ms = r.askMs === undefined ? -1 : r.askMs
+  return { count: r.unread + " for you", since: ms >= 0 ? "asked " + age(ms) : "" }
 }
 
 /** One agent row: two lines (name and age; state icon and what it is
@@ -267,12 +297,18 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   const when = r.ageMs >= 0
     ? (r.at ? '<time datetime="' + new Date(r.at).toISOString() + '">' : "<time>") + esc(age(r.ageMs)) + "</time>"
     : ""
-  const unread = r.unread ? '<b class="ax-af-count ha__n" data-tone="warn" data-n="' + r.unread + '">' + r.unread + '<span class="ax-sr">' + (r.unread === 1 ? " question" : " questions") + " for you</span></b>" : ""
+  // A Needs you row says its numbers in words (#2505): "4 for you" in the
+  // chip, and "asked 40m" under its question.
+  // haAskWords, written out: an injected function cannot call one not injected.
+  const askOn = r.state === "needs" && !!r.unread, askMs = r.askMs === undefined ? -1 : r.askMs
+  const ask = { count: askOn ? r.unread + " for you" : "", since: askOn && askMs >= 0 ? "asked " + age(askMs) : "" }
+  const unread = r.unread ? '<b class="ax-af-count ha__n' + (ask.count ? " is-words" : "") + '" data-tone="warn" data-n="' + r.unread + '">' + (ask.count ? esc(ask.count) : r.unread + '<span class="ax-sr">' + (r.unread === 1 ? " question" : " questions") + " for you</span>") + "</b>" : ""
   const tip = (s: string) => ' data-tip="' + esc(s) + '"'
   // Its numbers next to its name (#2145): runs going now and runs today,
   // each left out at zero; the words are in the tooltip and for screen
-  // readers, so the name keeps its room.
-  const going = r.runs || 0, today = r.today || 0
+  // readers, so the name keeps its room. A Needs you row leaves them out:
+  // what counts there is what waits on the owner (#2505).
+  const going = askOn ? 0 : r.runs || 0, today = askOn ? 0 : r.today || 0
   const words = [going ? going + " running now" : "", today ? today + (today === 1 ? " run" : " runs") + " today" : ""].filter(Boolean).join(", ")
   const stats = going || today
     ? '<span class="ha__stats"' + tip(words) + ">" +
@@ -288,8 +324,9 @@ export function haRowHtml(r: HaRow, cur: string, esc: (s: unknown) => string, ag
   return '<div class="ha__row is-' + r.state + (r.id === cur ? " is-cur" : "") + '" data-key="a:' + esc(r.id) + '" data-ha-agent="' + esc(r.id) + '">' +
     '<a class="ha__link" href="' + esc(href) + '"' + (isRun ? " data-ha-run" : "") + (r.id === cur ? ' aria-current="true"' : "") + ">" +
     '<span class="ha__face" aria-hidden="true">' + esc(r.face) + "</span>" +
-    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + stats + when + "</span>" +
-    '<span class="ha__line">' + haStateIcon(r.state, ic) + '<span class="ha__lt">' + esc(r.line || (r.state === "idle" ? "Nothing going" : word)) + "</span></span></span>" +
+    '<span class="ha__txt"><span class="ha__top"><b class="ha__name">' + esc(r.name) + "</b>" + stats + (askOn ? "" : when) + "</span>" +
+    '<span class="ha__line">' + haStateIcon(r.state, ic) + '<span class="ha__lt">' + esc(r.line || (r.state === "idle" ? "Nothing going" : word)) + "</span></span>" +
+    (ask.since ? '<span class="ha__since">' + esc(ask.since) + "</span>" : "") + "</span>" +
     '<span class="ax-sr"> (' + word + ")</span></a>" + unread + acts + "</div>" +
     (r.state === "working" ? haRunsHtml(r, esc, d.runHref) : "")
 }

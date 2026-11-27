@@ -3241,16 +3241,25 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wcx-body").innerHTML).toContain("File not available: GitHub did not give src/app.ts: 404")
   })
 
+  it("the chat's work line names the request of the question a Needs you row opened (#2505)", async () => {
+    const w = openWall({ data, chatAgent: "cx", diff: route, hash: "#page=chat&agent=cx&ask=request%3Ar2" })
+    await w.settle()
+    expect(w.el("hc-work").innerHTML).toContain('<a href="#post=r2" title="Open the request">Post r2</a>')
+    expect(w.el("hc-work").innerHTML).not.toContain("<select")
+    // A request with no forge home: Plan only.
+    expect(w.el("hc-work").innerHTML).not.toContain('data-kind="changes"')
+    expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r2"')
+  })
   it("the chat's work line names the open request the agent in view works on, with Changes and Plan", async () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [{ idx: 0, name: "Build the fix", agentId: "cx", state: "active", doneWhen: "PR open" }] } })
     await w.settle()
     const line = w.el("hc-work")
     expect(line.hidden).toBe(false)
-    // Open ones it owns or holds a step of, newest first; never a closed one.
-    // #2101: each choice also says its project and its last move.
-    expect(line.innerHTML).toMatch(/<option value="r1" selected>Post r1( · [^<·]+)? · [^<]*ago<\/option><option value="r2">Post r2[^<]*<\/option><option value="r4">Post r4[^<]*<\/option>/)
-    expect(line.innerHTML).not.toMatch(/ · <\/option>/)
-    expect(line.innerHTML).not.toContain('value="r3"')
+    // The newest open one it owns or holds a step of, named as a link to its
+    // post; no select (#2505: a control that did nothing Anis could follow).
+    expect(line.innerHTML).toContain('<a href="#post=r1" title="Open the request">Post r1</a>')
+    expect(line.innerHTML).not.toContain("<select")
+    expect(line.innerHTML).not.toContain("r3")
     expect(line.innerHTML).toContain('data-cx="open" data-kind="changes" data-id="r1" aria-pressed="false" title="The changes in acme/shop#12">Changes</button>')
 
     w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })
@@ -3264,10 +3273,6 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wcx-body").innerHTML).toContain('href="#post=r1" title="Everything that happened on this request">History</a>')
     expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r1" aria-pressed="true"')
 
-    // Picking a request with no forge home: Plan only.
-    w.fire("change", { target: { value: "r2", getAttribute: (k: string) => (k === "data-cx" ? "pick" : null) } })
-    expect(w.el("hc-work").innerHTML).not.toContain('data-kind="changes"')
-    expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r2"')
 
     // A second press on the open tab closes it.
     w.click({ "data-cx": "open", "data-kind": "plan", "data-id": "r1" })

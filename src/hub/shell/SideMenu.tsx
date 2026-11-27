@@ -28,7 +28,7 @@ import { shortAgo, type ShellPane, type TasksView } from "../tasks"
 import { TasksViewSwitch } from "../pages/ShellTasks"
 import { AfCount, AfSkeletonRows, Icon, Kbd, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import {
-  STATE_ICON, downWords, firstHit, haStateWord, menuGroups, menuRows, readMenuFolds, rowLine, rowStats, saveMenuFolds,
+  STATE_ICON, downWords, firstHit, haStateWord, menuGroups, menuRows, readMenuFolds, askWords, rowLine, rowStats, saveMenuFolds,
   type HaModel, type HaOpen, type HaRow, type MenuGroup,
 } from "./menu"
 
@@ -116,7 +116,10 @@ export function AgentFace({ r, rail }: { r: HaRow; rail?: boolean }) {
  *  what it is doing. Selecting it opens its chat in the centre. */
 function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: () => void }) {
   const word = haStateWord(r.state)
-  const stats = rowStats(r)
+  // A Needs you row says its numbers in words (#2505): "4 for you" and
+  // "asked 40m"; its run numbers and age are left out.
+  const ask = askWords(r)
+  const stats = ask.count ? "" : rowStats(r)
   return (
     <div data-slot="menu-agent" data-state={r.state} className={cn("flex min-h-11 items-center rounded-sm pointer-coarse:min-h-12", current ? "bg-accent" : "hover:bg-(--ax-surface-2)")}>
       <button type="button" data-shell-agent={r.id} aria-pressed={current} onClick={onPick} className={cn("flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2 py-1.5 text-left font-normal cursor-pointer", ring)}>
@@ -131,7 +134,7 @@ function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: 
                 <span className="sr-only">{stats}</span>
               </span>
             ) : null}
-            {r.ageMs >= 0 ? (
+            {!ask.count && r.ageMs >= 0 ? (
               <time dateTime={r.at ? new Date(r.at).toISOString() : undefined} title={r.at ? new Date(r.at).toLocaleString() : undefined} className="ml-auto shrink-0 text-[11.5px] tabular-nums text-muted-foreground">
                 {shortAgo(Date.now() - r.ageMs)}
               </time>
@@ -141,10 +144,17 @@ function AgentRow({ r, current, onPick }: { r: HaRow; current: boolean; onPick: 
             <StateIcon state={r.state} />
             <span className="truncate">{rowLine(r, word)}</span>
           </span>
+          {ask.since ? <span data-slot="menu-since" className="truncate text-[11.5px] tabular-nums text-muted-foreground">{ask.since}</span> : null}
         </span>
         <span className="sr-only"> ({word})</span>
       </button>
-      {r.unread ? <span className="mr-2 shrink-0"><AfCount n={r.unread} tone="warn" label={r.unread + (r.unread === 1 ? " question" : " questions") + " for you"} /></span> : null}
+      {r.unread ? (
+        <span className="mr-2 shrink-0" data-slot="menu-for-you">
+          {ask.count
+            ? <span data-slot="af-count" className="ax-af-count whitespace-nowrap" style={{ fontFamily: "inherit" }} data-n={r.unread} data-tone="warn">{ask.count}</span>
+            : <AfCount n={r.unread} tone="warn" label={r.unread + (r.unread === 1 ? " question" : " questions") + " for you"} />}
+        </span>
+      ) : null}
     </div>
   )
 }

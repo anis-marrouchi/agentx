@@ -254,11 +254,37 @@ The side menu lists every agent of every connected machine once, by what it is d
 
    Every group folds: select its heading (the arrow, the name and the count) to open or close it. The arrow points right when the group is folded and turns down when it is open; with reduced motion turned on in your system, it does not turn smoothly. The folding sections on the Hub's other pages use the same arrow. The first time, **Needs you** and **Working** are open and the others are folded. The Hub remembers in this browser which groups you opened or closed and whether a group shows all its agents, also after a reload. **Reset layout** in Settings › Layout puts them back.
 4. Each row has two lines. The first: the agent's initials in a grey square, its name, its counts and how long ago it last moved (point at it for the full date and time). The second: a state icon and its line, and an amber number when it has questions for you. The state icons are the same on every page: a turning spinner for **Working**, an amber circle with **!** for **Needs you**, a red circle with **×** for **Failed**, a green tick for **Done** and an empty grey circle for **Not working today**. The counts sit next to the name: a pulse line with how many of its own runs are going now (a worker a run started counts on its own agent's row) and a clock with how many runs it started today, since your midnight, the ones still going included. A count of 0 is left out. Point at the counts to read them in words. Finished runs today are counted by the hour, so a run that ended up to an hour before midnight can still count. The agent whose chat is open has a grey background. On a phone the counts are left out so the name has room.
+
+   A **Needs you** row says its numbers in words instead: **3 for you** on the right (how many questions it has for you), and a third line, **asked 40m**, for how long its oldest question has waited. Its run counts and its last move are left out there. Its second line is its oldest question.
 5. Point at a row (on a phone they always show) for **Stop** on a working agent and **⋯** for the row's menu, for example **Open chat**, **Open live run** and **Copy agent ID**.
 6. The whole side menu scrolls as one, so the last agent is always in reach; **Search agents and pages** stays at the top and **Settings** stays at the bottom.
 7. Select a row to open it:
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
+   - A **Needs you** row opens that agent's questions for you (see [Answer an agent's questions](#answer-an-agents-questions)).
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
+
+### Answer an agent's questions
+
+When an agent waits on you, selecting its row in **Needs you** opens its questions above its chat, so you see what it asks, not an older conversation about something else.
+
+![Coder's three questions: the oldest open, with what is known, what Yes and No do, and Yes, No and Later](/screenshots/hub-needs/open.png)
+
+*Demo data; your questions will differ.*
+
+1. **Browser:** in the side menu, select an agent under **Needs you**.
+2. The line at the top says how many questions it has for you, oldest first. The oldest is open: the question, what is known, what it suggests, what **Yes** and **No** do, and when to answer by. The others are listed under it, each with how long ago it was asked; select one to open it.
+3. **Yes** or **No** (or pick a choice, then **Answer**) shows a line that says what will be sent. Select **Confirm** to send it, or **Back**. The question leaves the list, the next one opens, and the count on the agent's row goes down at once. After the last one, the row leaves **Needs you**.
+
+   ![After answering the first: two left, the pricing question open with its three choices, and 2 for you on the row](/screenshots/hub-needs/after.png)
+
+4. **Later** folds the question and opens the next one. It stays in the list.
+5. A request that waits on your reply has **Open the task to reply**, which opens it in Tasks.
+6. **Whole chat** shows the agent's conversation under the questions; **Hide the chat** folds it again. The box at the bottom writes to the agent's chat, as always.
+7. **Phone:** the questions fill the screen above the box.
+
+   ![An agent's questions on a phone](/screenshots/hub-needs/phone.png)
+
+In the old Hub, the row opens the agent's chat with its first question named in the address (`ask=`), and **Working on** names the request of that question, as one link, with no list to pick from.
 
 ### See where the work runs: Machines
 
