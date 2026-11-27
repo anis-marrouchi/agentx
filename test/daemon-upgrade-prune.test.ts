@@ -36,6 +36,15 @@ describe("choosePrune: which release folders go", () => {
     expect(c.prune).not.toContain("/r/a-1")
     expect(c.prune).not.toContain("/r/a-2")
   })
+
+  it("keeps a folder newer than live (staged for the next upgrade), outside the keep count (#2517)", () => {
+    // live a-3, rollback a-2, a-4 staged after live, a-1 old.
+    const four = [f("/r/a-1", 1), f("/r/a-2", 2), f("/r/a-3", 3), f("/r/a-4", 4)]
+    const c = choosePrune({ folders: four, live: "/r/a-3", rollback: "/r/a-2", keep: 2, inUse: () => false })
+    expect(c.keep).toEqual(["/r/a-3", "/r/a-2"])
+    expect(c.newer).toEqual(["/r/a-4"])
+    expect(c.prune).toEqual(["/r/a-1"])
+  })
 })
 
 describe("releasePrefix and textNamesDir", () => {
@@ -90,6 +99,20 @@ describe("pruneReleases on real folders", () => {
     expect(logs.at(-1)).toBe("releases: kept 2, deleted 3, freed 3.00 GiB")
   })
 
+  it("keeps a release staged after the live one for the next upgrade (#2517)", () => {
+    const old = mk("agentx-release-a1", 500)
+    const rollback = mk("agentx-release-b1", 200)
+    const live = mk("agentx-release-c1", 100)
+    const staged = mk("agentx-release-f68dc4b6", 10)
+    const logs: string[] = []
+    const r = pruneReleases({ live, rollback, keep: 2 }, deps(() => "", logs))
+    expect(r.pruned.map((p) => p.dir)).toEqual([old])
+    expect(r.keptNewer).toEqual([staged])
+    expect(existsSync(staged)).toBe(true)
+    expect(logs).toContain(`release kept, newer than live: ${staged}`)
+    expect(logs.at(-1)).toBe("releases: kept 3, deleted 1, freed 1.00 GiB")
+  })
+
   it("keeps a folder a launchd file or process names, also when it starts being used mid-prune", () => {
     const a = mk("agentx-release-a1", 500)
     const b = mk("agentx-release-a2", 400)
@@ -142,6 +165,8 @@ describe("pruneReleases on real folders", () => {
   it("keeps a folder a symlink still points into (link could not move)", () => {
     const old = mk("agentx-release-a1", 500)
     mkdirSync(join(old, "only-here"))
+    const t = Date.now() / 1000 - 500
+    utimesSync(old, t, t) // the mkdir made it newer than live
     const rollback = mk("agentx-release-b1", 200)
     const live = mk("agentx-release-c1", 100)
     const bin = join(root, "bin")

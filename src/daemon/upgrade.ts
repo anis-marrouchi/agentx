@@ -266,6 +266,8 @@ export interface UpgradeOutcome {
   releases?: {
     keep: number
     pruned: { dir: string; bytes: number }[]
+    /** Newer than the live release (staged), kept (#2517); absent before. */
+    keptNewer?: string[]
     keptInUse: string[]
     freedBytes: number
     error?: string

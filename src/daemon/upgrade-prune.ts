@@ -26,6 +26,9 @@ export interface ReleaseFolder {
 
 export interface PruneChoice {
   keep: string[]
+  /** Changed after the live release: built or staged for a later upgrade,
+   *  not old. Kept outside the keep count (#2517). */
+  newer: string[]
   /** Would be pruned but something names it: never deleted. */
   inUse: string[]
   prune: string[]
@@ -42,7 +45,9 @@ export function releasePrefix(dir: string): string | null {
 
 /** Which release folders to keep and which to delete. The live and rollback
  *  folders are always kept and count toward `keep`; the newest others fill
- *  the slots left. A folder in use is kept whatever its age. */
+ *  the slots left. A folder newer than the live one (staged for the next
+ *  upgrade) is kept outside the count, and a folder in use is kept whatever
+ *  its age. */
 export function choosePrune(o: {
   folders: ReadonlyArray<ReleaseFolder>
   live: string
@@ -52,10 +57,12 @@ export function choosePrune(o: {
 }): PruneChoice {
   const fixed = new Set([o.live, o.rollback])
   const keep = [...fixed]
+  const liveMtime = o.folders.find((f) => f.dir === o.live)?.mtimeMs ?? Infinity
   const others = o.folders.filter((f) => !fixed.has(f.dir)).sort((a, b) => b.mtimeMs - a.mtimeMs)
-  const out: PruneChoice = { keep, inUse: [], prune: [] }
+  const out: PruneChoice = { keep, newer: [], inUse: [], prune: [] }
   for (const f of others) {
-    if (keep.length < o.keep) keep.push(f.dir)
+    if (f.mtimeMs > liveMtime) out.newer.push(f.dir)
+    else if (keep.length < o.keep) keep.push(f.dir)
     else if (o.inUse(f.dir)) out.inUse.push(f.dir)
     else out.prune.push(f.dir)
   }
@@ -175,6 +182,8 @@ export function folderBytes(dir: string): number {
 export interface PruneResult {
   keep: number
   pruned: { dir: string; bytes: number }[]
+  /** Newer than the live release, so staged, not old (#2517). */
+  keptNewer: string[]
   keptInUse: string[]
   freedBytes: number
   /** Why pruning stopped or did not run. */
@@ -200,10 +209,12 @@ const gib = (b: number) => `${(b / 1024 ** 3).toFixed(2)} GiB`
  *  failure stops pruning and is recorded, the upgrade stays ok. */
 export function pruneReleases(o: { live: string; rollback: string; keep: number }, deps: PruneDeps | ((s: string) => void)): PruneResult {
   const d = typeof deps === "function" ? realDeps(deps) : deps
-  const res: PruneResult = { keep: o.keep, pruned: [], keptInUse: [], freedBytes: 0 }
+  const res: PruneResult = { keep: o.keep, pruned: [], keptNewer: [], keptInUse: [], freedBytes: 0 }
   try {
     const named = d.inUseText()
     const choice = choosePrune({ folders: d.list(o.live), live: o.live, rollback: o.rollback, keep: o.keep, inUse: (dir) => textNamesDir(named, dir) })
+    res.keptNewer = choice.newer
+    for (const dir of choice.newer) d.log(`release kept, newer than live: ${dir}`)
     res.keptInUse = choice.inUse
     for (const dir of choice.inUse) d.log(`release kept, in use: ${dir}`)
     for (const dir of choice.prune) {
@@ -215,7 +226,7 @@ export function pruneReleases(o: { live: string; rollback: string; keep: number 
       res.freedBytes += bytes
       d.log(`release deleted: ${dir} (${gib(bytes)})`)
     }
-    d.log(`releases: kept ${choice.keep.length + res.keptInUse.length}, deleted ${res.pruned.length}, freed ${gib(res.freedBytes)}`)
+    d.log(`releases: kept ${choice.keep.length + res.keptNewer.length + res.keptInUse.length}, deleted ${res.pruned.length}, freed ${gib(res.freedBytes)}`)
   } catch (e) {
     res.error = e instanceof Error ? e.message : String(e)
     d.log(`release pruning stopped: ${res.error}`)
