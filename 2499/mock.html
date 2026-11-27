@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>#2499 Needs: Ask the agent, Go through them, helper — mock v1</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{
+  --background:#fff;--foreground:#0a0a0a;--card:#fff;--popover:#fff;
+  --primary:#171717;--primary-foreground:#fafafa;--secondary:#f5f5f5;
+  --muted:#f5f5f5;--muted-foreground:#696969;--accent:#f5f5f5;
+  --border:#e5e5e5;--input:#e5e5e5;--ring:#a1a1a1;--destructive:#e40014;
+  --side:#f5f5f5;--side-accent:#eaeaea;--status-success:#147638;--status-warning:#ca8a04;
+  --warn-bg:#fef9c3;--warn-ink:#854d0e;--link:#2563eb;
+  --radius:10px;--shadow-xs:0 1px 2px 0 rgb(0 0 0/.05);--shadow-floating:0 10px 24px rgb(0 0 0/.18);
+  --font-sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'SF Mono',SFMono-Regular,ui-monospace,Menlo,Consolas,monospace;
+}
+.dark{
+  --background:#0a0a0a;--foreground:#f0f0f0;--card:#171717;--popover:#171717;
+  --primary:#e5e5e5;--primary-foreground:#171717;--secondary:#262626;
+  --muted:#262626;--muted-foreground:#acacac;--accent:#404040;
+  --border:rgb(255 255 255/.07);--input:rgb(255 255 255/.15);--ring:#737373;--destructive:#ff6568;
+  --side:#2a2a2a;--side-accent:#353535;--status-success:#86efac;--status-warning:#eab308;
+  --warn-bg:rgb(234 179 8/.14);--warn-ink:#fde047;--link:#60a5fa;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:var(--font-sans);letter-spacing:.01em;-webkit-font-smoothing:antialiased;background:var(--background);color:var(--foreground);font-size:14px}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.s{width:14px;height:14px}
+.frame{display:none;height:100vh;min-height:0}
+.frame.on{display:flex}
+/* shell */
+.side{width:280px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 8px;gap:2px}
+.side .search{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--muted-foreground);font-size:13px;margin-bottom:10px}
+.side .search kbd{margin-left:auto;font:11px var(--font-mono);color:var(--muted-foreground)}
+.side .grp{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);padding:12px 10px 4px}
+.side a{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:10px;color:var(--foreground);text-decoration:none;font-size:13px}
+.side a.on{background:var(--side-accent);font-weight:500}
+.side a .n{margin-left:auto;font-size:12px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.bar{height:48px;flex:none;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px}
+.bar h1{font-size:14px;font-weight:500;margin:0}
+.bar .sub{font-size:12px;color:var(--muted-foreground)}
+.bar .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.scroll{flex:1;min-height:0;overflow:auto}
+.col{max-width:760px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:16px}
+/* parts */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;font:500 13px var(--font-sans);border:1px solid transparent;cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn.p{background:var(--primary);color:var(--primary-foreground)}
+.btn.o{background:var(--background);color:var(--foreground);border-color:var(--border);box-shadow:var(--shadow-xs)}
+.btn.g{background:transparent;color:var(--muted-foreground)}
+.btn.xs{height:24px;padding:0 8px;font-size:12px;border-radius:6px}
+.btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+.badge.warn{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}
+.list{border:1px solid var(--border);border-radius:8px;list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-top:1px solid var(--border)}
+.list li:first-child{border-top:0}
+.list li.sel{background:var(--muted)}
+.list .k{width:72px;justify-content:center;margin-top:1px}
+.list .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.list .t b{font-weight:400;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list .t span{font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list .w{font-size:12px;color:var(--muted-foreground);display:flex;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
+.help{font-size:12px;color:var(--muted-foreground);margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)}
+h2{font-size:16px;font-weight:500;margin:0}
+p{margin:0;line-height:1.5}
+dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:12px 0;margin:0;font-size:13px}
+dt{color:var(--muted-foreground)} dd{margin:0}
+.choices{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.choice{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer}
+.choice .dot{width:16px;height:16px;border-radius:999px;border:1px solid var(--ring);margin-top:1px;flex:none}
+.choice.on{border-color:var(--foreground)}
+.choice.on .dot{border:5px solid var(--foreground)}
+.choice small{display:block;color:var(--muted-foreground);font-size:12px;margin-top:2px}
+.sugg{font-size:11px;color:var(--muted-foreground);margin-left:auto;white-space:nowrap}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.progress{height:4px;border-radius:999px;background:var(--muted);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--foreground);width:33%}
+.kbdrow{display:flex;gap:14px;font-size:12px;color:var(--muted-foreground)}
+kbd{font:11px var(--font-mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;background:var(--muted);color:var(--foreground)}
+.mono{font-family:var(--font-mono);font-size:12px}
+/* panel */
+.panel{width:420px;flex:none;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--background)}
+.panel .head{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border)}
+.face{width:24px;height:24px;border-radius:999px;background:var(--muted);display:grid;place-items:center;font-size:12px;font-weight:600}
+.pin{margin:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-xs)}
+.pin .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);display:flex;align-items:center;gap:6px}
+.thread{flex:1;min-height:0;overflow:auto;padding:4px 16px 12px;display:flex;flex-direction:column;gap:14px;font-size:13px}
+.u{align-self:flex-end;max-width:80%;background:var(--muted);border-radius:10px;padding:8px 12px}
+.a{line-height:1.55}
+.a ul{margin:6px 0 0;padding-left:18px}
+.composer{margin:0 12px 12px;border:1px solid var(--border);border-radius:14px;padding:8px 8px 8px 12px;display:flex;flex-direction:column;gap:6px}
+.composer .ph{color:var(--muted-foreground);font-size:13px;min-height:20px}
+.composer .tools{display:flex;align-items:center;gap:6px}
+.send{margin-left:auto;width:28px;height:28px;border-radius:999px;background:var(--primary);color:var(--primary-foreground);display:grid;place-items:center}
+.sugpills{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+.pill{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:3px 10px;color:var(--foreground)}
+/* returned card */
+.notice{border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.strike{text-decoration:line-through;color:var(--muted-foreground)}
+.sec{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;padding-top:4px}
+.sec .c{color:var(--muted-foreground);font-weight:400}
+.lab{font-size:11px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.04em}
+.tag{position:fixed;right:10px;bottom:8px;font:11px var(--font-mono);color:var(--muted-foreground)}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+ <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+ <symbol id="i-msg" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+ <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
+ <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+ <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+ <symbol id="i-skip" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></symbol>
+ <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+ <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+ <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+ <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+ <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+ <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+ <symbol id="i-corner" viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></symbol>
+ <symbol id="i-archive" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/></symbol>
+ <symbol id="i-paper" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+ <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></symbol>
+</svg>
+
+<!-- shared side menu -->
+<template id="side">
+ <nav class="side" aria-label="Side menu">
+  <div class="search"><svg class="i s"><use href="#i-search"/></svg>Search<kbd>⌘K</kbd></div>
+  <a href="#"><svg class="i s"><use href="#i-msg"/></svg>Chat</a>
+  <a href="#" class="on"><svg class="i s"><use href="#i-inbox"/></svg>Waiting on you<span class="n">6</span></a>
+  <a href="#"><svg class="i s"><use href="#i-list"/></svg>Tasks<span class="n">14</span></a>
+  <div class="grp">Agents</div>
+  <a href="#"><span class="face">S</span>Secretary</a>
+  <a href="#"><span class="face">H</span>Hakim</a>
+  <a href="#"><span class="face">C</span>Coder</a>
+  <a href="#"><span class="face">D</span>DevOps</a>
+ </nav>
+</template>
+
+<!-- M1: Waiting on you, list + Go through them -->
+<section class="frame" id="f1">
+ <div data-side></div>
+ <div class="main">
+  <header class="bar"><h1>Waiting on you</h1><span class="sub">6 · oldest 2d</span>
+   <div class="r"><button class="btn p" data-new="go"><svg class="i s"><use href="#i-play"/></svg>Go through them</button></div></header>
+  <div class="scroll"><div class="col">
+   <ul class="list">
+    <li><span class="badge k">Decision</span><span class="t"><b>Start the four agent-talk fixes after the two already done?</b><span>Hakim asks: fix how agents hand work over, one after another, in the order planned</span></span><span class="w"><span class="badge warn">Answer today</span>2d</span></li>
+    <li><span class="badge k">Decision</span><span class="t"><b>Renew the test server for one more month (about 24 USD)?</b><span>DevOps asks: keep the rented build box running until 31 December</span></span><span class="w"><span class="badge warn">Answer today</span>1d</span></li>
+    <li><span class="badge k">Decision</span><span class="t"><b>Post the Friday video on the channel at 18:00?</b><span>AgentX Channel asks: the cut is ready and checked</span></span><span class="w">5h</span></li>
+    <li><span class="badge k">Request</span><span class="t"><b>Which bank account for the March invoice?</b><span>Needed from you: the account name</span></span><span class="w">3h</span></li>
+    <li><span class="badge k">Decision</span><span class="t"><b>Keep the idea "voice notes in the weekly digest"?</b><span>Secretary asks: park it, or open an issue</span></span><span class="w">2h</span></li>
+    <li><span class="badge k">Decision</span><span class="t"><b>Merge the side-menu fix after its review passed?</b><span>Hakim asks: tests green, one reviewer said yes</span></span><span class="w">40m</span></li>
+   </ul>
+   <p class="help">Go through them shows one at a time, the one due first on top. Answer, skip or ask the agent; the next one opens.</p>
+   <div class="sec">Decided for you today <span class="c">2</span><a class="btn g xs" style="margin-left:auto" href="#">Show</a></div>
+  </div></div>
+ </div>
+</section>
+
+<!-- M2: wizard -->
+<section class="frame" id="f2">
+ <div data-side></div>
+ <div class="main">
+  <header class="bar"><button class="btn g xs" aria-label="Back to the list"><svg class="i s"><use href="#i-left"/></svg>List</button>
+   <h1>Go through them</h1><span class="sub">2 of 6 · 4 left</span>
+   <div class="r"><span class="kbdrow"><span><kbd>1</kbd>–<kbd>3</kbd> pick</span><span><kbd>↵</kbd> answer</span><span><kbd>A</kbd> ask</span><span><kbd>S</kbd> skip</span><span><kbd>Esc</kbd> stop</span></span></div></header>
+  <div class="progress" style="margin:0"><i></i></div>
+  <div class="scroll"><div class="col">
+   <article style="display:flex;flex-direction:column;gap:16px">
+    <div class="meta"><span class="badge">Decision</span><span>Hakim</span><span>asked 2d ago</span><span class="badge warn"><svg class="i s"><use href="#i-clock"/></svg>Answer today, 21:00</span></div>
+    <h2>Start the four agent-talk fixes after the two already done?</h2>
+    <p>Two fixes to how agents hand work to each other are merged. Four more are planned. Hakim wants to know if they may start now, one after another.</p>
+    <ol class="choices" aria-label="Choices">
+     <li class="choice on"><span class="dot"></span><span>All four, one after another<small>Wrong handovers are reported; stuck waits wake their owner; a step says who does it; repeated asks are merged. About 3 days.</small></span><span class="sugg">Suggested</span></li>
+     <li class="choice"><span class="dot"></span><span>Only the first two<small>Wrong handovers and stuck waits. About 1 day.</small></span></li>
+     <li class="choice"><span class="dot"></span><span>Not now<small>Nothing starts; Hakim asks again next week.</small></span></li>
+    </ol>
+    <dl>
+     <dt>Why suggested</dt><dd>Last week 9 handovers went to the wrong agent; the four fixes remove that cause.</dd>
+     <dt>If you say nothing</dt><dd>Kept waiting, asked again tomorrow.</dd>
+     <dt>More</dt><dd><a href="#" style="color:var(--link)">The plan, on GitHub</a></dd>
+    </dl>
+    <div class="row">
+     <button class="btn p"><svg class="i s"><use href="#i-check"/></svg>Answer and next</button>
+     <button class="btn o"><svg class="i s"><use href="#i-msg"/></svg>Ask Hakim</button>
+     <button class="btn g"><svg class="i s"><use href="#i-skip"/></svg>Skip</button>
+     <button class="btn g" style="margin-left:auto"><svg class="i s"><use href="#i-clock"/></svg>Later</button>
+    </div>
+   </article>
+  </div></div>
+ </div>
+</section>
+
+<!-- M3: Ask the agent, panel beside the card -->
+<section class="frame" id="f3">
+ <div data-side></div>
+ <div class="main">
+  <header class="bar"><button class="btn g xs"><svg class="i s"><use href="#i-left"/></svg>List</button><h1>Go through them</h1><span class="sub">2 of 6 · 4 left</span></header>
+  <div class="progress"><i></i></div>
+  <div class="scroll"><div class="col">
+   <div class="meta"><span class="badge">Decision</span><span>Hakim</span><span>asked 2d ago</span></div>
+   <h2>Start the four agent-talk fixes after the two already done?</h2>
+   <ol class="choices">
+    <li class="choice on"><span class="dot"></span><span>All four, one after another</span><span class="sugg">Suggested</span></li>
+    <li class="choice"><span class="dot"></span><span>Only the first two</span></li>
+    <li class="choice"><span class="dot"></span><span>Not now</span></li>
+   </ol>
+   <div class="row"><button class="btn p"><svg class="i s"><use href="#i-check"/></svg>Answer and next</button><button class="btn o" aria-pressed="true" style="background:var(--muted)"><svg class="i s"><use href="#i-msg"/></svg>Ask Hakim</button><button class="btn g"><svg class="i s"><use href="#i-skip"/></svg>Skip</button></div>
+  </div></div>
+ </div>
+ <aside class="panel" aria-label="Ask Hakim">
+  <div class="head"><span class="face">H</span><b style="font-size:13px;font-weight:500">Hakim</b><span class="sub" style="font-size:12px;color:var(--muted-foreground)">about this decision</span>
+   <button class="btn g xs" style="margin-left:auto" aria-label="Close"><svg class="i s"><use href="#i-x"/></svg></button></div>
+  <div class="pin"><span class="lbl"><svg class="i s"><use href="#i-pin"/></svg>The decision</span>
+   <span style="font-size:13px">Start the four agent-talk fixes after the two already done?</span></div>
+  <div class="thread">
+   <div class="u">What are the four, in plain words? And does any of it touch the clients?</div>
+   <div class="a">The four fixes, in the order planned:
+    <ul><li><b>Wrong handovers.</b> When work goes to the wrong agent, it is reported at once instead of sitting there.</li>
+    <li><b>Stuck waits.</b> An agent waiting on another is woken when the other one finished.</li>
+    <li><b>Who does a step.</b> Every step of a plan names one agent.</li>
+    <li><b>Repeated asks.</b> The same question from two agents shows to you once.</li></ul>
+    <p style="margin-top:6px">None of it touches clients or money. It changes how agents pass work inside AgentX. I suggest all four.</p></div>
+   <div class="u">OK, all four.</div>
+   <div class="a" style="display:flex;flex-direction:column;gap:8px">
+    <span>Shall I record that as your answer?</span>
+    <div class="notice" style="padding:8px 10px;gap:6px"><span style="font-size:12px;color:var(--muted-foreground)">Answer the decision</span><b style="font-weight:500;font-size:13px">All four, one after another</b>
+     <div class="row"><button class="btn p xs"><svg class="i s"><use href="#i-check"/></svg>Yes, record it</button><button class="btn g xs">Not yet</button></div></div>
+   </div>
+  </div>
+  <div class="composer"><span class="ph">Ask Hakim about this…</span>
+   <div class="tools"><button class="btn g xs" aria-label="Attach"><svg class="i s"><use href="#i-paper"/></svg></button><span class="send"><svg class="i s"><use href="#i-up"/></svg></span></div></div>
+ </aside>
+</section>
+
+<!-- M4: plain-card check (what the raising agent gets back) -->
+<section class="frame" id="f4">
+ <div data-side></div>
+ <div class="main">
+  <header class="bar"><h1>Plain-card check</h1><span class="sub">what happens when a card is written</span></header>
+  <div class="scroll"><div class="col">
+   <div class="lab">A card as written by the agent</div>
+   <div class="notice">
+    <b class="strike" style="font-weight:400">Do you want items 3, 6, 7 and 8 started after 1 and 2, in the order the issue gives?</b>
+    <span class="help">Choices: <span class="strike">A) All four · B) Only 3 and 6 · C) Not now</span></span>
+   </div>
+   <div class="lab">Refused at once; the agent hears why</div>
+   <div class="notice mono" style="font-size:12px;line-height:1.5">[screen gate] Card not raised: the question points at things the owner has to look up ("items 3, 6, 7 and 8", "the issue"). Say what each one is in plain words, in the question or in the choices. Put links in source.</div>
+   <div class="lab">The agent writes it again; it passes</div>
+   <div class="notice">
+    <b style="font-weight:500">Start the four agent-talk fixes after the two already done?</b>
+    <span class="help">Choices: All four, one after another · Only the first two · Not now</span>
+   </div>
+   <p class="help">Checked by script, no model, in the one place every card is made (createCard). Nothing is rewritten for the agent.</p>
+  </div></div>
+ </div>
+</section>
+
+<!-- M5: helper's daily list -->
+<section class="frame" id="f5">
+ <div data-side></div>
+ <div class="main">
+  <header class="bar"><h1>Waiting on you</h1><span class="sub">4 · oldest 2d</span>
+   <div class="r"><button class="btn p"><svg class="i s"><use href="#i-play"/></svg>Go through them</button></div></header>
+  <div class="scroll"><div class="col">
+   <div class="sec">Decided for you today <span class="c">2</span><span class="help" style="margin-left:auto;font-weight:400">By Secretary, from your earlier answers. Undo puts it back in your list.</span></div>
+   <ul class="list">
+    <li><span class="badge k"><svg class="i s"><use href="#i-check"/></svg>Yes</span><span class="t"><b>Post the Friday video on the channel at 18:00?</b><span>Same as your answer on 20 Nov and 13 Nov: "yes, at 18:00"</span></span><span class="w"><button class="btn o xs"><svg class="i s"><use href="#i-undo"/></svg>Undo</button></span></li>
+    <li><span class="badge k"><svg class="i s"><use href="#i-archive"/></svg>Parked</span><span class="t"><b>Keep the idea "voice notes in the weekly digest"?</b><span>Idea, not tied to a client or this month's goals · back in 30 days</span></span><span class="w"><button class="btn o xs"><svg class="i s"><use href="#i-undo"/></svg>Undo</button></span></li>
+   </ul>
+   <div class="sec">Prepared for you <span class="c">3</span></div>
+   <ul class="list">
+    <li><span class="badge k">Decision</span><span class="t"><b>Renew the test server for one more month (about 24 USD)?</b><span>Money: left for you. Facts added: used 11 of 30 days last month</span></span><span class="w"><span class="badge warn">Answer today</span></span></li>
+    <li><span class="badge k">Decision</span><span class="t"><b>Start the four agent-talk fixes after the two already done?</b><span>No earlier answer of the same kind: left for you</span></span><span class="w">2d</span></li>
+    <li><span class="badge k">Request</span><span class="t"><b>Which bank account for the March invoice?</b><span>Money: left for you</span></span><span class="w">3h</span></li>
+   </ul>
+   <p class="help">Never decided for you: clients, money, production, a yes that needs the Mac popup, or anything without a matching earlier answer.</p>
+  </div></div>
+ </div>
+</section>
+
+<div class="tag" id="tag"></div>
+<script>
+const q=new URLSearchParams(location.search);const f=q.get('f')||'1';
+if(q.has('dark'))document.documentElement.classList.add('dark');
+document.querySelectorAll('[data-side]').forEach(n=>n.replaceWith(document.getElementById('side').content.cloneNode(true)));
+document.getElementById('f'+f).classList.add('on');
+if(f==='5')document.querySelectorAll('.side a.on .n').forEach(n=>n.textContent='4');
+document.getElementById('tag').textContent='#2499 mock v1 · M'+f+(q.has('dark')?' · dark':'');
+</script>
+</body></html>
