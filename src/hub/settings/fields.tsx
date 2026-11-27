@@ -22,11 +22,11 @@ export function useWorkState() {
 
 export type Note = { tone: "ok" | "err"; text: string } | null
 
-/** One write and its status line. `done` is what the line says after a
- *  real save; the server's summary (and hint) when there is none. */
 /** A write a dialog or a row is handed: `useWrite`'s `write` or `run`. */
 export type Send = (method: string, path: string, body: unknown, done?: string) => Promise<unknown>
 
+/** One write and its status line. `done` is what the line says after a
+ *  real save; the server's summary (and hint) when there is none. */
 export function useWrite(invalidate: QueryKey) {
   const client = useQueryClient()
   const [note, setNote] = useState<Note>(null)
