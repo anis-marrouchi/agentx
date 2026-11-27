@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.299.0](https://github.com/anis-marrouchi/agentx/compare/v0.298.0...v0.299.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** one React Task page per request ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) T1) ([0d88e77](https://github.com/anis-marrouchi/agentx/commit/0d88e77d0846088ce68bd4c032b4636700b47dbe))
+* **hub:** one React Task page per request on task-preview ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([74f52fe](https://github.com/anis-marrouchi/agentx/commit/74f52fed41f5d4df1809e6538fb60fd531eeb1ce))
+* **hub:** Task page data, peer writes and step icons ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([7043a17](https://github.com/anis-marrouchi/agentx/commit/7043a1709bfb1ef0a25ab2a621c14bd1da8632ef))
+
+
+### Bug Fixes
+
+* **hub:** Files tab lists a live run's files so far ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R17b) ([8e6b7e5](https://github.com/anis-marrouchi/agentx/commit/8e6b7e53c990a0cb5afb819ea887912fa5e5c140))
+* **hub:** Files tab lists a live run's files so far ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R17b) ([16b99bb](https://github.com/anis-marrouchi/agentx/commit/16b99bbb8c56b2d1f9c9bbd8fa919ee198065ef3))
+* **hub:** read Claude plan usage from the login Claude Code renews ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R5) ([#2474](https://github.com/anis-marrouchi/agentx/issues/2474)) ([135e575](https://github.com/anis-marrouchi/agentx/commit/135e57508aa857d4e98842e740c95102d1c252d4))
+
 ## [0.298.0](https://github.com/anis-marrouchi/agentx/compare/v0.297.2...v0.298.0) (2026-11-27)
 
 
