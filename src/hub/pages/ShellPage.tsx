@@ -16,13 +16,14 @@
 // you (S5) open in the centre too (ShellAutomations.tsx, ShellWaiting.tsx).
 // Every other item is a link to today's page, which the old Hub draws.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from "react"
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { apiGet, apiPost } from "../api"
 import { readBoot } from "../boot"
 import type { HubPageProps } from "../registry"
 import { navigate } from "../router"
 import { SHELL_PAGE, currentLayout } from "../shell"
 import { SideMenu, SideRail, type SideMenuProps } from "../shell/SideMenu"
+import { Composer, sayAnswer, type ComposerSend } from "../shell/Composer"
 import { FilesPanel } from "../shell/FilesPanel"
 import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
 import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaModel } from "../shell/menu"
@@ -38,17 +39,17 @@ import {
 
 export { SideMenu, type SideMenuProps } from "../shell/SideMenu"
 
-export interface ShellAgent { id: string; name: string; model?: string }
+export interface ShellAgent { id: string; name: string; model?: string; tier?: string }
 
 interface AgentsReply { agents?: RawAgent[] }
-interface RawAgent { id?: string; name?: string; model?: string }
+interface RawAgent { id?: string; name?: string; model?: string; tier?: string }
 
 /** /api/agents answers a list or { agents }; rows without an id are dropped. */
 export function shellAgents(reply: RawAgent[] | AgentsReply | null | undefined): ShellAgent[] {
   const list = Array.isArray(reply) ? reply : reply?.agents ?? []
   return list
     .filter((a) => a && (a.id || a.name))
-    .map((a) => ({ id: String(a.id || a.name), name: String(a.name || a.id), ...(a.model ? { model: a.model } : {}) }))
+    .map((a) => ({ id: String(a.id || a.name), name: String(a.name || a.id), ...(a.model ? { model: a.model } : {}), ...(a.tier ? { tier: a.tier } : {}) }))
 }
 
 // --- Chat ---
@@ -86,7 +87,6 @@ function PendingAnswer({ text }: { text: string }) {
 export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; phoneBar?: ReactNode; onThread?: (id: string | null) => void }) {
   const client = useQueryClient()
   const [threadId, setThreadId] = useState<string | null>(null)
-  const [text, setText] = useState("")
   const [error, setError] = useState("")
 
   // A new agent in view: open its newest conversation, if any.
@@ -119,28 +119,34 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
   const raw = useTaskStream({ node: thread.data?.node, agentId: thread.data?.thread?.agentId, taskId: waiting?.taskId }, settle)
   const live = liveAnswer(raw)
 
+  // A message sent by voice: its answer is said back in the agent's voice.
+  const spoken = useRef<string | null>(null)
   const send = useMutation({
-    mutationFn: (message: string) =>
-      apiPost<{ threadId: string }>("/api/assistant", { agentId: agent?.id, threadId: threadId ?? undefined, message }),
-    onSuccess: (d) => {
-      setText("")
+    mutationFn: (s: ComposerSend) =>
+      apiPost<{ threadId: string }>("/api/assistant", {
+        agentId: agent?.id, threadId: threadId ?? undefined, node: threadId ? thread.data?.node || undefined : undefined,
+        message: s.message, attachments: s.attachments, model: s.model, spoken: s.spoken,
+      }),
+    onSuccess: (d, s) => {
       sentHere.current = true
+      spoken.current = s.spoken ? d.threadId : null
       setThreadId(d.threadId)
       void client.invalidateQueries({ queryKey: ["assistant-thread", d.threadId] })
     },
     onError: (e: unknown) => setError("Not sent: " + (e instanceof Error ? e.message : "the computer did not answer")),
   })
-
-  const submit = (e?: FormEvent) => {
-    e?.preventDefault()
-    const message = text.trim()
-    if (!message || !agent || send.isPending) return
+  const onSend = (s: ComposerSend) => {
+    if (!agent || send.isPending) return Promise.resolve(false)
     setError("")
-    send.mutate(message)
+    return send.mutateAsync(s).then(() => true, () => false)
   }
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit()
-  }
+  useEffect(() => {
+    const t = thread.data
+    const last = t?.messages?.[t.messages.length - 1]
+    if (!threadId || spoken.current !== threadId || !last || last.role !== "assistant" || last.status !== "done" || !last.content) return
+    spoken.current = null
+    sayAnswer(threadId, t?.node, storedAnswer(last.content)).catch((e: unknown) => setError("Not said aloud: " + (e instanceof Error ? e.message : "the node did not answer")))
+  }, [thread.data, threadId])
 
   const messages = thread.data?.messages ?? []
   const machine = thread.data?.thread?.node || "This computer"
@@ -168,26 +174,13 @@ export function ShellChat({ agent, phoneBar, onThread }: { agent?: ShellAgent; p
           ))}
         </div>
       </div>
-      <form onSubmit={submit} className="mx-auto w-full max-w-[760px] shrink-0 px-4 pb-4">
-        <div className="rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-ring">
-          <textarea
-            rows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
-            disabled={!agent} aria-label={agent ? `Message ${agent.name}` : "Message"}
-            placeholder={agent ? `Message ${agent.name}` : "Pick an agent first"}
-            className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <div className="flex items-center justify-end gap-2 px-2 pb-2">
-            {agent?.model ? <span className="mr-auto rounded-sm border border-border px-1.5 font-mono text-[11px] text-muted-foreground" title="The agent's model">{agent.model}</span> : null}
-            <Button type="submit" size="sm" disabled={!agent || !text.trim() || send.isPending} aria-label="Send">
-              <Icon name="send" /> Send
-            </Button>
-          </div>
-        </div>
+      {/* The approved composer card (#2182), as on every other way into a chat (#2453). */}
+      <Composer agent={agent} node={thread.data?.node} busy={send.isPending} onSend={onSend}>
         <p className="mt-1.5 flex items-center gap-1.5 px-1 text-xs text-muted-foreground" data-shell="machine">
           <Icon name="monitor" className="size-3.5" /> {machine}
         </p>
         {error ? <p role="alert" className="mt-1 px-1 text-xs text-err-ink">{error}</p> : null}
-      </form>
+      </Composer>
     </section>
   )
 }
