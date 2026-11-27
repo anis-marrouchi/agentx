@@ -46,7 +46,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 
 1. **Browser:** open `/hub`. A fresh install opens here with no setting. If `dashboard.hub.react` is `false`, open `/hub?react=1` (once). The shell's own address is `/hub#page=home`.
 2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
-3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it. The answer shows word by word under **Working…** as the agent writes it, formatted as on the Task page: bold, lists, tables and code. When the run ends, the saved answer takes its place.
+3. **Centre, the chat:** the agent in view's newest conversation. The box at the bottom is the same card as in the old Hub chat: **To** and the agent's name on top, then your message, then **+** to attach files (or paste or drop them, five at most), the model, the mic, and the blue arrow to send. Press **Enter** or the arrow to send; **Shift Enter** starts a new line. For a Claude Code agent the model is a menu: the agent's own model, or **Opus**, **Sonnet** or **Haiku** for this message; other agents show their own model. The mic records a voice message and sends it when you stop; the pencil next to it (**Check before sending**) puts the words in the box for you to send instead. The answer to a voice message is said aloud. The machine shows under the box. The answer shows word by word under **Working…** as the agent writes it, formatted as on the Task page: bold, lists, tables and code. When the run ends, the saved answer takes its place.
 
    **Check it worked:** ask an agent for a long answer, for example "List ten things you can do, with a short line each". Words appear within a few seconds, before the run ends, and **bold** words show bold, with no asterisks.
 
@@ -193,12 +193,15 @@ What you put off with **Later** is not listed; the line under the list counts it
 
 - `/hub` as the owner opens on three columns, and the address ends in `#page=home`.
 - In Settings › Layout, turn **Workflows page** on, then open `/hub#page=home`: **Workflows** is under **More**.
+- Select an agent in the side menu: the box at the bottom reads **To** and the agent's name, with **+**, the model, the mic and a blue arrow.
 
 ### If the simple shell is wrong
 
 - **`/hub` opens the old Hub:** the layout is **Full** (pick **Simple** in Settings › Layout), you are not the owner (the shell is the owner's), or `dashboard.hub.react` is `false`. `/hub#page=home` opens the shell in any layout.
 - **The shell looks broken:** open `/hub?legacy=1` for the old version, or add `"home"` to `dashboard.hub.legacyPages`.
 - **No agents in the menu:** the dashboard could not reach the daemon. Check that it runs (**Terminal:** `agentx daemon status`).
+- **No mic in the box:** the browser gives no microphone to the page (it needs `https` or `localhost`) or has no recorder. Typing and files still work.
+- **A file shows "Not attached":** the machine that runs the agent refused or did not answer the upload; the reason is in brackets. Try again, or send the message without it.
 
 ## See every agent at a glance
 
