@@ -11,7 +11,9 @@ import { SideMenu, SideRail, type SideMenuProps } from "../src/hub/shell/SideMen
 import {
   MENU_FOLDS_KEY, firstHit, menuGroups, readMenuFolds, saveMenuFolds, shellShortcut, type HaModel, type HaRow,
 } from "../src/hub/shell/menu"
-import { chatFilesSource } from "../src/hub/shell/FilesPanel"
+import { chatFilesSource, currentRunHtml } from "../src/hub/shell/FilesPanel"
+import { streamStep } from "../src/hub/shell/run-stream"
+import { runFilesOf } from "../src/daemon/ui/pages/wall-files"
 import { SimpleShell, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
 
@@ -169,10 +171,44 @@ describe("the Files tab", () => {
     })
     expect(src).toEqual({
       key: "chat:t1", label: "Pricing page",
-      runs: [{ node: "http://node-a:4200", agent: "ada", task: "run-1" }],
+      current: { node: "http://node-a:4200", agent: "ada", task: "run-1", live: false },
+      runs: [],
       attached: ["brief.pdf", "logo.png"],
       ws: { node: "http://node-a:4200", agent: "ada" },
     })
+  })
+  it("the newest run is the current one, live while its answer is pending; the runs before it are below (#2455)", () => {
+    const thread = (last: { taskId: string | null; status: string }) => chatFilesSource({
+      node: "http://node-a:4200",
+      thread: { id: "t1", agentId: "ada" },
+      messages: [
+        { role: "assistant", content: "One", taskId: "run-1", status: "done" },
+        { role: "assistant", content: "Two", taskId: "run-2", status: "done" },
+        { role: "assistant", content: "", ...last },
+      ],
+    })!
+    const going = thread({ taskId: "run-3", status: "pending" })
+    expect(going.current).toEqual({ node: "http://node-a:4200", agent: "ada", task: "run-3", live: true })
+    expect(going.runs.map((r) => r.task)).toEqual(["run-1", "run-2"])
+    // Asked, not started yet: the run is current with no task.
+    expect(thread({ taskId: null, status: "pending" }).current).toEqual({ node: "http://node-a:4200", agent: "ada", task: "", live: true })
+  })
+  it("the current run's list while it goes: nothing yet says so, then each file its output names", () => {
+    expect(currentRunHtml(null, "run:r", true)).toContain("show here as it goes")
+    const out = '→ Read({"file_path":"/w/brief.md"})\n→ Write({"file_path":"/w/out/report.pdf","content":"x"})\n'
+    const html = currentRunHtml(runFilesOf(out, out), "run:r", true)
+    expect(html).toContain("report.pdf")
+    expect(html).toContain('data-src="run:r"')
+    expect(html).toContain("1 changed · 1 read")
+  })
+  it("the run's stream: start brings the output so far, chunks add to it, end closes it", () => {
+    let t = streamStep("", "start", JSON.stringify({ initial: "→ Read({})\n" }))!
+    t = streamStep(t, "chunk", JSON.stringify({ text: "more\n" }))!
+    expect(t).toBe("→ Read({})\nmore\n")
+    expect(streamStep(t, "chunk", JSON.stringify({ text: "\n[task finished]\n" }))).toBe(t)
+    expect(streamStep(t, "chunk", "not json")).toBe(t)
+    expect(streamStep(t, "end", "")).toBeNull()
+    expect(streamStep("", "start", JSON.stringify({ done: true }))).toBeNull()
   })
   it("no conversation: no source", () => {
     expect(chatFilesSource(null)).toBeNull()
