@@ -218,16 +218,27 @@ export function ltNodeState(n: LtNode): "up" | "checking" | "silent" {
   return !n.reachable || n.error ? "silent" : "up"
 }
 
+/** Whether a machine's agents count in the run counts: up, or checking with
+ *  its last good answer (agents listed, staleSince). A quick snapshot marks a
+ *  machine slower than 1.5 s as checking; dropping it made Working, the bar,
+ *  Machines and /mesh flicker 0→4→0 while runs went on (#2101-state). A
+ *  checking machine with nothing yet and a silent one do not count. */
+export function ltNodeCounts(n: LtNode): boolean {
+  const s = ltNodeState(n)
+  return s === "up" || (s === "checking" && (n.agents || []).length > 0)
+}
+
 /** Who is working now: the one count rule for the tree's "At work now"
- *  badges and the Hub's "Working" list (#2260). Only machines that are up
- *  count. An agent counts once, on the first up machine that lists it, and
+ *  badges, the Hub's "Working" list (#2260), the bar, Machines and /mesh
+ *  (#2101-state). Machines that count (ltNodeCounts) count. An agent counts
+ *  once, on the first up machine that lists it, else the first slow one, and
  *  is working when it has at least one run; its runs are counted apart. */
 export interface LtWorkCount {
   /** Agents working, all machines. */
   agents: number
   /** Runs going, of those agents. */
   runs: number
-  /** Per machine (ltNodeKey), up machines only. */
+  /** Per machine (ltNodeKey), machines that count (ltNodeCounts) only. */
   byNode: Record<string, { agents: number; runs: number }>
   /** agent id → the machine (ltNodeKey) it counts on. */
   home: Record<string, string>
@@ -235,8 +246,11 @@ export interface LtWorkCount {
 
 export function liveWorkCount(nodes: LtNode[]): LtWorkCount {
   const out: LtWorkCount = { agents: 0, runs: 0, byNode: {}, home: {} }
-  for (const n of nodes || []) {
-    if (!n || ltNodeState(n) !== "up") continue
+  // Up machines first, then slow ones from their last good answer: an agent
+  // a slow machine and an up one both list counts on the up one.
+  const order = (nodes || []).filter((n) => n && ltNodeState(n) === "up")
+    .concat((nodes || []).filter((n) => n && ltNodeState(n) !== "up" && ltNodeCounts(n)))
+  for (const n of order) {
     const key = ltNodeKey(n)
     const c = out.byNode[key] || (out.byNode[key] = { agents: 0, runs: 0 })
     for (const a of n.agents || []) {
@@ -270,8 +284,8 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
       working: 0, runs: 0, projects: [], done: [], idle: [],
     }
     // A machine still being asked keeps the rows of its last good answer,
-    // marked "as of" (#2292). Silent machines show none. Its badge stays
-    // "checking…": the Working count still takes up machines only (#2260).
+    // marked "as of" (#2292), and its runs count (ltNodeCounts,
+    // #2101-state). Silent machines show none.
     if (m.state === "silent" || !(n.agents || []).length) return m
     if (m.state === "checking") m.asOf = String(n.staleSince || "")
     // The badge counts as the Hub's Working list does (#2260).
@@ -281,8 +295,9 @@ export function liveTreeModel(nodes: LtNode[], posts: LtPost[], now: number): Lt
     for (const a of n.agents || []) {
       // Listed by an earlier machine too: it shows there only, so the rows
       // match the badge (#2260 C2).
-      // A checking machine: only agents no up machine lists, once each.
-      if (!a || !a.id || (m.state === "up" ? work.home[a.id] !== m.key : !!work.home[a.id] || !!shown[a.id])) continue
+      // Its home (liveWorkCount: up machines first, then slow ones with their
+      // last answer, #2101-state); an agent with none shows once.
+      if (!a || !a.id || (work.home[a.id] ? work.home[a.id] !== m.key : !!shown[a.id])) continue
       shown[a.id] = true
       const base = {
         agentId: a.id, agentName: String(a.name || a.id), color: a.color || null,
@@ -362,7 +377,9 @@ export function liveTreeHtml(machines: LtMachine[], hrefOf: (r: LtRow, m: LtMach
   if (!machines.length) return '<p class="lt__empty">Loading the machines…</p>'
   return machines.map((m) => {
     const badge = m.state === "silent" ? '<span class="lt__badge is-silent" title="' + ltEsc(m.error || "does not answer") + '">not checked</span>'
-      : m.state === "checking" ? '<span class="lt__badge">checking…</span>'
+      // A slow machine with its last answer shows its number and "as of",
+      // as its runs count (#2101-state); with no answer yet, "checking…".
+      : m.state === "checking" && !m.asOf ? '<span class="lt__badge">checking…</span>'
       : '<span class="lt__badge' + (m.working ? " is-live" : "") + '" title="' + m.working + (m.working === 1 ? " agent" : " agents") + " working now" +
         (m.runs > m.working ? ", " + m.runs + " runs" : "") + '">' + m.working + "</span>"
     const asOf = m.state === "checking" && m.asOf && Number.isFinite(Date.parse(m.asOf))

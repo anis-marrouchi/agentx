@@ -12,6 +12,11 @@ import { MESH_ANALYTICS_SCRIPT } from "./mesh-analytics.client"
 import { MESH_OPS_SCRIPT } from "./mesh-ops.client"
 import { MESH_ROUTINES_CSS, MESH_ROUTINES_SCRIPT } from "./mesh-routines.client"
 import { MESH_FEED_FILTERS, MESH_FEED_SCRIPT } from "./mesh-feed.client"
+import { injectFns } from "../inject"
+import { liveWorkCount, ltNodeCounts, ltNodeKey, ltNodeState } from "./wall-tree"
+
+/** The Hub's count rule, shipped to the Operations view (#2101-state). */
+const MESH_COUNT_SCRIPT = `<script>${injectFns({ ltNodeKey, ltNodeState, ltNodeCounts, liveWorkCount })}</script>`
 
 // --- /mesh — three views over one fleet -------------------------------
 //
@@ -203,7 +208,7 @@ export function renderMeshPage(opts: { peers?: TopbarPeer[]; localToken?: string
     css: MESH_CSS + MESH_ROUTINES_CSS + (opts.embed ? MESH_EMBED_CSS : ""),
     // Routines listens for the snapshot the Operations script fetches, so it
     // must be registered before that script's first load() fires.
-    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_ROUTINES_SCRIPT + MESH_OPS_SCRIPT + MESH_FEED_SCRIPT,
+    scripts: MESH_SHARED_SCRIPT + MESH_TABS_SCRIPT + MESH_DRILL_SCRIPT + MESH_ANALYTICS_SCRIPT + MESH_ROUTINES_SCRIPT + MESH_COUNT_SCRIPT + MESH_OPS_SCRIPT + MESH_FEED_SCRIPT,
   })
 }
 

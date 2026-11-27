@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { applyAttachSessions, resetLiveCaches, withLastGood } from "../src/daemon/board-dashboard"
+import { applyAttachSessions, dayWithLastGood, resetLiveCaches, withLastGood } from "../src/daemon/board-dashboard"
 
 // #193 — the Live page must not lose a node that is briefly slow, and must
 // show which Claude Code session answers for which agent.
@@ -60,5 +60,29 @@ describe("live snapshot: attached sessions", () => {
     expect(node.attachSessions[1].startedAt).toBeUndefined()
     // Only the project folder leaves the machine, never the full path.
     expect(JSON.stringify(node.attachSessions)).not.toContain("/Users/")
+  })
+})
+
+// #2101-state: /mesh's day snapshot of a slow node used to read as
+// "0 Tasks running" and the node as unreachable while the Hub listed its runs.
+describe("dayWithLastGood (#2101-state)", () => {
+  const U = "http://slow"
+  const t0 = Date.parse("2026-11-27T08:00:00Z")
+  const ok = (): any => ({ id: "mac", name: "MacBook-Local", url: U, reachable: true, agents: [{ id: "coder", runningTasks: [{ id: "c1" }] }], crons: [{ id: "daily" }] })
+  const late = (): any => ({ id: U, name: "MacBook-Local", url: U, reachable: false, error: "timed out", agents: [], crons: [] })
+  beforeEach(() => resetLiveCaches())
+
+  it("keeps the agents and runs of the last good answer, marked checking", () => {
+    dayWithLastGood(U, ok(), t0)
+    const shown = dayWithLastGood(U, late(), t0 + 10_000)
+    expect(shown).toMatchObject({ id: "mac", reachable: true, checking: true, stale: true, error: "timed out" })
+    expect(shown.agents[0].runningTasks).toHaveLength(1)
+    expect(shown.crons).toEqual([]) // the day's schedules are not reused
+  })
+
+  it("uses the live view's last good answer too, and only within 5 minutes", () => {
+    withLastGood(U, ok(), t0)
+    expect(dayWithLastGood(U, late(), t0 + 1_000).checking).toBe(true)
+    expect(dayWithLastGood(U, late(), t0 + 6 * 60_000).checking).toBeUndefined()
   })
 })

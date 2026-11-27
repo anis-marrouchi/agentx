@@ -66,7 +66,9 @@ export function mtModel(machines: LtMachine[], meshName?: string): MtMesh[] {
   })
   const mesh: MtMesh = { key: "own", name: meshName || "Your mesh", online: 0, total: ms.length, working: 0, runs: 0, machines: ms }
   for (const m of ms) {
-    if (m.state === "up") mesh.online++
+    // A slow machine that still carries its last good answer counts, as its
+    // runs do (ltNodeCounts, #2101-state): slow is not down.
+    if (m.state === "up" || (m.state === "checking" && m.asOf)) mesh.online++
     mesh.working += m.working
     mesh.runs += m.runs
   }
@@ -129,7 +131,7 @@ export function mtTreeHtml(meshes: MtMesh[], hrefOf: (r: LtRow, m: MtMachine) =>
       d.esc(mtCountWords(mesh.working, mesh.runs)) + '">' + mesh.working + "</span>"
     const body = mesh.machines.map((m) => {
       const badge = m.state === "silent" ? '<span class="lt__badge is-silent" title="' + d.esc(m.error || "does not answer") + '">not checked</span>'
-        : m.state === "checking" ? '<span class="lt__badge">checking…</span>'
+        : m.state === "checking" && !m.asOf ? '<span class="lt__badge">checking…</span>'
         : '<span class="lt__badge' + (m.working ? " is-live" : "") + '" title="' + d.esc(mtCountWords(m.working, m.runs)) + '">' + m.working + "</span>"
       const asOf = m.state === "checking" && m.asOf && Number.isFinite(Date.parse(m.asOf))
         ? ' <time class="lt__asof" datetime="' + d.esc(m.asOf) + '" title="Last answer at ' + d.esc(m.asOf) + '">as of ' + d.esc(m.asOf.slice(11, 16)) + "Z</time>" : ""

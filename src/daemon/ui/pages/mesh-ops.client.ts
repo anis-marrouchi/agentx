@@ -12,7 +12,7 @@ export const MESH_OPS_SCRIPT = `<script>
   function badge(status){
     var kind=(status==='success'||status==='active'||status==='online'||status==='running')?'ax-badge--live'
       :(status==='failed'||status==='timeout'||status==='offline'||status==='missed')?'ax-badge--err'
-      :(status==='retrying'||status==='held')?'ax-badge--warn':'ax-badge--ghost';
+      :(status==='retrying'||status==='held'||status==='checking')?'ax-badge--warn':'ax-badge--ghost';
     return '<span class="ax-badge '+kind+'">'+esc(status)+'</span>';
   }
   function avatar(text,variant){return '<span class="ax-avatar '+(variant?'ax-avatar--'+variant:'')+'">'+esc(initials(text))+'</span>'}
@@ -64,13 +64,17 @@ export const MESH_OPS_SCRIPT = `<script>
   });
 
   function render(s){
-    var nodes=s.nodes||[],reachable=nodes.filter(function(n){return n.reachable});
+    // One count rule with the Hub (liveWorkCount, #2101-state): a slow node
+    // carrying its last good answer counts, and an agent's runs count on its
+    // home node only, so "Tasks running" matches the Hub's runs.
+    var nodes=s.nodes||[],reachable=nodes.filter(ltNodeCounts),work=liveWorkCount(nodes);
     var agents=reachable.flatMap(function(n){return (n.agents||[]).map(function(a){return {node:n,agent:a}})});
-    var tasks=agents.flatMap(function(x){return (x.agent.runningTasks||[]).map(function(t){return {node:x.node,agent:x.agent,task:t}})});
+    var tasks=agents.filter(function(x){return work.home[x.agent.id]===ltNodeKey(x.node)})
+      .flatMap(function(x){return (x.agent.runningTasks||[]).filter(Boolean).map(function(t){return {node:x.node,agent:x.agent,task:t}})});
     var runs=reachable.flatMap(function(n){return (n.cronRuns||[]).map(function(r){return {node:n,run:r}})});
     var failed=runs.filter(function(x){return x.run.status!=='success'}).length;
     MX.setHealth(0,reachable.length+'/'+nodes.length,reachable.length===nodes.length?'ok':'warn');
-    MX.setHealth(1,tasks.length,tasks.length?'ok':'off');
+    MX.setHealth(1,work.runs,work.runs?'ok':'off');
     MX.setHealth(2,failed,failed?'warn':'off');
     document.getElementById('mx-updated').textContent='Fleet snapshot '+new Date(s.ts).toLocaleTimeString()
       +' · '+Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -136,7 +140,7 @@ export const MESH_OPS_SCRIPT = `<script>
     root.innerHTML=nodes.map(function(n,i){
       var active=(n.agents||[]).reduce(function(v,a){return v+(a.active||0)},0);
       var sub='<span>'+esc(n.reachable?n.agents.length+' agents · '+active+' active':n.error||'unreachable')+'</span>';
-      var status=n.reachable?(active?'active':'online'):'offline';
+      var status=n.checking&&n.reachable?'checking':n.reachable?(active?'active':'online'):'offline';
       return item({title:n.name,slug:n.id,sub:sub},badge(status),'data-node="'+i+'"',n.reachable?'teal':'coral');
     }).join('');
     root.querySelectorAll('[data-node]').forEach(function(el){

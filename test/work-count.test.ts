@@ -23,8 +23,9 @@ const NODES: LtNode[] = [
   { id: "clawd", name: "Clawd", url: "http://clawd", reachable: true, error: "HTTP 502", agents: [
     { id: "atlas", name: "atlas", runningTasks: [run("a1")] },
   ] },
-  // Still being asked again: the tree says "checking…".
-  { id: "slow", name: "Slow", url: "http://slow", reachable: true, checking: true, agents: [
+  // Still being asked again: the tree says "checking…" and keeps its last
+  // good answer, whose runs count (#2101-state).
+  { id: "slow", name: "Slow", url: "http://slow", reachable: true, checking: true, staleSince: ago(20_000), agents: [
     { id: "omar", name: "omar", runningTasks: [run("o1")] },
   ] },
   // The same agent listed by a second machine: it counts once, on the first.
@@ -37,10 +38,10 @@ const NODES: LtNode[] = [
 describe("liveWorkCount (#2260)", () => {
   const work = liveWorkCount(NODES)
 
-  it("counts agents with a run, once each, on machines that answer", () => {
-    expect(work.agents).toBe(3) // coder + devops on the Mac, seif on Peer
-    expect(work.runs).toBe(4) // c1, c2, d1, s1
-    expect(work.byNode).toEqual({ "http://mac": { agents: 2, runs: 3 }, "http://peer": { agents: 1, runs: 1 } })
+  it("counts agents with a run, once each, on machines that answer or are slow", () => {
+    expect(work.agents).toBe(4) // coder + devops on the Mac, omar on Slow, seif on Peer
+    expect(work.runs).toBe(5) // c1, c2, d1, o1, s1
+    expect(work.byNode).toEqual({ "http://mac": { agents: 2, runs: 3 }, "http://slow": { agents: 1, runs: 1 }, "http://peer": { agents: 1, runs: 1 } })
     expect(work.home.coder).toBe("http://mac")
   })
 
@@ -50,17 +51,17 @@ describe("liveWorkCount (#2260)", () => {
     const treeTotal = tree.reduce((n, m) => n + m.working, 0)
     expect(hub.counts.working).toBe(work.agents)
     expect(treeTotal).toBe(work.agents)
-    expect(hub.rows.filter((r) => r.state === "working").map((r) => r.id).sort()).toEqual(["coder", "devops", "seif"])
+    expect(hub.rows.filter((r) => r.state === "working").map((r) => r.id).sort()).toEqual(["coder", "devops", "omar", "seif"])
     expect(tree.map((m) => [m.name, m.state, m.working])).toEqual([
-      ["MacBook-Local", "up", 2], ["Clawd", "silent", 0], ["Slow", "checking", 0], ["Peer", "up", 1],
+      ["MacBook-Local", "up", 2], ["Clawd", "silent", 0], ["Slow", "checking", 1], ["Peer", "up", 1],
     ])
   })
 
-  it("keeps listing the agents of a machine that is not up, never as working (C1)", () => {
+  it("keeps listing the agents of a silent machine, never as working; a slow one counts (C1, #2101-state)", () => {
     const hub = hubAgentRows(NODES, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, work)
     const by = (id: string) => hub.rows.find((r) => r.id === id)
     expect(by("atlas")).toMatchObject({ node: "Clawd", state: "idle", runs: 0, taskId: "" })
-    expect(by("omar")).toMatchObject({ node: "Slow", state: "idle", runs: 0, taskId: "" })
+    expect(by("omar")).toMatchObject({ node: "Slow", state: "working", runs: 1, taskId: "o1" })
     expect(hub.rows.map((r) => r.id).sort()).toEqual(["atlas", "coder", "devops", "omar", "pm", "seif"])
   })
 
@@ -112,7 +113,7 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
   it("the nav's running count is the working agents, not their runs", () => {
     const f = new Function("S", "liveWorkCount", pick("wall.client.ts", "runningCount") + "; return runningCount()")
     expect(work.runs).toBeGreaterThan(work.agents) // one agent has two runs
-    expect(f(S, liveWorkCount)).toBe(work.agents) // 3: not 4 (runs), not 7 (all runs on every machine)
+    expect(f(S, liveWorkCount)).toBe(work.agents) // 4: not 5 (runs), not 8 (all runs on every machine)
   })
 
   it("the Agents page counts an agent's runs on its home machine only", () => {
@@ -120,7 +121,7 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
       pick("wall.client.ts", "allAgents") + "; return allAgents()")
     const list = f(S, liveWorkCount, ltNodeKey, () => [], (id: string) => id) as Array<{ id: string; running: number }>
     const runs = Object.fromEntries(list.map((a) => [a.id, a.running]))
-    expect(runs).toMatchObject({ coder: 2, devops: 1, seif: 1, atlas: 0, omar: 0 })
+    expect(runs).toMatchObject({ coder: 2, devops: 1, seif: 1, atlas: 0, omar: 1 })
     expect(list.filter((a) => a.running).length).toBe(work.agents)
   })
 
@@ -140,7 +141,7 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
     const m = hubAgentRows(NODES, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, work)
     const html = haListHtml(m, "", { working: true }, ltEsc, () => "now")
     const heads = [...html.matchAll(/<h4 class="ha__m" data-key="m:[^"]*">([^<]*) <span class="ha__hn">(\d+)<\/span><\/h4>/g)].map((x) => [x[1], Number(x[2])])
-    expect(heads).toEqual([["MacBook-Local", 2], ["Peer", 1]])
+    expect(heads).toEqual([["MacBook-Local", 2], ["Slow", 1], ["Peer", 1]])
     expect(heads.reduce((n, h) => n + (h[1] as number), 0)).toBe(work.agents)
     expect((html.match(/data-ha-agent="coder"/g) || []).length).toBe(1)
   })
@@ -157,5 +158,36 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
     const one = NODES.slice(0, 1)
     const m = hubAgentRows(one, [], NOW, NOW - 3_600_000, (t) => ltTitle(t, null), ltPlain, liveWorkCount(one))
     expect(haListHtml(m, "", false, ltEsc, () => "now")).not.toContain("ha__m")
+  })
+})
+
+// #2101-state: a quick snapshot marks a machine slower than 1.5 s as
+// checking and hands its last good answer. Working, the bar, Machines and
+// /mesh dropped it, so the count went 0→4→0 while the runs went on.
+describe("no flicker while a machine is slow (#2101-state)", () => {
+  const mac = (checking: boolean): LtNode => ({
+    id: "mac", name: "MacBook-Local", url: "http://mac", reachable: true,
+    ...(checking ? { checking: true, staleSince: ago(5_000) } : {}),
+    agents: [
+      { id: "coder", name: "Coder", runningTasks: [run("c1")] },
+      { id: "devops", name: "DevOps", runningTasks: [run("d1")] },
+      { id: "pm", name: "Hakim", runningTasks: [run("p1"), run("p2")] },
+      { id: "cx", name: "CX", runningTasks: [run("x1")] },
+    ],
+  })
+
+  it("gives the same count from a full and a quick snapshot of the same runs", () => {
+    const counts = [false, true, false, true].map((c) => liveWorkCount([mac(c)]))
+    expect(counts.map((w) => w.agents)).toEqual([4, 4, 4, 4])
+    expect(counts.map((w) => w.runs)).toEqual([5, 5, 5, 5])
+    const tree = liveTreeModel([mac(true)], [], NOW)
+    expect(tree[0]).toMatchObject({ state: "checking", working: 4, runs: 5 })
+  })
+
+  it("counts nothing for a machine still checking with no answer yet, or silent", () => {
+    const nothingYet: LtNode = { id: "http://mac", name: "MacBook-Local", url: "http://mac", reachable: false, checking: true, agents: [] }
+    const silent: LtNode = { ...mac(false), error: "HTTP 502" }
+    expect(liveWorkCount([nothingYet]).agents).toBe(0)
+    expect(liveWorkCount([silent]).agents).toBe(0)
   })
 })
