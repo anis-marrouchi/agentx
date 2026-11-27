@@ -228,6 +228,9 @@ details[open] > summary > .ha__chev { transform: rotate(90deg); }
 .ha__row:focus-within .ha__acts { display: flex; background: var(--ax-surface-2); }
 .ha__row.is-cur:focus-within .ha__acts { background: var(--ax-surface-3); }
 @media (hover: hover) { .ha__row:hover .ha__acts { display: flex; } }
+/* A Needs you row's "3 for you" stays whole (#2505 C5): its actions take
+   their own room after the chip, and the question's title gets the ellipsis. */
+.ha__row.is-asks .ha__acts { position: static; transform: none; padding: 0 4px 0 0; background: none; margin-left: -4px; }
 .ha__act { all: unset; box-sizing: border-box; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--ax-radius-sm); color: var(--ax-muted); cursor: pointer; }
 .ha__act svg { width: 14px; height: 14px; }
 .ha__act:focus-visible { outline: 2px solid var(--ax-ring); outline-offset: -2px; }

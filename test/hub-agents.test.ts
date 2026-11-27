@@ -143,7 +143,7 @@ describe("haListHtml", () => {
     expect(h).not.toContain("ha__node")
     expect(h).toMatch(/<summary class="ha__h"><span class="ha__chev" aria-hidden="true"><svg class="lucide lucide-chevron-right"[^]*?<\/span><span class="ha__ht">Working<\/span><span class="ha__hn" data-n="2">2<\/span><\/summary>/)
     for (const [t, n] of [["Needs you", 1], ["Done today", 1], ["Not working today", 1]]) expect(h).toContain('<span class="ha__ht">' + t + '</span><span class="ha__hn" data-n="' + n + '">' + n + "</span>")
-    expect(h).toContain('<div class="ha__row is-needs is-cur" data-key="a:pm" data-ha-agent="pm"><a class="ha__link" href="#page=chat&amp;agent=pm&amp;ask=card%3A1" aria-current="true">')
+    expect(h).toContain('<div class="ha__row is-needs is-asks is-cur" data-key="a:pm" data-ha-agent="pm"><a class="ha__link" href="#page=chat&amp;agent=pm&amp;ask=card%3A1" aria-current="true">')
     expect(h).toContain('<b class="ax-af-count ha__n" data-tone="warn" data-n="2">2<span class="ax-sr"> questions for you</span></b>')
     // The groups in the one state order: Needs you, Working, Done today, Not working today.
     const at = (k: string) => h.indexOf('data-key="g:' + k + '"')
