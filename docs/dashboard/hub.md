@@ -202,8 +202,8 @@ With no project yet, the page says how a project is made and shows **Add project
 
 ### Check Projects worked
 
-- Add a project with a repo that has open issues or requests: within 30 seconds it is listed with its open count, and `agentx.json` has it under `dashboard.wall.projects`.
-- Select it: **Tasks** opens with the project in the box at the top.
+1. Add a project with a repo that has open issues or requests: within 30 seconds it is listed with its open count, and `agentx.json` has it under `dashboard.wall.projects`.
+2. Select it: **Tasks** opens with the project in the box at the top.
 
 ### If Projects is wrong
 
