@@ -12,6 +12,7 @@
 
 import type { HubBoot } from "./boot"
 import { resolveHubLayout, type HubLayoutView, type HubShowItem } from "./layout"
+import { settingsHash } from "./settings/address"
 
 /** The React page id of the shell (pages.ts). */
 export const SHELL_PAGE = "home"
@@ -50,7 +51,9 @@ export const SHELL_MORE: Readonly<Partial<Record<HubShowItem, ShellNavItem>>> = 
   usage: { id: "usage", label: "Usage", icon: "gauge", href: "#view=cost" },
 }
 
-export const SHELL_SETTINGS: ShellNavItem = { id: "settings", label: "Settings", icon: "settings", href: "#page=settings" }
+/** Settings opens the new React Settings (#2101 ST1–ST5), not the old page:
+ *  settingsHash() follows SETTINGS_PAGE, so ST4's rename needs no edit here. */
+export const SHELL_SETTINGS: ShellNavItem = { id: "settings", label: "Settings", icon: "settings", href: settingsHash() }
 
 export interface ShellNav {
   main: ShellNavItem[]
