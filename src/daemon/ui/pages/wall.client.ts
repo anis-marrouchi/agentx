@@ -67,6 +67,7 @@ import { WALL_CONTEXT_SCRIPT } from "./wall-context.client"
 import { WALL_RUN_ON_SCRIPT } from "./wall-run-on.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_FEED_SCRIPT } from "./wall-feed.client"
+import { WALL_POST_SCRIPT } from "./wall-post.client"
 import { fdStates, fdState, fdGroupOf, fdGroupTitle, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch } from "./wall-feed-model"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
@@ -161,6 +162,7 @@ ${WALL_EDITOR_SCRIPT}
 ${WALL_CAPACITY_SCRIPT}
 ${WALL_PAGES_SCRIPT}
 ${WALL_FEED_SCRIPT}
+${WALL_POST_SCRIPT}
 ${HUB_OPERATIONS_SCRIPT}
 ${WALL_LIVE_SCRIPT}
 ${WALL_PICTURES_SCRIPT}
@@ -347,14 +349,6 @@ ${HUB_NAV_SCRIPT}
   function agoTime(ms) {
     return '<time datetime="' + esc(new Date(ms).toISOString()) + '" title="' + esc(stamp(ms)) + '">' + esc(chAgo(ms, Date.now())) + '</time>';
   }
-  var ICON = {
-    reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 0 1 8-8h1a7 7 0 0 1 0 14H9l-5 3v-9z"/></svg>',
-    runs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9h13l-3-3M20 15H7l3 3"/></svg>',
-    time: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
-    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>',
-    proof: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>',
-    trace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l4-4 3 3 5-6"/></svg>',
-  };
   /** A run's link: the Wall's own Task page (#1381), which links on to the classic one. */
   function taskHref(taskId, agentId, node, done) {
     return wallTaskHref({ id: taskId }, agentId, node && node.daemonUrl, done);
@@ -549,103 +543,6 @@ ${HUB_NAV_SCRIPT}
   function qaText(p, short) {
     if (p.qa) return p.qa.verdict.toUpperCase() + ' by ' + p.qa.by + (short ? '' : ', ' + stamp(p.qa.at) + (p.qa.note ? ': ' + p.qa.note : ''));
     return p.awaitingQa ? 'Awaiting QA sign-off' : '';
-  }
-
-  // --- Feed ---
-  // A post leads with its result (#1242); the request it answers opens
-  // from under it with one tap. No result recorded: the request alone.
-  function leadHtml(p, via, full) {
-    var r = p.result;
-    if (!r) return '<div class="wp__via">' + via + '</div>' +
-      '<p class="wp__title">' + esc(p.headline) + ' <span class="chip chip--ghost">No result yet</span></p>';
-    var from = r.from === 'reply'
-      ? 'Answered ' + shortTime(r.at) + (r.taskId && r.agentId ? ' · <a href="' + esc(taskHref(r.taskId, r.agentId, p.node, !isOpen(p))) + '">run ' + esc(r.taskId) + '</a>' : '')
-      : 'Closed with ' + shortTime(r.at);
-    return '<div class="wp__result ax-md">' + md(r.text) + '</div>' +
-      '<div class="wp__from">' + from + '</div>' +
-      '<details class="wp__ask"' + (full ? ' open' : '') + '><summary><span class="k">Request</span> ' + esc(p.headline) + '</summary>' +
-        '<div class="wp__via">' + via + ' · <span title="Request id">' + esc(p.id) + '</span> · ' + when(p.createdAt) + '</div>' +
-      '</details>';
-  }
-  /** A post. In the feed it opens on its own when selected; full, it is that page. */
-  function postHtml(p, full) {
-    var multi = S.data && S.data.nodes && S.data.nodes.length > 1;
-    var conc = p.concurrent || [];
-    var cls = 'wp' + (full ? ' wp--open' : '') + (p.blocked ? ' is-blocked' : '') + (p.failedRuns ? ' is-failed' : '') + (conc.length ? ' is-concurrent' : '');
-    // Author line: name, @handle, time, as on a social feed; the status as a chip.
-    var by = '<button type="button" class="name" data-agent="' + esc(p.owner) + '">' + esc(nameOf(p.owner)) + '</button>' +
-      '<span class="h">@' + esc(p.owner) + '</span><span aria-hidden="true">·</span>' +
-      (full ? shortTime(p.lastMoveAt) : '<a class="wp__link" href="' + esc(hashOf(p.id)) + '" data-open="' + esc(p.id) + '" title="Open this post and its thread">' + shortTime(p.lastMoveAt) + '</a>') +
-      (multi ? '<span aria-hidden="true">·</span><span>' + esc(p.node.name) + '</span>' : '') + stateBadge(p.state);
-    var via = [
-      p.askedBy ? 'Asked by <b>' + esc(p.askedBy) + '</b>' : '',
-      'in <b>' + esc(groupKey(p)) + '</b>',
-      p.project ? 'project <b>' + esc(p.project) + '</b>' : '',
-      p.goal ? 'goal <b>' + esc(p.goal.title) + '</b>' : '',
-    ].filter(Boolean).join(' · ');
-    // Action row: thread, runs, minutes, then the links out.
-    var shown = full || S.shown[p.id];
-    var acts = [
-      full ? '' : '<button type="button" data-thread="' + esc(p.id) + '" aria-expanded="' + (shown ? 'true' : 'false') + '">' + ICON.reply + (shown ? 'Hide thread' : 'Thread') + '</button>',
-      '<span title="Runs that worked on it"' + (p.failedRuns ? ' class="is-err"' : '') + '>' + ICON.runs + p.runs + (p.runs === 1 ? ' run' : ' runs') + (p.failedRuns ? ', ' + p.failedRuns + ' failed' : '') + '</span>',
-      p.runMs ? '<span title="Minutes the runs took">' + ICON.time + mins(p.runMs) + ' min</span>' : '',
-    ];
-    // Compact in the feed (#1355): the author line, the result, one amber
-    // line when it waits on someone, and one row of icons with the
-    // project. Times, asker, group, GitLab time and the links are in the
-    // opened post.
-    if (!full) {
-      if (p.project) acts.push('<span title="Project">' + ICON.link + esc(p.project) + '</span>');
-      if (p.goal) acts.push('<button type="button" data-goal="' + esc(p.goal.id) + '" title="Show every post for this goal">Goal: ' + esc(p.goal.title) + '</button>');
-      return '<article class="' + cls + '" id="post-' + esc(p.id) + '" data-post="' + esc(p.id) + '" tabindex="0">' + avatar(p.owner) + '<div class="wp__b">' +
-        '<div class="wp__by">' + by + '</div>' +
-        leadHtml(p, via, false) + wsCopiesHtml(p, esc) +
-        (waitLine(p) ? '<div class="wp__block">' + waitLine(p) + '</div>' : '') +
-        '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
-        '<div class="wp__thread" data-for="' + esc(p.id) + '">' + (shown && S.threads[p.id] ? threadHtml(S.threads[p.id], p) : '') + '</div>' +
-        '</div></article>';
-    }
-    if (p.home) acts.push(/^https?:\/\//.test(p.home.link)
-      ? '<a href="' + esc(p.home.link) + '" target="_blank" rel="noopener" title="Home: ' + esc(p.home.link) + '">' + ICON.link + '<span class="home">Home: ' + esc(p.home.link.replace(/^https?:\/\//, '')) + '</span></a>'
-      : '<span title="Home">' + ICON.link + 'Home: ' + esc(p.home.link) + '</span>');
-    // A PR or MR home has its diff (#2102, wall-diff.client.ts).
-    acts.push(diffButtonHtml(p));
-    // The node its issue runs on (#2104), when the owner moved it.
-    if (p.runOn) acts.push('<span class="wro__on" title="This issue\'s runs go to ' + esc(p.runOn) + '">Runs on ' + esc(p.runOn) + '</span>');
-    if (p.evidence) acts.push(/^https?:\/\//.test(p.evidence)
-      ? '<a href="' + esc(p.evidence) + '" target="_blank" rel="noopener">' + ICON.proof + 'Proof</a>'
-      : '<span>' + ICON.proof + 'Proof: ' + esc(p.evidence) + '</span>');
-    (p.comments || []).slice(0, 3).forEach(function (c) {
-      if (/^https?:\/\//.test(c.url)) acts.push('<a href="' + esc(c.url) + '" target="_blank" rel="noopener" title="Comment posted ' + esc(stamp(c.at)) + '">' + ICON.reply + 'Comment' + (c.agentId ? ' by ' + esc(c.agentId) : '') + ' ' + shortTime(c.at) + '</a>');
-    });
-    if (p.lastRun) {
-      acts.push('<a href="' + esc(taskHref(p.lastRun.taskId, p.lastRun.agentId, p.node, !isOpen(p))) + '">' + ICON.trace + 'Task record and trace</a>');
-      acts.push('<a href="' + esc(activityHref(p.lastRun.agentId)) + '">Agent activity</a>');
-    }
-    // Opened, a post reads as a task (#1355): the request as its title,
-    // where it stands, its plan, the result, then the facts and the thread.
-    var t = S.threads[p.id];
-    return '<article class="' + cls + ' wtk" id="open-' + esc(p.id) + '">' + avatar(p.owner) + '<div class="wp__b">' +
-      '<div class="wp__by">' + by + '</div>' +
-      '<h1 class="wtk__title">' + esc(p.headline) + '</h1>' +
-      progressHtml(p, t && t.plan) +
-      (p.blocked ? '<div class="wp__block" title="Since ' + esc(stamp(p.blocked.since)) + '">Why it waits: ' + esc(p.blocked.why) + '</div>' : '') +
-      (t && t.plan && t.plan.length ? planHtml(t.plan) : '') +
-      resultHtml(p) +
-      (p.timeFlag ? '<div class="wp__flag">Time: ' + esc(p.timeFlag) + '</div>' : '') +
-      (forgeClosedOpen(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says ' + esc(p.forgeState.state) + (p.forgeState.closedBy ? ' by ' + esc(p.forgeState.closedBy) : '') + ', but this post is still open. Do not pick it up.</div>' : '') +
-      (forgeOpenClosed(p) ? '<div class="wp__flag">' + esc(forgeName(p.forgeState)) + ' says open, but this post is ' + esc(p.state) + '. Close it there or reopen it here.</div>' : '') +
-      (forgeFlags(p).length ? '<div class="wp__flag">GitLab time: ' + esc(forgeFlags(p).join('; ')) + '</div>' : '') +
-      conc.map(function (o) { return concHtml(o, function (id, agent) { return '<a href="' + esc(taskHref(id, agent, p.node, true)) + '">' + esc(id) + '</a>'; }); }).join('') +
-      cardsOf(p).map(function (c) { return cardHtml(c, p); }).join('') +
-      (qaText(p) ? '<div class="wp__qa">QA: ' + esc(qaText(p)) + (p.awaitingQa && p.qa ? ' — new verdict asked' : '') + '</div>' : '') +
-      factsHtml(p) +
-      '<div class="wp__acts">' + acts.filter(Boolean).join('') + '</div>' +
-      doHtml(p) +
-      diffHtml(p) +
-      '<div class="wp__thread" data-for="' + esc(p.id) + '"><h2 class="wp__th">Thread</h2>' +
-        (t ? threadHtml(t, p) : '') + '</div>' +
-      '</div></article>';
   }
 
   // --- The opened task (#1355) ---
@@ -889,39 +786,6 @@ ${HUB_NAV_SCRIPT}
     render();
   }
 
-  // --- One post on its own (#1316) ---
-  function postPageHtml() {
-    var p = findPost(S.post);
-    if (p) return postHtml(p, true);
-    if (!S.data) return '<p class="ax-wall__empty">Loading…</p>';
-    return '<p class="ax-wall__empty">This post is not on the ${HUB_NAME}: it may be older than seven days, or its node did not answer. <button type="button" class="wa-more" data-back>Back to the feed</button></p>';
-  }
-
-  // --- What the owner does from an open post (#1316) ---
-  function doHtml(p) {
-    var others = allAgents().filter(function (a) { return a.id !== p.owner; });
-    var draft = S.drafts[p.id] || '';
-    var live = liveTaskOf(p.owner);
-    return '<div class="wdo" data-for="' + esc(p.id) + '">' +
-      // Any post takes a comment (#1355): on a closed one it opens the post
-      // again; an @name in it brings that agent in with a post of its own.
-      '<label class="wdo__l" for="wdo-text">Comment to @' + esc(p.owner) + (isOpen(p) ? '' : ': this post is ' + esc(p.state) + ', so a comment opens it again') + '</label>' +
-      '<textarea id="wdo-text" class="wdo__t" rows="2" maxlength="4000" placeholder="It reaches ' + esc(nameOf(p.owner)) + ' like a message on any channel. Use @name to bring in another agent.">' + esc(draft) + '</textarea>' +
-      '<div class="wdo__row">' +
-        '<button type="button" class="ax-btn" data-act="comment">Comment</button>' +
-        (live ? '<a class="ax-btn ax-btn--ghost" href="' + esc(wallTaskHref(live.t, p.owner, live.n.url)) + '" title="' + esc(nameOf(p.owner)) + ' is working now">● Join live</a>' : '') +
-        '<button type="button" class="ax-btn ax-btn--ghost" data-act="call" title="' + esc(nameOf(p.owner)) + ' calls you on AgentX Voice about this post">Call ' + esc(nameOf(p.owner)) + '</button>' +
-        (others.length
-          ? '<span class="wdo__sp"><select id="wdo-with" aria-label="Talks with">' + others.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select>' +
-            '<button type="button" class="ax-btn ax-btn--ghost" data-act="space" title="Two agents talk about this post out loud on this computer">Start a Space</button></span>'
-          : '') +
-      '</div>' +
-      '<div id="wdo-close">' + closeHtml(p) + '</div>' +
-      '<div id="wdo-runon">' + runOnHtml(p) + '</div>' +
-      '<p class="wdo__n" id="wdo-note" role="status">' + esc(S.doNote || '') + '</p>' +
-      '<div id="wdo-space">' + spaceHtml() + '</div>' +
-    '</div>';
-  }
   async function act(method, path, body, peer) {
     try {
       var h = headers(peer);
@@ -1463,6 +1327,8 @@ ${HUB_NAV_SCRIPT}
     $('wall-tools').hidden = !posts_;
     $('wall-cols-btn').hidden = !(posts_ && S.view === 'list');
     document.querySelector('.ax-wall').classList.toggle('is-posts', posts_);
+    // The post page has the feed's column (#2101, wall-post.client.ts).
+    document.querySelector('.ax-wall').classList.toggle('is-post', page === 'post');
     // The "Filters" fold says how many are in use (#2352); the status tab and the search box show themselves.
     var fn = FILTERS.filter(function (k) { return k !== 'status' && k !== 'q' && f[k]; }).length;
     $('wall-fn').textContent = fn ? String(fn) : '';

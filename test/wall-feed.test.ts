@@ -470,6 +470,32 @@ describe("Running now does not wait on the feed (#1252)", () => {
   })
 })
 
+// #2101 (Anis, v0.289.0): the post page opened from a link draws its own
+// grey boxes in the feed's column before the posts load, so it does not jump.
+describe("Post page loading state (#2101)", () => {
+  it("draws the post's skeleton in the post column before the posts arrive", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const w = openWall({ hash: "#post=r1", feed: new Promise((r) => { answer = r }) })
+    await w.settle()
+    const loading = w.el("wall-post").innerHTML
+    expect(loading).toContain('class="wp wp--open wtk is-loading" aria-busy="true"')
+    expect(loading).not.toContain("Loading…</p>")
+    expect(w.wall.classList.contains("is-post")).toBe(true)
+    answer({ ok: true, status: 200, json: async () => WALL })
+    await w.settle()
+    const page = w.el("wall-post").innerHTML
+    expect(page).toContain('<article class="wp wp--open wtk" id="open-r1">')
+    expect(page).toContain('class="fd-compose"')
+    expect(w.wall.classList.contains("is-post")).toBe(true)
+  })
+
+  it("keeps the post column styles scoped to the post page", () => {
+    const html = renderWallPage()
+    expect(html).toContain(".ax-wall.is-post .ax-wall__main > :is(.ax-wall__head, .ax-wall__post) { max-width: 720px;")
+    expect(html).not.toMatch(/\n\.ax-wall__main > :is\(\.ax-wall__head, \.ax-wall__post\) \{ max-width/)
+  })
+})
+
 describe("Wall home first load (#1442)", () => {
   it("asks for the machines and a quick feed first, and the rest once the posts are drawn", async () => {
     let answer: (v: unknown) => void = () => {}
