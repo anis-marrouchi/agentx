@@ -12,14 +12,28 @@ import type { VoiceRequest, VoiceRequestStore } from "@/daemon/voice-requests-ap
 // that AgentX is upgrading. The next daemon runs every kept row once, oldest
 // first, before it takes new widget rows. Counts go to last.json through
 // the upgrade job, like the admission queue's (upgrade-queue-record.ts).
+//
+// The same holds earlier, while an upgrade holds new starts and waits for
+// idle (#2360): the daemon is not draining yet, but a widget /ask would wait
+// behind the hold in silence for up to its whole length. Its row is kept the
+// same way; if the hold ends with no switch, this daemon sends it itself.
 
 export const WIDGET_KEEP_FILE = "widget-keep.json"
 
-/** The words the widget says when its message is kept. */
-export function upgradingText(msLeft: number): string {
+/** The words the widget says when its message is kept. `msLeft` null: no
+ *  estimate, the upgrade waits for the current runs to finish. */
+export function upgradingText(msLeft: number | null): string {
+  if (msLeft === null || !Number.isFinite(msLeft)) return "AgentX is upgrading, back once the current runs finish. Your message is kept."
   // The rest of the drain, then about a minute for the new daemon to start.
   const n = Math.max(1, Math.ceil((Math.max(0, msLeft) + 60_000) / 60_000))
   return `AgentX is upgrading, back in about ${n} minute${n === 1 ? "" : "s"}. Your message is kept.`
+}
+
+/** Time left in an upgrade's start hold (#2360), or null when it has no
+ *  usable end: the line then says it waits for the current runs. */
+export function holdMsLeft(until: string | null | undefined, now: number): number | null {
+  const t = until ? Date.parse(until) : NaN
+  return Number.isFinite(t) && t > now ? t - now : null
 }
 
 /** The reply to a POST /ask that came during the drain, or null when it
@@ -27,7 +41,7 @@ export function upgradingText(msLeft: number): string {
 export function keepAskForUpgrade(input: {
   store: VoiceRequestStore | null
   body: Record<string, unknown>
-  msLeft: number
+  msLeft: number | null
   now?: number
 }): Reply | null {
   const { store, body } = input

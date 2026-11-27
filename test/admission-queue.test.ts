@@ -697,6 +697,20 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     }
   })
 
+  it("tells onHoldEnd once when the hold is released or expires (#2502)", async () => {
+    const { q, advance } = setup()
+    const ends: string[] = []
+    q.onHoldEnd = (how) => ends.push(how)
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
+    q.releaseHold()
+    q.releaseHold()
+    q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
+    advance(60_000)
+    await q.pump()
+    expect(q.startHold).toBeNull()
+    expect(ends).toEqual(["released", "expired"])
+  })
+
   it("does not move the deadline later on a repeat hold", async () => {
     const { q, advance } = setup()
     const first = q.holdStarts("agentx daemon upgrade", 1_000_000 + 60_000)
