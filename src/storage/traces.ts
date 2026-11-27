@@ -47,6 +47,9 @@ export interface TraceStartInput {
   workflowRunId?: string | null
   workflowId?: string | null
   workflowNodeId?: string | null
+  /** Why the daemon started the run (jobs/wake.ts WakeKind), #2012. NULL
+   *  for any other run and for rows from before the column. */
+  wakeKind?: string | null
   intentEventId?: string | null
   intentDecidedBy?: string | null
   resumeSessionId?: string | null
@@ -221,8 +224,8 @@ export function recordTraceStart(
       task_id, agent_id, channel, chat_id, workflow_run_id, workflow_id,
       workflow_node_id, intent_event_id, intent_decided_by, resume_session_id,
       model, status, started_at, message_preview, original_message,
-      resume_origin, resume_attempt, resumed_from, person, sender
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?, ?, ?, ?, ?, ?)
+      resume_origin, resume_attempt, resumed_from, person, sender, wake_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-flight', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     taskId,
     input.agentId,
@@ -243,6 +246,7 @@ export function recordTraceStart(
     input.resumedFrom ?? null,
     input.person ?? null,
     input.sender ?? null,
+    input.wakeKind ?? null,
   )
   return taskId
 }

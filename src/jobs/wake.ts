@@ -60,13 +60,34 @@ export function wakeContext(job: Pick<JobRecord, "id" | "channel" | "chatId">): 
  *  wake that runs in a context of its own (an owner's request is woken as
  *  a pick-up): the mark makes it wait for a slot instead of being queued. */
 export function markWake<T extends object>(ctx: T, jobId: string): T {
-  return Object.assign(ctx, { [WAKE_MARK]: jobId })
+  return markWakeKind(Object.assign(ctx, { [WAKE_MARK]: jobId }), "job")
 }
 
 /** The job this run was started to wake, when the daemon started it. */
 export function wokenJobId(ctx: object | undefined | null): string | undefined {
   const id = ctx ? (ctx as Record<symbol, unknown>)[WAKE_MARK] : undefined
   return typeof id === "string" && id ? id : undefined
+}
+
+/** Why the daemon itself started a run (#2012): saved as
+ *  task_traces.wake_kind, so each kind of wake is a job type of its own
+ *  with its own numbers, instead of one lump of chat runs. */
+export type WakeKind =
+  | "job" | "pickup" | "overdue" | "no-due" | "no-proof" | "proof-block" | "pr-due" | "pr-lead"
+  | "plan-dispatch" | "plan-nudge" | "plan-continue" | "owner-words"
+
+const WAKE_KIND = Symbol("runs.wakeKind")
+
+/** Marks `ctx` as a run the daemon started for `kind`. A symbol key, like
+ *  the wake mark: a caller of /task cannot set it. */
+export function markWakeKind<T extends object>(ctx: T, kind: WakeKind): T {
+  return Object.assign(ctx, { [WAKE_KIND]: kind })
+}
+
+/** The kind of daemon wake that started this run; undefined for any other run. */
+export function wakeKindOf(ctx: object | undefined | null): WakeKind | undefined {
+  const k = ctx ? (ctx as Record<symbol, unknown>)[WAKE_KIND] : undefined
+  return typeof k === "string" && k ? k as WakeKind : undefined
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)

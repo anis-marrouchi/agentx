@@ -69,25 +69,30 @@ export interface JobType {
   channel: string
   workflowId: string | null
   cronId: string | null
+  /** A run the daemon itself started (task_traces.wake_kind, #2012), when
+   *  it is not a cron or workflow run. */
+  wakeKind: string | null
 }
 
 /** The job type of a run. A `workflow:<id>` chatId names the run, not the
- *  workflow, so only `workflowId` says which workflow it is. */
-export function jobTypeOf(agentId: string, channel: string, chatId: string | null | undefined, workflowId: string | null | undefined): JobType {
+ *  workflow, so only `workflowId` says which workflow it is. A workflow or
+ *  cron wins over the wake kind. */
+export function jobTypeOf(agentId: string, channel: string, chatId: string | null | undefined, workflowId: string | null | undefined, wakeKind?: string | null): JobType {
   const cronId = !workflowId && typeof chatId === "string" && chatId.startsWith("cron:") ? chatId.slice(5) || null : null
-  return { agentId, channel, workflowId: workflowId || null, cronId }
+  return { agentId, channel, workflowId: workflowId || null, cronId, wakeKind: !workflowId && !cronId && wakeKind ? wakeKind : null }
 }
 
-/** A cron job or a workflow: work that repeats, so its median means
- *  something. A chat job type lumps unrelated conversations together. */
+/** A cron job, a workflow or a kind of daemon wake: work that repeats,
+ *  so its median means something. A chat job type lumps unrelated
+ *  conversations together. */
 export function hasJobIdentity(jt: JobType): boolean {
-  return !!(jt.workflowId || jt.cronId)
+  return !!(jt.workflowId || jt.cronId || jt.wakeKind)
 }
 
 /** The words every cost detail starts with. They survive normalizeDetail,
  *  so one job type stays one group. */
 export function jobKey(jt: JobType): string {
-  return `job ${jt.channel} ${jt.workflowId ?? jt.cronId ?? "chat"}`
+  return `job ${jt.channel} ${jt.workflowId ?? jt.cronId ?? (jt.wakeKind ? `wake:${jt.wakeKind}` : "chat")}`
 }
 
 /** Base + tier2 tokens of a trace row; tier2 is NULL before v12. */
@@ -100,8 +105,10 @@ function jobWhere(jt: JobType): { sql: string; args: unknown[] } {
   const base = "agent_id = ? AND channel = ?"
   if (jt.workflowId) return { sql: `${base} AND workflow_id = ?`, args: [jt.agentId, jt.channel, jt.workflowId] }
   if (jt.cronId) return { sql: `${base} AND chat_id = ?`, args: [jt.agentId, jt.channel, `cron:${jt.cronId}`] }
+  const chat = `${base} AND workflow_id IS NULL AND (chat_id IS NULL OR (chat_id NOT LIKE 'cron:%' AND chat_id NOT LIKE 'workflow:%'))`
+  if (jt.wakeKind) return { sql: `${chat} AND wake_kind = ?`, args: [jt.agentId, jt.channel, jt.wakeKind] }
   return {
-    sql: `${base} AND workflow_id IS NULL AND (chat_id IS NULL OR (chat_id NOT LIKE 'cron:%' AND chat_id NOT LIKE 'workflow:%'))`,
+    sql: `${chat} AND wake_kind IS NULL`,
     args: [jt.agentId, jt.channel],
   }
 }
@@ -136,6 +143,8 @@ export interface CostRun {
   channel: string
   chatId?: string | null
   workflowId?: string | null
+  /** task_traces.wake_kind (#2012). */
+  wakeKind?: string | null
   startedAt: number
   /** Continued a provider session. */
   resumed: boolean
@@ -161,7 +170,7 @@ export interface CostHistory {
 
 /** The cost signals of one finished run. Pure: no database, no clock. */
 export function costSignals(run: CostRun, history: CostHistory = {}): Signal[] {
-  const jt = jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId)
+  const jt = jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId, run.wakeKind)
   const key = jobKey(jt)
   const out: Signal[] = []
   const add = (kind: SignalKind, detail: string) => out.push({ kind, agentId: run.agentId, ref: run.taskId, detail: `${key}: ${detail}` })
@@ -211,7 +220,7 @@ export interface Query { sql: string; args: unknown[] }
 
 /** The job type's past successful runs, last BASELINE_DAYS. */
 export function baselineQuery(run: CostRun, now: number): Query {
-  const w = jobWhere(jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId))
+  const w = jobWhere(jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId, run.wakeKind))
   return {
     sql: `SELECT ${TOTAL_SQL} AS t ${FROM_TRACES} WHERE ${w.sql} AND started_at >= ? AND started_at < ?
       AND status = 'ok' AND task_id != ? AND ${TOTAL_SQL} > 0 ORDER BY started_at DESC LIMIT ?`,
@@ -252,7 +261,7 @@ export function jobRunsQuery(jt: JobType, from: number, to: number): Query {
  *  fire the kind it is for. Synchronous; the caller catches. */
 export function readCostHistory(db: Database.Database, run: CostRun, now = Date.now()): CostHistory {
   const h: CostHistory = {}
-  const jt = jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId)
+  const jt = jobTypeOf(run.agentId, run.channel, run.chatId, run.workflowId, run.wakeKind)
   if (hasJobIdentity(jt) && runTotal(run.usage) >= COST_HIGH_MIN_TOKENS) {
     const q = baselineQuery(run, now)
     h.pastTotals = (db.prepare(q.sql).all(...q.args) as Array<{ t: number }>).map((r) => r.t)
@@ -294,11 +303,11 @@ export function queueCostSignals(run: CostRun, now?: number): void {
 /** The job types of the runs `taskIds` name. */
 export function jobTypesOfTraces(db: Database.Database, taskIds: string[]): JobType[] {
   const out = new Map<string, JobType>()
-  const stmt = db.prepare("SELECT agent_id AS agentId, channel, chat_id AS chatId, workflow_id AS workflowId FROM task_traces WHERE task_id = ?")
+  const stmt = db.prepare("SELECT agent_id AS agentId, channel, chat_id AS chatId, workflow_id AS workflowId, wake_kind AS wakeKind FROM task_traces WHERE task_id = ?")
   for (const id of new Set(taskIds)) {
-    const r = stmt.get(id) as { agentId: string; channel: string | null; chatId: string | null; workflowId: string | null } | undefined
+    const r = stmt.get(id) as { agentId: string; channel: string | null; chatId: string | null; workflowId: string | null; wakeKind: string | null } | undefined
     if (!r) continue
-    const jt = jobTypeOf(r.agentId, r.channel ?? "", r.chatId, r.workflowId)
+    const jt = jobTypeOf(r.agentId, r.channel ?? "", r.chatId, r.workflowId, r.wakeKind)
     out.set(`${jt.agentId}|${jt.channel}|${jobKey(jt)}`, jt)
   }
   return [...out.values()]

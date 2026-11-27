@@ -137,6 +137,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           originalMessage: p.fullMessage ?? p.messagePreview,
           workflowRunId,
           workflowId: p.workflowId ?? null,
+          wakeKind: p.wakeKind ?? null,
           resumeOrigin: p.resumeOrigin ?? null,
           resumeAttempt: p.resumeAttempt ?? 0,
           resumedFrom: p.resumedFrom ?? null,
