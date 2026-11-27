@@ -340,7 +340,7 @@ Open **Workflows** and open a run: each step is one line with its state word at 
 
 ## Put the app on your phone
 
-Select **Mobile app** at the bottom of the nav (with the simple layout, turn **Mobile app page** on in [Settings › Layout](./settings.md#layout) first, or open `/hub#page=mobile`). In the simple shell it opens in the centre, at `/hub#page=home&pane=mobile`, under **More**. The page says what the phone app does and how to install it in five steps: Tailscale on both devices, two `tailscale serve` commands, `agentx app pair --name "My phone"`, scan the QR code, add it to the home screen. Each command has a **Copy** button. The full guide is [Phone app](./mobile-app.md).
+Select **Mobile app** at the bottom of the nav (with the simple layout, turn **Mobile app page** on in [Settings › Layout](./settings.md#layout) first, or open `/hub#page=mobile`). In the simple shell it opens in the centre, at `/hub#page=home&pane=mobile`, under **More**. The page says what the phone app does and how to install it in five steps: Tailscale on both devices, two `tailscale serve` commands, `agentx app pair --name "My phone"`, scan the QR code, add it to the home screen. Each command has a **Copy** button. Beside the steps (above them in a narrow window), a phone leans slowly and shows the phone app's Chat, Desk, Fleet and Alerts in turn; with reduced motion on, it stays still on Chat. The full guide is [Phone app](./mobile-app.md).
 
 ![The Hub's Mobile app page with setup steps in a demo instance](/screenshots/wall/mobile-page.png)
 

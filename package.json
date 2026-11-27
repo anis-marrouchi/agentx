@@ -83,6 +83,7 @@
     "docs:seed": "node docs/.scripts/seed-demo.mjs",
     "docs:shots": "node docs/.scripts/capture.mjs",
     "docs:shots:mobile": "node docs/.scripts/capture-mobile.mjs",
+    "hub:phone-screens": "node docs/.scripts/hub-phone-screens.mjs",
     "docs:social-preview": "node docs/.scripts/social-preview.mjs",
     "docs:preview": "vitepress preview docs",
     "prepublishOnly": "npm run build",

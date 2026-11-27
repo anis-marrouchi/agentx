@@ -5,6 +5,7 @@
 // words, drawn in the shell's centre; a static page, no read.
 import { useState, type ReactNode } from "react"
 import { Button, Icon, cn } from "../ui"
+import { PhonePreview } from "./PhonePreview"
 
 // The docs website page, never the raw .md on GitHub (Anis 2026-11-25).
 export const MOBILE_GUIDE = "https://agentx-docs.pages.dev/dashboard/mobile-app"
@@ -60,7 +61,7 @@ export function MobilePane({ phoneBar }: { phoneBar?: ReactNode }) {
         </a>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-2xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
+        <div className="mx-auto grid max-w-2xl gap-8 px-4 py-6 sm:px-6 sm:py-8 lg:max-w-5xl lg:grid-cols-[minmax(0,42rem)_15rem] lg:justify-between lg:gap-x-12">
           <div data-mobile="why">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">Your agents, in your pocket</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">The same agents and the same chats as here, on your phone. Hold to talk to the agent you are with, answer what waits for you on the Desk with one tap, and get a note when a run ends or an agent asks you something.</p>
@@ -72,6 +73,10 @@ export function MobilePane({ phoneBar }: { phoneBar?: ReactNode }) {
                 </li>
               ))}
             </ul>
+          </div>
+          {/* Between the why and the steps on a narrow window, beside them on a wide one. */}
+          <div className="lg:col-start-2 lg:row-span-4 lg:row-start-1">
+            <PhonePreview className="lg:sticky lg:top-4" />
           </div>
           <div data-mobile="install">
             <h2 className="text-sm font-medium text-foreground">Install it in five minutes</h2>

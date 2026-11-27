@@ -96,6 +96,14 @@
      crosses the words while the agent works. Use with motion-safe:. */
   --animate-ax-shimmer: ax-shimmer 2s linear infinite;
   @keyframes ax-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+  /* The Mobile app page's phone (#2459): a slow lean of 6 degrees or less,
+     there and back. Off under reduced motion. */
+  --animate-ax-phone-tilt: ax-phone-tilt 14s ease-in-out infinite alternate;
+  @keyframes ax-phone-tilt {
+    from { transform: rotateY(-6deg) rotateX(3deg); }
+    to { transform: rotateY(6deg) rotateX(1deg); }
+  }
 }
 
 /* The roots. */
