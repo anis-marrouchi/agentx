@@ -1,0 +1,206 @@
+/* The orb's look: orca-design on the AgentX tokens. The values below are the
+   --ax-* tokens of src/daemon/ui/tokens.ts (light and Orca dark), copied
+   because this page is a local file and does not load the dashboard's CSS.
+   Colour is for state only: grey orb at rest, AgentX blue while it works. */
+
+:root {
+  --ax-blue: #1f66e5;
+  --ax-blue-t: #e8f0ff;
+  --ax-surface: #ffffff;
+  --ax-surface-3: #f5f5f5;
+  --ax-border: #e5e5e5;
+  --ax-text: #0a0a0a;
+  --ax-muted: #696969;
+  --ax-primary: #1f66e5;
+  --ax-primary-fg: #ffffff;
+  --ax-ring: #2979ff;
+  --ax-radius-md: 8px;
+  --ax-radius-lg: 14px;
+  --ax-shadow-lg: 0 10px 30px -10px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
+  --ax-font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --level: 0;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ax-blue: #4d94ff;
+    --ax-blue-t: #1c2b47;
+    --ax-surface: #171717;
+    --ax-surface-3: #262626;
+    --ax-border: rgb(255 255 255 / 0.08);
+    --ax-text: #f0f0f0;
+    --ax-muted: #acacac;
+    --ax-ring: #4d94ff;
+    --ax-shadow-lg: 0 10px 30px -10px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+    color-scheme: dark;
+  }
+}
+
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body { display: flex; justify-content: center; align-items: flex-start; }
+body {
+  font: 13px/1.4 var(--ax-font);
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ax-text);
+  user-select: none;
+}
+
+/* The window is sized to this box (orb-window.ts), so the space around the
+   orb and the pill stays clickable for the apps beneath. */
+.stage {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 20px;
+}
+
+/* --- The orb: 56px, a floating surface (hairline + floating shadow) --- */
+.orb-wrap { position: relative; width: 56px; height: 56px; }
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--ax-border);
+  background: var(--ax-surface);
+  color: var(--ax-muted);
+  box-shadow: var(--ax-shadow-lg);
+  cursor: grab;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.orb:focus-visible { outline: 3px solid color-mix(in srgb, var(--ax-ring) 50%, transparent); outline-offset: 2px; }
+.orb:active { cursor: grabbing; }
+
+.icon {
+  grid-area: 1 / 1;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: none;
+}
+
+/* The rim: a level ring while listening, a turning arc while thinking. */
+.orb-ring {
+  position: absolute;
+  inset: -5px;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  fill: none;
+  stroke: var(--ax-blue);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* idle: grey orb, a mic says "hold to talk". */
+[data-state="idle"] .icon-mic { display: block; }
+
+/* listening: blue mic, the rim follows the voice level (--level 0..1). */
+[data-state="listening"] .orb { color: var(--ax-blue); border-color: var(--ax-blue); }
+[data-state="listening"] .icon-mic { display: block; }
+[data-state="listening"] .orb-ring {
+  opacity: calc(0.35 + var(--level) * 0.65);
+  transform: scale(calc(1 + var(--level) * 0.12));
+  transition: transform 100ms var(--ease-out), opacity 100ms var(--ease-out);
+}
+
+/* thinking: the one allowed endless motion, a spinner arc on the rim. */
+[data-state="thinking"] .orb { color: var(--ax-blue); }
+[data-state="thinking"] .orb-ring { opacity: 1; stroke-dasharray: 60 140; animation: orb-spin 1s linear infinite; }
+[data-state="thinking"] .icon-mic { display: block; opacity: 0.5; }
+
+/* speaking: audio lines that move with the agent's voice. */
+[data-state="speaking"] .orb { color: var(--ax-blue); background: var(--ax-blue-t); border-color: transparent; }
+[data-state="speaking"] .icon-lines { display: block; }
+[data-state="speaking"] .icon-lines path { transform-box: fill-box; transform-origin: center; animation: orb-bar 900ms ease-in-out infinite alternate; }
+[data-state="speaking"] .icon-lines path:nth-child(2n) { animation-delay: -300ms; }
+[data-state="speaking"] .icon-lines path:nth-child(3n) { animation-delay: -600ms; }
+
+/* call-back: a filled blue orb with a phone, the one primary colour fill. */
+[data-state="callback"] .orb { background: var(--ax-primary); color: var(--ax-primary-fg); border-color: transparent; }
+[data-state="callback"] .icon-phone { display: block; }
+
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes orb-bar { from { transform: scaleY(0.45); } to { transform: scaleY(1); } }
+
+/* --- Unread: a count on the orb (from the open-requests list, PR 3) --- */
+.unread {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px solid var(--ax-surface);
+  background: var(--ax-blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- The pill under the orb: one soft surface, one line of text --- */
+.pill {
+  max-width: 280px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: var(--ax-radius-lg);
+  border: 1px solid var(--ax-border);
+  background: var(--ax-surface);
+  box-shadow: var(--ax-shadow-lg);
+  text-align: center;
+  animation: pill-in 180ms var(--ease-out);
+}
+.pill[hidden], .pill-actions[hidden], .unread[hidden] { display: none; }
+.pill p { margin: 0; }
+.pill-title { font-weight: 500; }
+.pill-title:empty, .pill-text:empty { display: none; }
+.pill-text { color: var(--ax-text); }
+/* Words not yet final (listening) and work in progress (thinking) are grey. */
+[data-state="listening"] .pill-text, [data-state="thinking"] .pill-text { color: var(--ax-muted); }
+[data-state="callback"] .pill { text-align: left; padding: 12px; }
+[data-state="callback"] .pill-text { color: var(--ax-muted); font-size: 12.5px; }
+
+.pill-actions { display: flex; gap: 4px; margin-top: 10px; }
+.btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--ax-radius-md);
+  border: 1px solid transparent;
+  font: 500 13px/1 var(--ax-font);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ax-ring) 50%, transparent); outline-offset: 1px; }
+.btn-primary { background: var(--ax-primary); color: var(--ax-primary-fg); }
+.btn-ghost { background: transparent; color: var(--ax-text); }
+@media (hover: hover) {
+  .btn-ghost:hover { background: var(--ax-surface-3); }
+}
+
+@keyframes pill-in { from { opacity: 0; transform: translateY(4px); } }
+
+/* Reduce Motion: no turning, no moving bars, no slide. The state still reads
+   from the colour, the icon and the words. */
+@media (prefers-reduced-motion: reduce) {
+  .orb, .btn, [data-state="listening"] .orb-ring { transition: none; }
+  [data-state="thinking"] .orb-ring, [data-state="speaking"] .icon-lines path { animation: none; }
+  .pill { animation: pill-fade 120ms ease-out; }
+}
+@keyframes pill-fade { from { opacity: 0; } }

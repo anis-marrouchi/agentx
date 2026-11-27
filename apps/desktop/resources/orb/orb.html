@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- The floating orb (#2265 PR 2). One orb and one pill under it; the five
+     states from design note v2: idle, listening, thinking, speaking, call-back.
+     Icons: lucide (ISC licence, https://lucide.dev), drawn inline. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+<title>AgentX orb</title>
+<link rel="stylesheet" href="orb.css">
+</head>
+<body>
+<main id="stage" class="stage" data-slot="orb-stage" data-state="idle">
+  <div class="orb-wrap">
+    <button id="orb" class="orb" data-slot="orb" type="button" aria-label="Hold to talk" title="Hold to talk">
+      <svg class="orb-ring" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30"/></svg>
+      <svg class="icon icon-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
+      <svg class="icon icon-lines" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>
+      <svg class="icon icon-phone" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></svg>
+    </button>
+    <span id="unread" class="unread" data-slot="orb-unread" hidden></span>
+  </div>
+  <section id="pill" class="pill" data-slot="orb-pill" role="status" aria-live="polite" hidden>
+    <p id="title" class="pill-title"></p>
+    <p id="text" class="pill-text"></p>
+    <div id="actions" class="pill-actions" hidden>
+      <button type="button" class="btn btn-primary" data-action="answer">Answer</button>
+      <button type="button" class="btn btn-ghost" data-action="later">Later</button>
+      <button type="button" class="btn btn-ghost" data-action="decline">Decline</button>
+    </div>
+  </section>
+  <!-- Room for the #2464 assistant panel (design note v3): empty in PR 2. -->
+  <div id="panel" data-slot="orb-panel" hidden></div>
+</main>
+<script src="orb.js"></script>
+</body>
+</html>

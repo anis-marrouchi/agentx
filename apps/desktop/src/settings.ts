@@ -14,9 +14,14 @@ export interface AppSettings {
   showOnLaunch: boolean
   /** What closing the window does: hide it to the tray, or quit the app. */
   closeAction: CloseAction
+  /** Show the floating orb (#2265). */
+  orbVisible: boolean
+  /** The global talk key (⌥Space / Alt+Space). Off until the person turns it on:
+   *  on macOS it needs a permission, asked only then (#2265 v3 Q2). */
+  globalKey: boolean
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide" }
+export const DEFAULT_SETTINGS: AppSettings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false }
 
 export const SETTINGS_FILE = "settings.json"
 
@@ -31,6 +36,8 @@ export function parseSettings(raw: unknown): AppSettings {
     openAtLogin: typeof o.openAtLogin === "boolean" ? o.openAtLogin : DEFAULT_SETTINGS.openAtLogin,
     showOnLaunch: typeof o.showOnLaunch === "boolean" ? o.showOnLaunch : DEFAULT_SETTINGS.showOnLaunch,
     closeAction: o.closeAction === "hide" || o.closeAction === "quit" ? o.closeAction : DEFAULT_SETTINGS.closeAction,
+    orbVisible: typeof o.orbVisible === "boolean" ? o.orbVisible : DEFAULT_SETTINGS.orbVisible,
+    globalKey: typeof o.globalKey === "boolean" ? o.globalKey : DEFAULT_SETTINGS.globalKey,
   }
 }
 

@@ -91,5 +91,8 @@
       "maintainer": "AgentX"
     }
   },
-  "homepage": "https://github.com/anis-marrouchi/agentx"
+  "homepage": "https://github.com/anis-marrouchi/agentx",
+  "optionalDependencies": {
+    "uiohook-napi": "^1.5.5"
+  }
 }

@@ -14,6 +14,9 @@ import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, resta
 import type { TrayActions, TrayState } from "./menu.js"
 import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
+import { hideOrb, orbVisible, setupOrb, showOrb, showOrbState } from "./orb-window.js"
+import { applyGlobalKey, askForGlobalKey, globalKeyMode, KEY_LABEL, stopGlobalKey } from "./global-key.js"
+import { isWayland, talkModeLine } from "./talk-key.js"
 
 const BASE = dashboardUrl()
 const HUB = hubUrl(BASE)
@@ -34,6 +37,12 @@ let daemonManaged: string | null = null
 // launchd/systemd seen running the daemon this session. Kept while it is down: during
 // `daemon upgrade` the job is booted out for a moment, and Start must stay off then too.
 let managedSeen: string | null = null
+
+// C9 (#2265): GNOME on Wayland may ignore "always on top" for a native
+// Wayland window. Under XWayland (X11 through Wayland) the orb stays on top,
+// so on a Wayland session the app runs as an X11 client. Set before ready.
+const WAYLAND = isWayland(process.platform, process.env)
+if (WAYLAND) app.commandLine.appendSwitch("ozone-platform", "x11")
 
 function log(message: string, err?: unknown): void {
   process.stderr.write(`[agentx-desktop] ${message}${err ? `: ${String(err)}` : ""}\n`)
@@ -131,6 +140,7 @@ function toggleWindow(): void {
 
 const trayActions: TrayActions = {
   onToggleWindow: toggleWindow,
+  onToggleOrb: () => changeSetting({ orbVisible: !orbVisible() }),
   onQuit: () => app.quit(),
   onDaemon: (action) => void daemonAction(action),
   onSetting: changeSetting,
@@ -145,6 +155,8 @@ function trayState(): TrayState {
     loginItemSupported: LOGIN_ITEM_SUPPORTED,
     startRefusal: startRefusal(daemonStatus, DAEMON, daemonManaged),
     remote: DAEMON_REMOTE,
+    orbVisible: orbVisible(),
+    talkLine: talkModeLine(globalKeyMode(), KEY_LABEL),
   }
 }
 
@@ -152,8 +164,25 @@ function refreshTray(): void {
   updateTray(trayActions, trayState())
 }
 
+// The orb and the global talk key, as the settings say. In PR 2 the key
+// only shows "listening" on the orb; PR 3 records and sends.
+function applyTalkKey(): void {
+  applyGlobalKey(settings.globalKey, WAYLAND, (edge) => showOrbState({ state: edge === "start" ? "listening" : "idle" }), log)
+}
+
 function changeSetting(change: Partial<AppSettings>): void {
+  if (change.globalKey) {
+    // Turned on: on macOS a permission is asked first, with the reason (v3 Q2).
+    void askForGlobalKey().then((yes) => applySetting({ globalKey: yes }))
+    return
+  }
+  applySetting(change)
+}
+
+function applySetting(change: Partial<AppSettings>): void {
   settings = { ...settings, ...change }
+  if ("orbVisible" in change) (settings.orbVisible ? showOrb : hideOrb)()
+  if ("globalKey" in change) applyTalkKey()
   if ("openAtLogin" in change && !applyLoginItem()) {
     // The system kept its own value: show that, not the wish.
     settings.openAtLogin = !settings.openAtLogin
@@ -310,6 +339,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     quitting = true
   })
+  app.on("will-quit", stopGlobalKey)
   app.on("window-all-closed", () => {
     // Stay in the top bar; Quit is in the tray menu and the app menu.
   })
@@ -324,6 +354,9 @@ if (!app.requestSingleInstanceLock()) {
       if (!applyLoginItem()) settings.openAtLogin = app.getLoginItemSettings().openAtLogin
       guardDevices()
       appMenu()
+      setupOrb({ resources: RESOURCES, userData: app.getPath("userData"), log, onChange: refreshTray })
+      if (settings.orbVisible) showOrb()
+      applyTalkKey()
       createTray(RESOURCES, trayActions, trayState())
       void pollDaemon()
       setInterval(() => void pollDaemon(), 5000)

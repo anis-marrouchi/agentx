@@ -3,22 +3,35 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import menu from "../dist/menu.js"
 
-const settings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide" }
+const settings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false }
 const calls = []
 const actions = {
   onToggleWindow: () => calls.push("toggle"),
+  onToggleOrb: () => calls.push("orb"),
   onQuit: () => calls.push("quit"),
   onDaemon: (a) => calls.push(a),
   onSetting: (c) => calls.push(c),
 }
-const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, remote: false, ...over })
+const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, remote: false, orbVisible: true, talkLine: "Talk: hold the orb (global key off)", ...over })
 const items = (s) => menu.menuTemplate(s, actions).filter((i) => i.type !== "separator")
 const byLabel = (s, prefix) => items(s).find((i) => i.label.startsWith(prefix))
 
 test("all six controls are in the menu", () => {
   const labels = items(state()).map((i) => i.label)
-  assert.deepEqual(labels, ["Hide AgentX", "Daemon: running", "Start", "Stop", "Restart…", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
+  assert.deepEqual(labels, ["Hide AgentX", "Hide orb", "Talk: hold the orb (global key off)", "Global talk key", "Daemon: running", "Start", "Stop", "Restart…", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
   assert.equal(byLabel(state({ windowVisible: false }), "Show").label, "Show AgentX")
+})
+
+test("orb toggle, talk line and global key follow the state (#2265)", () => {
+  assert.equal(byLabel(state({ orbVisible: false }), "Show orb").label, "Show orb")
+  const line = "Talk: press ⌥Space, press again to send (Wayland does not let apps see a key held down)"
+  const talk = byLabel(state({ talkLine: line }), "Talk:")
+  assert.deepEqual([talk.label, talk.enabled], [line, false])
+  calls.length = 0
+  byLabel(state(), "Hide orb").click()
+  byLabel(state(), "Global talk key").click({ checked: true })
+  assert.deepEqual(calls, ["orb", { globalKey: true }])
+  assert.equal(byLabel(state({ settings: { ...settings, globalKey: true } }), "Global talk key").checked, true)
 })
 
 test("daemon buttons follow its status", () => {
@@ -50,7 +63,7 @@ test("daemon buttons follow its status", () => {
 })
 
 test("settings items show and change the saved values", () => {
-  const s = state({ settings: { openAtLogin: true, showOnLaunch: false, closeAction: "quit" } })
+  const s = state({ settings: { ...settings, openAtLogin: true, showOnLaunch: false, closeAction: "quit" } })
   assert.equal(byLabel(s, "Open at login").checked, true)
   assert.equal(byLabel(s, "Show the window").checked, false)
   const radios = byLabel(s, "Closing").submenu
