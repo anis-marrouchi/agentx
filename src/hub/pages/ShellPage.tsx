@@ -37,7 +37,7 @@ import { WaitingPane } from "./ShellWaiting"
 import { ProjectsPane } from "./ShellProjects"
 import { ActivityPane } from "./ShellActivity"
 import {
-  AfSkeletonRows, AfStateLabel, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
+  AfSkeletonRows, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
   Tooltip, TooltipContent, TooltipTrigger, cn,
 } from "../ui"
 
@@ -76,16 +76,73 @@ export function ChatAnswer({ md, streaming }: { md: string; streaming: boolean }
   )
 }
 
-/** A pending answer: the label, then the words so far from the run's live
- *  output, read as the old panel reads it, without any {"answer":"…"} wrapper. */
+/** A pending answer: the shimmering "Working…" line (A15), then the words
+ *  so far from the run's live output, read as the old panel reads it,
+ *  without any {"answer":"…"} wrapper. Still words under reduced motion. */
 function PendingAnswer({ text }: { text: string }) {
   return (
-    <div className="flex flex-col gap-2" data-shell="live">
-      <AfStateLabel state="running" label="Working…" />
+    <div className="flex flex-col gap-2" data-shell="live" aria-busy="true">
+      <span
+        role="status"
+        className="w-fit bg-[linear-gradient(90deg,var(--color-muted-foreground)_40%,var(--color-foreground)_50%,var(--color-muted-foreground)_60%)] bg-[length:200%_100%] bg-clip-text text-sm text-transparent motion-safe:animate-ax-shimmer reduce-effects:bg-none reduce-effects:text-muted-foreground"
+      >
+        Working…
+      </span>
       {text ? <ChatAnswer md={text} streaming /> : null}
     </div>
   )
 }
+
+/** Copy, under the last answer (A8): the icon turns into a check for a moment. */
+function CopyAnswer({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  useEffect(() => {
+    if (!done) return
+    const t = setTimeout(() => setDone(false), 1500)
+    return () => clearTimeout(t)
+  }, [done])
+  return (
+    <div className="mt-1 flex items-center gap-1" data-shell="actions">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost" size="icon-sm" aria-label={done ? "Copied" : "Copy"} className="size-7 text-muted-foreground"
+            onClick={() => { void navigator.clipboard?.writeText(text).then(() => setDone(true), () => {}) }}
+          >
+            <Icon name={done ? "check" : "copy"} className="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{done ? "Copied" : "Copy"}</TooltipContent>
+      </Tooltip>
+    </div>
+  )
+}
+
+/** One turn of the chat. A failed answer shows its error with Try again,
+ *  which sends the question before it again (P10). */
+export function ChatTurn({ m, live = "", last = false, onRetry }: { m: ChatMessage; live?: string; last?: boolean; onRetry?: () => void }) {
+  return (
+    <div data-role={m.role} className={cn("text-sm", m.role === "user" ? "self-end max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-2" : "min-w-0")}>
+      {m.status === "pending" ? <PendingAnswer text={live} />
+        : m.status === "error" ? (
+          <div className="flex flex-col items-start gap-2" data-shell="turn-error">
+            <span className="whitespace-pre-wrap text-err-ink">{m.content || "The run ended with an error."}</span>
+            {onRetry ? <Button variant="outline" size="sm" onClick={onRetry}><Icon name="rotate-ccw" />Try again</Button> : null}
+          </div>
+        )
+        : m.role === "assistant" ? (
+          <>
+            <ChatAnswer md={storedAnswer(m.content)} streaming={false} />
+            {last ? <CopyAnswer text={storedAnswer(m.content)} /> : null}
+          </>
+        )
+        : m.content}
+    </div>
+  )
+}
+
+/** Ideas for an empty chat (A14): a pill sends its words. */
+const SUGGESTIONS = ["What are you working on?", "What did you get done today?", "Is anything waiting on me?"]
 
 /** The centre: the agent in view's newest conversation and the writing box. */
 export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAgent; asks?: HaAsk[]; phoneBar?: ReactNode; onThread?: (id: string | null) => void }) {
@@ -108,6 +165,10 @@ export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAg
   const showThread = !asking || whole
   const [threadId, setThreadId] = useState<string | null>(null)
   const [error, setError] = useState("")
+  // The list follows new words while it is scrolled to the end (A5); once
+  // the reader scrolls up it stays put, and a button brings it back.
+  const scroller = useRef<HTMLDivElement>(null)
+  const [away, setAway] = useState(false)
 
   // A new agent in view: open its newest conversation, if any.
   const latest = useQuery({
@@ -117,7 +178,7 @@ export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAg
   })
   // A send before the list loads picks the thread itself: the list must not overwrite it.
   const sentHere = useRef(false)
-  useEffect(() => { sentHere.current = false; setThreadId(null); setError("") }, [agent?.id])
+  useEffect(() => { sentHere.current = false; setThreadId(null); setError(""); setAway(false) }, [agent?.id])
   useEffect(() => { if (!sentHere.current) setThreadId(latest.data?.threads?.[0]?.id ?? null) }, [latest.data])
   // The right column's Files follows the conversation in view.
   useEffect(() => { onThread?.(threadId) }, [threadId, onThread])
@@ -160,6 +221,19 @@ export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAg
     setError("")
     return send.mutateAsync(s).then(() => true, () => false)
   }
+  // Stop ends the running reply (POST /api/task/action kind=cancel, as the
+  // old Hub chat and the feed do); the thread read then shows how it ended.
+  const stop = useMutation({
+    mutationFn: (taskId: string) =>
+      apiPost(`/api/task/action?node=${encodeURIComponent(thread.data?.node || "")}&task=${encodeURIComponent(taskId)}&kind=cancel`, { reason: "Stopped from the Hub chat" }),
+    onSuccess: settle,
+    onError: (e: unknown) => setError("Not stopped: " + (e instanceof Error ? e.message : "the computer did not answer")),
+  })
+  const onStop = () => {
+    setError("")
+    if (waiting?.taskId) stop.mutate(waiting.taskId)
+    else setError("Not stopped: the run has not started yet.")
+  }
   useEffect(() => {
     const t = thread.data
     const last = t?.messages?.[t.messages.length - 1]
@@ -170,33 +244,63 @@ export function ShellChat({ agent, asks, phoneBar, onThread }: { agent?: ShellAg
 
   const messages = thread.data?.messages ?? []
   const machine = thread.data?.thread?.node || "This computer"
+  const lastSeq = messages[messages.length - 1]?.seq
+  // Try again sends the question before the failed answer once more.
+  const retry = (i: number) => {
+    const asked = messages.slice(0, i).reverse().find((x) => x.role === "user")
+    return asked && !waiting ? () => { void onSend({ message: asked.content }) } : undefined
+  }
+
+  const onScroll = () => {
+    const el = scroller.current
+    if (el) setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 80)
+  }
+  const toEnd = () => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight }
+  useEffect(() => { if (!away) toEnd() }, [thread.data, live, away])
   return (
     <section aria-label="Chat" data-shell="chat" className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         {phoneBar}
         <h1 className="truncate text-sm font-medium">{agent ? agent.name : "Chat"}</h1>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-4 py-6">
-          {agent && asking ? <AgentQuestions agentId={agent.id} list={questions} whole={whole} onWhole={setWhole} onAnswered={onAnswered} /> : null}
-          {!agent ? (
-            <EmptyState title="Pick an agent to chat with">Your agents are in the side menu.</EmptyState>
-          ) : !showThread ? null : thread.isLoading ? (
-            <AfSkeletonRows />
-          ) : messages.length === 0 ? (
-            <p className="pt-16 text-center text-sm text-muted-foreground">Ask {agent.name} anything. The answer shows here.</p>
-          ) : messages.map((m) => (
-            <div key={m.seq} data-role={m.role} className={cn("text-sm", m.role === "user" ? "self-end max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-2" : "min-w-0")}>
-              {m.status === "pending" ? <PendingAnswer text={m === waiting ? live : ""} />
-                : m.status === "error" ? <span className="whitespace-pre-wrap text-err-ink">{m.content || "The run ended with an error."}</span>
-                : m.role === "assistant" ? <ChatAnswer md={storedAnswer(m.content)} streaming={false} />
-                : m.content}
-            </div>
-          ))}
+      <div className="relative min-h-0 flex-1">
+        <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto">
+          <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-4 py-6" aria-live="polite" data-shell="messages">
+            {agent && asking ? <AgentQuestions agentId={agent.id} list={questions} whole={whole} onWhole={setWhole} onAnswered={onAnswered} /> : null}
+            {!agent ? (
+              <EmptyState title="Pick an agent to chat with">Your agents are in the side menu.</EmptyState>
+            ) : !showThread ? null : thread.isLoading ? (
+              <AfSkeletonRows />
+            ) : messages.length === 0 ? (
+              <div className="flex flex-col items-center gap-4 pt-16 text-center" data-shell="greeting">
+                <h2 className="text-base font-semibold">Ask {agent.name} anything</h2>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {SUGGESTIONS.map((q) => (
+                    <Button key={q} variant="outline" size="sm" className="rounded-full" data-shell="suggestion" disabled={send.isPending} onClick={() => { void onSend({ message: q }) }}>{q}</Button>
+                  ))}
+                </div>
+              </div>
+            ) : messages.map((m, i) => (
+              <ChatTurn
+                key={m.seq} m={m} live={m === waiting ? live : ""} last={m.seq === lastSeq && m.role === "assistant"}
+                onRetry={m.status === "error" ? retry(i) : undefined}
+              />
+            ))}
+          </div>
         </div>
+        {away ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon-sm" aria-label="Scroll to the end" className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-xs" onClick={toEnd} data-shell="to-end">
+                <Icon name="arrow-down" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Scroll to the end</TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
       {/* The approved composer card (#2182), as on every other way into a chat (#2453). */}
-      <Composer agent={agent} node={thread.data?.node} busy={send.isPending} onSend={onSend}>
+      <Composer agent={agent} node={thread.data?.node} busy={send.isPending || stop.isPending} onSend={onSend} onStop={waiting ? onStop : undefined}>
         <p className="mt-1.5 flex items-center gap-1.5 px-1 text-xs text-muted-foreground" data-shell="machine">
           <Icon name="monitor" className="size-3.5" /> {machine}
         </p>
@@ -298,7 +402,10 @@ export function SimpleShell(props: SimpleShellProps & { width?: ShellWidth }) {
       {width !== "wide" ? <PhoneButton label="Files" icon="panel-right" className="order-last ml-auto" onClick={() => setSheet("tabs")} /> : null}
     </>
   )
-  const cols = width === "phone" ? "minmax(0,1fr)" : (rail ? "56px" : "280px") + " minmax(0,1fr)" + (width === "wide" ? " 300px" : "")
+  // On a computer the right column shows once the chat in view has a thread:
+  // until then it would only hold an empty state (E3).
+  const right = width === "wide" && chatThread !== null
+  const cols = width === "phone" ? "minmax(0,1fr)" : (rail ? "56px" : "280px") + " minmax(0,1fr)" + (right ? " 300px" : "")
   return (
     <div
       data-shell="simple" data-layout={props.view.layout} data-width={width}
@@ -317,7 +424,7 @@ export function SimpleShell(props: SimpleShellProps & { width?: ShellWidth }) {
       <main className="min-h-0">
         <Centre props={menu} bar={bar} onThread={setThreadId} />
       </main>
-      {width === "wide" ? (
+      {right ? (
         <aside aria-label="Right column" className="min-h-0 border-l border-border">
           <RightTabs threadId={chatThread} />
         </aside>

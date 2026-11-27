@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react"
 import { modelChoices } from "../../daemon/assistant-model"
 import { HubApiError } from "../api"
-import { Icon, cn } from "../ui"
+import { Icon, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 
 /** Files one message may carry (assistant-upload.ts ATTACH_MAX). */
 export const ATTACH_MAX = 5
@@ -61,6 +61,7 @@ export function filesOnlyText(n: number): string {
   return n === 1 ? "See the attached file." : "See the attached files."
 }
 
+const send = "inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ax-blue-d)] text-white transition-colors hover:bg-[var(--ax-blue)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-45"
 const round = "inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
 
 /** Says an answer back in the agent's voice: the node answers with audio,
@@ -80,13 +81,15 @@ export async function sayAnswer(threadId: string, node: string | undefined, text
   if (!r.ok) throw new Error(d.error || "HTTP " + r.status)
 }
 
-export function Composer({ agent, node, busy, onSend, children }: {
+export function Composer({ agent, node, busy, onSend, onStop, children }: {
   agent?: ComposerAgent
   /** The node that holds the conversation, so files go up where the agent runs. */
   node?: string
   busy?: boolean
   /** Resolves true when the message was taken. */
   onSend: (s: ComposerSend) => Promise<boolean>
+  /** Set while a reply runs: Send turns into Stop, which calls it (A3). */
+  onStop?: () => void
   /** Lines under the card (the machine, a send error). */
   children?: ReactNode
 }) {
@@ -297,7 +300,12 @@ export function Composer({ agent, node, busy, onSend, children }: {
               {choices.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
             </select>
           ) : agent.model ? (
-            <span className="max-w-[40%] truncate px-1.5 font-mono text-[11.5px] text-muted-foreground" title="This agent runs on its own model" data-shell="model">{agent.model}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="max-w-[40%] truncate px-1.5 font-mono text-[11.5px] text-muted-foreground" data-shell="model">{agent.model}</span>
+              </TooltipTrigger>
+              <TooltipContent>This agent runs on its own model</TooltipContent>
+            </Tooltip>
           ) : null}
           <span className="ml-auto" />
           {canRecord ? (
@@ -323,12 +331,20 @@ export function Composer({ agent, node, busy, onSend, children }: {
               ) : null}
             </>
           ) : null}
-          <button
-            type="submit" aria-label="Send" title="Send (Enter)" disabled={!canSend}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ax-blue-d)] text-white transition-colors hover:bg-[var(--ax-blue)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-45"
-          >
-            <Icon name="arrow-up" />
-          </button>
+          {onStop ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" aria-label="Stop" disabled={busy} onClick={onStop} className={send} data-shell="stop">
+                  <Icon name="square" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Stop</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button type="submit" aria-label="Send" title="Send (Enter)" disabled={!canSend} className={send}>
+              <Icon name="arrow-up" />
+            </button>
+          )}
         </div>
       </div>
       {children}

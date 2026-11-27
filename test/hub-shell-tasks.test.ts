@@ -104,9 +104,12 @@ describe("List and Kanban for sample tasks", () => {
   it("List: one row per task under its column, empty columns left out", () => {
     const out = html(createElement(TaskList, { posts: sample }))
     expect(out).toContain('data-tasks="list"')
-    for (const p of sample) expect(out).toContain(`data-task="${p.id}"`)
+    // Closed starts folded (orca-design C22): its rows draw when it opens.
+    for (const id of ["r1", "r2"]) expect(out).toContain(`data-task="${id}"`)
+    expect(out).not.toContain('data-task="r3"')
     expect(out).toContain('data-lane="in_progress"')
-    expect(out).toContain('data-lane="closed"')
+    expect(out).toMatch(/data-state="closed"[^>]*data-lane="closed"|data-lane="closed"[^>]*data-state="closed"/)
+    expect(out).toContain('data-slot="collapsible-trigger"')
     expect(out).not.toContain('data-lane="waiting_other"')
     expect(out).toContain('href="#page=home&amp;pane=tasks&amp;open=r1"')
     expect(out).toContain("@coder")
@@ -207,9 +210,11 @@ describe("the project filter (#2226 S5)", () => {
   })
   it("the filter offers every project, and the one picked", () => {
     const out = html(createElement(TasksProjectFilter, { projects: ["agentx", "docs"], project: "gone" }))
+    // The S4 Select: the picked project shows on its trigger; the list draws when it opens.
     expect(out).toContain('data-shell="tasks-project"')
-    expect(out).toContain(">All projects<")
-    for (const p of ["agentx", "docs", "gone"]) expect(out).toContain(`value="${p}"`)
+    expect(out).toContain('role="combobox"')
+    expect(out).toContain(">gone<")
+    expect(html(createElement(TasksProjectFilter, { projects: ["agentx"], project: null }))).toContain(">All projects<")
     expect(taskHref("r1", "agentx")).toBe("#page=home&pane=tasks&project=agentx&open=r1")
   })
   it("on a phone the switch is icons only, still named for screen readers", () => {

@@ -1507,7 +1507,7 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 }
 
 /* Skeleton (P8): shown only if the load takes more than 400ms. */
-.ax-skel { display: grid; gap: 8px; animation: ax-fade 150ms ease-out 400ms both; }
+.ax-skel { display: grid; gap: 8px; animation: ax-fade-flat 150ms ease-out 400ms both; }
 .ax-skel--cards { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--ax-gap); }
 .ax-skel__row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .ax-skel__card {
@@ -1568,10 +1568,12 @@ textarea.ax-builder__inp { min-height: 80px; line-height: 1.5; resize: vertical;
 
 @keyframes ax-pop { from { opacity: 0; transform: scale(0.95); } }
 @keyframes ax-menu-in { from { opacity: 0; transform: scale(0.98); } }
-@keyframes ax-fade { from { opacity: 0; } }
+/* Opacity only. Not ax-fade: that one moves 4px, and a second rule of the
+   same name replaced it for the settings tabs too (#2431 C1). */
+@keyframes ax-fade-flat { from { opacity: 0; } }
 /* Reduced motion: no movement, the short fades stay. */
 @media (prefers-reduced-motion: reduce) {
-  .ax-tip, .ax-menu__content, .ax-dialog[open] { animation-name: ax-fade; }
+  .ax-tip, .ax-menu__content, .ax-dialog[open] { animation-name: ax-fade-flat; }
 }
 
 /* --- Responsive collapses for the settings primitives --- */

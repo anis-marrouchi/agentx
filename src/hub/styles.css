@@ -91,6 +91,11 @@
   --animate-ax-fade-out: ax-fade-out 150ms cubic-bezier(0.7, 0, 0.84, 0);
   @keyframes ax-pop-in { from { opacity: 0; transform: scale(0.95); } }
   @keyframes ax-pop-out { to { opacity: 0; transform: scale(0.95); } }
+
+  /* A pending line's shimmer (orca-design A15, A17): a light band that
+     crosses the words while the agent works. Use with motion-safe:. */
+  --animate-ax-shimmer: ax-shimmer 2s linear infinite;
+  @keyframes ax-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 }
 
 /* The roots. */

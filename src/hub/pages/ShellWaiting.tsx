@@ -14,7 +14,7 @@ import {
   type WaitingItem, type WaitingList, type WaitingReply,
 } from "../waiting"
 import { taskHref } from "./ShellTasks"
-import { Badge, Button, EmptyState, Icon, Skeleton, buttonVariants, cn } from "../ui"
+import { Badge, Button, EmptyState, Icon, Skeleton, Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn } from "../ui"
 
 function When({ item, now }: { item: WaitingItem; now: number }) {
   const asked = item.askedAt ? Date.parse(item.askedAt) : NaN
@@ -33,7 +33,7 @@ export function WaitingRows({ items, now = Date.now() }: { items: WaitingItem[];
     <ul data-waiting="list" className="divide-y divide-border rounded-md border border-border">
       {items.map((i) => (
         <li key={i.key}>
-          <a href={waitingHref(i.key)} data-waiting-item={i.key} className="flex items-start gap-3 px-3 py-2.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+          <a href={waitingHref(i.key)} data-waiting-item={i.key} className="flex items-start gap-3 px-3 py-2.5 can-hover:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
             <Badge variant="outline" className="mt-px w-[72px] shrink-0 justify-center text-[11px] font-normal text-muted-foreground">{waitingKind(i.kind)}</Badge>
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[13px]">{i.title}</span>
@@ -95,7 +95,7 @@ export function WaitingDetail({ item, now = Date.now(), actions }: { item: Waiti
       </dl>
       {actions ?? <div className="flex flex-wrap items-center gap-2">
         <a href={NEEDS_YOU_PAGE} className={buttonVariants({ size: "sm" })} data-waiting="answer">
-          Answer <Icon name="external-link" className="size-3.5" />
+          Answer
         </a>
         {task ? <a href={taskHref(task)} className={buttonVariants({ size: "sm", variant: "outline" })} data-waiting="task">Open the task</a> : null}
         <span className="text-xs text-muted-foreground">Answers open the old Hub's Waiting on you, where yes, no and later are given.</span>
@@ -125,7 +125,7 @@ export function WaitingBody({ list, error, onRetry, now }: WaitingBodyProps) {
     <div className="flex flex-col gap-3">
       {list.errors.map((e, n) => <p key={n} role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn-ink">{e}</p>)}
       {list.items.length === 0 ? (
-        <EmptyState title="Nothing waits for you" action={<a className="text-sm text-link hover:underline" href="#page=home&pane=tasks">See the tasks</a>}>
+        <EmptyState title="Nothing waits for you" action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href="#page=home&pane=tasks">See the tasks</a>}>
           When an agent asks you to decide or approve something, it shows here.
         </EmptyState>
       ) : <WaitingRows items={list.items} now={now} />}
@@ -150,9 +150,14 @@ export function WaitingPane({ open, phoneBar }: { open: string | null; phoneBar?
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         {phoneBar}
         {open ? (
-          <a href={waitingHref()} aria-label="Back to Waiting on you" title="Back to Waiting on you" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-            <Icon name="arrow-left" />
-          </a>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a href={waitingHref()} aria-label="Back to Waiting on you" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground can-hover:hover:bg-accent can-hover:hover:text-foreground">
+                <Icon name="arrow-left" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent>Back to Waiting on you</TooltipContent>
+          </Tooltip>
         ) : null}
         <h1 className="truncate text-sm font-medium">Waiting on you</h1>
         {!open && list ? <span className="text-xs tabular-nums text-muted-foreground">{list.items.length}</span> : null}
