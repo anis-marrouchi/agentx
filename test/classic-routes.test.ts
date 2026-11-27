@@ -103,14 +103,14 @@ describe("the Wall's links (link crawl)", () => {
 describe("classic Task page redirect", () => {
   it("carries the run to the Wall Task page's hash", () => {
     const to = classicRedirect("/tasks/t%201", new URLSearchParams("agent=ops&channel=slack&archived=1&ask=hi&at=2026-01-01T00:00:00Z&name=Ops"), "http://daemon.test")
-    expect(to).toMatch(/^\/#/)
-    const q = new URLSearchParams(to!.slice(2))
-    expect(Object.fromEntries(q)).toEqual({ page: "task", task: "t 1", agent: "ops", node: "http://daemon.test", ch: "slack", ask: "hi", at: "2026-01-01T00:00:00Z", done: "1" })
+    expect(to).toMatch(/^\/hub#/)
+    const q = new URLSearchParams(to!.slice("/hub#".length))
+    expect(Object.fromEntries(q)).toEqual({ page: "task", task: "t 1", agent: "ops", run: "t 1", node: "http://daemon.test", ch: "slack", ask: "hi", at: "2026-01-01T00:00:00Z", done: "1" })
   })
 
   it("keeps the node it was given, and needs an agent", () => {
     const to = classicRedirect("/tasks/t1", new URLSearchParams("agent=ops&node=http://peer.test"), "http://daemon.test")
-    expect(new URLSearchParams(to!.slice(2)).get("node")).toBe("http://peer.test")
+    expect(new URLSearchParams(to!.slice("/hub#".length)).get("node")).toBe("http://peer.test")
     expect(classicRedirect("/tasks/t1", new URLSearchParams(""), "http://daemon.test")).toBeNull()
     expect(classicRedirect("/tasks/%E0%A4%A", new URLSearchParams("agent=ops"), "http://daemon.test")).toBeNull()
   })
@@ -148,7 +148,7 @@ describe("classic Task page redirect", () => {
       const base = await start()
       const r = await fetch(`${base}/tasks/t1?agent=ops`, { redirect: "manual" })
       expect(r.status).toBe(302)
-      expect(r.headers.get("location")).toBe("/#page=task&task=t1&agent=ops&node=http%3A%2F%2Fdaemon.invalid%3A18800")
+      expect(r.headers.get("location")).toBe("/hub#page=task&task=t1&agent=ops&run=t1&node=http%3A%2F%2Fdaemon.invalid%3A18800")
     })
 
     it("redirects /agents/<id>/history to the Wall", async () => {

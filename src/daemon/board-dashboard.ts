@@ -754,8 +754,11 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if ((path.startsWith("/api/admin/") && path !== STREAM_TICKET_PATH) || path.startsWith("/api/workflows") || path.startsWith("/api/agents")) {
     // An explicit ?peer=fleet (the /activity map) beats the topbar's
     // per-node header: that view is mesh-wide by definition.
-    const peerId = url.searchParams.get("peer") === "fleet" ? "fleet"
+    const named = url.searchParams.get("peer") === "fleet" ? "fleet"
       : String(req.headers["x-agentx-peer"] || "").trim() || url.searchParams.get("peer") || ""
+    // This node by its own daemon URL is this node: an old run address names
+    // its node that way, and the Task page reads it as the peer (#2101 T3).
+    const peerId = isOwnDaemonUrl(named, ctx.config) ? "" : named
     // This block runs before the /api/admin/* token gate below, and both the
     // fleet fan-out and the per-peer proxy call peers with their own tokens,
     // so check dashboard.token here first (#1201). GET /api/agents is the
@@ -4281,6 +4284,12 @@ async function proxyAdminToPeer(
   } catch (e: any) {
     sendJson(res, 502, { error: `proxy to peer failed: ${e?.message || e}`, target })
   }
+}
+
+/** Is this peer id this node's own daemon URL (`dashboard.daemonUrl`)? */
+export function isOwnDaemonUrl(id: string, config: DaemonConfig): boolean {
+  const own = (config.dashboard?.daemonUrl || "").replace(/\/+$/, "")
+  return !!own && id.replace(/\/+$/, "") === own
 }
 
 /**

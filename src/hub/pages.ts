@@ -26,10 +26,12 @@ export const HUB_REACT_PAGES: readonly HubReactPage[] = [
   // are built; ST4 moves it to `settings`. Owner only, and like every page
   // here `dashboard.hub.legacyPages` sends it back to the old code.
   { page: "settings-preview", ownerOnly: true },
-  // The one Task page per request (#2101 T1), on a review id while the old
-  // post page (`#post=`) and run page (`#page=task`) keep their addresses;
-  // T3 sends them here. Owner only, like the old post page's actions.
-  { page: "task-preview", ownerOnly: true },
+  // The one Task page per request (#2101 T1, T2), on the old run page's id
+  // since T3: `#post=<id>`, `/tasks/<id>?agent=` and the review id
+  // `task-preview` open it (src/hub/task/old-links.ts). Owner only, like the
+  // old post page's actions; anyone else, and `legacyPages: ["task"]`, keep
+  // the old post and run pages.
+  { page: "task", ownerOnly: true },
   // The feed (#2101), drawn to the approved orca mock of #2387, on a review
   // id until Anis accepts it; the old feed stays on `#status=open`. Owner
   // only, and `dashboard.hub.legacyPages` sends it back like the rest.

@@ -18,6 +18,8 @@ export const stamp = (at: number) => new Date(at).toLocaleString(undefined, { da
 
 /** "5m" in a <time>, the full stamp in its tooltip (C17). */
 export function Ago({ at, now, className }: { at: number; now: number; className?: string }) {
+  // No time known (a run only its address names): nothing to say.
+  if (!at) return null
   return (
     <Tooltip>
       <TooltipTrigger asChild>

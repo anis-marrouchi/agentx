@@ -33,7 +33,7 @@ export interface ClassicRoute {
 }
 
 export const CLASSIC_ROUTES: ClassicRoute[] = [
-  { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: "/#page=task", note: "The Task page (#1381): stream, steer, Stop." },
+  { path: "/tasks/<id>", label: "One task's run", status: "wall", wall: HUB_PATH + "#page=task", note: "The Task page (#2101 T3): the run's request with the run open, or the run on its own (src/hub/task/old-links.ts)." },
   { path: "/live", label: "Live", status: "wall", wall: HUB_PATH + "#page=live", note: "Redirected in board-dashboard.ts (#1439)." },
   { path: "/monitor", label: "Monitor", status: "pending", blockedBy: [1449], note: "Connect a CLI session; open actions of CLI sessions. No child issue yet (#1439 and #1440 closed)." },
   { path: "/mesh", label: "Operations", status: "pending", blockedBy: [1449], note: "Lifetime view (thread → run → step drill), Routines with stale verdicts, run analytics; no child issue yet." },
@@ -92,13 +92,17 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
   if (task) {
     const agent = params.get("agent")
     if (!agent) return null
-    // The Wall Task page's hash keys (wall-task.client.ts TASK_KEYS).
+    // The Task page (#2101 T3, src/hub/task/old-links.ts) finds the run's
+    // request and opens the run in it (`run`). It reads the old run page's
+    // keys (wall-task.client.ts TASK_KEYS), which a viewer the React Hub does
+    // not draw it for still gets.
     const q = new URLSearchParams()
     q.set("page", "task")
     let id: string
     try { id = decodeURIComponent(task[1]) } catch { return null }
     q.set("task", id)
     q.set("agent", agent)
+    q.set("run", id)
     q.set("node", params.get("node") || daemonUrl)
     const ch = params.get("channel")
     if (ch) q.set("ch", ch)
@@ -107,7 +111,7 @@ export function classicRedirect(path: string, params: URLSearchParams, daemonUrl
     const at = params.get("at")
     if (at) q.set("at", at)
     if (params.get("archived") === "1") q.set("done", "1")
-    return "/#" + q.toString()
+    return HUB_PATH + "#" + q.toString()
   }
   if (path === "/workflows/editor" || path === "/workflows/editor/") {
     // The editor's page keys (wall-editor.client.ts): e-wf names the

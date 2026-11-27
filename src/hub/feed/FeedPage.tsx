@@ -100,9 +100,9 @@ export default function FeedPage({ params }: HubPageProps) {
     nameOf,
     owner: posts.data?.owner !== false,
     busy, copied, said,
-    open: (p) => { location.hash = postHash(p.id) },
+    open: (p) => { location.hash = postHash(p) },
     copy: (p) => {
-      const url = location.origin + location.pathname + postHash(p.id)
+      const url = location.origin + location.pathname + postHash(p)
       void navigator.clipboard?.writeText(url).then(() => {
         setCopied(p.id)
         window.setTimeout(() => setCopied((c) => (c === p.id ? "" : c)), 2000)

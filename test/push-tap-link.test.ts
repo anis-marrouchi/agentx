@@ -65,7 +65,7 @@ describe("the router", () => {
     r.addChannel({ name: "ntfy", start: async () => {}, stop: async () => {}, onMessage: () => {}, send } as any)
     await r.sendOutbound({ channel: "ntfy", chatId: "default", text: "a\nb", told: { requestId: "req 7" } })
     await r.sendOutbound({ channel: "ntfy", chatId: "default", text: "a\nb" })
-    expect((send.mock.calls[0] as any)[0]).toMatchObject({ open: "/hub#post=req%207" })
+    expect((send.mock.calls[0] as any)[0]).toMatchObject({ open: "/hub#page=task&id=req+7" })
     expect((send.mock.calls[0] as any)[0].told).toBeUndefined()
     expect((send.mock.calls[1] as any)[0].open).toBeUndefined()
   })

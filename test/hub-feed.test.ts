@@ -77,8 +77,9 @@ describe("filters and the address", () => {
     expect(feedHash({ status: "", q: "docs" })).toBe("#page=feed-preview&status=all&q=docs")
     expect(parseHash(feedHash({ status: "failed", owner: "coder" })).get("owner")).toBe("coder")
   })
-  it("a post still opens on the old Hub's address", () => {
-    expect(postHash("req-1")).toBe("#status=open&post=req-1")
+  it("a post opens its Task page, on its node (#2101 T3)", () => {
+    expect(postHash({ id: "req-1" })).toBe("#page=task&id=req-1")
+    expect(postHash({ id: "req-1", node: { name: "mini", peer: "http://p" } })).toBe("#page=task&id=req-1&peer=http%3A%2F%2Fp")
   })
   it("search matches every word over title, words, owner, project and id", () => {
     const p = post("req-x", "in_progress", { headline: "Fix the login page", project: "atlas" })

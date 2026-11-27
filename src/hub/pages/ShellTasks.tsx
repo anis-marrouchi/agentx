@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { apiFetch, apiGet } from "../api"
 import { buildHash, navigate } from "../router"
+import { taskHash } from "../task/old-links"
 import {
   FORGE_TASKS_URL, TASKS_URL, forgePosts, forgeUnread, mergeTasks, shortAgo, taskProjects, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane, tasksOfProject,
   type TaskEvent, type TaskLane, type TaskPost, type TaskThreadReply, type TasksReply, type TasksView,
@@ -241,7 +242,7 @@ export function TaskThread({ post, events, error, onRetry }: { post: TaskPost; e
           {post.owner ? <span>@{post.owner}</span> : null}
           {post.project ? <span className="font-mono text-[11px]">{post.project}</span> : null}
           {post.node?.name ? <span>{post.node.name}</span> : null}
-          <a href={"#post=" + encodeURIComponent(post.id)} className="ml-auto inline-flex items-center gap-1 text-link hover:underline">
+          <a href={taskHash({ id: post.id, peer: post.node?.peer })} className="ml-auto inline-flex items-center gap-1 text-link hover:underline">
             Full record <Icon name="external-link" className="size-3" />
           </a>
         </p>
