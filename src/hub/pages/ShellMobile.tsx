@@ -3,7 +3,7 @@
 // The old Hub's #page=mobile (hub-nav.ts hubMobilePageHtml, Anis
 // 2026-11-24): why to try the phone app, then how to install it. Same
 // words, drawn in the shell's centre; a static page, no read.
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Button, Icon, cn } from "../ui"
 import { PhonePreview } from "./PhonePreview"
 
@@ -25,8 +25,15 @@ const ring = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring
 /** A command with a Copy button; the button says Copied for 2 s. */
 function Command({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(t)
+  }, [copied])
   const copy = () => {
-    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }, () => setCopied(false))
+    // No clipboard on an http page that is not localhost (#2514 C2).
+    if (!navigator.clipboard) return
+    navigator.clipboard.writeText(text).then(() => setCopied(true), () => setCopied(false))
   }
   return (
     <div data-mobile="command" className="mt-2 flex items-start gap-1 rounded-md border border-border bg-muted pr-1">
