@@ -10,7 +10,7 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 import {
   HELD_UPGRADE, RESTART_REASON, UPGRADE_HELD_LINE, UPGRADE_KEEP_MS, UPGRADE_TOO_OLD, VoiceRequestStore, handleVoiceRequests,
 } from "../src/daemon/voice-requests-api"
-import { keepAskForUpgrade, postKeptAsk, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
+import { drainAsk, keepAskForUpgrade, postKeptAsk, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
 
 // #2502: a widget message sent while the daemon drains for an upgrade is
 // kept on its row, answered at once, and sent once by the next daemon.
@@ -55,6 +55,34 @@ describe("keepAskForUpgrade (old daemon, draining)", () => {
     expect(upgradingText(0)).toBe("AgentX is upgrading, back in about 1 minute. Your message is kept.")
     expect(upgradingText(-5000)).toContain("about 1 minute.")
     expect(upgradingText(61_000)).toContain("about 3 minutes.")
+  })
+})
+
+describe("drainAsk (drain gate, #2502 B3)", () => {
+  it("a caller that fails the mesh check keeps nothing, and the body is not read", async () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("pm-agent", "q", false, T0)
+    let read = false
+    const out = await drainAsk({
+      authorized: () => false,
+      readBody: async () => { read = true; return { request: r.id } },
+      keep: (body) => keepAskForUpgrade({ store, body, msLeft: 0, now: T0 }),
+    })
+    expect(out).toBe("refused")
+    expect(read).toBe(false)
+    expect(db.prepare("SELECT held FROM voice_requests WHERE id = ?").get(r.id)).toEqual({ held: null })
+  })
+
+  it("a caller that passes the mesh check has its row kept", async () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("pm-agent", "q", false, T0)
+    const out = await drainAsk({
+      authorized: () => true,
+      readBody: async () => ({ request: r.id }),
+      keep: (body) => keepAskForUpgrade({ store, body, msLeft: 0, now: T0 }),
+    })
+    expect(out).toMatchObject({ status: 202, body: { kept: true, request: r.id } })
+    expect(db.prepare("SELECT held FROM voice_requests WHERE id = ?").get(r.id)).toEqual({ held: HELD_UPGRADE })
   })
 })
 

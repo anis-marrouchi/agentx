@@ -43,6 +43,19 @@ export function keepAskForUpgrade(input: {
   }
 }
 
+/** The drain gate's POST /ask: the mesh check comes first (#2502 B3).
+ *  /ask is mesh-protected, and a kept row is later sent by the next daemon
+ *  over loopback, where it is never checked again. "refused" means
+ *  `authorized` has already answered (401/403); null means answer 503. */
+export async function drainAsk(input: {
+  authorized: () => boolean
+  readBody: () => Promise<Record<string, unknown>>
+  keep: (body: Record<string, unknown>) => Reply | null
+}): Promise<Reply | "refused" | null> {
+  if (!input.authorized()) return "refused"
+  return input.keep(await input.readBody())
+}
+
 /** Run each kept row once, oldest first. `ask` sends it as the widget
  *  would (POST /ask with its row), calls `sent()` once /ask has taken the
  *  row, and resolves when /ask has answered. The next row starts once the

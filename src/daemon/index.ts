@@ -260,7 +260,7 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { writeQueueAtClose } from "@/daemon/upgrade-queue-record"
-import { keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
+import { drainAsk, keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
 import { UPGRADE_KEEP_MS } from "@/daemon/voice-requests-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
@@ -5172,7 +5172,12 @@ export class AgentXDaemon {
         // A widget message is kept on its open-requests row and runs on the
         // next daemon; the widget hears that at once (#2502).
         if (req.method === "POST" && (req.url || "/").split("?")[0] === "/ask") {
-          const kept = this.keepAskForUpgrade(await readBody(req))
+          const kept = await drainAsk({
+            authorized: () => this.checkMeshAuth(req, res, "/ask"),
+            readBody: () => readBody(req),
+            keep: (body) => this.keepAskForUpgrade(body),
+          })
+          if (kept === "refused") return
           if (kept) { this.json(res, kept.status, kept.body); return }
         }
         res.setHeader("Retry-After", "30")
