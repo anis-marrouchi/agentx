@@ -36,7 +36,7 @@ export function ProjectLine({ r }: { r: ProjectRow }) {
     >
       <span className="flex min-w-0 items-center gap-2">
         <Icon name="folder" className="size-3.5 text-muted-foreground" />
-        <span className={r.project ? "truncate text-[13px] font-medium" : "truncate text-[13px] italic text-muted-foreground"}>{name}</span>
+        <span className={r.project ? "truncate text-[13px] font-medium" : "truncate pr-0.5 text-[13px] italic text-muted-foreground"}>{name}</span>
         <span className="truncate text-xs text-muted-foreground sm:hidden">{r.open} open</span>
       </span>
       {n(r.open)}{n(r.inProgress)}{n(r.blocked)}{n(r.stalled)}
@@ -117,7 +117,8 @@ export function ProjectsPane({ owner, phoneBar }: { owner: boolean; phoneBar?: R
         {phoneBar}
         <h1 className="truncate text-sm font-medium">Projects</h1>
         {rows ? <span className="text-xs tabular-nums text-muted-foreground">{rows.filter((r) => r.project !== null).length}</span> : null}
-        {addButton && rows?.length ? <span className="ml-auto">{addButton}</span> : null}
+        {/* flex-1, not ml-auto: the phone bar's panel button has ml-auto too, which would split the space. */}
+        {addButton && rows?.length ? <span className="flex flex-1 justify-end">{addButton}</span> : null}
       </header>
       <div className="mx-auto min-h-0 w-full max-w-[880px] flex-1 overflow-y-auto px-4 py-4">
         <ProjectsBody rows={rows} error={list.isError ? errText(list.error) : null} onRetry={() => void list.refetch()} add={addButton} />
