@@ -125,6 +125,18 @@ export function listRuns(store: MemoryStore, agent?: string): TidyRun[] {
     .filter((r): r is TidyRun => r !== null && (!agent || r.agent === agent))
 }
 
+/** Put restored facts back where their createdAt puts them, not at the
+ *  end: prune's cap keeps the last facts in the file as the newest. */
+function placeByAge(facts: MemoryFact[], back: MemoryFact[]): MemoryFact[] {
+  const out = facts.slice()
+  const age = (f: MemoryFact) => Date.parse(f.createdAt)
+  for (const b of back.slice().sort((x, y) => age(x) - age(y))) {
+    const i = out.findIndex((f) => age(f) > age(b))
+    out.splice(i === -1 ? out.length : i, 0, b)
+  }
+  return out
+}
+
 /** Undo a run, or one change of it. Each change is undone at most once. */
 export function undoRun(
   store: MemoryStore, runId: string, opts: { change?: number; force?: boolean; now?: number } = {},
@@ -155,7 +167,7 @@ export function undoRun(
     const back = c.before.filter((b) => b.id === keepId || !byId.has(b.id))
     if (back.length === 0) { result.skipped.push({ n: c.n, why: "the facts are already there" }); continue }
     const replaced = new Set(back.map((b) => b.id))
-    facts = [...facts.filter((f) => !replaced.has(f.id) && f.id !== keepId), ...back]
+    facts = placeByAge(facts.filter((f) => !replaced.has(f.id) && f.id !== keepId), back)
     c.undoneAt = undoneAt
     result.restored.push(c.n)
     changed = true

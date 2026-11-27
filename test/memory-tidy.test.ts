@@ -108,6 +108,22 @@ describe("undo", () => {
     expect(() => undoRun(store, run.runId, { change: 9 })).toThrow(/no change 9/)
   })
 
+  it("puts a restored fact back in createdAt order, so the next prune drops the same oldest fact", () => {
+    for (let i = 0; i < 201; i++) add(`fact ${i}`)
+    // Distinct, rising createdAt: fact 0 is the oldest.
+    store.rewrite("a", store.getAll("a").map((f, i) => ({ ...f, createdAt: new Date(NOW - (201 - i) * 1000).toISOString() })))
+
+    const run = store.prune("a", NOW)!
+    expect(run.changes.map((c) => c.before[0].content)).toEqual(["fact 0"])
+    expect(undoRun(store, run.runId, { now: NOW }).restored).toEqual([1])
+    expect(contents()[0]).toBe("fact 0")
+
+    const next = store.prune("a", NOW)!
+    expect(next.changes.map((c) => c.before[0].content)).toEqual(["fact 0"])
+    expect(contents()).toContain("fact 1")
+    expect(contents()).toHaveLength(200)
+  })
+
   it("refuses an unknown or unsafe run id", () => {
     expect(showRun(store, "../a")).toBeNull()
     expect(() => undoRun(store, "nope")).toThrow(/no tidy run/)
