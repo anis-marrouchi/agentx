@@ -24,6 +24,10 @@ export interface TrayState {
   orbVisible: boolean
   /** The talk line: which way the global key works now (talkModeLine in talk-key.ts). */
   talkLine: string
+  /** The agents the orb can talk to (empty until the daemon answered). */
+  orbAgents: readonly { id: string; name: string }[]
+  /** The daemon's node.defaultAgent, used while none is chosen. */
+  orbDefault?: string
 }
 
 export interface TrayActions {
@@ -42,6 +46,22 @@ function daemonLine(s: TrayState): string {
   return `Daemon: running${by}`
 }
 
+/** "Orb talks to": the chosen agent, or the node's first while none is chosen or it is gone. */
+function orbAgentMenu(s: TrayState, a: TrayActions): MenuItemConstructorOptions {
+  const list = s.orbAgents
+  const current = list.find((x) => x.id === s.settings.orbAgent) || list.find((x) => x.id === s.orbDefault) || list[0]
+  if (!current) return { label: "Orb talks to: no agent yet", enabled: false }
+  return {
+    label: `Orb talks to: ${current.name}`,
+    submenu: list.map((x) => ({
+      label: x.name === x.id ? x.id : `${x.name} (${x.id})`,
+      type: "radio" as const,
+      checked: x.id === current.id,
+      click: () => a.onSetting({ orbAgent: x.id }),
+    })),
+  }
+}
+
 /** The menu, as plain data (no Electron calls), so its shape is easy to check. */
 export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorOptions[] {
   const d = s.daemon
@@ -58,6 +78,7 @@ export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorO
     { label: s.windowVisible ? "Hide AgentX" : "Show AgentX", click: a.onToggleWindow },
     { label: s.orbVisible ? "Hide orb" : "Show orb", click: a.onToggleOrb },
     { label: s.talkLine, enabled: false },
+    orbAgentMenu(s, a),
     {
       label: "Global talk key",
       type: "checkbox",

@@ -9,20 +9,20 @@ import settings from "../dist/settings.js"
 const { DEFAULT_SETTINGS, parseSettings, loadSettings, saveSettings, settingsPath } = settings
 
 test("defaults: no login item, window at launch, close hides, orb shown, global key off", () => {
-  assert.deepEqual(DEFAULT_SETTINGS, { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false })
+  assert.deepEqual(DEFAULT_SETTINGS, { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false, orbAgent: "" })
 })
 
 test("bad or unknown values fall back to the default", () => {
   assert.deepEqual(parseSettings(null), DEFAULT_SETTINGS)
   assert.deepEqual(parseSettings({ openAtLogin: "yes", showOnLaunch: 0, closeAction: "explode", orbVisible: "no", globalKey: 1, extra: 1 }), DEFAULT_SETTINGS)
-  assert.deepEqual(parseSettings({ openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true }), { openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true })
+  assert.deepEqual(parseSettings({ openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true, orbAgent: "coder" }), { openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true, orbAgent: "coder" })
 })
 
 test("saved settings survive a restart; a broken file gives the defaults", () => {
   const dir = mkdtempSync(join(tmpdir(), "agentx-desktop-settings-"))
   try {
     assert.deepEqual(loadSettings(dir), DEFAULT_SETTINGS)
-    const mine = { openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true }
+    const mine = { openAtLogin: true, showOnLaunch: false, closeAction: "quit", orbVisible: false, globalKey: true, orbAgent: "coder" }
     saveSettings(dir, mine)
     assert.deepEqual(JSON.parse(readFileSync(settingsPath(dir), "utf8")), mine)
     assert.deepEqual(loadSettings(dir), mine)

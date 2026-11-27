@@ -14,7 +14,8 @@ import { cliArgs, daemonTarget, isLoopbackUrl, managedService, readStatus, resta
 import type { TrayActions, TrayState } from "./menu.js"
 import { loadSettings, saveSettings, settingsPath, type AppSettings } from "./settings.js"
 import { createTray, updateTray } from "./tray.js"
-import { hideOrb, orbVisible, setupOrb, showOrb, showOrbState } from "./orb-window.js"
+import { hideOrb, isOrbContents, orbVisible, sendToOrb, setupOrb, showOrb, showOrbState } from "./orb-window.js"
+import { nodeDefault, orbAgents, setupOrbVoice } from "./orb-voice.js"
 import { applyGlobalKey, askForGlobalKey, globalKeyMode, KEY_LABEL, stopGlobalKey } from "./global-key.js"
 import { isWayland, talkModeLine } from "./talk-key.js"
 
@@ -37,6 +38,9 @@ let daemonManaged: string | null = null
 // launchd/systemd seen running the daemon this session. Kept while it is down: during
 // `daemon upgrade` the job is booted out for a moment, and Start must stay off then too.
 let managedSeen: string | null = null
+// The agents the orb can talk to, for the tray (refreshed every minute).
+let agents: { id: string; name: string }[] = []
+let agentDefault = ""
 
 // C9 (#2265): GNOME on Wayland may ignore "always on top" for a native
 // Wayland window. Under XWayland (X11 through Wayland) the orb stays on top,
@@ -157,6 +161,8 @@ function trayState(): TrayState {
     remote: DAEMON_REMOTE,
     orbVisible: orbVisible(),
     talkLine: talkModeLine(globalKeyMode(), KEY_LABEL),
+    orbAgents: agents,
+    orbDefault: agentDefault,
   }
 }
 
@@ -164,10 +170,26 @@ function refreshTray(): void {
   updateTray(trayActions, trayState())
 }
 
-// The orb and the global talk key, as the settings say. In PR 2 the key
-// only shows "listening" on the orb; PR 3 records and sends.
+// The orb and the global talk key, as the settings say. The key's start and
+// stop go to the orb page, which records as when the orb itself is held.
 function applyTalkKey(): void {
-  applyGlobalKey(settings.globalKey, WAYLAND, (edge) => showOrbState({ state: edge === "start" ? "listening" : "idle" }), log)
+  applyGlobalKey(
+    settings.globalKey,
+    WAYLAND,
+    (edge) => {
+      if (edge === "start" && !orbVisible()) showOrb()
+      sendToOrb("orb:talk", edge)
+    },
+    log,
+  )
+}
+
+async function refreshAgents(): Promise<void> {
+  const [next, def] = await Promise.all([orbAgents(), nodeDefault()])
+  if (JSON.stringify(next) === JSON.stringify(agents) && def === agentDefault) return
+  agents = next
+  agentDefault = def
+  refreshTray()
 }
 
 function changeSetting(change: Partial<AppSettings>): void {
@@ -293,7 +315,10 @@ function guardDevices(): void {
   ses.setPermissionRequestHandler((wc, permission, callback, details) => {
     if (permission !== "media") return callback(false)
     const origin = details.requestingUrl || wc.getURL()
-    const ok = allowsMedia(origin, BASE, (details as { mediaTypes?: string[] }).mediaTypes)
+    const types = (details as { mediaTypes?: string[] }).mediaTypes
+    // The orb page (a local file) records too: audio only, its own window only.
+    const orb = isOrbContents(wc) && !!types?.length && types.every((t) => t === "audio")
+    const ok = orb || allowsMedia(origin, BASE, types)
     if (!ok || process.platform !== "darwin") return callback(ok)
     // macOS asks the person once; the answer is kept in System Settings.
     systemPreferences
@@ -304,7 +329,7 @@ function guardDevices(): void {
         callback(false)
       })
   })
-  ses.setPermissionCheckHandler((_wc, permission, origin) => permission === "media" && isDashboardOrigin(origin, BASE))
+  ses.setPermissionCheckHandler((wc, permission, origin) => permission === "media" && (isDashboardOrigin(origin, BASE) || (!!wc && isOrbContents(wc))))
 }
 
 // --- Menus ---
@@ -355,6 +380,17 @@ if (!app.requestSingleInstanceLock()) {
       guardDevices()
       appMenu()
       setupOrb({ resources: RESOURCES, userData: app.getPath("userData"), log, onChange: refreshTray })
+      setupOrbVoice({
+        base: BASE,
+        daemonUrl: DAEMON.url,
+        agent: () => settings.orbAgent,
+        isOrb: (e) => isOrbContents(e.sender),
+        show: showOrbState,
+        send: sendToOrb,
+        log,
+      })
+      void refreshAgents()
+      setInterval(() => void refreshAgents(), 60_000)
       if (settings.orbVisible) showOrb()
       applyTalkKey()
       createTray(RESOURCES, trayActions, trayState())
