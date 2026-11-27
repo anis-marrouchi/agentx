@@ -199,6 +199,14 @@ describe("the saved Hub menu (#2149 M2)", () => {
     }
     for (const i of nav.hidden) expect(shown.has(i.id)).toBe(false)
   })
+  it("saved: Wiki and Mobile app switched on stay under More (pm C1)", () => {
+    const v = resolveHubLayout({ layout: "simple", show: { wiki: true, mobile: true, workflows: true } })
+    const nav = shellNav(v, { owner: true, menu: mine })
+    expect(ids(nav.more)).toEqual(["mobile", "wiki"])
+    // Workflows is a catalog page: the saved menu decides it (left out = hidden).
+    expect(ids(nav.hidden)).toContain("workflows")
+    expect(shellNav(simple, { owner: true, menu: mine }).more).toEqual([])
+  })
   it("a guest never gets the owner's links or Settings (C4)", () => {
     const nav = shellNav(simple, { owner: false, menu: mine })
     expect(nav.main.some((i) => i.external)).toBe(false)

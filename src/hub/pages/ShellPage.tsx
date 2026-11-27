@@ -353,8 +353,9 @@ export default function ShellPage({ params }: HubPageProps) {
   const waiting = useQuery({ queryKey: ["shell-waiting"], queryFn: () => apiGet<WaitingReply>(WAITING_URL), refetchInterval: 15_000 })
   const needs = waiting.data ? waitingList(waiting.data).items.length : undefined
   // The Hub's menu (#2149): the owner's, so only the owner reads it (the
-  // route is the owner's too). Until it is saved, or if it can't be read,
-  // the side menu is the default list.
+  // route is the owner's too). Until it is saved, or while the request
+  // fails, the side menu is the default list. A saved menu.json that can't
+  // be parsed reads back as the "everything" preset (hub-menu.ts read()).
   const menu = useQuery({ queryKey: MENU_QUERY_KEY, queryFn: () => apiGet<MenuReply>(MENU_API), enabled: boot.owner })
   return (
     <SimpleShell

@@ -76,7 +76,7 @@ export interface ShellNav {
  *  Hub's menu (Settings › Menu, #2149), the menu follows it (menuNav);
  *  until then it is the default list below, as before. */
 export function shellNav(view: HubLayoutView, opts: { owner: boolean; menu?: ShellMenu }): ShellNav {
-  if (opts.menu?.saved) return menuNav(opts.menu, opts.owner)
+  if (opts.menu?.saved) return menuNav(opts.menu, opts.owner, view)
   const more: ShellNavItem[] = []
   for (const [id, item] of Object.entries(SHELL_MORE) as [HubShowItem, ShellNavItem][]) {
     if (view.show[id]) more.push(item)
@@ -125,8 +125,10 @@ export function viewHref(filter: Record<string, string>): string {
 /** The side menu from the saved menu: Search and the agents first (the
  *  shell's frame, never in the store), then the items in the owner's order,
  *  with group headers; the catalog pages left out go to `hidden`. Links are
- *  the owner's: another viewer never gets them. */
-export function menuNav(m: ShellMenu, owner: boolean): ShellNav {
+ *  the owner's: another viewer never gets them. The items switched on in
+ *  Settings › Layout that the menu has no page for (Wiki, Mobile app) stay
+ *  under More, as before the save, so turning them on still reaches them. */
+export function menuNav(m: ShellMenu, owner: boolean, view?: HubLayoutView): ShellNav {
   const pages = new Map(m.catalog.flatMap((g) => g.items.map((p) => [p.key, p] as const)))
   const main: ShellNavItem[] = [SHELL_BY_ID.get("search")!, SHELL_BY_ID.get("agents")!]
   const shown = new Set<string>(["search", "agents"])
@@ -147,7 +149,11 @@ export function menuNav(m: ShellMenu, owner: boolean): ShellNav {
   }
   // A group header with nothing under it is not drawn.
   const kept = main.filter((i, n) => !i.group || (n + 1 < main.length && !main[n + 1].group))
-  return { main: kept, more: [], hidden, foot: owner ? [SHELL_SETTINGS] : [] }
+  const more: ShellNavItem[] = []
+  for (const [id, item] of Object.entries(SHELL_MORE) as [HubShowItem, ShellNavItem][]) {
+    if (view?.show[id] && !shown.has(item.id)) more.push(item)
+  }
+  return { main: kept, more, hidden, foot: owner ? [SHELL_SETTINGS] : [] }
 }
 
 /** Where /hub opens: the shell, when the layout is simple, the viewer has
