@@ -36,6 +36,7 @@ import { AutomationsPane } from "./ShellAutomations"
 import { WaitingPane } from "./ShellWaiting"
 import { ProjectsPane } from "./ShellProjects"
 import { ActivityPane } from "./ShellActivity"
+import { MobilePane } from "./ShellMobile"
 import {
   AfSkeletonRows, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
   Tooltip, TooltipContent, TooltipTrigger, cn,
@@ -341,6 +342,7 @@ function Centre({ props, bar, onThread }: { props: SimpleShellProps; bar: ReactN
     case "waiting": return <WaitingPane open={props.openTask ?? null} phoneBar={bar} />
     case "projects": return <ProjectsPane owner={props.owner} phoneBar={bar} />
     case "activity": return <ActivityPane phoneBar={bar} />
+    case "mobile": return <MobilePane phoneBar={bar} />
     default: return <ShellChat agent={current} asks={row?.state === "needs" ? row.asks : undefined} phoneBar={bar} onThread={onThread} />
   }
 }

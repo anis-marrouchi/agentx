@@ -48,7 +48,7 @@ export const SHELL_MAIN: readonly ShellNavItem[] = [
  *  it until it has one (noPlace in layout.ts, #2313 E6); gates and hosts are parts of a post and of
  *  the status bar, not menu items, so the shell has nothing to show for them. */
 export const SHELL_MORE: Readonly<Partial<Record<HubShowItem, ShellNavItem>>> = {
-  mobile: { id: "mobile", label: "Mobile app", icon: "smartphone", href: "#page=mobile" },
+  mobile: { id: "mobile", label: "Mobile app", icon: "smartphone", href: "#page=home&pane=mobile" },
   workflows: { id: "workflows", label: "Workflows", icon: "workflow", href: "#page=workflows" },
   wiki: { id: "wiki", label: "Wiki", icon: "book-open", href: "/admin/wiki/" },
   activity: { id: "activity", label: "Activity", icon: "activity", href: "#page=home&pane=activity" },
