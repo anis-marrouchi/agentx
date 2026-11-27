@@ -26,6 +26,11 @@ export interface FlagResult {
 export function flagUnsourced(
   store: MemoryStore, agentId: string, opts: { apply?: boolean; now?: number } = {},
 ): FlagResult {
+  // Read and rewrite under the facts lock: an append in between is kept.
+  return store.withFactsLock(agentId, () => flagUnsourcedLocked(store, agentId, opts))
+}
+
+function flagUnsourcedLocked(store: MemoryStore, agentId: string, opts: { apply?: boolean; now?: number }): FlagResult {
   const facts = store.getAll(agentId)
   const since = new Date(opts.now ?? Date.now()).toISOString()
   const flagged: FlagResult["flagged"] = []

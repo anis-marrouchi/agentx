@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmS
 import { tmpdir } from "os"
 import path from "path"
 import { MemoryStore } from "../src/agents/memory-store"
-import { listRuns, MAX_BACKUPS, MAX_RUNS, recordRun, showRun, undoRun } from "../src/improve/tidy"
+import { changeNote, listRuns, MAX_BACKUPS, MAX_RUNS, OVER_CAP_SKIP, recordRun, RUN_FLOOR_HOURS, RUN_KEEP_DAYS, showRun, trimRuns, undoRun } from "../src/improve/tidy"
 
 // #2117 PR 1: a fact cleanup leaves a run log, so every fact it drops or
 // merges can be listed and put back.
@@ -115,13 +115,27 @@ describe("undo", () => {
 
     const run = store.prune("a", NOW)!
     expect(run.changes.map((c) => c.before[0].content)).toEqual(["fact 0"])
-    expect(undoRun(store, run.runId, { now: NOW }).restored).toEqual([1])
+    expect(undoRun(store, run.runId, { now: NOW, force: true }).restored).toEqual([1])
     expect(contents()[0]).toBe("fact 0")
 
     const next = store.prune("a", NOW)!
     expect(next.changes.map((c) => c.before[0].content)).toEqual(["fact 0"])
     expect(contents()).toContain("fact 1")
     expect(contents()).toHaveLength(200)
+  })
+
+  it("C2: skips an over-cap drop while the file is still at its cap, and says so", () => {
+    for (let i = 0; i < 201; i++) add(`fact ${i}`)
+    const run = store.prune("a", NOW)!
+    expect(changeNote(run.changes[0])).toMatch(/undo skips it while the agent has 200 facts/)
+    expect(undoRun(store, run.runId, { now: NOW }).skipped).toEqual([{ n: 1, why: OVER_CAP_SKIP }])
+    expect(contents()).not.toContain("fact 0")
+
+    // With room again, it goes back.
+    store.rewrite("a", store.getAll("a").slice(1))
+    expect(undoRun(store, run.runId, { now: NOW }).restored).toEqual([1])
+    expect(contents()).toContain("fact 0")
+    expect(changeNote(showRun(store, run.runId)!.changes[0])).toBeUndefined()
   })
 
   it("refuses an unknown or unsafe run id", () => {
@@ -140,12 +154,41 @@ describe("history is bounded", () => {
     expect(readdirSync(dir).filter((f) => f.startsWith("a.prune."))).toHaveLength(MAX_BACKUPS)
   })
 
-  it("keeps at most MAX_RUNS run logs, dropping the oldest", () => {
-    const first = recordRun(store, "a", "prune", [], { at: "2026-01-01T00:00:00.000Z" })
-    for (let i = 0; i < MAX_RUNS; i++) {
-      recordRun(store, "a", "prune", [], { at: new Date(NOW + i * 1000).toISOString() })
+  it("keeps at most MAX_RUNS prune logs per agent, but none younger than RUN_FLOOR_HOURS goes", () => {
+    const old = NOW - 3 * DAY
+    const first = recordRun(store, "a", "prune", [], { at: new Date(old).toISOString(), now: NOW })
+    for (let i = 1; i <= MAX_RUNS; i++) {
+      recordRun(store, "a", "prune", [], { at: new Date(old + i * 1000).toISOString(), now: NOW })
     }
-    expect(readdirSync(path.join(store.memoryRoot(), "_tidy"))).toHaveLength(MAX_RUNS)
-    expect(existsSync(path.join(store.memoryRoot(), "_tidy", `${first.runId}.json`))).toBe(false)
+    const dir = path.join(store.memoryRoot(), "_tidy")
+    expect(readdirSync(dir)).toHaveLength(MAX_RUNS)
+    expect(existsSync(path.join(dir, `${first.runId}.json`))).toBe(false)
+
+    // A night's logs (younger than the floor) all stay, even past the cap,
+    // until the next morning's review has seen them.
+    for (let i = 0; i < 5; i++) recordRun(store, "a", "prune", [], { at: new Date(NOW - 3600_000 + i * 1000).toISOString(), now: NOW })
+    const young = listRuns(store, "a").filter((r) => NOW - Date.parse(r.at) < RUN_FLOOR_HOURS * 3600_000)
+    expect(young).toHaveLength(5)
+    expect(readdirSync(dir)).toHaveLength(MAX_RUNS)
+  })
+
+  it("C1: keeps run logs by age per agent: a tidy log outlives its 7-day item, then goes", () => {
+    const tidy10 = recordRun(store, "a", "tidy", [], { at: new Date(NOW - 10 * DAY).toISOString(), now: NOW })
+    const tidy15 = recordRun(store, "a", "tidy", [], { at: new Date(NOW - 15 * DAY).toISOString(), now: NOW - 15 * DAY })
+    // Another agent's many prune logs never push agent a's logs out.
+    for (let i = 0; i < MAX_RUNS + 3; i++) recordRun(store, "b", "prune", [], { at: new Date(NOW - 2 * DAY + i * 1000).toISOString(), now: NOW })
+    expect(showRun(store, tidy15.runId)).not.toBeNull()
+    trimRuns(store, "a", NOW)
+    expect(showRun(store, tidy10.runId)).not.toBeNull()
+    expect(showRun(store, tidy15.runId)).toBeNull()
+    expect(RUN_KEEP_DAYS).toBeGreaterThan(7)
+    expect(listRuns(store, "b")).toHaveLength(MAX_RUNS)
+  })
+
+  it("C1: the count cap never drops a tidy log", () => {
+    const tidy = recordRun(store, "a", "tidy", [], { at: new Date(NOW - 5 * DAY).toISOString(), now: NOW })
+    for (let i = 0; i < MAX_RUNS + 2; i++) recordRun(store, "a", "prune", [], { at: new Date(NOW - 4 * DAY + i * 1000).toISOString(), now: NOW })
+    expect(showRun(store, tidy.runId)).not.toBeNull()
+    expect(listRuns(store, "a").filter((r) => r.by === "prune")).toHaveLength(MAX_RUNS)
   })
 })

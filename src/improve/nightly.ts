@@ -6,8 +6,10 @@
 // ranking. Stage 3 (sweep only): hand the worst to the retro. Stage 4
 // (sweep only): a problem whose picked fix did not lower its count says so
 // on its next card. Rules (sweep only, #1996): one fix rule per agent in its
-// memory, at most 3. Model calls only when `improve.enabled`, within
-// `improve.dailyUsd`.
+// memory, at most 3. Stage 5, tidy (sweep only, #2117): merge and drop
+// facts and notes in each agent's memory, every change logged and undoable;
+// only when `improve.tidy.enabled`. Model calls only when `improve.enabled`,
+// within `improve.dailyUsd`.
 
 import type Database from "better-sqlite3"
 import { readImproveSettings, spentToday, type ImproveSettings } from "./budget"
@@ -17,6 +19,8 @@ import { handWorstToRetro, type HandoffOutcome } from "./handoff"
 import { ruleRetiredNote, ruleStage, type RuleStageResult } from "./rules"
 import type { ApprovalSettings } from "@/approvals/sweep"
 import type { AgentMemory } from "@/agents/agent-memory"
+import type { MemoryStore } from "@/agents/memory-store"
+import { tidyStage, type TidyStageResult } from "./tidy-stage"
 
 export interface ImprovePassOptions {
   /** Writable: the ranking and the spend are saved in it. */
@@ -39,6 +43,9 @@ export interface ImprovePassOptions {
   /** One fix rule per agent, at most 3 (#1996): the agents' memory the
    *  rules are written to. Unset: no rule stage. */
   rules?: { memory: AgentMemory }
+  /** Stage 5, the memory tidy (#2117): the agents' facts and notes. Unset:
+   *  no tidy. Runs only when `improve.tidy.enabled`. */
+  tidy?: { store: MemoryStore; notes: AgentMemory }
   now?: number
 }
 
@@ -51,6 +58,8 @@ export interface ImprovePassResult extends RankResult {
   held?: HeldCheck[]
   /** The rule stage (#1996), when the pass was given the agents' memory. */
   rules?: RuleStageResult
+  /** Stage 5, the memory tidy, when the pass was given the memory stores. */
+  tidy?: TidyStageResult
   spent: { usd: number }
 }
 
@@ -97,5 +106,13 @@ export async function improvePass(opts: ImprovePassOptions): Promise<ImprovePass
       })
     }
   }
-  return { ...r, settings, savedDay, handoff, held, rules, spent: { usd: spentToday(opts.db, now).usd } }
+  // Stage 5: tidy each agent's memory, last, so the retro's budget comes
+  // first. Note merges are model calls only when improve.enabled.
+  const tidy = opts.tidy
+    ? await tidyStage({
+      store: opts.tidy.store, notes: opts.tidy.notes, settings, db: opts.db, commit: opts.commit, now,
+      call: settings.enabled ? call : undefined,
+    })
+    : undefined
+  return { ...r, settings, savedDay, handoff, held, rules, tidy, spent: { usd: spentToday(opts.db, now).usd } }
 }

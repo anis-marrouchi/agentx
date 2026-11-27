@@ -7,6 +7,7 @@ import { memoryContextLines, renderMemoryBlock, type ContextLine } from "./memor
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
 import { isNodeFact } from "./node-facts"
 import { backupFacts, MAX_BACKUPS, recordRun, type TidyRun } from "@/improve/tidy"
+import { withLock } from "@/wiki/facts/ledger-file"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -39,7 +40,8 @@ export interface MemoryFact {
   intervalDays?: number
 }
 
-const MAX_MEMORIES = 200
+import { MAX_MEMORIES } from "./memory-limits"
+export { MAX_MEMORIES }
 const TASK_STATE_TTL_DAYS = 7
 
 
@@ -49,7 +51,11 @@ export class MemoryStore {
    *  are rendered as references to it (memory-context.ts). */
   private ledger: FactLedger
 
-  constructor(baseDir: string = process.cwd()) {
+  /** How long a write waits for another holder of the facts lock. */
+  private lockWaitMs: number
+
+  constructor(baseDir: string = process.cwd(), opts: { lockWaitMs?: number } = {}) {
+    this.lockWaitMs = opts.lockWaitMs ?? 5000
     this.memoryDir = resolve(baseDir, ".agentx/memory")
     this.ledger = new FactLedger(resolve(baseDir, ".agentx/wiki"))
     if (!existsSync(this.memoryDir)) {
@@ -59,6 +65,18 @@ export class MemoryStore {
 
   private filePath(agentId: string): string {
     return resolve(this.memoryDir, `${agentId}.jsonl`)
+  }
+
+  /**
+   * Run `fn` holding the agent's facts lock (`<agent>.jsonl.lock`, #2117).
+   * Every write takes it: an append, and every read-then-rewrite (prune,
+   * review, the nightly tidy, undo). The daemon appends while the nightly
+   * sweep, a separate process, rewrites; without one lock a fact appended
+   * between the tidy's read and its rewrite was lost. Re-entrant within a
+   * process; a holder that crashed is taken over after 30 s.
+   */
+  withFactsLock<T>(agentId: string, fn: () => T): T {
+    return withLock(this.filePath(agentId), fn, { what: `memory facts of ${agentId}`, timeoutMs: this.lockWaitMs, staleMs: 30_000 })
   }
 
   /** Store a fact. Refuses secrets, and usage-limit, reset and hold notes
@@ -76,7 +94,10 @@ export class MemoryStore {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
     }
-    appendFileSync(this.filePath(agentId), JSON.stringify(entry) + "\n")
+    this.withFactsLock(agentId, () => {
+      appendFileSync(this.filePath(agentId), JSON.stringify(entry) + "\n")
+      this.parsedCache.delete(this.filePath(agentId))
+    })
     return true
   }
 
@@ -158,6 +179,10 @@ export class MemoryStore {
    */
   recordAccess(agentId: string, memoryIds: string[]): void {
     if (memoryIds.length === 0) return
+    this.withFactsLock(agentId, () => this.recordAccessLocked(agentId, memoryIds))
+  }
+
+  private recordAccessLocked(agentId: string, memoryIds: string[]): void {
     const memories = this.getAll(agentId)
     const idSet = new Set(memoryIds)
     let changed = false
@@ -174,12 +199,7 @@ export class MemoryStore {
       }
     }
 
-    if (changed) {
-      writeFileSync(
-        this.filePath(agentId),
-        memories.map(m => JSON.stringify(m)).join("\n") + "\n",
-      )
-    }
+    if (changed) this.rewrite(agentId, memories)
   }
 
   /**
@@ -238,6 +258,10 @@ export class MemoryStore {
 
   /** Approve or reject a fact. Returns false when the id is unknown. */
   review(agentId: string, id: string, decision: "approved" | "rejected", by = "operator"): boolean {
+    return this.withFactsLock(agentId, () => this.reviewLocked(agentId, id, decision, by))
+  }
+
+  private reviewLocked(agentId: string, id: string, decision: "approved" | "rejected", by: string): boolean {
     const memories = this.getAll(agentId)
     const m = memories.find((f) => f.id === id)
     if (!m) return false
@@ -251,11 +275,13 @@ export class MemoryStore {
   /** Facts that contain a credential, stored before extraction stopped
    *  keeping them. They are never injected; `apply` also deletes them. */
   scrubSecrets(agentId: string, apply = false): number {
-    const memories = this.getAll(agentId)
-    const keep = memories.filter((m) => m.category !== "secret" && !containsSecret(m.content))
-    const removed = memories.length - keep.length
-    if (apply && removed > 0) this.rewrite(agentId, keep)
-    return removed
+    return this.withFactsLock(agentId, () => {
+      const memories = this.getAll(agentId)
+      const keep = memories.filter((m) => m.category !== "secret" && !containsSecret(m.content))
+      const removed = memories.length - keep.length
+      if (apply && removed > 0) this.rewrite(agentId, keep)
+      return removed
+    })
   }
 
   /** Trust and review counts, for the CLI. */
@@ -273,8 +299,13 @@ export class MemoryStore {
     return this.filePath(agentId)
   }
 
-  /** Replace every fact of an agent. Callers back the file up first. */
+  /** Replace every fact of an agent. Callers back the file up first, and
+   *  read the facts they pass inside `withFactsLock`. */
   rewrite(agentId: string, memories: MemoryFact[]): void {
+    this.withFactsLock(agentId, () => this.rewriteLocked(agentId, memories))
+  }
+
+  private rewriteLocked(agentId: string, memories: MemoryFact[]): void {
     // Lines getAll could not parse are kept as they are, not dropped:
     // a rewrite must never lose what it did not understand.
     let unreadable: string[] = []
@@ -284,6 +315,9 @@ export class MemoryStore {
     } catch { /* no file yet */ }
     const lines = [...memories.map((m) => JSON.stringify(m)), ...unreadable]
     writeFileSync(this.filePath(agentId), lines.join("\n") + (lines.length ? "\n" : ""))
+    // A rewrite of the same size within one mtime tick would otherwise be
+    // read back from the cache as the old facts.
+    this.parsedCache.delete(this.filePath(agentId))
   }
 
   /**
@@ -314,6 +348,10 @@ export class MemoryStore {
    * null when nothing was dropped (the file is then left as it is).
    */
   prune(agentId: string, now: number = Date.now()): TidyRun | null {
+    return this.withFactsLock(agentId, () => this.pruneLocked(agentId, now))
+  }
+
+  private pruneLocked(agentId: string, now: number): TidyRun | null {
     const all = this.getAll(agentId)
     if (all.length === 0) return null
 

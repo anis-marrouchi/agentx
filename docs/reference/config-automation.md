@@ -667,6 +667,9 @@ Self-improvement from failure signals. Counting the signals is always on and cos
 | `improve.maxCardsPerDay` | number (0–3) | `1` | Decision cards the self-improvement pass may raise in any 24 hours. The retro's own limit of three a day still holds. |
 | `improve.mergeModel` | string | `"haiku"` | The small model that merges problems worded differently, once a day. Empty: no merge. |
 | `improve.minRefs` | number (2–50) | `3` | A problem is ranked only once it came from this many separate requests, hand-offs or runs. |
+| `improve.tidy.enabled` | boolean | `false` | Tidy each agent's memory every night, as the last step of the same nightly pass. See [Tidy an agent's memory](/jobs/agent-memory#12-tidy-an-agent-s-memory-each-night). |
+| `improve.tidy.staleDays` | number (7–3650) | `90` | A fact marked unverified this many days ago is dropped by the tidy. |
+| `improve.tidy.maxChangesPerAgent` | number (1–200) | `20` | At most this many changes per agent per night. |
 
 ## `shutdown`
 

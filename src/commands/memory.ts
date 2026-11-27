@@ -295,6 +295,85 @@ facts
       : chalk.dim(`  ${total} fact(s) state billing, account, outage or deploy state with no source. Run with --apply to flag them.`))
   })
 
+// --- agentx memory tidy (#2117) ---
+//
+// `tidy`: what the nightly tidy would change (preview), or with --commit
+// change it now. `tidy show <runId>`: one run's changes. `tidy undo
+// <runId>`: put them back. `tidy list`: the latest runs.
+
+memory
+  .command("tidy")
+  .description("merge duplicate facts and notes, drop expired and stale facts (preview unless --commit); also: tidy list | show <run> | undo <run>")
+  .argument("[action]", "list, show or undo (default: run the tidy)")
+  .argument("[run]", "run id, for show and undo")
+  .option("--agent <id>", "one agent (default: all)")
+  .option("--commit", "make the changes (default: list what would change)")
+  .option("--change <n>", "undo only this change of the run")
+  .option("--force", "undo even a change whose kept fact or note changed since, or an over-cap drop")
+  .action(async (action: string | undefined, runId: string | undefined, opts: { agent?: string; commit?: boolean; change?: string; force?: boolean }) => {
+    const { listRuns, showRun, undoRun, changeNote } = await import("@/improve/tidy")
+    const store = new MemoryStore()
+    const notes = new AgentMemory()
+    if (action === "list") {
+      const runs = listRuns(store, opts.agent).slice(0, 20)
+      if (runs.length === 0) console.log(chalk.dim("  no tidy runs"))
+      for (const r of runs) {
+        const undone = r.changes.filter((c) => c.undoneAt).length
+        console.log(`  ${chalk.cyan(r.runId)}  ${r.by}  ${r.changes.length} change(s)${undone ? chalk.dim(`, ${undone} undone`) : ""}`)
+      }
+      return
+    }
+    if (action === "show" || action === "undo") {
+      if (!runId) { console.error(chalk.red(`  tidy ${action} needs a run id (see \`agentx memory tidy list\`)`)); process.exitCode = 1; return }
+      if (action === "show") {
+        const run = showRun(store, runId)
+        if (!run) { console.error(chalk.red(`  no tidy run ${runId}`)); process.exitCode = 1; return }
+        console.log(`  ${chalk.bold(run.agent)}  ${run.by} at ${run.at}${run.backup ? chalk.dim(`  (backup: ${run.backup})`) : ""}`)
+        for (const c of run.changes) {
+          const what = c.store === "fact"
+            ? c.before.map((f) => f.content.slice(0, 100)).join(" | ")
+            : c.before.map((n) => n.name).join(" + ")
+          const note = changeNote(c)
+          console.log(`  ${c.n}. ${c.store} ${c.action}${c.reason ? ` (${c.reason})` : ""}: ${what}${c.undoneAt ? chalk.dim(`  undone ${c.undoneAt}`) : ""}`)
+          if (note) console.log(chalk.dim(`     ${note}`))
+        }
+        return
+      }
+      const change = opts.change === undefined ? undefined : Number(opts.change)
+      if (change !== undefined && (!Number.isInteger(change) || change < 1)) {
+        console.error(chalk.red(`  --change must be a change number, 1 or more`)); process.exitCode = 1; return
+      }
+      try {
+        const r = undoRun(store, runId, { change, force: !!opts.force, notes })
+        if (r.restored.length) console.log(chalk.green(`  ✓ put back change(s) ${r.restored.join(", ")}`))
+        for (const s of r.skipped) console.log(chalk.yellow(`  skipped ${s.n}: ${s.why}`))
+      } catch (e: any) {
+        console.error(chalk.red(`  ${e?.message ?? e}`)); process.exitCode = 1
+      }
+      return
+    }
+    if (action !== undefined) { console.error(chalk.red(`  unknown tidy action "${action}": use list, show or undo`)); process.exitCode = 1; return }
+
+    const [{ tidyStage }, { readImproveSettings }, { printTidy }] = await Promise.all([
+      import("@/improve/tidy-stage"), import("@/improve/budget"), import("@/commands/improve"),
+    ])
+    const settings = readImproveSettings()
+    // Note merges are model calls: by hand too, only with improve.enabled,
+    // and booked in the same daily budget.
+    const dbPath = resolve(process.cwd(), ".agentx/db.sqlite")
+    const db = opts.commit && settings.enabled && existsSync(dbPath) ? new (await import("better-sqlite3")).default(dbPath) : undefined
+    try {
+      const { reviewWithClaudeCost } = await import("@/daemon/session-monitor")
+      printTidy(await tidyStage({
+        store, notes, settings, db, commit: !!opts.commit, agent: opts.agent, byHand: true,
+        call: db ? (input, model, prompt) => reviewWithClaudeCost(input, model, undefined, prompt) : undefined,
+      }))
+    } finally {
+      db?.close()
+    }
+    if (!opts.commit) console.log(chalk.dim("\n  Preview: nothing changed. Add --commit to make the changes."))
+  })
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer)

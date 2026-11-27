@@ -380,6 +380,40 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 3. To absorb that agent once anyway, name it: `agentx wiki absorb --agent <agent>`.
 4. To turn it back on, run `agentx config set agents.<agent>.wiki.absorb.enabled true`.
 
+## 12. Tidy an agent's memory each night
+
+Over time an agent saves the same fact twice in different words, and keeps facts that went out of date. The nightly tidy cleans this up and keeps a record of every change, so you can put any change back.
+
+Each night, for each agent, it:
+
+- merges facts that say the same thing, keeping the newest;
+- drops task facts that have expired, and facts marked unverified more than 90 days ago (`improve.tidy.staleDays`);
+- merges notes that say the same thing into one note. An AI model writes the merged text, so this needs `improve.enabled` and counts against `improve.dailyUsd`.
+
+It never changes facts waiting in `agentx memory facts held`, the fix rules (notes named `loop_…`) or lines of the facts file it cannot read. It makes at most 20 changes per agent a night (`improve.tidy.maxChangesPerAgent`).
+
+1. **Terminal:** see what it would change, without changing anything:
+   ```sh
+   agentx memory tidy
+   ```
+2. **`agentx.json`:** to run it every night, turn it on, then restart the daemon:
+   ```json
+   { "improve": { "tidy": { "enabled": true } } }
+   ```
+   It runs as the last step of the nightly `agentx retro sweep --commit` job. To run it once now, add `--commit` to step 1.
+3. **Terminal:** list the latest runs, then see one run's changes:
+   ```sh
+   agentx memory tidy list
+   agentx memory tidy show <run>
+   ```
+4. **Terminal:** put a run's changes back, or only one of them with `--change <n>`:
+   ```sh
+   agentx memory tidy undo <run>
+   ```
+   Each change is put back once. A change whose kept fact or note was edited after the tidy is skipped, unless you add `--force`.
+
+Each run's record is in `.agentx/memory/_tidy/` for 14 days. The facts file is copied to `.agentx/memory/_backup/` before each change.
+
 ## Check it worked
 
 1. `agentx memory facts scrub` reports `0 fact(s) contain credentials`.
@@ -394,7 +428,8 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 10. After you turn the wiki absorb off for an agent, `agentx wiki absorb --dry-run` prints `absorb is off for this agent` next to it.
 11. Change a rule on a wiki decision page (and, with approvals on, approve it with `agentx wiki decisions approve`), then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
 12. `agentx wiki decisions list` shows `approved` next to that page. Edit the page again and it shows `changed since approval`.
-13. Start a new conversation with an agent and ask what its wiki block lists. It names page counts per type and the `wiki search` command, with no titles. With `"startCatalog": "titles"` it lists the titles.
+13. After `agentx memory tidy --commit`, `agentx memory tidy list` shows the run, and `agentx memory tidy show <run>` lists each change.
+14. Start a new conversation with an agent and ask what its wiki block lists. It names page counts per type and the `wiki search` command, with no titles. With `"startCatalog": "titles"` it lists the titles.
 
 ## If something is wrong
 
@@ -427,4 +462,6 @@ The **Edit** dialog on an agent's card in **Settings** has the same switch, **In
 - **`agentx memory check` says a note has no `checked` even though the header has one:** the date must be written `YYYY-MM-DD` (a date and time such as `2026-10-01T09:00:00Z` works too). The check prints what it could not read under the note.
 - **`agentx memory check` finds no notes:** without `--dir` it reads the AgentX store, `.agentx/agent-memory/<agent>/`, in the folder that holds `agentx.json`. Run it there, or name the notes folder with `--dir`.
 - **`agentx wiki absorb` still skips an agent you turned back on:** check the agent in `agentx.json`. `wiki.absorb.enabled` must be `true` or left out.
+- **`agentx memory tidy undo` skips a change and says the facts file is at its 200-fact cap:** the fact was dropped because the agent had more than 200 facts. Put back, it would be dropped again at the next clean-up. Remove facts you no longer need first, or add `--force`.
+- **A memory command says the memory facts of an agent are busy:** another `agentx` command, or the nightly tidy, is writing that agent's facts. Try again. If nothing else is running, delete the `.lock` file named in the message.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.
