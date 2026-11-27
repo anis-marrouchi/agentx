@@ -14,6 +14,7 @@ import {
   chatRouteOk, checksSummary, daemonNodeFromArgs, healthIsUpgraded, hubPageOk, peerSkew, releaseDirFromArgs, retargetPlist, runsToCut,
   upgradeJobLabel, type HubProbe, type PeerSkew, type UpgradeOutcome,
 } from "@/daemon/upgrade"
+import { pruneReleases } from "@/daemon/upgrade-prune"
 import { dashboardBaseUrl } from "./start-plan"
 import { daemonBase, drainLimitMs, getJson, postJson, readHolding, readInflight, readRunning } from "./daemon-http"
 
@@ -32,6 +33,9 @@ export interface UpgradeRunOptions {
   peopleOnly?: boolean
   /** How long the Hub page may take to load after the reload (tests). */
   hubWaitMs?: number
+  /** Release folders kept after an ok upgrade, live and rollback included;
+   *  0 keeps them all (#2495). */
+  keepReleases?: number
 }
 
 /** The version a release folder's CLI reports, or null when it does not run. */
@@ -281,6 +285,8 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
     const skipped = checks.checksSkipped ? `peer and Hub checks skipped (${checks.checksSkipped})` : ""
     const reasons = [failed.length ? `could not reload ${failed.join(", ")}` : "", summary, skipped].filter(Boolean)
     const hubBroken = checks.hub.some((h) => !h.ok)
+    // 3c. Old release folders go only after a fully ok upgrade (#2495).
+    if (!hubBroken && o.keepReleases) outcome.releases = pruneReleases({ live: o.dir, rollback: oldDir, keep: o.keepReleases }, log)
     return finish(hubBroken ? "degraded" : "ok", reasons.length ? `daemon upgraded; ${reasons.join("; ")}` : undefined)
   }
 

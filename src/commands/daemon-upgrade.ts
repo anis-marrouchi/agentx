@@ -6,6 +6,7 @@ import { resolve } from "path"
 import { launchdDomain, launchdPlistPath } from "@/daemon/restart-host"
 import { bootstrapJob, hasLaunchd, jobLoaded, jobPid, readPlistJson } from "@/native/macos/launchd"
 import { oneShotPlist, releaseDirFromArgs, upgradeJobLabel } from "@/daemon/upgrade"
+import { DEFAULT_KEEP_RELEASES } from "@/daemon/upgrade-prune"
 import { daemonBase, getJson } from "./daemon-http"
 import { releaseVersion, runUpgrade, type UpgradeRunOptions } from "./daemon-upgrade-run"
 
@@ -33,6 +34,7 @@ export const upgradeCommand = new Command("upgrade")
   .option("--force", "restart even if tasks are still running when --timeout runs out")
   .option("--people-only", "wait only for runs a person is waiting on; the fleet's own runs (agent to agent, schedules, workflows) get the drain time and are cut")
   .option("--boot-timeout <minutes>", "how long the new daemon may take to answer", "5")
+  .option("--keep-releases <n>", "release folders kept beside the new one after an ok upgrade, live and rollback included (0 keeps all)", String(DEFAULT_KEEP_RELEASES))
   .option("--no-follow", "start the upgrade and return without showing its log")
   .option("--dry-run", "show what would change, without changing anything")
   .option("--run", "(internal) do the upgrade in this process")
@@ -46,9 +48,12 @@ export const upgradeCommand = new Command("upgrade")
       force: !!opts.force,
       bootTimeoutMin: Number(opts.bootTimeout),
       peopleOnly: !!opts.peopleOnly,
+      keepReleases: Number(opts.keepReleases),
     }
     if (!Number.isFinite(runOpts.timeoutMin) || runOpts.timeoutMin < 0) fail("--timeout must be a number of minutes")
     if (!Number.isFinite(runOpts.bootTimeoutMin) || runOpts.bootTimeoutMin <= 0) fail("--boot-timeout must be a number of minutes")
+    const keep = runOpts.keepReleases ?? 0
+    if (!Number.isInteger(keep) || (keep !== 0 && keep < 2)) fail("--keep-releases must be 0 (keep all) or 2 or more (the live release and its rollback)")
     if (opts.run) process.exit(await runUpgrade(runOpts))
 
     if (!hasLaunchd()) fail("agentx daemon upgrade works with launchd (macOS) only for now.", "On Linux, point the systemd unit at the new release and run: agentx daemon restart --reload-service")
@@ -77,6 +82,7 @@ export const upgradeCommand = new Command("upgrade")
     if (opts.dryRun) {
       console.log(chalk.dim(`  Would hold new run starts (queued runs stay queued) and wait up to ${runOpts.timeoutMin} min for ${runOpts.peopleOnly ? "runs a person is waiting on (other runs are not waited for)" : "idle"}${runOpts.force ? ", then restart anyway" : ", then give up"}, switch every loaded job naming ${oldDir},`))
       console.log(chalk.dim(`  reload them, and wait up to ${runOpts.bootTimeoutMin} min for ${version}; on failure put the old settings back.`))
+      console.log(chalk.dim(keep ? `  When ok, delete release folders beside it past the newest ${keep} (live and ${oldDir} kept; none in use).` : "  Keep every old release folder (--keep-releases 0)."))
       console.log()
       return
     }
@@ -91,6 +97,7 @@ export const upgradeCommand = new Command("upgrade")
     const cli = realpathSync(process.argv[1])
     const args = [process.execPath, cli, "daemon", "upgrade", dir, "--run",
       "--timeout", String(runOpts.timeoutMin), "--boot-timeout", String(runOpts.bootTimeoutMin),
+      "--keep-releases", String(keep),
       ...(runOpts.force ? ["--force"] : []),
       ...(runOpts.peopleOnly ? ["--people-only"] : []),
       ...(opts.expectVersion ? ["--expect-version", opts.expectVersion] : []),

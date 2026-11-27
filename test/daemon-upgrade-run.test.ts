@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   sent: [] as { key?: string; minutes?: number }[],
   /** Runs when the daemon job is reloaded: the old daemon's shutdown. */
   onReload: null as null | (() => void),
+  /** Calls to pruneReleases (#2495). */
+  pruned: [] as any[],
 }))
 
 vi.mock("child_process", async (orig) => ({
@@ -57,6 +59,9 @@ vi.mock("../src/native/macos/launchd", () => ({
   readPlistJson: () => ({ ProgramArguments: ["/usr/bin/node", join(h.root, "old/dist/cli.js"), "daemon", "start"] }),
   reloadJob: async () => { h.onReload?.(); h.onReload = null; return true },
 }))
+vi.mock("../src/daemon/upgrade-prune", () => ({
+  pruneReleases: vi.fn((o: any) => { h.pruned.push(o); return { keep: o.keep, pruned: [{ dir: "/r/agentx-release-old", bytes: 1024 }], keptInUse: [], freedBytes: 1024 } }),
+}))
 vi.mock("../src/daemon/shutdown", () => ({ writeShutdownRequest: () => {} }))
 vi.mock("../src/daemon/upgrade-native", () => ({ ensureNativeModules: () => ({ ok: true, detail: "loads" }) }))
 vi.mock("../src/commands/daemon-http", () => {
@@ -88,7 +93,7 @@ vi.mock("../src/commands/daemon-http", () => {
 const html = () => new Response("<html>" + "x".repeat(4096) + "</html>", { status: 200, headers: { "content-type": "text/html" } })
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
-async function run(over: { timeoutMin?: number } = {}) {
+async function run(over: { timeoutMin?: number; keepReleases?: number } = {}) {
   vi.resetModules()
   const { runUpgrade } = await import("../src/commands/daemon-upgrade-run")
   const code = await runUpgrade({ dir: join(h.root, "new"), timeoutMin: 1, force: false, bootTimeoutMin: 1, hubWaitMs: 0, ...over })
@@ -139,6 +144,35 @@ describe("daemon upgrade run: checks after the upgrade (#2227)", () => {
     expect(last.result).toBe("ok")
     expect(last.peerSkew).toEqual([{ peer: "clawd", url: "http://peer.test", version: "0.1.0", commit: "bffdedf7" }])
     expect(last.reason).toContain("peer clawd runs 0.1.0")
+  })
+
+  it("prunes old release folders only after an ok upgrade (#2495)", async () => {
+    h.pruned = []
+    h.fetch = (url) => {
+      if (url.startsWith("http://peer.test")) return json({ version: "0.2.0", commit: "abc12345" })
+      if (url.endsWith("/api/app/conversations")) return json({ error: "unpaired" }, 401)
+      return html()
+    }
+    const ok = await run({ keepReleases: 2 })
+    expect(ok.last.result).toBe("ok")
+    expect(h.pruned).toEqual([{ live: join(h.root, "new"), rollback: join(h.root, "old"), keep: 2 }])
+    expect(ok.last.releases.pruned).toEqual([{ dir: "/r/agentx-release-old", bytes: 1024 }])
+
+    h.pruned = []
+    h.healthCalls = 0
+    h.fetch = () => { throw new TypeError("fetch failed") }
+    const degraded = await run({ keepReleases: 2 })
+    expect(degraded.last.result).toBe("degraded")
+    expect(h.pruned).toEqual([])
+    expect(degraded.last.releases).toBeUndefined()
+  })
+
+  it("keeps every release with --keep-releases 0", async () => {
+    h.pruned = []
+    h.fetch = (url) => url.endsWith("/api/app/conversations") ? json({}, 401) : url.startsWith("http://peer.test") ? json({ version: "0.2.0", commit: "abc12345" }) : html()
+    const { last } = await run({ keepReleases: 0 })
+    expect(last.result).toBe("ok")
+    expect(h.pruned).toEqual([])
   })
 
   it("records the checks as skipped, with the reason, when agentx.json does not load", async () => {
