@@ -20,7 +20,7 @@ Work that an agent started on its own, such as a schedule or a workflow, does no
 
 AgentX writes down every piece of work it hands out, in its database on the machine of the agent that asked. After a restart it reads that back:
 
-- **The helper was still working:** its answer will never come. Your agent is told the work "was lost", and tells you.
+- **The helper was still working, or was about to start:** if the helper is on this machine, AgentX sends it the same message once more after the restart, with a first line saying an earlier run was stopped. Its answer then comes back as usual. If that second run is stopped by a restart too, or the helper is on another machine, your agent is told the work "was lost", or that it failed, and tells you. Turn this off with `resendAfterRestart` below.
 - **The answer was back, but your agent had not started passing it on** (for example, it was busy with another message in the same chat): your agent passes it on once, right after the restart (unless `requeueRelayOnRestart` is off).
 - **Your agent was passing it on when AgentX stopped:** it tries once more after the restart (see `requeueRelayOnRestart` below). If that try is stopped or fails too, you get a short message saying the answer could not be passed on.
 
@@ -54,6 +54,7 @@ These settings live under `mesh.delegation` in `agentx.json`. They apply to help
 | `mesh.delegation.asyncWhenHuman` | `true` | Turn it off (`false`) to make every agent wait for its helper, as in older versions. |
 | `mesh.delegation.timeoutMinutes` | `30` | How long a helper has to answer. After this, your agent is told it timed out, and a helper on this machine is stopped. |
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. With it off, an answer your agent had not started passing on is not passed on after a restart either. |
+| `mesh.delegation.resendAfterRestart` | `true` | If AgentX restarts while a helper on this machine is working on, or waiting to start, a message from your agent, the helper gets the message once more after the restart. Turn it off (`false`) to have such work reported as lost or failed, as in older versions. |
 | `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 | `mesh.delegation.coalesceSeconds` | `120` | How long a helper's answer waits for the other helpers your agent asked from the same chat, so they all come back as one message. From 0 to 900. With `0`, only answers that are already in are joined. |
 | `mesh.delegation.topicSessions` | `false` | Turn it on (`true`) so a message that names one issue or merge request, but no `home`, continues the helper's last run on that issue while it is still fresh (see **One issue named in the message** below). Read at start: restart AgentX after changing it. |

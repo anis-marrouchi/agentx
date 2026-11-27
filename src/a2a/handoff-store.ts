@@ -22,7 +22,7 @@
 
 import type Database from "better-sqlite3"
 import { existsSync, readFileSync, renameSync, unlinkSync } from "fs"
-import { NONE_ORIGIN, type DelegationRecord, type DelegationResult, type DelegationStatus, type WayHome } from "./delegation"
+import { NONE_ORIGIN, type DelegationRecord, type DelegationResult, type DelegationStatus, type ResendSpec, type WayHome } from "./delegation"
 import { ensureColumns } from "@/storage/sqlite"
 
 /** The suffix a delegation log gets once it is imported (#1961). */
@@ -120,6 +120,11 @@ export const HANDOFF_JOURNAL_COLUMNS: Array<[string, string]> = [
   ["way_home", "TEXT"],
   ["result_text", "TEXT"],
   ["waiting_json", "TEXT"],
+  // #2467 item 1: what a local hand-off needs to be sent again after a
+  // restart ({ message, calleeContext?, timeoutMs?, slotWaitMs? }), kept
+  // only while the row is open; and when it was sent again (once).
+  ["resend_json", "TEXT"],
+  ["resent_at", "INTEGER"],
 ]
 
 /** A hand-off as GET /a2a/delegations lists it: ids, agents and status,
@@ -228,6 +233,8 @@ interface Row {
   result_text?: string | null
   waiting_json?: string | null
   way_home?: string | null
+  resend_json?: string | null
+  resent_at?: number | null
 }
 
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -277,13 +284,13 @@ export class HandoffStore {
    *  nothing was inserted. */
   insert(rec: DelegationRecord, at: number, source: "db" | "file" = "db"): boolean {
     return this.sql(`
-      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at, join_key, way_home)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO handoffs (id, caller, callee, peer, kind, depth, home, task_type, request, origin_json, root_json, started_at, source, updated_at, join_key, way_home, resend_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       rec.id, rec.caller, rec.callee, rec.peer ?? null, rec.kind ?? null, rec.depth ?? null, rec.home ?? null,
       // A none row has no way home: no origin is kept.
       rec.taskType ?? null, rec.request, rec.wayHome === "none" ? null : JSON.stringify(rec.origin), JSON.stringify(rec.root ?? null), rec.startedAt, source, at,
-      rec.joinKey ?? null, rec.wayHome ?? null,
+      rec.joinKey ?? null, rec.wayHome ?? null, rec.resend ? JSON.stringify(rec.resend) : null,
     ).changes > 0
   }
 
@@ -382,7 +389,7 @@ export class HandoffStore {
     const json = pending ? JSON.stringify({ result: pending.result, ...(pending.wrote ? { wrote: true } : {}) }) : null
     const text = result ? result.text.slice(0, RESULT_TEXT_CAP) : null
     const changed = this.sql(`
-      UPDATE handoffs SET status = ?, ended_at = ?, updated_at = ?, result_text = ?, waiting_json = ?,
+      UPDATE handoffs SET status = ?, ended_at = ?, updated_at = ?, result_text = ?, waiting_json = ?, resend_json = NULL,
         relay_json    = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ? ELSE relay_json END,
         relay_at      = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ? ELSE relay_at END,
         relay_attempt = CASE WHEN ? IS NOT NULL AND relay_attempt IS NULL THEN ${PENDING_ATTEMPT} ELSE relay_attempt END
@@ -464,6 +471,13 @@ export class HandoffStore {
    *  written (a second process on this database took it). */
   claimRerun(id: string, at: number): boolean {
     return this.sql("UPDATE handoffs SET relay_attempt = 2, relay_at = ?, updated_at = ? WHERE id = ? AND relay_attempt < 2")
+      .run(at, at, id).changes > 0
+  }
+
+  /** Take the one resend after a restart (#2467): false when the row
+   *  ended, was sent again already, or keeps nothing to send. */
+  claimResend(id: string, at: number): boolean {
+    return this.sql("UPDATE handoffs SET resent_at = ?, updated_at = ? WHERE id = ? AND status IS NULL AND resent_at IS NULL AND resend_json IS NOT NULL")
       .run(at, at, id).changes > 0
   }
 
@@ -626,7 +640,21 @@ export class HandoffStore {
       ...(r.depth ? { depth: r.depth } : {}),
       ...(r.home ? { home: r.home } : {}),
       ...(wayHome ? { wayHome } : {}),
+      ...(resendOf(r.resend_json) ? { resend: resendOf(r.resend_json)! } : {}),
+      ...(r.resent_at ? { resent: true as const } : {}),
     }
+  }
+}
+
+/** What a row keeps to send a hand-off again (#2467); null when it keeps
+ *  nothing or it does not read. */
+function resendOf(v: string | null | undefined): ResendSpec | null {
+  if (!v) return null
+  try {
+    const o = JSON.parse(v)
+    return o && typeof o.message === "string" ? o as ResendSpec : null
+  } catch {
+    return null
   }
 }
 

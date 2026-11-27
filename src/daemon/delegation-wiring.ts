@@ -655,6 +655,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
     requeueRelayOnRestart: cfg.requeueRelayOnRestart,
+    resendAfterRestart: cfg.resendAfterRestart,
     coalesceMs: cfg.coalesceSeconds * 1000,
     // The hand-off journal is the table (#1861); no file is written (#1961).
     store,
