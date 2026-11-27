@@ -11,6 +11,8 @@
 import { BUSINESS_ROWS } from "./rows/business"
 import { CHANNELS_ROWS, WHATSAPP_ROWS } from "./rows/channels"
 import { MENU_ROWS } from "./rows/menu"
+import { MESH_ROWS } from "./rows/mesh"
+import { DIAGNOSTICS_ROWS, MACHINE_ROWS } from "./rows/system"
 
 export type SettingsGroupId = "general" | "work" | "people" | "connections" | "system"
 
@@ -220,9 +222,21 @@ export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
     help: "Pair the daemon with WhatsApp, watch chats for an agent, and sweep chats into a wiki.",
     rows: WHATSAPP_ROWS,
   },
-  { id: "mesh", label: "Mesh", icon: "network", group: "connections", oldSection: "mesh", help: "Your other machines and tokens.", rows: [] },
-  { id: "machine", label: "Machine", icon: "monitor", group: "system", oldSection: "advanced", help: "This machine, screen capture and agentx.json.", rows: [] },
-  { id: "diagnostics", label: "Diagnostics", icon: "activity", group: "system", oldSection: "diagnostics", help: "Errors, routing, rotations and checks.", rows: [] },
+  {
+    id: "mesh", label: "Mesh", icon: "network", group: "connections", oldSection: "mesh", built: true,
+    help: "Link this AgentX to your other machines so they share work, and give software its keys. Same as agentx mesh.",
+    rows: MESH_ROWS,
+  },
+  {
+    id: "machine", label: "Machine", icon: "monitor", group: "system", oldSection: "advanced", built: true,
+    help: "How agents capture this computer's screen, and agentx.json itself. Changes here apply without a restart.",
+    rows: MACHINE_ROWS,
+  },
+  {
+    id: "diagnostics", label: "Diagnostics", icon: "activity", group: "system", oldSection: "diagnostics", built: true,
+    help: "What the agents ran today, what went wrong, how messages were routed, the daemon's output and the preflight checks. Read-only; spend is on the Cost page.",
+    rows: DIAGNOSTICS_ROWS,
+  },
 ]
 
 export type GeneralRowId = (typeof GENERAL_ROWS)[number]["id"]

@@ -29,6 +29,10 @@ import {
   type AgentConfig, type AgentState, type CronRow, actionUsers, agentPatch, alsoLines, changedFields, inputsText, modelTier, parseInputs, restartWords, savedValue, showValue,
 } from "../src/hub/settings/agent-data"
 import { engineName } from "../src/hub/settings/data"
+import DiagnosticsPane from "../src/hub/settings/DiagnosticsPane"
+import MachinePane from "../src/hub/settings/MachinePane"
+import MeshPane from "../src/hub/settings/MeshPane"
+import { delta, fillDays, fillHours, num, regionsPatch, regionsText, tokenScopes, tokenState } from "../src/hub/settings/system-data"
 
 const state = {
   exists: true,
@@ -622,5 +626,157 @@ describe("SettingsRow wrap", () => {
   it("leaves a stacked row as it was", () => {
     expect(row("stack")).toContain('data-layout="stack"')
     expect(row("stack")).toContain("flex-col gap-2")
+  })
+})
+
+// --- ST3b: Mesh, Machine and Diagnostics (#2101) ---
+
+/** A pane drawn with its queries filled (`a/b` → ["settings", "a", "b"])
+ *  and the folds (tabs) in `open` open. */
+function renderSystem(Pane: () => unknown, data: Record<string, unknown>, open: string[] = []): string {
+  const client = new QueryClient()
+  for (const [k, v] of Object.entries(data)) client.setQueryData(["settings", ...k.split("/")], v)
+  const disclosure = { isOpen: (id: string) => open.includes(id), setOpen: () => {} }
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null,
+      createElement(DisclosureContext.Provider, { value: disclosure }, createElement(Pane as never)))),
+  )
+}
+
+/** Every row drawn is defined and in search, and every row defined is drawn
+ *  in one of the shots (condition 1). */
+function expectRowsMatch(pane: string, htmls: string[]) {
+  const drawn = new Set(htmls.flatMap((h) => [...h.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1])))
+  const inSearch = new Set(buildSettingsIndex().filter((e) => e.pane === pane).map((e) => e.row))
+  for (const id of drawn) expect(inSearch, `${pane}: row "${id}" is drawn but not in search`).toContain(id)
+  for (const r of paneDef(pane).rows) expect(drawn, `${pane}: row "${r.id}" is defined but not drawn`).toContain(r.id)
+}
+
+// Invented machines and keys only (no real host, token or key).
+const meshState = {
+  ...state,
+  nodeName: "studio",
+  mesh: { enabled: true, peers: [{ name: "laptop", url: "http://10.0.0.24:18800", hasToken: true }, { name: "vps-1", url: "https://vps-1.example.net:18800", hasToken: false }], healthCheck: { interval: 60, timeout: 10 } },
+}
+const meshTokens = [
+  { id: "t1", name: "Chat bridge", prefix: "axt_7f3k", scopes: ["agent:coder"], lastUsedAt: "2026-11-26T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z" },
+  { id: "t2", name: "Old script", prefix: "axt_c0e2", scopes: ["dashboard:write"], revokedAt: "2026-09-02T00:00:00Z" },
+]
+
+describe("Settings › Mesh (#2101 ST3b)", () => {
+  const html = renderSystem(MeshPane, { state: meshState, tokens: meshTokens })
+  it("is built, and draws only rows defined in its row list, all in search, and all of them (condition 1)", () => {
+    expect(paneDef("mesh").built).toBe(true)
+    expectRowsMatch("mesh", [html])
+  })
+  it("draws the peers, the health check folded, and the tokens with revoked ones folded", () => {
+    expect(html).toContain("is linked to 2 peers")
+    expect(html).toContain("2 machines this one talks to.")
+    expect(html).toContain("Token set")
+    expect(html).toContain("No token")
+    expect(html).toMatch(/data-disclosure="mesh-advanced" data-state="closed"/)
+    expect(html).toContain("Revoked (1)")
+    expect(html).toContain("agent:coder")
+    expect(html).toContain('aria-label="More for laptop"')
+    expect(html).toContain('aria-label="Health check every"')
+  })
+  it("says what to do when there is nothing yet", () => {
+    const empty = renderSystem(MeshPane, { state: { ...state, mesh: { enabled: false, peers: [] } }, tokens: [] })
+    expect(empty).toContain("Off. Turn it on to share work between your AgentX machines.")
+    expect(empty).toContain("No peers yet.")
+    expect(empty).toContain("No tokens yet.")
+  })
+  it("sums token state and the scopes a token may take", () => {
+    const now = Date.parse("2026-11-26T12:00:00Z")
+    expect(tokenState({ id: "a", name: "a" }, now)).toBe("active")
+    expect(tokenState({ id: "a", name: "a", revokedAt: "2026-01-01" }, now)).toBe("revoked")
+    expect(tokenState({ id: "a", name: "a", expiresAt: "2026-01-01" }, now)).toBe("expired")
+    expect(tokenState({ id: "a", name: "a", lastUsedAt: "2026-09-01" }, now)).toBe("stale")
+    expect(tokenScopes(state.agents).map((s) => s[0])).toEqual(["dashboard:read", "dashboard:write", "agent:*", "mesh:peer", "agent:coder"])
+  })
+})
+
+describe("Settings › Machine (#2101 ST3b)", () => {
+  const screen = {
+    maxPixels: 1_200_000, intervalMs: 100, changeThreshold: 0.02, stableMs: 400, timeoutMs: 10_000,
+    regions: { chat: { x: 0, y: 60, width: 720, height: 800 } },
+    buffer: { enabled: false, region: "screen", seconds: 10, fps: 2, maxPixels: 300_000 },
+  }
+  const html = renderSystem(MachinePane, { state: { ...state, screen }, config: { exists: true, raw: "{\n  \"agents\": {}\n}", hidden: 2 } })
+  it("is built, and draws only rows defined in its row list, all in search, and all of them (condition 1)", () => {
+    expect(paneDef("machine").built).toBe(true)
+    expectRowsMatch("machine", [html])
+  })
+  it("draws the screen fields, the rare tuning folded, recent frames off, and agentx.json with its hidden secrets", () => {
+    expect(html).toContain('value="1,200,000"')
+    expect(html).toContain('value="100"')
+    expect(html).toContain("chat=0,60,720,800")
+    expect(html).toMatch(/data-disclosure="screen-advanced" data-state="closed"/)
+    expect(html).toMatch(/<button[^>]*aria-checked="false"[^>]*aria-label="Keep recent frames"|<button[^>]*aria-label="Keep recent frames"[^>]*aria-checked="false"/)
+    expect(html).toContain("2 secrets typed into the file are hidden and kept on save.")
+    expect(html).toContain("Edit file")
+  })
+  it("writes regions as lines, sends each one taken out as null, and refuses a line with no name", () => {
+    expect(regionsText(screen.regions)).toBe("chat=0,60,720,800")
+    expect(regionsPatch("chat=0,0,10,10", { old: { x: 0, y: 0, width: 1, height: 1 } })).toEqual({ old: null, chat: "0,0,10,10" })
+    expect(regionsPatch("=1,2,3,4", {})).toHaveProperty("error")
+  })
+  it("search finds agentx.json on this pane", () => {
+    expect(searchSettings(buildSettingsIndex(), "agentx.json")[0]).toMatchObject({ pane: "machine", row: "cfg" })
+  })
+})
+
+describe("Settings › Diagnostics (#2101 ST3b)", () => {
+  const now = new Date().toISOString()
+  const data = {
+    state,
+    "dg/overview/__all/50": {
+      kpis: { tasksToday: 248, tasksDelta: 31, errorsToday: 7, errorRate: 0.028, avgDurationMs: 41_000, p50DurationMs: 28_000, p95DurationMs: 120_000, spendToday: 18.4, spendDelta: -3.1 },
+      perAgent: [{ agent_id: "coder", tasks: 71, errors: 2, avg_duration_ms: 84_000, last_active: now }],
+      perChannel: [{ channel: "telegram", tasks: 131, errors: 4 }],
+      idleAgents: ["pm-agent"],
+      recentErrors: [{ started_at: now, agent_id: "coder", channel: "gitlab", plain: "The engine ran out of turns", message_preview: "Review a change" }],
+    },
+    "dg/activity/__all/50": { hourly: [{ hour: now.slice(0, 13), tasks: 5, errors: 1 }], daily: [{ day: now.slice(0, 10), tasks: 9 }], perAgent: [{ agent_id: "coder", tasks_24h: 5, tasks_7d: 9 }] },
+    "dg/errors/__all/50": { rows: [{ started_at: now, agent_id: "coder", channel: "gitlab", plain: "Git push was rejected" }] },
+    "dg/routing/__all/50": { rows: [{ at: now, channel: "slack", chat_id: "C01", kind: "mention", deciding_stage: "wake word", agent_id: "coder", reason: "said @coder" }] },
+    "dg/rotations/__all/50": { rows: [{ rotated_at: now, agent_id: "coder", channel: "gitlab", reason: "tier-2", last_turn_input_tokens: 182_400 }] },
+    "dg/doctor/__all/50": { summary: { ok: 1, warnings: 0, errors: 1 }, checks: [{ severity: "ok", group: "Daemon", title: "Daemon running" }, { severity: "fail", group: "Mesh", title: "vps-1 does not answer", fix: "agentx mesh ping vps-1" }] },
+  }
+  const tabs = ["overview", "activity", "errors", "routing", "rotations", "logs", "doctor"]
+  const htmls = Object.fromEntries(tabs.map((t) => [t, renderSystem(DiagnosticsPane, data, ["dg-tab-" + t])]))
+  it("is built, and draws only rows defined in its row list, all in search, and all of them across its tabs (condition 1)", () => {
+    expect(paneDef("diagnostics").built).toBe(true)
+    expectRowsMatch("diagnostics", Object.values(htmls))
+  })
+  it("names each row's tab, so search turns to it", () => {
+    for (const r of paneDef("diagnostics").rows) expect(tabs.map((t) => "dg-tab-" + t)).toContain(r.open)
+    expect(searchSettings(buildSettingsIndex(), "rotations")[0]).toMatchObject({ pane: "diagnostics", row: "dg-rotations", open: "dg-tab-rotations" })
+  })
+  it("opens on Overview when no tab is named", () => {
+    expect(renderSystem(DiagnosticsPane, data)).toContain("The engine ran out of turns")
+  })
+  it("draws each tab from its data, read-only", () => {
+    expect(htmls.overview).toContain("248")
+    expect(htmls.overview).toContain("7 errors")
+    expect(htmls.overview).toContain("The engine ran out of turns")
+    expect(htmls.activity).toContain('aria-label="Tasks per hour"')
+    expect(htmls.errors).toContain("Git push was rejected")
+    expect(htmls.routing).toContain("wake word")
+    expect(htmls.rotations).toContain("182,400")
+    expect(htmls.logs).toContain('aria-label="Filter lines"')
+    expect(htmls.doctor).toContain("1 OK · 0 warnings · 1 failing")
+    expect(htmls.doctor).toContain("agentx mesh ping vps-1")
+    expect(htmls.doctor).toContain("Run the checks again")
+  })
+  it("fills every hour and day, oldest first, and says the change in words", () => {
+    const t = Date.parse("2026-11-26T12:30:00Z")
+    const h = fillHours([{ hour: "2026-11-26T12", tasks: 3 }, { hour: "2026-11-25T13", tasks: 1 }], t)
+    expect(h).toHaveLength(24)
+    expect(h[0].tasks).toBe(1)
+    expect(h[23].tasks).toBe(3)
+    expect(fillDays([{ day: "2026-11-20", tasks: 2 }], t)[0].tasks).toBe(2)
+    expect(delta(31, num)).toBe("▲ 31 vs yesterday")
+    expect(delta(0, num)).toBe("Same as yesterday")
   })
 })

@@ -10,7 +10,7 @@
 // POST|DELETE …/boards and …/boards/columns. No new endpoint.
 import { useState, type ReactNode } from "react"
 import { Badge, Button, Icon } from "../ui"
-import { oldSettingsHash } from "./address"
+import { settingsHash } from "./address"
 import { ProjectDialog, ClientDialog, MappingDialog, BoardDialog, ColumnDialog, NEXT_START } from "./BusinessDialogs"
 import { CLIENT_KIND, clientRows, columnMap, contactKey, contactMatch, type Board, type BusinessState, type ClientRow, type Project } from "./business-data"
 import { STATE_KEY, WriteNote, useWorkState, useWrite } from "./fields"
@@ -62,7 +62,7 @@ export default function BusinessPane() {
             <SettingsRow
               pane={PANE} row="layer"
               label={<span className="inline-flex items-center gap-2">Business layer <Badge variant="secondary">Off</Badge></span>}
-              control={<Button asChild variant="outline" size="sm"><a href={oldSettingsHash("advanced")}>Open agentx.json</a></Button>}
+              control={<Button asChild variant="outline" size="sm"><a href={settingsHash("machine", "cfg")}>Open agentx.json</a></Button>}
             />
           </SettingsGroup>
         )}
