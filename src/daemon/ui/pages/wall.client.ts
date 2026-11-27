@@ -1746,8 +1746,10 @@ ${HUB_NAV_SCRIPT}
 
   // The link's page and view apply before any read answers (#2101): the
   // first frame has the final layout (column, gutters, composer), and the
-  // posts fill it in place when they arrive.
-  applyHash();
+  // posts fill it in place when they arrive. Only on the feed itself: the
+  // other pages (Settings, a Task) draw once their own reads answer.
+  var firstPage = new URLSearchParams(location.hash.replace(/^#/, '')).get('page');
+  if (!firstPage || firstPage === 'wall') applyHash();
   // A link from the classic task page: /wall?task=<id> opens that post's thread.
   var fromTask = new URLSearchParams(location.search).get('task');
   load().then(function () {
