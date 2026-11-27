@@ -62,6 +62,28 @@ export function fdGroupTitle(group: string): string {
   return t[group] || group
 }
 
+/** Posts in feed groups, in the fdStates() order; newest move first
+ *  inside each. `stateOf` gives a post's state (it knows what runs now). */
+export function fdGroupPosts<T extends { lastMoveAt: number }>(posts: T[], stateOf: (p: T) => string): Array<{ key: string; title: string; posts: T[] }> {
+  const st = fdStates()
+  const by: Record<string, T[]> = {}
+  posts.forEach((p) => {
+    const g = fdGroupOf(stateOf(p))
+    if (!by[g]) by[g] = []
+    by[g].push(p)
+  })
+  return Object.keys(by).sort((a, b) => st[a].order - st[b].order).map((g) => ({
+    key: g, title: fdGroupTitle(g), posts: by[g].slice().sort((x, y) => y.lastMoveAt - x.lastMoveAt),
+  }))
+}
+
+/** What a post said, as plain words for two lines: its result, else what
+ *  was asked, without the daemon's markers or markdown. */
+export function fdExcerpt(p: { result?: { text?: string } | null; need?: string }): string {
+  const t = (p.result && p.result.text) || p.need || ""
+  return String(t).replace(/\[agentx:[^\]\n]*\]?/g, "").replace(/^\s*>+/gm, "").replace(/[#*_`]+/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\s+/g, " ").trim()
+}
+
 /** Does a post in `state` belong under the status tab `tab` (its filter
  *  value)? Open is every open state; Waiting is on you or on others. */
 export function fdInTab(state: string, tab: string): boolean {

@@ -18,11 +18,12 @@ export function App({ boot }: { boot: HubBoot }) {
   const page = reactPageFor(params, boot.pages)
   const Page = page ? hubRegistry.pageComponent(page) : undefined
   if (!Page) return null
+  const Fallback = hubRegistry.route(page!)?.fallback
   return (
     <TooltipProvider>
       <div className="ax-hub" data-hub-page={page}>
         <ConnectionLine />
-        <Suspense fallback={<div className="flex flex-col gap-3 p-4"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full" /></div>}>
+        <Suspense fallback={Fallback ? <Fallback /> : <div className="flex flex-col gap-3 p-4"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full" /></div>}>
           <Page params={params} />
         </Suspense>
         <Suspense fallback={null}><Toaster /></Suspense>

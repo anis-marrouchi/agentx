@@ -47,6 +47,12 @@
   --color-warn: var(--ax-warn);
   --color-warn-ink: var(--ax-amber-ink);
   --color-err-ink: var(--ax-red-ink);
+  /* A failed run's line: its tint and edge, with err-ink for the words. */
+  --color-err-tint: var(--ax-red-t);
+  --color-err-edge: var(--ax-red-e);
+  /* The quieter surface and the second text tone (hover rows, excerpts). */
+  --color-surface-2: var(--ax-surface-2);
+  --color-foreground-2: var(--ax-text-2);
 
   --radius-sm: var(--ax-radius-sm);
   --radius-md: var(--ax-radius-md);

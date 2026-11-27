@@ -68,7 +68,7 @@ import { WALL_RUN_ON_SCRIPT } from "./wall-run-on.client"
 import { WALL_PAGES_SCRIPT } from "./wall-pages.client"
 import { WALL_FEED_SCRIPT } from "./wall-feed.client"
 import { WALL_POST_SCRIPT } from "./wall-post.client"
-import { fdStates, fdState, fdGroupOf, fdGroupTitle, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch } from "./wall-feed-model"
+import { fdStates, fdState, fdGroupOf, fdGroupTitle, fdGroupPosts, fdExcerpt, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch } from "./wall-feed-model"
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
@@ -135,7 +135,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}
-  ${injectFns({ fdStates, fdState, fdGroupOf, fdGroupTitle, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch })}
+  ${injectFns({ fdStates, fdState, fdGroupOf, fdGroupTitle, fdGroupPosts, fdExcerpt, fdInTab, fdCounts, fdClock, fdSortBy, fdPatch })}
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haStateIcon, haStateWord, haRowHref, haGroups, haRowHtml, haListHtml, haRailHtml, haDownHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunStart, haRunsHtml, haRunsToday })}
   ${injectFns({ engineIconKey, engineIcon })}
