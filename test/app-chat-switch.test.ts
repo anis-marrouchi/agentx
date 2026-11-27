@@ -214,3 +214,69 @@ describe("voice pinned to the chat open when recording started", () => {
     expect(p.chatPosts()).toEqual([])
   })
 })
+
+// Switch then talk (#2101 G, Hakim's v4 condition): on the phone Agents
+// tab, a tap on an agent's row calls AXChat.with (app-agents.client.ts),
+// which starts a new chat with that agent. Words said after the tap must
+// go to the agent tapped, never to the conversation on screen before it.
+describe("switch then talk: Agents tab tap, then voice", () => {
+  const hakimRow = { node: "local", nodeName: "Mac", agent: "pm-agent", agentName: "Hakim", color: "#1f66e5" }
+  const rassamRow = { node: "local", nodeName: "Mac", agent: "artist-3d", agentName: "Rassam" }
+
+  async function onRassam() {
+    const p = page()
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    return p
+  }
+
+  it("switch then talk: spoken words after the tap start a chat with the tapped agent", async () => {
+    const p = await onRassam()
+    p.C.with(hakimRow)
+    expect(p.C.current()).toBeNull()
+    expect(p.C.target()).toEqual(hakimRow)
+    const pin = p.C.pin() // the voice bar starts recording after the tap
+    expect(pin).toEqual({ id: null, target: hakimRow })
+    expect(p.C.sendTo(pin, "this is for Hakim", { spoken: true })).toBe(true)
+    expect(p.chatPosts()).toEqual([{ node: "local", agent: "pm-agent", message: "this is for Hakim", spoken: true }])
+    expect(p.flashes).toEqual([])
+  })
+
+  it("switch then talk: typed words after the tap go to the tapped agent too", async () => {
+    const p = await onRassam()
+    p.C.with(hakimRow)
+    p.C.send("typed for Hakim")
+    expect(p.chatPosts()).toEqual([{ node: "local", agent: "pm-agent", message: "typed for Hakim" }])
+  })
+
+  it("switch then talk: a tap while still recording keeps the words with the chat recording started in", async () => {
+    const p = await onRassam()
+    const pin = p.C.pin() // recording starts in Rassam's chat
+    p.C.with(hakimRow) // Agents tab tap while speaking
+    p.C.sendTo(pin, "still for Rassam", { spoken: true })
+    expect(p.chatPosts()).toEqual([{ conversationId: rassam, message: "still for Rassam", spoken: true }])
+    await p.answer((x) => x.path === "/api/app/chat", {})
+    expect(p.flashes.join(" ")).toMatch(/Sent to artist-3d/)
+  })
+
+  it("switch then talk: two taps, words go to the last agent tapped", async () => {
+    const p = await onRassam()
+    p.C.with(hakimRow)
+    p.C.with(rassamRow)
+    p.C.send("for a new Rassam chat", { spoken: true })
+    expect(p.chatPosts()).toEqual([{ node: "local", agent: "artist-3d", message: "for a new Rassam chat", spoken: true }])
+  })
+
+  it("switch then talk: a tap while the old chat is answering does not hold the words for it", async () => {
+    const p = await onRassam()
+    p.C.send("Rassam, draw it")
+    expect(p.C.busy()).toBe(true)
+    p.C.with(hakimRow)
+    expect(p.C.busy()).toBe(false)
+    p.C.send("this is for Hakim", { spoken: true })
+    expect(p.chatPosts()).toEqual([
+      { conversationId: rassam, message: "Rassam, draw it" },
+      { node: "local", agent: "pm-agent", message: "this is for Hakim", spoken: true },
+    ])
+  })
+})
