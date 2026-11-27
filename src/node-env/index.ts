@@ -16,7 +16,7 @@
 //            credential its last session ran on
 //   work     the admission snapshot: running, waiting, next
 
-import { lastClaudeSessionInit, liftedProviderHolds, activeProviderHolds, getClaudeCodeUsage, type LiftedHold, type RateLimitSignal } from "@/agents/claude-code-quota"
+import { accountHolds, lastClaudeSessionInit, liftedProviderHolds, activeProviderHolds, getClaudeCodeUsage, type LiftedHold, type RateLimitSignal } from "@/agents/claude-code-quota"
 import type { AdmissionSnapshot } from "@/admission/queue"
 import type { DaemonConfig } from "@/daemon/config"
 import { detectHost, type HostInfo } from "@/native/host-info"
@@ -62,6 +62,8 @@ export interface NodeReport {
     windows: PlanWindow[]
     /** Windows that hold cold dispatches now. */
     holds: Array<{ window: string; since: string; until: string | null; reportedAt: string }>
+    /** Holds per Claude account (#2113 C1), the active one first. Names only. */
+    accounts: Array<{ account: string; active: boolean; holds: Array<{ window: string; until: string | null }> }>
     /** Holds that ended in the last day, so a recovery is visible. */
     lifted: Array<{ window: string; heldSince: string; liftedAt: string; how: LiftedHold["how"] }>
     /** Local dispatch counters (runs started in the last hour / 5 hours). */
@@ -209,6 +211,10 @@ export function accountReport(agents: DaemonConfig["agents"], now = Date.now()):
     })),
     holds: activeProviderHolds(now).map((s) => ({
       window: s.window, since: iso(s.seenAt), until: s.resetsAt ? iso(s.resetsAt) : null, reportedAt: iso(s.seenAt),
+    })),
+    accounts: accountHolds(now).map((a) => ({
+      account: a.account, active: a.active,
+      holds: a.holds.map((s) => ({ window: s.window, until: s.resetsAt ? iso(s.resetsAt) : null })),
     })),
     lifted: liftedProviderHolds(now).map((l) => ({
       window: l.window, heldSince: iso(l.heldSince), liftedAt: iso(l.liftedAt), how: l.how,

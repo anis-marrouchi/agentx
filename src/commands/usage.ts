@@ -66,6 +66,7 @@ usage
   .command("plan")
   .description("show the Claude plan windows as Claude Code last reported them, and any hold on fresh sessions")
   .option("--lift", "lift the hold on fresh sessions now, without waiting for the reset time")
+  .option("--account <name>", "with --lift: the Claude account whose holds to lift (default: the active one)")
   .option("--json", "raw JSON output")
   .action(async (opts) => {
     try {
@@ -73,7 +74,7 @@ usage
       const [host, port] = config.node.bind.split(":")
       const base = `http://${host || "127.0.0.1"}:${port}`
       const res = opts.lift
-        ? await fetch(`${base}/usage/plan/lift`, { method: "POST", signal: AbortSignal.timeout(3000) })
+        ? await fetch(`${base}/usage/plan/lift${opts.account ? `?account=${encodeURIComponent(opts.account)}` : ""}`, { method: "POST", signal: AbortSignal.timeout(3000) })
         : await fetch(`${base}/usage/plan`, { signal: AbortSignal.timeout(3000) })
       if (!res.ok) throw new Error(`Daemon answered ${res.status}. It may be older than this command; restart it.`)
       const data = await res.json() as any
@@ -84,7 +85,7 @@ usage
       if (opts.lift) {
         const names = (data.lifted as Array<{ window: string }>).map((s) => label(s.window))
         console.log(names.length
-          ? `  Lifted the hold on: ${names.join(", ")}. The next fresh session asks Claude again.`
+          ? `  Lifted the hold on: ${names.join(", ")}${data.account ? ` (account ${data.account})` : ""}. The next fresh session asks Claude again.`
           : chalk.dim("  No hold to lift."))
         console.log()
         return

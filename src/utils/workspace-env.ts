@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from "fs"
-import { CLI_PROVIDERS, withCliAccountEnv } from "@/agents/cli-accounts"
+import { CLI_PROVIDERS, activeCliAccountName, activeCliDir, cliAccountForDir, readCliAccounts, withCliAccountEnv, type CliAccounts, type CliProvider } from "@/agents/cli-accounts"
 import { resolve } from "path"
 
 // Loads per-agent secrets from the agent's workspace and tells the runtime
@@ -123,6 +123,19 @@ export function withWorkspaceCliAccountEnv(env: NodeJS.ProcessEnv, workspace: st
     own.push(envVar)
   }
   return withCliAccountEnv(env, own)
+}
+
+/**
+ * The account an agent's runs use (#2113 C1): a config folder set in its
+ * workspace .env maps to the profile with that folder (by resolved path),
+ * else `env:<agentId>`; with none set, the active profile. `dir` is the
+ * folder the run uses, for the dispatch trace line (C3).
+ */
+export function cliAccountOfWorkspace(provider: CliProvider, workspace: string, agentId: string, state: CliAccounts = readCliAccounts()): { account: string; dir: string } {
+  const own = loadWorkspaceEnv(workspace)[CLI_PROVIDERS[provider].envVar]?.trim()
+  return own
+    ? { account: cliAccountForDir(provider, own, `env:${agentId}`, state), dir: own }
+    : { account: activeCliAccountName(provider, state), dir: activeCliDir(provider, state) }
 }
 
 // Force the `claude` CLI to use OAuth/subscription billing. When

@@ -17,7 +17,7 @@
 
 import { homedir } from "node:os"
 import { activeCliDir, CLI_PROVIDERS, DEFAULT_PROFILE, readCliAccounts, withCliAccountEnv, type CliAccounts, type CliProvider } from "./cli-accounts"
-import { PlanUsageReader, readStoredLogin, type PlanUsageErrorKind, type PlanWindowReading } from "./claude-plan-usage"
+import { PlanUsageReader, readStoredLogin, type PlanUsageErrorKind, type PlanUsageReading, type PlanWindowReading } from "./claude-plan-usage"
 import { readCodexPlanUsageCached, type CodexPlanUsage } from "./codex-plan-usage"
 
 export interface AccountPlanReading {
@@ -58,6 +58,18 @@ export interface AccountsReadDeps {
 }
 
 const claudeReaders = new Map<string, { reader: PlanUsageReader; next: number; pending?: Promise<void> }>()
+/** Account name → the folder its reader reads, as of the last read. */
+let claudeDirByName = new Map<string, string>()
+
+/**
+ * The last fresh reading of an added Claude account that is not in use, for
+ * the priority gate (#2113): it holds runs on that account by its own plan.
+ * Null when that account was not read lately (the Hub polls /usage/plan).
+ */
+export function claudeAccountReading(name: string, now: number = Date.now()): PlanUsageReading | null {
+  const dir = claudeDirByName.get(name)
+  return (dir && claudeReaders.get(dir)?.reader.freshReading(now)) || null
+}
 
 /** Drops the readers of folders no longer read: removed accounts, the one now in use, or all when reading is off. */
 function dropClaudeReaders(keep: Set<string>): void {
@@ -101,6 +113,7 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
   const log = deps.log ?? (() => {})
   const out: AccountsPlanUsage = {}
   const claudeDirs = new Set<string>()
+  const dirByName = new Map<string, string>()
   for (const p of Object.keys(CLI_PROVIDERS) as CliProvider[]) {
     const s = state[p]
     if (!s || !s.profiles.length) continue
@@ -114,6 +127,7 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
       const dir = activeCliDir(p, as, env, home)
       if (p === "claude") {
         claudeDirs.add(dir)
+        dirByName.set(name, dir)
         return { name, active: false, ...(await readClaudeAccount(dir, withCliAccountEnv({ ...env }, [], as), now, make)) }
       }
       const r = await codex(dir).catch((e) => { log(`[plan-usage] Codex account "${name}" not read: ${e?.message ?? e}`); return null })
@@ -121,8 +135,9 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
     }))
   }
   dropClaudeReaders(claudeDirs)
+  claudeDirByName = dirByName
   return out
 }
 
 /** For tests. */
-export function clearAccountsPlanUsage(): void { claudeReaders.clear() }
+export function clearAccountsPlanUsage(): void { claudeReaders.clear(); claudeDirByName = new Map() }

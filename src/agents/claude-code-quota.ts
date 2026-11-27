@@ -45,6 +45,8 @@
 // writing first, cron jobs last. See agents/plan-priority.ts.
 
 import { planUsageReader } from "./claude-plan-usage"
+import { claudeAccountReading } from "./plan-usage-accounts"
+import { activeCliAccountName } from "./cli-accounts"
 import { planPriorityHold, type RunPriority, type WindowUse } from "./plan-priority"
 
 export interface DispatchBudget {
@@ -76,8 +78,8 @@ export function getDispatchBudget(): DispatchBudget { return { ...budget } }
 
 export function clearDispatchHistory(): void {
   timestamps.length = 0
-  providerSignals.clear()
-  liftedHolds.clear()
+  signalsByAccount.clear()
+  liftedByAccount.clear()
   lastSessionInit = null
 }
 
@@ -111,8 +113,29 @@ export interface RateLimitSignal {
   seenAt: number
 }
 
-/** Latest signal per window. A newer event for the same window replaces it. */
-const providerSignals = new Map<string, RateLimitSignal>()
+// --- Per account (#2113 C1) ---
+//
+// Each Claude account (a CLI profile, see cli-accounts.ts) has its own plan
+// windows, so signals and holds are kept per account: a used-up account
+// holds only the runs on that account. The account of a run is the profile
+// name of the config folder its env uses (cliAccountForDir). A caller that
+// names no account means the active profile, the one new runs use.
+
+/** Latest signal per window, per account. A newer event for the same window replaces it. */
+const signalsByAccount = new Map<string, Map<string, RateLimitSignal>>()
+
+let activeAccount: () => string = () => activeCliAccountName("claude")
+
+/** Tests: set how the active account is found (default: cli-accounts.json). */
+export function setActiveAccountResolver(fn?: () => string): void {
+  activeAccount = fn ?? (() => activeCliAccountName("claude"))
+}
+
+function signals(account: string = activeAccount()): Map<string, RateLimitSignal> {
+  let m = signalsByAccount.get(account)
+  if (!m) { m = new Map(); signalsByAccount.set(account, m) }
+  return m
+}
 
 /** A rejected signal with no reset time is trusted for this long. */
 const REJECTED_FALLBACK_HOLD_MS = 15 * 60 * 1000
@@ -137,22 +160,28 @@ export interface LiftedHold {
 }
 
 const LIFTED_KEEP_MS = 24 * 60 * 60 * 1000
-const liftedHolds = new Map<string, LiftedHold>()
+const liftedByAccount = new Map<string, Map<string, LiftedHold>>()
+
+function lifted(account: string): Map<string, LiftedHold> {
+  let m = liftedByAccount.get(account)
+  if (!m) { m = new Map(); liftedByAccount.set(account, m) }
+  return m
+}
 
 function holdEnd(s: RateLimitSignal): number {
   return s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS
 }
 
-function noteLifted(s: RateLimitSignal, liftedAt: number, how: LiftedHold["how"]): void {
+function noteLifted(account: string, s: RateLimitSignal, liftedAt: number, how: LiftedHold["how"]): void {
   if (s.status !== "rejected" || s.usingOverage) return
-  liftedHolds.set(s.window, { window: s.window, heldSince: s.seenAt, ...(s.resetsAt && { resetsAt: s.resetsAt }), liftedAt, how })
+  lifted(account).set(s.window, { window: s.window, heldSince: s.seenAt, ...(s.resetsAt && { resetsAt: s.resetsAt }), liftedAt, how })
 }
 
 /** Holds that ended in the last day, newest first. A hold whose reset
  *  time passed counts as lifted at that time. */
-export function liftedProviderHolds(now: number = Date.now()): LiftedHold[] {
-  const out = new Map(liftedHolds)
-  for (const s of providerSignals.values()) {
+export function liftedProviderHolds(now: number = Date.now(), account: string = activeAccount()): LiftedHold[] {
+  const out = new Map(lifted(account))
+  for (const s of signals(account).values()) {
     if (s.status !== "rejected" || s.usingOverage) continue
     const end = holdEnd(s)
     if (end <= now) out.set(s.window, { window: s.window, heldSince: s.seenAt, ...(s.resetsAt && { resetsAt: s.resetsAt }), liftedAt: end, how: "reset" })
@@ -250,36 +279,37 @@ function concerns(window: string, model: string | undefined): boolean {
  * ignored. `model` is the model of the run that produced the event; a served
  * request lifts the holds of the other windows that concern that model.
  */
-export function recordRateLimitEvent(event: unknown, now: number = Date.now(), model?: string): RateLimitSignal | null {
+export function recordRateLimitEvent(event: unknown, now: number = Date.now(), model?: string, account: string = activeAccount()): RateLimitSignal | null {
   const signal = parseRateLimitEvent(event, now)
   if (!signal) return null
+  const providerSignals = signals(account)
   if (signal.status !== "rejected") {
     for (const [window, s] of providerSignals) {
       if (s.status !== "rejected") continue
-      if (window === signal.window) { if (holdEnd(s) > now) noteLifted(s, now, "served"); continue }
+      if (window === signal.window) { if (holdEnd(s) > now) noteLifted(account, s, now, "served"); continue }
       if (!windowModel(window) || (model && concerns(window, model))) {
-        if (holdEnd(s) > now) noteLifted(s, now, "served")
+        if (holdEnd(s) > now) noteLifted(account, s, now, "served")
         providerSignals.delete(window)
       }
     }
   } else {
-    liftedHolds.delete(signal.window)
+    lifted(account).delete(signal.window)
   }
   providerSignals.set(signal.window, signal)
   return signal
 }
 
 /** The rejected windows that still hold at `now`. Extra usage still serving is not a hold. */
-export function activeProviderHolds(now: number = Date.now()): RateLimitSignal[] {
-  return [...providerSignals.values()].filter((s) => {
+export function activeProviderHolds(now: number = Date.now(), account: string = activeAccount()): RateLimitSignal[] {
+  return [...signals(account).values()].filter((s) => {
     if (s.status !== "rejected" || s.usingOverage) return false
     return holdEnd(s) > now
   })
 }
 
 /** The window that holds a cold run on `model` at `now`, if any. */
-export function activeProviderHold(now: number = Date.now(), model?: string): RateLimitSignal | null {
-  return activeProviderHolds(now).find((s) => concerns(s.window, model)) ?? null
+export function activeProviderHold(now: number = Date.now(), model?: string, account: string = activeAccount()): RateLimitSignal | null {
+  return activeProviderHolds(now, account).find((s) => concerns(s.window, model)) ?? null
 }
 
 /**
@@ -287,17 +317,17 @@ export function activeProviderHold(now: number = Date.now(), model?: string): Ra
  * Claude again. If the window is still used up, that run's refusal puts the
  * hold back. Returns the holds that were lifted.
  */
-export function liftProviderHolds(now: number = Date.now()): RateLimitSignal[] {
-  const lifted = activeProviderHolds(now)
-  for (const s of lifted) {
-    noteLifted(s, now, "operator")
-    providerSignals.delete(s.window)
+export function liftProviderHolds(now: number = Date.now(), account: string = activeAccount()): RateLimitSignal[] {
+  const out = activeProviderHolds(now, account)
+  for (const s of out) {
+    noteLifted(account, s, now, "operator")
+    signals(account).delete(s.window)
   }
-  return lifted
+  return out
 }
 
-export function getProviderSignals(): RateLimitSignal[] {
-  return [...providerSignals.values()].sort((a, b) => b.seenAt - a.seenAt)
+export function getProviderSignals(account: string = activeAccount()): RateLimitSignal[] {
+  return [...signals(account).values()].sort((a, b) => b.seenAt - a.seenAt)
 }
 
 // --- Usage view ---
@@ -315,7 +345,7 @@ export interface ClaudeCodeUsage {
 
 function capOn(v: number | undefined): v is number { return typeof v === "number" && v > 0 }
 
-export function getClaudeCodeUsage(now: number = Date.now()): ClaudeCodeUsage {
+export function getClaudeCodeUsage(now: number = Date.now(), account: string = activeAccount()): ClaudeCodeUsage {
   prune(now)
   const hourCutoff = now - ONE_H_MS
   let lastHour = 0
@@ -329,7 +359,7 @@ export function getClaudeCodeUsage(now: number = Date.now()): ClaudeCodeUsage {
     last5h,
     maxPerHour: capOn(budget.maxPerHour) ? budget.maxPerHour : undefined,
     maxPer5h: capOn(budget.maxPer5h) ? budget.maxPer5h : undefined,
-    provider: getProviderSignals(),
+    provider: getProviderSignals(account),
   }
   if (out.maxPerHour) out.hourlyRatio = lastHour / out.maxPerHour
   if (out.maxPer5h) out.fiveHourRatio = last5h / out.maxPer5h
@@ -354,14 +384,17 @@ const PRIORITY_RECHECK_MS = 15 * 60_000
  * How full each plan window is, for the priority gate: the usage reader's
  * reading (agents/claude-plan-usage.ts) when it is recent, else the
  * utilization Claude Code last reported with a run. The newer one wins.
+ * The main reader reads the active account; another account uses its own
+ * reader's reading (plan-usage-accounts.ts) when recent, else what its own
+ * runs reported.
  */
-export function planWindowUse(now: number = Date.now()): WindowUse[] {
+export function planWindowUse(now: number = Date.now(), account: string = activeAccount()): WindowUse[] {
   const out = new Map<string, WindowUse & { at: number }>()
-  for (const s of providerSignals.values()) {
+  for (const s of signals(account).values()) {
     if (s.utilization === undefined) continue
     out.set(s.window, { window: s.window, utilization: s.utilization, ...(s.resetsAt && { resetsAt: s.resetsAt }), at: s.seenAt })
   }
-  const reading = planUsageReader.freshReading(now)
+  const reading = account === activeAccount() ? planUsageReader.freshReading(now) : claudeAccountReading(account, now)
   for (const w of reading?.windows ?? []) {
     const seen = out.get(w.window)
     if (!seen || reading!.readAt >= seen.at) out.set(w.window, { ...w, at: reading!.readAt })
@@ -395,10 +428,10 @@ function resetLabel(resetsAt: number | undefined, now: number): string {
  * The function DOES NOT mutate state. Call `recordClaudeCodeDispatch()`
  * separately once the caller commits to the dispatch.
  */
-export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now(), model?: string, priority?: RunPriority): QuotaGateAbort | null {
-  const usage = getClaudeCodeUsage(now)
+export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now(), model?: string, priority?: RunPriority, account: string = activeAccount()): QuotaGateAbort | null {
+  const usage = getClaudeCodeUsage(now, account)
   if (hasWarmSession) return null
-  const hold = activeProviderHold(now, model)
+  const hold = activeProviderHold(now, model, account)
   if (hold) {
     return {
       abort: true,
@@ -406,13 +439,13 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
       message:
         `Claude plan limit reached: Claude Code reports the ${windowLabel(hold.window)} window as rejected. ` +
         `Cold dispatches are held until it resets ${resetLabel(hold.resetsAt, now)}; open conversations still go through. ` +
-        `To try again now, run: agentx usage plan --lift`,
+        `To try again now, run: agentx usage plan --lift --account ${account}`,
       usage,
       retryAt: hold.resetsAt,
     }
   }
   if (priority) {
-    const held = planPriorityHold(priority, planWindowUse(now), model)
+    const held = planPriorityHold(priority, planWindowUse(now, account), model)
     if (held) {
       return {
         abort: true,
@@ -462,8 +495,8 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
  * limit, or when usage has crossed warnRatio of a configured local cap.
  * Otherwise null. Suppression of repeats is a caller concern.
  */
-export function warnIfNearingCap(now: number = Date.now()): string | null {
-  const usage = getClaudeCodeUsage(now)
+export function warnIfNearingCap(now: number = Date.now(), account: string = activeAccount()): string | null {
+  const usage = getClaudeCodeUsage(now, account)
   const nearing = usage.provider.find((s) => s.status === "allowed_warning")
   if (nearing) {
     const pct = nearing.utilization !== undefined ? ` (${Math.round(nearing.utilization * 100)}% used)` : ""
@@ -477,4 +510,25 @@ export function warnIfNearingCap(now: number = Date.now()): string | null {
     return `claude-code 5h usage ${usage.last5h}/${usage.maxPer5h} (${Math.round(usage.fiveHourRatio * 100)}% of local cap)`
   }
   return null
+}
+
+// --- Holds per account (#2113 C1) ---
+
+export interface AccountHolds {
+  account: string
+  active: boolean
+  holds: RateLimitSignal[]
+  /** How full each window is, as planWindowUse reads it for that account. */
+  windows: WindowUse[]
+}
+
+/**
+ * Every account the gate knows (the active one first): its holds and how
+ * full its windows are. The one read for a later auto-switch (#2351).
+ * Names only, never a folder, an email or a token.
+ */
+export function accountHolds(now: number = Date.now()): AccountHolds[] {
+  const active = activeAccount()
+  const names = [active, ...[...signalsByAccount.keys()].filter((a) => a !== active)]
+  return names.map((account) => ({ account, active: account === active, holds: activeProviderHolds(now, account), windows: planWindowUse(now, account) }))
 }

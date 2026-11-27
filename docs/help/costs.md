@@ -173,6 +173,12 @@ Some windows count one model only, for example a weekly limit for Opus. Such a w
    ```
    The next fresh session asks Claude again. If the window is still used up, that session fails and the hold comes back.
 
+   With more than one Claude account (Hub, **Accounts**), each account has its own holds: a used-up account holds only the runs on that account. `--lift` lifts the active account's holds. To lift another account's, name it:
+   ```sh
+   agentx usage plan --lift --account work
+   ```
+   An agent whose own `.env` sets `CLAUDE_CONFIG_DIR` counts as the account with that folder, or as `env:<agent id>` when no account has it.
+
 Example output:
 
 ```text
