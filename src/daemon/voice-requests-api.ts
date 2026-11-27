@@ -83,6 +83,18 @@ export const LIMITS = {
 /** Why a request that was thinking when the daemon stopped has no answer. */
 export const RESTART_REASON = "AgentX restarted before the answer came back. Ask again."
 
+/** `held` of a row /ask kept while the daemon drained for an upgrade
+ *  (#2502): the next daemon runs it once at boot. Other `held` values are
+ *  admission-queue reasons and are never replayed. */
+export const HELD_UPGRADE = "upgrade"
+/** How the list shows a row kept for an upgrade. */
+export const UPGRADE_HELD_LINE = "Kept during an AgentX upgrade. It goes when AgentX is back."
+/** A kept row older than this at boot is not sent: the moment has passed. */
+export const UPGRADE_KEEP_MS = 30 * 60_000
+export const UPGRADE_TOO_OLD = "Kept during an AgentX upgrade, too old to send. Ask again."
+
+const CLIENT_KEY_RE = /^[A-Za-z0-9-]{8,64}$/
+
 const ID_RE = /^r[a-z0-9]{8,32}$/
 
 export function isVoiceRequestsPath(path: string): boolean {
@@ -111,11 +123,19 @@ export class VoiceRequestStore {
     const cols = db.prepare("PRAGMA table_info(voice_requests)").all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === "conversation_id")) db.exec("ALTER TABLE voice_requests ADD COLUMN conversation_id TEXT")
     if (!cols.some((c) => c.name === "held")) db.exec("ALTER TABLE voice_requests ADD COLUMN held TEXT")
+    // The widget's own id for a message, so a message it sends again after
+    // the daemon was down is one row, not two (#2502).
+    if (!cols.some((c) => c.name === "client_key")) db.exec("ALTER TABLE voice_requests ADD COLUMN client_key TEXT")
+    if (!cols.some((c) => c.name === "session")) db.exec("ALTER TABLE voice_requests ADD COLUMN session TEXT")
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS voice_requests_client_key ON voice_requests(client_key) WHERE client_key IS NOT NULL")
     this.chats = new AppChatStore(db)
+    // A row kept for an upgrade waits for replayKept(), unless it is too old.
+    db.prepare(`UPDATE voice_requests SET state = 'failed', error = ?, since = ?, held = NULL
+      WHERE state = 'thinking' AND held = ? AND sent_at < ?`).run(UPGRADE_TOO_OLD, now, HELD_UPGRADE, now - UPGRADE_KEEP_MS)
     // The /ask that was holding a thinking row died with the last daemon:
     // nothing will ever answer it. Say so instead of thinking forever.
-    db.prepare("UPDATE voice_requests SET state = 'failed', error = ?, since = ? WHERE state = 'thinking'")
-      .run(RESTART_REASON, now)
+    db.prepare("UPDATE voice_requests SET state = 'failed', error = ?, since = ? WHERE state = 'thinking' AND (held IS NULL OR held != ?)")
+      .run(RESTART_REASON, now, HELD_UPGRADE)
     db.prepare("DELETE FROM voice_requests WHERE closed_at IS NOT NULL AND closed_at < ?")
       .run(now - LIMITS.closedDays * 24 * 60 * 60_000)
   }
@@ -140,10 +160,17 @@ export class VoiceRequestStore {
     try { return JSON.parse(row.reply) } catch { return null }
   }
 
-  create(agentId: string, question: string, waiting = false, now = Date.now()): VoiceRequest {
+  /** `clientKey`: the client's own id for the message. A key already
+   *  seen returns that row unchanged instead of adding a second one. */
+  create(agentId: string, question: string, waiting = false, now = Date.now(), clientKey?: string): VoiceRequest {
+    const key = clientKey && CLIENT_KEY_RE.test(clientKey) ? clientKey : null
+    if (key) {
+      const seen = this.db.prepare("SELECT id FROM voice_requests WHERE client_key = ?").get(key) as { id: string } | undefined
+      if (seen) return this.get(seen.id)!
+    }
     const id = `r${now.toString(36)}${randomBytes(4).toString("hex")}`
-    this.db.prepare(`INSERT INTO voice_requests (id, agent_id, question, state, sent_at, since)
-      VALUES (?, ?, ?, ?, ?, ?)`).run(id, agentId, question.slice(0, LIMITS.question), waiting ? "waiting" : "thinking", now, now)
+    this.db.prepare(`INSERT INTO voice_requests (id, agent_id, question, state, sent_at, since, client_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, agentId, question.slice(0, LIMITS.question), waiting ? "waiting" : "thinking", now, now, key)
     // Too many open: the oldest that are done leave first, never one still
     // with its agent.
     const extra = (this.db.prepare("SELECT COUNT(*) AS n FROM voice_requests WHERE closed_at IS NULL").get() as { n: number }).n - LIMITS.open
@@ -181,6 +208,22 @@ export class VoiceRequestStore {
   hold(id: string, why: string): void {
     if (!ID_RE.test(id)) return
     this.db.prepare("UPDATE voice_requests SET held = ? WHERE id = ? AND state = 'thinking'").run(oneLine(why, LIMITS.error), id)
+  }
+
+  /** /ask came while the daemon drained for an upgrade: the row waits,
+   *  thinking, for the next daemon to run it once. False when the row is
+   *  unknown, closed or already done. */
+  keepForUpgrade(id: string, session: string | null, now = Date.now()): boolean {
+    if (!ID_RE.test(id)) return false
+    return this.db.prepare(`UPDATE voice_requests SET state = 'thinking', held = ?, since = ?, session = ?
+      WHERE id = ? AND closed_at IS NULL AND state IN ('waiting', 'thinking')`)
+      .run(HELD_UPGRADE, now, session ? session.slice(0, 100) : null, id).changes === 1
+  }
+
+  /** Rows kept for an upgrade, oldest first, with the session they came in. */
+  keptForUpgrade(): Array<VoiceRequest & { session: string | null }> {
+    return (this.db.prepare(`${SELECT_ROWS} WHERE v.state = 'thinking' AND v.held = ? AND v.closed_at IS NULL
+      ORDER BY v.sent_at, v.rowid`).all(HELD_UPGRADE) as any[]).map((r) => ({ ...toRequest(r), session: r.session ?? null }))
   }
 
   /** Its turn started: it is no longer held. */
@@ -266,7 +309,9 @@ function toRequest(r: any): VoiceRequest {
   return {
     id: r.id, agentId: r.agent_id, question: r.question, state: r.state,
     sentAt: r.sent_at, since: r.since, heard: r.heard_at != null || readOnPhone,
-    error: r.error ?? null, held: r.state === "thinking" ? r.held ?? null : null, closed: r.closed_at != null,
+    error: r.error ?? null,
+    held: r.state !== "thinking" ? null : r.held === HELD_UPGRADE ? UPGRADE_HELD_LINE : r.held ?? null,
+    closed: r.closed_at != null,
     conversationId: r.conversation_id ?? null,
   }
 }
@@ -301,7 +346,8 @@ export function handleVoiceRequests(
     const question = typeof body.question === "string" ? body.question.trim() : ""
     if (!agentId || !question) return { status: 400, body: { error: "Send agentId and question" } }
     if (!deps.knows(agentId)) return { status: 404, body: { error: `Unknown agent: "${agentId}"` } }
-    return { status: 201, body: { request: store.create(agentId, question, body.waiting === true) } }
+    const clientKey = typeof body.clientKey === "string" ? body.clientKey : undefined
+    return { status: 201, body: { request: store.create(agentId, question, body.waiting === true, Date.now(), clientKey) } }
   }
 
   if (path === "/voice/requests/close-heard") {

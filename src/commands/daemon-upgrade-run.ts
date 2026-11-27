@@ -9,6 +9,7 @@ import { ensureNativeModules } from "@/daemon/upgrade-native"
 import { MAX_HOLD_MINUTES } from "@/daemon/restart-api"
 import { loadOperatorKey, OPERATOR_HEADER } from "@/requests/operator"
 import { QUEUE_AT_CLOSE_FILE, readQueueAtClose } from "@/daemon/upgrade-queue-record"
+import { readWidgetKeep } from "@/daemon/upgrade-keep"
 import { loadDaemonConfig } from "@/daemon/config"
 import {
   chatRouteOk, checksSummary, daemonNodeFromArgs, healthIsUpgraded, hubPageOk, peerSkew, releaseDirFromArgs, retargetPlist, runsToCut,
@@ -273,6 +274,11 @@ export async function runUpgrade(o: UpgradeRunOptions): Promise<number> {
         outcome.drain.refusedAtSwitch = atClose.refused
         log(`old daemon's queue at the switch: ${atClose.kept} chat message(s) kept for replay, ${atClose.refused} other run(s) refused`)
       } else log(`no record of the old daemon's queue at the switch in ${resolve(agentxDir, "upgrade", QUEUE_AT_CLOSE_FILE)}; keptAtSwitch/refusedAtSwitch not recorded`)
+      // Widget messages kept during the drain and sent by the new daemon (#2502).
+      const widget = readWidgetKeep(agentxDir, outcome.drain.startedAt)
+      outcome.drain.widgetKept = widget?.kept ?? 0
+      outcome.drain.widgetReplayed = widget?.replayed ?? 0
+      if (widget?.kept || widget?.replayed) log(`widget messages: ${widget.kept ?? 0} kept during the drain, ${widget.replayed ?? 0} sent by the new daemon`)
     }
     const failed: string[] = []
     for (const j of others) if (!(await reloadJob(j, j.plist, { drainLimitMs: 60_000, log }))) failed.push(j.label)

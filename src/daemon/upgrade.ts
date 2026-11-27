@@ -253,6 +253,10 @@ export interface UpgradeOutcome {
      *  so refused counts runs other limits (memory, cap) held. */
     keptAtSwitch?: number
     refusedAtSwitch?: number
+    /** Widget messages the old daemon kept during the drain, and those the
+     *  new daemon found to send at boot (#2502). */
+    widgetKept?: number
+    widgetReplayed?: number
   }
   /** Symlinks (the global `agentx` CLI) moved to the live release after an
    *  ok upgrade (#2495); absent when none pointed at another release. */
