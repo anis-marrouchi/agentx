@@ -408,6 +408,41 @@ describe("Feed title row keeps Chat on its line (#2387 follow-up)", () => {
   })
 })
 
+describe("Feed and List keep their frame while the posts load (#2101, Anis v0.289.0)", () => {
+  it("the feed has its column before the posts answer", async () => {
+    const w = openWall({ feed: new Promise(() => {}) })
+    await w.settle()
+    expect(w.wall.classList.contains("is-posts")).toBe(true)
+    expect(w.wall.classList.contains("is-wide")).toBe(false)
+  })
+
+  it("the List has its wide column before the posts answer", async () => {
+    const w = openWall({ feed: new Promise(() => {}), hash: "#view=list" })
+    await w.settle()
+    expect(w.wall.classList.contains("is-posts")).toBe(true)
+    expect(w.wall.classList.contains("is-wide")).toBe(true)
+  })
+
+  it("the List is a centred column with the feed's gutters, not full width", () => {
+    const page = renderWallPage()
+    expect(page).toContain(".ax-wall.is-posts { --fd-col: 720px; }")
+    expect(page).toContain(".ax-wall.is-posts.is-wide { --fd-col: 976px; }")
+    expect(page).toContain(".ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }")
+    expect(page).toContain("padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }")
+    expect(page).not.toContain("padding-left: 24px; padding-right: 24px; max-width: none; }")
+  })
+
+  it("a post link opened before the posts arrive loads its thread once they do", async () => {
+    let answer: (v: unknown) => void = () => {}
+    const feed = new Promise((r) => { answer = r })
+    const w = openWall({ feed, hash: "#post=r1" })
+    await w.settle()
+    answer({ ok: true, status: 200, json: async () => WALL })
+    await w.settle()
+    expect(w.calls.some((c) => c.url.startsWith("/api/admin/wall/thread?"))).toBe(true)
+  })
+})
+
 // #1188: the QA verdict line and the "Awaiting QA only" filter, run through
 // the page's real match() rather than read from the source.
 describe("Running now does not wait on the feed (#1252)", () => {

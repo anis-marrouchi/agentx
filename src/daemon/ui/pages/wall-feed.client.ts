@@ -487,8 +487,12 @@ export const WALL_FEED_SCRIPT = String.raw`
 export const WALL_FEED_CSS = `
 /* The feed and its List view (#2101, wall-feed.client.ts): the approved mock. */
 .fd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { max-width: 720px; margin-left: auto; margin-right: auto; }
-.ax-wall.is-posts.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { max-width: 976px; margin-left: auto; margin-right: auto; }
+/* One column for the feed and the List: the same frame and gutters at
+   every width; the List's table is wider (C3). The column is set before
+   the posts arrive, so nothing moves when they do (#2101). */
+.ax-wall.is-posts { --fd-col: 720px; }
+.ax-wall.is-posts.is-wide { --fd-col: 976px; }
+.ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }
 .ax-wall.is-posts .ax-wall__head { position: static; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 0; }
 .ax-wall.is-posts .ax-wall__titlebar { padding: 24px 0 16px; gap: 8px; flex-wrap: wrap; }
 .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: var(--ax-fs-pane); font-weight: var(--ax-fw-strong); letter-spacing: -.01em; }
@@ -715,15 +719,14 @@ button.fp__mi { cursor: pointer; }
 
 /* Mid width: the side menu is a rail; the search box is shorter. */
 @media (max-width: 1180px) {
-  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed) { padding-left: 24px; padding-right: 24px; max-width: 768px; }
-  .ax-wall.is-posts.is-wide .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__list) { padding-left: 24px; padding-right: 24px; max-width: none; }
+  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }
   .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: 24px; margin-right: 24px; padding-left: 16px; padding-right: 12px; }
   @media (min-width: 769px) { .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
   .fd-q { width: 160px; }
   .fd-hint { display: none; }
   .fd-compose__row .fd-send { margin-left: auto; }
   /* The tabs' hairline ends where the rows end. */
-  .ax-wall.is-posts .ax-wall__main > .fd-bar { padding-left: 0; padding-right: 0; max-width: min(720px, calc(100% - 48px)); }
+  .ax-wall.is-posts .ax-wall__main > .fd-bar { padding-left: 0; padding-right: 0; max-width: min(var(--fd-col), calc(100% - 48px)); }
 }
 /* Phone: the title row, then Feed | List full width; search is an icon. */
 @media (max-width: 640px) {

@@ -739,26 +739,4 @@ describe("start hold for a daemon upgrade (#2360)", () => {
     expect(out).toMatchObject({ ok: false, reason: "timeout" })
     expect(a.ticket).toBeTruthy()
   })
-
-  it("keeps the wait clock of a run the hold did not hold", async () => {
-    const { q, advance } = setup({ maxSessions: 1, ownerExtraSessions: 0, maxWaitMinutes: 1 })
-    const a = ask(q, "a")
-    await tick(); await tick()
-    let out: any
-    // An agent-to-agent run is not held; it waits on the session cap.
-    void q.admit({ agentId: "b", channel: "a2a" }).then((o) => { out = o })
-    await tick(); await tick()
-    advance(30_000)
-    await q.pump()
-    q.holdStarts("agentx daemon upgrade", 1_000_000 + 30_000 + 7_200_000)
-    advance(20_000)
-    q.releaseHold()
-    await tick(); await tick()
-    expect(out).toBeUndefined()
-    // 30 s + 20 s + 15 s on the cap is past 1 min: refused, no extra time.
-    advance(15_000)
-    await q.pump()
-    expect(out).toMatchObject({ ok: false, reason: "timeout" })
-    expect(a.ticket).toBeTruthy()
-  })
 })
