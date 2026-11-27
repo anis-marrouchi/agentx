@@ -113,6 +113,8 @@ describe("the pane", () => {
     const out = html(createElement(ActivityBody, { data, view: "timeline", perspective: "agent", period: "24 h" }))
     expect(out).toContain('data-activity="timeline"')
     expect(out).toContain('data-run="b"')
+    // A narrow band's time is cut; its title holds the full range (C3).
+    expect(out).toMatch(/data-activity="band-head" title="[^"]+ – [^"]+"/)
   })
   it("opens on the Feed, with Timeline and Map beside it", () => {
     const out = html(createElement(ActivityPane, {}))

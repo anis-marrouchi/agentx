@@ -29,7 +29,7 @@ function Segmented<T extends string | number>({ label, value, items, onPick, nam
       {items.map((i) => (
         <button
           key={String(i.value)} type="button" aria-pressed={value === i.value} data-value={i.value} onClick={() => onPick(i.value)}
-          className={cn("flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-xs cursor-pointer", ring,
+          className={cn("flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs cursor-pointer", ring,
             value === i.value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}
         >
           {i.icon ? <Icon name={i.icon} className="size-3.5" /> : null}{i.label}
@@ -94,7 +94,7 @@ export function ActivityTimeline({ t, runs, selected, onPick }: { t: Timeline; r
           {t.lanes.length} lanes · {runs} runs
         </div>
         <Bands t={t} head cell={(bi) => (
-          <div data-activity="band-head" className="flex flex-col items-center justify-center overflow-hidden py-2 text-center font-mono text-[10px] font-semibold leading-tight text-muted-foreground md:flex-row md:gap-1">
+          <div data-activity="band-head" title={`${clock(t.bands[bi].from)} – ${clock(t.bands[bi].to)}`} className="flex flex-col items-center justify-center overflow-hidden py-2 text-center font-mono text-[10px] font-semibold leading-tight text-muted-foreground md:flex-row md:gap-1">
             <span className="max-w-full truncate">{clock(t.bands[bi].from)}</span>
             <span className="hidden md:inline">–</span>
             <span className="max-w-full truncate">{clock(t.bands[bi].to)}</span>
@@ -247,7 +247,7 @@ export function ActivityPane({ phoneBar }: { phoneBar?: ReactNode }) {
         {view === "timeline" ? (
           <>
             <span className="ml-1 hidden text-xs text-muted-foreground sm:inline">Lanes by</span>
-            <div className="max-w-full overflow-x-auto"><Segmented name="perspective" label="Lanes by" value={perspective} items={ACTIVITY_PERSPECTIVES} onPick={setPerspective} /></div>
+            <div data-activity="lanes-row" className="min-w-0 max-w-full overflow-x-auto max-sm:pr-6 max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]"><Segmented name="perspective" label="Lanes by" value={perspective} items={ACTIVITY_PERSPECTIVES} onPick={setPerspective} /></div>
             <div className="ml-auto"><MarksKey /></div>
           </>
         ) : view === "map" ? <span className="text-xs text-muted-foreground">Projects are lines, agents are stations, work in flight is a train. Live.</span> : null}
