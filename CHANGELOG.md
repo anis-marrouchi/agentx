@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.300.1](https://github.com/anis-marrouchi/agentx/compare/v0.300.0...v0.300.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **hub:** every Settings link opens the new Settings, with one menu ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2481](https://github.com/anis-marrouchi/agentx/issues/2481)) ([b38b435](https://github.com/anis-marrouchi/agentx/commit/b38b435b24fa668cf5ec24fc502e2f21dc8ceed9))
+
 ## [0.300.0](https://github.com/anis-marrouchi/agentx/compare/v0.299.0...v0.300.0) (2026-11-27)
 
 
