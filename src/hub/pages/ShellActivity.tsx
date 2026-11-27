@@ -94,8 +94,10 @@ export function ActivityTimeline({ t, runs, selected, onPick }: { t: Timeline; r
           {t.lanes.length} lanes · {runs} runs
         </div>
         <Bands t={t} head cell={(bi) => (
-          <div className="flex items-center justify-center py-2 font-mono text-[10px] font-semibold text-muted-foreground">
-            {clock(t.bands[bi].from)} – {clock(t.bands[bi].to)}
+          <div data-activity="band-head" className="flex flex-col items-center justify-center overflow-hidden py-2 text-center font-mono text-[10px] font-semibold leading-tight text-muted-foreground md:flex-row md:gap-1">
+            <span className="max-w-full truncate">{clock(t.bands[bi].from)}</span>
+            <span className="hidden md:inline">–</span>
+            <span className="max-w-full truncate">{clock(t.bands[bi].to)}</span>
           </div>
         )} />
       </div>
