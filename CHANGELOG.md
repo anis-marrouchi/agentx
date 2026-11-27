@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.295.0](https://github.com/anis-marrouchi/agentx/compare/v0.294.0...v0.295.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** Settings Business, Channels and WhatsApp panes ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST3) ([#2443](https://github.com/anis-marrouchi/agentx/issues/2443)) ([0f502cf](https://github.com/anis-marrouchi/agentx/commit/0f502cf63eacef3519a2cf6d55cf190af11bacf0))
+* **improve:** save the wake kind of daemon-started runs on task_traces ([#2440](https://github.com/anis-marrouchi/agentx/issues/2440)) ([722293c](https://github.com/anis-marrouchi/agentx/commit/722293ca82e30a7a92af378d50b8dadc758795b3)), closes [#2012](https://github.com/anis-marrouchi/agentx/issues/2012)
+
+
+### Bug Fixes
+
+* **daemon:** upgrade hold follow-ups: wait clock, queue record log ([#2360](https://github.com/anis-marrouchi/agentx/issues/2360)) ([#2438](https://github.com/anis-marrouchi/agentx/issues/2438)) ([b4acf9c](https://github.com/anis-marrouchi/agentx/commit/b4acf9c8a3312822ef4061c220b3663f47351f85))
+* **hub:** Settings rows wrap on phones only; one menu, confirm and input class ([#2418](https://github.com/anis-marrouchi/agentx/issues/2418) review) ([#2439](https://github.com/anis-marrouchi/agentx/issues/2439)) ([228ac36](https://github.com/anis-marrouchi/agentx/commit/228ac3694e895618991f853b0041ed614cf4faa8))
+
 ## [0.294.0](https://github.com/anis-marrouchi/agentx/compare/v0.293.0...v0.294.0) (2026-11-26)
 
 
