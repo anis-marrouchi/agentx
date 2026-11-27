@@ -73,7 +73,9 @@
 }
 .axc-tool__head:hover, .axc-reason__head:hover { background: var(--ax-surface-2); }
 .axc-tool__head:focus-visible, .axc-reason__head:focus-visible { outline: 2px solid var(--ax-ring, var(--ax-accent)); outline-offset: 1px; }
-.axc-tool__chev { width: 10px; flex: none; color: var(--ax-muted); font-size: 10px; }
+.axc-tool__chev { width: 12px; height: 12px; flex: none; color: var(--ax-muted); transition: transform .15s ease-out; }
+.axc-tool__chev[data-open="true"] { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .axc-tool__chev { transition: none; } }
 .axc-tool__verb { font-weight: 600; color: var(--ax-text); flex: none; }
 .axc-tool__obj { font-family: var(--ax-mono, monospace); font-size: .95em; color: var(--ax-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .axc-tool__counts { flex: none; font: var(--ax-fs-xs, 12px) var(--ax-mono, monospace); }

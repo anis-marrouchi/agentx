@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import type { Part } from "../parse"
 import { editDiff, prettyInput, toolSummary } from "../tools"
 import { DiffView, diffCounts, diffRows } from "./DiffView"
+import { Chevron } from "./Chevron"
 
 // AI Elements' Tool: one folded line per step (what it did, on what, and
 // its state); open it for the input and the result. An edit shows its diff
@@ -22,7 +23,7 @@ export function Tool({ part, running }: { part: ToolPart; running: boolean }) {
   return (
     <div className={`axc-tool axc-tool--${state}`}>
       <button type="button" className="axc-tool__head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="axc-tool__chev" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <Chevron open={open} />
         <span className="axc-tool__verb">{verb}</span>
         {object ? <span className="axc-tool__obj">{object}</span> : null}
         {counts ? (
