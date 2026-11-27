@@ -346,7 +346,7 @@ Select **Mobile app** at the bottom of the nav (with the simple layout, turn **M
 
 ## Read the bottom status bar
 
-On a desktop screen, the thin bar at the bottom shows, each with its icon: whether the Hub is **Connected** to the daemon (**Connecting…**, **Reconnecting…** or **Offline** otherwise), the machines it reads, how many agents are running, an item for each engine your agents use now (**Claude**, **Codex**, and **API**, **Orchestrator** or **OpenCode** for agents billed per token), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it, usually at once and at most a few seconds after the page opens. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
+On a desktop screen, the thin bar at the bottom shows, each with its icon: **Connecting…**, **Reconnecting…** or **Offline** with a dot when the Hub cannot reach the daemon (nothing while it is connected), the machines it reads, how many agents are running, an item for each engine your agents use now (**Claude**, **Codex**, and **API**, **Orchestrator** or **OpenCode** for agents billed per token), and on the right **Accounts** (see [Switch the Claude Code or Codex account](#switch-the-claude-code-or-codex-account-for-new-runs)), **CLI**, **Theme** (light or dark) and the AgentX version. The version appears once the daemon has reported it, usually at once and at most a few seconds after the page opens. On a phone, the navigation bar occupies the bottom edge, so this status bar is hidden. Up to 1180 pixels wide the bar stays on one line: Theme is its icon, the engines keep their logo and bars without their names, the agents count reads **3 running**, **CLI** shortens with **…**, and **Accounts** is just its name (point at it for the full text).
 
 ### See plan usage and the agents from the status bar
 
@@ -355,7 +355,8 @@ An engine gets an item while at least one agent runs on it. A plan (**Claude**, 
 1. Point at an engine in the bottom bar (or select it, on a touch screen or with the keyboard). A drop-down opens with one bar per limit window, its reset time, when it was read, and the agents that use the engine. When you added more accounts for that engine under **Accounts**, the drop-down has a section for each account with its own bars; the one new runs use comes first, marked **In use**. For an engine billed per token, the drop-down says **No plan limit**, gives **Spent today** and each agent's share, and links to **Cost**.
 2. Select **Add account** at the bottom of a Claude or Codex drop-down to add another account for that engine (owner only). It opens the **Accounts** form at that engine's row.
 3. Point at **agents running**. A drop-down lists every agent with its state (**Working**, **Needs you**, **Done today**, **Idle** or **Paused**), its engine's logo and its quick actions: **Chat**, **Open run** (while it runs a task), **Pause** or **Resume** new work (owner only) and **Stop run**, which asks first.
-4. Press **Escape**, or select anywhere else, to close a drop-down.
+   With a mouse, an agent's quick actions show when you point at its row or move to it with Tab; on a touch screen they always show.
+4. Press **Escape**, or select anywhere else, to close a drop-down. This works for **Accounts** and **CLI** too, and the focus goes back to the button that opened it.
 
 **Check it worked:** the engine item shows its bars, and its drop-down says when it was read, for example **Read 2 min ago** or **As of the last Codex run on this machine, 1 h ago**. When the account in use is near a limit (70% or more) the item turns amber, and red at 90% or when a run reported the limit reached.
 
@@ -434,6 +435,8 @@ On a narrow window the panel slides over the page from the right. On a phone it 
 
 The panel reads the same pull or merge requests, with the same tokens, as the **Diff** view, and line comments in **Changes** work as described in [Comment on the lines of a pull or merge request](#comment-on-the-lines-of-a-pull-or-merge-request). A file longer than 3,000 lines shows its first 3,000.
 
+While a plan, a file, a run's files or a workspace folder loads, the panel shows grey placeholder lines. When a read fails, the panel says what could not be read and offers **Retry**.
+
 The top of the chat shows the agent's letter, the computer it runs on and its engine with the engine's own logo, and one state word: **Working** while it answers, **Waiting on you** when it has a question for you, or **Done**. While it works, **Stop** ends the run. **↗ Request** opens the request the agent is on.
 
 1. Select **Plan** to see the steps of the agent's open requests and who has each step. Above the steps, a line shows when the request started, when it last moved, its project (its repository when it has no project, or **no project** when it has neither) and links to its home and **History**. Each step shows how long ago it last moved; a step with no known time shows none.
@@ -448,8 +451,10 @@ On a window wider than 1,180 px you can size both side columns, and the Hub reme
 
 1. **Browser:** drag the edge between the side menu and the page, or between the page and the right panel. The menu goes from 200 to 420 px wide. The panel goes from 320 px up to 70% of the window. The page in the middle always keeps at least 480 px: when the window is too narrow for the widths you set, the panel and then the menu are made narrower, and they get their widths back when the window is wide enough again.
 2. To collapse the side menu to a column of icons, select the button at its top right. Select it again to expand the menu to its last width.
-3. To collapse the right panel, double-click its edge. Its tabs stay open; select the panel button at the top right of the page to bring it back. Opening something new in the panel also brings it back.
-4. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it. On a Mac, **⌘B** collapses or expands the side menu and **⌘J** the right panel while it has tabs. Windows and Linux have no shortcut for this, because Ctrl+B and Ctrl+J belong to the browser.
+3. To collapse the right panel, press **Esc** while you are in it (not while you type in a box). Its tabs stay open, and the focus goes to the panel button at the top right of the page; select it to bring the panel back. Opening something new in the panel also brings it back. Up to 1180 px wide, where the panel slides over the page, **Esc** closes its open tab instead.
+4. Double-click an edge to give that column its first width back.
+5. From the keyboard, select an edge with Tab, then use ← and → to resize it and Enter to collapse or expand it. On a Mac, **⌘B** collapses or expands the side menu and **⌘J** the right panel while it has tabs; point at the buttons to see the shortcut. Windows and Linux have no shortcut for this, because Ctrl+B and Ctrl+J belong to the browser.
+6. While a column is resized or collapsed, the bottom status bar shows **Reset layout**. Select it to put both columns back as they start; the button then goes away.
 
 Narrower windows keep the icon menu and the sliding panel, as above.
 
