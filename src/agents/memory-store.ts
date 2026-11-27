@@ -6,6 +6,7 @@ import type { Provenance } from "./fact-freshness"
 import { memoryContextLines, renderMemoryBlock, type ContextLine } from "./memory-context"
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
 import { isNodeFact } from "./node-facts"
+import { backupFacts, MAX_BACKUPS, recordRun, type TidyRun } from "@/improve/tidy"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -301,34 +302,50 @@ export class MemoryStore {
     })
   }
 
+  /** The `.agentx/memory` folder: run logs and backups live under it. */
+  memoryRoot(): string {
+    return this.memoryDir
+  }
+
   /**
    * Prune old/expired memories. Cap at MAX_MEMORIES per agent.
+   * Each dropped fact goes in a run log first (improve/tidy.ts), so it can
+   * be listed and undone, and the file is backed up. Returns the run, or
+   * null when nothing was dropped (the file is then left as it is).
    */
-  prune(agentId: string): void {
-    let memories = this.getAll(agentId)
-    if (memories.length === 0) return
+  prune(agentId: string, now: number = Date.now()): TidyRun | null {
+    const all = this.getAll(agentId)
+    if (all.length === 0) return null
 
-    const now = Date.now()
     const ttlMs = TASK_STATE_TTL_DAYS * 24 * 60 * 60 * 1000
+    const dropped: Array<{ fact: MemoryFact; reason: string }> = []
 
     // Remove expired task-state memories
-    memories = memories.filter(m => {
+    let memories = all.filter(m => {
+      let keep = true
       if (m.category === "task-state" && m.expiresAt) {
-        return new Date(m.expiresAt).getTime() > now
+        keep = new Date(m.expiresAt).getTime() > now
+      } else if (m.category === "task-state" && !m.expiresAt) {
+        keep = now - new Date(m.createdAt).getTime() < ttlMs
       }
-      if (m.category === "task-state" && !m.expiresAt) {
-        return now - new Date(m.createdAt).getTime() < ttlMs
-      }
-      return true
+      if (!keep) dropped.push({ fact: m, reason: "expired" })
+      return keep
     })
 
     // Cap at MAX_MEMORIES (keep most recent)
     if (memories.length > MAX_MEMORIES) {
+      for (const m of memories.slice(0, -MAX_MEMORIES)) dropped.push({ fact: m, reason: "over-cap" })
       memories = memories.slice(-MAX_MEMORIES)
     }
 
-    // Rewrite file
-    const file = this.filePath(agentId)
-    writeFileSync(file, memories.map(m => JSON.stringify(m)).join("\n") + "\n")
+    if (dropped.length === 0) return null
+    const at = new Date(now).toISOString()
+    const backup = backupFacts(this, agentId, { at, tag: "prune", keep: MAX_BACKUPS })
+    const run = recordRun(this, agentId, "prune",
+      dropped.map(({ fact, reason }) => ({ store: "fact" as const, action: "drop" as const, reason, before: [fact], after: null })),
+      { at, backup })
+    // rewrite keeps the lines getAll could not parse.
+    this.rewrite(agentId, memories)
+    return run
   }
 }

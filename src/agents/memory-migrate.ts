@@ -1,6 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync } from "fs"
-import { basename, dirname, resolve } from "path"
 import { classifyFact } from "./fact-freshness"
+import { backupFacts } from "@/improve/tidy"
 import type { MemoryFact, MemoryStore } from "./memory-store"
 
 // --- One-off: flag unsourced volatile memory lines as unverified (#273) ---
@@ -43,12 +42,7 @@ export function flagUnsourced(
 
   if (!opts.apply || flagged.length === 0) return { agentId, flagged }
 
-  const file = store.fileFor(agentId)
-  const dir = resolve(dirname(file), "_backup")
-  mkdirSync(dir, { recursive: true })
-  let backup = resolve(dir, `${basename(file, ".jsonl")}.${since.replace(/[:.]/g, "-")}.jsonl`)
-  for (let n = 1; existsSync(backup); n++) backup = backup.replace(/(\.\d+)?\.jsonl$/, `.${n}.jsonl`)
-  copyFileSync(file, backup)
+  const backup = backupFacts(store, agentId, { at: since })
   store.rewrite(agentId, facts)
   return { agentId, flagged, backup }
 }
