@@ -16,7 +16,7 @@
 //
 // Shipped to the page as their own text (injectFns, wall-context.client.ts),
 // so no imports are used inside the functions; filesTabHtml calls wflIcon
-// and the workspace parts call wflLoader, which are injected with them.
+// and the workspace parts call wflSkel and wflErr, which are injected with them.
 
 import { icon, type IconName } from "../icons"
 
@@ -154,15 +154,21 @@ export function wflIcon(kind: string): string {
 }
 wflIcon.svg = Object.fromEntries(([
   ["files", "files"], ["file", "file"], ["wrote", "file-plus"], ["edited", "pencil-line"], ["read", "eye"], ["pr", "git-pull-request"],
-  ["art", "package"], ["dir", "folder"], ["att", "paperclip"], ["x", "x"],
+  ["art", "package"], ["dir", "folder"], ["att", "paperclip"], ["x", "x"], ["retry", "refresh-cw"],
 ] as Array<[string, IconName]>).map(([k, n]) => [k, icon(n, 14, "wfl__ic")])) as Record<string, string>
 
-/** The shared eight-ray loader (#2152): the markup of afLoaderHtml
- *  (../affect.css.ts), here as its own function so it ships with these. */
-export function wflLoader(label: string): string {
-  let rays = ""
-  for (let i = 0; i < 8; i++) rays += `<span style="rotate:${i * 45}deg;animation-delay:${((i - 8) * 0.1).toFixed(1)}s"></span>`
-  return `<span class="ax-af-loader" role="status"><span class="ax-af-loader__rays" aria-hidden="true">${rays}</span>${label}</span>`
+/** Grey lines while a list or a file loads (P8, A16): the Hub's skeleton
+ *  (.ax-af-skeleton, affect.css.ts), as Chat draws it. `label` is for a
+ *  screen reader. Shipped with injectFns, so it takes nothing from outside. */
+export function wflSkel(label: string): string {
+  return `<div class="wfl__skel" role="status" aria-busy="true"><span class="ax-sr">${label}</span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span></div>`
+}
+
+/** What failed, then Retry (C15). `retry`: the Retry button's raw attributes
+ *  (a data-cx the panel answers), already escaped; none draws no button. */
+export function wflErr(text: string, retry = ""): string {
+  return `<div class="wfl__err" role="alert"><span>${text}</span>` +
+    (retry ? `<button type="button" class="wcx__re" ${retry}>${wflIcon("retry")}Retry</button>` : "") + "</div>"
 }
 
 /** The Files tab: changed files, then read ones, artifacts, attachments, and the PR when there is one. */
@@ -174,7 +180,7 @@ export function filesTabHtml(r: RunFiles, o: { key: string; changes?: { id: stri
   const rows: string[] = []
   if (o.changes) rows.push(`<li><button type="button" class="wfl__i" data-cx="open" data-kind="changes" data-id="${esc(o.changes.id)}"><span class="wfl__op is-pr">${wflIcon("pr")}PR</span><b>${esc(o.changes.ref)}</b><small>its changes</small></button></li>`)
   r.files.forEach((f, i) => {
-    rows.push(`<li><button type="button" class="wfl__i" data-cx="wfile" data-src="${esc(o.key)}" data-i="${i}" title="${esc(f.path)}"><span class="wfl__op is-${esc(f.op)}">${wflIcon(f.op)}${esc(word[f.op])}</span><b>${esc(name(f.path))}</b><small>${esc(dir(f.path))}${f.n > 1 ? ` · ${f.n}×` : ""}</small></button></li>`)
+    rows.push(`<li><button type="button" class="wfl__i" data-cx="wfile" data-src="${esc(o.key)}" data-i="${i}" data-tip="${esc(f.path)}"><span class="wfl__op is-${esc(f.op)}">${wflIcon(f.op)}${esc(word[f.op])}</span><b>${esc(name(f.path))}</b><small>${esc(dir(f.path))}${f.n > 1 ? ` · ${f.n}×` : ""}</small></button></li>`)
   })
   for (const a of r.artifacts) rows.push(`<li><span class="wfl__i"><span class="wfl__op is-art">${wflIcon("art")}file</span><b>${esc(a.filename)}</b><small>${a.mime ? `${esc(a.mime)} · ` : ""}sent with the answer</small></span></li>`)
   for (const a of r.attached) rows.push(`<li><span class="wfl__i"><span class="wfl__op is-att">${wflIcon("att")}attached</span><b>${esc(a)}</b><small>you attached it</small></span></li>`)
@@ -217,7 +223,7 @@ export interface WorkspaceView {
  *  folder and file buttons carry. */
 export function workspaceHtml(
   w: WorkspaceView | null | undefined, key: string,
-  o: { title?: string; top?: string; dirCx?: string; fileCx?: string } = {},
+  o: { title?: string; top?: string; dirCx?: string; fileCx?: string; retry?: boolean } = {},
 ): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   if (!w) return ""
@@ -227,8 +233,8 @@ export function workspaceHtml(
   const crumbs = [`<button type="button" class="wfl__cr" data-cx="${dirCx}" data-src="${esc(key)}" data-path="">${esc(top)}</button>`]
   parts.forEach((p, i) => crumbs.push(`<button type="button" class="wfl__cr" data-cx="${dirCx}" data-src="${esc(key)}" data-path="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</button>`))
   const head = (title ? `<h4 class="wfl__h">${wflIcon("dir")}${esc(title)}</h4>` : "") + `<nav class="wfl__crs" aria-label="Folder">${crumbs.join('<span aria-hidden="true">/</span>')}</nav>`
-  if (w.error) return head + `<p class="ax-wall__empty">${esc(title || top)} not available: ${esc(w.error)}.</p>`
-  if (!w.list) return head + wflLoader(`Reading the ${esc(title ? title.toLowerCase() : top)}…`)
+  if (w.error) return head + wflErr(`${esc(title || top)} not available: ${esc(w.error)}.`, o.retry ? `data-cx="${dirCx}" data-src="${esc(key)}" data-path="${esc(w.dir)}"` : "")
+  if (!w.list) return head + wflSkel(`Reading the ${esc(title ? title.toLowerCase() : top)}…`)
   const at = (n: string) => (w.dir ? `${w.dir}/${n}` : n)
   const rows = (w.list.entries || []).map((e) => e.kind === "dir"
     ? `<li><button type="button" class="wfl__i wfl__ws" data-cx="${dirCx}" data-src="${esc(key)}" data-path="${esc(at(e.name))}"><span class="wfl__op is-dir">${wflIcon("dir")}folder</span><b>${esc(e.name)}</b></button></li>`
@@ -238,12 +244,12 @@ export function workspaceHtml(
 }
 
 /** One workspace file, as it is now, in the panel. */
-export function workspaceFileHtml(f: { path: string; content?: string; size?: number; error?: string; loading?: boolean } | null | undefined, where = "the workspace"): string {
+export function workspaceFileHtml(f: { path: string; content?: string; size?: number; error?: string; loading?: boolean } | null | undefined, where = "the workspace", retry = ""): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   if (!f) return `<p class="ax-wall__empty">Nothing to show here any more.</p>`
   const head = `<p class="wcx__at"><code>${esc(f.path)}</code> · as it is now in ${esc(where)}</p>`
-  if (f.error) return head + `<p class="ax-wall__empty">Not shown: ${esc(f.error)}.</p>`
-  if (f.loading || typeof f.content !== "string") return head + wflLoader("Reading the file…")
+  if (f.error) return head + wflErr(`Not shown: ${esc(f.error)}.`, retry)
+  if (f.loading || typeof f.content !== "string") return head + wflSkel("Reading the file…")
   const lines = f.content.split("\n").map((l, i) => `<tr><td class="wdf__n">${i + 1}</td><td class="wdf__c">${esc(l)}</td></tr>`).join("")
   return head + `<div class="wdf__w"><table class="wdf__t wcx__file"><tbody>${lines}</tbody></table></div>`
 }
@@ -267,7 +273,8 @@ export const WALL_FILES_CSS = `
 @keyframes wfl-in { from { opacity: 0; transform: translateY(4px); } }
 .wfl__i { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 6px 8px; font: inherit; color: var(--ax-text); transition: background-color .15s ease; }
 button.wfl__i { cursor: pointer; }
-button.wfl__i:hover, button.wfl__i:focus-visible { background: var(--ax-surface-2); }
+@media (hover: hover) { button.wfl__i:hover { background: var(--ax-surface-3); } }
+button.wfl__i:focus-visible { background: var(--ax-surface-3); }
 button.wfl__i:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wfl__i b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wfl__i small { grid-column: 2; color: var(--ax-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -278,7 +285,8 @@ button.wfl__i:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wfl__h { display: flex; align-items: center; gap: 6px; margin: 16px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ax-muted); }
 .wfl__crs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 6px; font-size: 12px; color: var(--ax-muted); }
 .wfl__cr { font: inherit; color: var(--ax-accent); background: none; border: 0; border-radius: var(--ax-radius-sm); padding: 1px 4px; cursor: pointer; }
-.wfl__cr:hover, .wfl__cr:focus-visible { background: var(--ax-surface-2); }
+@media (hover: hover) { .wfl__cr:hover { background: var(--ax-surface-3); } }
+.wfl__cr:focus-visible { background: var(--ax-surface-3); }
 .wfl__ws { grid-template-rows: auto; }
 .wcx__now { margin: 0 0 10px; }
 .wfl__ch { margin: 0 0 12px; } .wfl__chh { font-size: 12px; color: var(--ax-muted); margin: 0 0 4px; }
@@ -286,7 +294,11 @@ button.wfl__i:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wcx__src { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .wcx__src a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wcx__re { flex: none; font: inherit; font-size: var(--ax-fs-xs); color: var(--ax-muted); background: none; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); padding: 2px 9px; cursor: pointer; }
-.wcx__re:hover { color: var(--ax-text); border-color: var(--ax-text-2); }
+.wcx__re { display: inline-flex; align-items: center; gap: 5px; }
+@media (hover: hover) { .wcx__re:hover:not(:disabled) { color: var(--ax-text); background: var(--ax-surface-3); } }
+.wcx__re:disabled { opacity: .5; cursor: default; }
+/* Failing (C15): what failed, then Retry. */
+.wfl__err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; color: var(--ax-red-ink); font-size: var(--ax-fs-sm); }
 .wcx__tab .wfl__ic { vertical-align: -2px; margin-right: 4px; }
 /* The Files buttons on the Task page and in the chat header. */
 .wtask__files, .hc__files { display: inline-flex; align-items: center; gap: 5px; }

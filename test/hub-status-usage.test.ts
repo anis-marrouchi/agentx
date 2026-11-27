@@ -6,7 +6,7 @@ import {
 import { fetchHubUsage, hubUsageFromPlan, resetHubUsageCache } from "../src/daemon/hub-usage-api"
 import { activeCliDir } from "../src/agents/cli-accounts"
 import { handlePlanUsageApi } from "../src/daemon/plan-usage-api"
-import { HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
+import { HUB_STATUS_CSS, HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 
 // #2101 R5, R28: the status bar's plan engines, their limit bars and drop-downs.
@@ -118,7 +118,7 @@ describe("status bar items and drop-downs", () => {
   it("the item has the logo, the name and a bar per 5-hour and week window", () => {
     const html = hubEngineChipHtml("claude-code", rows, esc, icon)
     expect(html).toContain('<i data-e="claude-code"></i><span class="hsu__n">Claude</span>')
-    expect(html).toContain('<span class="hsu__k">5h</span><span class="hsu__m" role="progressbar" aria-label="5 hours used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42"><i style="width:42%"></i></span><b>42%</b>')
+    expect(html).toContain('<span class="hsu__k">5h</span><span class="hsu__m" role="progressbar" aria-label="5 hours used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42"><i style="transform:scaleX(0.42)"></i></span><b>42%</b>')
     expect(html).toContain('aria-valuenow="19"')
     expect(html).not.toContain("hsu__flag")
   })
@@ -221,7 +221,17 @@ describe("status bar items and drop-downs", () => {
   it("fits 900 px: names go, logos and bars stay; motion respects reduced motion", () => {
     const narrow = HUB_USAGE_CSS.slice(HUB_USAGE_CSS.indexOf("@media (max-width: 1180px)"))
     expect(narrow).toContain(".hsu__n, .hs__long { display: none; }")
-    expect(HUB_USAGE_CSS).toContain("@media (prefers-reduced-motion: reduce) { .hsu-pop { animation: none; }")
+    // One popover recipe for the bar (hub-status.ts): scale(.98) over 150ms, none under reduced motion.
+    expect(HUB_STATUS_CSS).toContain(".hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: hs-pop 150ms")
+    expect(HUB_STATUS_CSS).toContain("@media (prefers-reduced-motion: reduce) { .hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: none; } }")
+    // C12: row actions hide at rest with a mouse, show on hover or focus, and stay on touch.
+    expect(HUB_USAGE_CSS).toContain("@media (hover: hover) { .hsg__acts { opacity: 0; transition: opacity 150ms; }")
+    expect(HUB_USAGE_CSS).not.toContain("opacity: .55")
+    // C10: the state colours are tokens (the avatar's #fff waits for the shared avatar, S3).
+    for (const hex of ["#f59e0b", "#e40014", "#f5a524", "#2fbf71"]) expect(HUB_USAGE_CSS).not.toContain(hex)
+    // The bars grow with transform, not width, in 200ms (C18).
+    expect(HUB_USAGE_CSS).toContain("transition: transform 200ms")
+    expect(HUB_USAGE_CSS).toContain("@media (prefers-reduced-motion: reduce) { .hsu__m i, .hsu__bar i { transition: none; } }")
   })
 })
 

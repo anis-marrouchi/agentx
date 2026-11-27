@@ -15,8 +15,10 @@
 // The page in the middle keeps at least 480 px: the saved widths are fitted
 // to the window on load, on every window resize and after each drag (the
 // saved preference itself is kept, so a wider window gives it back).
-// Each edge is a separator: drag it, double-click it to collapse or expand,
-// or focus it and use ← → (16 px) and Enter. On a Mac ⌘B toggles the menu
+// Each edge is a separator: drag it, double-click it to give the panel its
+// default width back, or focus it and use ← → (16 px) and Enter (collapse or
+// expand). Esc inside the right panel collapses it. "Reset layout" in the
+// status bar puts both panels back as they start (orca-design C21, C23). On a Mac ⌘B toggles the menu
 // and ⌘J the panel. Windows and Linux get no shortcut: Ctrl+B and Ctrl+J
 // are the browser's (bookmarks, downloads), and Ctrl+Shift+J opens the
 // console, so there the buttons and the focusable edges do it.
@@ -29,6 +31,7 @@
 // not up, and a reload reads the index of the entry it is on.
 
 import { icon } from "../icons"
+import { tip } from "../components"
 
 /** The panels the Hub remembers. */
 export type HubPanelId = "nav" | "cx"
@@ -160,6 +163,7 @@ export const HUB_PANELS_FNS = { hubPanelClamp, hubPanelsRead, hubPanelsFit, hubP
 // Lucide, 16 px (icons.ts).
 const PANEL_ICON = {
   menu: icon("panel-left"),
+  reset: icon("rotate-ccw", 14),
   panel: icon("panel-right"),
   back: icon("chevron-left"),
   fwd: icon("chevron-right"),
@@ -167,7 +171,7 @@ const PANEL_ICON = {
 
 /** The menu's fold button, at the top of the nav. */
 export function hubNavFoldHtml(): string {
-  return `<button type="button" class="axp-btn axp-navfold" data-panel-toggle="nav" aria-label="Collapse the side menu" aria-expanded="true" title="Collapse the side menu (⌘B)">${PANEL_ICON.menu}</button>`
+  return `<button type="button" class="axp-btn axp-navfold" data-panel-toggle="nav" aria-label="Collapse the side menu" aria-expanded="true" ${tip("Collapse the side menu")}>${PANEL_ICON.menu}</button>`
 }
 
 /** The edges you drag: one on the nav, one on the right panel. */
@@ -176,23 +180,30 @@ export function hubPanelGripHtml(id: HubPanelId): string {
   // The value: the panel's width in px. The page script keeps
   // aria-valuenow (and the right panel's max, which follows the window) in step.
   const [min, max, now] = id === "nav" ? [HUB_NAV_MIN, HUB_NAV_MAX, HUB_NAV_DEFAULT] : [HUB_CX_MIN, HUB_CX_MIN, HUB_CX_MIN]
-  return `<div class="axp-grip axp-grip--${id}" data-panel-grip="${id}" role="separator" aria-orientation="vertical" aria-label="${label}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${now}" tabindex="0" title="Drag to resize. Double-click to collapse."></div>`
+  return `<div class="axp-grip axp-grip--${id}" data-panel-grip="${id}" role="separator" aria-orientation="vertical" aria-label="${label}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${now}" tabindex="0" ${tip("Drag to resize. Double-click to reset.")}></div>`
 }
 
 /** Back, Forward and the Panel button, at the start of the titlebar. */
 export function hubHistoryHtml(): string {
-  return `<span class="axp-hist"><button type="button" class="axp-btn" data-hist="back" aria-label="Back to the previous page" title="Back" disabled>${PANEL_ICON.back}</button><button type="button" class="axp-btn" data-hist="fwd" aria-label="Forward" title="Forward" disabled>${PANEL_ICON.fwd}</button></span>`
+  return `<span class="axp-hist"><button type="button" class="axp-btn" data-hist="back" aria-label="Back to the previous page" ${tip("Back")} disabled>${PANEL_ICON.back}</button><button type="button" class="axp-btn" data-hist="fwd" aria-label="Forward" ${tip("Forward")} disabled>${PANEL_ICON.fwd}</button></span>`
 }
 
 /** Shown while the right panel is collapsed and has tabs open. */
 export function hubPanelReopenHtml(): string {
-  return `<button type="button" class="axp-btn axp-reopen" data-panel-toggle="cx" aria-label="Show the right panel" title="Show the right panel (⌘J)" hidden>${PANEL_ICON.panel}<b class="axp-reopen__n" id="axp-cx-n"></b></button>`
+  return `<button type="button" class="axp-btn axp-reopen" data-panel-toggle="cx" aria-label="Show the right panel" ${tip("Show the right panel")} hidden>${PANEL_ICON.panel}<b class="axp-reopen__n" id="axp-cx-n"></b></button>`
+}
+
+/** "Reset layout" (C21): in the status bar, shown only while a panel is not
+ *  as it starts (a width set, or folded). */
+export function hubPanelResetHtml(): string {
+  return `<button type="button" class="hs__btn axp-reset" data-panel-reset hidden>${PANEL_ICON.reset}<span>Reset layout</span></button>`
 }
 
 export const HUB_PANELS_CSS = `
 /* Panels you resize, collapse and expand (#2101 P, hub-panels.ts). */
 .axp-btn { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 28px; padding: 0 4px; border-radius: var(--ax-radius-sm); color: var(--ax-muted); cursor: pointer; }
-.axp-btn:hover:not(:disabled) { background: var(--ax-surface-3); color: var(--ax-text); }
+@media (hover: hover) { .axp-btn:hover:not(:disabled) { background: var(--ax-surface-3); color: var(--ax-text); } }
+.axp-btn:focus-visible { box-shadow: var(--ax-focus-ring); }
 .axp-btn:disabled { opacity: .35; cursor: default; }
 .axp-btn svg { width: 16px; height: 16px; flex: none; }
 .axp-hist { display: inline-flex; gap: 2px; margin-right: 6px; flex: none; }
@@ -202,7 +213,10 @@ export const HUB_PANELS_CSS = `
 .axp-navfold { position: absolute; top: 14px; right: 10px; }
 .axp-grip { position: absolute; top: 0; bottom: 0; width: 7px; z-index: 5; cursor: col-resize; touch-action: none; }
 .axp-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background-color .12s ease-out; }
-.axp-grip:hover::after, .axp-grip:focus-visible::after, .axp-grip.is-drag::after { background: var(--ax-accent); }
+@media (hover: hover) { .axp-grip:hover::after { background: var(--ax-ring); } }
+.axp-grip.is-drag::after { background: var(--ax-ring); }
+/* Focus: the one ring (S1), as a 3px band on the edge. */
+.axp-grip:focus-visible::after { left: 2px; width: 3px; background: color-mix(in srgb, var(--ax-ring) 50%, transparent); }
 .axp-grip:focus-visible { box-shadow: none; }
 /* The menu scrolls, so its edge sits on the page, at the menu's width. */
 .axp-grip--nav { position: fixed; left: calc(var(--axp-nav-w, 280px) - 4px); }
@@ -224,7 +238,7 @@ body.axp-dragging, body.axp-dragging * { cursor: col-resize !important; user-sel
 @media (min-width: 641px) { .ax-wall__back { display: none !important; } }
 /* Under 1180 px the rail and the sheet stay as they are. */
 @media (max-width: 1180px) {
-  .axp-grip, .axp-navfold, .axp-reopen { display: none !important; }
+  .axp-grip, .axp-navfold, .axp-reopen, .axp-reset { display: none !important; }
 }
 @media (max-width: 640px) { .axp-hist { display: none; } }
 @media (prefers-reduced-motion: reduce) { .axp-grip::after { transition: none; } }
@@ -264,13 +278,18 @@ export const HUB_PANELS_SCRIPT = String.raw`
     document.querySelectorAll('[data-panel-toggle="nav"]').forEach(function (b) {
       b.setAttribute('aria-expanded', String(!P.nav.folded));
       b.setAttribute('aria-label', P.nav.folded ? 'Expand the side menu' : 'Collapse the side menu');
-      b.title = (P.nav.folded ? 'Expand' : 'Collapse') + ' the side menu' + (MAC ? ' (⌘B)' : '');
+      b.setAttribute('data-tip', (P.nav.folded ? 'Expand' : 'Collapse') + ' the side menu');
+      if (MAC) b.setAttribute('data-tip-key', '⌘B');
     });
     var re = document.querySelector('.axp-reopen'), n = cxSeen().n;
     if (re) {
-      re.hidden = !(P.cx.folded && cxOpen()); re.title = 'Show the right panel' + (MAC ? ' (⌘J)' : '');
+      re.hidden = !(P.cx.folded && cxOpen());
+      if (MAC) re.setAttribute('data-tip-key', '⌘J');
       var c = document.getElementById('axp-cx-n'); if (c) c.textContent = n > 1 ? String(n) : '';
     }
+    // Reset layout shows only while there is something to reset.
+    var moved = P.nav.w != null || P.nav.folded || P.cx.w != null || P.cx.folded;
+    document.querySelectorAll('[data-panel-reset]').forEach(function (b) { b.hidden = !moved; });
     // The edges' values for a screen reader: the width now, and how far it can go in this window.
     document.querySelectorAll('[data-panel-grip]').forEach(function (g) {
       var id = g.getAttribute('data-panel-grip'), min = id === 'nav' ? LIM.navMin : LIM.cxMin;
@@ -287,18 +306,20 @@ export const HUB_PANELS_SCRIPT = String.raw`
     var to = id === 'nav' ? document.querySelector('.axp-navfold') : document.querySelector(P.cx.folded ? '.axp-reopen' : '.axp-grip--cx');
     if (shown(to)) to.focus();
   }
+  function reset() { P = { nav: { w: null, folded: false }, cx: { w: null, folded: false } }; save(); apply(); }
   function setW(id, w) { P[id].w = hubPanelClamp(id, w, innerWidth, others(id), LIM); P[id].folded = false; apply(); }
 
   document.addEventListener('click', function (ev) {
-    var t = ev.target.closest && ev.target.closest('[data-panel-toggle],[data-hist]');
+    var t = ev.target.closest && ev.target.closest('[data-panel-toggle],[data-hist],[data-panel-reset]');
     if (!t) return;
+    if (t.hasAttribute('data-panel-reset')) { reset(); return; }
     if (t.hasAttribute('data-panel-toggle')) { toggle(t.getAttribute('data-panel-toggle')); return; }
     if (t.getAttribute('data-hist') !== 'back') { history.forward(); return; }
     // Nothing behind in this tab (a post opened from a link): the post's own Back opens the feed.
     var own = document.getElementById('wall-back');
     if (!canBack() && own && !own.hidden) own.click(); else history.back();
   });
-  // Drag an edge; double-click it to collapse or expand; ← → and Enter from the keyboard.
+  // Drag an edge; double-click it for the default width; ← → and Enter from the keyboard.
   document.addEventListener('pointerdown', function (ev) {
     var g = ev.target.closest && ev.target.closest('[data-panel-grip]');
     if (!g || ev.button !== 0) return;
@@ -319,7 +340,7 @@ export const HUB_PANELS_SCRIPT = String.raw`
     if (!g) return;
     var id = g.getAttribute('data-panel-grip');
     if (id === 'cx' && !cxOpen()) return;
-    toggle(id);
+    P[id].w = null; P[id].folded = false; save(); apply();
   });
   document.addEventListener('keydown', function (ev) {
     var g = ev.target.closest && ev.target.closest('[data-panel-grip]');
@@ -332,7 +353,17 @@ export const HUB_PANELS_SCRIPT = String.raw`
       if (ev.key === 'Enter') { ev.preventDefault(); toggle(id); return; }
     }
     var tg = ev.target || {}, tag = tg.tagName || '';
-    var id2 = hubPanelKey(ev, { mac: MAC, typing: tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!tg.isContentEditable, viewport: innerWidth, cxOpen: cxOpen() });
+    var typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!tg.isContentEditable;
+    // Esc inside the right panel (C16): on a computer it collapses, and the focus goes to the
+    // button that brings it back; under 1180 px, where it is a sheet, its open tab closes.
+    // Not while typing (a line comment), and not when something in the panel already used the Esc.
+    if (ev.key === 'Escape' && !typing && !ev.defaultPrevented && cxOpen() && tg.closest && tg.closest('#wall-ctx')) {
+      if (innerWidth > 1180) { if (!P.cx.folded) { ev.preventDefault(); toggle('cx'); } return; }
+      var x = document.querySelector('#wcx-tabs .wcx__tab.is-on [data-cx="close"]');
+      if (x) { ev.preventDefault(); x.click(); var top = document.querySelector('#wcx-tabs [role="tab"]'); if (top) top.focus(); }
+      return;
+    }
+    var id2 = hubPanelKey(ev, { mac: MAC, typing: typing, viewport: innerWidth, cxOpen: cxOpen() });
     if (!id2) return;
     ev.preventDefault();
     toggle(id2);

@@ -40,14 +40,13 @@
 import { HUB_NAME } from "../hub-name"
 import { hubPanelGripHtml } from "./hub-panels"
 import { injectFns } from "../inject"
-import { afLoaderHtml } from "../affect.css"
 import { chAgo, chDate, chReqMetaHtml } from "./wall-chat-head.client"
-import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflIcon, wflLoader, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
+import { attachedOf, fileOpOf, filesTabHtml, mergeRunFiles, runFileHtml, runFilesOf, wflErr, wflIcon, wflSkel, workspaceFileHtml, workspaceHtml, workspaceRel } from "./wall-files"
 
 export const WALL_CONTEXT_SCRIPT = String.raw`
   // --- Right panel (#2101 R15) ---
   ${injectFns({ chAgo, chDate, chReqMetaHtml })}
-  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, wflLoader, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
+  ${injectFns({ fileOpOf, runFilesOf, attachedOf, mergeRunFiles, wflIcon, wflSkel, wflErr, filesTabHtml, runFileHtml, workspaceHtml, workspaceFileHtml, workspaceRel })}
   S.cx = { tabs: [], on: 0, painted: '', files: {}, src: {} };
   var CX_MAX = 6;
   var CX_NAME = { files: 'Files', wfile: 'File', wsfile: 'File', changes: 'Changes', plan: 'Plan', file: 'File' };
@@ -120,15 +119,15 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     return S.cx.tabs.map(function (t, i) {
       var src = cxIsSrc(t.kind) ? S.cx.src[t.id] : null, p = src ? null : findPost(t.id), on = i === S.cx.on;
       var what = src ? src.label : p ? p.headline : '';
-      return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" title="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
+      return '<span class="wcx__tab' + (on ? ' is-on' : '') + '"><button type="button" role="tab" aria-selected="' + on + '" data-cx="tab" data-i="' + i + '" data-tip="' + esc((t.path ? t.path + ' · ' : '') + what) + '">' +
         (t.kind === 'files' ? wflIcon('files') : '') +
         '<b>' + esc(CX_NAME[t.kind]) + '</b>' + (t.path ? ' ' + esc(cxTitle(t)) : what ? ' ' + esc(cxShort(what)) : '') + '</button>' +
-        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '" title="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
+        '<button type="button" class="wcx__x" data-cx="close" data-i="' + i + '" aria-label="Close ' + esc(CX_NAME[t.kind]) + '" data-tip="Close ' + esc(CX_NAME[t.kind]) + '">' + wflIcon('x') + '</button></span>';
     }).join('');
   }
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
   function cxHeadHtml(p, t) {
-    return '<div class="wcx__h"><a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>' +
+    return '<div class="wcx__h"><a href="#post=' + encodeURIComponent(p.id) + '" data-tip="Open the request">' + esc(p.headline) + '</a>' +
       (t.kind === 'file' ? '<code>' + esc(t.path) + '</code>' : '') + cxMetaHtml(p) + '</div>';
   }
   /** When it started, its last move, its project, its home and History (#2101). */
@@ -137,8 +136,8 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
-    if (!th || th.loading) return '${afLoaderHtml("Loading the plan…")}';
-    if (th.error) return '<p class="ax-wall__empty">Plan not available: ' + esc(th.error) + '</p>';
+    if (!th || th.loading) return wflSkel('Loading the plan…');
+    if (th.error) return wflErr('Plan not available: ' + esc(th.error) + '.', 'data-cx="replan" data-id="' + esc(p.id) + '"');
     if (!th.plan || !th.plan.length) return '<p class="ax-wall__empty">This request has no plan steps.' + (p.mergeRef ? ' Its changes are under Changes.' : '') + '</p>';
     return planHtml(th.plan);
   }
@@ -155,8 +154,8 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxFileHtml(t) {
     var f = S.cx.files[cxKey(t)];
-    if (!f || f.loading) return '${afLoaderHtml("Loading the file…")}';
-    if (f.error) return '<p class="ax-wall__empty">File not available: ' + esc(f.error) + '</p>';
+    if (!f || f.loading) return wflSkel('Loading the file…');
+    if (f.error) return wflErr('File not available: ' + esc(f.error) + '.', 'data-cx="refile"');
     var d = f.data;
     if (d.status === 'removed') return '<p class="ax-wall__empty">' + esc(d.ref) + ' removes this file.</p>';
     if (d.status === 'binary') return '<p class="ax-wall__empty">Binary file: not shown.</p>';
@@ -293,11 +292,12 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   function cxSrcHtml(t) {
     var s = S.cx.src[t.id];
     if (!s) return '<p class="ax-wall__empty">Nothing to show here any more.</p>';
-    var head = '<div class="wcx__h wcx__src">' + (s.href ? '<a href="' + esc(s.href) + '" title="Open it">' + esc(s.label) + '</a>' : '<b>' + esc(s.label) + '</b>') +
+    var head = '<div class="wcx__h wcx__src">' + (s.href ? '<a href="' + esc(s.href) + '" data-tip="Open it">' + esc(s.label) + '</a>' : '<b>' + esc(s.label) + '</b>') +
       (t.kind === 'files' ? '<button type="button" class="wcx__re" data-cx="freload" data-src="' + esc(s.key) + '"' + (s.loading ? ' disabled' : '') + '>Reload</button>' : '') + '</div>';
-    if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path]);
-    if (!s.data && s.loading) return head + '${afLoaderHtml("Reading the runs…")}' + workspaceHtml(s.ws, s.key);
-    if (!s.data) return head + '<p class="ax-wall__empty">Files not available: ' + esc(s.error || 'not read yet') + '.</p>' + workspaceHtml(s.ws, s.key);
+    if (t.kind === 'wsfile') return head + workspaceFileHtml(s.ws && s.ws.files[t.path], undefined, 'data-cx="wsfile" data-src="' + esc(s.key) + '" data-path="' + esc(t.path) + '"');
+    var ws = workspaceHtml(s.ws, s.key, { retry: true });
+    if (!s.data && s.loading) return head + wflSkel('Reading the runs…') + ws;
+    if (!s.data) return head + wflErr('Files not available: ' + esc(s.error || 'not read yet') + '.', 'data-cx="freload" data-src="' + esc(s.key) + '"') + ws;
     if (t.kind === 'wfile') {
       // The file as it is now, from the workspace, when the path is in it.
       var rel = s.ws && s.ws.list ? workspaceRel(t.path, s.ws.list.root) : null;
@@ -305,7 +305,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       return head + now + runFileHtml(s.data.files.filter(function (f) { return f.path === t.path; })[0]);
     }
     var so = s.live ? '<p class="wcx__now">Still running: the files so far. Reload for more.</p>' : '';
-    return head + so + filesTabHtml(s.data, { key: s.key, changes: s.changes }) + workspaceHtml(s.ws, s.key);
+    return head + so + filesTabHtml(s.data, { key: s.key, changes: s.changes }) + ws;
   }
   /** The Files buttons say whether their tab is open. */
   function cxPressed() {
@@ -342,10 +342,10 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       ? (askId && list.filter(function (x) { return x.id === askId; })[0]) || (typeof decPostOf === 'function' ? decPostOf(askKey) : askId ? findPost(askId) : null)
       : list[0];
     if (!p) { w.hidden = true; w.innerHTML = ''; return; }
-    var what = '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
+    var what = '<a href="#post=' + encodeURIComponent(p.id) + '" data-tip="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
     w.innerHTML = '<span class="hc__worklbl">Working on</span>' + what +
-      (p.mergeRef ? '<button type="button" class="hc__ib" data-cx="open" data-kind="changes" data-id="' + esc(p.id) + '"' + on('changes') + ' title="The changes in ' + esc(p.mergeRef) + '">Changes</button>' : '') +
+      (p.mergeRef ? '<button type="button" class="hc__ib" data-cx="open" data-kind="changes" data-id="' + esc(p.id) + '"' + on('changes') + ' data-tip="The changes in ' + esc(p.mergeRef) + '">Changes</button>' : '') +
       '<button type="button" class="hc__ib" data-cx="open" data-kind="plan" data-id="' + esc(p.id) + '"' + on('plan') + '>Plan</button>';
     w.hidden = false;
   }
@@ -382,6 +382,9 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       return;
     }
     if (what === 'close') { cxClose(i); cxPaintWork(); return; }
+    // Retry after a failed read (C15): the plan, or the file in view.
+    if (what === 'replan') { loadThread(t.getAttribute('data-id')); S.cx.painted = ''; cxPaint(); return; }
+    if (what === 'refile') { var ft = cxActive(); if (ft) { delete S.cx.files[cxKey(ft)]; cxLoadFile(ft); S.cx.painted = ''; cxPaint(); } return; }
     if (what === 'open') {
       var kind = t.getAttribute('data-kind'), id = t.getAttribute('data-id'), at = cxFind(kind, id);
       // A second press on an open one closes it, as the post's Diff does.
@@ -410,20 +413,20 @@ export const WALL_CONTEXT_CSS = `
 .wcx__tab.is-on > button[role="tab"] b { color: var(--ax-text); }
 .wcx__tab > button:focus-visible { box-shadow: inset var(--ax-focus-ring); }
 .wcx__x { display: inline-flex; align-items: center; padding: 3px 6px 3px 2px; background: none; border: 0; color: var(--ax-muted); cursor: pointer; }
-.wcx__x:hover { color: var(--ax-text); }
+@media (hover: hover) { .wcx__x:hover { color: var(--ax-text); } }
 .wcx__body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
 .wcx__body #wdf > .wdf { margin-top: 0; padding-top: 0; border-top: 0; }
 .wcx__body #wdf .wdf > .wp__th { margin-top: 0; padding-top: 0; border-top: 0; }
 .wcx__h { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; font-size: 13px; }
 .wcx__h a { font-weight: 600; color: var(--ax-text); text-decoration: none; }
-.wcx__h a:hover { color: var(--ax-accent); }
+@media (hover: hover) { .wcx__h a:hover { text-decoration: underline; } }
 .wcx__h code { font-family: var(--ax-mono); font-size: 12px; color: var(--ax-muted); overflow-wrap: anywhere; }
 .wcx__at { margin: 0 0 8px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wcx__file tr.is-add { background: color-mix(in srgb, var(--ax-green) 12%, transparent); }
 .wdf__fhr { display: flex; align-items: stretch; background: var(--ax-surface-2); }
 .wdf__fhr .wdf__fh { flex: 1; min-width: 0; }
 .wdf__open { font: inherit; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-accent); background: none; border: 0; border-left: 1px solid var(--ax-border); padding: 0 10px; cursor: pointer; }
-.wdf__open:hover { background: var(--ax-surface-3); }
+@media (hover: hover) { .wdf__open:hover { background: var(--ax-surface-3); } }
 /* The chat's work line: the request the agent in view works on. */
 .hc__work { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-bottom: 1px solid var(--ax-border); font-size: 13px; min-width: 0; }
 .hc__work[hidden] { display: none; }

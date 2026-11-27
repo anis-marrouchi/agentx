@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   HUB_CX_MIN, HUB_MAIN_MIN, HUB_NAV_MAX, HUB_NAV_MIN, HUB_PANEL_LIMITS, HUB_PANELS_CSS, HUB_PANELS_FNS, HUB_PANELS_SCRIPT,
   hubCxOpened, hubHistStep, hubHistoryHtml, hubNavFoldHtml, hubPanelClamp, hubPanelDrag, hubPanelGripHtml, hubPanelKey,
-  hubPanelReopenHtml, hubPanelsApply, hubPanelsFit, hubPanelsRead,
+  hubPanelReopenHtml, hubPanelResetHtml, hubPanelsApply, hubPanelsFit, hubPanelsRead,
 } from "../src/daemon/ui/pages/hub-panels"
 import { injectFns } from "../src/daemon/ui/inject"
 import { wallContextHtml, WALL_CONTEXT_CSS } from "../src/daemon/ui/pages/wall-context.client"
@@ -105,6 +105,44 @@ describe("Hub panels: the page (#2101 P)", () => {
     expect(WALL_CONTEXT_CSS).toContain("var(--axp-nav-w, 280px) minmax(0, 1fr) var(--axp-cx-w, minmax(380px, 42vw))")
     expect(HUB_PANELS_CSS).toContain(".ax-wall.nav-folded { --axp-nav-w: 56px; }")
     expect(HUB_PANELS_CSS).toContain(".ax-wall.cx-folded .wcx { display: none; }")
+  })
+
+  it("names its controls with tooltips, not title (Hub review batch 6, C14)", () => {
+    const html = hubNavFoldHtml() + hubPanelGripHtml("nav") + hubPanelGripHtml("cx") + hubHistoryHtml() + hubPanelReopenHtml() + hubPanelResetHtml()
+    expect(html).not.toContain("title=")
+    expect(hubPanelGripHtml("cx")).toContain('data-tip="Drag to resize. Double-click to reset."')
+    expect(hubHistoryHtml()).toContain('aria-label="Back to the previous page" data-tip="Back"')
+    // The ⌘B / ⌘J chips go on a Mac only: Windows and Linux have no shortcut.
+    expect(HUB_PANELS_SCRIPT).toContain("if (MAC) b.setAttribute('data-tip-key', '⌘B');")
+    expect(HUB_PANELS_SCRIPT).toContain("if (MAC) re.setAttribute('data-tip-key', '⌘J');")
+    expect(HUB_PANELS_SCRIPT).not.toContain(".title =")
+  })
+
+  it("resets a width on double-click, and both panels with Reset layout (C21, C23)", () => {
+    // Double-click gives the panel its default width back; it no longer folds it.
+    const dbl = HUB_PANELS_SCRIPT.slice(HUB_PANELS_SCRIPT.indexOf("addEventListener('dblclick'"), HUB_PANELS_SCRIPT.indexOf("addEventListener('keydown'"))
+    expect(dbl).toContain("P[id].w = null; P[id].folded = false; save(); apply();")
+    expect(dbl).not.toContain("toggle(")
+    // Reset layout: one click, shown only while a panel moved, gone under 1180 px.
+    expect(hubPanelResetHtml()).toContain('data-panel-reset hidden>')
+    expect(hubPanelResetHtml()).toContain("lucide-rotate-ccw")
+    expect(HUB_PANELS_SCRIPT).toContain("if (t.hasAttribute('data-panel-reset')) { reset(); return; }")
+    expect(HUB_PANELS_SCRIPT).toContain("var moved = P.nav.w != null || P.nav.folded || P.cx.w != null || P.cx.folded;")
+    expect(HUB_PANELS_CSS).toContain(".axp-grip, .axp-navfold, .axp-reopen, .axp-reset { display: none !important; }")
+  })
+
+  it("collapses the right panel on Esc, or closes its tab where it is a sheet (C16)", () => {
+    const esc = HUB_PANELS_SCRIPT.slice(HUB_PANELS_SCRIPT.indexOf("if (ev.key === 'Escape'"))
+    // Never while typing a line comment, nor after something in the panel used the Esc.
+    expect(esc).toMatch(/^if \(ev\.key === 'Escape' && !typing && !ev\.defaultPrevented && cxOpen\(\) && tg\.closest && tg\.closest\('#wall-ctx'\)\)/)
+    expect(esc).toContain("if (innerWidth > 1180) { if (!P.cx.folded) { ev.preventDefault(); toggle('cx'); } return; }")
+    expect(esc).toContain("#wcx-tabs .wcx__tab.is-on [data-cx=\"close\"]")
+  })
+
+  it("uses the one focus ring and gates hover (S1, C20)", () => {
+    expect(HUB_PANELS_CSS).not.toContain("var(--ax-accent)")
+    expect(HUB_PANELS_CSS).toContain("@media (hover: hover) { .axp-btn:hover:not(:disabled)")
+    expect(HUB_PANELS_CSS).toContain(".axp-grip:focus-visible::after { left: 2px; width: 3px; background: color-mix(in srgb, var(--ax-ring) 50%, transparent); }")
   })
 
   it("ships a script that parses with its helpers", () => {

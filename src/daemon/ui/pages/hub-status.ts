@@ -6,7 +6,9 @@
 // light/dark switch lives here, not in the side menu.
 
 import { icon } from "../icons"
+import { tip } from "../components"
 import { HUB_USAGE_POP_HTML } from "./hub-status-usage"
+import { hubPanelResetHtml } from "./hub-panels"
 
 /** One provider row of the account picker (#2101 P9b): what GET /api/admin/hub/accounts returns. */
 export interface HubAccountsProvider {
@@ -108,13 +110,14 @@ const HS_ICON = {
 
 export const HUB_STATUS_HTML = `<footer class="hs" id="hub-status" aria-label="Hub status">
   <span class="hs__conn" id="hs-conn" data-state="wait" role="status"><i class="hs__dot" aria-hidden="true"></i><span id="hs-conn-t">Connecting…</span></span>
-  <span class="hs__i" id="hs-node" title="The machines this Hub reads" hidden>${HS_ICON.node}<span id="hs-node-t"></span></span>
+  <span class="hs__i" id="hs-node" ${tip("The machines this Hub reads")} hidden>${HS_ICON.node}<span id="hs-node-t"></span></span>
   <button type="button" class="hs__btn hsu__trig" id="hs-running-i" data-hsu-pop="agents" aria-haspopup="true" aria-expanded="false" aria-controls="hsu-pop" hidden>${HS_ICON.agents}<span id="hs-running"></span>${HS_ICON.down}</button>
   <span class="hsu" id="hs-engines"></span>
   <span class="hs__gap"></span>
   <button type="button" class="hs__btn hs__acct" id="hs-acct" aria-expanded="false" aria-controls="hs-acct-pop" hidden>Accounts</button>
-  <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" title="Switch the CLI of the agent in view" hidden><span id="hs-cli-i" class="hs__eng">${HS_ICON.cli}</span><span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
-  <button type="button" class="hs__btn" data-wall-theme title="Light / dark" aria-label="Switch light or dark">${HS_ICON.theme}<span>Theme</span></button>
+  <button type="button" class="hs__btn" id="hs-cli" aria-haspopup="dialog" aria-expanded="false" aria-controls="hs-cli-pop" ${tip("Switch the CLI of the agent in view")} hidden><span id="hs-cli-i" class="hs__eng">${HS_ICON.cli}</span><span id="hs-cli-t">CLI</span>${HS_ICON.down}</button>
+  ${hubPanelResetHtml()}
+  <button type="button" class="hs__btn" data-wall-theme ${tip("Light / dark")} aria-label="Switch light or dark">${HS_ICON.theme}<span>Theme</span></button>
   <span class="hs__i" id="hs-version-i" hidden>${HS_ICON.tag}<span id="hs-version"></span></span>
 </footer>
 <section class="hsa" id="hs-acct-pop" aria-label="CLI accounts for new runs" hidden></section>
@@ -126,23 +129,29 @@ export const HUB_STATUS_CSS = `
 .hs__i, .hs__conn, .hs__btn { display: inline-flex; align-items: center; gap: 5px; }
 .hs svg { width: 14px; height: 14px; flex: none; }
 .hs__gap { margin-left: auto; }
-.hs__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ax-muted); }
-.hs__conn[data-state="ok"] .hs__dot { background: var(--ax-green); }
-.hs__conn[data-state="err"] .hs__dot, .hs__conn[data-state="off"] .hs__dot { background: var(--ax-amber, #f5a524); }
-.hs__conn[data-state="err"], .hs__conn[data-state="off"] { color: var(--ax-amber-ink, var(--ax-text)); }
+/* Healthy says nothing (P1): the chip shows only while it connects, reconnects or is offline, and only a problem gets the dot. */
+.hs__conn[data-state="ok"] { display: none; }
+.hs__dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ax-amber); }
+.hs__conn[data-state="err"] .hs__dot, .hs__conn[data-state="off"] .hs__dot { display: block; }
+.hs__conn[data-state="err"], .hs__conn[data-state="off"] { color: var(--ax-amber-ink); }
 .hs__btn { font: inherit; color: var(--ax-text-2); background: none; border: 1px solid transparent; border-radius: var(--ax-radius-sm); padding: 2px 6px; cursor: pointer; }
-.hs__btn:hover, .hs__btn[aria-expanded="true"] { background: var(--ax-surface-3); color: var(--ax-text); }
+.hs__btn[aria-expanded="true"] { background: var(--ax-surface-3); color: var(--ax-text); }
+@media (hover: hover) { .hs__btn:hover { background: var(--ax-surface-3); color: var(--ax-text); } }
 .hs__chev { width: 11px; height: 11px; }
-.hsa { position: fixed; z-index: 10; bottom: 36px; right: 18px; width: min(520px, calc(100vw - 36px)); max-height: 70vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); box-shadow: var(--ax-shadow-lg); font-size: var(--ax-fs-sm); }
+/* One popover recipe for the bar (C7, C13): token shadow, opens from its trigger at scale(.98) over 150ms. */
+@keyframes hs-pop { from { opacity: 0; transform: scale(.98); } }
+.hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: hs-pop 150ms cubic-bezier(.16, 1, .3, 1); }
+@media (prefers-reduced-motion: reduce) { .hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: none; } }
+.hsa { position: fixed; z-index: 10; bottom: 36px; right: 18px; width: min(520px, calc(100vw - 36px)); max-height: 70vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); box-shadow: var(--ax-shadow-lg); font-size: var(--ax-fs-sm); transform-origin: bottom right; }
 .hsa__lead, .hsa__hint, .hsa__note { margin: 0 0 8px; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
-.hsa__note.is-ok { color: var(--ax-green-d, var(--ax-text)); }
-.hsa__note.is-err { color: var(--ax-red-ink, var(--ax-red)); }
-.hsa__note.is-wait { color: var(--ax-amber-ink, var(--ax-text)); }
+.hsa__note.is-ok { color: var(--ax-green-d); }
+.hsa__note.is-err { color: var(--ax-red-ink); }
+.hsa__note.is-wait { color: var(--ax-amber-ink); }
 .hsa__p { border: 0; border-top: 1px solid var(--ax-border); margin: 8px 0 0; padding: 8px 0 4px; }
 .hsa__p legend { font-weight: 600; padding: 0; }
 .hsa__hint code { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); }
 .hsc__who { display: flex; align-items: center; gap: 8px; }
-.hsc__who select { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
+.hsc__who select { flex: 1; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); background: var(--ax-surface); color: var(--ax-text); }
 .hsc__eng { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .hsc__eng .ax-eng, .hs__eng .ax-eng { width: 15px; height: 15px; }
 .hs__eng { display: inline-flex; }
@@ -155,10 +164,10 @@ export const HUB_STATUS_CSS = `
 .hsa__p legend small { color: var(--ax-muted); font-weight: 400; font-family: var(--ax-mono); }
 .hsa__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; }
 .hsa__row code, .hsa__hint code { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); overflow-wrap: anywhere; }
-.hsa__miss { color: var(--ax-amber, #b26b00); font-style: normal; }
+.hsa__miss { color: var(--ax-amber-ink); font-style: normal; }
 .hsa__rm { font: inherit; font-size: var(--ax-fs-xs); background: none; border: 0; color: var(--ax-muted); cursor: pointer; text-decoration: underline; }
 .hsa__add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; margin: 6px 0; }
-.hsa__add input { font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: 6px; background: var(--ax-surface); color: var(--ax-text); }
+.hsa__add input { font: inherit; padding: 4px 8px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-md); background: var(--ax-surface); color: var(--ax-text); }
 /* Up to 1180 px (the icon nav), everything still fits on one line down to
    900 px: the CLI button shortens with an ellipsis (the CLI drop-down names
    the agent), Accounts is its one word (the full words stay in its title),
