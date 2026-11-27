@@ -174,10 +174,11 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
 ]
 
 /** The built-in pages the Hub's menu picks from (#2149): every nav page
- *  but Settings, which is always reached from the nav foot. */
-export function hubMenuCatalog(): Array<{ label: string; items: Array<{ key: string; label: string; icon: string }> }> {
+ *  but Settings, which is always reached from the nav foot. The href is the
+ *  page's hash, unescaped (the nav writes it for HTML). */
+export function hubMenuCatalog(): Array<{ label: string; items: Array<{ key: string; label: string; icon: string; href: string }> }> {
   return WALL_NAV_GROUPS.filter((g) => g.label !== "Owner")
-    .map((g) => ({ label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, icon: i.icon })) }))
+    .map((g) => ({ label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, icon: i.icon, href: i.href.replace(/&amp;/g, "&") })) }))
 }
 
 /** Where the owner's Settings links go (#1428, #1449). */

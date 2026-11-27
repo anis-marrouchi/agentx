@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 import { resolveHubLayout, HUB_SHOW_IDS } from "../src/hub/layout"
-import { SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLandingHash, shellNav } from "../src/hub/shell"
+import { PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLandingHash, shellNav, type ShellMenu } from "../src/hub/shell"
+import { hubMenuCatalog } from "../src/daemon/ui/pages/wall"
+import { presetItems, type MenuItem } from "../src/daemon/hub-menu"
 import { HUB_REACT_PAGES, hubReactPageIds } from "../src/hub/pages"
 import { SimpleShell, shellAgents, type SimpleShellProps } from "../src/hub/pages/ShellPage"
 import { TooltipProvider } from "../src/hub/ui"
@@ -154,5 +156,72 @@ describe("the shell draws three columns", () => {
     expect(html).toContain("No agents yet.")
     expect(html).toContain("Pick an agent to chat with")
     expect(html).toMatch(/<textarea[^>]*disabled/)
+  })
+})
+
+// #2149 M2: the side menu follows the owner's saved Hub menu.
+describe("the saved Hub menu (#2149 M2)", () => {
+  const catalog = hubMenuCatalog()
+  const saved = (items: MenuItem[], isSaved = true): ShellMenu => ({ menu: { items }, saved: isSaved, catalog })
+  const mine = saved([
+    { id: "g1", kind: "group", label: "Daily" },
+    { id: "m1", kind: "page", page: "needs" },
+    { id: "m2", kind: "page", page: "wall", label: "My work" },
+    { id: "m3", kind: "view", page: "wall", label: "Blocked", icon: "star", filter: { status: "blocked", project: "acme" } },
+    { id: "g2", kind: "group", label: "Empty" },
+    { id: "g3", kind: "group", label: "Fleet" },
+    { id: "m4", kind: "page", page: "people" },
+    { id: "pin_1", kind: "link", label: "Docs", url: "https://example.com/docs" },
+  ])
+
+  it("unsaved: the default list, as before", () => {
+    expect(shellNav(simple, { owner: true, menu: saved(mine.menu.items as MenuItem[], false) })).toEqual(shellNav(simple, { owner: true }))
+  })
+  it("saved: Search and Agents, then the owner's items in order, empty groups dropped", () => {
+    const nav = shellNav(simple, { owner: true, menu: mine })
+    expect(ids(nav.main)).toEqual(["search", "agents", "g1", "needs", "tasks", "m3", "g3", "people", "pin_1"])
+    expect(nav.main.find((i) => i.id === "tasks")!.label).toBe("My work")
+    expect(nav.main.find((i) => i.id === "m3")!.href).toBe("#view=feed&status=blocked&project=acme")
+    expect(nav.main.find((i) => i.id === "people")!.href).toBe("#page=people")
+    expect(nav.main.find((i) => i.id === "pin_1")).toMatchObject({ href: "https://example.com/docs", external: true })
+    expect(nav.more).toEqual([])
+    expect(ids(nav.foot)).toEqual(["settings"])
+  })
+  it("a page left out is still reachable: it is in hidden, found by search (C4)", () => {
+    const nav = shellNav(simple, { owner: true, menu: mine })
+    const shown = new Set(ids(nav.main))
+    expect(ids(nav.hidden)).toContain("automations")
+    expect(ids(nav.hidden)).toContain("running")
+    // Every catalog page is either drawn or in hidden, never lost.
+    for (const p of catalog.flatMap((g) => g.items)) {
+      const id = PAGE_SHELL[p.key] ?? p.key
+      expect(shown.has(id) || nav.hidden.some((i) => i.id === id)).toBe(true)
+    }
+    for (const i of nav.hidden) expect(shown.has(i.id)).toBe(false)
+  })
+  it("a guest never gets the owner's links or Settings (C4)", () => {
+    const nav = shellNav(simple, { owner: false, menu: mine })
+    expect(nav.main.some((i) => i.external)).toBe(false)
+    expect(nav.foot).toEqual([])
+  })
+  it("the catalog hrefs are plain hashes, not HTML", () => {
+    for (const p of catalog.flatMap((g) => g.items)) {
+      expect(p.href).toMatch(/^#/)
+      expect(p.href).not.toContain("&amp;")
+    }
+  })
+  it("every icon the saved menu can draw is in the kit", () => {
+    const nav = shellNav(simple, { owner: true, menu: saved(presetItems("everything", catalog)) })
+    for (const i of [...nav.main, ...nav.hidden].filter((x) => !x.group)) expect(ICON_NAMES).toContain(i.icon)
+  })
+  it("draws the saved menu: group headers, items in order, hidden pages not drawn, links in a new tab", () => {
+    const html = draw({ menu: mine })
+    expect(html).toContain('data-shell-menu-group="g1"')
+    expect(html).not.toContain('data-shell-menu-group="g2"')
+    expect(html.indexOf('data-shell-item="needs"')).toBeLessThan(html.indexOf('data-shell-item="tasks"'))
+    expect(html).toContain(">My work<")
+    expect(html).not.toContain('data-shell-item="automations"')
+    expect(html).not.toContain('data-shell-group="pages"')
+    expect(html).toMatch(/href="https:\/\/example\.com\/docs"[^>]*target="_blank"|target="_blank"[^>]*href="https:\/\/example\.com\/docs"/)
   })
 })

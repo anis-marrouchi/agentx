@@ -12,6 +12,9 @@ import type { Menu, MenuCatalog, MenuItem, MenuPresetId } from "../../daemon/hub
 export type { Menu, MenuItem, MenuPresetId }
 
 export const MENU_API = "/api/admin/wall/menu"
+/** The one cache entry of the menu: Settings › Menu writes it on each save
+ *  and the shell's side menu reads it, so a change shows with no reload. */
+export const MENU_QUERY_KEY = ["settings", "menu"] as const
 
 export interface MenuReply {
   menu: Menu

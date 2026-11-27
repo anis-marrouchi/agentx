@@ -22,13 +22,13 @@ import { Button, Icon, Select, SelectContent, SelectItem, SelectTrigger, SelectV
 import type { AdminState } from "./data"
 import { MenuItems } from "./MenuItems"
 import { AddMenu, ResetDialog } from "./MenuDialogs"
-import { MENU_API, addAt, barIds, inMore, newItemId, itemIcon, itemLabel, pageNames, PAGE_ICONS, type MenuDraft, type MenuItem, type MenuReply } from "./menu-model"
+import { MENU_API, MENU_QUERY_KEY, addAt, barIds, inMore, newItemId, itemIcon, itemLabel, pageNames, PAGE_ICONS, type MenuDraft, type MenuItem, type MenuReply } from "./menu-model"
 import { Disclosure, PaneHeader, SettingsGroup, SettingsItem, SettingsRow } from "./parts"
 import { paneDef } from "./panes"
 import { MENU_ADVANCED } from "./rows/menu"
 
 const PANE = "menu"
-const KEY = ["settings", "menu"]
+const KEY = MENU_QUERY_KEY
 
 export interface MenuNote { tone: "ok" | "err" | "busy"; text: string; conflict?: boolean; undo?: MenuDraft }
 
