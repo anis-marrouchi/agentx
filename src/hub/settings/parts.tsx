@@ -229,6 +229,25 @@ export function ConfirmDialog({ open, onOpenChange, title, text, yes, run }: {
   )
 }
 
+export interface ConfirmSpec { title: string; text: ReactNode; yes: string; run: () => Promise<unknown> }
+
+/** A pane's one confirm step: `ask` opens it, `dialog` goes anywhere in the pane. */
+export function useConfirm(): { ask: (s: ConfirmSpec) => void; dialog: ReactNode } {
+  const [spec, setSpec] = useState<ConfirmSpec | null>(null)
+  const dialog = spec && <ConfirmDialog open onOpenChange={(v) => { if (!v) setSpec(null) }} title={spec.title} text={spec.text} yes={spec.yes} run={spec.run} />
+  return { ask: setSpec, dialog }
+}
+
+/** A list with nothing in it yet, inside its card. */
+export function EmptyLine({ children }: { children: ReactNode }) {
+  return <p className="py-4 text-sm text-muted-foreground">{children}</p>
+}
+
+/** A group's add button (its `action`). */
+export function AddButton({ label, onClick, row }: { label: string; onClick: () => void; row?: string }) {
+  return <Button variant="outline" size="sm" data-row={row} onClick={onClick}><Icon name="plus" className="size-3.5" />{label}</Button>
+}
+
 /** An engine's logo, the size of a line of text. */
 export function EngineLogo({ tier }: { tier?: string }) {
   return <span aria-hidden="true" className="inline-flex size-3.5 shrink-0 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: engineIcon(tier || "claude-code") }} />
@@ -307,7 +326,7 @@ export function FormDialog({ open, onOpenChange, title, description, submit, onS
               <div hidden={!more} className="flex flex-col gap-3 pb-1 pl-5">{advanced}</div>
             </div>
           )}
-          {error ? <p role="alert" className="text-xs text-destructive">{error.text}</p> : null}
+          {error?.text ? <p role="alert" className="text-xs text-destructive">{error.text}</p> : null}
           <DialogFooter className="items-center">
             {footNote && <span className="mr-auto text-xs text-muted-foreground">{footNote}</span>}
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

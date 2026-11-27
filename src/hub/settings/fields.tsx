@@ -8,7 +8,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { apiFetch, apiGet } from "../api"
-import { Button, Icon, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
+import { Button, Icon, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import { INPUT } from "./parts"
 import type { WorkState } from "./work-data"
 
@@ -23,15 +23,18 @@ export function useWorkState() {
 export type Note = { tone: "ok" | "err"; text: string } | null
 
 /** One write and its status line. `done` is what the line says after a
- *  real save; the server's summary when there is none. */
+ *  real save; the server's summary (and hint) when there is none. */
+/** A write a dialog or a row is handed: `useWrite`'s `write` or `run`. */
+export type Send = (method: string, path: string, body: unknown, done?: string) => Promise<unknown>
+
 export function useWrite(invalidate: QueryKey) {
   const client = useQueryClient()
   const [note, setNote] = useState<Note>(null)
   const m = useMutation({
     mutationFn: (v: { method: string; path: string; body: unknown; done?: string }) =>
-      apiFetch<{ summary?: string }>(SETTINGS_API + v.path, { method: v.method, body: JSON.stringify(v.body), headers: { "Content-Type": "application/json" } }),
+      apiFetch<{ summary?: string; hint?: string }>(SETTINGS_API + v.path, { method: v.method, body: JSON.stringify(v.body), headers: { "Content-Type": "application/json" } }),
     onSuccess: (r, v) => {
-      setNote({ tone: "ok", text: v.done ?? r?.summary ?? "Saved" })
+      setNote({ tone: "ok", text: v.done ?? ([r?.summary, r?.hint].filter(Boolean).join(" ") || "Saved") })
       return client.invalidateQueries({ queryKey: invalidate })
     },
     onError: (e) => setNote({ tone: "err", text: "Not saved: " + (e as Error).message }),
@@ -160,4 +163,50 @@ export function InlineFold({ label, children }: { label: string; children: React
       {open && <div className="mt-1.5 pl-[18px]">{children}</div>}
     </div>
   )
+}
+
+/** A labelled field in a dialog, with one line of help under it. */
+export function Field({ label, help, children }: { label: string; help?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1 text-sm">
+      {label}{children}
+      {help && <span className="text-xs text-muted-foreground">{help}</span>}
+    </label>
+  )
+}
+
+/** Two fields side by side from 640 px. */
+export function FieldRow({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>
+}
+
+/** A dialog's text field: full width, `h-9`. */
+export const dialogInput = cn(INPUT, "h-9 w-full")
+
+const EMPTY = "__none"
+export interface ChoiceOption { value: string; label: ReactNode }
+
+/** One pick from a short list. An empty value is a real choice here
+ *  ("None", "No one"), which Radix does not allow, so it travels as a
+ *  placeholder value. In a dialog, put it in a Field. */
+export function Choice({ label, value, onChange, options, className, disabled }: {
+  label: string; value: string; onChange: (v: string) => void; options: ChoiceOption[]; className?: string; disabled?: boolean
+}) {
+  return (
+    <Select value={value || EMPTY} disabled={disabled} onValueChange={(v) => onChange(v === EMPTY ? "" : v)}>
+      <SelectTrigger className={cn("h-9 w-full", className)} aria-label={label}><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {options.map((o) => <SelectItem key={o.value || EMPTY} value={o.value || EMPTY}>{o.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  )
+}
+
+/** Pick one of your agents (`@id` in mono); `none` adds an empty choice. */
+export function AgentSelect({ agents, none, ...props }: Omit<Parameters<typeof Choice>[0], "options"> & { agents: readonly { id: string }[]; none?: string }) {
+  const options: ChoiceOption[] = [
+    ...(none !== undefined ? [{ value: "", label: none }] : []),
+    ...agents.map((a) => ({ value: a.id, label: <span className="font-mono text-xs">@{a.id}</span> })),
+  ]
+  return <Choice {...props} options={options} />
 }

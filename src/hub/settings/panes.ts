@@ -8,6 +8,8 @@
 //
 // Plain data: no React, so the test and search read it without a browser.
 
+import { BUSINESS_ROWS } from "./rows/business"
+import { CHANNELS_ROWS, WHATSAPP_ROWS } from "./rows/channels"
 import { MENU_ROWS } from "./rows/menu"
 
 export type SettingsGroupId = "general" | "work" | "people" | "connections" | "system"
@@ -198,14 +200,26 @@ export const SETTINGS_PANES: readonly SettingsPaneDef[] = [
     help: "Where approval cards reach you and how long they wait, and how agents follow what you ask them for. Changes save at once.",
     rows: APPROVALS_ROWS,
   },
-  { id: "business", label: "Business", icon: "building-2", group: "people", oldSection: "business", help: "Org chart and business settings.", rows: [] },
+  {
+    id: "business", label: "Business", icon: "building-2", group: "people", oldSection: "business", built: true,
+    help: "The org chart, projects, clients and which chat belongs to which client: what the PM gate and the activity graph read. The org chart applies at once, the rest at the next daemon start.",
+    rows: BUSINESS_ROWS,
+  },
   {
     id: "guests", label: "Guests", icon: "user-round-plus", group: "people", oldSection: "guests", built: true,
     help: "Other organisations you let into part of this mesh. Nothing is shared until you open a grant.",
     rows: GUESTS_ROWS,
   },
-  { id: "channels", label: "Channels", icon: "message-square", group: "connections", oldSection: "channels", help: "Chat apps and developer tools.", rows: [] },
-  { id: "whatsapp", label: "WhatsApp", icon: "message-circle", group: "connections", oldSection: "channels", help: "WhatsApp numbers and who they answer.", rows: [] },
+  {
+    id: "channels", label: "Channels", icon: "message-square", group: "connections", oldSection: "channels", built: true,
+    help: "The chat apps and developer tools your agents answer from. Secrets stay in .env: each field takes the name of the variable that holds one.",
+    rows: CHANNELS_ROWS,
+  },
+  {
+    id: "whatsapp", label: "WhatsApp", icon: "message-circle", group: "connections", oldSection: "channels", built: true,
+    help: "Pair the daemon with WhatsApp, watch chats for an agent, and sweep chats into a wiki.",
+    rows: WHATSAPP_ROWS,
+  },
   { id: "mesh", label: "Mesh", icon: "network", group: "connections", oldSection: "mesh", help: "Your other machines and tokens.", rows: [] },
   { id: "machine", label: "Machine", icon: "monitor", group: "system", oldSection: "advanced", help: "This machine, screen capture and agentx.json.", rows: [] },
   { id: "diagnostics", label: "Diagnostics", icon: "activity", group: "system", oldSection: "diagnostics", help: "Errors, routing, rotations and checks.", rows: [] },

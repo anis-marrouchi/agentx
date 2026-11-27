@@ -28,3 +28,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export const apiGet = <T,>(path: string) => apiFetch<T>(path)
 export const apiPost = <T,>(path: string, body: unknown) =>
   apiFetch<T>(path, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } })
+
+/** A text reply, such as an SVG to draw as an image; "" when there is none (204). */
+export async function apiText(path: string): Promise<string> {
+  const res = await fetch(path, { credentials: "same-origin", headers: headers() })
+  if (!res.ok) throw new HubApiError(res.status, res.statusText || "request failed")
+  return res.status === 204 ? "" : res.text()
+}

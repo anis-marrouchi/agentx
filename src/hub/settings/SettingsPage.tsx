@@ -29,6 +29,9 @@ const PANES: Record<string, ComponentType> = {
   agent: lazy(() => import("./AgentPane")),
   actions: lazy(() => import("./ActionsPane")),
   guests: lazy(() => import("./GuestsPane")),
+  business: lazy(() => import("./BusinessPane")),
+  channels: lazy(() => import("./ChannelsPane")),
+  whatsapp: lazy(() => import("./WhatsAppPane")),
   menu: lazy(() => import("./MenuPane")),
 }
 
