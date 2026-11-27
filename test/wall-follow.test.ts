@@ -102,6 +102,28 @@ describe("followAttach", () => {
       })
     })
 
+    it("opens at the page's top on a phone and does not pull it down (#2405 review C1)", () => {
+      withPage(390, (page) => {
+        page.scrollTop = 0; page.scrollHeight = 700
+        const out = box({ scrollHeight: 400, clientHeight: 400 })
+        const b = btn()
+        const f = followAttach(out as unknown as HTMLElement, b as unknown as HTMLElement, 640)
+        // Nothing below the screen yet: not following, and no ↓ to press.
+        expect(f.following()).toBe(false)
+        expect(b.hidden).toBe(true)
+        // The stream grows past the screen: the page stays at its top, ↓ shows.
+        page.scrollHeight = 3000; f.stick()
+        expect(page.scrollTop).toBe(0)
+        expect(b.hidden).toBe(false)
+        // One tap follows the stream.
+        b.fire("click")
+        expect(page.scrollTop).toBe(3000)
+        expect(f.following()).toBe(true)
+        page.scrollHeight = 3400; f.stick()
+        expect(page.scrollTop).toBe(3400)
+      })
+    })
+
     it("keeps the output's own scroll when it has one, and ignores the page on a wide window", () => {
       withPage(390, (page) => {
         const out = box({ scrollHeight: 2000, clientHeight: 500, scrollTop: 1500 })

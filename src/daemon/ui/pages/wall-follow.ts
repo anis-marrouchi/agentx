@@ -47,7 +47,11 @@ export function followAttach(scroller: HTMLElement | null, btn: HTMLElement | nu
       ? ((document.scrollingElement || document.documentElement) as HTMLElement | null) : null
   const box = (): HTMLElement => (scroller.scrollHeight > scroller.clientHeight + 1 ? scroller : page() || scroller)
   const near = () => { const b = box(); return b.scrollHeight - b.scrollTop - b.clientHeight < 60 }
-  const show = () => { if (btn) btn.hidden = on }
+  // A phone-width page opens at its top (#2405 review C1): the header, the
+  // request and the plan come first, so it starts not following. ↓ shows once
+  // there is text below the screen; one tap, or scrolling to the end, follows.
+  on = box() === scroller
+  const show = () => { if (btn) btn.hidden = on || near() }
   const onScroll = () => { on = near(); show() }
   const toEnd = () => { const b = box(); b.scrollTop = b.scrollHeight }
   const onClick = (e: Event) => { e.preventDefault(); on = true; toEnd(); show() }
