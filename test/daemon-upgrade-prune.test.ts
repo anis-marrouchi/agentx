@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync, existsSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, readlinkSync, symlinkSync, utimesSync, writeFileSync, existsSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { choosePrune, listReleaseFolders, pruneReleases, releasePrefix, textNamesDir, type PruneDeps } from "../src/daemon/upgrade-prune"
+import { choosePrune, inUseText, listLinks, listReleaseFolders, moveReleaseLinks, pruneReleases, releasePrefix, textNamesDir, type PruneDeps } from "../src/daemon/upgrade-prune"
 
 // Old release folders after an ok `agentx daemon upgrade` (#2495).
 
@@ -50,6 +50,8 @@ describe("releasePrefix and textNamesDir", () => {
     expect(textNamesDir("<string>/s/agentx-release-af56</string>", d)).toBe(true)
     expect(textNamesDir("cd /s/agentx-release-af56\nls", d)).toBe(true)
     expect(textNamesDir("node /s/agentx-release-af5612/dist/cli.js", d)).toBe(false)
+    expect(textNamesDir("PATH=/s/agentx-release-af56:/usr/bin", d)).toBe(true)
+    expect(textNamesDir("x=/s/agentx-release-af56;y", d)).toBe(true)
   })
 })
 
@@ -100,6 +102,56 @@ describe("pruneReleases on real folders", () => {
     expect(r.keptInUse.sort()).toEqual([a, b].sort())
     expect(r.pruned).toEqual([])
     expect(existsSync(a) && existsSync(b)).toBe(true)
+  })
+
+  it("never touches sibling dev worktrees (a .git file or folder), even run from one", () => {
+    const wtFile = mk("agentx-2349", 900)
+    writeFileSync(join(wtFile, ".git"), "gitdir: /repo/.git/worktrees/agentx-2349")
+    const wtDir = mk("agentx-2440", 900)
+    mkdirSync(join(wtDir, ".git"))
+    const old = mk("agentx-2100", 800)
+    const rollback = mk("agentx-2200", 200)
+    const live = mk("agentx-2495", 100)
+    const r = pruneReleases({ live, rollback, keep: 2 }, deps(() => ""))
+    expect(r.pruned.map((p) => p.dir)).toEqual([old])
+    expect(existsSync(wtFile) && existsSync(wtDir)).toBe(true)
+
+    // Live itself is a worktree: nothing beside it is a release.
+    writeFileSync(join(live, ".git"), "gitdir: x")
+    const again = mk("agentx-2101", 800)
+    expect(pruneReleases({ live, rollback, keep: 2 }, deps(() => "")).pruned).toEqual([])
+    expect(existsSync(again)).toBe(true)
+  })
+
+  it("moves the global CLI link to the live release, then the old folder can go", () => {
+    const old = mk("agentx-release-a1", 500)
+    const rollback = mk("agentx-release-b1", 200)
+    const live = mk("agentx-release-c1", 100)
+    const bin = join(root, "bin")
+    mkdirSync(bin)
+    symlinkSync(join(old, "dist/cli.js"), join(bin, "agentx.target"))
+    symlinkSync("/usr/bin/env", join(bin, "env"))
+    const moved = moveReleaseLinks(live, listLinks([bin]), () => {})
+    expect(moved).toEqual([{ link: join(bin, "agentx.target"), from: join(old, "dist/cli.js"), to: join(live, "dist/cli.js") }])
+    expect(readlinkSync(join(bin, "agentx.target"))).toBe(join(live, "dist/cli.js"))
+    expect(readlinkSync(join(bin, "env"))).toBe("/usr/bin/env")
+    const r = pruneReleases({ live, rollback, keep: 2 }, deps(() => inUseText(join(root, "no-la"), listLinks([bin]))))
+    expect(r.pruned.map((p) => p.dir)).toEqual([old])
+  })
+
+  it("keeps a folder a symlink still points into (link could not move)", () => {
+    const old = mk("agentx-release-a1", 500)
+    mkdirSync(join(old, "only-here"))
+    const rollback = mk("agentx-release-b1", 200)
+    const live = mk("agentx-release-c1", 100)
+    const bin = join(root, "bin")
+    mkdirSync(bin)
+    symlinkSync(join(old, "only-here"), join(bin, "tool"))
+    expect(moveReleaseLinks(live, listLinks([bin]), () => {})).toEqual([])
+    const r = pruneReleases({ live, rollback, keep: 2 }, deps(() => inUseText(join(root, "no-la"), listLinks([bin]))))
+    expect(r.pruned).toEqual([])
+    expect(r.keptInUse).toEqual([old])
+    expect(existsSync(old)).toBe(true)
   })
 
   it("deletes nothing and records why when the process list fails", () => {

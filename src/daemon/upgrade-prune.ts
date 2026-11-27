@@ -5,12 +5,15 @@
 // the new one with the same name prefix are pruned, keeping the live release,
 // the one it switched from, and the newest others up to --keep-releases.
 // A folder named by a launchd settings file or a running process is never
-// deleted, checked again just before each delete.
+// deleted, checked again just before each delete. Neither is a folder a
+// symlink in the node's bin folder (the global `agentx` CLI) resolves into;
+// those links are first moved to the live release. A folder with a `.git`
+// entry is a dev worktree, never a release: it is never a candidate.
 
 import { spawnSync } from "child_process"
-import { existsSync, lstatSync, readdirSync, readFileSync, rmSync, statSync } from "fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync } from "fs"
 import { homedir } from "os"
-import { basename, dirname, join } from "path"
+import { basename, dirname, join, relative, resolve, sep } from "path"
 
 /** Releases kept by default: the live one and one rollback. */
 export const DEFAULT_KEEP_RELEASES = 2
@@ -60,17 +63,20 @@ export function choosePrune(o: {
 }
 
 /** Release folders beside `live`: same parent, same name prefix, a real
- *  folder (not a link) holding dist/cli.js. */
+ *  folder (not a link) holding dist/cli.js, without a `.git` entry (a dev
+ *  worktree such as `agentx-2495` shares the `agentx-` prefix with its
+ *  siblings and may hold work not committed). */
 export function listReleaseFolders(live: string): ReleaseFolder[] {
   const prefix = releasePrefix(live)
-  if (!prefix) return []
+  // Run from a dev worktree: not a release layout, touch nothing beside it.
+  if (!prefix || existsSync(join(live, ".git"))) return []
   const parent = dirname(live)
   const out: ReleaseFolder[] = []
   for (const name of readdirSync(parent)) {
     if (!name.startsWith(prefix)) continue
     const dir = join(parent, name)
     try {
-      if (!lstatSync(dir).isDirectory() || !existsSync(join(dir, "dist/cli.js"))) continue
+      if (!lstatSync(dir).isDirectory() || !existsSync(join(dir, "dist/cli.js")) || existsSync(join(dir, ".git"))) continue
       out.push({ dir, mtimeMs: statSync(dir).mtimeMs })
     } catch { /* gone or unreadable: not a candidate */ }
   }
@@ -80,15 +86,72 @@ export function listReleaseFolders(live: string): ReleaseFolder[] {
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /** Whether `text` names `dir` as a path: followed by "/", a quote, "<",
- *  white space or the end, not as the prefix of a longer folder name. */
+ *  ":" or ";" (a PATH entry), white space or the end, not as the prefix of a
+ *  longer folder name. */
 export function textNamesDir(text: string, dir: string): boolean {
-  return new RegExp(`${escapeRe(dir)}(?=[/<"'\\s]|$)`, "m").test(text)
+  return new RegExp(`${escapeRe(dir)}(?=[/<"':;\\s]|$)`, "m").test(text)
+}
+
+/** Folders whose symlinks can point into a release: the node's bin folder
+ *  (`agentx.target -> <release>/dist/cli.js`) and the global package. */
+export function linkDirs(binDir = dirname(process.execPath)): string[] {
+  return [binDir, join(binDir, "..", "lib", "node_modules")]
+}
+
+/** Every symlink directly in `dirs`, with the absolute path it points to. */
+export function listLinks(dirs: ReadonlyArray<string>): { link: string; target: string }[] {
+  const out: { link: string; target: string }[] = []
+  for (const d of dirs) {
+    let names: string[]
+    try { names = readdirSync(d) } catch { continue }
+    for (const n of names) {
+      const link = join(d, n)
+      try {
+        if (lstatSync(link).isSymbolicLink()) out.push({ link, target: resolve(d, readlinkSync(link)) })
+      } catch { /* gone or unreadable: skip */ }
+    }
+  }
+  return out
+}
+
+export interface MovedLink { link: string; from: string; to: string }
+
+/** After an ok upgrade, move every link that points into another release
+ *  folder beside `live` (same parent, same prefix) to the same path inside
+ *  `live`, when that path exists there. The swap is a rename, so the link is
+ *  never missing. A link that cannot move stays and keeps its folder in use. */
+export function moveReleaseLinks(live: string, links: ReadonlyArray<{ link: string; target: string }>, log: (s: string) => void): MovedLink[] {
+  const prefix = releasePrefix(live)
+  // Run from a dev worktree: not a release layout, touch nothing beside it.
+  if (!prefix || existsSync(join(live, ".git"))) return []
+  const parent = dirname(live)
+  const moved: MovedLink[] = []
+  for (const { link, target } of links) {
+    const rel = relative(parent, target)
+    const [folder, ...rest] = rel.split(sep)
+    if (rel.startsWith("..") || !folder.startsWith(prefix) || join(parent, folder) === live) continue
+    if (existsSync(join(parent, folder, ".git"))) continue
+    const to = join(live, ...rest)
+    if (!existsSync(to)) { log(`link not moved, ${to} missing: ${link} -> ${target}`); continue }
+    try {
+      const tmp = `${link}.agentx-upgrade-${process.pid}`
+      rmSync(tmp, { force: true })
+      symlinkSync(to, tmp)
+      renameSync(tmp, link)
+      moved.push({ link, from: target, to })
+      log(`link moved: ${link} -> ${to} (was ${target})`)
+    } catch (e) {
+      log(`link not moved: ${link}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  return moved
 }
 
 /** What names folders right now: every launchd settings file in
- *  ~/Library/LaunchAgents (loaded or not) and every running command line. */
-export function inUseText(laDir = join(homedir(), "Library", "LaunchAgents")): string {
-  const parts: string[] = []
+ *  ~/Library/LaunchAgents (loaded or not), every symlink in the node's bin
+ *  folder and global packages, and every running command line. */
+export function inUseText(laDir = join(homedir(), "Library", "LaunchAgents"), links = listLinks(linkDirs())): string {
+  const parts: string[] = links.map((l) => `${l.link} -> ${l.target}`)
   try {
     for (const f of readdirSync(laDir)) {
       if (!f.endsWith(".plist")) continue

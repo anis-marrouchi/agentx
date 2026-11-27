@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   onReload: null as null | (() => void),
   /** Calls to pruneReleases (#2495). */
   pruned: [] as any[],
+  linksMoved: 0,
 }))
 
 vi.mock("child_process", async (orig) => ({
@@ -60,6 +61,9 @@ vi.mock("../src/native/macos/launchd", () => ({
   reloadJob: async () => { h.onReload?.(); h.onReload = null; return true },
 }))
 vi.mock("../src/daemon/upgrade-prune", () => ({
+  linkDirs: () => [],
+  listLinks: () => [],
+  moveReleaseLinks: vi.fn(() => { h.linksMoved = (h.linksMoved ?? 0) + 1; return [] }),
   pruneReleases: vi.fn((o: any) => { h.pruned.push(o); return { keep: o.keep, pruned: [{ dir: "/r/agentx-release-old", bytes: 1024 }], keptInUse: [], freedBytes: 1024 } }),
 }))
 vi.mock("../src/daemon/shutdown", () => ({ writeShutdownRequest: () => {} }))
@@ -148,6 +152,7 @@ describe("daemon upgrade run: checks after the upgrade (#2227)", () => {
 
   it("prunes old release folders only after an ok upgrade (#2495)", async () => {
     h.pruned = []
+    h.linksMoved = 0
     h.fetch = (url) => {
       if (url.startsWith("http://peer.test")) return json({ version: "0.2.0", commit: "abc12345" })
       if (url.endsWith("/api/app/conversations")) return json({ error: "unpaired" }, 401)
@@ -157,22 +162,28 @@ describe("daemon upgrade run: checks after the upgrade (#2227)", () => {
     expect(ok.last.result).toBe("ok")
     expect(h.pruned).toEqual([{ live: join(h.root, "new"), rollback: join(h.root, "old"), keep: 2 }])
     expect(ok.last.releases.pruned).toEqual([{ dir: "/r/agentx-release-old", bytes: 1024 }])
+    expect(h.linksMoved).toBe(1)
 
     h.pruned = []
+    h.linksMoved = 0
     h.healthCalls = 0
     h.fetch = () => { throw new TypeError("fetch failed") }
     const degraded = await run({ keepReleases: 2 })
     expect(degraded.last.result).toBe("degraded")
     expect(h.pruned).toEqual([])
     expect(degraded.last.releases).toBeUndefined()
+    expect(h.linksMoved).toBe(0)
   })
 
   it("keeps every release with --keep-releases 0", async () => {
     h.pruned = []
     h.fetch = (url) => url.endsWith("/api/app/conversations") ? json({}, 401) : url.startsWith("http://peer.test") ? json({ version: "0.2.0", commit: "abc12345" }) : html()
+    h.linksMoved = 0
     const { last } = await run({ keepReleases: 0 })
     expect(last.result).toBe("ok")
     expect(h.pruned).toEqual([])
+    // The CLI link still follows the live release.
+    expect(h.linksMoved).toBe(1)
   })
 
   it("records the checks as skipped, with the reason, when agentx.json does not load", async () => {
