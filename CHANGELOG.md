@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.304.0](https://github.com/anis-marrouchi/agentx/compare/v0.303.0...v0.304.0) (2026-11-27)
+
+
+### Features
+
+* **daemon:** prune old release folders after an ok upgrade ([#2495](https://github.com/anis-marrouchi/agentx/issues/2495)) ([#2496](https://github.com/anis-marrouchi/agentx/issues/2496)) ([9219dd6](https://github.com/anis-marrouchi/agentx/commit/9219dd6f1cb0fbe0142ee06d05a4ffaaeeb8ac24))
+* **hub:** Activity opens in the React shell ([#2457](https://github.com/anis-marrouchi/agentx/issues/2457)) ([#2491](https://github.com/anis-marrouchi/agentx/issues/2491)) ([d63a0e7](https://github.com/anis-marrouchi/agentx/commit/d63a0e791057e2010e3a5a2562018128136d6c58))
+* **hub:** Needs you row opens on the agent's questions ([#2505](https://github.com/anis-marrouchi/agentx/issues/2505)) ([#2510](https://github.com/anis-marrouchi/agentx/issues/2510)) ([95a55eb](https://github.com/anis-marrouchi/agentx/commit/95a55eb27b3d249bcfa3707fe737536f700ee559))
+
 ## [0.303.0](https://github.com/anis-marrouchi/agentx/compare/v0.302.0...v0.303.0) (2026-11-27)
 
 
