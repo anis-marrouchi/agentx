@@ -86,6 +86,8 @@ export const WALL_CALL_PATH = `${WALL_ACTIONS_PREFIX}/call`
 export const WALL_POST_PATH = `${WALL_ACTIONS_PREFIX}/post`
 export const WALL_SPACE_PATH = `${WALL_ACTIONS_PREFIX}/space`
 export const WALL_BUDGET_PATH = `${WALL_ACTIONS_PREFIX}/budget`
+/** POST {name, repos[], agents[]}: add a project (#2454, wall-project-settings.ts). */
+export const WALL_PROJECT_PATH = `${WALL_ACTIONS_PREFIX}/project`
 export const WALL_DECIDE_PATH = `${WALL_ACTIONS_PREFIX}/decide`
 export const WALL_DECIDE_POPUP_PATH = `${WALL_DECIDE_PATH}/popup`
 export const WALL_REVIEW_PATH = `${WALL_ACTIONS_PREFIX}/review`
