@@ -333,10 +333,14 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     // A Needs you row opens on its question (#2505, ask=request:<id> in the
     // hash): Working on names that question's request. No select: one
     // request, named, as a link to its post; else the newest open one.
-    var ask = /[#&]ask=([^&]*)/.exec(location.hash || ''), askId = '';
-    try { askId = ask ? decodeURIComponent(ask[1]) : ''; } catch (e) { askId = ''; }
-    askId = askId.indexOf('request:') === 0 ? askId.slice(8) : '';
-    var p = (askId && (list.filter(function (x) { return x.id === askId; })[0] || findPost(askId))) || list[0];
+    // A question on no request (a draft, a card on no post): no work line,
+    // never the newest request in its place (#2505 Q1).
+    var ask = /[#&]ask=([^&]*)/.exec(location.hash || ''), askKey = '';
+    try { askKey = ask ? decodeURIComponent(ask[1]) : ''; } catch (e) { askKey = ''; }
+    var askId = askKey.indexOf('request:') === 0 ? askKey.slice(8) : '';
+    var p = askKey
+      ? (askId && list.filter(function (x) { return x.id === askId; })[0]) || (typeof decPostOf === 'function' ? decPostOf(askKey) : askId ? findPost(askId) : null)
+      : list[0];
     if (!p) { w.hidden = true; w.innerHTML = ''; return; }
     var what = '<a href="#post=' + encodeURIComponent(p.id) + '" title="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
@@ -350,7 +354,16 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
     var p = findPost(id);
     return p ? { project: p.project, repo: p.repo, home: p.home, createdAt: p.createdAt, lastMoveAt: p.lastMoveAt || p.updatedAt } : null;
   }
-  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost, files: function (src) { cxFiles(src); } };
+  /** What waits on the owner from this agent, oldest first: the Needs you
+   *  row's own list (decAll, wall-decide.client.ts), put-off ones left out,
+   *  so the chat lists the same questions the row counts (#2505). */
+  function cxAsks(agent) {
+    if (!agent || typeof decAll !== 'function') return [];
+    return decAll().filter(function (o) { return o.agent === agent && !o.snoozed; })
+      .sort(function (a, b) { return (a.at || 0) - (b.at || 0); })
+      .map(function (o) { return { key: o.key, kind: o.kind, title: o.title, ask: o.ask, at: o.at }; });
+  }
+  window.AXCtx = { open: cxOpen, paintWork: cxPaintWork, post: cxPost, asks: cxAsks, files: function (src) { cxFiles(src); } };
   // Another Needs you row of the same agent: the work line follows its question (#2505).
   window.addEventListener('hashchange', function () { if (/[#&]ask=/.test(location.hash || '')) cxPaintWork(); });
 

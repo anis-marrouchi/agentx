@@ -13,7 +13,7 @@ import { openWall } from "./wall-settings-harness"
 
 type Reply = { status: number; body: unknown } | "down"
 
-function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; node?: string; hash?: string; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
+function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; node?: string; hash?: string; ctx?: object; route?: (url: string, init: any) => Reply | Promise<Reply> | undefined } = {}) {
   const page = renderWallPage({ owner: opts.owner ?? true, signIn: opts.signIn })
   const els = new Map<string, any>()
   const on = (e: any) => (t: string, f: (ev: any) => void) => { (e.on[t] ??= []).push(f) }
@@ -75,7 +75,9 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     addEventListener(t: string, f: (ev: any) => void) { this.s.on[t] = f }
     close() { this.s.closed = true }
   }
-  const win: any = { AX_LOCAL_TOKEN: "tok", EventSource: FakeES, addEventListener: () => {}, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
+  // The page's own window listeners (hashchange), played by fireWin().
+  const winOn: Record<string, Array<(ev: any) => void>> = {}
+  const win: any = { AX_LOCAL_TOKEN: "tok", EventSource: FakeES, AXCtx: opts.ctx, addEventListener: (t: string, f: (ev: any) => void) => { (winOn[t] ??= []).push(f) }, axPageContext: () => ({ page: "Hub", view: "feed", status: "failed", count: 2, inView: ["Nightly backup", "Weekly digest"] }) }
   const loc = { pathname: "/hub", hash: opts.hash ?? "#status=failed" }
   const setHash = (_state: unknown, _title: string, href: string) => { loc.hash = href.startsWith("#") ? href : "" }
   const hashes: string[] = []
@@ -101,7 +103,11 @@ function openChat(opts: { owner?: boolean; signIn?: boolean; thread?: string; no
     for (const f of docOn.on.keydown ?? []) f({ preventDefault() {}, defaultPrevented: false, target: {}, ...ev })
     await settle()
   }
-  return { page, el, calls, ls, wallCls, fire, settle, timers, delays, streams, docOn, key, win, loc }
+  const fireWin = async (type: string) => {
+    for (const f of winOn[type] ?? []) f({})
+    await settle()
+  }
+  return { page, el, calls, ls, wallCls, fire, fireWin, settle, timers, delays, streams, docOn, key, win, loc }
 }
 
 describe("Hub entry routes", () => {
@@ -1277,5 +1283,78 @@ describe("Hub chat mic: sends on stop, check-first switch, hear it back (#2266)"
     w.el("hc-mic-play").on.click[0]({})
     await w.settle()
     expect(w.played).toEqual(["blob:rec-1"])
+  })
+})
+
+// #2505 live regression (Hakim, 11-27): the old Hub chat, not React, draws
+// #page=chat. Opening a Needs you row's link stripped ask=<key> on the
+// agent switch, so the work line and the thread showed the newest thread.
+describe("Hub chat: a Needs you row's link keeps its question (#2505)", () => {
+  const T0 = Date.parse("2026-11-22T10:00:00Z")
+  function needsChat(hash: string) {
+    const seen: string[] = []
+    const box: { loc?: { hash: string } } = {}
+    const ctx = {
+      paintWork: () => { if (box.loc) seen.push(box.loc.hash) },
+      post: () => null,
+      asks: (agent: string) => agent === "forge" ? [
+        { key: "card:c9", kind: "card", title: "A Desk card", at: T0 - 60_000 },
+        { key: "request:req-old", kind: "request", title: "Older request", at: T0 },
+        { key: "request:req-9", kind: "request", title: "Check the answer on the v4 render card", ask: "Is the v4 render ok?", at: T0 + 60_000 },
+      ] : agent === "scout" ? [{ key: "request:req-3", kind: "request", title: "Scout's question", at: T0 }] : [],
+    }
+    const w = openChat({
+      hash, ctx,
+      route: (url) => url === "/api/assistant/threads?agent=forge" ? { status: 200, body: { threads: [{ id: "f1", title: "Call: Done: fox lip-sync", agentId: "forge" }] } }
+        : url === "/api/assistant/thread?id=f1" ? thread("f1", "forge", "Call: Done: fox lip-sync")
+        : url === "/api/assistant/threads?agent=scout" ? { status: 200, body: { threads: [] } }
+        : undefined,
+    })
+    box.loc = w.loc
+    return { w, seen }
+  }
+
+  it("opened by its link (page load), keeps ask= in the address while the chat opens on the agent", async () => {
+    const { w, seen } = needsChat("#page=chat&agent=forge&ask=request%3Areq-9")
+    await w.settle()
+    expect(w.el("hc-agent").value).toBe("forge")
+    expect(w.loc.hash).toBe("#page=chat&agent=forge&ask=request%3Areq-9")
+    // The work line was painted with the question's request in the address, every time.
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((h) => h.includes("ask=request%3Areq-9"))).toBe(true)
+  })
+
+  it("lists the row's questions in the thread, the one it opened last (in view by the writing box), with where to reply", async () => {
+    const { w } = needsChat("#page=chat&agent=forge&ask=request%3Areq-9")
+    await w.settle()
+    const log = w.el("hc-log").innerHTML
+    expect(log).toContain('data-hc-waitkey="request:req-9"')
+    expect(log.indexOf('data-hc-waitkey="request:req-9"')).toBeGreaterThan(log.indexOf('data-hc-waitkey="request:req-old"'))
+    expect(log).toContain("Is the v4 render ok?")
+    expect(log).toContain("Reply in Waiting on you")
+    expect(log).toContain('href="#post=req-9"')
+    // Desk cards come from the Desk's own list with their buttons, not twice.
+    expect(log).not.toContain('data-hc-waitkey="card:c9"')
+    expect(w.el("hc-pill").textContent).toBe("Waiting on you")
+  })
+
+  it("another agent's row while the chat is open: the chat switches and keeps that row's ask=", async () => {
+    const { w, seen } = needsChat("#page=chat&agent=forge&ask=request%3Areq-9")
+    await w.settle()
+    w.loc.hash = "#page=chat&agent=scout&ask=request%3Areq-3"
+    seen.length = 0
+    await w.fireWin("hashchange")
+    expect(w.el("hc-agent").value).toBe("scout")
+    expect(w.loc.hash).toBe("#page=chat&agent=scout&ask=request%3Areq-3")
+    expect(seen.every((h) => h.includes("ask=request%3Areq-3"))).toBe(true)
+    expect(w.el("hc-log").innerHTML).toContain('data-hc-waitkey="request:req-3"')
+  })
+
+  it("picking another agent in the chat drops the first agent's ask=", async () => {
+    const { w } = needsChat("#page=chat&agent=forge&ask=request%3Areq-9")
+    await w.settle()
+    w.el("hc-agent").value = "scout"
+    await w.fire("hc-agent", "change")
+    expect(w.loc.hash).toBe("#page=chat&agent=scout")
   })
 })

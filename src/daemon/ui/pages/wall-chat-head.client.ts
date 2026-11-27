@@ -181,6 +181,40 @@ export function chAskHtml(a: HeadAsk, o: { name: string; now: number; draft?: As
     `</div>`
 }
 
+/** The Needs you question a row opened: ask=<key> in the hash (#2505), else "". */
+export function chAskKey(hash: string): string {
+  const m = /[#&]ask=([^&]*)/.exec(String(hash || ""))
+  if (!m) return ""
+  try { return decodeURIComponent(m[1]) } catch { return "" }
+}
+
+/** One thing waiting on the owner from this agent, as the Needs you row has it (#2505). */
+export interface HeadWait { key: string; kind?: string; title?: string; ask?: string; at?: number }
+
+/** The agent's questions that are not its Desk cards (a request asking the
+ *  owner, a draft, a CI hold…), in the Needs you row's order, the one the
+ *  row opened last: the thread keeps to its end, so that one is in view by
+ *  the writing box. Desk cards are drawn by chAskHtml with their buttons. */
+export function chWaitsFor(items: HeadWait[], cardKeys: string[], asked: string): HeadWait[] {
+  const list = (items || []).filter((i) => i && i.key && cardKeys.indexOf(i.key) < 0 && String(i.key).indexOf("card:") !== 0)
+  const at = list.findIndex((i) => i.key === asked)
+  return at >= 0 ? [...list.slice(0, at), ...list.slice(at + 1), list[at]] : list
+}
+
+/** One such question in the thread: what is asked, and where it is answered
+ *  (Waiting on you, which has the reply box for a request). */
+export function chWaitHtml(a: HeadWait, o: { name: string; now: number; asked: boolean }): string {
+  const when = a.at ? chAgo(a.at, o.now) : ""
+  const q = a.ask || a.title || ""
+  const id = String(a.key).indexOf("request:") === 0 ? String(a.key).slice(8) : ""
+  return `<div class="hc__ask${o.asked ? " is-asked" : ""}" data-hc-waitkey="${chEsc(a.key)}">` +
+    `<div class="hc__askhd"><span class="hc__askdot" aria-hidden="true"></span><b>${chEsc(o.name)}</b> asks you${when ? `<span class="hc__askt">${chEsc(when)}</span>` : ""}</div>` +
+    `<div class="hc__askq" dir="auto">${chEsc(q)}</div>` +
+    (a.title && a.ask && a.title !== a.ask ? `<div class="hc__askd" dir="auto">${chEsc(a.title)}</div>` : "") +
+    `<div class="hc__askrow"><a class="hc__ab hc__ab--pri" href="#status=open&amp;view=decide">${id ? "Reply in Waiting on you" : "Answer in Waiting on you"}</a>` +
+    (id ? `<a class="hc__ab" href="#post=${encodeURIComponent(id)}">See the request</a>` : "") + `</div></div>`
+}
+
 /** The Plan tab: each request's steps, who has each, and where it is. */
 export function chPlanHtml(reqs: HeadReq[], name: string, o: { now?: number; post?: (id: string) => { project?: string | null; repo?: string | null; home?: { kind: string; link: string } | null; createdAt?: number; lastMoveAt?: number } | null } = {}): string {
   const words: Record<string, string> = { done: "done", active: "now", pending: "next", blocked: "blocked", skipped: "skipped", failed: "failed" }
@@ -234,7 +268,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-face')) return;
   ${injectFns({ engineIconKey, engineIcon })}
-  ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chDate, chReqMetaHtml, chPlanHtml, chProofsHtml, chEsc })}
+  ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chAskKey, chWaitsFor, chWaitHtml, chDate, chReqMetaHtml, chPlanHtml, chProofsHtml, chEsc })}
   var asks = [], reqs = [], drafts = {}, view = null, tab = 'chat', loadedAt = 0, timer = null;
 
   function load() {
@@ -265,6 +299,11 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     if (!view) return;
     var id = view.agent, name = view.name || id;
     var mine = id ? chAsksFor(asks, id) : [], rq = id ? chReqsFor(reqs, id) : [];
+    // The rest of what the agent's Needs you row counts (#2505): its
+    // requests asking the owner and the like, the one the row opened first.
+    var asked = chAskKey(location.hash);
+    var waits = id && window.AXCtx && typeof window.AXCtx.asks === 'function'
+      ? chWaitsFor(window.AXCtx.asks(id), mine.map(function (a) { return a.key; }), asked) : [];
     var face = $('hc-face');
     if (id) {
       var f = chFace(id, name);
@@ -275,7 +314,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     // The engine with its own logo (engine-icons.ts, #2272).
     var eng = chEngine(view.tier || '');
     $('hc-where').innerHTML = [view.node ? chEsc(view.node) : '', eng ? engineIcon(view.tier, 'ax-eng') + ' ' + chEsc(eng) : ''].filter(Boolean).join(' · ');
-    var st = id ? chState({ pending: !!view.pending, asks: mine.length, waiting: rq.some(function (r) { return r.agentId === id && r.state === 'waiting_owner'; }), done: !!view.done }) : null;
+    var st = id ? chState({ pending: !!view.pending, asks: mine.length + waits.length, waiting: rq.some(function (r) { return r.agentId === id && r.state === 'waiting_owner'; }), done: !!view.done }) : null;
     var pill = $('hc-pill');
     pill.hidden = !st;
     if (st) { pill.textContent = st.word; pill.setAttribute('data-state', st.key); face.setAttribute('data-state', st.key); }
@@ -292,9 +331,12 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     // The questions, at the end of the thread.
     var log = $('hc-log');
     log.querySelectorAll('.hc__asks').forEach(function (card) { card.remove(); });
-    if (tab === 'chat' && mine.length) {
+    if (tab === 'chat' && (mine.length || waits.length)) {
       var now = Date.now();
-      var html = '<div class="hc__asks">' + mine.map(function (a) { return chAskHtml(a, { name: name, now: now, draft: drafts[a.key] }); }).join('') + '</div>';
+      var cards = mine.map(function (a) { return chAskHtml(a, { name: name, now: now, draft: drafts[a.key] }); });
+      var others = waits.map(function (a) { return chWaitHtml(a, { name: name, now: now, asked: a.key === asked }); });
+      // The question the row opened comes last, in view by the writing box.
+      var html = '<div class="hc__asks">' + (mine.some(function (a) { return a.key === asked; }) ? others.concat(cards) : cards.concat(others)).join('') + '</div>';
       // Appended, not re-parsed: the live answer and its open folds stay as they are.
       if (log.insertAdjacentHTML) log.insertAdjacentHTML('beforeend', html); else log.innerHTML += html;
       var hcApi = window.AXHubChat;
@@ -360,6 +402,9 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     var card = t.closest('[data-hc-askkey]'), key = card && card.getAttribute('data-hc-askkey');
     if (key) (drafts[key] = drafts[key] || {}).text = t.value;
   });
+
+  // Another Needs you row of the agent in view: its question comes first (#2505).
+  window.addEventListener('hashchange', function () { if (/[#&]ask=/.test(location.hash || '')) paint(); });
 
   load();
   tick();
