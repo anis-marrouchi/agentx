@@ -10,7 +10,7 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 import {
   HELD_UPGRADE, RESTART_REASON, UPGRADE_HELD_LINE, UPGRADE_KEEP_MS, UPGRADE_TOO_OLD, VoiceRequestStore, handleVoiceRequests,
 } from "../src/daemon/voice-requests-api"
-import { drainAsk, keepAskForUpgrade, postKeptAsk, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
+import { drainAsk, holdMsLeft, keepAskForUpgrade, postKeptAsk, readWidgetKeep, replayKept, upgradingText, writeWidgetKeep } from "../src/daemon/upgrade-keep"
 
 // #2502: a widget message sent while the daemon drains for an upgrade is
 // kept on its row, answered at once, and sent once by the next daemon.
@@ -86,6 +86,44 @@ describe("drainAsk (drain gate, #2502 B3)", () => {
   })
 })
 
+describe("during an upgrade's start hold (old daemon, not draining yet)", () => {
+  it("keeps the row at once with N from the hold's end, or says it waits for runs", () => {
+    const store = new VoiceRequestStore(db, T0)
+    const r = store.create("pm-agent", "are we on 305?", false, T0)
+    const until = new Date(T0 + 70 * 60_000).toISOString()
+    const reply = keepAskForUpgrade({ store, body: { request: r.id, session: "S1" }, msLeft: holdMsLeft(until, T0), now: T0 })
+    expect(reply).toMatchObject({ status: 202, body: { kept: true, request: r.id, text: "AgentX is upgrading, back in about 71 minutes. Your message is kept." } })
+    expect(store.get(r.id)).toMatchObject({ state: "thinking", held: UPGRADE_HELD_LINE })
+
+    expect(holdMsLeft(undefined, T0)).toBeNull()
+    expect(holdMsLeft("not a time", T0)).toBeNull()
+    expect(holdMsLeft(new Date(T0 - 1).toISOString(), T0)).toBeNull()
+    expect(upgradingText(null)).toBe("AgentX is upgrading, back once the current runs finish. Your message is kept.")
+    const r2 = store.create("pm-agent", "q2", false, T0)
+    expect(keepAskForUpgrade({ store, body: { request: r2.id }, msLeft: holdMsLeft(null, T0), now: T0 })?.body)
+      .toMatchObject({ text: "AgentX is upgrading, back once the current runs finish. Your message is kept." })
+  })
+
+  it("a row kept early in a long hold is still sent: its age counts from the stop", () => {
+    const old = new VoiceRequestStore(db, T0)
+    const r = old.create("pm-agent", "kept at hold start", false, T0)
+    old.keepForUpgrade(r.id, null, T0)
+    const stopAt = T0 + 65 * 60_000
+    expect(old.stampKept(stopAt)).toBe(1)
+    const store = new VoiceRequestStore(db, stopAt + 2 * 60_000)
+    expect(store.get(r.id)).toMatchObject({ state: "thinking", held: UPGRADE_HELD_LINE })
+    expect(store.keptForUpgrade().map((k) => k.id)).toEqual([r.id])
+  })
+
+  it("the same row kept and never stamped is too old after 30 min", () => {
+    const old = new VoiceRequestStore(db, T0)
+    const r = old.create("pm-agent", "kept", false, T0)
+    old.keepForUpgrade(r.id, null, T0)
+    const store = new VoiceRequestStore(db, T0 + UPGRADE_KEEP_MS + 1)
+    expect(store.get(r.id)).toMatchObject({ state: "failed", error: UPGRADE_TOO_OLD })
+  })
+})
+
 describe("next daemon's boot", () => {
   it("keeps upgrade rows thinking, fails other thinking rows, and fails kept rows past 30 min", () => {
     const old = new VoiceRequestStore(db, T0)
@@ -93,7 +131,7 @@ describe("next daemon's boot", () => {
     const stale = old.create("pm-agent", "stale", false, T0 - UPGRADE_KEEP_MS - 1)
     const busy = old.create("pm-agent", "busy", false, T0)
     old.keepForUpgrade(kept.id, null, T0)
-    old.keepForUpgrade(stale.id, null, T0)
+    old.keepForUpgrade(stale.id, null, T0 - UPGRADE_KEEP_MS - 1)
     old.hold(busy.id, "Not started yet: busy.") // an admission hold is not an upgrade
 
     const store = new VoiceRequestStore(db, T0 + 60_000)

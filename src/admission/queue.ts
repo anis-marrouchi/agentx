@@ -364,6 +364,8 @@ export class AdmissionQueue {
   private lastCloseRoundAt: number | null = null
   private saidNothingToClose = false
   private hold: { by: string; since: number; until: number } | null = null
+  /** Called once each time a start hold ends, released or expired (#2502). */
+  onHoldEnd: ((how: "released" | "expired") => void) | null = null
   private readonly bootAt: number
 
   constructor(
@@ -489,6 +491,7 @@ export class AdmissionQueue {
     const heldMs = Math.max(0, Math.min(now, h.until) - h.since)
     for (const e of this.waiting) if (heldByStartHold(e) && e.nodeHeldSince !== null) e.nodeHeldSince = Math.min(now, e.nodeHeldSince + heldMs)
     this.log(`[admission] start hold for ${h.by} ${how} after ${Math.round(heldMs / 1000)}s; ${this.waiting.length} waiting`)
+    try { this.onHoldEnd?.(how) } catch (err) { this.log(`[admission] hold-end hook failed: ${(err as Error).message}`) }
   }
 
   private drop(e: Entry): void {

@@ -263,8 +263,11 @@ describe("voice requests gate and wiring", () => {
     const ask = src.slice(src.indexOf('case "POST /ask":'), src.indexOf('case "POST /mesh/task":'))
     expect(ask).toContain("this.voiceRequests?.start(requestId)")
     expect(ask).toContain("this.voiceRequests?.settle(requestId, status, out)")
-    // Every answer of /ask goes through the one reply that settles the row.
-    expect(ask.match(/this\.json\(res,/g)).toHaveLength(1)
+    // Every answer of /ask goes through the one reply that settles the row,
+    // except the upgrade-hold answer, whose row is kept, not settled (#2502).
+    expect(ask.match(/this\.json\(res,/g)).toHaveLength(2)
+    expect(ask).toMatch(/const kept = hold \? this\.keepAskForUpgrade\([^\n]*\n\s*if \(kept\) \{ this\.json\(res, kept\.status, kept\.body\); return \}/)
+    expect(ask.indexOf("keepAskForUpgrade")).toBeLessThan(ask.indexOf("this.voiceRequests?.start(requestId)"))
     // A throw before reply() still settles the row, with the error.
     expect(ask).toMatch(/catch \(err\) \{[^}]*finishThread\(\{ content: "", error: why \}\)\s*if \(requestId && !settled\) \{\s*this\.voiceRequests\?\.settle\(requestId, 500,/)
     expect(ask).toContain("throw err")

@@ -130,8 +130,10 @@ export class VoiceRequestStore {
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS voice_requests_client_key ON voice_requests(client_key) WHERE client_key IS NOT NULL")
     this.chats = new AppChatStore(db)
     // A row kept for an upgrade waits for replayKept(), unless it is too old.
+    // Its age counts from `since`: when it was kept, or when the daemon
+    // that kept it during a start hold began to stop (stampKept).
     db.prepare(`UPDATE voice_requests SET state = 'failed', error = ?, since = ?, held = NULL
-      WHERE state = 'thinking' AND held = ? AND sent_at < ?`).run(UPGRADE_TOO_OLD, now, HELD_UPGRADE, now - UPGRADE_KEEP_MS)
+      WHERE state = 'thinking' AND held = ? AND since < ?`).run(UPGRADE_TOO_OLD, now, HELD_UPGRADE, now - UPGRADE_KEEP_MS)
     // The /ask that was holding a thinking row died with the last daemon:
     // nothing will ever answer it. Say so instead of thinking forever.
     db.prepare("UPDATE voice_requests SET state = 'failed', error = ?, since = ? WHERE state = 'thinking' AND (held IS NULL OR held != ?)")
@@ -218,6 +220,13 @@ export class VoiceRequestStore {
     return this.db.prepare(`UPDATE voice_requests SET state = 'thinking', held = ?, since = ?, session = ?
       WHERE id = ? AND closed_at IS NULL AND state IN ('waiting', 'thinking')`)
       .run(HELD_UPGRADE, now, session ? session.slice(0, 100) : null, id).changes === 1
+  }
+
+  /** The daemon stops: rows kept during a long start hold start their age
+   *  now, so the 30 min limit counts from the switch, not from the hold. */
+  stampKept(now = Date.now()): number {
+    return this.db.prepare(`UPDATE voice_requests SET since = ? WHERE state = 'thinking' AND held = ? AND closed_at IS NULL`)
+      .run(now, HELD_UPGRADE).changes
   }
 
   /** Rows kept for an upgrade, oldest first, with the session they came in. */

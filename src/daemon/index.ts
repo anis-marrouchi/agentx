@@ -148,7 +148,7 @@ import { parseWorkActivity, type WorkActivity } from "@/workflows/wake"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, fillLinkAgents, type AttachedRequests } from "@/requests/attach"
 import { contextWithTaskType, taskTypeOf } from "@/agents/task-context"
-import { contextWithAdmissionPriority, requestedPriorityOf } from "@/admission/queue"
+import { contextWithAdmissionPriority, requestedPriorityOf, type StartHold } from "@/admission/queue"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
 import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
@@ -260,7 +260,7 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { writeQueueAtClose } from "@/daemon/upgrade-queue-record"
-import { drainAsk, keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
+import { drainAsk, holdMsLeft, keepAskForUpgrade, postKeptAsk, replayKept, writeWidgetKeep } from "@/daemon/upgrade-keep"
 import { UPGRADE_KEEP_MS } from "@/daemon/voice-requests-api"
 import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { readCodexPlanUsageCached } from "@/agents/codex-plan-usage"
@@ -1688,19 +1688,21 @@ export class AgentXDaemon {
     process.on("SIGTERM", () => shutdown("SIGTERM"))
   }
 
-  /** POST /ask during the drain: keep the widget's row, or null (#2502). */
-  private keepAskForUpgrade(body: Record<string, unknown>): { status: number; body: unknown } | null {
+  /** POST /ask during the drain, or during an upgrade's start hold (`hold`):
+   *  keep the widget's row, or null (#2502). */
+  private keepAskForUpgrade(body: Record<string, unknown>, hold?: StartHold): { status: number; body: unknown } | null {
     const now = Date.now()
-    const endsAt = this.drainEndsAt ?? now + drainLimitMs({
+    const msLeft = hold ? holdMsLeft(hold.until, now) : (this.drainEndsAt ?? now + drainLimitMs({
       configSeconds: this.config.shutdown?.drainTimeoutSeconds,
       env: process.env,
       agentSeconds: this.registry.runningAgentDrainSeconds(),
-    })
-    const kept = keepAskForUpgrade({ store: this.voiceRequests, body, msLeft: endsAt - now, now })
+    })) - now
+    const kept = keepAskForUpgrade({ store: this.voiceRequests, body, msLeft, now })
     if (!kept) return null
-    this.log(`[upgrade-keep] kept widget request ${String(body.request)} for the next daemon`)
+    this.log(`[upgrade-keep] kept widget request ${String(body.request)} ${hold ? `during the start hold (until ${hold.until})` : "for the next daemon"}`)
     try {
-      writeWidgetKeep(resolve(process.cwd(), ".agentx"), new Date(this.shutdownAt ?? now).toISOString(), { kept: 1 })
+      const since = hold ? Date.parse(hold.since) : (this.shutdownAt ?? now)
+      writeWidgetKeep(resolve(process.cwd(), ".agentx"), new Date(Number.isFinite(since) ? since : now).toISOString(), { kept: 1 })
     } catch (err) {
       this.log(`[upgrade-keep] could not record the kept count: ${(err as Error).message}`)
     }
@@ -1711,7 +1713,8 @@ export class AgentXDaemon {
    *  oldest first, through this daemon's own /ask (#2502). */
   private replayKeptAsks(port: number, host?: string): void {
     const store = this.voiceRequests
-    if (!store) return
+    // One replay at a time: a second would send the same kept rows again.
+    if (!store || this.voiceReplay) return
     const rows = store.keptForUpgrade()
     const agentxDir = resolve(process.cwd(), ".agentx")
     try {
@@ -1783,6 +1786,8 @@ export class AgentXDaemon {
     // other waiting runs are answered as interrupted.
     this.nodeEnv.stop()
     const heldForUpgrade = this.registry.admission.startHold !== null
+    // Widget rows kept during the hold count their age from now (#2502).
+    if (heldForUpgrade) this.voiceRequests?.stampKept()
     const left = this.registry.admission.close()
     if (heldForUpgrade) {
       try { writeQueueAtClose(resolve(process.cwd(), ".agentx"), { at: new Date().toISOString(), ...left }) } catch (err) {
@@ -5209,6 +5214,9 @@ export class AgentXDaemon {
     this.httpServer.listen(port, host || "0.0.0.0", () => {
       this.log(`  HTTP API: http://${host || "0.0.0.0"}:${port}`)
       this.replayKeptAsks(port, host)
+      // A start hold that ends with no switch (upgrade refused or rolled
+      // back in place): this daemon sends the rows it kept (#2502).
+      this.registry.admission.onHoldEnd = () => { if (!this.shuttingDown) this.replayKeptAsks(port, host) }
       // Surface a mis-declared inbox at boot rather than at the first
       // foreign message, when the sender would just see a 503.
       const broken = unresolvableInboxes(this.config, (id) => !!this.registry.getAgent(id))
@@ -9960,6 +9968,13 @@ export class AgentXDaemon {
           }
           // The row follows the turn: thinking now, then answered or failed
           // with what is sent back, so any client can read it later.
+          // An upgrade holds new starts (#2360): keep the widget's row and
+          // say so at once instead of waiting behind the hold (#2502).
+          if (requestId && req.headers["x-agentx-replay"] !== this.replayToken) {
+            const hold = this.registry.admission.startHold
+            const kept = hold ? this.keepAskForUpgrade({ request: requestId, session: voiceSession }, hold) : null
+            if (kept) { this.json(res, kept.status, kept.body); return }
+          }
           // Rows kept by the last daemon's upgrade go first, in order (#2502).
           if (requestId && this.voiceReplay && req.headers["x-agentx-replay"] !== this.replayToken) await this.voiceReplay
           if (requestId) this.voiceRequests?.start(requestId)
