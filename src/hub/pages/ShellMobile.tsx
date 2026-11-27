@@ -28,9 +28,9 @@ function Command({ text }: { text: string }) {
     void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }, () => setCopied(false))
   }
   return (
-    <div data-mobile="command" className="relative mt-2 rounded-md border border-border bg-muted">
-      <pre className="overflow-x-auto py-2.5 pl-3 pr-11 font-mono text-[12px] leading-relaxed text-foreground"><code>{text}</code></pre>
-      <Button variant="ghost" size="icon" className="absolute right-1 top-1 size-7" aria-label={copied ? "Copied" : "Copy the command"} title={copied ? "Copied" : "Copy"} onClick={copy}>
+    <div data-mobile="command" className="mt-2 flex items-start gap-1 rounded-md border border-border bg-muted pr-1">
+      <pre className="min-w-0 flex-1 overflow-x-auto py-2.5 pl-3 font-mono text-[12px] leading-relaxed text-foreground"><code>{text}</code></pre>
+      <Button variant="ghost" size="icon" className="mt-1 size-7 shrink-0" aria-label={copied ? "Copied" : "Copy the command"} title={copied ? "Copied" : "Copy"} onClick={copy}>
         <Icon name={copied ? "check" : "copy"} className="size-3.5" />
       </Button>
     </div>
