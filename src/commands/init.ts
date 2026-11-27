@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs"
 import { hostname } from "os"
 import { resolve, join } from "path"
+import { freshHubSetting } from "@/hub/layout"
 
 // --- agentx init: interactive setup for new installations ---
 
@@ -83,6 +84,8 @@ export const init = new Command()
           discovery: "static",
           healthCheck: { interval: 60, timeout: 10 },
         },
+        // A fresh install opens the simple Hub; no key is full (#2466).
+        dashboard: { hub: freshHubSetting() },
       }, null, 2)
     }
 

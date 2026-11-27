@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { handleAdminApi } from "../src/daemon/admin-panel"
 import { dashboardConfigSchema } from "../src/boards/config"
 import {
-  HUB_SHOW_IDS, applyHubLayoutPatch, hubHiddenItems, hubLayoutSetting, parseHubLayoutPatch, resolveHubLayout,
+  HUB_SHOW_IDS, applyHubLayoutPatch, freshHubSetting, hubHiddenItems, hubLayoutSetting, parseHubLayoutPatch, resolveHubLayout,
 } from "../src/hub/layout"
 import { HUB_LAYOUT_CSS, HUB_NAV_ITEM, hubHideSelectors, hubLayoutBoot } from "../src/daemon/ui/pages/hub-layout"
 import { hubReactHead } from "../src/daemon/ui/hub-react"
@@ -23,12 +23,26 @@ describe("the keys and their defaults", () => {
   it("lists every item Hakim named, each with its own switch", () => {
     expect([...HUB_SHOW_IDS]).toEqual(ALL)
   })
-  it("an install with no key (new or existing) is simple: every item hidden", () => {
-    for (const setting of [undefined, null, {}, dashboardConfigSchema.parse({}).hub]) {
+  it("a Hub with no layout key (from before #2313, or upgraded since) opens full: nothing hidden (#2466)", () => {
+    for (const setting of [undefined, null, {}, { react: true }, dashboardConfigSchema.parse({}).hub]) {
       const v = resolveHubLayout(setting as any)
-      expect(v.layout).toBe("simple")
-      expect(hubHiddenItems(v)).toEqual(ALL)
+      expect(v.layout).toBe("full")
+      expect(hubHiddenItems(v)).toEqual([])
       expect(v.overrides).toEqual([])
+    }
+  })
+  it("a fresh install's setting opens simple: every item hidden (#2466)", () => {
+    expect(freshHubSetting()).toEqual({ layout: "simple" })
+    const v = resolveHubLayout(dashboardConfigSchema.parse({ hub: freshHubSetting() }).hub)
+    expect(v.layout).toBe("simple")
+    expect(hubHiddenItems(v)).toEqual(ALL)
+  })
+  it("a layout the owner chose is kept, simple or full (#2466)", () => {
+    for (const layout of ["simple", "full"] as const) {
+      const cfg: any = { dashboard: { hub: {} } }
+      applyHubLayoutPatch(cfg, parseHubLayoutPatch({ layout }))
+      expect(resolveHubLayout(cfg.dashboard.hub).layout).toBe(layout)
+      expect(resolveHubLayout(dashboardConfigSchema.parse(cfg.dashboard).hub).layout).toBe(layout)
     }
   })
   it("full shows every item; an item's own switch wins over the layout", () => {
@@ -40,8 +54,8 @@ describe("the keys and their defaults", () => {
     expect(s.show.gates).toBe(true)
     expect(hubHiddenItems(s)).not.toContain("mobile")
   })
-  it("an unknown layout falls back to simple", () => {
-    expect(resolveHubLayout({ layout: "fancy" }).layout).toBe("simple")
+  it("an unknown layout falls back to full", () => {
+    expect(resolveHubLayout({ layout: "fancy" }).layout).toBe("full")
   })
   it("hubLayoutSetting gives the same view back", () => {
     const v = resolveHubLayout({ layout: "full", show: { org: false } })
@@ -51,8 +65,8 @@ describe("the keys and their defaults", () => {
 })
 
 describe("schema", () => {
-  it("defaults dashboard.hub to the simple layout, no item switches", () => {
-    expect(dashboardConfigSchema.parse({}).hub).toMatchObject({ layout: "simple", show: {} })
+  it("defaults dashboard.hub to the full layout, no item switches (#2466)", () => {
+    expect(dashboardConfigSchema.parse({}).hub).toMatchObject({ layout: "full", show: {} })
   })
   it("takes full and item switches, refuses a bad layout or an unknown item", () => {
     expect(dashboardConfigSchema.parse({ hub: { layout: "full", show: { wiki: true } } }).hub).toMatchObject({ layout: "full", show: { wiki: true } })
@@ -122,10 +136,10 @@ describe("hide, never disable: the current Hub", () => {
     expect(page).toContain('href="#page=mobile"')
     expect(page).toContain('id="hs-node"')
   })
-  it("the page boots simple when no setting is given, and full when asked", () => {
-    const simple = renderWallPage({ owner: true })
+  it("the page boots full when no setting is given (#2466), and simple when asked", () => {
+    const simple = renderWallPage({ owner: true, hub: { react: false, layout: resolveHubLayout({ layout: "simple" }) } })
     expect(simple).toContain(`document.documentElement.setAttribute("data-hub-hide", "${ALL.join(" ")}")`)
-    const full = renderWallPage({ owner: true, hub: { react: false, layout: resolveHubLayout({ layout: "full" }) } })
+    const full = renderWallPage({ owner: true })
     expect(full).toContain(`setAttribute("data-hub-hide", "")`)
     expect(full).toContain('"layout":"full"')
     // Before the body, so a hidden item never flashes in.

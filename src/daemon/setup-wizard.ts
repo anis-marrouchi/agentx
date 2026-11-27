@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig, writeAgentxConfig } from "./config-mutate"
 import { renderSetupPage } from "./ui/pages/setup"
 import { loadDaemonConfig } from "./config"
+import { freshHubSetting } from "@/hub/layout"
 
 /** Shape of the pre-render state snapshot — exported so the page file can
  *  type its props without re-importing this whole module. */
@@ -207,7 +208,8 @@ function buildFreshConfig(payload: WizardPayload, workspaceDir: string, mentions
     channels: {},
     crons: {},
     mesh: { enabled: false, peers: [], discovery: "static", healthCheck: { interval: 60, timeout: 10 } },
-    dashboard: { enabled: true, port: ports.dashboardPort ?? 4202, bind: "127.0.0.1", daemonUrl: `http://localhost:${daemonPort}` },
+    // A fresh install opens the simple Hub (#2466); no key is full.
+    dashboard: { enabled: true, port: ports.dashboardPort ?? 4202, bind: "127.0.0.1", daemonUrl: `http://localhost:${daemonPort}`, hub: freshHubSetting() },
     boards: [],
   }
   if (payload.telegram && telegramTokenRef) {

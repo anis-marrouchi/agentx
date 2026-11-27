@@ -82,11 +82,11 @@ describe("React page ids per viewer", () => {
     expect(hubReactPageIds(true, ["catalog"])).not.toContain("catalog")
   })
   it("reads the boot config defensively", () => {
-    expect(readBoot({} as any)).toMatchObject({ pages: [], owner: false, layout: { layout: "simple" } })
+    expect(readBoot({} as any)).toMatchObject({ pages: [], owner: false, layout: { layout: "full" } })
     expect(readBoot({ AX_HUB: { pages: ["catalog", 3 as any], owner: true } } as any)).toMatchObject({ pages: ["catalog"], owner: true })
-    // The layout (#2226 S1): the same keys the old Hub reads; a bad one is simple.
+    // The layout (#2226 S1): the same keys the old Hub reads; no key or a bad one is full (#2466).
     expect(readBoot({ AX_HUB: { layout: { layout: "full", show: { workflows: false } } } } as any).layout.show).toMatchObject({ workflows: false, org: true })
-    expect(readBoot({ AX_HUB: { layout: { layout: "nope" } } } as any).layout.layout).toBe("simple")
+    expect(readBoot({ AX_HUB: { layout: { layout: "nope" } } } as any).layout.layout).toBe("full")
   })
 })
 
@@ -183,7 +183,7 @@ describe("the daemon's switch and tags", () => {
     "pages/CatalogPage.tsx": { file: "CatalogPage-x.js" },
   }
   it("is on by default (#2226); false turns it off; ?react=1 and ?legacy=1 change one load", () => {
-    expect(dashboardConfigSchema.parse({}).hub).toEqual({ react: true, legacyPages: [], layout: "simple", show: {} })
+    expect(dashboardConfigSchema.parse({}).hub).toEqual({ react: true, legacyPages: [], layout: "full", show: {} })
     expect(hubReactOn(undefined, new URLSearchParams())).toBe(true)
     expect(hubReactOn({}, new URLSearchParams())).toBe(true)
     expect(hubReactOn({ react: true }, new URLSearchParams())).toBe(true)

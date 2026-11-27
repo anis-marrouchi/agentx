@@ -161,7 +161,8 @@ export const dashboardConfigSchema = z.object({
   hub: z.object({
     react: z.boolean().default(true),
     legacyPages: z.array(z.string().min(1).max(40)).max(50).default([]),
-    /** Simple by default, full as an option (#2226 S1, src/hub/layout.ts).
+    /** Full when unset (a Hub from before #2313), simple as written into a
+     *  fresh install (#2226 S1, #2466, src/hub/layout.ts).
      *  `layout` sets every item's default (simple hides them, full shows
      *  them); `show.<item>` overrides one. Hidden items keep running. */
     layout: z.enum(HUB_LAYOUTS).default(HUB_DEFAULT_LAYOUT),

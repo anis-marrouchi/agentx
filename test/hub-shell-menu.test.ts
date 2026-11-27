@@ -28,7 +28,7 @@ const team = model([
 function wrap(el: ReturnType<typeof createElement>): string {
   return renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(TooltipProvider, null, el)))
 }
-const simple = resolveHubLayout()
+const simple = resolveHubLayout({ layout: "simple" })
 const menu = (p: Partial<SideMenuProps> = {}) => wrap(createElement(SideMenu, { view: simple, owner: true, model: team, onAgent: () => {}, ...p }))
 
 /** A store like localStorage, in memory. */

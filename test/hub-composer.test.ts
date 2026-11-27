@@ -14,7 +14,7 @@ const card = (agent?: ComposerAgent) =>
   renderToStaticMarkup(createElement(Composer, { agent, onSend: async () => true }))
 
 function shell(p: Partial<SimpleShellProps> = {}): string {
-  const props: SimpleShellProps = { view: resolveHubLayout(), owner: true, agents: [{ id: "ada", name: "Ada", model: "claude-opus-4-6", tier: "claude-code" }], agent: "ada", ...p }
+  const props: SimpleShellProps = { view: resolveHubLayout({ layout: "simple" }), owner: true, agents: [{ id: "ada", name: "Ada", model: "claude-opus-4-6", tier: "claude-code" }], agent: "ada", ...p }
   return renderToStaticMarkup(
     createElement(QueryClientProvider, { client: new QueryClient() }, createElement(TooltipProvider, null, createElement(SimpleShell, props))),
   )

@@ -67,7 +67,7 @@ The chart comes from `business.orgChart` in `agentx.json`. Until you fill it in,
    agentx business orgchart add dev --role Engineer --reports-to pm
    ```
 
-2. **Browser:** open the dashboard. On the Hub, select **Org** in the nav (under **More** on a phone). With the simple layout, the default, Org is not in the menus: turn **Org page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=org`, which always works.
+2. **Browser:** open the dashboard. On the Hub, select **Org** in the nav (under **More** on a phone). With the simple layout, the default on a new install, Org is not in the menus: turn **Org page** on in [Settings › Layout](./settings.md#layout), or open `/hub#page=org`, which always works.
 
 The role shows under the agent's name. On the `/org` page, the line under it is the first sentence of the role's first responsibility in `business.roles`, or else of the agent's instructions. An org chart needs nothing else: `business.enabled` can stay off.
 

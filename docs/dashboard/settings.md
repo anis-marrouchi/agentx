@@ -254,7 +254,7 @@ Text that is not valid JSON is refused and nothing is saved. A value that is val
 
 ## Layout
 
-**Layout** sets how much the Hub shows. **Simple**, the default, keeps the bare minimum: agents, chat, **Waiting on you**, **Jobs** and **Settings**. **Full** also shows the Workflows and Mobile app pages, plan gates and request steps on a post, the hosts in the status bar, and every page in ⌘K.
+**Layout** sets how much the Hub shows. **Simple**, the default on a new install, keeps the bare minimum: agents, chat, **Waiting on you**, **Jobs** and **Settings**. **Full** also shows the Workflows and Mobile app pages, plan gates and request steps on a post, the hosts in the status bar, and every page in ⌘K.
 
 **Layout** is the first row: **Simple** or **Full**. Under it, each item has its own switch, which wins over the layout. Rules has no switch yet: it comes with the Rules page. **Reset** next to an item gives it back to the layout. Picking a layout sets every switch back to that layout's default. If a change is not saved, the message says why; select **Retry** to send it again.
 
@@ -276,7 +276,7 @@ The keys are `dashboard.hub.layout` and `dashboard.hub.show` in the [configurati
 
 > **Warning:** if you edit `dashboard.hub.show` by hand in `agentx.json`, use only these item names (`mobile`, `workflows`, `wiki`, `rules`, `gates`, `hosts`, `activity`, `org`, `sessions`, `usage`) and only `true` or `false`. A misspelt name or another value makes the whole file invalid, and the daemon does not load any of it. Use **Settings › Layout**, which only writes valid values.
 
-**After an upgrade:** an install that had no layout set before gets the simple layout. Workflows, Mobile app, Activity, Org, Live and Cost leave the menus, and nothing stops running. To get them back, select **Full** in **Settings › Layout**.
+**New install or upgrade:** a new install (`agentx start`, `agentx init`, the first-run page, `agentx demo`) writes `"layout": "simple"` into `agentx.json`, so it opens simple. A Hub with no `dashboard.hub.layout` key opens full. That is any install from before the simple layout, including one already upgraded to a release that showed it simple. A layout you picked in **Settings › Layout** is kept on upgrade. To change it, pick the other one there.
 
 ## Check it worked
 

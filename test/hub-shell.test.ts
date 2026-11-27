@@ -12,7 +12,7 @@ import { TooltipProvider } from "../src/hub/ui"
 import { ICON_NAMES } from "../src/hub/ui/icons"
 
 const ids = (items: { id: string }[]) => items.map((i) => i.id)
-const simple = resolveHubLayout()
+const simple = resolveHubLayout({ layout: "simple" })
 const full = resolveHubLayout({ layout: "full" })
 
 describe("shell side menu per layout", () => {
@@ -28,7 +28,7 @@ describe("shell side menu per layout", () => {
     expect(ids(shellNav(full, { owner: true }).more)).toEqual(["mobile", "workflows", "wiki", "activity", "org", "sessions", "usage"])
   })
   it("one switch on in simple shows that item only", () => {
-    const v = resolveHubLayout({ show: { workflows: true } })
+    const v = resolveHubLayout({ layout: "simple", show: { workflows: true } })
     expect(ids(shellNav(v, { owner: true }).more)).toEqual(["workflows"])
   })
   it("one switch off in full hides that item only", () => {
@@ -36,7 +36,7 @@ describe("shell side menu per layout", () => {
     expect(ids(shellNav(v, { owner: true }).more)).toEqual(["mobile", "workflows", "activity", "sessions", "usage"])
   })
   it("rules, gates and hosts are not menu items", () => {
-    const v = resolveHubLayout({ show: { rules: true, gates: true, hosts: true } })
+    const v = resolveHubLayout({ layout: "simple", show: { rules: true, gates: true, hosts: true } })
     expect(shellNav(v, { owner: true }).more).toEqual([])
   })
   it("Settings for the owner only", () => {
@@ -82,7 +82,7 @@ describe("the layout now", () => {
     expect(currentLayout({ layout: simple }, {}).show.workflows).toBe(false)
   })
   it("follows a save from Settings › Layout with no reload", () => {
-    const saved = resolveHubLayout({ show: { workflows: true } })
+    const saved = resolveHubLayout({ layout: "simple", show: { workflows: true } })
     const now = currentLayout({ layout: simple }, { AX_HUB_LAYOUT: saved })
     expect(now.layout).toBe("simple")
     expect(now.show.workflows).toBe(true)
@@ -131,7 +131,7 @@ describe("the shell draws three columns", () => {
     for (const id of Object.keys(SHELL_MORE)) expect(html).toContain(`data-shell-item="${id}"`)
   })
   it("a switch turned on shows its item in the simple layout", () => {
-    const html = draw({ view: resolveHubLayout({ show: { workflows: true } }) })
+    const html = draw({ view: resolveHubLayout({ layout: "simple", show: { workflows: true } }) })
     expect(html).toContain('data-shell-item="workflows"')
     expect(html).toContain('href="#page=workflows"')
     expect(html).not.toContain('data-shell-item="mobile"')
