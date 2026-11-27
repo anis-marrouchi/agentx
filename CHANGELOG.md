@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.307.0](https://github.com/anis-marrouchi/agentx/compare/v0.306.0...v0.307.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** Mobile app page opens in the React shell ([#2457](https://github.com/anis-marrouchi/agentx/issues/2457)) ([#2514](https://github.com/anis-marrouchi/agentx/issues/2514)) ([367dfdf](https://github.com/anis-marrouchi/agentx/commit/367dfdfb21710114e69412ca1e5d09f26f0f884d))
+
 ## [0.306.0](https://github.com/anis-marrouchi/agentx/compare/v0.305.1...v0.306.0) (2026-11-27)
 
 
