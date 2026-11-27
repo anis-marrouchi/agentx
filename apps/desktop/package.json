@@ -24,6 +24,7 @@
     "appId": "dev.agentx.desktop",
     "productName": "AgentX",
     "publish": null,
+    "npmRebuild": false,
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -91,5 +92,8 @@
       "maintainer": "AgentX"
     }
   },
-  "homepage": "https://github.com/anis-marrouchi/agentx"
+  "homepage": "https://github.com/anis-marrouchi/agentx",
+  "optionalDependencies": {
+    "uiohook-napi": "^1.5.5"
+  }
 }

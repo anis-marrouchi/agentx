@@ -20,10 +20,15 @@ export interface TrayState {
   startRefusal: string | null
   /** The daemon URL is not this machine: Start, Stop and Restart would act on the local daemon. */
   remote: boolean
+  /** The floating orb window is shown. */
+  orbVisible: boolean
+  /** The talk line: which way the global key works now (talkModeLine in talk-key.ts). */
+  talkLine: string
 }
 
 export interface TrayActions {
   onToggleWindow: () => void
+  onToggleOrb: () => void
   onQuit: () => void
   onDaemon: (action: "start" | "stop" | "restart") => void
   onSetting: (change: Partial<AppSettings>) => void
@@ -51,6 +56,14 @@ export function menuTemplate(s: TrayState, a: TrayActions): MenuItemConstructorO
   })
   return [
     { label: s.windowVisible ? "Hide AgentX" : "Show AgentX", click: a.onToggleWindow },
+    { label: s.orbVisible ? "Hide orb" : "Show orb", click: a.onToggleOrb },
+    { label: s.talkLine, enabled: false },
+    {
+      label: "Global talk key",
+      type: "checkbox",
+      checked: s.settings.globalKey,
+      click: (item) => a.onSetting({ globalKey: item.checked }),
+    },
     { type: "separator" },
     { label: daemonLine(s), enabled: false },
     // Never a second daemon next to one launchd/systemd runs, nor one started in a guessed folder.
