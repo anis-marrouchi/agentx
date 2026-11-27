@@ -45,7 +45,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 *Demo data; your agents will differ.*
 
 1. **Browser:** open `/hub`. A fresh install opens here with no setting. If `dashboard.hub.react` is `false`, open `/hub?react=1` (once). The shell's own address is `/hub#page=home`.
-2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** (see [Projects in the shell](#projects-in-the-shell) below) and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. The box at the bottom is the same card as in the old Hub chat: **To** and the agent's name on top, then your message, then **+** to attach files (or paste or drop them, five at most), the model, the mic, and the blue arrow to send. Press **Enter** or the arrow to send; **Shift Enter** starts a new line. For a Claude Code agent the model is a menu: the agent's own model, or **Opus**, **Sonnet** or **Haiku** for this message; other agents show their own model. The mic records a voice message and sends it when you stop; the pencil next to it (**Check before sending**) puts the words in the box for you to send instead. The answer to a voice message is said aloud. The machine shows under the box. The answer shows word by word under **Working…** as the agent writes it, formatted as on the Task page: bold, lists, tables and code. When the run ends, the saved answer takes its place.
 
    **Check it worked:** ask an agent for a long answer, for example "List ten things you can do, with a short line each". Words appear within a few seconds, before the run ends, and **bold** words show bold, with no asterisks.
@@ -70,7 +70,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
    ![The simple shell on a phone](/screenshots/hub-shell/simple-phone.png)
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
 
-**Tasks**, **Automations** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+**Tasks**, **Automations**, **Projects** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
 
 ### Tasks: List or Kanban
 
@@ -197,6 +197,30 @@ What you put off with **Later** is not listed; the line under the list counts it
 - **Could not read what waits on you:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**.
 - **A yellow line above the list:** one source could not be read (for example the requests). The list may be short until it can; the line says which.
 - **No longer waiting** after opening a link: it was answered, put off, or it expired.
+
+### Projects in the shell
+
+**Projects** lists your projects, each with its open, in progress, blocked and stalled tasks across every machine, and its worst state: **Stalled**, **Blocked**, **Moving** or **No open work**. Tasks no project claims are under **Other**, last. Its address is `/hub#page=home&pane=projects`. It reads the same [project list](#see-every-project-at-once) as the old Hub's Projects page.
+
+1. **Browser:** in the simple shell, select **Projects** in the side menu.
+2. **Select a project** to open **Tasks** with that project picked.
+3. **Add a project** (owner only): select **Add project**. Give its **Name**, then its **Repos** (`group/project` on GitLab or GitHub, comma separated), its **Agents**, or both. Select **Add project**. It is added to `dashboard.wall.projects` in `agentx.json` and the daemon reloads its settings.
+4. **Phone:** the list fills the screen and shows each project's open count next to its name.
+
+With no project yet, the page says how a project is made and shows **Add project**.
+
+### Check Projects worked
+
+1. Add a project with a repo that has open issues or requests: within 30 seconds it is listed with its open count, and `agentx.json` has it under `dashboard.wall.projects`.
+2. Select it: **Tasks** opens with the project in the box at the top.
+
+### If Projects is wrong
+
+- **Could not read the projects:** the dashboard could not reach the daemon, or your sign-in ended. Select **Try again**.
+- **No Add project button:** you are not signed in as the owner.
+- **"A project named … already exists":** pick another name, or change that project in `agentx.json`.
+- **"… is not a repo":** write the repo as `group/project`, as in its address on GitLab or GitHub.
+- **The new project shows 0 open:** no open task names its repo or agents yet. A task belongs to the first project that names its home repo, else its agent.
 
 ### Check the simple shell worked
 

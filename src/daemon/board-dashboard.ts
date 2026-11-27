@@ -62,6 +62,7 @@ import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workfl
 import { progressGroups, slimRun } from "@/workflows/follow-up"
 import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
 import { budgetPatchProblem, updateBudget, type BudgetPatch } from "@/daemon/budget-settings"
+import { addWallProject, wallProjectAdd } from "@/daemon/wall-project-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { appReachDeps, type AppReachDeps } from "./app-reach"
@@ -102,7 +103,7 @@ import { mergeGoals } from "./wall-goals"
 import { claimClosure, wallThroughput, type WallClosure } from "./wall-throughput"
 import { handleWallReviews, WALL_REVIEWS_PATH } from "./wall-reviews"
 import { buildWallEvents, readShare, WALL_EVENTS_PATH } from "./wall-events"
-import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallGuestsTarget, wallSettingsTarget, WALL_BUDGET_PATH, type Reply as WallReply } from "./wall-actions"
+import { handleWallAction, isWallActionPath, isWallWrite, wallAnswerRoute, wallGuestsTarget, wallSettingsTarget, WALL_BUDGET_PATH, WALL_PROJECT_PATH, type Reply as WallReply } from "./wall-actions"
 import { claimBlocker } from "./wall-blocks"
 import { wallCapacity } from "./wall-capacity"
 import { forgeConnectorsOf } from "@/requests/drift/live"
@@ -986,6 +987,16 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const problem = budgetPatchProblem(body)
     if (problem) { sendJson(res, 400, { error: problem }); return }
     const r = await updateBudget(body as unknown as BudgetPatch)
+    if (!r.success) { sendJson(res, 400, { error: r.error }); return }
+    sendJson(res, 200, { ok: true, reloaded: !!r.reloaded })
+    return
+  }
+  // Add a project from the Hub's Projects page (#2454), under the Wall's
+  // owner-only guard. { name, repos[], agents[] }
+  if (method === "POST" && path === WALL_PROJECT_PATH) {
+    const read = wallProjectAdd(await readJson(req).catch(() => ({})) as Record<string, unknown>)
+    if ("problem" in read) { sendJson(res, 400, { error: read.problem }); return }
+    const r = await addWallProject(read.entry)
     if (!r.success) { sendJson(res, 400, { error: r.error }); return }
     sendJson(res, 200, { ok: true, reloaded: !!r.reloaded })
     return

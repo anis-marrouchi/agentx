@@ -145,11 +145,12 @@ export function saveTasksView(view: TasksView, store: Store | null = browserStor
 
 // --- The shell's centre ---
 
-export type ShellPane = "chat" | "tasks" | "automations" | "waiting"
-const PANES: readonly ShellPane[] = ["tasks", "automations", "waiting"]
+export type ShellPane = "chat" | "tasks" | "automations" | "waiting" | "projects"
+const PANES: readonly ShellPane[] = ["tasks", "automations", "waiting", "projects"]
 
 /** What the centre shows for this hash: `#page=home&pane=tasks&open=<id>`,
- *  `&pane=tasks&project=<name>`, `&pane=automations`, `&pane=waiting&open=<key>`. */
+ *  `&pane=tasks&project=<name>`, `&pane=automations`, `&pane=waiting&open=<key>`,
+ *  `&pane=projects` (#2454). */
 export function shellPane(params: URLSearchParams): { pane: ShellPane; open: string | null; project: string | null } {
   const want = params.get("pane") as ShellPane | null
   const pane: ShellPane = want && PANES.includes(want) ? want : "chat"

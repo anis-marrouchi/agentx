@@ -32,6 +32,7 @@ import { WAITING_URL, waitingList, type WaitingReply } from "../waiting"
 import { TasksPane } from "./ShellTasks"
 import { AutomationsPane } from "./ShellAutomations"
 import { WaitingPane } from "./ShellWaiting"
+import { ProjectsPane } from "./ShellProjects"
 import {
   AfSkeletonRows, AfStateLabel, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
   Tooltip, TooltipContent, TooltipTrigger, cn,
@@ -214,6 +215,7 @@ function Centre({ props, bar, onThread }: { props: SimpleShellProps; bar: ReactN
     case "tasks": return <TasksPane view={props.tasksView ?? "list"} onView={(v) => props.onTasksView?.(v)} open={props.openTask ?? null} project={props.project ?? null} phoneBar={bar} />
     case "automations": return <AutomationsPane phoneBar={bar} />
     case "waiting": return <WaitingPane open={props.openTask ?? null} phoneBar={bar} />
+    case "projects": return <ProjectsPane owner={props.owner} phoneBar={bar} />
     default: return <ShellChat agent={current} phoneBar={bar} onThread={onThread} />
   }
 }

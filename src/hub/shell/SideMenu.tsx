@@ -29,7 +29,7 @@ import {
 } from "./menu"
 
 /** The menu item each centre pane belongs to. */
-const PANE_OF: Record<string, ShellPane> = { tasks: "tasks", automations: "automations", needs: "waiting" }
+const PANE_OF: Record<string, ShellPane> = { tasks: "tasks", automations: "automations", needs: "waiting", projects: "projects" }
 
 const ring = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 /** A Workspace row. The old Hub's CSS sets `a { font-weight: 600 }`: rows say their weight. */
