@@ -3,9 +3,11 @@
 // Until all 13 panes are built (ST4), React Settings answers on a review id,
 // `#page=settings-preview`, and the old Settings stays `#page=settings`.
 // ST4 changes SETTINGS_PAGE to "settings"; nothing else names the id.
+// The id lives in old-sections.ts, which the daemon reads too (#2101).
 import { buildHash } from "../router"
+import { SETTINGS_PAGE } from "./old-sections"
 
-export const SETTINGS_PAGE = "settings-preview"
+export { SETTINGS_PAGE }
 
 /** `#page=settings-preview&section=<pane>&row=<row>`; `section` is the old
  *  Settings' key, so links read the same on both. */
@@ -13,9 +15,10 @@ export function settingsHash(section?: string, row?: string): string {
   return buildHash({ page: SETTINGS_PAGE, section, row })
 }
 
-/** The old Settings' section, for panes React does not draw yet. */
+/** The old Settings' section, for panes React does not draw yet. `old=1`
+ *  keeps the old Hub from sending it straight back here (wall.client.ts). */
 export function oldSettingsHash(section: string): string {
-  return buildHash({ page: "settings", section })
+  return buildHash({ page: "settings", section, old: "1" })
 }
 
 /** One agent on the Agent pane: `#page=settings-preview&section=agent&agent=<id>`. */

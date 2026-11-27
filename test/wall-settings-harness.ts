@@ -37,7 +37,7 @@ export const LIVE = { nodes: [{ name: "node-a", url: "http://node-a", reachable:
 export type Reply = { status: number; body: unknown }
 export type Route = (url: string, init: any) => Reply | undefined
 
-export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; signIn?: boolean; route?: Route }) {
+export function openWall(opts: { hash: string; owner?: boolean; business?: boolean; signIn?: boolean; route?: Route; hubPages?: string[] }) {
   const page = renderWallPage({ owner: opts.owner ?? true, business: opts.business, signIn: opts.signIn })
   const cfg = /<script>window\.AX_WALL_SETTINGS = (.*?);<\/script>/.exec(page)
   const script = CRON_VALUE_SCRIPT + "\n" + WALL_PAGE_SCRIPT
@@ -100,8 +100,16 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
         : { status: 200, body: { runs: [] } })
     return Promise.resolve({ ok: r.status < 400, status: r.status, json: async () => r.body, text: async () => (typeof r.body === "string" ? r.body : JSON.stringify(r.body)) })
   }
-  const win: any = { addEventListener: (t: string, f: () => void) => { onWindow[t] = f } }
+  // dispatched: the events the script fires on window, with the hash at
+  // that moment (the React Hub reads location.hash on hashchange).
+  const dispatched: Array<{ type: string; hash: string }> = []
+  const win: any = {
+    addEventListener: (t: string, f: () => void) => { onWindow[t] = f },
+    dispatchEvent: (e: Event) => { dispatched.push({ type: e.type, hash }); onWindow[e.type]?.(); return true },
+  }
   if (cfg) win.AX_WALL_SETTINGS = JSON.parse(cfg[1])
+  // The React Hub's pages for this viewer (window.AX_HUB, hub-react.ts).
+  if (opts.hubPages) win.AX_HUB = { pages: opts.hubPages }
   if (page.includes("<script>window.AX_WALL_SIGN_IN = true;</script>")) win.AX_WALL_SIGN_IN = true
   const sources: FakeEventSource[] = []
   class FakeEventSource {
@@ -157,7 +165,7 @@ export function openWall(opts: { hash: string; owner?: boolean; business?: boole
     return prevented
   }
   const writes = () => calls.filter((c) => c.method !== "GET")
-  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc }
+  return { page, el, calls, writes, settle, go, click, submit, type, change, key, keyAt, paints: () => paints, wall, sources, win, doc, dispatched, hash: () => hash }
 }
 
 export const settingsHtml = (w: ReturnType<typeof openWall>) => w.el("wall-settings")!.innerHTML as string

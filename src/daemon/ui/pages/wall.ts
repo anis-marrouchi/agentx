@@ -40,6 +40,8 @@ import { WALL_WORKFLOWS_CSS } from "./wall-workflows.client"
 import { WALL_EDITOR_CSS } from "./wall-editor.client"
 import { assetUrl } from "../asset-url"
 import { HUB_REACT_ROOT, hubReactHead } from "../hub-react"
+import { hubReactPageIds } from "../../../hub/pages"
+import { SETTINGS_PAGE, newSettingsHref } from "../../../hub/settings/old-sections"
 import { WALL_PAGES_CSS } from "./wall-pages.client"
 import { WALL_LIVE_CSS } from "./wall-live.client"
 import { WALL_PICTURES_CSS } from "./wall-pictures.client"
@@ -181,8 +183,13 @@ export function hubMenuCatalog(): Array<{ label: string; items: Array<{ key: str
     .map((g) => ({ label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, icon: i.icon, href: i.href.replace(/&amp;/g, "&") })) }))
 }
 
-/** Where the owner's Settings links go (#1428, #1449). */
-const WALL_SETTINGS_HREF = "#page=settings"
+/** Where the owner's Settings links go (#1428, #1449): the new Settings
+ *  when React draws it for this viewer (#2101, Anis 2026-11-27: one menu
+ *  on Settings), else the old page, which `legacyPages` or `?legacy=1`
+ *  keep. */
+export function wallSettingsHref(newSettings: boolean): string {
+  return newSettings ? newSettingsHref() : "#page=settings"
+}
 
 /** The nav for this viewer: without Settings (and its Owner group) unless owner. */
 function wallNavGroups(owner: boolean): typeof WALL_NAV_GROUPS {
@@ -261,10 +268,11 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const layout = opts.hub?.layout ?? resolveHubLayout()
   const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages, layout }) : ""
   const groups = wallNavGroups(owner)
+  const settingsHref = wallSettingsHref(!!hubHead && hubReactPageIds(owner, opts.hub?.legacyPages ?? []).includes(SETTINGS_PAGE))
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
   const navItems = groups.map((group) => {
-    const items = group.items.map((item) => navItemHtml(item)).join("\n")
+    const items = group.items.map((item) => navItemHtml(item.key === "settings" ? { ...item, href: settingsHref } : item)).join("\n")
     if (!group.label) return items
     if (group.label === "Owner") return `<span class="ax-wall__navlbl" aria-hidden="true">Owner</span>\n${items}`
     return `<details class="ax-wall__navgroup"><summary>${group.label}</summary>\n${items}\n</details>`
@@ -286,7 +294,7 @@ ${hubAgentsNavHtml()}
     <details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">${HUB_FOLD_CHEVRON}<span class="ha__ht">Machines</span><span class="ha__hn" id="wall-machines-n" data-tip="Agents working now">0</span></summary>
       <div id="wall-machines-body" aria-live="off"><p class="lt__empty">Loading the machines…</p></div>
     </details>
-${hubNavFootHtml(owner, WALL_SETTINGS_HREF)}
+${hubNavFootHtml(owner, settingsHref)}
     <div class="ax-wall__pagelinks" id="wall-pagelinks" hidden>
 ${navItems}
 ${dashboard}

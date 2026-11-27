@@ -162,6 +162,10 @@
    `.is-hub` and every other part of the main area steps aside, as the chat
    does with `.hc-open` (wall-chat.css.ts). */
 .ax-wall.is-hub .ax-wall__main > :not(#ax-hub-root) { display: none !important; }
+/* A React page with its own menu (the new Settings, #2101): the old side
+   menu, its resize grip and its phone scrim step aside too, so the page
+   shows one menu (wall.client.ts sets `.is-hub-own-menu`). */
+.ax-wall.is-hub-own-menu :is(#wall-nav, [data-panel-grip="nav"], .hub-scrim) { display: none !important; }
 
 /* The old Hub's Files markup in the shell's Files tab (shell/FilesPanel.tsx,
    wall-files.ts): the reset above clears its folder links' colour; give it

@@ -40,6 +40,14 @@ To check it worked, open `/org`: it shows the same chart, with the change. If a 
 
 `/admin`, the old Settings address, opens this page. `/hub#page=settings&section=` followed by a section's name, such as `/hub#page=settings&section=channels`, opens that section directly.
 
+### The new Settings
+
+When the Hub is drawn in React, **Settings** in the side menu, in ⌘K Pages and in the top bar opens the new Settings (`/hub#page=settings-preview`). It has one menu, its own, and **Back to app** at the top returns you to the Hub. The Hub's side menu is hidden while it is open.
+
+Old addresses still work: `/hub#page=settings&section=<name>` opens the matching pane of the new Settings. For example, `section=channels` opens **Channels**, `section=tokens` opens **General › Tokens**, and `section=agents&agent=coder` opens the Agent pane on @coder. One difference: org-setup's **Add agent here** now opens **General › Add agent** without the manager filled in.
+
+The old page stays for viewers the new Settings is not drawn for (the legacy Hub), and for the few panes the new Settings links to with `old=1`.
+
 ## Try an agent
 
 1. **Browser:** open the Hub and select **Settings**. **Agents** opens first.
