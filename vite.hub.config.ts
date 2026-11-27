@@ -13,10 +13,22 @@ import { defineConfig } from "vite"
 
 const root = fileURLToPath(new URL("./src/hub", import.meta.url))
 
+// The shell chat renders answers with the Task page's Streamdown (#2101).
+// @streamdown/code imports the whole `shiki` bundle (every grammar): point
+// that one import at the cut-down copy, as tsup.web.config.ts does.
+const shikiLite = fileURLToPath(new URL("./src/web/task-conversation/shiki-lite.ts", import.meta.url))
+const shikiLitePlugin = {
+  name: "shiki-lite",
+  enforce: "pre" as const,
+  resolveId(source: string, importer?: string) {
+    return source === "shiki" && importer && /[\\/]@streamdown[\\/]code[\\/]/.test(importer) ? shikiLite : null
+  },
+}
+
 export default defineConfig({
   root,
   base: "/assets/hub/",
-  plugins: [react(), tailwindcss()],
+  plugins: [shikiLitePlugin, react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
   build: {
