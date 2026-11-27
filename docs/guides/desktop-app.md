@@ -66,7 +66,18 @@ The orb, the talk key and the last three choices are kept in `settings.json` in 
 
 Links to other websites open in your usual browser, not in the app. The app lets only the dashboard's own pages use the microphone. It never lets any page use the camera.
 
-On macOS, the AgentX Voice app keeps its floating pill and the ⌥Space shortcut for now. See the [AgentX Voice guide](/guides/agentx-voice).
+On macOS, the AgentX Voice app keeps its floating pill and the ⌥Space shortcut until you switch. See the [AgentX Voice guide](/guides/agentx-voice).
+
+### Switch a Mac from AgentX Voice to the orb
+
+```bash
+agentx desktop orb --dry-run   # see what changes
+agentx desktop orb
+```
+
+It builds this app, puts it in `~/Applications/AgentX.app`, sets it to start at login with the orb shown and no window, and turns off the AgentX Voice login item, so only one of them runs. The AgentX Voice app and the computer-use helper stay installed. Allow the microphone when macOS asks.
+
+Until the orb can answer calls, an agent's call rings on your phone instead. To go back, rename the turned-off file in `~/Library/LaunchAgents` (it ends in `.disabled-orb-<date>`) back to `.plist`, quit AgentX from its menu, then run `agentx desktop start`.
 
 ## Settings
 
