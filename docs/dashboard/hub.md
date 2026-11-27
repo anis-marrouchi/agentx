@@ -46,7 +46,11 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 
 1. **Browser:** open `/hub`. A fresh install opens here with no setting. If `dashboard.hub.react` is `false`, open `/hub?react=1` (once). The shell's own address is `/hub#page=home`.
 2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
-3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it.
+3. **Centre, the chat:** the agent in view's newest conversation. Write in the box and press **Enter** or **Send**; **Shift Enter** starts a new line. The agent's model shows in the box, and the machine under it. The answer shows word by word under **Working…** as the agent writes it, formatted as on the Task page: bold, lists, tables and code. When the run ends, the saved answer takes its place.
+
+   **Check it worked:** ask an agent for a long answer, for example "List ten things you can do, with a short line each". Words appear within a few seconds, before the run ends, and **bold** words show bold, with no asterisks.
+
+   **If something is wrong:** if the whole answer lands at once at the end, the browser could not open the run's live output (a machine that does not answer, or a proxy that holds streams back); the answer still shows when the run ends. Reload the page and try again, and check that the machine shows as reachable in the side menu.
 4. **Right, the tabs:** **Files** comes first. It fills in when a project is picked; the other tabs come later.
 5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
