@@ -34,6 +34,7 @@ The app is still in preview. Each change to it is built for all three systems by
 |---|---|
 | **Show AgentX** / **Hide AgentX** | Shows or hides the Hub window. |
 | **Show orb** / **Hide orb** | Shows or hides the floating orb (see [The orb](#the-orb)). |
+| **Orb talks to** | The agent the orb sends your words to. |
 | **Talk: …** | Says how the talk key works now: off, hold to talk, or press twice, with the reason. |
 | **Global talk key** | Turns on ⌥Space (Alt+Space on Windows and Ubuntu) from any app. Off by default. |
 | **Daemon: running** / **stopped** | Whether the daemon answers. Checked every 5 seconds. |
@@ -52,8 +53,12 @@ Start, Stop and Restart act on this computer only. When the app points at a daem
 A small round orb floats above your other windows, on every desktop, also over full-screen apps on macOS. It is not in the taskbar or the Dock.
 
 - Drag the orb to move it. It comes back to the same place next launch. If that screen is gone, it goes to the bottom right of the main screen.
-- Hold the orb to talk. Let go to send.
-- It shows five states: idle, listening, thinking, speaking, and call-back (with **Answer**, **Later** and **Decline**). In this version the orb shows listening while you hold it or the talk key; recording and the live states come in the next version.
+- Hold the orb (or the talk key) to talk. Your words show under the orb as you speak. Let go to send.
+- The words go to the agent named in the icon's menu under **Orb talks to** (until you pick one: the node's default agent, else its first). They join one Hub conversation, so you can read it in the Hub later.
+- While the agent works, the orb turns and shows what it writes. Then it says the answer in the agent's voice, with its first words under the orb. Tap the orb (or press Escape) to stop it.
+- Live words come from the node's own speech to text, one pass at a time, on the first 30 seconds of a recording only. Past 30 seconds the orb shows your voice level, and the whole recording is written down when you let go. A recording stops by itself after two minutes.
+- The first time, the system asks for the microphone for AgentX.
+- It shows five states: idle, listening, thinking, speaking, and call-back. Call-back is not fed yet.
 - **Global talk key**: on macOS the system asks you to allow AgentX under **Privacy & Security › Accessibility** the first time you turn it on. AgentX looks at that one key only. It does not keep or send any other key. Until you allow it, and on Ubuntu with Wayland, the key works as press once to start and press again to send. The menu says which.
 - On Ubuntu with Wayland, the app runs through XWayland so the orb can stay on top.
 

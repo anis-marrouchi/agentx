@@ -3,7 +3,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import menu from "../dist/menu.js"
 
-const settings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false }
+const settings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false, orbAgent: "" }
 const calls = []
 const actions = {
   onToggleWindow: () => calls.push("toggle"),
@@ -12,13 +12,13 @@ const actions = {
   onDaemon: (a) => calls.push(a),
   onSetting: (c) => calls.push(c),
 }
-const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, remote: false, orbVisible: true, talkLine: "Talk: hold the orb (global key off)", ...over })
+const state = (over) => ({ windowVisible: true, daemon: { running: true, pid: 9, service: "none" }, busy: null, settings, loginItemSupported: true, startRefusal: null, remote: false, orbVisible: true, talkLine: "Talk: hold the orb (global key off)", orbAgents: [], ...over })
 const items = (s) => menu.menuTemplate(s, actions).filter((i) => i.type !== "separator")
 const byLabel = (s, prefix) => items(s).find((i) => i.label.startsWith(prefix))
 
-test("all six controls are in the menu", () => {
+test("all the controls are in the menu", () => {
   const labels = items(state()).map((i) => i.label)
-  assert.deepEqual(labels, ["Hide AgentX", "Hide orb", "Talk: hold the orb (global key off)", "Global talk key", "Daemon: running", "Start", "Stop", "Restart…", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
+  assert.deepEqual(labels, ["Hide AgentX", "Hide orb", "Talk: hold the orb (global key off)", "Orb talks to: no agent yet", "Global talk key", "Daemon: running", "Start", "Stop", "Restart…", "Open at login", "Show the window at launch", "Closing the window", "Quit AgentX"])
   assert.equal(byLabel(state({ windowVisible: false }), "Show").label, "Show AgentX")
 })
 
@@ -74,4 +74,17 @@ test("settings items show and change the saved values", () => {
   byLabel(s, "Quit").click()
   assert.deepEqual(calls, [{ closeAction: "hide" }, { openAtLogin: false }, "quit"])
   assert.equal(byLabel(state({ loginItemSupported: false }), "Open at login").enabled, false)
+})
+
+test("Orb talks to: the chosen agent, picked from the node's agents", () => {
+  const agents = [{ id: "secretary", name: "Secretary" }, { id: "coder", name: "Coder" }]
+  assert.equal(byLabel(state(), "Orb talks to: no agent yet").enabled, false)
+  const item = byLabel(state({ orbAgents: agents, settings: { ...settings, orbAgent: "coder" } }), "Orb talks to: Coder")
+  assert.deepEqual(item.submenu.map((x) => x.checked), [false, true])
+  // A chosen agent that is gone: the node's first is used and shown.
+  assert.ok(byLabel(state({ orbAgents: agents, settings: { ...settings, orbAgent: "gone" } }), "Orb talks to: Secretary"))
+  assert.ok(byLabel(state({ orbAgents: agents, orbDefault: "coder" }), "Orb talks to: Coder"), "none chosen: the node's default")
+  calls.length = 0
+  byLabel(state({ orbAgents: agents }), "Orb talks to: Secretary").submenu[1].click()
+  assert.deepEqual(calls, [{ orbAgent: "coder" }])
 })

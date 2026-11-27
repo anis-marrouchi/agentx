@@ -90,7 +90,26 @@ body {
   display: none;
 }
 
-/* The rim: a level ring while listening, a turning arc while thinking. */
+/* A soft glow behind the orb that breathes with the voice (--level 0..1):
+   his while listening, the agent's while speaking. One shape, no rings. */
+.orb-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ax-blue) 38%, transparent), transparent);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 160ms var(--ease-out), transform 90ms var(--ease-out);
+  pointer-events: none;
+}
+[data-state="listening"] .orb-wrap::before,
+[data-state="speaking"] .orb-wrap::before {
+  opacity: calc(0.35 + var(--level) * 0.65);
+  transform: scale(calc(0.9 + var(--level) * 0.3));
+}
+
+/* The rim: a turning arc while thinking. */
 .orb-ring {
   position: absolute;
   inset: -5px;
@@ -110,11 +129,6 @@ body {
 /* listening: blue mic, the rim follows the voice level (--level 0..1). */
 [data-state="listening"] .orb { color: var(--ax-blue); border-color: var(--ax-blue); }
 [data-state="listening"] .icon-mic { display: block; }
-[data-state="listening"] .orb-ring {
-  opacity: calc(0.35 + var(--level) * 0.65);
-  transform: scale(calc(1 + var(--level) * 0.12));
-  transition: transform 100ms var(--ease-out), opacity 100ms var(--ease-out);
-}
 
 /* thinking: the one allowed endless motion, a spinner arc on the rim. */
 [data-state="thinking"] .orb { color: var(--ax-blue); }
@@ -171,7 +185,15 @@ body {
 .pill p { margin: 0; }
 .pill-title { font-weight: 500; }
 .pill-title:empty, .pill-text:empty { display: none; }
-.pill-text { color: var(--ax-text); }
+/* Live words: two lines at most; orb-flow.ts caption() keeps the newest words. */
+.pill-text {
+  color: var(--ax-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-wrap: pretty;
+}
 /* Words not yet final (listening) and work in progress (thinking) are grey. */
 [data-state="listening"] .pill-text, [data-state="thinking"] .pill-text { color: var(--ax-muted); }
 [data-state="callback"] .pill { text-align: left; padding: 12px; }
@@ -199,8 +221,9 @@ body {
 /* Reduce Motion: no turning, no moving bars, no slide. The state still reads
    from the colour, the icon and the words. */
 @media (prefers-reduced-motion: reduce) {
-  .orb, .btn, [data-state="listening"] .orb-ring { transition: none; }
+  .orb, .btn, .orb-wrap::before { transition: none; }
   [data-state="thinking"] .orb-ring, [data-state="speaking"] .icon-lines path { animation: none; }
   .pill { animation: pill-fade 120ms ease-out; }
+  [data-state] .orb-wrap::before { transform: none; }
 }
 @keyframes pill-fade { from { opacity: 0; } }

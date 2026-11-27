@@ -44,8 +44,20 @@ function fits(p: Point, size: { width: number; height: number }, a: Area): boole
  * The window's new bounds when its content changes size: the orb keeps its
  * place on screen, so the window grows around the top middle.
  */
-export function regrow(now: Area, width: number, height: number): Area {
+export function regrow(now: Area, width: number, height: number, area?: Area): Area {
   const w = Math.max(1, Math.round(width))
   const h = Math.max(1, Math.round(height))
-  return { x: Math.round(now.x + (now.width - w) / 2), y: now.y, width: w, height: h }
+  const b = { x: Math.round(now.x + (now.width - w) / 2), y: now.y, width: w, height: h }
+  return area ? clampTo(b, area) : b
+}
+
+/**
+ * C2 (#2493 review): a window that grew past the screen's work area is moved
+ * back onto it (the bottom-right default would push the pill off screen).
+ * A window larger than the area keeps its top left on the area.
+ */
+export function clampTo(b: Area, area: Area): Area {
+  const x = Math.max(area.x, Math.min(b.x, area.x + area.width - b.width))
+  const y = Math.max(area.y, Math.min(b.y, area.y + area.height - b.height))
+  return { ...b, x: Math.round(x), y: Math.round(y) }
 }

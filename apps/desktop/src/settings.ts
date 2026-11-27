@@ -19,9 +19,11 @@ export interface AppSettings {
   /** The global talk key (⌥Space / Alt+Space). Off until the person turns it on:
    *  on macOS it needs a permission, asked only then (#2265 v3 Q2). */
   globalKey: boolean
+  /** The agent the orb talks to; "" for the node's first agent (#2265 PR 3). */
+  orbAgent: string
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false }
+export const DEFAULT_SETTINGS: AppSettings = { openAtLogin: false, showOnLaunch: true, closeAction: "hide", orbVisible: true, globalKey: false, orbAgent: "" }
 
 export const SETTINGS_FILE = "settings.json"
 
@@ -38,6 +40,7 @@ export function parseSettings(raw: unknown): AppSettings {
     closeAction: o.closeAction === "hide" || o.closeAction === "quit" ? o.closeAction : DEFAULT_SETTINGS.closeAction,
     orbVisible: typeof o.orbVisible === "boolean" ? o.orbVisible : DEFAULT_SETTINGS.orbVisible,
     globalKey: typeof o.globalKey === "boolean" ? o.globalKey : DEFAULT_SETTINGS.globalKey,
+    orbAgent: typeof o.orbAgent === "string" ? o.orbAgent.slice(0, 200) : DEFAULT_SETTINGS.orbAgent,
   }
 }
 

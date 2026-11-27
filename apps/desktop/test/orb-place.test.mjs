@@ -29,3 +29,19 @@ test("growing for the pill keeps the orb where it is (top middle)", () => {
   assert.deepEqual(b, { x: 0, y: 200, width: 288, height: 140 })
   assert.equal(b.x + b.width / 2, 100 + 88 / 2)
 })
+
+test("C2: a window that grows past the work area is moved back onto it", () => {
+  // The default bottom-right place: the pill grows down, off the screen.
+  const at = orbPlace(null, size, [main], main)
+  const b = place.regrow({ ...at, ...size }, 300, 200, main)
+  assert.ok(b.x + b.width <= main.x + main.width, "right edge on the area")
+  assert.ok(b.y + b.height <= main.y + main.height, "bottom edge on the area")
+  assert.ok(b.x >= main.x && b.y >= main.y)
+  assert.equal(b.width, 300)
+  assert.equal(b.height, 200)
+})
+
+test("C2: a window already on the area is not moved", () => {
+  const b = { x: 400, y: 300, width: 288, height: 140 }
+  assert.deepEqual(place.clampTo(b, main), b)
+})

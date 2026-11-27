@@ -64,6 +64,11 @@ function startShortcut(onEdge: (edge: TalkEdge) => void): boolean {
   return shortcut
 }
 
+function swallowKey(log: (m: string, err?: unknown) => void): void {
+  shortcut = globalShortcut.register(DEFAULT_TALK_KEY.accelerator, () => {})
+  if (!shortcut) log(`${DEFAULT_TALK_KEY.accelerator} is taken by another app; it also reaches the app in front`)
+}
+
 export function stopGlobalKey(): void {
   if (hook) {
     hook.removeAllListeners("keydown")
@@ -82,6 +87,10 @@ export function applyGlobalKey(enabled: boolean, wayland: boolean, onEdge: (edge
   if (!enabled) return current
   const hookResult = wayland ? ({ ok: false, reason: "Wayland" } as const) : startHook(onEdge)
   current = talkMode({ enabled, wayland, hook: hookResult })
+  // C1 (#2493 review): in hold mode the key must not also reach the app in
+  // front (Windows opens the window menu, macOS types a no-break space). A
+  // shortcut with no action takes it; the hook still sees it go down and up.
+  if (current.mode === "hold") swallowKey(log)
   if (current.mode === "press-twice" && !startShortcut(onEdge)) {
     log(`${DEFAULT_TALK_KEY.accelerator} is taken by another app`)
     current = { mode: "off", reason: `${KEY_LABEL} is taken by another app` }
@@ -109,7 +118,9 @@ export async function askForGlobalKey(): Promise<boolean> {
     message: `Talk with ${KEY_LABEL} from any app`,
     detail:
       `To see ${KEY_LABEL} held down while another app is in front, macOS asks you to allow AgentX under Privacy & Security > Accessibility. ` +
-      `AgentX looks at that one key only; it does not keep or send any other key. Until you allow it, ${KEY_LABEL} works as press to start, press again to send, and holding the orb always works.`,
+      `AgentX looks at that one key only; it does not keep or send any other key. ` +
+      `Continue: macOS asks for the permission; until you allow it, ${KEY_LABEL} works as press to start, press again to send. ` +
+      `Not now: the key stays off. Holding the orb always works.`,
   })
   if (r.response !== 0) return false
   systemPreferences.isTrustedAccessibilityClient(true) // shows the system's own prompt

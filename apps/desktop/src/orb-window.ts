@@ -2,8 +2,8 @@
 // windows and on every workspace (full-screen apps too on macOS), out of the
 // taskbar, dragged by the orb itself. Its place is kept in orb-state.json.
 //
-// The page is a local file (resources/orb), so it needs no daemon and holds
-// no token. The live states and words come in PR 3.
+// The page is a local file (resources/orb) and holds no token. It records
+// and plays; orb-voice.ts talks to the dashboard (#2265 PR 3).
 
 import { BrowserWindow, ipcMain, screen, type IpcMainEvent } from "electron"
 import { existsSync, readFileSync, writeFileSync } from "fs"
@@ -57,9 +57,12 @@ export function setupOrb(o: OrbOptions): void {
   opts = o
   ipcMain.on("orb:resize", (e, width: unknown, height: unknown) => {
     const w = fromOrb(e)
-    if (!w || typeof width !== "number" || typeof height !== "number") return
-    const b = regrow(w.getBounds(), Math.min(width, 480), Math.min(height, 480))
-    w.setBounds(b)
+    // C4: NaN and Infinity are numbers too.
+    if (!w || typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height)) return
+    const now = w.getBounds()
+    // C2: kept on the work area of the screen it is on.
+    const area = screen.getDisplayMatching(now).workArea
+    w.setBounds(regrow(now, Math.min(width, 480), Math.min(height, 480), area))
   })
   ipcMain.on("orb:drag", (e, step: unknown, dx: unknown, dy: unknown) => {
     const w = fromOrb(e)
@@ -134,7 +137,17 @@ export function hideOrb(): void {
   win.close()
 }
 
-/** What the orb shows (PR 3 feeds the live states; PR 2 uses it for the talk key). */
+/** What the orb shows. */
 export function showOrbState(view: OrbView): void {
-  if (win && !win.isDestroyed()) win.webContents.send("orb:state", view)
+  sendToOrb("orb:state", view)
+}
+
+/** A message to the orb page; dropped when the orb is closed. */
+export function sendToOrb(channel: string, ...args: unknown[]): void {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
+}
+
+/** True for the orb page's own contents (its microphone and its messages). */
+export function isOrbContents(wc: Electron.WebContents): boolean {
+  return !!win && !win.isDestroyed() && wc === win.webContents
 }
