@@ -62,6 +62,19 @@
   --shadow-float: var(--ax-shadow-lg);
 }
 
+/* The Sheet (ui/sheet.tsx): Orca's timing, 300 ms in and 200 ms out, from
+   its own edge (orca-design motion). Off under reduced motion. */
+@theme {
+  --animate-sheet-in: ax-sheet-in 300ms cubic-bezier(.32, .72, 0, 1);
+  --animate-sheet-out: ax-sheet-out 200ms ease-in;
+  --animate-fade-in: ax-fade-in 300ms ease-out;
+  --animate-fade-out: ax-fade-out 200ms ease-in;
+  @keyframes ax-sheet-in { from { transform: translateX(var(--ax-sheet-from, -100%)); } }
+  @keyframes ax-sheet-out { to { transform: translateX(var(--ax-sheet-from, -100%)); } }
+  @keyframes ax-fade-in { from { opacity: 0; } }
+  @keyframes ax-fade-out { to { opacity: 0; } }
+}
+
 /* The roots. */
 .ax-hub {
   font-family: var(--ax-font);
@@ -115,3 +128,8 @@
    `.is-hub` and every other part of the main area steps aside, as the chat
    does with `.hc-open` (wall-chat.css.ts). */
 .ax-wall.is-hub .ax-wall__main > :not(#ax-hub-root) { display: none !important; }
+
+/* The old Hub's Files markup in the shell's Files tab (shell/FilesPanel.tsx,
+   wall-files.ts): the reset above clears its folder links' colour; give it
+   back. Its other looks come from WALL_FILES_CSS as they are. */
+.ax-hub [data-shell="files"] .wfl__cr { color: var(--ax-accent); }
