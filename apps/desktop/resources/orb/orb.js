@@ -4,8 +4,8 @@
 // answer, and tells this page what to show.
 //
 // Live words (Hakim C11): while recording, the whole take so far goes for a
-// rolling pass every 2.5 s, one at a time (a pass still running skips the
-// next), and only for the first 30 s; past that the pill shows the level
+// rolling pass every 2.5 s, one at a time (the next waits for the app's
+// answer to the last, matched by pass id), and only for the first 30 s; past that the pill shows the level
 // meter and the final pass writes it all down on release. The numbers are
 // LIVE_WORDS_* in src/orb-flow.ts; keep both in step.
 //
@@ -56,6 +56,7 @@
   // --- Recording ---
   let rec = null // { mr, stream, chunks, t0, lastPass, busy, ctx, raf, timer, stopped }
   let wanted = false // held now; a release before the microphone opened cancels
+  let opening = false // the microphone is being opened (getUserMedia not settled)
 
   function meterOf(stream, onLevel) {
     const ctx = new AudioContext()
@@ -83,22 +84,38 @@
   async function startTalk() {
     if (rec || wanted) return
     wanted = true
+    if (opening) {
+      // Pressed again while the microphone still opens: that take goes on.
+      render({ state: "listening", text: "" })
+      return
+    }
     stopPlaying(false)
     bridge?.begin()
     render({ state: "listening", text: "" })
     let stream
+    opening = true
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     } catch (e) {
+      opening = false
       wanted = false
       const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError")
       render({ state: "idle", title: denied ? "The microphone is blocked" : "Could not open the microphone", text: denied ? "Allow AgentX in the system's privacy settings." : "" })
       setTimeout(() => shown.state === "idle" && render({ state: "idle" }), 6000)
       return
     }
-    if (!wanted) return stream.getTracks().forEach((t) => t.stop())
+    opening = false
+    if (!wanted) {
+      // B1: let go before the microphone opened (on macOS the first time,
+      // while the permission prompt is up): nothing was recorded. Close the
+      // stream, end the turn begun above, and rest.
+      stream.getTracks().forEach((t) => t.stop())
+      bridge?.cancel()
+      render({ state: "idle" })
+      return
+    }
     const mr = new MediaRecorder(stream)
-    rec = { mr, stream, chunks: [], t0: Date.now(), lastPass: Date.now(), busy: false, meter: null, timer: 0, words: "" }
+    rec = { mr, stream, chunks: [], t0: Date.now(), lastPass: Date.now(), busy: 0, meter: null, timer: 0, words: "" }
     mr.ondataavailable = (e) => e.data && e.data.size && rec && rec.chunks.push(e.data)
     mr.start(500)
     rec.meter = meterOf(stream, (v) => {
@@ -119,16 +136,24 @@
       return
     }
     if (rec.busy || Date.now() - rec.lastPass < EVERY_MS || !rec.chunks.length || !bridge) return
-    rec.busy = true
+    // rec.busy holds the id of the pass asked for; the app answers each id once.
+    const id = ++passIds
+    rec.busy = id
     rec.lastPass = Date.now()
     const r = rec
     take()
       .arrayBuffer()
-      .then((buf) => bridge.partial(buf, r.mr.mimeType || "audio/webm", ms))
+      .then((buf) => bridge.partial(buf, r.mr.mimeType || "audio/webm", ms, id))
+      .catch(() => {
+        // N6: the take could not be read: free the next pass.
+        if (r.busy === id) r.busy = 0
+      })
   }
-  bridge?.onPartial((text) => {
-    if (!rec) return
-    rec.busy = false
+  let passIds = 0
+  bridge?.onPartial((text, id) => {
+    // An answer to an older pass (or an older take) is not this one's.
+    if (!rec || rec.busy !== id) return
+    rec.busy = 0
     if (text && !rec.capped) {
       rec.words = text
       render({ state: "listening", text })
@@ -136,8 +161,14 @@
   })
 
   function stopTalk() {
+    const held = wanted
     wanted = false
-    if (!rec) return
+    if (!rec) {
+      // B1: let go while the microphone still opens: rest now; startTalk
+      // closes the stream and ends the turn when it settles.
+      if (held && opening) render({ state: "idle" })
+      return
+    }
     const r = rec
     rec = null
     clearTimeout(r.timer)
@@ -148,7 +179,14 @@
       r.stream.getTracks().forEach((t) => t.stop())
       const blob = new Blob(r.chunks, { type: r.mr.mimeType || "audio/webm" })
       if (!bridge) return render({ state: "idle" })
-      blob.arrayBuffer().then((buf) => bridge.final(buf, blob.type, ms))
+      blob
+        .arrayBuffer()
+        .then((buf) => bridge.final(buf, blob.type, ms))
+        .catch(() => {
+          // N6: the take could not be read (nothing went to the app): say so.
+          render({ state: "idle", title: "Could not read the recording", text: "Try again." })
+          setTimeout(() => shown.state === "idle" && render({ state: "idle" }), 6000)
+        })
     }
     r.mr.stop()
     render({ state: "thinking", text: r.words || "Writing it down…" })

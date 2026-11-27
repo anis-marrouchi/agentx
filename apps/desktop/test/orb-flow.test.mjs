@@ -63,3 +63,24 @@ test("the answer is read only after the orb's own message", () => {
   assert.equal(answerOf([...old, { role: "user" }, { role: "assistant", status: "error", content: "boom" }], 3).kind, "failed")
   assert.equal(answerOf([...old, { role: "user" }, { role: "assistant", status: "done", content: "" }], 3).kind, "failed")
 })
+
+test("C11/S2: one speech-to-text pass at a time; a rolling one is dropped, the final one waits", async () => {
+  const { oneAtATime } = flow
+  const stt = oneAtATime()
+  let release
+  const order = []
+  const rolling = stt.tryRun(() => new Promise((r) => (release = r)).then(() => order.push("rolling")))
+  assert.ok(rolling)
+  assert.equal(stt.busy(), true)
+  assert.equal(stt.tryRun(async () => order.push("dropped")), undefined, "a second rolling pass is dropped")
+  const final = stt.run(async () => order.push("final"))
+  await new Promise((r) => setImmediate(r))
+  assert.deepEqual(order, [], "the final pass waits for the rolling one")
+  release()
+  await final
+  assert.deepEqual(order, ["rolling", "final"])
+  assert.equal(stt.busy(), false)
+  await assert.rejects(stt.run(async () => { throw new Error("boom") }))
+  assert.equal(stt.busy(), false, "a failed pass frees the gate")
+  assert.ok(stt.tryRun(async () => 1))
+})

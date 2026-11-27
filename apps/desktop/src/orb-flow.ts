@@ -30,6 +30,30 @@ export function livePass(i: { busy: boolean; recordedMs: number; sinceLastMs: nu
   return "pass"
 }
 
+/**
+ * One speech-to-text pass at a time (C11), rolling or final. A rolling pass
+ * asks with `tryRun` and is dropped (undefined) while another runs; the final
+ * pass waits its turn with `run`, so it never runs beside a rolling one.
+ */
+export function oneAtATime(): {
+  busy: () => boolean
+  tryRun: <T>(fn: () => Promise<T>) => Promise<T> | undefined
+  run: <T>(fn: () => Promise<T>) => Promise<T>
+} {
+  let running = 0
+  let tail: Promise<unknown> = Promise.resolve()
+  const run = <T>(fn: () => Promise<T>): Promise<T> => {
+    running++
+    const p = tail.then(fn)
+    tail = p.then(
+      () => void running--,
+      () => void running--,
+    )
+    return p
+  }
+  return { busy: () => running > 0, tryRun: (fn) => (running > 0 ? undefined : run(fn)), run }
+}
+
 /** The last words, whole words only, with "…" in front when cut: the live caption. */
 export function caption(text: string, max = CAPTION_MAX): string {
   const t = String(text || "").replace(/\s+/g, " ").trim()

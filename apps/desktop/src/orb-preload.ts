@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld("agentxOrb", {
   dragMove: (dx: number, dy: number) => ipcRenderer.send("orb:drag", "move", dx, dy),
   dragEnd: () => ipcRenderer.send("orb:drag", "end"),
   begin: () => ipcRenderer.send("orb:begin"),
-  partial: (bytes: ArrayBuffer, type: string, ms: number) => ipcRenderer.send("orb:partial", bytes, type, ms),
+  partial: (bytes: ArrayBuffer, type: string, ms: number, id: number) => ipcRenderer.send("orb:partial", bytes, type, ms, id),
   final: (bytes: ArrayBuffer, type: string, ms: number) => ipcRenderer.send("orb:final", bytes, type, ms),
   cancel: () => ipcRenderer.send("orb:cancel"),
   played: () => ipcRenderer.send("orb:played"),
@@ -37,9 +37,9 @@ contextBridge.exposeInMainWorld("agentxOrb", {
   onTalk: (cb: (edge: "start" | "stop") => void) => {
     ipcRenderer.on("orb:talk", (_e, edge: "start" | "stop") => cb(edge))
   },
-  /** Words of a rolling pass, or null when it failed. */
-  onPartial: (cb: (text: string | null) => void) => {
-    ipcRenderer.on("orb:partial", (_e, text: string | null) => cb(text))
+  /** Words of a rolling pass, or null when it was dropped or failed, with the pass id it answers. */
+  onPartial: (cb: (text: string | null, id: number) => void) => {
+    ipcRenderer.on("orb:partial", (_e, text: string | null, id: number) => cb(text, id))
   },
   onPlay: (cb: (play: OrbPlay) => void) => {
     ipcRenderer.on("orb:play", (_e, play: OrbPlay) => cb(play))
