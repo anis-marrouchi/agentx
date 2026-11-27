@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.298.0](https://github.com/anis-marrouchi/agentx/compare/v0.297.2...v0.298.0) (2026-11-27)
+
+
+### Features
+
+* **hub:** Files panel as Run artifacts, Project and Workspace tabs ([#2455](https://github.com/anis-marrouchi/agentx/issues/2455)) ([#2460](https://github.com/anis-marrouchi/agentx/issues/2460)) ([943638c](https://github.com/anis-marrouchi/agentx/commit/943638c4f799b8ecb330c99196679f75006d33e2))
+* **hub:** Projects pane in the React shell with Add project ([#2454](https://github.com/anis-marrouchi/agentx/issues/2454)) ([#2461](https://github.com/anis-marrouchi/agentx/issues/2461)) ([abada15](https://github.com/anis-marrouchi/agentx/commit/abada158fe3851512cccb09f0e2ebf8b5ea83e69))
+
+
+### Bug Fixes
+
+* **hub:** one run count while a machine is slow, on the Hub and /mesh ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([8c95a5a](https://github.com/anis-marrouchi/agentx/commit/8c95a5af56ea0bebbe85e20f2f049e7d83b8540e))
+* **hub:** one run count while a machine is slow, on the Hub and /mesh ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([9e98eae](https://github.com/anis-marrouchi/agentx/commit/9e98eae99a1e75f82196377f4eff5519d5618e09))
+* **hub:** Settings in the side menu and topbar opens the new Settings ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([3c12f12](https://github.com/anis-marrouchi/agentx/commit/3c12f126a9458970aa2fb30e572b4845304f3f5a))
+* **hub:** Settings in the side menu and topbar opens the new Settings ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([4bcfb7e](https://github.com/anis-marrouchi/agentx/commit/4bcfb7e7cf94b67f0d011c9d695ec2328fac974b))
+
 ## [0.297.2](https://github.com/anis-marrouchi/agentx/compare/v0.297.1...v0.297.2) (2026-11-27)
 
 
