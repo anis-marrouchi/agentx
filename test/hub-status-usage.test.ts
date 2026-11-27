@@ -3,7 +3,7 @@ import {
   hubAgentsPopHtml, hubAgo, hubClock, hubEngineChipHtml, hubEnginePopHtml, hubEngineShort, hubEnginesInUse, hubIn,
   hubSpan, hubStatusWord, hubUsageRows, HUB_USAGE_CSS, HUB_USAGE_POP_HTML,
 } from "../src/daemon/ui/pages/hub-status-usage"
-import { fetchHubUsage, hubUsageFromPlan } from "../src/daemon/hub-usage-api"
+import { fetchHubUsage, hubUsageFromPlan, resetHubUsageCache } from "../src/daemon/hub-usage-api"
 import { activeCliDir } from "../src/agents/cli-accounts"
 import { handlePlanUsageApi } from "../src/daemon/plan-usage-api"
 import { HUB_STATUS_HTML } from "../src/daemon/ui/pages/hub-status"
@@ -32,6 +32,15 @@ describe("engines in use (R28a)", () => {
     expect(hubEnginesInUse([{ agents: [{ id: "a", tier: "claude-code" }] }]).map((e) => e.engine)).toEqual(["claude-code"])
     expect(hubEnginesInUse([])).toEqual([])
     expect(hubEnginesInUse([{ name: "x" }, { agents: [{ name: "no id" }] }] as any)).toEqual([])
+  })
+
+  it("keeps an item for a plan read on this machine with no agent on it, never for an API engine (R5)", () => {
+    const nodes = [{ name: "Mac", agents: [{ id: "a", name: "Alpha", tier: "claude-code" }] }]
+    expect(hubEnginesInUse(nodes, ["codex-cli", "sdk"])).toEqual([
+      { engine: "claude-code", agents: [{ id: "a", name: "Alpha", node: "Mac" }] },
+      { engine: "codex-cli", agents: [] },
+    ])
+    expect(hubEnginesInUse([], ["claude-code"])).toEqual([{ engine: "claude-code", agents: [] }])
   })
 
   it("names the engines short", () => {
@@ -120,6 +129,15 @@ describe("status bar items and drop-downs", () => {
     expect(flagged).not.toContain("progressbar")
     const empty = hubEngineChipHtml("codex-cli", [], esc, icon)
     expect(empty).toBe('<i data-e="codex-cli"></i><span class="hsu__n">Codex</span>')
+  })
+
+  it("with the time, each bar says when its window resets (R5)", () => {
+    const html = hubEngineChipHtml("claude-code", rows, esc, icon, null, now)
+    const at = now + 90 * 60_000
+    expect(html).toContain('<b>42%</b><span class="hsu__rs hs__long">resets <time datetime="' + new Date(at).toISOString() + '"')
+    expect(html).toContain(">" + hubClock(at, now) + "</time></span>")
+    expect(html.match(/hsu__rs/g)).toHaveLength(2)
+    expect(hubEngineChipHtml("claude-code", rows, esc, icon)).not.toContain("hsu__rs")
   })
 
   it("the engine drop-down: bars, reset, when read, its agents, and Add account for the owner (R28b, c, h)", () => {
@@ -276,6 +294,7 @@ describe("the daemon's readings, shaped for the bar (R28g causes 1 and 3)", () =
   })
 
   it("the dashboard asks the daemon's /usage/plan with the mesh token, and fails loudly on an error", async () => {
+    resetHubUsageCache()
     const calls: Array<{ url: string; auth?: string }> = []
     const ok = (async (url: string, init: any) => { calls.push({ url, auth: init.headers.Authorization }); return new Response(JSON.stringify(plan()), { status: 200 }) }) as any
     const config = { dashboard: { daemonUrl: "http://127.0.0.1:4000/", token: "dash", daemons: [] } } as any
@@ -285,7 +304,23 @@ describe("the daemon's readings, shaped for the bar (R28g causes 1 and 3)", () =
     await fetchHubUsage(config, ok, {}, now)
     expect(calls[1].auth).toBe("Bearer dash")
     const bad = (async () => new Response("no", { status: 401 })) as any
-    await expect(fetchHubUsage(config, bad, {}, now)).rejects.toThrow("daemon usage read answered 401")
+    resetHubUsageCache()
+    await expect(fetchHubUsage(config, bad, {}, now, () => {})).rejects.toThrow("daemon usage read answered 401")
+  })
+
+  it("a daemon that does not answer in time leaves its last answer standing for 15 minutes, aged by today's clock (R5)", async () => {
+    resetHubUsageCache()
+    const config = { dashboard: { daemonUrl: "http://127.0.0.1:4000", token: "dash", daemons: [] } } as any
+    const ok = (async () => new Response(JSON.stringify(plan()), { status: 200 })) as any
+    const slow = (async () => { throw new Error("The operation was aborted due to timeout") }) as any
+    const logs: string[] = []
+    const first = await fetchHubUsage(config, ok, {}, now)
+    const again = await fetchHubUsage(config, slow, {}, now + 60_000, (m) => logs.push(m))
+    expect(again).toEqual(hubUsageFromPlan(plan(), now + 60_000))
+    expect(again.engines.map((e) => e.engine)).toEqual(first.engines.map((e) => e.engine))
+    expect(logs).toEqual(["[hub] daemon usage not read, last answer used: The operation was aborted due to timeout"])
+    await expect(fetchHubUsage(config, slow, {}, now + 16 * 60_000, (m) => logs.push(m))).rejects.toThrow("timeout")
+    expect(logs[1]).toBe("[hub] daemon usage not read: The operation was aborted due to timeout")
   })
 
   it("the daemon's /usage/plan carries Codex only when it was read", () => {
