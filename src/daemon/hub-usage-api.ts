@@ -59,6 +59,8 @@ export interface HubEngineUsage {
   plan?: string
   /** Every account of this engine, when the owner added more than the default one (R28d). */
   accounts?: HubAccountUsage[]
+  /** Why the plan % is not read now (#2101 R5): the login ran out, or the usage service asked to wait. */
+  unread?: "login" | "rate-limited"
 }
 
 /** Today's recorded run cost on this machine, for the API engines (#2101 R28e). */
@@ -117,8 +119,9 @@ export function hubUsageFromPlan(plan: any, now: number = Date.now()): HubUsage 
   const engines: HubEngineUsage[] = []
   const rows = [...claude.values()]
   const claudeAccounts = plan?.accounts?.claude
-  if (rows.length || Array.isArray(claudeAccounts)) {
-    engines.push(withAccounts({ engine: "claude-code", rows, readAt: rows.length ? Math.max(...rows.map((r) => r.at)) : null, source: fromPlan || !rows.length ? "plan" : "runs" }, claudeAccounts, READING_MAX_AGE_MS, now))
+  const unread = fromPlan ? undefined : unreadReason(plan?.reader?.lastError?.kind)
+  if (rows.length || Array.isArray(claudeAccounts) || unread) {
+    engines.push(withAccounts({ engine: "claude-code", rows, readAt: rows.length ? Math.max(...rows.map((r) => r.at)) : null, source: fromPlan || !rows.length ? "plan" : "runs", ...(unread && { unread }) }, claudeAccounts, READING_MAX_AGE_MS, now))
   }
   const codex = plan?.codex
   const codexAt = num(codex?.readAt)
@@ -129,6 +132,12 @@ export function hubUsageFromPlan(plan: any, now: number = Date.now()): HubUsage 
   }
   const windows = rows.filter((r) => r.utilization !== undefined).map((r) => ({ window: r.window, utilization: r.utilization!, ...(r.resetsAt && { resetsAt: r.resetsAt }) }))
   return { engines, windows, readAt: rows.length ? Math.max(...rows.map((r) => r.at)) : null }
+}
+
+/** The reader's last error kind (claude-plan-usage.ts), as the bar says it; nothing for an error the owner cannot act on. */
+function unreadReason(kind: unknown): HubEngineUsage["unread"] {
+  if (kind === "stale-login" || kind === "signed-out" || kind === "no-login" || kind === "missing-scope") return "login"
+  return kind === "rate-limited" ? "rate-limited" : undefined
 }
 
 /** A reading's windows that have a percentage, as rows read at `at`. */

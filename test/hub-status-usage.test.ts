@@ -156,6 +156,11 @@ describe("status bar items and drop-downs", () => {
     expect(none).not.toContain("hsu__read")
     expect(none).not.toContain("not known")
     expect(none).toContain("Add account")
+    const login = hubEnginePopHtml("claude-code", { engine: "claude-code", rows: [], readAt: now, source: "runs", unread: "login" }, r, [], now, esc, icon, false)
+    expect(login).toContain("Plan usage not read: the Claude login on this machine has run out. Sign in again with <code>claude /login</code>.")
+    expect(login).toContain('<span class="hsu__st">Allowed</span>')
+    const wait = hubEnginePopHtml("claude-code", { engine: "claude-code", rows: [], readAt: null, source: "plan", unread: "rate-limited" }, [], [], now, esc, icon, false)
+    expect(wait).toContain("Plan usage not read yet: Claude's usage service asked to wait.")
   })
 
   it("the agents drop-down: state, engine, and Chat / Open run / Pause / Stop run (R28f)", () => {
@@ -247,6 +252,21 @@ describe("the daemon's readings, shaped for the bar (R28g causes 1 and 3)", () =
   it("adds Codex from its session reading, with its plan", () => {
     const u = hubUsageFromPlan(plan({ codex: { readAt: now - 3600_000, plan: "plus", windows: [{ window: "five_hour", utilization: 0.09, resetsAt: now + 60_000 }, { window: "x" }] } }), now)
     expect(u.engines[1]).toEqual({ engine: "codex-cli", source: "session", plan: "plus", readAt: now - 3600_000, rows: [{ window: "five_hour", utilization: 0.09, resetsAt: now + 60_000, at: now - 3600_000 }] })
+  })
+
+  // #2101 R5: on the Mac the reader never read a % (its login had run out),
+  // so the item said only "Claude". The drop-down now says why.
+  it("says why the plan % is not read: a lapsed login or a wait asked by the usage service", () => {
+    const lapsed = hubUsageFromPlan(plan({
+      reader: { reading: null, lastError: { kind: "stale-login", message: "x", at: now } },
+      provider: [{ window: "seven_day", status: "allowed", resetsAt: now + 3600_000, seenAt: now - 10_000 }],
+    }), now)
+    expect(lapsed.engines[0]).toMatchObject({ engine: "claude-code", source: "runs", unread: "login" })
+    const waiting = hubUsageFromPlan(plan({ reader: { reading: null, lastError: { kind: "rate-limited", message: "x", at: now } } }), now)
+    expect(waiting.engines).toEqual([{ engine: "claude-code", rows: [], readAt: null, source: "plan", unread: "rate-limited" }])
+    // A fresh reading says nothing more; an error the owner cannot act on says nothing.
+    expect(hubUsageFromPlan(plan({ reader: { ...plan().reader, lastError: { kind: "stale-login" } } }), now).engines[0].unread).toBeUndefined()
+    expect(hubUsageFromPlan(plan({ reader: { reading: null, lastError: { kind: "failed" } } }), now).engines).toEqual([])
   })
 
   it("has no engines with no readings at all", () => {

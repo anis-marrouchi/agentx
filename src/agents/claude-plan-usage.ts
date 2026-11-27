@@ -72,7 +72,10 @@ export interface StoredLogin {
 export interface LoginReadDeps {
   env?: NodeJS.ProcessEnv
   home?: string
-  readKeychain?: (service: string) => Promise<string | null>
+  /** One keychain item of `service`; with `account`, that account's only. */
+  readKeychain?: (service: string, account?: string) => Promise<string | null>
+  /** The OS user name Claude Code saves its login under (default: os.userInfo()). */
+  user?: string
   readFile?: (file: string) => string | null
   now?: number
 }
@@ -104,16 +107,46 @@ export function parseStoredLogin(raw: string | null, source: LoginSource, now: n
 export async function readStoredLogin(deps: LoginReadDeps = {}): Promise<StoredLogin> {
   const env = deps.env ?? process.env
   const home = deps.home ?? os.homedir()
-  const readKeychain = deps.readKeychain ?? ((service: string) => readClaudeCodeKeychainEntry(service))
+  const readKeychain = deps.readKeychain ?? ((service: string, account?: string) => readClaudeCodeKeychainEntry(service, account))
   const readFile = deps.readFile ?? readFileOrNull
   const now = deps.now ?? Date.now()
   const configDir = env.CLAUDE_CONFIG_DIR?.trim() || undefined
+  const user = deps.user ?? currentUser()
+  const service = keychainServiceFor(configDir)
+  const kc: LoginSource = configDir ? "config-dir-keychain" : "keychain"
 
-  // The OS keychain first (macOS only; elsewhere it reads nothing), then the file.
-  const fromKeychain = parseStoredLogin(await readKeychain(keychainServiceFor(configDir)), configDir ? "config-dir-keychain" : "keychain", now)
-  if (fromKeychain) return fromKeychain
-  const file = path.join(configDir ?? path.join(home, ".claude"), ".credentials.json")
-  return parseStoredLogin(readFile(file), "credentials-file", now) ?? { token: null, source: "none", renewable: false }
+  // Claude Code saves its login under the user's account name. An item an
+  // older Claude Code saved (account "Claude Code") can sit beside it with
+  // the same service and a login that ran out months ago (#2101 R5): the
+  // keychain items and the file are all read, and the login that runs out
+  // last wins. On a tie the keychain comes first, then the file.
+  const raws: Array<[string | null, LoginSource]> = [
+    [user ? await readKeychain(service, user) : null, kc],
+    [await readKeychain(service), kc],
+    [readFile(path.join(configDir ?? path.join(home, ".claude"), ".credentials.json")), "credentials-file"],
+  ]
+  let best: { login: StoredLogin; expires: number } | null = null
+  for (const [raw, source] of raws) {
+    const login = parseStoredLogin(raw, source, now)
+    if (!login) continue
+    const expires = loginExpiresAt(raw)
+    if (!best || expires > best.expires) best = { login, expires }
+  }
+  return best?.login ?? { token: null, source: "none", renewable: false }
+}
+
+/** When a stored login's access token runs out (ms); 0 when it does not say. */
+function loginExpiresAt(raw: string | null): number {
+  try {
+    const e = (JSON.parse(raw ?? "null") as { claudeAiOauth?: { expiresAt?: unknown } } | null)?.claudeAiOauth?.expiresAt
+    return typeof e === "number" && Number.isFinite(e) ? e : 0
+  } catch {
+    return 0
+  }
+}
+
+function currentUser(): string | undefined {
+  try { return os.userInfo().username || undefined } catch { return undefined }
 }
 
 // --- The usage endpoint ---

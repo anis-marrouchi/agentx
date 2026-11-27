@@ -169,13 +169,42 @@ describe("readStoredLogin", () => {
   it("reads the Keychain entry of the config folder Claude Code uses", async () => {
     const asked: string[] = []
     const got = await readStoredLogin({
-      env: { CLAUDE_CONFIG_DIR: "/x/claude" }, home: "/h",
-      readKeychain: async (s) => { asked.push(s); return login("tok-a") },
+      env: { CLAUDE_CONFIG_DIR: "/x/claude" }, home: "/h", user: "me",
+      readKeychain: async (s, a) => { asked.push(a ? `${s}|${a}` : s); return login("tok-a") },
       readFile: () => null,
     })
-    expect(asked).toEqual([keychainServiceFor("/x/claude")])
-    expect(asked[0]).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/)
+    expect(asked).toEqual([`${keychainServiceFor("/x/claude")}|me`, keychainServiceFor("/x/claude")])
+    expect(asked[1]).toMatch(/^Claude Code-credentials-[0-9a-f]{8}$/)
     expect(got).toEqual({ token: "tok-a", source: "config-dir-keychain", renewable: true })
+  })
+
+  // #2101 R5: the Mac had an item from June (account "Claude Code") beside
+  // the one Claude Code renews (account = the user). `security` without an
+  // account returned the June one, so the reader never read a percentage.
+  it("takes the login that runs out last when two keychain items share the service", async () => {
+    const at = (token: string, expiresAt: number) => JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "r", expiresAt } })
+    const got = await readStoredLogin({
+      env: {}, home: "/h", user: "me", now: 5_000,
+      readKeychain: async (_s, a) => (a === "me" ? at("fresh", 9_000) : at("june", 1_000)),
+      readFile: () => null,
+    })
+    expect(got.token).toBe("fresh")
+    const older = await readStoredLogin({
+      env: {}, home: "/h", user: "me", now: 5_000,
+      readKeychain: async (_s, a) => (a === "me" ? at("old-user", 1_000) : at("newer", 9_000)),
+      readFile: () => null,
+    })
+    expect(older.token).toBe("newer")
+  })
+
+  it("takes the credentials file when it runs out later than the keychain login", async () => {
+    const at = (token: string, expiresAt: number) => JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "r", expiresAt } })
+    const got = await readStoredLogin({
+      env: {}, home: "/h", user: "me",
+      readKeychain: async () => at("kc", 1_000),
+      readFile: () => at("file", 9_000),
+    })
+    expect(got).toEqual({ token: "file", source: "credentials-file", renewable: true })
   })
 
   it("falls back to the credentials file when the keychain has nothing", async () => {
