@@ -36,9 +36,12 @@ export const WALL_KEEP_SCRIPT = String.raw`
     for (var i = 0; i < all.length; i++) if (keyOf(all[i]) === key) return all[i];
     return null;
   }
+  // A fold that keeps its own open state: the side tree's (data-lt-key) and
+  // any marked data-keep-own (the Agents Sheet's folds, which open on an error).
+  function keepOwn(d) { return d.hasAttribute('data-lt-key') || d.hasAttribute('data-keep-own'); }
   function keepSnap(where) {
     var k = { where: where, y: window.scrollY || 0, open: {}, lists: {}, inner: [] };
-    document.querySelectorAll('.ax-wall details').forEach(function (d) { if (!d.hasAttribute('data-lt-key')) k.open[keepKey(d)] = !!d.open; });
+    document.querySelectorAll('.ax-wall details').forEach(function (d) { if (!keepOwn(d)) k.open[keepKey(d)] = !!d.open; });
     document.querySelectorAll('.ax-wall [data-more-list]').forEach(function (l) {
       if (!l.hidden) k.lists[keepBox(l) + '|' + l.getAttribute('data-more-list')] = true;
     });
@@ -47,7 +50,7 @@ export const WALL_KEEP_SCRIPT = String.raw`
   }
   function keepApply(k, where) {
     document.querySelectorAll('.ax-wall details').forEach(function (d) {
-      if (d.hasAttribute('data-lt-key')) return;
+      if (keepOwn(d)) return;
       var was = k.open[keepKey(d)];
       if (was === true && !d.open) d.open = true;
       else if (was === false && d.open) d.open = false;

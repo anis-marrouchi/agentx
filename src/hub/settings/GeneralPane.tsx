@@ -14,12 +14,13 @@ import {
 } from "../ui"
 import { agentHash, settingsHash } from "./address"
 import {
-  AGENT_ID, ENGINE_CHOICES, activeTokens, channelSummary, engineName, initials, needsYou, nodeChecking, nodeDown, orgNode, restartWaiting,
+  ENGINE_CHOICES, activeTokens, channelSummary, engineName, initials, needsYou, nodeChecking, nodeDown, orgNode, restartWaiting,
   type AdminState, type LiveNode, type LiveReply, type OrgReply, type StateAgent, type TokenRow,
 } from "./data"
 import { Ago, Disclosure, EngineLogo, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows, ToneDot } from "./parts"
 import { paneDef } from "./panes"
 import { waitingHref } from "../waiting"
+import { INSTRUCTIONS_MAX, agmField, agmFieldProblem } from "../../agents/agent-form"
 
 const PANE = "general"
 const RESTART = "agentx daemon restart --when-idle"
@@ -244,9 +245,13 @@ function AddAgentDialog({ open, onOpenChange, taken }: { open: boolean; onOpenCh
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const id = f.id.trim()
+    // The one agent form's checks (#2144), the same sentences the Hub's Agents page and the server use.
     if (!id) return setError({ field: "id", text: "Give the agent an id." })
-    if (!AGENT_ID.test(id)) return setError({ field: "id", text: "Use lowercase letters, digits, - and _." })
+    const bad = agmFieldProblem("id", id)
+    if (bad) return setError({ field: "id", text: bad })
     if (taken.includes(id)) return setError({ field: "id", text: `@${id} already exists.` })
+    const long = agmFieldProblem("instructions", f.personality)
+    if (long) return setError({ field: "personality", text: long })
     add.mutate({ ...f, id, name: f.name.trim(), triggerWords: f.triggerWords.trim(), model: f.model.trim(), personality: f.personality.trim() })
   }
   const close = (v: boolean) => { onOpenChange(v); if (!v) { setDone(""); setError(null); setMore(false) } }
@@ -268,7 +273,7 @@ function AddAgentDialog({ open, onOpenChange, taken }: { open: boolean; onOpenCh
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-sm">Agent id
                 <input autoFocus className={input + " font-mono"} value={f.id} onChange={(e) => set("id", e.target.value)} placeholder="sales" autoComplete="off" aria-invalid={error?.field === "id"} />
-                <span className="text-xs text-muted-foreground">Lowercase letters, digits, - and _</span>
+                <span className="text-xs text-muted-foreground">{agmField("id").help.replace(/^From the name if empty: /, "")}</span>
               </label>
               <label className="flex flex-col gap-1 text-sm">Name
                 <input className={input} value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Sales Desk" />
@@ -293,7 +298,7 @@ function AddAgentDialog({ open, onOpenChange, taken }: { open: boolean; onOpenCh
             </div>
             <Disclosed open={more} onOpenChange={setMore}>
               <label className="flex flex-col gap-1 text-sm">Instructions
-                <textarea rows={3} maxLength={4000} className={input + " h-auto py-2"} value={f.personality} onChange={(e) => set("personality", e.target.value)} placeholder="You answer pricing questions and pass support questions to @cx." />
+                <textarea rows={3} maxLength={INSTRUCTIONS_MAX} className={input + " h-auto py-2"} value={f.personality} onChange={(e) => set("personality", e.target.value)} placeholder="You answer pricing questions and pass support questions to @cx." />
               </label>
               <div className="flex items-center justify-between gap-4 text-sm">
                 <span className="flex flex-col gap-0.5">Answer on the public API<span className="text-xs text-muted-foreground">A token with agent:&lt;id&gt; scope can reach it.</span></span>

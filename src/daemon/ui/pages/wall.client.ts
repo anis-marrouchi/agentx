@@ -87,7 +87,8 @@ import { WALL_NUMBERS_SCRIPT } from "./wall-numbers.client"
 import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numDeptOf, numEsc, numFilter, numGroups, numJobHtml, numMerge, numRank, numRowHtml, numSourceText, numSparkSvg, numStatusHtml, numTagKinds, numTagsOf, numbersPageHtml, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml } from "./wall-numbers"
 import { WALL_JOBLEDGER_SCRIPT } from "./wall-jobledger.client"
 import { WALL_AGENTS_SCRIPT } from "./wall-agents.client"
-import { agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml } from "./wall-agents"
+import { agmEsc, agmIcon, agmStatus, agmStatusHtml, agmWorkspaceLine, agmFormHtml, agmActsHtml, agmRemoveHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml } from "./wall-agents"
+import { agmField, agmFields, agmLimits, agmModelGroups, agmModelHelp, agmSlug, agmFieldProblem, agmCreateErrors, agmFirstError, agmCreateSteps, agmFormOf, agmEditSteps, agmWorkspacePath } from "@/agents/agent-form"
 import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlQueueHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
 import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
@@ -150,7 +151,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, ltNodeCounts, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml })}
   ${injectFns({ ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml })}
-  ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
+  ${injectFns({ agmField, agmFields, agmLimits, agmModelGroups, agmModelHelp, agmSlug, agmFieldProblem, agmCreateErrors, agmFirstError, agmCreateSteps, agmFormOf, agmEditSteps, agmWorkspacePath, agmEsc, agmIcon, agmStatus, agmStatusHtml, agmWorkspaceLine, agmFormHtml, agmActsHtml, agmRemoveHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
   ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_KEEP_SCRIPT}
 ${WALL_REVIEWS_SCRIPT}
@@ -845,7 +846,7 @@ ${HUB_NAV_SCRIPT}
       h['Content-Type'] = 'application/json';
       var r = await fetch(path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined });
       var b = await r.json().catch(function () { return {}; });
-      return r.ok ? { ok: true, body: b } : { ok: false, error: b.error || ('HTTP ' + r.status) };
+      return r.ok ? { ok: true, body: b } : { ok: false, error: b.error || ('HTTP ' + r.status), status: r.status, body: b };
     } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
   function note(text) { S.doNote = text; var el = $('wdo-note'); if (el) el.textContent = text; }

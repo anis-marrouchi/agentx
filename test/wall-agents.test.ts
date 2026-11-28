@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "os"
 import { join } from "path"
 import { Readable } from "stream"
-import { agentWorkspace, handleAdminApi } from "../src/daemon/admin-panel"
+import { agentWorkspace, handleAdminApi, setRunningOfForTest, workspaceProblem } from "../src/daemon/admin-panel"
+import { chmodSync } from "fs"
 import { wallSettingsTarget, isWallWrite } from "../src/daemon/wall-actions"
 import {
-  agmActsHtml, agmCreateSteps, agmEditSteps, agmFormHtml, agmFormOf, agmHeadHtml, agmSlug, agmStatus, agmStatusHtml, agmTestHtml,
+  agmActsHtml, agmCreateSteps, agmEditSteps, agmFormHtml, agmFormOf, agmHeadHtml, agmRemoveHtml, agmSlug, agmStatus, agmStatusHtml, agmTestHtml,
 } from "../src/daemon/ui/pages/wall-agents"
 import { LIVE, STATE, openWall } from "./wall-settings-harness"
 
@@ -64,7 +65,9 @@ describe("agmCreateSteps: one form, the existing routes in order", () => {
   it("refuses a missing name, a bad id, a token value instead of its name, and half a Slack", () => {
     expect(agmCreateSteps({}).error).toBe("Give the agent a name.")
     expect(agmCreateSteps({ name: "X", id: "Bad Id" }).error).toMatch(/lowercase/)
-    expect(agmCreateSteps({ name: "X", telegramEnv: "123:abc" }).error).toMatch(/^Telegram token: write the environment variable's name/)
+    expect(agmCreateSteps({ name: "X", telegramEnv: "123:abc" }).error).toMatch(/^Telegram bot token: write the environment variable's name/)
+    // Every field's problem, for the error under each field (#2144).
+    expect(agmCreateSteps({ id: "Bad Id", telegramEnv: "123:abc" }).errors).toMatchObject({ name: "Give the agent a name.", id: expect.stringMatching(/lowercase/), telegramEnv: expect.stringMatching(/capitals/) })
     expect(agmCreateSteps({ name: "X", slackBotEnv: "SLACK_BOT" }).error).toMatch(/both token names/)
     expect(agmCreateSteps({ name: "X", instructions: "a".repeat(4001) }).error).toMatch(/up to 4000 characters/)
     expect(agmCreateSteps({ name: "X", instructions: "a".repeat(4000) }).error).toBe("")
@@ -72,7 +75,9 @@ describe("agmCreateSteps: one form, the existing routes in order", () => {
   it("asks before taking this machine's one Slack or Discord bot from another agent", () => {
     const f = { name: "Sales", slackBotEnv: "SLACK_BOT", slackAppEnv: "SLACK_APP", discordEnv: "DISCORD_TOKEN" }
     const bound = { slack: "cx", discord: "ops" }
-    expect(agmCreateSteps(f, bound).error).toBe('Slack\'s bot answers as @cx now. Tick "Move the Slack bot" to make it answer as @sales, or leave the Slack fields empty.')
+    // Both asked at once, each under its own field; the note says the first in form order (Discord, then Slack).
+    expect(agmCreateSteps(f, bound).errors).toMatchObject({ moveSlack: 'Slack\'s bot answers as @cx now. Tick "Move the Slack bot" to make it answer as @sales, or leave the Slack fields empty.' })
+    expect(agmCreateSteps({ ...f, moveDiscord: true }, bound).error).toMatch(/^Slack's bot answers as @cx now/)
     expect(agmCreateSteps({ ...f, moveSlack: true }, bound).error).toMatch(/^Discord's bot answers as @ops now/)
     const plan = agmCreateSteps({ ...f, moveSlack: true, moveDiscord: true }, bound)
     expect(plan.steps[1].body).toEqual({ botTokenEnv: "SLACK_BOT", appTokenEnv: "SLACK_APP", agentBinding: "sales", moveBot: true })
@@ -82,7 +87,7 @@ describe("agmCreateSteps: one form, the existing routes in order", () => {
     expect(free.error).toBe("")
     expect(free.steps.every((s) => !("moveBot" in s.body))).toBe(true)
     // The form says whom each bot answers as, and offers the move.
-    const html = agmFormHtml({ name: "Sales" }, "new", ENGINES, "", { slack: "cx", discord: "" })
+    const html = agmFormHtml({ name: "Sales" }, "new", ENGINES, { bound: { slack: "cx", discord: "" } })
     expect(html).toContain("It answers as <b>@cx</b> now.")
     expect(html).toContain('id="agm-f-moveSlack"')
     expect(html).not.toContain('id="agm-f-moveDiscord"')
@@ -114,20 +119,31 @@ describe("agmEditSteps: only what changed", () => {
 describe("the manager's markup escapes fleet text", () => {
   const evil = '<img src=x onerror="alert(1)">'
   it("in the form, the buttons, the test drive and the head", () => {
-    const form = agmFormHtml({ name: evil, role: evil, workspace: evil, instructions: evil, tier: "codex-cli" }, "new", ENGINES, evil)
+    const form = agmFormHtml({ name: evil, role: evil, workspace: evil, instructions: evil, tier: "codex-cli" }, "new", ENGINES, { note: evil, errors: { name: evil }, base: "/d", home: "/h" })
     expect(form).not.toContain("<img")
     expect(form).toContain('value="&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"')
     expect(form).toContain('<option value="codex-cli" selected>')
     for (const id of ["agm-f-name", "agm-f-id", "agm-f-role", "agm-f-workspace", "agm-f-tier", "agm-f-model", "agm-f-telegramEnv", "agm-f-slackBotEnv", "agm-f-discordEnv"]) expect(form).toContain(`id="${id}"`)
-    const edit = agmFormHtml({ id: "cx", name: "Desk", workspace: "/w/<cx>" }, "edit", ENGINES, "")
+    const edit = agmFormHtml({ id: "cx", name: "Desk", workspace: "/w/<cx>" }, "edit", ENGINES, {})
     expect(edit).toContain('data-agm-form="edit" data-id="cx"')
     expect(edit).not.toContain('id="agm-f-workspace"')
-    expect(edit).toContain("<code>/w/&lt;cx&gt;</code>")
-    expect(agmFormHtml({ id: "a&b", name: "D" }, "edit", ENGINES, "")).toContain("agent=a%26b\"")
+    expect(edit).toContain('<code class="agm-path">/w/&lt;cx&gt;</code>')
+    expect(agmFormHtml({ id: "a&b", name: "D" }, "edit", ENGINES, {})).toContain("agent=a%26b\"")
     const acts = agmActsHtml("cx", evil, agmStatus({ running: 0, needs: 0, hold: "", started: true }), "", "cx")
     expect(acts).not.toContain("<img")
     expect(acts).toContain('data-agm-act="pause" data-id="cx"')
-    expect(acts).toContain('data-agm-act="remove" data-id="cx"')
+    // Test drive and Remove sit in the open "…" menu, Remove last after a line.
+    expect(acts).toMatch(/data-agm-act="test" data-id="cx".*<hr>.*class="is-danger" data-agm-act="ask" data-id="cx"/s)
+    expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "", started: true }), "", "")).not.toContain('data-agm-act="ask"')
+    const rm = agmRemoveHtml({ id: "cx", name: evil, workspace: "/w/<cx>", running: 0 })
+    expect(rm).not.toContain("<img")
+    expect(rm).toContain('role="alertdialog"')
+    expect(rm).toContain('data-agm-act="remove" data-id="cx"')
+    expect(rm).toContain("<code>/w/&lt;cx&gt;</code>")
+    const busy = agmRemoveHtml({ id: "cx", name: "D", workspace: "", running: 2 })
+    expect(busy).toContain("@cx has 2 tasks running.")
+    expect(busy).toMatch(/id="agm-rm-go" data-agm-act="remove-idle"/)
+    expect(busy).toContain('data-agm-act="remove-now"')
     expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "paused", started: true }), "paused", "")).toContain('data-agm-act="resume"')
     expect(agmActsHtml("cx", "D", agmStatus({ running: 0, needs: 0, hold: "waiting", started: true }), "waiting", "")).toContain("Approve in Waiting on you")
     expect(agmTestHtml("cx", evil, { agent: "cx", msgs: [{ kind: "agent", text: evil }] })).not.toContain("<img")
@@ -240,6 +256,54 @@ describe("DELETE /api/admin/agents and the bots: Remove leaves nothing behind (#
     return { status, json: JSON.parse(out) }
   }
 
+  it("refuses a busy agent with 409 and its running count, and removes it with force (#2144)", async () => {
+    expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales" })).status).toBe(200)
+    setRunningOfForTest(async () => ({ sales: 2, lead: 1 }))
+    try {
+      expect(await call({ id: "sales" }, "DELETE")).toEqual({ status: 409, json: { running: 2, error: "@sales has 2 tasks running." } })
+      expect(saved().agents.sales).toBeTruthy()
+      expect((await call({ id: "sales", force: true }, "DELETE")).status).toBe(200)
+      expect(saved().agents.sales).toBeUndefined()
+    } finally { setRunningOfForTest(null) }
+    // The daemon not answering means nothing of it runs: removed.
+    expect((await call({ id: "lead" }, "DELETE")).status).toBe(200)
+  })
+
+  it("never deletes the workspace folder or its files (#2144 C4)", async () => {
+    expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales" })).status).toBe(200)
+    const ws = saved().agents.sales.workspace
+    writeFileSync(join(ws, "notes.md"), "keep me")
+    expect((await call({ id: "sales" }, "DELETE")).status).toBe(200)
+    expect(readFileSync(join(ws, "notes.md"), "utf-8")).toBe("keep me")
+    expect(existsSync(join(ws, "CLAUDE.md"))).toBe(true)
+    // Created again with the same folder, it finds its files there.
+    expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales", workspace: ws })).status).toBe(200)
+    expect(readFileSync(join(ws, "notes.md"), "utf-8")).toBe("keep me")
+  })
+
+  it("refuses a workspace that is a file or cannot be written, and saves nothing (#2144 C1)", async () => {
+    const before = readFileSync(join(dir, "agentx.json"), "utf-8")
+    writeFileSync(join(dir, "afile"), "x")
+    const file = await call({ id: "w1", name: "W", triggerWords: "@w1", workspace: "afile" })
+    expect(file).toEqual({ status: 400, json: { field: "workspace", error: `The workspace is a file, not a folder: ${join(dir, "afile")}.` } })
+    const under = await call({ id: "w2", name: "W", triggerWords: "@w2", workspace: "afile/sub" })
+    expect(under.json).toEqual({ field: "workspace", error: `The workspace cannot be made: ${join(dir, "afile")} is a file.` })
+    expect(workspaceProblem(join(dir, "new", "deep"))).toBe("")
+    if (process.getuid?.() !== 0) {
+      mkdirSync(join(dir, "locked"))
+      chmodSync(join(dir, "locked"), 0o555)
+      try {
+        const locked = await call({ id: "w3", name: "W", triggerWords: "@w3", workspace: "locked/ws" })
+        expect(locked.json).toEqual({ field: "workspace", error: `The workspace cannot be made: AgentX cannot write in ${join(dir, "locked")}.` })
+        expect(existsSync(join(dir, "locked", "ws"))).toBe(false)
+      } finally { chmodSync(join(dir, "locked"), 0o755) }
+    }
+    expect(readFileSync(join(dir, "agentx.json"), "utf-8")).toBe(before)
+    // A refused save (the id is taken) leaves no empty folder behind.
+    expect((await call({ id: "lead", name: "Lead 2", triggerWords: "@lead", workspace: "fresh" })).status).toBe(400)
+    expect(existsSync(join(dir, "fresh"))).toBe(false)
+  })
+
   it("takes the agent out of the org chart with its lines, so the same id is created again with a role", async () => {
     expect((await call({ id: "sales", name: "Sales", triggerWords: "@sales", role: "Sales lead" })).status).toBe(200)
     expect((await call({ op: "add-member", member: "agent:lead", role: "Boss" }, "POST", "/api/admin/org/chart")).status).toBe(200)
@@ -301,12 +365,12 @@ describe("DELETE /api/admin/agents and the bots: Remove leaves nothing behind (#
 
   it("keeps the same instructions limit on create and edit, and does not cut them", async () => {
     const long = "a".repeat(4001)
-    expect((await call({ id: "w", name: "W", triggerWords: "@w", personality: long })).json.error).toMatch(/longer than 4000 characters/)
+    expect((await call({ id: "w", name: "W", triggerWords: "@w", personality: long })).json.error).toMatch(/up to 4000 characters/)
     expect(saved().agents.w).toBeUndefined()
     const ok = "b".repeat(1200)
     expect((await call({ id: "w", name: "W", triggerWords: "@w", personality: ok })).status).toBe(200)
     expect(saved().agents.w.systemPrompt).toBe(ok)
-    expect((await call({ id: "w", patch: { systemPrompt: long } }, "PATCH")).json.error).toMatch(/longer than 4000 characters/)
+    expect((await call({ id: "w", patch: { systemPrompt: long } }, "PATCH")).json.error).toMatch(/up to 4000 characters/)
     expect((await call({ id: "w", patch: { systemPrompt: "c".repeat(4000) } }, "PATCH")).status).toBe(200)
   })
 })
@@ -340,7 +404,15 @@ describe("the Hub's Agents page (#2144)", () => {
   })
 
   it("creates an agent from one form, asks for the restart, then test drives it", async () => {
-    const w = openWall({ hash: "#page=agents", route: (u, i) => u === P + "/agents/test" && i.method === "POST" ? { status: 200, body: { chatId: "c", response: { content: "Hello, I am Sales." } } } : undefined })
+    // @sales shows in the live list once the restart is done, and in the saved settings after the create.
+    let started = false, created = false
+    const withSales = { nodes: [{ ...LIVE.nodes[0], agents: [...LIVE.nodes[0].agents, { id: "sales", name: "Sales", runningTasks: [] }] }] }
+    const w = openWall({ hash: "#page=agents", route: (u, i) =>
+      u === P + "/agents/test" && i.method === "POST" ? { status: 200, body: { chatId: "c", response: { content: "Hello, I am Sales." } } }
+      : u === P + "/agents" && i.method === "POST" ? (created = true, { status: 200, body: { summary: "ok" } })
+      : u.startsWith("/api/live?") && started ? { status: 200, body: withSales }
+      : u === "/api/admin/state" && created ? { status: 200, body: { ...STATE, agents: [...(STATE as any).agents, { id: "sales", name: "Sales", tier: "claude-code", mentions: ["@sales"], workspace: "/w/sales" }] } }
+      : undefined })
     await w.settle()
     await w.click({ "data-agm-act": "new" })
     expect(page(w)).toContain('data-agm-form="new"')
@@ -349,7 +421,10 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.type("agm-f-workspace", "~/work/sales")
     await w.type("agm-f-model", "model-b")
     await w.type("agm-f-telegramEnv", "SALES_TG")
+    // Enter in a field: focus stays in the Sheet, and the page still closes it.
+    w.doc.activeElement = { id: "agm-f-telegramEnv" } as any
     await w.submit({ "data-agm-form": "new" })
+    expect(page(w)).not.toContain('data-agm-form="new"')
     expect(w.writes().map((c) => [c.method, c.url, c.body])).toEqual([
       ["POST", P + "/agents", { id: "sales", name: "Sales", triggerWords: "@sales", tier: "claude-code", model: "model-b", role: "Sales lead", workspace: "~/work/sales" }],
       ["POST", P + "/channels/telegram", { id: "sales", agentBinding: "sales", botTokenEnv: "SALES_TG" }],
@@ -358,7 +433,14 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.click({ "data-agm-act": "restart" })
     expect(w.writes().at(-1)).toMatchObject({ method: "POST", url: "/api/admin/wall/live/restart?node=" + encodeURIComponent(LIVE.nodes[0].url) })
     expect(page(w)).toContain("Restart asked")
-    // The test drive opened for it; it is only drawn on a card the settings list.
+    expect(page(w)).toContain("Waiting for @sales to start")
+    // Proof path: once /api/live reports @sales, its Test drive opens with a first message ready.
+    started = true
+    await w.click({ "data-agm-act": "restart" })
+    expect(page(w)).toContain("@sales started. Send the message below to test it.")
+    expect(page(w)).toContain('id="agm-td-text"')
+    expect(page(w)).toContain(">Say hello in one line.</textarea>")
+    // Test drive from the "…" menu on another card.
     await w.click({ "data-agm-act": "test", "data-id": "cx" })
     w.el("agm-td-text").value = "hi"
     await w.click({ "data-agm-act": "send", "data-id": "cx" })
@@ -391,12 +473,14 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.submit({ "data-agm-form": "new" })
     // The Slack bot answers as @cx: nothing is sent until the owner says yes.
     expect(w.writes()).toEqual([])
-    expect(w.el("agm-n-form").textContent).toMatch(/^Slack's bot answers as @cx now/)
+    // The sentence shows under the tick box; the note under the buttons counts the fields.
+    expect(w.el("agm-n-form").textContent).toBe("Not saved: fix the field in red.")
+    expect(page(w)).toContain('<p class="agm-err" id="agm-e-moveSlack">Slack&#39;s bot answers as @cx now.')
     await w.type("agm-f-moveSlack", true)
     await w.submit({ "data-agm-form": "new" })
     expect(w.writes().map((c) => c.url)).toEqual([P + "/agents", P + "/channels/telegram"])
-    // The repaint after the reload draws the note in the form that stays open.
-    expect(page(w)).toContain("Saved the agent; not Telegram: Account id is taken. Fix it and press Create agent again: what is saved is not sent again.")
+    // The note says it in the Sheet that stays open; the Hub's refresh does not repaint over the Sheet.
+    expect(w.el("agm-n-form").textContent).toBe("Saved the agent; not Telegram: Account id is taken. Fix it and press Create agent again: what is saved is not sent again.")
     expect(page(w)).toContain('data-agm-form="new"')
     expect(page(w)).toContain('value="SALES_TG"')
     telegramFails = false
@@ -409,11 +493,12 @@ describe("the Hub's Agents page (#2144)", () => {
     expect(page(w)).toContain("Created @sales.")
   })
 
-  it("edits, pauses, resumes and removes (after a confirm)", async () => {
+  it("edits in the Sheet, pauses, resumes and removes (after a confirm)", async () => {
     const w = openWall({ hash: "#page=agents" })
     await w.settle()
     await w.click({ "data-agm-act": "edit", "data-id": "cx" })
-    expect(card(w, "cx")).toContain('data-agm-form="edit" data-id="cx"')
+    expect(page(w)).toContain('class="agm-sheet is-enter" role="dialog" aria-modal="true"')
+    expect(page(w)).toContain('data-agm-form="edit" data-id="cx"')
     await w.type("agm-f-model", "model-c")
     await w.submit({ "data-agm-form": "edit", "data-id": "cx" })
     expect(w.writes().at(-1)).toEqual({ method: "PATCH", url: P + "/agents", body: { id: "cx", patch: { model: "model-c" } } })
@@ -422,9 +507,12 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.click({ "data-agm-act": "resume", "data-id": "ops" })
     expect(w.writes().at(-1)).toEqual({ method: "POST", url: P + "/org/hold", body: { agent: "ops", paused: false } })
     const before = w.writes().length
+    await w.click({ "data-agm-act": "menu", "data-id": "ops" })
+    expect(card(w, "ops")).toContain('id="agm-menu" role="menu"')
     await w.click({ "data-agm-act": "ask", "data-id": "ops" })
     expect(w.writes().length).toBe(before)
-    expect(card(w, "ops")).toContain("Remove @ops (Night Shift)?")
+    expect(page(w)).toContain('role="alertdialog"')
+    expect(page(w)).toContain("Remove @ops (Night Shift)?")
     await w.click({ "data-agm-act": "remove", "data-id": "ops" })
     expect(w.writes().at(-1)).toEqual({ method: "DELETE", url: P + "/agents", body: { id: "ops" } })
     expect(page(w)).toContain('data-agm-act="restart"')

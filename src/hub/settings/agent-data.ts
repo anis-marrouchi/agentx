@@ -6,7 +6,7 @@
 // agent's edit fields, its integrations and the actions; /api/workflows
 // says which workflow runs an action (an `action.run` or poll node's
 // `config.actionId`).
-import { seedModels } from "../../agents/conventions/seed-models"
+import { INSTRUCTIONS_MAX, MODEL_GROUPS } from "../../agents/agent-form"
 import type { AdminState, StateAgent } from "./data"
 
 export interface Integration {
@@ -53,7 +53,7 @@ export type AgentDraft = Partial<Record<AgentField, string>>
 const RESTART: Partial<Record<AgentField, string>> = { model: "model", permissionMode: "tool permissions" }
 export const RESTART_CMD = "agentx daemon restart --when-idle"
 export const PERMISSIONS = [["default", "Default"], ["plan", "Plan only"], ["bypassPermissions", "Bypass permissions"]] as const
-export const INSTRUCTIONS_MAX = 4000
+export { INSTRUCTIONS_MAX }
 
 export function savedValue(a: AgentConfig, k: AgentField): string {
   switch (k) {
@@ -132,8 +132,8 @@ export function money(n?: number): string {
 /** The models the picker offers, by engine, from the CLI catalog's seed
  *  lists (#2349). A typed name not in the list is offered too, so a new
  *  model needs no release. */
-export const MODEL_GROUPS: readonly { tier: string; models: readonly string[] }[] = (["claude-code", "codex-cli"] as const)
-  .map((tier) => ({ tier, models: seedModels(tier).map((m) => m.id) }))
+/** The pickers' models: the one agent form's list (src/agents/agent-form.ts). */
+export { MODEL_GROUPS }
 
 /** The engine a listed model belongs to; undefined for one typed by hand. */
 export function modelTier(model: string): string | undefined {
