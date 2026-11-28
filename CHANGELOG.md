@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.314.1](https://github.com/anis-marrouchi/agentx/compare/v0.314.0...v0.314.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** Feed and List have their final frame from the first paint ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2565](https://github.com/anis-marrouchi/agentx/issues/2565)) ([fa68fad](https://github.com/anis-marrouchi/agentx/commit/fa68fad5c579fae897e8b095fcd2a614b0619e3f))
+
 ## [0.314.0](https://github.com/anis-marrouchi/agentx/compare/v0.313.1...v0.314.0) (2026-11-28)
 
 
