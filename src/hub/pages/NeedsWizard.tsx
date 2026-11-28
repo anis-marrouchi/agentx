@@ -165,6 +165,32 @@ function RequestsStep({ items, live, onDone, onOneByOne, onSkip }: {
   )
 }
 
+/** One agent's answers: the first 3, then Show all (orca-design C22). */
+function SummaryGroup({ agent, answers }: { agent: string; answers: SentAnswer[] }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? answers : answers.slice(0, 3)
+  return (
+    <section className="flex flex-col gap-1.5" data-summary-agent={agent}>
+      <h3 className="text-xs text-muted-foreground">{agent ? "@" + agent : "No agent named"} · {answers.length}</h3>
+      <ul className="divide-y divide-border rounded-md border border-border text-[13px]">
+        {shown.map((a) => (
+          <li key={a.key} className="flex items-center gap-3 px-3 py-2">
+            <span className="shrink-0 font-medium">{a.words}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{a.title}</span>
+          </li>
+        ))}
+        {answers.length > 3 ? (
+          <li>
+            <button type="button" onClick={() => setAll(!all)} className="w-full px-3 py-2 text-left text-xs text-muted-foreground can-hover:hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              {all ? "Show fewer" : `Show all (${answers.length})`}
+            </button>
+          </li>
+        ) : null}
+      </ul>
+    </section>
+  )
+}
+
 /** The end: what went to whom, and what could not be sent. */
 export function WizardSummary({ sent, onClose }: { sent: SentAnswer[]; onClose: () => void }) {
   const { byAgent, failed } = sentSummary(sent)
@@ -175,19 +201,7 @@ export function WizardSummary({ sent, onClose }: { sent: SentAnswer[]; onClose: 
         <h2 className="flex items-center gap-2 text-base font-medium"><Icon name="circle-check" className="size-4 text-muted-foreground" />{count ? `${count} ${count === 1 ? "answer" : "answers"} sent` : "Nothing sent"}</h2>
         <p className="text-sm text-muted-foreground">{count ? "Each agent was told as you answered." : "You skipped them all. They still wait on you."}</p>
       </div>
-      {byAgent.map((g) => (
-        <section key={g.agent} className="flex flex-col gap-1.5" data-summary-agent={g.agent}>
-          <h3 className="text-xs text-muted-foreground">{g.agent ? "@" + g.agent : "No agent named"} · {g.answers.length}</h3>
-          <ul className="divide-y divide-border rounded-md border border-border text-[13px]">
-            {g.answers.map((a) => (
-              <li key={a.key} className="flex items-center gap-3 px-3 py-2">
-                <span className="shrink-0 font-medium">{a.words}</span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">{a.title}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {byAgent.map((g) => <SummaryGroup key={g.agent} agent={g.agent} answers={g.answers} />)}
       {failed.length ? (
         <section className="flex flex-col gap-1.5" data-summary="failed">
           <h3 className="text-xs text-err-ink">Not sent · {failed.length}</h3>

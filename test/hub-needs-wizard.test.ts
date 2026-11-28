@@ -106,6 +106,13 @@ describe("the wizard on screen", () => {
     expect(out).toContain("Not sent · 1")
     expect(out).toContain("offline")
   })
+  it("a long group shows 3, then Show all", () => {
+    const sent = Array.from({ length: 30 }, (_, n) => ({ key: "r" + n, title: "R" + n, agent: "ops", words: "Pick it up again" }))
+    const out = html(createElement(WizardSummary, { sent, onClose: () => {} }))
+    expect(out).toContain("30 answers sent")
+    expect(out).toContain("Show all (30)")
+    expect(out).not.toContain("R3<")
+  })
   it("skipping them all says nothing was sent", () => {
     expect(html(createElement(WizardSummary, { sent: [], onClose: () => {} }))).toContain("Nothing sent")
   })
