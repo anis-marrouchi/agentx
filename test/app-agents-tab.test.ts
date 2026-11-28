@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { IncomingMessage, ServerResponse } from "http"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
 import { APP_AGENTS_SCRIPT } from "../src/daemon/ui/pages/app-agents.client"
@@ -85,7 +85,11 @@ describe("the rows the phone draws", () => {
 })
 
 describe("GET /api/app/hub/agents", () => {
+  // The handler reads the clock: pin it to NOW, so the sent dayStart stays within two days.
+  afterEach(() => { vi.useRealTimers() })
   it("answers with the Hub's rows for the viewer's day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(NOW)
     const asked: number[][] = []
     const { res, out } = fakeRes()
     const local = NOW - 3_600_000
