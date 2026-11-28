@@ -40,8 +40,12 @@ export interface MenuGroup {
   /** The rows drawn now (the group's first `cap` while capped: 5 for
    *  Needs you, 3 for Working, hub-agents.ts haGroups). */
   rows: HaRow[]
-  /** Every row of the group that matches the search. */
+  /** Every row of the group that matches the search (Show all (N)). */
   total: number
+  /** The number on its heading: Needs you shows Waiting on you's number
+   *  (waiting.ts waitingCount) when it is known and nothing is searched;
+   *  every other group, and any search, shows `total`. */
+  count: number
   open: boolean
   capped: boolean
 }
@@ -53,8 +57,9 @@ const matches = (r: HaRow, needle: string) =>
  *  Working, Done today, Not working today), empty ones left out. Needs you
  *  and Working start open, the others folded. While searching, every group
  *  with a match is open and shows every match, and the counts are the
- *  matches (orca-design principle 8: counts follow the filter). */
-export function menuGroups(m: HaModel, open: HaOpen, needle = ""): MenuGroup[] {
+ *  matches (orca-design principle 8: counts follow the filter). `needs`
+ *  is Waiting on you's number, put on the Needs you heading. */
+export function menuGroups(m: HaModel, open: HaOpen, needle = "", needs?: number): MenuGroup[] {
   const q = needle.trim().toLowerCase()
   const out: MenuGroup[] = []
   for (const g of haGroups()) {
@@ -64,7 +69,7 @@ export function menuGroups(m: HaModel, open: HaOpen, needle = ""): MenuGroup[] {
     const more = (g.more || null) as keyof HaOpen | null
     const isOpen = q ? true : g.id === "needs" || g.id === "working" ? open[fold] !== false : !!open[fold]
     const capped = !q && !!more && !open[more] && all.length > g.cap
-    out.push({ id: g.id, label: g.label, fold, more: !q && all.length > g.cap ? more : null, rows: capped ? all.slice(0, g.cap) : all, total: all.length, open: isOpen, capped })
+    out.push({ id: g.id, label: g.label, fold, more: !q && all.length > g.cap ? more : null, rows: capped ? all.slice(0, g.cap) : all, total: all.length, count: g.id === "needs" && !q && needs !== undefined ? needs : all.length, open: isOpen, capped })
   }
   return out
 }
