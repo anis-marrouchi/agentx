@@ -110,10 +110,9 @@ describe("every page counts work with liveWorkCount (#2258)", () => {
   const work = liveWorkCount(NODES)
   const S = { live: { nodes: NODES } }
 
-  it("the nav's running count is the working agents, not their runs", () => {
-    const f = new Function("S", "liveWorkCount", pick("wall.client.ts", "runningCount") + "; return runningCount()")
+  it("the nav has no Running now count any more: the agent list's Working is the one count (#2101 R1)", () => {
     expect(work.runs).toBeGreaterThan(work.agents) // one agent has two runs
-    expect(f(S, liveWorkCount)).toBe(work.agents) // 4: not 5 (runs), not 8 (all runs on every machine)
+    expect(src("wall.client.ts")).not.toContain("function runningCount(")
   })
 
   it("the Agents page counts an agent's runs on its home machine only", () => {
