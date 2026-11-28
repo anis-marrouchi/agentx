@@ -14,7 +14,7 @@ The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent 
 
 1. **Phone:** open the app and tap **Chat**.
 2. **Phone:** tap **Choose an agent** at the top of Chat, or tap the back arrow. The list shows each computer with a green dot when it is online, and each agent as **idle** or **busy**. Agents on an offline computer can't be picked.
-3. **Phone:** tap an agent. The header at the top of Chat shows its name, with **Working** or **Ready** and the computer it runs on. Tap the name to pick another agent.
+3. **Phone:** tap an agent. The header at the top of Chat shows its letter in its colour, its name, and the computer and engine it runs on (for example *Mac · Claude Code*). A **Working** label shows while it answers. Tap the name to pick another agent.
 
 Close a sheet with **Done**, by pulling its handle down, by tapping outside it, or with **Escape** on a keyboard.
 
@@ -182,7 +182,7 @@ The phone never sees where a file is on the computer: each file gets its own ran
 
 When the agent works on a GitHub or GitLab issue, you can read its pull or merge request and comment on its lines from the phone.
 
-1. **Phone:** in Chat, tap the button at the top right of the header. **Changes** opens with the pull request's number and its added and removed lines.
+1. **Phone:** in Chat, tap the last button at the top right of the header (after **History** and **New conversation**). **Changes** opens with the pull request's number and its added and removed lines.
 2. **Phone:** tap a file to see its lines.
 3. **Phone:** tap a line, write your comment, and tap **Add**. Add as many as you like.
 4. **Phone:** tap **Send to** and the agent's name. The agent gets every comment in one message, with the file and line of each.
@@ -190,6 +190,16 @@ When the agent works on a GitHub or GitLab issue, you can read its pull or merge
 Tap the back arrow to return to the conversation. On GitHub, the arrow at the top right opens the pull request in the browser.
 
 The screen shows the newest open request of the agent on the computer this phone is paired to, the same diff the Hub shows under a post.
+
+## See the agent's plan and proofs
+
+Under the header are three tabs: **Chat**, **Plan** and **Proofs**.
+
+1. **Phone:** tap **Plan**. Each open request the agent has, or has a step in, shows with its steps numbered. A done step has a green tick; the step being worked on is blue. Under each step is who has it.
+2. **Phone:** tap **Proofs**. Each done step shows with its proof, usually a link to a pull request, an issue or a message. Tap a link to open it.
+3. **Phone:** tap **Chat** to go back to the conversation. The orb and the text box stay at the bottom on every tab.
+
+Plan and Proofs show the requests on the computer this phone is paired to. For an agent on another computer in your mesh, they say so: open that computer's Hub to see its plans.
 
 ## Go back to a conversation
 
@@ -266,10 +276,12 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
 7. **Phone:** ask an agent: `ask me yes or no with quick replies`. **Yes** and **No** appear under the answer. Tap **Yes**: it shows as your message, both turn grey, and the agent answers.
 8. **Phone:** ask one agent something long, then pick a second agent and ask it something too. Two chips show at the top of Chat. When the first agent finishes, a banner with its name appears; tap it, and its answer opens.
-9. **Browser (computer):** open the dashboard, select **Activity**, then **Map**. Your chat comes in from **Phone app**, not from **Mesh (A2A)**. See [Activity](./activity.md).
+9. **Phone:** pick an agent that has an open request with a plan, and tap **Plan**. Its steps are listed, numbered, the same as under **Plan** in the Hub chat.
+10. **Browser (computer):** open the dashboard, select **Activity**, then **Map**. Your chat comes in from **Phone app**, not from **Mesh (A2A)**. See [Activity](./activity.md).
 
 ## If something is wrong
 
+- **Plan says the agent has no plan on an open request** — the agent has no open request with steps on this computer. Ask it to plan the work, or check the Hub's Requests page.
 - **"Install ffmpeg on … for voice input from the phone"** — the AgentX service on that computer can't find `ffmpeg`. Install it as in [What the computer needs for voice](#what-the-computer-needs-for-voice). If it is already installed, the service's `PATH` is shorter than your terminal's: set `AGENTX_FFMPEG` to its full path (from `which ffmpeg`) in the service's environment, then run `agentx daemon restart`. `agentx doctor` says when the service finds it. Until then the text box opens so you can type.
 - **"Voice input isn't set up on this computer"** — the computer has neither an ElevenLabs key nor Whisper with `ffmpeg`. Set one up as in [What the computer needs for voice](#what-the-computer-needs-for-voice). Until then the text box opens so you can type.
 - **"The microphone is blocked"** — the phone refused the microphone. Allow it as in [Allow the microphone on an iPhone](#allow-the-microphone-on-an-iphone), or in the browser's site settings on Android. You can type meanwhile.
