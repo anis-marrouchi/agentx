@@ -31,6 +31,14 @@ The daemon's own messages are not jobs: an answer coming back from a hand-off, a
 2. The page opens on the **Open** jobs, most recently active first. Its address is `/hub#page=jobledger`.
 3. The number beside **Jobs** in the nav is how many jobs are stalled or blocked. It shows after the page has been opened once.
 
+On **Open** with **All doors**, the work comes first, in three groups:
+
+1. **Needs you:** a job that is blocked, or waiting on you. When there is none, the line reads "Nothing waits on you.". A job you asked for that an agent is still working on does not count here.
+2. **Moving:** the jobs under way. It shows 3 rows, then **Show all** with the count.
+3. **Nobody on it:** stalled jobs. It starts folded, and only shows when there is one.
+
+The state chips, the **Door** filter and the [Queue block](#the-queue-block) come after the groups. When you pick another state or one door, the chips and the filter stay at the top and the list is not grouped.
+
 The page reads every machine the Hub reads. With more than one machine, each row names its machine. A machine that does not answer is named above the list. The list is read again every minute while the page is open.
 
 ## Read a row
@@ -39,15 +47,16 @@ Each row has:
 
 - **The job's name:** its headline, written by whoever asked. An agent writes it with the `headline` field of `agentx_send_agent`. A message that opens with "About the subject:" uses that subject. Otherwise the daemon writes a short one with a small model call within a few minutes (`requests.headlines.jobsWithinHours`, default 24, covers jobs opened in the last 24 hours; `0` turns it off for jobs). A job with no headline yet reads **Untitled job from** and the name of whoever asked, in grey. The page never cuts the start of the message into a title.
 - **The status line:** the main thing on the row. See [What the status line means](#what-the-status-line-means).
-- **Who asked and who owes it:** for example `pm → @coder`.
+- **Who asked and who owes it:** for example `PM → Coder`. Each agent goes by the name the side menu shows; its id is in the tooltip. "you" is you, and an agent on another machine reads, for example, "DevOps on clawd".
+- **What would move it:** on a blocked, waiting-on-you or stalled job, one more line, for example "Moves when you answer Coder.".
 - **The door.**
 - **The home:** a link to the issue or merge request, when the job has one.
-- **Updated:** how long ago the job last moved.
+- **Updated:** how long ago the job last moved. The full local time is in the tooltip.
 - **Your request:** a tag on a job that you asked for yourself. **See it in Requests** opens **Waiting on you** on its **Requests** chip, where you can answer or close it.
 
 ## What the status line means
 
-The daemon writes the status line from facts it has: the run that is live now and its last tool call, the wake that is set, the name and due time of whoever the job waits on, or the absence of all three. It is never what the agent says about itself.
+The daemon writes the status line from facts it has: the run that is live now and its last tool call, the wake that is set, the name and due time of whoever the job waits on, or the absence of all three. It is never what the agent says about itself. The row shows it in plain words: agents by name, and no `dlg-`, `req-`, `prm-`, `job-` or `run-` ids. The line as the daemon wrote it is in the tooltip, and the job's own id is under **Ids** in its details.
 
 | State | Chip | A status line looks like | It means |
 |---|---|---|---|
