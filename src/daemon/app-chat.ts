@@ -3,6 +3,7 @@ import type { TokenRecord } from "./token-store"
 import type { AppChatStore, AppConversation } from "./app-chat-store"
 import { readJson, type NodeReply, type SnapshotNode } from "./app-fleet"
 import { relayTurn, type DaemonTarget } from "./app-chat-relay"
+import { surfaceHints } from "@/situations/surfaces"
 import { ChatTurn, ORPHAN_LIMIT_MS } from "./app-chat-turns"
 import { ACTIVE_LIMIT, AppPresence, buildActive, finishPush, shouldPushFinish, type FinishPush, type RunningTurn } from "./app-chat-active"
 
@@ -232,7 +233,10 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
     const spoken = body.spoken === true
     // Only a spoken turn can be a call; Chat stores `message` unchanged.
     const call = spoken && body.call === "watch" ? "watch" as const : undefined
-    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}`, spoken, ...(call ? { call } : {}) }, turn.ac.signal, (e, d) => turn.broadcast(e, d))
+    // #2083: speaker on|off and screen phone|tablet|desktop from the phone;
+    // anything else is dropped.
+    const hints = surfaceHints(body)
+    const out = await relayTurn(deps.daemon, { node, agent, message, chatId: `app:${id}`, spoken, ...(call ? { call } : {}), hints }, turn.ac.signal, (e, d) => turn.broadcast(e, d))
     if (turn.orphaned) {
       out.error = `Stopped: the phone was away for more than ${Math.round((deps.orphanLimitMs ?? ORPHAN_LIMIT_MS) / 60_000)} minutes.`
       void cancelRuns(conv, deps, device.name)

@@ -1,6 +1,7 @@
 import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import type { AppToolBadge } from "./app-chat-store"
 import { isQueued } from "@/agents/queued"
+import { surfaceHints, type SurfaceHints } from "@/situations/surfaces"
 import { ARTIFACT_LIMITS, extractArtifacts, plainAnswer, type DeclaredArtifact } from "@/utils/artifact-sentinel"
 
 // --- Phone app chat: one turn, relayed from the daemon ---
@@ -29,6 +30,9 @@ export interface TurnRequest {
   /** The first turn of a live call from the Android app (#1664): the agent
    *  is told it is on a call, so it answers what was just said, briefly. */
   call?: "watch"
+  /** #2083: the phone's speaker button and screen class, already
+   *  whitelisted (surfaceHints). Sent on every turn, typed or spoken. */
+  hints?: SurfaceHints
 }
 
 /** What the agent reads before the first words of a live call. Only the
@@ -61,7 +65,10 @@ const MAX_REPLY = 500
 export function upstreamRequest(t: TurnRequest): { path: string; body: Record<string, unknown> } {
   // A spoken turn keeps the typed turn's channel and chat id, so both stay
   // in one agent session; `via` only records how it was said.
-  const context = { channel: "app", chatId: t.chatId, sender: APP_SENDER, ...(t.spoken ? { via: "voice" } : {}) }
+  // The hints are checked again here, so nothing but on|off and
+  // phone|tablet|desktop is ever forwarded.
+  const hints = surfaceHints(t.hints)
+  const context = { channel: "app", chatId: t.chatId, sender: APP_SENDER, ...(t.spoken ? { via: "voice" } : {}), ...hints }
   const message = t.call === "watch" ? `${LIVE_CALL_NOTE}\n\n${t.message}` : t.message
   return t.node === "local"
     ? { path: "/task", body: { agent: t.agent, message, stream: true, context } }

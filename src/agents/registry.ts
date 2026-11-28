@@ -87,6 +87,8 @@ import { budgetProjectResolver } from "./budget-projects"
 import { BudgetHolds, MAX_HELD_PER_AGENT } from "./budget-holds"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { situationContextFor } from "@/situations/context"
+import { surfaceForTurn } from "@/situations/surfaces"
+import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { withClaudeMdFiles, type SettingSource } from "./claude-md-chain"
 import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
@@ -4477,9 +4479,19 @@ export class AgentRegistry {
     // Read here, after the planner may have dropped the session above.
     const runRules = this.rulesForRun(task, channel, chatId, !resumeSessionId)
 
+    // #2083: the surface this turn is read or heard on. Shadow (default):
+    // built and logged, not in the prompt; active: in the channel layer.
+    const surface = surfaceForTurn(this.config.situations?.surfaces, {
+      channel,
+      via: task.context?.via,
+      speaker: task.context?.speaker,
+      screen: task.context?.screen,
+    }, this.config.voice?.spokenMaxChars ?? SPOKEN_MAX_CHARS)
+    if (surface.line && this.config.situations?.surfaces?.mode !== "active") this.log(`[${task.agentId}] surface (shadow) ${channel}:${chatId}: ${surface.pick?.id} limit=${surface.pick?.maxChars ?? "-"} — ${surface.line}`)
     const contextInput: ContextInput = {
       channel,
       chatId,
+      ...surface.prompt,
       channelScope: task.context?.group ? "group" : (channel === "gitlab" ? "project" : "personal"),
       groupName: task.context?.group,
       agentId: task.agentId,

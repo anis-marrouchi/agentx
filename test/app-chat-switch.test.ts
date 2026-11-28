@@ -67,8 +67,14 @@ function page() {
     p.resolve({ status, ok: status < 300, json: () => Promise.resolve(body), body: null })
     await tick(); await tick()
   }
-  const chatPosts = () => pending.filter((p) => p.path === "/api/app/chat").map((p) => p.body)
-  return { C: window.AXChat, els, pending, flashes, tick, conv, answer, chatPosts }
+  // These tests are about where words go; the #2083 hints every post
+  // carries are checked on their own (chatHints).
+  const chatPosts = () => pending.filter((p) => p.path === "/api/app/chat").map((p) => {
+    const { speaker: _s, screen: _w, ...rest } = p.body
+    return rest
+  })
+  const chatHints = () => pending.filter((p) => p.path === "/api/app/chat").map((p) => ({ speaker: p.body.speaker, screen: p.body.screen }))
+  return { C: window.AXChat, els, pending, flashes, tick, conv, answer, chatPosts, chatHints, store, window }
 }
 
 const rassam = "cmwrassam0001", hakim = "cmwhakim00001"
@@ -278,5 +284,25 @@ describe("switch then talk: Agents tab tap, then voice", () => {
       { conversationId: rassam, message: "Rassam, draw it" },
       { node: "local", agent: "pm-agent", message: "this is for Hakim", spoken: true },
     ])
+  })
+})
+
+describe("surface hints on every post (#2083)", () => {
+  it("sends the speaker button and a coarse screen class, typed or spoken", async () => {
+    const p = page()
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    p.window.innerWidth = 390
+    p.C.send("typed, speaker default on")
+    expect(p.chatHints()).toEqual([{ speaker: "on", screen: "phone" }])
+  })
+  it("speaker off and a wide screen", async () => {
+    const p = page()
+    p.store["ax-voice-speaker"] = "0"
+    p.window.innerWidth = 1400
+    p.C.open(rassam)
+    await p.answer((x) => x.path.endsWith(rassam), p.conv(rassam, "artist-3d"))
+    p.C.send("said with speaker off", { spoken: true })
+    expect(p.chatHints()).toEqual([{ speaker: "off", screen: "desktop" }])
   })
 })

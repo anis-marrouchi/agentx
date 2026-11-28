@@ -320,6 +320,11 @@ export interface AgentTask {
      *  question was spoken, so it waits on its own chat as a voice turn
      *  does and gets no phone-only prompt (#1455). */
     via?: "voice"
+    /** #2083: hints from the phone app, whitelisted by surfaceHints() before
+     *  use. `speaker` is the phone's speaker button; `screen` a coarse class
+     *  from the viewport width. Unknown values are ignored. */
+    speaker?: string
+    screen?: string
   }
 }
 
