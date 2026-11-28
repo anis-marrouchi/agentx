@@ -410,12 +410,26 @@ describe("Feed title row keeps Chat on its line (#2387 follow-up)", () => {
 
 describe("Feed and List have their final frame from the first paint (#2101, Hakim v0.311.3 check)", () => {
   /** Runs the first-frame script as the parser would, on a root with the given link. */
-  function firstFrame(hash: string): string[] {
+  function firstFrame(hash: string, hubPages?: string[]): string[] {
     const classes = new Set<string>()
     const root = { classList: { add: (c: string) => classes.add(c) } }
-    new Function("document", "location", WALL_FIRST_FRAME_SCRIPT)({ currentScript: { parentElement: root } }, { hash })
+    const win = hubPages ? { AX_HUB: { pages: hubPages } } : undefined
+    new Function("document", "location", "window", WALL_FIRST_FRAME_SCRIPT)({ currentScript: { parentElement: root } }, { hash }, win)
     return [...classes].sort()
   }
+
+  it("a page React draws shows its root from the first frame, not after the feed's read (req-01M8CTCW)", () => {
+    const pages = ["task", "home"]
+    expect(firstFrame("#page=task&id=req-1", pages)).toEqual(["is-hub"])
+    expect(firstFrame("#page=home", pages)).toEqual(["is-hub"])
+    // An old post link waits for the old script to move it (taskMove).
+    expect(firstFrame("#post=req-1", pages)).toEqual([])
+    // The old Hub draws it: nothing, as before; the Feed keeps its column.
+    expect(firstFrame("#page=task&id=req-1", ["home"])).toEqual([])
+    expect(firstFrame("#post=req-1")).toEqual([])
+    expect(firstFrame("#page=jobledger", pages)).toEqual([])
+    expect(firstFrame("", pages)).toEqual(["is-posts"])
+  })
 
   it("the script sits right inside the wall root, before the head and the composer", () => {
     const page = renderWallPage()

@@ -22,7 +22,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Suspense, lazy, useEffect, useMemo, useState, type FormEvent } from "react"
 import { HUB_NAME } from "../../daemon/ui/hub-name"
-import { apiFetch, apiPost } from "../api"
+import { apiPost } from "../api"
 import { readBoot } from "../boot"
 import { useLiveSnapshot } from "../live-react"
 import type { HubPageProps } from "../registry"
@@ -33,8 +33,8 @@ import {
 import { Ago, FactList, LinkRow, PlanSteps, Prose, StageStrip, TaskSection, TaskSkeleton, Thread, planLabel } from "./parts"
 import {
   allAgents, closeCall, closeConfirmText, isOpen, mentionText, mentionedAgents, nodeAgents, stateWord,
-  taskAddress, taskFacts, taskFlags, taskLinks, taskLoadError, taskRead, taskStages, taskThreadPath, waitReason,
-  type CloseKind, type LiveSnapshot, type TaskAddress, type TaskRead, type TaskThreadReply,
+  taskAddress, taskFacts, taskFlags, taskLinks, taskLoadError, taskRead, taskStages, taskThreadPath, taskThreadQuery, waitReason,
+  type CloseKind, type LiveSnapshot, type TaskAddress, type TaskRead,
 } from "./task-data"
 import { addressRun, requestRuns } from "./runs"
 
@@ -60,9 +60,8 @@ export default function TaskPage({ params }: HubPageProps) {
   const addr = taskAddress(params)
   const path = taskThreadPath(addr)
   const thread = useQuery({
-    queryKey: ["task-thread", path, addr.peer],
+    ...taskThreadQuery(path, addr.peer),
     enabled: !!path,
-    queryFn: () => apiFetch<TaskThreadReply>(path!, { headers: addr.peer ? { "X-Agentx-Peer": addr.peer } : {} }),
     refetchInterval: 15_000,
   })
   const read = useMemo(() => taskRead(thread.data, addr.peer), [thread.data, addr.peer])

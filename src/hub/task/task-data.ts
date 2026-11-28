@@ -9,7 +9,7 @@
 //
 // Plain data and pure functions, so the tests check them without a browser
 // (test/hub-task-data.test.ts).
-import { HubApiError } from "../api"
+import { HubApiError, apiFetch } from "../api"
 import { TASK_PAGE, taskHash } from "./old-links"
 
 /** The page's `#page=` id (#2101 T3: the old run page's), in old-links.ts,
@@ -45,6 +45,16 @@ export function taskThreadPath(a: Pick<TaskAddress, "id" | "task">): string | nu
   if (a.id) return "/api/admin/wall/thread?id=" + encodeURIComponent(a.id)
   if (a.task) return "/api/admin/wall/thread?task=" + encodeURIComponent(a.task)
   return null
+}
+
+/** The page's read of its request, as one react-query entry: the page's
+ *  useQuery and the read the /hub document started (early.ts, main.tsx)
+ *  share its key. */
+export function taskThreadQuery(path: string | null, peer: string | null) {
+  return {
+    queryKey: ["task-thread", path, peer] as const,
+    queryFn: () => apiFetch<TaskThreadReply>(path!, { headers: peer ? { "X-Agentx-Peer": peer } : {} }),
+  }
 }
 
 // --- The reply (the parts of WallPost, WallPlanStep and WallEvent drawn) ---
