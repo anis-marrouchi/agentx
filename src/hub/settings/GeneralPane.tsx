@@ -19,6 +19,7 @@ import {
 } from "./data"
 import { Ago, Disclosure, EngineLogo, ErrorLine, PaneHeader, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows, ToneDot } from "./parts"
 import { paneDef } from "./panes"
+import { waitingHref } from "../waiting"
 
 const PANE = "general"
 const RESTART = "agentx daemon restart --when-idle"
@@ -124,7 +125,7 @@ function AgentItem({ agent: a, org, busy, onHold }: { agent: StateAgent; org?: O
         {a.access === "public" && <><span aria-hidden="true">·</span><span>public API</span></>}
       </>}
       badge={waiting ? (
-        <a href="#status=open&view=decide" title="It starts once you approve it" className={badgeVariants({ variant: "warn" })}>Waits for approval</a>
+        <a href={waitingHref()} title="It starts once you approve it" className={badgeVariants({ variant: "warn" })}>Waits for approval</a>
       ) : undefined}
       control={<>
         {!waiting && <Switch checked={isOn} disabled={busy} onCheckedChange={(v) => onHold(!v)} aria-label={(isOn ? "Turn off " : "Turn on ") + name} />}

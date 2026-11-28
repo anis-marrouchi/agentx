@@ -2,18 +2,19 @@
 //
 // The centre's Waiting on you pane: the owner's one list (waiting.ts), the
 // longest waiting first. Opening an item shows what is asked, what is
-// known, what yes and no do and when it must be answered, in the same pane.
-// Answers are made where they are made today: "Answer" opens the old Hub's
-// Needs you (yes, no, a choice, later), and a request's task opens in Tasks.
+// known, what yes and no do and when it must be answered, in the same pane,
+// and answers it there (NeedsWizard.tsx AnswerBar). "Go through them" opens
+// the wizard: one at a time, most urgent first (#2499 part 2).
 import { useQuery } from "@tanstack/react-query"
-import type { ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { apiGet } from "../api"
 import { shortAgo } from "../tasks"
 import {
-  NEEDS_YOU_PAGE, WAITING_URL, waitingHref, waitingKind, waitingList, waitingSoon, waitingTaskId,
+  WAITING_URL, waitingHref, waitingKind, waitingList, waitingSoon,
   type WaitingItem, type WaitingList, type WaitingReply,
 } from "../waiting"
-import { taskHref } from "./ShellTasks"
+import { navigate } from "../router"
+import { AnswerBar, NeedsWizard } from "./NeedsWizard"
 import { Badge, Button, EmptyState, Icon, Skeleton, Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn } from "../ui"
 
 function When({ item, now }: { item: WaitingItem; now: number }) {
@@ -57,9 +58,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** An opened item: the question, then what is known and what each answer does. */
+/** An opened item: the question, then what is known and what each answer
+ *  does, then the answers (AnswerBar, back to the list once sent). */
 export function WaitingDetail({ item, now = Date.now(), actions }: { item: WaitingItem; now?: number; actions?: ReactNode }) {
-  const task = waitingTaskId(item)
   const soon = waitingSoon(item, now)
   return (
     <article data-waiting="open" data-waiting-item={item.key} className="flex flex-col gap-4">
@@ -93,13 +94,7 @@ export function WaitingDetail({ item, now = Date.now(), actions }: { item: Waiti
         ) : null}
         {!item.said && !item.facts && !item.recommend && !item.yes && !item.no && !item.expires ? <Field label="Details">Nothing more on record.</Field> : null}
       </dl>
-      {actions ?? <div className="flex flex-wrap items-center gap-2">
-        <a href={NEEDS_YOU_PAGE} className={buttonVariants({ size: "sm" })} data-waiting="answer">
-          Answer
-        </a>
-        {task ? <a href={taskHref(task)} className={buttonVariants({ size: "sm", variant: "outline" })} data-waiting="task">Open the task</a> : null}
-        <span className="text-xs text-muted-foreground">Answers open the old Hub's Waiting on you, where yes, no and later are given.</span>
-      </div>}
+      {actions ?? <AnswerBar item={item} onSent={() => navigate({ page: "home", pane: "waiting" })} />}
     </article>
   )
 }
@@ -131,7 +126,7 @@ export function WaitingBody({ list, error, onRetry, now }: WaitingBodyProps) {
       ) : <WaitingRows items={list.items} now={now} />}
       {list.later ? (
         <p className="px-1 text-xs text-muted-foreground">
-          {list.later} put off for later. <a className="text-link hover:underline" href={NEEDS_YOU_PAGE}>See them in the old Hub's Waiting on you</a>.
+          {list.later} put off for later. They come back here when their time is up.
         </p>
       ) : null}
     </div>
@@ -145,14 +140,18 @@ export function WaitingPane({ open, phoneBar }: { open: string | null; phoneBar?
   const q = useQuery({ queryKey: ["shell-waiting"], queryFn: () => apiGet<WaitingReply>(WAITING_URL), refetchInterval: 15_000 })
   const list = q.data ? waitingList(q.data) : undefined
   const item = open ? list?.items.find((i) => i.key === open) : undefined
+  // The wizard keeps the list it opened with; `live` is what still waits.
+  const [walk, setWalk] = useState<WaitingItem[] | null>(null)
+  const live = useMemo(() => (list ? new Set(list.items.map((i) => i.key)) : null), [list])
+  const close = () => { setWalk(null); void q.refetch() }
   return (
     <section aria-label="Waiting on you" data-shell="waiting" className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         {phoneBar}
-        {open ? (
+        {open || walk ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <a href={waitingHref()} aria-label="Back to Waiting on you" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground can-hover:hover:bg-accent can-hover:hover:text-foreground">
+              <a href={waitingHref()} onClick={walk ? (e) => { e.preventDefault(); close() } : undefined} aria-label="Back to Waiting on you" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground can-hover:hover:bg-accent can-hover:hover:text-foreground">
                 <Icon name="arrow-left" />
               </a>
             </TooltipTrigger>
@@ -160,10 +159,14 @@ export function WaitingPane({ open, phoneBar }: { open: string | null; phoneBar?
           </Tooltip>
         ) : null}
         <h1 className="truncate text-sm font-medium">Waiting on you</h1>
-        {!open && list ? <span className="text-xs tabular-nums text-muted-foreground">{list.items.length}</span> : null}
+        {!open && !walk && list ? <span className="text-xs tabular-nums text-muted-foreground">{list.items.length}</span> : null}
+        {!open && !walk && list?.items.length ? (
+          <Button size="sm" className="ml-auto" onClick={() => setWalk(list.items)} data-waiting="walk">Go through them</Button>
+        ) : null}
       </header>
       <div className={cn("mx-auto min-h-0 w-full max-w-[784px] flex-1 overflow-y-auto px-4 py-4")}>
-        {open ? (
+        {walk ? <NeedsWizard items={walk} live={live} onClose={close} />
+          : open ? (
           q.isError ? <WaitingBody error={errText(q.error)} onRetry={() => void q.refetch()} />
             : !list ? <Skeleton className="h-16 w-full" />
             : !item ? <EmptyState title="No longer waiting" action={<a className="text-sm text-link hover:underline" href={waitingHref()}>Waiting on you</a>}>It was answered, put off for later, or it expired.</EmptyState>

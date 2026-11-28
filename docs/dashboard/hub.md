@@ -181,18 +181,22 @@ Automations only shows. To add, change or turn off a schedule, use [Settings ›
 
    ![An opened decision: the question, what Yes and No do, and when to answer by](/screenshots/hub-automations/waiting-open.png)
 
-4. **Answer** opens **Waiting on you** in the old Hub, where you give Yes, No, a choice or Later. For a request, **Open the task** opens it in Tasks.
-5. **Phone:** the list and the opened item fill the screen.
+4. **Answer it there:** **Yes**, **No** or a choice, or **Later**. A request offers **Pick it up again** or **Close it**, and **Open the task** opens it in Tasks. A Yes that sends or publishes outside (WhatsApp, email, a post) asks you once more. The answer goes to the agent that asked at once, and the list comes back.
+5. **Go through them** (top right) answers the list one item at a time, most urgent first: deploys, then the ones that expire soonest, then the oldest. Each answer goes to its agent the moment you give it; **Skip** moves on without answering, and **N left** says how many steps remain. When two or more requests are not finished, they are one step at the end: **Restart all**, **Close all** (it asks once more) or **One by one**. At the end, a summary says what went to which agent and what could not be sent. **Esc** or the back arrow stops at any point; what you answered is already sent.
+
+   ![Go through them: one item at a time, with what is left](/screenshots/hub-automations/waiting-wizard.png)
+
+6. **Phone:** the list and the opened item fill the screen.
 
    ![Waiting on you on a phone](/screenshots/hub-automations/waiting-phone.png)
    ![An opened item with choices on a phone](/screenshots/hub-automations/waiting-open-phone.png)
 
-What you put off with **Later** is not listed; the line under the list counts it and links to it in the old Hub's Waiting on you.
+What you put off with **Later** is not listed; the line under the list counts it, and it comes back when its time is up.
 
 ### Check Waiting on you worked
 
 - The number next to **Waiting on you** matches the **Waiting on you** count in the old Hub and the phone app's Desk.
-- Answer an item in the old Hub's Waiting on you, then come back: within 15 seconds it is gone from the list.
+- Answer an item on **Waiting on you**: it is gone from the list at once, and from the old Hub and the phone app's Desk within 15 seconds.
 
 ### If Waiting on you is wrong
 

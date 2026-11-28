@@ -17,6 +17,7 @@ import {
   Ago, AgentChip, ConfirmDialog, Disclosure, Dots, ErrorLine, IconButton, Lead, PaneHeader, RowMenu, SettingsGroup, SettingsItem, SettingsRow, SkeletonRows,
 } from "./parts"
 import { paneDef } from "./panes"
+import { waitingHref } from "../waiting"
 
 const PANE = "guests"
 
@@ -188,7 +189,7 @@ function GrantItem({ grant: g, tier, open, onToggle, busy, onAct, menu }: {
             {g.state === "active" ? "Pause" : "Resume"}
           </Button>
         ) : g.state === "pending" && g.guestNode ? (
-          <Button asChild variant="outline" size="sm"><a href="#status=open&view=decide">Review</a></Button>
+          <Button asChild variant="outline" size="sm"><a href={waitingHref()}>Review</a></Button>
         ) : undefined}
         menu={menu}
       />

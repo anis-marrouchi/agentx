@@ -64,7 +64,7 @@ export function needsYou(live: LiveReply | null | undefined, agents: StateAgent[
     else if (restartWaiting(n)) out.push({ key: "restart-" + n.name, tone: "warn", text: `${n.name} waits for a restart`, help: "Restart it on Live when its work is done.", action: "Open Live", href: "#page=live" })
   }
   for (const a of agents) {
-    if (orgNode(org, a.id)?.status === "waiting") out.push({ key: "wait-" + a.id, tone: "warn", text: `${a.id} waits for your approval`, help: "It starts its first run once you approve it.", action: "Review", href: "#status=open&view=decide" })
+    if (orgNode(org, a.id)?.status === "waiting") out.push({ key: "wait-" + a.id, tone: "warn", text: `${a.id} waits for your approval`, help: "It starts its first run once you approve it.", action: "Review", href: "#page=home&pane=waiting" })
   }
   return out
 }
