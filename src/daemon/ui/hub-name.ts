@@ -7,6 +7,8 @@
 // the old word: people never see them. scripts/hub-name-check.mjs fails CI
 // on the old name in visible text and the docs.
 
+import { taskHash } from "../../hub/task/old-links"
+
 /** The name people read: nav, page titles, messages. */
 export const HUB_NAME = "Hub"
 
@@ -27,10 +29,11 @@ export function hubRedirect(path: string, search = ""): string | null {
   return HUB_PATH + path.slice(OLD_HUB_PATH.length) + search
 }
 
-/** One request on its own, with its thread (#1316). A push about the
- *  request opens it when tapped (#1652). */
+/** One request on its own, with its thread (#1316): its Task page (#2101
+ *  T3). A push about the request opens it when tapped (#1652). A viewer the
+ *  React Hub does not draw it for gets the old post page (old-links.ts). */
 export function hubPostPath(requestId: string): string {
-  return `${HUB_PATH}#post=${encodeURIComponent(requestId)}`
+  return HUB_PATH + taskHash({ id: requestId })
 }
 
 /** The Hub's Needs you view: what waits on the owner (#1440). /approvals,

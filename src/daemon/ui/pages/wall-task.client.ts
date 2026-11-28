@@ -525,12 +525,15 @@ export const WALL_TASK_SCRIPT = String.raw`
   var TASK_COMPOSER = ${JSON.stringify(TASK_COMPOSER_HTML)};
   /** The query keys of a Task page's hash. */
   var TASK_KEYS = ['task', 'agent', 'node', 'trace', 'ch', 'ask', 'at', 'done'];
-  /** The Wall's link to a run's Task page. t: { id, traceId?, channel?, message?, startedAt? } */
+  /** The Wall's link to a run's Task page. t: { id, traceId?, channel?, message?, startedAt? }
+   *  When React draws the Task page (#2101 T3) it finds the run's request
+   *  and opens the run in it (run=); the old run page reads the rest. */
   function wallTaskHref(t, agentId, nodeUrl, done) {
     var q = new URLSearchParams();
     q.set('page', 'task');
     q.set('task', t.id);
     q.set('agent', agentId);
+    if (taskInReact()) q.set('run', t.id);
     if (nodeUrl) q.set('node', nodeUrl);
     if (t.traceId) q.set('trace', t.traceId);
     if (t.channel) q.set('ch', t.channel);
@@ -591,7 +594,7 @@ export const WALL_TASK_SCRIPT = String.raw`
     if (!d || !d.post) return '';
     var p = d.post;
     return '<section class="wtask__req" aria-label="Tracked request"><h2 class="wtask__h">' + esc(p.headline || p.id) +
-      ' <a class="wtask__open" href="#post=' + encodeURIComponent(p.id) + '">Open the post</a></h2>' +
+      ' <a class="wtask__open" href="' + esc(taskHash({ id: p.id, peer: p.node && p.node.peer })) + '">Open the post</a></h2>' +
       progressHtml(p) + (d.plan && d.plan.length ? planHtml(d.plan) : '') + factsHtml(p) + '</section>';
   }
   async function loadTaskDetail(t) {
@@ -832,7 +835,8 @@ export const WALL_TASK_SCRIPT = String.raw`
   // review of #2138). A snapshot that arrives starts the waits over.
   var LIVE_RETRY_MS = [2000, 5000, 10000, 30000], liveRetry = 0, liveRetryTimer = null;
   function followLive(page) {
-    var want = page === 'live' || page === 'task' || treeShown();
+    // React's Task page follows the stream itself (#2101 T3): only the old run page needs it here.
+    var want = page === 'live' || (page === 'task' && !!S.task) || treeShown();
     if (want && !S.liveEs) {
       if (liveRetryTimer) { clearTimeout(liveRetryTimer); liveRetryTimer = null; }
       try {

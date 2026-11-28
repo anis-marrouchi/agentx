@@ -627,14 +627,17 @@ To see the waiting tasks in the feed instead:
 
 *Scripted demo data; your team's names and machines will differ.*
 
-The address of that page ends in `#post=` and the task id, so you can share a link to one post. The **List** view opens the same page when you select a post's title.
+The address of that page ends in `#post=` and the task id, so you can share a link to one post. The **List** view opens the same page when you select a post's title. When you are signed in as the owner, the post opens on its [Task page](#open-a-requests-task-page) instead.
 
-### Open the new Task page
+### Open a request's Task page
 
-The Hub is getting one **Task page** per request, in the new look. It shows the same request as the page above, and makes the same calls when you act on it. For now only the owner can open it, by its own address; the old post page keeps its address until the Task page takes its place.
+Each request has one **Task page**, in the new look: the request, its plan, its runs and its thread. When you are signed in as the owner, every link to a request or a run opens it: a post in the feed, a Live card, **Open the run** in a chat, **History** and **See the request** in a chat, a push you tap, and **⌘K**.
 
-1. **Browser:** copy the task id from the end of a post's address (the part after `#post=`, for example `req-1234`).
-2. **Browser:** open `/hub#page=task-preview&id=` followed by that id, for example `/hub#page=task-preview&id=req-1234`.
+1. **Browser:** select a post in the feed, or a card under **Live**. The address ends in `#page=task&id=` and the request id, for example `/hub#page=task&id=req-1234`. A run's page also has `&run=` and the run's id, and that run opens in place.
+2. Old links still work. They open the same Task page, with the run they name open:
+    - a post's old address, `/hub#post=req-1234`;
+    - an old run page, `/tasks/` and the run id with `?agent=`, or `/hub#page=task&task=` and the run id;
+    - the review address of the first Task pages, `/hub#page=task-preview&id=req-1234`.
 3. The page shows, from the top:
     - **Task**, the agent that has it, and its state on the right (**Working**, **Waiting on you**, **Done** and so on), then the request as the title and what was asked under it;
     - where it stands: **Asked**, **Working**, **Waits** (only while it waits) and **Done**, as on the old page, with one amber line that says why it waits;
@@ -645,7 +648,7 @@ The Hub is getting one **Task page** per request, in the new look. It shows the 
     - **Links**: its issue or pull request, its proof, and the comments agents posted there;
     - **Thread**: every step of its history, then the comment box.
 4. **Browser:** select a section's title (**Plan**, **Facts**, **Thread** and so on) to fold it or open it again.
-5. **Browser:** to act on it, use the comment box at the bottom. It does what the old page's box does (see [Act on a post](#act-on-a-post)): **Comment** with the arrow or **Enter**, `@` another agent to bring it in, **Call** the agent, **Hand to…**, **Done** and **Drop**. Hand to, Done and Drop open a line that says what will happen; select **Confirm**, or **Back**. **Start a Space** stays on the old page for now.
+5. **Browser:** to act on it, use the comment box at the bottom. It does what the old page's box does (see [Act on a post](#act-on-a-post)): **Comment** with the arrow or **Enter**, `@` another agent to bring it in, **Call** the agent, **Hand to…**, **Done** and **Drop**. Hand to, Done and Drop open a line that says what will happen; select **Confirm**, or **Back**. **Start a Space** stays on the old post page for now: open `/hub?legacy=1#post=` followed by the request id.
 6. **Browser:** to go back, select the arrow at the top left, press **Escape**, or use the browser's Back button.
 
 ![The new Task page: state, where it stands, the plan with each step's agent and state, the result and the facts](/screenshots/hub-task/task.png)
@@ -656,23 +659,30 @@ The Hub is getting one **Task page** per request, in the new look. It shows the 
 
 *Scripted demo data; your team's names and machines will differ.*
 
+A run that no request tracks (a scheduled job's, a chat's) shows on its own Task page: **A run of** and the agent's name, then the run.
+
+Anyone who is not the owner, and every viewer when `dashboard.hub.legacyPages` lists `task`, keeps the old pages: a Task page link opens the old post page or the old run page.
+
 #### Check the Task page worked
 
-Open the same request on the old page (`#post=` and its id) and on the Task page. Both show the same title, state, plan steps and thread. Write a comment on the Task page: it shows in its **Thread** within a few seconds, and on the old page too.
+1. **Browser:** open `/hub#post=` followed by a request id. The address turns into `#page=task&id=` and the same id, and the Task page shows the request.
+2. **Browser:** under **Live**, select a run's card. Its request's Task page opens with that run open under **Live run**.
+3. Write a comment on the Task page: it shows in its **Thread** within a few seconds.
 
 #### If the Task page is wrong
 
 - **No task in this address**: the address has no `id=`. Add the request id after `id=`.
 - **Could not load the task**: the machine that keeps the request did not answer. Select **Retry**; check that the machine shows as reachable.
-- **No request for this run**: the address names a run that nobody tracks as a request; open the run on the run page instead.
-- The page opens the old Hub: you are not signed in as the owner, or `dashboard.hub.legacyPages` lists `task-preview` (see [Configuration › Operations](../reference/config-operations.md)).
+- **No request for this run**: the address names a run but not its agent (`&agent=`), and nobody tracks it as a request. Open the run from **Live** or **Activity** instead.
+- **Task not found**: the machine that keeps it has no request with this id. The link may be wrong, or the request was removed.
+- A link opens the old post page or run page: you are not signed in as the owner, or `dashboard.hub.legacyPages` lists `task` (see [Configuration › Operations](../reference/config-operations.md)).
 - The action buttons are missing: only the owner sees **Call**, **Hand to…**, **Done** and **Drop**; Hand to, Done and Drop show only while the request is open.
 
 ### Watch and steer a run
 
 The Task page shows the request's runs in place, so you do not need the run page to follow one.
 
-1. **Browser:** open the request's Task page (see [Open the new Task page](#open-the-new-task-page)).
+1. **Browser:** open the request's Task page (see [Open a request's Task page](#open-a-requests-task-page)).
 2. While an agent works on it, **Live run** shows the run as a conversation: what was asked on the right, then each step the agent takes (folded to one line; select it to see its input and result), its thinking, and its reply as it is written. **Working** turns at the top right of the section, with the agent's name and when the run started. The run scrolls on its own while you are at its end; scroll up to read and it stays where you are.
 3. **Browser:** to steer it, type in the box under the run and press **Enter** (or select the arrow). Your words go in as the run's next turn. The line under the box says what happened: queued as the next turn, sent as a new run of the same chat (that run then shows here), or why it was not sent.
 4. **Browser:** to stop it, select the square **Stop** button next to the arrow. The turn ends now; the line under the box says **Stop asked** or why it did not stop.

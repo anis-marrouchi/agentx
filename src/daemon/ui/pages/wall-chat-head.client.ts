@@ -5,7 +5,7 @@
 // a state pill (Working · Waiting on you · Done), the tabs Chat · Plan ·
 // Proofs, Files (the right panel's Files tab for this chat, #2101 R17),
 // Stop while a run is going, and ↗ Request to the request the agent is on
-// (its Hub post, #post=<id>).
+// (its Task page, #page=task&id=<id>, #2101 T3).
 //
 // Plan and Proofs read the owner's open requests
 // (GET /api/admin/approvals/requests, requests-panel.ts): the ones the
@@ -29,6 +29,7 @@
 import { injectFns } from "../inject"
 import { engineIconKey, engineIcon } from "./engine-icons"
 import { wflIcon } from "./wall-files"
+import { taskHash } from "../../../hub/task/old-links"
 
 /** One open Desk card, as GET /api/admin/approvals lists it (InboxItem). */
 export interface HeadAsk {
@@ -61,6 +62,8 @@ export interface HeadReq {
  *  post when the page has it (WallPost), else from the card. */
 export interface ReqMeta {
   id: string
+  /** The node that keeps it (a peer's daemon URL), none for this one. */
+  peer?: string | null
   createdAt?: number | null
   /** Its last move: the post's lastMoveAt, else updatedAt. */
   movedAt?: number | null
@@ -82,7 +85,9 @@ export function chDate(ms: number): string {
 }
 
 /** The line under a request's title: started · moved · project · home · History.
- *  History is the request's own timeline, its Hub post (#post=<id>). */
+ *  History is the request's own timeline, its Task page (#2101 T3, the
+ *  address of old-links.ts taskHash, built here: a shipped function calls
+ *  only functions of its own file). */
 export function chReqMetaHtml(m: ReqMeta, now: number): string {
   const esc = (s: unknown) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
   const bits: string[] = []
@@ -96,7 +101,9 @@ export function chReqMetaHtml(m: ReqMeta, now: number): string {
     const ref = m.home.link.replace(/^https?:\/\/[^/]+\//, "").replace(/\/-\//, "/").replace(/\/(issues|pull|merge_requests)\//, (_s, k) => (k === "merge_requests" ? "!" : "#"))
     bits.push(`<a href="${esc(m.home.link)}" target="_blank" rel="noopener" title="Its ${esc(m.home.kind)} home">${esc(ref)}</a>`)
   }
-  bits.push(`<a href="#post=${encodeURIComponent(m.id)}" title="Everything that happened on this request">History</a>`)
+  const task = new URLSearchParams({ page: "task", id: m.id })
+  if (m.peer) task.set("peer", m.peer)
+  bits.push(`<a href="${esc("#" + task.toString())}" title="Everything that happened on this request">History</a>`)
   return `<div class="hc__planm">${bits.join(" · ")}</div>`
 }
 
@@ -212,7 +219,7 @@ export function chWaitHtml(a: HeadWait, o: { name: string; now: number; asked: b
     `<div class="hc__askq" dir="auto">${chEsc(q)}</div>` +
     (a.title && a.ask && a.title !== a.ask ? `<div class="hc__askd" dir="auto">${chEsc(a.title)}</div>` : "") +
     `<div class="hc__askrow"><a class="hc__ab hc__ab--pri" href="#status=open&amp;view=decide">${id ? "Reply in Waiting on you" : "Answer in Waiting on you"}</a>` +
-    (id ? `<a class="hc__ab" href="#post=${encodeURIComponent(id)}">See the request</a>` : "") + `</div></div>`
+    (id ? `<a class="hc__ab" href="${chEsc("#" + new URLSearchParams({ page: "task", id }).toString())}">See the request</a>` : "") + `</div></div>`
 }
 
 /** The Plan tab: each request's steps, who has each, and where it is. */
@@ -224,7 +231,7 @@ export function chPlanHtml(reqs: HeadReq[], name: string, o: { now?: number; pos
     const steps = (r.plan && r.plan.steps) || []
     const p = (o.post && o.post(r.id)) || null
     const meta = chReqMetaHtml({ id: r.id, createdAt: (p && p.createdAt) || r.createdAt, movedAt: (p && p.lastMoveAt) || r.updatedAt, project: p ? p.project || null : undefined, repo: p ? p.repo : null, home: (p && p.home) || r.home || null }, now)
-    const head = `<div class="hc__planh"><a href="#post=${encodeURIComponent(r.id)}">${chEsc(r.summary || r.id)}</a><span class="hc__pill">${steps.length ? `${steps.length} steps` : "no plan"}</span></div>` + meta
+    const head = `<div class="hc__planh"><a href="${chEsc("#" + new URLSearchParams({ page: "task", id: r.id }).toString())}">${chEsc(r.summary || r.id)}</a><span class="hc__pill">${steps.length ? `${steps.length} steps` : "no plan"}</span></div>` + meta
     if (!steps.length) return `<section class="hc__plan">${head}</section>`
     return `<section class="hc__plan">${head}<ol>` + steps.map((s) => {
       const st = String(s.state || "pending")
@@ -268,6 +275,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
   var api = window.AXHubChat;
   if (!api || !$('hc-form') || !$('hc-face')) return;
   ${injectFns({ engineIconKey, engineIcon })}
+  ${injectFns({ taskHash })}
   ${injectFns({ chFace, chEngine, chState, chAgo, chAsksFor, chReqsFor, chAskHtml, chAskKey, chWaitsFor, chWaitHtml, chDate, chReqMetaHtml, chPlanHtml, chProofsHtml, chEsc })}
   var asks = [], reqs = [], drafts = {}, view = null, tab = 'chat', loadedAt = 0, timer = null;
 
@@ -327,7 +335,7 @@ export const WALL_CHAT_HEAD_SCRIPT = String.raw`
     if (fb) fb.hidden = !(fsrc && (fsrc.runs.length || fsrc.attached.length || fsrc.ws));
     var req = $('hc-req'), r = rq[0];
     req.hidden = !r;
-    if (r) { req.setAttribute('href', '#post=' + encodeURIComponent(r.id)); req.setAttribute('title', r.summary || r.id); }
+    if (r) { req.setAttribute('href', taskHash({ id: r.id })); req.setAttribute('title', r.summary || r.id); }
     // The questions, at the end of the thread.
     var log = $('hc-log');
     log.querySelectorAll('.hc__asks').forEach(function (card) { card.remove(); });

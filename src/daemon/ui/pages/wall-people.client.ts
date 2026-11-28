@@ -2,7 +2,7 @@
 //
 // Spliced into WALL_PAGE_SCRIPT's closure, so it uses that script's S, $,
 // esc(), when(), avatar(), nameOf(), isOpen(), stateBadge(), getJson(),
-// headers(), wallTaskHref(), fillSelect(), writeHash() and render().
+// headers(), wallTaskHref(), taskHash(), fillSelect(), writeHash() and render().
 //
 // Everyone who talks to the agents, as the classic /people page showed
 // them: role, channel identities, the agents they may reach, and, opened,
@@ -110,7 +110,7 @@ export const WALL_PEOPLE_SCRIPT = String.raw`
   }
   function requestHtml(r) {
     var s = PP_REQUEST[r.state] || [String(r.state).replace(/_/g, ' '), 'chip--ghost'];
-    return '<li><a href="#post=' + encodeURIComponent(r.id) + '" class="wpp__text">' + esc(plain(r.text) || 'Request') + '</a>' +
+    return '<li><a href="' + esc(taskHash({ id: r.id })) + '" class="wpp__text">' + esc(plain(r.text) || 'Request') + '</a>' +
       '<p class="wpp__meta">' + ppState(s[0], s[1]) + '<span>' + esc(nameOf(r.agentId)) + '</span><span>' + esc(r.channel) + '</span><span>' + when(r.createdAt) + '</span></p></li>';
   }
   function requestsHtml(p, d) {

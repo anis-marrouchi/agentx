@@ -46,6 +46,14 @@ export function requestRuns(events: readonly TaskEvent[]): RequestRun[] {
   return out.sort((a, b) => a.at - b.at)
 }
 
+/** A run no request tracks, as its address names it (`task=` and `agent=`,
+ *  the old run page's address, #2101 T3): the Task page shows it on its own.
+ *  Its status is "ended" until the live snapshot says it runs; how it ended
+ *  is in its record. Null without the run or its agent. */
+export function addressRun(a: { task: string | null; agent: string | null }): RequestRun | null {
+  return a.task && a.agent ? { taskId: a.task, agentId: a.agent, status: "ended", at: 0, durationMs: null, text: "" } : null
+}
+
 /** The task ids running now on any node, by the live snapshot. Null when
  *  there is no snapshot yet: then a run's own status decides. */
 export function runningTaskIds(live: LiveSnapshot | null | undefined): Set<string> | null {
@@ -109,6 +117,7 @@ export function runState(run: Pick<RequestRun, "taskId" | "status">, running: Se
     // Left "in-flight" with nothing running it: a restart cut it off.
     case "in-flight": return { icon: "circle-x", word: "Failed", tone: "err", reason: "cut off" }
     case "paused": return { icon: "pause", word: "Paused", tone: "idle" }
+    case "ended": return { icon: "circle", word: "Ended", tone: "idle" }
     default: return { icon: "circle", word: "Idle", tone: "idle", reason: run.status || "no record" }
   }
 }

@@ -12,6 +12,7 @@ import { fdCounts, fdGroupPosts, fdInTab, fdState, fdStates } from "../../daemon
 import { wsFold } from "../../daemon/ui/pages/wall-sidebar"
 import { ltRequestId, type LtTask } from "../../daemon/ui/pages/wall-tree"
 import { buildHash } from "../router"
+import { taskHash } from "../task/old-links"
 
 /** The review id (pages.ts); the old feed stays on `#status=open`. */
 export const FEED_PAGE = "feed-preview"
@@ -146,5 +147,5 @@ export function waitLine(p: FeedPost, now = Date.now()): string {
   return ""
 }
 
-/** The old Hub's address of a post (it opens there until the Task page moves). */
-export const postHash = (id: string) => buildHash({ status: "open", post: id })
+/** A post's Task page (#2101 T3), on the node that keeps it. */
+export const postHash = (p: Pick<FeedPost, "id" | "node">) => taskHash({ id: p.id, peer: p.node?.peer })

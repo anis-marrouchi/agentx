@@ -2788,7 +2788,7 @@ describe("The People page on the Wall (#1441)", () => {
     const html = w.el("wall-people").innerHTML
     expect(html).toMatch(/Sara laptop[\s\S]*Active[\s\S]*End access[\s\S]*100\.64\.0\.7[\s\S]*as sara@/)
     expect(html).toMatch(/Sara phone[\s\S]*Waiting for your approval/)
-    expect(html).toContain('<a href="#post=r9" class="wpp__text">Fix the checkout</a>')
+    expect(html).toContain('<a href="#page=task&amp;id=r9" class="wpp__text">Fix the checkout</a>')
     expect(html).toContain("1 earlier request")
     expect(html).toMatch(/href="#page=task&amp;task=T1&amp;agent=cx[^"]*"/)
     // No raw markers or machine ids in the text.
@@ -3202,7 +3202,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wall-ctx").hidden).toBe(false)
     expect(w.wall.classList.contains("cx-open")).toBe(true)
     expect(w.el("wcx-tabs").innerHTML).toContain('<b>Changes</b> Post r1')
-    expect(w.el("wcx-body").innerHTML).toContain('<a href="#post=r1" data-tip="Open the request">Post r1</a>')
+    expect(w.el("wcx-body").innerHTML).toContain('<a href="#page=task&amp;id=r1" data-tip="Open the request">Post r1</a>')
     const html = w.el("wdf").innerHTML
     expect(html).toContain("Diff · acme/shop#12")
     expect(html).toContain('<button type="button" class="wdf__open" data-cx="file" data-path="src/app.ts"')
@@ -3244,7 +3244,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
   it("the chat's work line names the request of the question a Needs you row opened (#2505)", async () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, hash: "#page=chat&agent=cx&ask=request%3Ar2" })
     await w.settle()
-    expect(w.el("hc-work").innerHTML).toContain('<a href="#post=r2" data-tip="Open the request">Post r2</a>')
+    expect(w.el("hc-work").innerHTML).toContain('<a href="#page=task&amp;id=r2" data-tip="Open the request">Post r2</a>')
     expect(w.el("hc-work").innerHTML).not.toContain("<select")
     // A request with no forge home: Plan only.
     expect(w.el("hc-work").innerHTML).not.toContain('data-kind="changes"')
@@ -3254,7 +3254,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, hash: "#page=chat&agent=cx&ask=inbox%3Adraft-1" })
     await w.settle()
     expect(w.el("hc-work").hidden).toBe(true)
-    expect(w.el("hc-work").innerHTML).not.toContain("#post=r1")
+    expect(w.el("hc-work").innerHTML).not.toContain("page=task&amp;id=r1")
   })
   it("the chat's work line names the open request the agent in view works on, with Changes and Plan", async () => {
     const w = openWall({ data, chatAgent: "cx", diff: route, thread: { events: [], plan: [{ idx: 0, name: "Build the fix", agentId: "cx", state: "active", doneWhen: "PR open" }] } })
@@ -3263,7 +3263,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(line.hidden).toBe(false)
     // The newest open one it owns or holds a step of, named as a link to its
     // post; no select (#2505: a control that did nothing Anis could follow).
-    expect(line.innerHTML).toContain('<a href="#post=r1" data-tip="Open the request">Post r1</a>')
+    expect(line.innerHTML).toContain('<a href="#page=task&amp;id=r1" data-tip="Open the request">Post r1</a>')
     expect(line.innerHTML).not.toContain("<select")
     expect(line.innerHTML).not.toContain("r3")
     expect(line.innerHTML).toContain('data-cx="open" data-kind="changes" data-id="r1" aria-pressed="false" data-tip="The changes in acme/shop#12">Changes</button>')
@@ -3276,7 +3276,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wcx-body").innerHTML).toContain('<div class="hc__planm">Started <time datetime="')
     expect(w.el("wcx-body").innerHTML).toContain('href="https://github.com/acme/shop/pull/12"')
     expect(w.el("wcx-body").innerHTML).toContain('>acme/shop#12</a>')
-    expect(w.el("wcx-body").innerHTML).toContain('href="#post=r1" title="Everything that happened on this request">History</a>')
+    expect(w.el("wcx-body").innerHTML).toContain('href="#page=task&amp;id=r1" title="Everything that happened on this request">History</a>')
     expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r1" aria-pressed="true"')
 
 

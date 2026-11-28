@@ -395,11 +395,13 @@ export const WALL_CHAT_SCRIPT = String.raw`
     if (!d || !d.hasAttribute || !d.hasAttribute('data-hc-turn')) return;
     openTurns[d.getAttribute('data-hc-turn')] = !!d.open;
   }, true);
-  /** The pending answer's Task page on the Hub (wall-task.client.ts). */
+  /** The pending answer's Task page on the Hub, with the run open (run=,
+   *  #2101 T3); a viewer React does not draw it for gets the old run page
+   *  (wall-task.client.ts), which drops run= (old-links.ts taskFallback). */
   function runHref(m) {
     if (!m || !m.taskId || !threadNode || !thread) return '';
     var q = new URLSearchParams();
-    q.set('page', 'task'); q.set('task', m.taskId); q.set('agent', thread.agentId); q.set('node', threadNode);
+    q.set('page', 'task'); q.set('task', m.taskId); q.set('agent', thread.agentId); q.set('node', threadNode); q.set('run', m.taskId);
     var ask = msgs.filter(function (x) { return x.role === 'user'; }).pop();
     if (ask) q.set('ask', chatAttached(String(ask.content)).text.slice(0, 400));
     return '#' + q.toString();

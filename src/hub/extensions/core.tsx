@@ -11,7 +11,7 @@ defineHubExtension({
     { page: "catalog", title: "Components", load: () => import("../pages/CatalogPage") },
     { page: "home", title: "Home", load: () => import("../pages/ShellPage") },
     { page: "settings-preview", title: "Settings", load: () => import("../settings/SettingsPage") },
-    { page: "task-preview", title: "Task", load: () => import("../task/TaskPage") },
+    { page: "task", title: "Task", load: () => import("../task/TaskPage") },
     { page: "feed-preview", title: "Hub", load: () => import("../feed/FeedPage"), fallback: FeedPageSkeleton },
   ],
 })

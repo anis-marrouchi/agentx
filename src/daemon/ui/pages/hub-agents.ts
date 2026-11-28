@@ -511,7 +511,9 @@ export function haSwitchHtml(hits: HaHits, sel: number, esc: (s: unknown) => str
       (n < 9 ? '<kbd class="hk__kbd">' + esc(mod) + (n + 1) + "</kbd>" : ""))).join("")
   }
   if (hits.reqs.length) {
-    html += '<h3 class="hk__h">Requests</h3>' + hits.reqs.map((r) => hit(" hk__req", "#status=open&post=" + encodeURIComponent(r.id),
+    // A request opens its Task page (#2101 T3, old-links.ts taskHash; built
+    // here, as this file imports nothing).
+    html += '<h3 class="hk__h">Requests</h3>' + hits.reqs.map((r) => hit(" hk__req", "#" + new URLSearchParams({ page: "task", id: r.id }).toString(),
       '<span class="hk__ico" aria-hidden="true">' + (ic["message-square-text"] || "") + '</span><span class="ha__txt"><b class="ha__name">' + esc(r.title) + "</b>" +
       '<span class="ha__line"><span class="ha__lt">' + esc(r.sub || r.owner || "") + "</span></span></span>")).join("")
   }

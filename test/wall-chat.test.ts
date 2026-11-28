@@ -460,7 +460,7 @@ describe("Hub chat: on the page (#1528)", () => {
     w.streams[0].emit("chunk", { text: "the log" })
     const log = w.el("hc-log").innerHTML
     expect(log).toContain("Reading the log")
-    expect(log).toContain('href="#page=task&amp;task=task-7&amp;agent=scout&amp;node=http%3A%2F%2Fstudio&amp;ask=Why%3F">Open the run</a>')
+    expect(log).toContain('href="#page=task&amp;task=task-7&amp;agent=scout&amp;node=http%3A%2F%2Fstudio&amp;run=task-7&amp;ask=Why%3F">Open the run</a>')
     // The stream is open: the thread read is only the fallback.
     expect(w.delays.at(-1)).toBe(5000)
 
@@ -970,7 +970,8 @@ describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
       { idx: 2, name: "Review", agentId: "pm", state: "active" },
     ] } }]
     const plan = chPlanHtml(reqs, "pm")
-    expect(plan).toContain('href="#post=req-1"')
+    // Each request opens its Task page (#2101 T3).
+    expect(plan).toContain('href="#page=task&amp;id=req-1"')
     expect(plan).toContain("2 steps")
     expect(plan).toMatch(/is-done[^]*✓[^]*Design note/)
     expect(plan).toContain("pm · now")
@@ -985,7 +986,7 @@ describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
     expect(card).toContain("moved 3h ago")
     expect(card).toContain('href="https://gitlab.example/noqta/site/-/issues/12"')
     expect(card).toContain(">noqta/site#12</a>")
-    expect(card).toContain('href="#post=req-2" title="Everything that happened on this request">History</a>')
+    expect(card).toContain('href="#page=task&amp;id=req-2" title="Everything that happened on this request">History</a>')
     expect(card).toContain("pm · done · 2h ago")
     expect(card).not.toContain("pm · next ·")
     // The Hub post, when the page has it, gives the project and its last move.
@@ -999,9 +1000,9 @@ describe("Hub chat header and questions: what it draws (#2101 P5, P6)", () => {
     const repoOnly = chPlanHtml(bare, "pm", { now, post: () => ({ project: null, repo: "noqta/site", home: null }) })
     expect(repoOnly).toContain("<b>noqta/site</b>")
     const none = chPlanHtml(bare, "pm", { now, post: () => ({ project: null, repo: null, home: null }) })
-    expect(none).toContain('<div class="hc__planm">no project · <a href="#post=req-3"')
+    expect(none).toContain('<div class="hc__planm">no project · <a href="#page=task&amp;id=req-3"')
     const unknown = chPlanHtml(bare, "pm", { now })
-    expect(unknown).toContain('<div class="hc__planm"><a href="#post=req-3"')
+    expect(unknown).toContain('<div class="hc__planm"><a href="#page=task&amp;id=req-3"')
     for (const h of [repoOnly, none, unknown]) {
       expect(h).not.toMatch(/·\s*·|·\s*<\/|NaN|undefined|null/)
       expect(h).toContain("pm · now</small>")
@@ -1043,7 +1044,7 @@ describe("Hub chat header and questions: on the page (#2101 P5, P6)", () => {
     expect(w.el("hc-pill").textContent).toBe("Working")
     expect(w.el("hc-hstop").hidden).toBe(false)
     expect(w.el("hc-req").hidden).toBe(false)
-    expect(w.el("hc-req").getAttribute("href")).toBe("#post=req-1")
+    expect(w.el("hc-req").getAttribute("href")).toBe("#page=task&id=req-1")
     // Stop in the header stops the pending run, as the answer's Stop does.
     await w.fire("hc-hstop", "click")
     expect(w.calls.some((c) => c.method === "POST" && c.url === "/api/task/action?node=http%3A%2F%2Fstudio&task=task-9&kind=cancel")).toBe(true)
@@ -1332,7 +1333,7 @@ describe("Hub chat: a Needs you row's link keeps its question (#2505)", () => {
     expect(log.indexOf('data-hc-waitkey="request:req-9"')).toBeGreaterThan(log.indexOf('data-hc-waitkey="request:req-old"'))
     expect(log).toContain("Is the v4 render ok?")
     expect(log).toContain("Reply in Waiting on you")
-    expect(log).toContain('href="#post=req-9"')
+    expect(log).toContain('href="#page=task&amp;id=req-9"')
     // Desk cards come from the Desk's own list with their buttons, not twice.
     expect(log).not.toContain('data-hc-waitkey="card:c9"')
     expect(w.el("hc-pill").textContent).toBe("Waiting on you")

@@ -13,8 +13,10 @@
 //   Links    home, proof, comments posted there.
 //   Thread   the timeline, then the comment box and the actions.
 //
-// One 768 px column, as the feed. On the review id `task-preview` (pages.ts,
-// owner only) while the old pages keep their addresses; T3 moves them here.
+// One 768 px column, as the feed. On `#page=task` (pages.ts, owner only):
+// the old post page (`#post=<id>`), the old run page and `/tasks/<id>` open
+// here, with the run they name open (old-links.ts, T3). A run no request
+// tracks (a schedule's, a chat's) shows on its own: its head, then the run.
 // Reads and writes are the old post page's (task-data.ts), sent to the node
 // that keeps the request.
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -31,10 +33,10 @@ import {
 import { Ago, FactList, LinkRow, PlanSteps, Prose, StageStrip, TaskSection, TaskSkeleton, Thread, planLabel } from "./parts"
 import {
   allAgents, closeCall, closeConfirmText, isOpen, mentionText, mentionedAgents, nodeAgents, stateWord,
-  taskAddress, taskFacts, taskFlags, taskLinks, taskRead, taskStages, taskThreadPath, waitReason,
-  type CloseKind, type LiveSnapshot, type TaskRead, type TaskThreadReply,
+  taskAddress, taskFacts, taskFlags, taskLinks, taskLoadError, taskRead, taskStages, taskThreadPath, waitReason,
+  type CloseKind, type LiveSnapshot, type TaskAddress, type TaskRead, type TaskThreadReply,
 } from "./task-data"
-import { requestRuns } from "./runs"
+import { addressRun, requestRuns } from "./runs"
 
 const TaskRuns = lazy(() => import("./TaskRuns"))
 
@@ -87,11 +89,16 @@ export default function TaskPage({ params }: HubPageProps) {
     <div data-slot="task-page" className="mx-auto flex w-full max-w-[768px] flex-col gap-6 px-6 pb-12 pt-6 max-sm:gap-5 max-sm:px-4 max-sm:pt-3">
       {!path ? <EmptyState title="No task in this address" action={<Button variant="outline" size="sm" onClick={leave}>Back</Button>}>The address names no request.</EmptyState>
         : thread.isPending ? <TaskSkeleton />
-        : thread.isError && !thread.data ? (
+        : thread.isError && !thread.data && taskLoadError(thread.error) === "missing" ? (
+          <EmptyState title="Task not found" action={<Button variant="outline" size="sm" onClick={leave}>Back</Button>}>
+            No request has this id on {addr.peer ? "the machine that keeps it" : "this machine"}. The link may be wrong, or the request was removed.
+          </EmptyState>
+        ) : thread.isError && !thread.data ? (
           <EmptyState title="Could not load the task" action={<Button variant="outline" size="sm" onClick={() => void thread.refetch()}>Retry</Button>}>
             {(thread.error as Error | null)?.message || "No answer"}.
           </EmptyState>
-        ) : !read ? (
+        ) : !read && addressRun(addr) ? <RunAlone addr={addr} live={live.data} now={now} />
+        : !read ? (
           <EmptyState title="No request for this run" action={<Button variant="outline" size="sm" onClick={leave}>Back</Button>}>Nobody tracks it as a request, so it has no Task page.</EmptyState>
         ) : <TaskBody read={read} live={live.data} now={now} run={addr.run} />}
     </div>
@@ -164,6 +171,38 @@ function TaskBody({ read, live, now, run }: { read: TaskRead; live: LiveSnapshot
         <Thread events={events} now={now} />
         <Actions read={read} live={live} nameOf={nameOf} />
       </TaskSection>
+    </>
+  )
+}
+
+/** A run no request tracks (a schedule's, a chat's), by the old run page's
+ *  address: the head, then the run, live with its steer box and Stop while
+ *  it goes, else open as its record. */
+function RunAlone({ addr, live, now }: { addr: TaskAddress; live: LiveSnapshot | undefined; now: number }) {
+  const run = useMemo(() => addressRun(addr)!, [addr.task, addr.agent]) // eslint-disable-line react-hooks/exhaustive-deps
+  const names = useMemo(() => Object.fromEntries(allAgents(live).map((a) => [a.id, a.name || a.id])), [live])
+  const nameOf = (id: string) => names[id] || id
+  useEffect(() => { document.title = "Run · " + HUB_NAME }, [])
+  return (
+    <>
+      <header data-slot="task-head" className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Back" onClick={leave} className="-ml-2 size-7 text-muted-foreground"><Icon name="arrow-left" /></Button>
+            </TooltipTrigger>
+            <TooltipContent>Back <Kbd>Esc</Kbd></TooltipContent>
+          </Tooltip>
+          <span>Run</span>
+          <span aria-hidden="true">·</span>
+          <span>@{nameOf(run.agentId)}</span>
+        </div>
+        <h1 className="text-2xl font-semibold leading-tight tracking-[-0.01em] max-sm:text-xl">A run of {nameOf(run.agentId)}</h1>
+        <p className="text-sm leading-6 text-muted-foreground">No request tracks this run, so it shows on its own.</p>
+      </header>
+      <Suspense fallback={<Skeleton aria-label="Loading the run" className="h-40 w-full rounded-xl" />}>
+        <TaskRuns runs={[run]} taskNode={addr.peer ? { peer: addr.peer, daemonUrl: addr.peer } : null} live={live} run={run.taskId} now={now} nameOf={nameOf} />
+      </Suspense>
     </>
   )
 }

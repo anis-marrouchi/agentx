@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   followupNote, isRunning, recordOutput, requestRuns, runActionUrl, runHash, runNodeUrl, runRecordUrl, runState, runTook, runView,
-  runningTaskIds, stopNote, type RequestRun,
+  addressRun, runningTaskIds, stopNote, type RequestRun,
 } from "../src/hub/task/runs"
 import type { TaskEvent } from "../src/hub/task/task-data"
 
@@ -78,6 +78,9 @@ describe("runState", () => {
     expect(runState(run("t", 0, "in-flight"), none)).toMatchObject({ word: "Failed", reason: "cut off" })
     expect(runState(run("t", 0, "in-flight"), new Set(["t"]))).toMatchObject({ icon: "loader-circle", word: "Working" })
     expect(runState(run("t", 0, null), none)).toMatchObject({ icon: "circle", word: "Idle", reason: "no record" })
+    // A run only its address names (#2101 T3): over, how it ended is in its record.
+    expect(runState(run("t", 0, "ended"), none)).toEqual({ icon: "circle", word: "Ended", tone: "idle" })
+    expect(runState(run("t", 0, "ended"), new Set(["t"]))).toMatchObject({ word: "Working" })
   })
   it("says how long a run took", () => {
     expect([runTook(null), runTook(45_000), runTook(180_000), runTook(80 * 60_000)]).toEqual(["", "45 s", "3 min", "1 h 20 min"])
@@ -86,8 +89,8 @@ describe("runState", () => {
 
 describe("addresses and calls", () => {
   it("sets or drops run= and keeps the rest of the address", () => {
-    expect(runHash("#page=task-preview&id=req-1", "t9")).toBe("#page=task-preview&id=req-1&run=t9")
-    expect(runHash("#page=task-preview&id=req-1&run=t9", null)).toBe("#page=task-preview&id=req-1")
+    expect(runHash("#page=task&id=req-1", "t9")).toBe("#page=task&id=req-1&run=t9")
+    expect(runHash("#page=task&id=req-1&run=t9", null)).toBe("#page=task&id=req-1")
   })
   it("reads and writes through the old run page's endpoints", () => {
     expect(runRecordUrl("http://n", "coder", "t 1")).toBe("/api/task/history?node=http%3A%2F%2Fn&agent=coder&task=t+1")
@@ -117,5 +120,19 @@ describe("what a steer or Stop said back", () => {
     expect(followupNote({})).toEqual({ text: "Queued: it goes in as the next turn.", err: false })
     expect(stopNote({})).toEqual({ text: "Stop asked: the turn ends now.", err: false })
     expect(stopNote({ error: "no run" })).toEqual({ text: "Not stopped: no run", err: true })
+  })
+})
+
+describe("a run no request tracks (#2101 T3)", () => {
+  it("is the run its address names, opened on its own", () => {
+    const r = addressRun({ task: "t1", agent: "ops" })!
+    expect(r).toEqual({ taskId: "t1", agentId: "ops", status: "ended", at: 0, durationMs: null, text: "" })
+    // Asked for, and over: it opens in place; going now, it is the live run.
+    expect(runView([r], "t1", new Set())).toEqual({ live: null, past: [r], opened: "t1" })
+    expect(runView([r], "t1", new Set(["t1"])).live).toBe(r)
+  })
+  it("needs the run and its agent", () => {
+    expect(addressRun({ task: "t1", agent: null })).toBeNull()
+    expect(addressRun({ task: null, agent: "ops" })).toBeNull()
   })
 })

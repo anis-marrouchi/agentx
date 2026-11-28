@@ -9,24 +9,35 @@
 //
 // Plain data and pure functions, so the tests check them without a browser
 // (test/hub-task-data.test.ts).
-import { buildHash } from "../router"
+import { HubApiError } from "../api"
+import { TASK_PAGE, taskHash } from "./old-links"
 
-/** The page's `#page=` id. A review id, as the new Settings and feed had,
- *  while the old run page still owns `#page=task`; T3 moves it there. */
-export const TASK_PAGE = "task-preview"
+/** The page's `#page=` id (#2101 T3: the old run page's), in old-links.ts,
+ *  which the daemon reads too. */
+export { TASK_PAGE }
 
 /** What the address names: a request (`id=`), or a run whose request is
- *  looked up (`task=`), the node that keeps it, and the run opened in place. */
-export interface TaskAddress { id: string | null; task: string | null; peer: string | null; run: string | null }
+ *  looked up (`task=`, with its `agent`), the node that keeps it, and the
+ *  run opened in place. */
+export interface TaskAddress { id: string | null; task: string | null; agent: string | null; peer: string | null; run: string | null }
 
+/** The old run page's address reads the same (#2101 T3): its `node` is the
+ *  peer, and the run it names opens. */
 export function taskAddress(params: URLSearchParams): TaskAddress {
   const get = (k: string) => params.get(k) || null
-  return { id: get("id"), task: get("task"), peer: get("peer"), run: get("run") }
+  const task = get("task")
+  return { id: get("id"), task, agent: get("agent"), peer: get("peer") || get("node"), run: get("run") || task }
 }
 
 /** The Task page of a request; `peer` when a mesh node keeps it. */
 export function taskPageHref(id: string, opts: { peer?: string | null; run?: string | null } = {}): string {
-  return buildHash({ page: TASK_PAGE, id, peer: opts.peer, run: opts.run })
+  return taskHash({ id, peer: opts.peer, run: opts.run })
+}
+
+/** Why the request did not load: the node has no such request ("missing",
+ *  the page's not-found state), or the read failed (Retry). */
+export function taskLoadError(err: unknown): "missing" | "failed" {
+  return err instanceof HubApiError && err.status === 404 && !/^unknown peer/.test(err.message) ? "missing" : "failed"
 }
 
 /** Where the request is read: by its id, or by a run of it. */

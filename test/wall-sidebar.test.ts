@@ -40,6 +40,7 @@ describe("one post per item (#2101 R10)", () => {
     const html = wsCopiesHtml({ id: "p2", copies: ["p3", "p<1"] }, esc)
     expect(html).toContain("2 more posts like this")
     expect(html).toContain('data-open="p&lt;1"')
+    expect(html).toContain('href="#page=task&amp;id=p%3C1"')
     expect(wsCopiesHtml({ id: "p" }, esc)).toBe("")
   })
 })

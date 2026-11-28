@@ -338,7 +338,7 @@ describe("Wall Task: the run, its conversation and a steer box (#1381)", () => {
     expect(w.calls.find((c) => c.url.startsWith("/api/admin/wall/thread?"))!.url).toBe("/api/admin/wall/thread?task=tr9")
     const d = w.el("wtask-details").innerHTML
     expect(d).toContain("Refund order 47")
-    expect(d).toContain('href="#post=r1">Open the post</a>')
+    expect(d).toContain('href="#page=task&amp;id=r1">Open the post</a>')
     expect(d).toContain('class="wtk__prog"')
     expect(d).toContain('class="wtk__plan"')
     expect(d).toContain('class="wtk__facts"')

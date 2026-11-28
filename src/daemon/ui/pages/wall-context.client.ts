@@ -127,13 +127,15 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
   }
   function cxShort(s) { s = String(s || ''); return s.length > 28 ? s.slice(0, 27) + '…' : s; }
   function cxHeadHtml(p, t) {
-    return '<div class="wcx__h"><a href="#post=' + encodeURIComponent(p.id) + '" data-tip="Open the request">' + esc(p.headline) + '</a>' +
+    return '<div class="wcx__h"><a href="' + esc(cxPostHref(p)) + '" data-tip="Open the request">' + esc(p.headline) + '</a>' +
       (t.kind === 'file' ? '<code>' + esc(t.path) + '</code>' : '') + cxMetaHtml(p) + '</div>';
   }
   /** When it started, its last move, its project, its home and History (#2101). */
   function cxMetaHtml(p) {
-    return chReqMetaHtml({ id: p.id, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project || null, repo: p.repo, home: p.home }, Date.now());
+    return chReqMetaHtml({ id: p.id, peer: p.node && p.node.peer, createdAt: p.createdAt, movedAt: p.lastMoveAt || p.updatedAt, project: p.project || null, repo: p.repo, home: p.home }, Date.now());
   }
+  /** A request's Task page, on the node that keeps it (#2101 T3, old-links.ts). */
+  function cxPostHref(p) { return taskHash({ id: p.id, peer: p.node && p.node.peer }); }
   function cxPlanHtml(p) {
     var th = S.threads[p.id];
     if (!th || th.loading) return wflSkel('Loading the plan…');
@@ -342,7 +344,7 @@ export const WALL_CONTEXT_SCRIPT = String.raw`
       ? (askId && list.filter(function (x) { return x.id === askId; })[0]) || (typeof decPostOf === 'function' ? decPostOf(askKey) : askId ? findPost(askId) : null)
       : list[0];
     if (!p) { w.hidden = true; w.innerHTML = ''; return; }
-    var what = '<a href="#post=' + encodeURIComponent(p.id) + '" data-tip="Open the request">' + esc(p.headline) + '</a>';
+    var what = '<a href="' + esc(cxPostHref(p)) + '" data-tip="Open the request">' + esc(p.headline) + '</a>';
     var on = function (kind) { return cxFind(kind, p.id) >= 0 ? ' aria-pressed="true"' : ' aria-pressed="false"'; };
     w.innerHTML = '<span class="hc__worklbl">Working on</span>' + what +
       (p.mergeRef ? '<button type="button" class="hc__ib" data-cx="open" data-kind="changes" data-id="' + esc(p.id) + '"' + on('changes') + ' data-tip="The changes in ' + esc(p.mergeRef) + '">Changes</button>' : '') +

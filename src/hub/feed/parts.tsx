@@ -22,7 +22,7 @@ import {
 } from "../ui"
 import { fdAgo, fdExcerpt } from "../../daemon/ui/pages/wall-feed-model"
 import type { WallOwnerCard } from "../../daemon/wall-api"
-import { initials, mins, stamp, stateInfo, until, waitLine, type FeedPost } from "./model"
+import { initials, mins, postHash, stamp, stateInfo, until, waitLine, type FeedPost } from "./model"
 
 // --- What a row can do, given by the page ---
 
@@ -284,7 +284,7 @@ export function FeedRow({ post, state, running, now }: { post: FeedPost; state: 
         <div className="flex min-w-0 items-baseline gap-2 text-[13px] text-muted-foreground">
           <span className="font-medium text-foreground">{name}</span>
           <span className="min-w-0 truncate font-mono text-xs max-sm:hidden">{post.owner}</span>
-          <a href={"#post=" + encodeURIComponent(post.id)} onClick={(e) => { e.preventDefault(); a.open(post) }} className="shrink-0 font-normal text-muted-foreground can-hover:hover:underline">
+          <a href={postHash(post)} onClick={(e) => { e.preventDefault(); a.open(post) }} className="shrink-0 font-normal text-muted-foreground can-hover:hover:underline">
             <RelTime ms={post.lastMoveAt} now={now} />
           </a>
           <StateLabel state={state} className="ml-auto self-center" />

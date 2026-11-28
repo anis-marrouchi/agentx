@@ -1,0 +1,212 @@
+// Old Task links open the merged Task page (#2101 T3): the old post page
+// (`#post=<id>`), the old run page (`#page=task&task=…`, where /tasks/<id>
+// lands) and the T1/T2 review id, with the right run open; and the links the
+// Hub and the daemon write point at the Task page straight away.
+import { describe, expect, it } from "vitest"
+import { TASK_PAGE, TASK_PREVIEW_PAGE, taskFallback, taskHash, taskRedirect } from "../src/hub/task/old-links"
+import { taskAddress, taskLoadError } from "../src/hub/task/task-data"
+import { HubApiError } from "../src/hub/api"
+import { HUB_REACT_PAGES } from "../src/hub/pages"
+import { classicRedirect } from "../src/daemon/ui/classic-routes"
+import { hubPostPath } from "../src/daemon/ui/hub-name"
+import { postHash } from "../src/hub/feed/model"
+import { chPlanHtml, chReqMetaHtml, chWaitHtml, WALL_CHAT_HEAD_SCRIPT } from "../src/daemon/ui/pages/wall-chat-head.client"
+import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
+import { wsCopiesHtml } from "../src/daemon/ui/pages/wall-sidebar"
+import { haSwitchHtml } from "../src/daemon/ui/pages/hub-agents"
+import { ltEsc } from "../src/daemon/ui/pages/wall-tree"
+import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
+import { openWall } from "./wall-settings-harness"
+
+const keys = (hash: string) => Object.fromEntries(new URLSearchParams(hash.replace(/^[^#]*#/, "")))
+const addr = (hash: string) => taskAddress(new URLSearchParams(hash.replace(/^[^#]*#/, "")))
+
+describe("the Task page owns #page=task", () => {
+  it("is a React page, owner only, and the review id is gone", () => {
+    expect(TASK_PAGE).toBe("task")
+    expect(HUB_REACT_PAGES).toContainEqual({ page: "task", ownerOnly: true })
+    expect(HUB_REACT_PAGES.map((p) => p.page)).not.toContain(TASK_PREVIEW_PAGE)
+  })
+  it("writes a request's address and a run's", () => {
+    expect(taskHash({ id: "req 1" })).toBe("#page=task&id=req+1")
+    expect(taskHash({ id: "req-1", peer: "http://p:1", run: "t9" })).toBe("#page=task&id=req-1&peer=http%3A%2F%2Fp%3A1&run=t9")
+    expect(taskHash({ task: "t1", agent: "ops", peer: null })).toBe("#page=task&task=t1&agent=ops")
+  })
+})
+
+describe("where an old address goes when React draws the Task page", () => {
+  it("#post=<id> opens the request, on the node that keeps it", () => {
+    expect(taskRedirect("#post=req-1")).toBe("#page=task&id=req-1")
+    expect(taskRedirect("#status=open&view=list&post=req%201")).toBe("#page=task&id=req+1")
+    expect(taskRedirect("#post=req-1", (id) => (id === "req-1" ? "http://peer:18800" : null))).toBe("#page=task&id=req-1&peer=http%3A%2F%2Fpeer%3A18800")
+  })
+  it("the review id keeps every part of its address", () => {
+    expect(taskRedirect("#page=task-preview&id=req-1&run=t9")).toBe("#page=task&id=req-1&run=t9")
+    expect(taskRedirect("#page=task-preview&task=t1&agent=ops")).toBe("#page=task&task=t1&agent=ops")
+  })
+  it("an old run address is a Task page address already: it stays, and opens its run", () => {
+    const old = "#page=task&task=t1&agent=ops&node=http%3A%2F%2Fpeer&ch=slack&ask=hi&done=1"
+    expect(taskRedirect(old)).toBeNull()
+    expect(addr(old)).toEqual({ id: null, task: "t1", agent: "ops", peer: "http://peer", run: "t1" })
+  })
+  it("leaves every other address alone", () => {
+    for (const h of ["", "#status=open", "#page=live", "#page=task&id=req-1", "#page=settings&section=mesh"]) expect(taskRedirect(h), h).toBeNull()
+  })
+})
+
+describe("where a Task page address goes when React does not draw it (legacyPages, ?legacy=1, not the owner)", () => {
+  it("a request to the old post page", () => {
+    expect(taskFallback("#page=task&id=req-1")).toBe("#status=open&post=req-1")
+    expect(taskFallback("#page=task&id=req-1&peer=http%3A%2F%2Fp&run=t9")).toBe("#status=open&post=req-1")
+    expect(taskFallback("#page=task-preview&id=req-1")).toBe("#status=open&post=req-1")
+  })
+  it("a run to the old run page, its peer as the node", () => {
+    expect(keys(taskFallback("#page=task&task=t1&agent=ops&peer=http%3A%2F%2Fp&run=t1")!)).toEqual({ page: "task", task: "t1", agent: "ops", node: "http://p" })
+    expect(keys(taskFallback("#page=task-preview&task=t1&agent=ops")!)).toEqual({ page: "task", task: "t1", agent: "ops" })
+  })
+  it("keeps an old run address as it is", () => {
+    expect(taskFallback("#page=task&task=t1&agent=ops&node=http%3A%2F%2Fn&ch=slack&ask=hi&at=x&done=1")).toBeNull()
+    expect(taskFallback("#status=open&post=req-1")).toBeNull()
+    expect(taskFallback("#page=live")).toBeNull()
+  })
+})
+
+describe("/tasks/<id>?agent= (old run Task page)", () => {
+  it("lands on the Task page with that run open", () => {
+    const to = classicRedirect("/tasks/t%201", new URLSearchParams("agent=ops&node=http://peer.test&channel=slack"), "http://daemon.test")!
+    expect(to.startsWith("/hub#")).toBe(true)
+    expect(keys(to)).toMatchObject({ page: "task", task: "t 1", agent: "ops", run: "t 1", node: "http://peer.test" })
+    expect(addr(to)).toEqual({ id: null, task: "t 1", agent: "ops", peer: "http://peer.test", run: "t 1" })
+  })
+})
+
+describe("a Task page that cannot be found", () => {
+  it("is not found on a 404 from the node, a failure otherwise", () => {
+    expect(taskLoadError(new HubApiError(404, "no post for that id"))).toBe("missing")
+    expect(taskLoadError(new HubApiError(404, "unknown peer: http://gone"))).toBe("failed")
+    expect(taskLoadError(new HubApiError(502, "daemon unreachable"))).toBe("failed")
+    expect(taskLoadError(new Error("offline"))).toBe("failed")
+  })
+})
+
+describe("links to a request point at the Task page", () => {
+  it("a push or a chat message about a request (hubPostPath)", () => {
+    expect(hubPostPath("req 7")).toBe("/hub#page=task&id=req+7")
+  })
+  it("a post in the feed opens on its node", () => {
+    expect(postHash({ id: "req-1" })).toBe("#page=task&id=req-1")
+    expect(postHash({ id: "req-1", node: { name: "mini", peer: "http://p" } })).toBe("#page=task&id=req-1&peer=http%3A%2F%2Fp")
+  })
+})
+
+describe("the old Hub script sends old addresses on (wall.client.ts)", () => {
+  const PAGES = [TASK_PAGE]
+  const route = (url: string) => url.startsWith("/api/admin/wall?")
+    ? { status: 200, body: { node: "node-a", syncedAt: Date.now(), nodes: [{ name: "node-a", ok: true }], failures: [], posts: [
+      { id: "r-peer", state: "in_progress", headline: "On a peer", owner: "cx", asker: "anis", group: { channel: "whatsapp", chatId: "g1" }, createdAt: 1, lastMoveAt: 1, node: { name: "mini", peer: "http://mini:18800", daemonUrl: "http://mini:18800" } },
+    ] } }
+    : undefined
+
+  it("#post=<id> opens the Task page, and tells the React Hub", async () => {
+    const w = openWall({ hash: "#status=open&post=r1", hubPages: PAGES })
+    await w.settle()
+    expect(w.hash()).toBe("#page=task&id=r1")
+    expect(w.dispatched).toContainEqual({ type: "hashchange", hash: "#page=task&id=r1" })
+    expect(w.wall.classList.contains("is-hub")).toBe(true)
+    expect(w.wall.classList.contains("is-post")).toBe(false)
+  })
+
+  it("#post=<id> of a request a peer keeps opens it there", async () => {
+    const w = openWall({ hash: "#post=r-peer", hubPages: PAGES, route })
+    await w.settle()
+    expect(w.hash()).toBe("#page=task&id=r-peer&peer=http%3A%2F%2Fmini%3A18800")
+  })
+
+  it("a #post= link clicked later goes too", async () => {
+    const w = openWall({ hash: "", hubPages: PAGES })
+    await w.settle()
+    await w.go("#post=r2")
+    expect(w.hash()).toBe("#page=task&id=r2")
+  })
+
+  it("an old run address stays, drawn by React, and the old run page does not start", async () => {
+    const old = "#page=task&task=t1&agent=cx&node=http%3A%2F%2Fnode-a"
+    const w = openWall({ hash: old, hubPages: PAGES })
+    await w.settle()
+    expect(w.hash()).toBe(old)
+    expect(w.wall.classList.contains("is-hub")).toBe(true)
+    // The old run page streams its run; with React drawing it, nothing does.
+    expect(w.sources.map((s: { url: string }) => s.url).filter((u: string) => u.includes("/api/task/"))).toEqual([])
+    expect(w.calls.map((c) => c.url).filter((u) => u.startsWith("/api/task/"))).toEqual([])
+  })
+
+  it("the T1/T2 review id opens the Task page", async () => {
+    const w = openWall({ hash: "#page=task-preview&id=r1&run=t9", hubPages: PAGES })
+    await w.settle()
+    expect(w.hash()).toBe("#page=task&id=r1&run=t9")
+  })
+
+  it("without React's Task page, a Task page address goes back to the old pages", async () => {
+    const post = openWall({ hash: "#page=task&id=r1", hubPages: [] })
+    await post.settle()
+    expect(post.hash()).toBe("#status=open&post=r1")
+    expect(post.wall.classList.contains("is-post")).toBe(true)
+
+    const run = openWall({ hash: "#page=task&task=t1&agent=cx&peer=http%3A%2F%2Fnode-a&run=t1", hubPages: [] })
+    await run.settle()
+    expect(keys(run.hash())).toEqual({ page: "task", task: "t1", agent: "cx", node: "http://node-a" })
+    expect(run.wall.classList.contains("is-hub")).toBe(false)
+  })
+
+  it("without React's Task page, #post= and old run addresses stay where they were", async () => {
+    const w = openWall({ hash: "#status=open&post=r1", hubPages: [] })
+    await w.settle()
+    expect(w.hash()).toBe("#status=open&post=r1")
+    expect(w.wall.classList.contains("is-post")).toBe(true)
+  })
+})
+
+describe("Live cards and the Hub's own links open the Task page (wall.client.ts)", () => {
+  const LIVE_RUN = { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [
+    { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t7", channel: "whatsapp", message: "Refund", startedAt: new Date().toISOString() }] },
+  ] }] }
+  const route = (url: string) => url.startsWith("/api/live?") ? { status: 200, body: LIVE_RUN } : undefined
+  const cardHref = (html: string) => /<a class="wls ax-af-card is-work" href="([^"]+)"/.exec(html)?.[1].replace(/&amp;/g, "&") ?? ""
+
+  it("a Live card opens the run on the Task page, with the run open", async () => {
+    const w = openWall({ hash: "#page=live", hubPages: [TASK_PAGE], route })
+    await w.settle()
+    const to = keys(cardHref(w.el("wall-live").innerHTML))
+    expect(to).toMatchObject({ page: "task", task: "t7", agent: "cx", node: "http://node-a", run: "t7" })
+    expect(addr("#" + new URLSearchParams(to).toString())).toMatchObject({ task: "t7", agent: "cx", run: "t7" })
+  })
+
+  it("without React's Task page, a Live card keeps the old run page's address", async () => {
+    const w = openWall({ hash: "#page=live", hubPages: [], route })
+    await w.settle()
+    const href = cardHref(w.el("wall-live").innerHTML)
+    expect(keys(href)).toMatchObject({ page: "task", task: "t7", agent: "cx" })
+    expect(keys(href).run).toBeUndefined()
+    expect(taskFallback(href)).toBeNull()
+  })
+
+  it("a request's History line opens its Task page, on the node that keeps it", () => {
+    expect(chReqMetaHtml({ id: "r 1" }, Date.now())).toContain('href="#page=task&amp;id=r+1"')
+    expect(chReqMetaHtml({ id: "r1", peer: "http://mini:18800" }, Date.now())).toContain('href="#page=task&amp;id=r1&amp;peer=http%3A%2F%2Fmini%3A18800"')
+    expect(chPlanHtml([{ id: "r2", summary: "Ship" }] as never, "pm")).toContain('<a href="#page=task&amp;id=r2">Ship</a>')
+  })
+
+  it("a question on a request links its Task page, as do a post's copies and the switcher's requests", () => {
+    expect(chWaitHtml({ key: "request:r 4", ask: "Ship?" }, { name: "pm", now: Date.now(), asked: false })).toContain('<a class="hc__ab" href="#page=task&amp;id=r+4">See the request</a>')
+    expect(wsCopiesHtml({ copies: ["r5"] } as never, ltEsc)).toContain('<a href="#page=task&amp;id=r5" data-open="r5">r5</a>')
+    expect(haSwitchHtml({ agents: [], reqs: [{ id: "r6", title: "Fix" }] }, 0, ltEsc)).toContain('href="#page=task&amp;id=r6"')
+  })
+
+  it("a chat's Open the run opens the run on the Task page (run=)", () => {
+    expect(WALL_CHAT_SCRIPT).toContain("q.set('run', m.taskId)")
+  })
+
+  it("no old script writes a #post= link by hand any more", () => {
+    for (const s of [WALL_PAGE_SCRIPT, WALL_CHAT_HEAD_SCRIPT, WALL_CHAT_SCRIPT]) expect(s).not.toMatch(/#(status=open&(amp;)?)?post=['"$`]/)
+  })
+})

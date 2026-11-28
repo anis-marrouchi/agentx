@@ -156,7 +156,8 @@ describe("an opened task", () => {
     expect(out).toContain("In progress")
     expect(out).toContain('data-event="run"')
     expect(out).toContain("Opened PR #12")
-    expect(out).toContain('href="#post=r1"')
+    // Full record opens its Task page (#2101 T3).
+    expect(out).toContain('href="#page=task&amp;id=r1"')
   })
   it("an error reading it is said inline", () => {
     const out = html(createElement(TaskThread, { post: sample[0], error: "Could not read this task: down" }))

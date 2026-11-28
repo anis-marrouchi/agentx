@@ -99,7 +99,8 @@ export interface PushAdapterDeps {
   log?: (...args: unknown[]) => void
 }
 
-/** A path on this node the app can open, such as /hub#post=r1. */
+/** A path on this node the app can open, such as a request's Task page,
+ *  /hub#page=task&id=r1 (hubPostPath, #2101 T3). */
 function openPath(open: string | undefined): string | undefined {
   return open && open.startsWith("/") && !open.startsWith("//") && open.length <= MAX_URL ? open : undefined
 }

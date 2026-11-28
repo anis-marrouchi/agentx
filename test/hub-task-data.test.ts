@@ -15,10 +15,17 @@ const step = (over: Partial<TaskPlanStep> = {}): TaskPlanStep => ({
 
 describe("task address", () => {
   it("reads id, task, peer and run, and builds the page's address", () => {
-    const a = taskAddress(new URLSearchParams("page=task-preview&id=req-1&peer=http%3A%2F%2Fpeer&run=t9"))
-    expect(a).toEqual({ id: "req-1", task: null, peer: "http://peer", run: "t9" })
-    expect(taskPageHref("req-1")).toBe("#page=task-preview&id=req-1")
-    expect(taskPageHref("req 1", { peer: "http://p" })).toBe("#page=task-preview&id=req+1&peer=http%3A%2F%2Fp")
+    const a = taskAddress(new URLSearchParams("page=task&id=req-1&peer=http%3A%2F%2Fpeer&run=t9"))
+    expect(a).toEqual({ id: "req-1", task: null, agent: null, peer: "http://peer", run: "t9" })
+    expect(taskPageHref("req-1")).toBe("#page=task&id=req-1")
+    expect(taskPageHref("req 1", { peer: "http://p" })).toBe("#page=task&id=req+1&peer=http%3A%2F%2Fp")
+    expect(taskPageHref("req-1", { run: "t9" })).toBe("#page=task&id=req-1&run=t9")
+  })
+  it("reads an old run page address (#2101 T3): its node is the peer, its run opens", () => {
+    const a = taskAddress(new URLSearchParams("page=task&task=t1&agent=ops&node=http%3A%2F%2Fpeer&ch=slack&done=1"))
+    expect(a).toEqual({ id: null, task: "t1", agent: "ops", peer: "http://peer", run: "t1" })
+    // A peer named on its own wins over the old node; a run named wins over the task.
+    expect(taskAddress(new URLSearchParams("page=task&task=t1&run=t2&peer=http%3A%2F%2Fa&node=http%3A%2F%2Fb"))).toMatchObject({ peer: "http://a", run: "t2" })
   })
   it("reads the request by id first, then by run, else nothing", () => {
     expect(taskThreadPath({ id: "a/b", task: "t" })).toBe("/api/admin/wall/thread?id=a%2Fb")
