@@ -358,19 +358,20 @@ export interface HaOpen {
   work?: boolean
   /** Done today shows its rows (folded by default: it only grows). */
   done?: boolean
-  /** Needs you shows every row, not the first 3. */
+  /** Needs you shows every row, not the first 5. */
   needsAll?: boolean
 }
 
 /** The groups, in the state order of orca-design recipes §9: the key its
- *  fold is saved under, the "Show all" key (capped groups), its title and
- *  the states it holds. A failed run sits under Needs you. */
-export function haGroups(): Array<{ id: string; fold: string; more: string; label: string; states: string[] }> {
+ *  fold is saved under, the "Show all" key (capped groups) and how many rows
+ *  show before it, its title and the states it holds. A failed run sits
+ *  under Needs you, which shows its top 5 (#2101 R3); Working shows 3. */
+export function haGroups(): Array<{ id: string; fold: string; more: string; cap: number; label: string; states: string[] }> {
   return [
-    { id: "needs", fold: "needs", more: "needsAll", label: "Needs you", states: ["needs", "failed"] },
-    { id: "working", fold: "work", more: "working", label: "Working", states: ["working"] },
-    { id: "done", fold: "done", more: "", label: "Done today", states: ["done"] },
-    { id: "idle", fold: "idle", more: "", label: "Not working today", states: ["idle"] },
+    { id: "needs", fold: "needs", more: "needsAll", cap: 5, label: "Needs you", states: ["needs", "failed"] },
+    { id: "working", fold: "work", more: "working", cap: 3, label: "Working", states: ["working"] },
+    { id: "done", fold: "done", more: "", cap: 0, label: "Done today", states: ["done"] },
+    { id: "idle", fold: "idle", more: "", cap: 0, label: "Not working today", states: ["idle"] },
   ]
 }
 
@@ -379,7 +380,7 @@ export function haGroups(): Array<{ id: string; fold: string; more: string; labe
  * is a fold with its count, the chevron leading the title (orca-design
  * C22): Needs you and Working open unless `open.needs` / `open.work` is
  * false, the others folded
- * unless opened. Needs you and Working show their first 3 rows and
+ * unless opened. Needs you shows its first 5 rows, Working its first 3, then
  * "Show all (N)" unless `open.needsAll` / `open.working`. A boolean `open`
  * is the old idleOpen. Every part carries `data-key`, so the side menu
  * patches a refresh in place (hub-nav.client.ts haPatch).
@@ -387,10 +388,9 @@ export function haGroups(): Array<{ id: string; fold: string; more: string; labe
 export function haListHtml(m: HaModel, cur: string, open: boolean | HaOpen, esc: (s: unknown) => string, age: (ms: number) => string, o?: HaDraw): string {
   const op: HaOpen = typeof open === "object" && open ? open : { idle: !!open }
   const ic = (o && o.ic) || {}
-  // Rows before Show all; here, as an injected function cannot read a module const.
-  const cap = 3
   let body = ""
   for (const g of haGroups()) {
+    const cap = g.cap
     const all = m.rows.filter((r) => g.states.indexOf(r.state) >= 0)
     if (!all.length) continue
     const capped = !!g.more && !op[g.more as keyof HaOpen] && all.length > cap

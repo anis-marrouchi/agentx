@@ -57,6 +57,12 @@ export const SHELL_MORE: Readonly<Partial<Record<HubShowItem, ShellNavItem>>> = 
   usage: { id: "usage", label: "Usage", icon: "gauge", href: "#view=cost" },
 }
 
+/** The pages the agents list now shows (#2101 R1: one live list): what is
+ *  running (Running now), the live sessions (Sessions, the old Live) and
+ *  every run (Activity). They are not drawn in the menu, saved or not; ⌘K
+ *  still finds them. */
+export const IN_AGENT_LIST: ReadonlySet<string> = new Set(["running", "sessions", "activity"])
+
 /** Settings opens the new React Settings (#2101 ST1–ST5), not the old page:
  *  settingsHash() follows SETTINGS_PAGE, so ST4's rename needs no edit here. */
 export const SHELL_SETTINGS: ShellNavItem = { id: "settings", label: "Settings", icon: "settings", href: settingsHash() }
@@ -78,10 +84,12 @@ export interface ShellNav {
 export function shellNav(view: HubLayoutView, opts: { owner: boolean; menu?: ShellMenu }): ShellNav {
   if (opts.menu?.saved) return menuNav(opts.menu, opts.owner, view)
   const more: ShellNavItem[] = []
+  const hidden: ShellNavItem[] = []
   for (const [id, item] of Object.entries(SHELL_MORE) as [HubShowItem, ShellNavItem][]) {
-    if (view.show[id]) more.push(item)
+    if (IN_AGENT_LIST.has(item.id)) hidden.push(item)
+    else if (view.show[id]) more.push(item)
   }
-  return { main: [...SHELL_MAIN], more, hidden: [], foot: opts.owner ? [SHELL_SETTINGS] : [] }
+  return { main: [...SHELL_MAIN], more, hidden, foot: opts.owner ? [SHELL_SETTINGS] : [] }
 }
 
 // --- The saved Hub menu (#2149 M2) ---
@@ -138,7 +146,7 @@ export function menuNav(m: ShellMenu, owner: boolean, view?: HubLayoutView): She
     if (it.kind === "view") { main.push({ id: it.id, label: it.label, icon: it.icon || "bookmark", href: viewHref(it.filter) }); continue }
     const page = pages.get(it.page)
     const item = page && pageItem(page)
-    if (!item || shown.has(item.id)) continue
+    if (!item || shown.has(item.id) || IN_AGENT_LIST.has(item.id)) continue
     shown.add(item.id)
     main.push({ ...item, label: it.label || item.label, icon: it.icon || item.icon })
   }
@@ -151,7 +159,7 @@ export function menuNav(m: ShellMenu, owner: boolean, view?: HubLayoutView): She
   const kept = main.filter((i, n) => !i.group || (n + 1 < main.length && !main[n + 1].group))
   const more: ShellNavItem[] = []
   for (const [id, item] of Object.entries(SHELL_MORE) as [HubShowItem, ShellNavItem][]) {
-    if (view?.show[id] && !shown.has(item.id)) more.push(item)
+    if (view?.show[id] && !shown.has(item.id) && !IN_AGENT_LIST.has(item.id)) more.push(item)
   }
   return { main: kept, more, hidden, foot: owner ? [SHELL_SETTINGS] : [] }
 }

@@ -1320,8 +1320,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   //   GET /api/mesh/job?node=&kind=cron|workflow&key=&limit=
   //   GET /api/mesh/run?node=&task=
   //   GET /api/mesh/conversation?node=&agent=&channel=&chat=&tzOffset=
+  //   GET /api/mesh/latest?node=&agent=&limit=   (an agent's latest conversation, #2101 R26;
+  //   a node silent for NODE_TIMEOUT_MS, as in /api/live, answers 502, and the Hub says "not checked")
   if (method === "GET" && (path === "/api/mesh/thread" || path === "/api/mesh/job"
-      || path === "/api/mesh/run" || path === "/api/mesh/conversation")) {
+      || path === "/api/mesh/run" || path === "/api/mesh/conversation" || path === "/api/mesh/latest")) {
     const nodeUrl = url.searchParams.get("node")
     if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
     const q = url.searchParams
@@ -1336,6 +1338,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       if (!kind || !key) { sendJson(res, 400, { error: "kind and key required" }); return }
       upstream = `/analytics/job?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`
         + `&limit=${encodeURIComponent(q.get("limit") || "120")}`
+    } else if (path === "/api/mesh/latest") {
+      const agent = q.get("agent")
+      if (!agent) { sendJson(res, 400, { error: "agent required" }); return }
+      upstream = `/analytics/latest?agent=${encodeURIComponent(agent)}&limit=${encodeURIComponent(q.get("limit") || "10")}`
     } else if (path === "/api/mesh/conversation") {
       const [agent, channel, chat] = [q.get("agent"), q.get("channel"), q.get("chat")]
       if (!agent || !channel || !chat) { sendJson(res, 400, { error: "agent, channel, chat required" }); return }
@@ -1347,7 +1353,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       upstream = `/analytics/run/${encodeURIComponent(task)}`
     }
     try {
-      await proxyNodeAnalytics(res, await resolveNodeTargets(ctx.config), nodeUrl, upstream)
+      await proxyNodeAnalytics(res, await resolveNodeTargets(ctx.config), nodeUrl, upstream, path === "/api/mesh/latest" ? NODE_TIMEOUT_MS : undefined)
     } catch (e: any) { sendJson(res, 502, { error: e.message }) }
     return
   }

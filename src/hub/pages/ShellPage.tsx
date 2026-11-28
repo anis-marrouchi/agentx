@@ -27,7 +27,9 @@ import { Composer, sayAnswer, type ComposerSend } from "../shell/Composer"
 import { FilesPanel } from "../shell/FilesPanel"
 import { AgentQuestions, rowsWithout, useAgentQuestions } from "../shell/AgentQuestions"
 import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
-import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaAsk, type HaModel } from "../shell/menu"
+import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaAsk, type HaModel, type HaRow } from "../shell/menu"
+import { LatestConversation } from "../shell/LatestConversation"
+import { rowOpens, runHref } from "../shell/latest"
 import { readTasksView, saveTasksView, shellPane, type TasksView } from "../tasks"
 import { WAITING_URL, waitingList, type WaitingReply } from "../waiting"
 import { MENU_API, MENU_QUERY_KEY, type MenuReply } from "../settings/menu-model"
@@ -343,8 +345,26 @@ function Centre({ props, bar, onThread }: { props: SimpleShellProps; bar: ReactN
     case "projects": return <ProjectsPane owner={props.owner} phoneBar={bar} />
     case "activity": return <ActivityPane phoneBar={bar} />
     case "mobile": return <MobilePane phoneBar={bar} />
-    default: return <ShellChat agent={current} asks={row?.state === "needs" ? row.asks : undefined} phoneBar={bar} onThread={onThread} />
+    default: return <AgentPane key={current?.id} agent={current} row={row} phoneBar={bar} onThread={onThread} />
   }
+}
+
+/** The agent in view (#2101 R26): an agent that is not working and has no
+ *  questions opens on its latest conversation, read only, until New Hub
+ *  chat; the others open the Hub chat. A working agent never gets here: its
+ *  row opens its live run (ShellPage onAgent). */
+function AgentPane({ agent, row, phoneBar, onThread }: { agent?: ShellAgent; row?: HaRow; phoneBar: ReactNode; onThread: (id: string | null) => void }) {
+  const [hub, setHub] = useState(false)
+  // Decided when the agent is picked: a refresh of the rows does not swap the pane.
+  const [opens] = useState(() => rowOpens(row))
+  const chat = <ShellChat agent={agent} asks={row?.state === "needs" ? row.asks : undefined} phoneBar={phoneBar} onThread={onThread} />
+  if (!agent || !row || hub || opens !== "latest") return chat
+  return (
+    <LatestConversation
+      agent={agent} nodeUrl={row.nodeUrl} node={row.node} phoneBar={phoneBar} hub={chat} onNewChat={() => setHub(true)}
+      turn={(m, last) => <ChatTurn m={m} last={last} />}
+    />
+  )
 }
 
 /** The shell's width class (orca-design responsive §1): phone up to 640 px,
@@ -477,10 +497,15 @@ export default function ShellPage({ params }: HubPageProps) {
   const [tasksView, setTasksView] = useState<TasksView>(() => readTasksView())
   const onTasksView = (v: TasksView) => { setTasksView(v); saveTasksView(v) }
   // Picking an agent while another pane is open goes back to the chat with it.
-  const onAgent = (id: string) => { setAgent(id); if (pane !== "chat") navigate({ page: SHELL_PAGE }) }
   // The menu's rows, grouped by state, as the old Hub's menu draws them
   // (#2388); patched in place on each read, keyed by agent.
   const rows = useQuery({ queryKey: ["hub-agents"], queryFn: () => apiGet<HaModel>(hubAgentsUrl()), refetchInterval: 5_000 })
+  // A working agent opens its live run on its Task page (#2101 R26).
+  const onAgent = (id: string) => {
+    const row = rows.data?.rows.find((r) => r.id === id)
+    if (row && rowOpens(row) === "run") { location.hash = runHref(row); return }
+    setAgent(id); if (pane !== "chat") navigate({ page: SHELL_PAGE })
+  }
   // Waiting on you's count: the same read as its pane (ShellWaiting.tsx).
   const waiting = useQuery({ queryKey: ["shell-waiting"], queryFn: () => apiGet<WaitingReply>(WAITING_URL), refetchInterval: 15_000 })
   const needs = waiting.data ? waitingList(waiting.data).items.length : undefined

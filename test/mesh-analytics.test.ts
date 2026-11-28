@@ -5,7 +5,7 @@ import path from "path"
 import type Database from "better-sqlite3"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { buildMeshAnalytics, classifyCause, dayKeysBetween, dayBounds } from "../src/storage/mesh-analytics"
-import { listJobRuns, listThreadRuns, getRunShape, getDayActivity, getConversationSummary } from "../src/storage/mesh-drill"
+import { listJobRuns, listThreadRuns, getRunShape, getDayActivity, getConversationSummary, latestThread } from "../src/storage/mesh-drill"
 import { mergeMeshAnalytics, mergeMeshDay } from "../src/daemon/mesh-analytics-api"
 
 let tmp: string
@@ -242,6 +242,29 @@ describe("mesh drill-down", () => {
     const runs = listThreadRuns(db, { agent: "a", channel: "telegram", chatId: "c" })
     expect(runs).toHaveLength(2)
     expect(runs[0].startedAt).toBeGreaterThan(runs[1].startedAt)
+  })
+
+  it("finds an agent's latest conversation on any channel, schedules and workflows left out (#2101 R26)", () => {
+    const db = openTmp()
+    trace(db, { agent: "a", channel: "telegram", chat: "t1", ago: 3 })
+    trace(db, { agent: "a", channel: "a2a", chat: "a2a:pm:a", ago: 2 })
+    trace(db, { agent: "a", channel: "a2a", chat: "a2a:pm:a", ago: 1.5 })
+    trace(db, { agent: "a", channel: "cron", chat: "cron:j", ago: 0.5 })
+    trace(db, { agent: "a", channel: "workflow", chat: "w", ago: 0.4 })
+    trace(db, { agent: "b", channel: "telegram", chat: "t2", ago: 0.1 })
+    const l = latestThread(db, { agent: "a", limit: 1 })
+    expect(l).toMatchObject({ found: true, agent: "a", channel: "a2a", chatId: "a2a:pm:a" })
+    expect(l.runs).toHaveLength(1)
+    expect(l.runs[0].startedAt).toBe(listThreadRuns(db, { agent: "a", channel: "a2a", chatId: "a2a:pm:a" })[0].startedAt)
+    // Content-free, as every read here: no message or answer.
+    expect(JSON.stringify(l)).not.toMatch(/original_message|final_response|error/)
+  })
+
+  it("an agent that never spoke in a conversation has none", () => {
+    const db = openTmp()
+    trace(db, { agent: "a", channel: "cron", chat: "cron:j", ago: 1 })
+    expect(latestThread(db, { agent: "a" })).toEqual({ found: false, agent: "a", runs: [] })
+    expect(latestThread(db, { agent: "nobody" }).found).toBe(false)
   })
 
   it("summarises what a run touched from tool names alone", () => {
