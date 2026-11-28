@@ -35,6 +35,12 @@ import {
 /** The menu item each centre pane belongs to. */
 const PANE_OF: Record<string, ShellPane> = { tasks: "tasks", automations: "automations", needs: "waiting", projects: "projects", activity: "activity", mobile: "mobile", workflows: "workflows" }
 
+/** Is this item the one in view: the page's item outside the shell, else the pane's. */
+function isOn(id: string, pane: ShellPane, current?: string): boolean {
+  if (current !== undefined) return id === current
+  return PANE_OF[id] !== undefined && PANE_OF[id] === pane
+}
+
 const ring = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 /** A Workspace row. The old Hub's CSS sets `a { font-weight: 600 }`: rows say their weight. */
 const itemCls = "flex h-8 w-full items-center gap-2.5 rounded-sm px-2 text-left text-[13.5px] font-normal pointer-coarse:h-11 cursor-pointer " + ring
@@ -63,6 +69,11 @@ export interface SideMenuProps {
   focusSearch?: number
   /** The Hub's saved menu (#2149, owner only); without it, the default list. */
   menu?: ShellMenu
+  /** Where the Hub item opens (shell.ts hubFeedHref); the old feed without it. */
+  hubHref?: string
+  /** The item of the page in view, outside the shell (#2593, shellItemFor):
+   *  marked instead of the pane's. */
+  current?: string
 }
 
 function GroupLabel({ children }: { children: ReactNode }) {
@@ -190,13 +201,13 @@ function flipTheme() {
 
 /** The full side menu: header, search, the agents by state, Workspace,
  *  More (the items switched on in Settings › Layout) and the foot. */
-export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pane = "chat", tasksView = "list", onTasksView, action, focusSearch, menu }: SideMenuProps) {
+export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pane = "chat", tasksView = "list", onTasksView, action, focusSearch, menu, hubHref, current }: SideMenuProps) {
   const [q, setQ] = useState("")
   const box = useRef<HTMLInputElement>(null)
   useEffect(() => { if (focusSearch) { box.current?.focus(); box.current?.select() } }, [focusSearch])
   const [folds, setFolds] = useState<HaOpen>(() => readMenuFolds())
   const setFold = (k: keyof HaOpen, v: boolean) => setFolds((o) => { const n = { ...o, [k]: v }; saveMenuFolds(n); return n })
-  const nav = shellNav(view, { owner, menu })
+  const nav = shellNav(view, { owner, menu, hubHref })
   const needle = q.trim().toLowerCase()
   const hit = (label: string) => !needle || label.toLowerCase().includes(needle)
   const groups = model ? menuGroups(model, folds, needle, needs) : []
@@ -266,7 +277,7 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
               {workspace.map((item) => item.group ? (
                 <div key={item.id} data-shell-menu-group={item.id} className="mt-2"><GroupLabel>{item.label}</GroupLabel></div>
               ) : (
-                <MenuLink key={item.id} item={item} onOpen={onDone} active={PANE_OF[item.id] !== undefined && PANE_OF[item.id] === pane} count={item.id === "needs" ? needs : undefined} />
+                <MenuLink key={item.id} item={item} onOpen={onDone} active={isOn(item.id, pane, current)} count={item.id === "needs" ? needs : undefined} />
               ))}
             </div>
           </section>
@@ -274,7 +285,7 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
         {more.length ? (
           <section aria-label="More" data-shell-group="more" className="mt-3.5">
             <GroupLabel>More</GroupLabel>
-            <div className="flex flex-col gap-px">{more.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} />)}</div>
+            <div className="flex flex-col gap-px">{more.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} active={isOn(item.id, pane, current)} />)}</div>
           </section>
         ) : null}
         {pages.length ? (
@@ -290,7 +301,7 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
         </div>
       ) : null}
       <div className="-mx-4 flex flex-col gap-px border-t border-border px-4 pt-2 pb-3">
-        {nav.foot.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} />)}
+        {nav.foot.map((item) => <MenuLink key={item.id} item={item} onOpen={onDone} active={isOn(item.id, pane, current)} />)}
         <button type="button" data-shell-item="theme" onClick={flipTheme} className={cn(itemCls, itemIdle, "min-[641px]:hidden")}>
           <Icon name="sun-moon" />
           <span>Light / dark</span>
@@ -312,7 +323,7 @@ function RailTip({ label, children }: { label: string; children: ReactNode }) {
 
 const railBtn = "relative grid size-9 place-items-center rounded-sm text-(--ax-text-2) hover:bg-(--ax-surface-2) hover:text-foreground cursor-pointer " + ring
 
-export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "model" | "needs" | "agent" | "onAgent" | "pane" | "menu"> {
+export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "model" | "needs" | "agent" | "onAgent" | "pane" | "menu" | "hubHref" | "current"> {
   /** Opens the full menu: unfolds it on a computer, as a Sheet below 1181 px. */
   onExpand: () => void
   /** Opens the full menu with the cursor in its search box (⌘K). */
@@ -323,8 +334,8 @@ export interface SideRailProps extends Pick<SideMenuProps, "view" | "owner" | "m
  *  its face with its state icon, in the menu's groups and order with a
  *  hairline between them, then Workspace's icons and Settings. Names,
  *  states and lines are in the tooltips. */
-export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "chat", onExpand, onSearch, menu }: SideRailProps) {
-  const nav = shellNav(view, { owner, menu })
+export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "chat", onExpand, onSearch, menu, hubHref, current }: SideRailProps) {
+  const nav = shellNav(view, { owner, menu, hubHref })
   const rows = model ? menuRows(model) : []
   // The rail has no room for group headers: their items follow each other.
   const workspace = [...nav.main.filter((i) => i.id !== "search" && i.id !== "agents" && !i.group), ...nav.more]
@@ -340,15 +351,15 @@ export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "ch
         {!model ? <AfSkeletonRows rows={3} /> : rows.map((r, i) => {
           const word = haStateWord(r.state)
           const sep = i > 0 && r.state !== rows[i - 1].state && !(r.state === "failed" && rows[i - 1].state === "needs")
-          const current = pane === "chat" && r.id === agent
+          const picked = pane === "chat" && r.id === agent
           return (
             <div key={r.id} className="contents">
               {sep ? <hr className="my-1 w-6 border-border" /> : null}
               <RailTip label={r.name + " · " + word + (r.line ? ": " + r.line : "")}>
                 <button
-                  type="button" data-shell-rail-agent={r.id} aria-pressed={current} aria-label={r.name + ", " + word}
+                  type="button" data-shell-rail-agent={r.id} aria-pressed={picked} aria-label={r.name + ", " + word}
                   onClick={() => onAgent?.(r.id)}
-                  className={cn("relative grid size-10 shrink-0 place-items-center rounded-sm cursor-pointer", ring, current ? "bg-accent" : "hover:bg-(--ax-surface-2)")}
+                  className={cn("relative grid size-10 shrink-0 place-items-center rounded-sm cursor-pointer", ring, picked ? "bg-accent" : "hover:bg-(--ax-surface-2)")}
                 >
                   <AgentFace r={r} rail />
                 </button>
@@ -358,7 +369,7 @@ export function SideRail({ view, owner, model, needs, agent, onAgent, pane = "ch
         })}
         <div className="mt-2 flex w-full flex-col items-center gap-0.5 border-t border-border pt-2">
           {workspace.map((item) => {
-            const active = PANE_OF[item.id] !== undefined && PANE_OF[item.id] === pane
+            const active = isOn(item.id, pane, current)
             const n = item.id === "needs" ? needs ?? 0 : 0
             return (
               <RailTip key={item.id} label={item.label}>

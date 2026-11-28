@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 import { resolveHubLayout, HUB_SHOW_IDS } from "../src/hub/layout"
-import { IN_AGENT_LIST, PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLandingHash, shellNav, type ShellMenu } from "../src/hub/shell"
+import { IN_AGENT_LIST, PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, hubFeedHref, shellItemFor, shellLandingHash, shellNav, type ShellMenu } from "../src/hub/shell"
+import { wantsMenuFrame } from "../src/hub/shell/menu-frame"
+import { SideMenu, SideRail } from "../src/hub/shell/SideMenu"
 import { hubMenuCatalog } from "../src/daemon/ui/pages/wall"
 import { presetItems, type MenuItem } from "../src/daemon/hub-menu"
 import { HUB_REACT_PAGES, hubReactPageIds } from "../src/hub/pages"
@@ -19,7 +21,8 @@ const full = resolveHubLayout({ layout: "full" })
 
 describe("shell side menu per layout", () => {
   it("lists the issue's default items in its order, whatever the layout", () => {
-    const want = ["search", "tasks", "automations", "agents", "projects", "needs"]
+    // #2593: the Hub page (Feed | List) has its own item, after Search.
+    const want = ["search", "hub", "tasks", "automations", "agents", "projects", "needs"]
     expect(ids(shellNav(simple, { owner: true }).main)).toEqual(want)
     expect(ids(shellNav(full, { owner: true }).main)).toEqual(want)
   })
@@ -221,8 +224,10 @@ describe("the saved Hub menu (#2149 M2)", () => {
   })
   it("saved: Search and Agents, then the owner's items in order, empty groups dropped", () => {
     const nav = shellNav(simple, { owner: true, menu: mine })
-    expect(ids(nav.main)).toEqual(["search", "agents", "g1", "needs", "tasks", "m3", "g3", "people", "pin_1"])
-    expect(nav.main.find((i) => i.id === "tasks")!.label).toBe("My work")
+    // #2593: the Hub feed is the Hub item now; Tasks, which it used to be, follows it.
+    expect(ids(nav.main)).toEqual(["search", "agents", "g1", "needs", "hub", "tasks", "m3", "g3", "people", "pin_1"])
+    expect(nav.main.find((i) => i.id === "hub")!.label).toBe("My work")
+    expect(nav.main.find((i) => i.id === "tasks")!.href).toBe("#page=home&pane=tasks")
     expect(nav.main.find((i) => i.id === "m3")!.href).toBe("#view=feed&status=blocked&project=acme")
     expect(nav.main.find((i) => i.id === "people")!.href).toBe("#page=people")
     expect(nav.main.find((i) => i.id === "pin_1")).toMatchObject({ href: "https://example.com/docs", external: true })
@@ -281,5 +286,52 @@ describe("the saved Hub menu (#2149 M2)", () => {
     expect(html).not.toContain('data-shell-item="automations"')
     expect(html).not.toContain('data-shell-group="pages"')
     expect(html).toMatch(/href="https:\/\/example\.com\/docs"[^>]*target="_blank"|target="_blank"[^>]*href="https:\/\/example\.com\/docs"/)
+  })
+})
+
+// #2593: one side menu on every Hub page, and the Hub page one click away.
+describe("one side menu and a Hub item (#2593)", () => {
+  const boot = (pages: string[], layout = simple) => ({ pages, layout })
+  const menuHtml = (el: ReturnType<typeof createElement>) => renderToStaticMarkup(createElement(TooltipProvider, null, el))
+
+  it("the Hub item opens the React feed when the viewer has it, else the old feed", () => {
+    expect(hubFeedHref(["home", "feed-preview"])).toBe("#page=feed-preview")
+    expect(hubFeedHref(["home"])).toBe("#status=open&view=feed")
+    const nav = shellNav(simple, { owner: true, hubHref: "#page=feed-preview" })
+    expect(nav.main.find((i) => i.id === "hub")).toMatchObject({ label: "Hub", href: "#page=feed-preview" })
+    // Hub and Tasks are two items, never one hijacking the other.
+    expect(nav.main.find((i) => i.id === "tasks")!.href).toBe("#page=home&pane=tasks")
+    expect(PAGE_SHELL.wall).toBe("hub")
+  })
+  it("a saved menu without the Hub feed still finds it by search", () => {
+    const m: ShellMenu = { menu: { items: [{ id: "m1", kind: "page", page: "needs" }] }, saved: true, catalog: hubMenuCatalog() }
+    const nav = shellNav(simple, { owner: true, menu: m, hubHref: "#page=feed-preview" })
+    expect(nav.hidden.find((i) => i.id === "hub")!.href).toBe("#page=feed-preview")
+  })
+  it("marks the item of the page in view: the feed and its List are the Hub", () => {
+    const nav = shellNav(simple, { owner: true, hubHref: "#page=feed-preview" })
+    expect(shellItemFor("#page=feed-preview", nav)).toBe("hub")
+    expect(shellItemFor("#page=feed-preview&view=list", nav)).toBe("hub")
+    expect(shellItemFor("#status=open&view=list", nav)).toBe("hub")
+    expect(shellItemFor("#page=agents", nav)).toBe("agents")
+    expect(shellItemFor("#page=task&id=r1", nav)).toBeUndefined()
+    expect(shellItemFor("#post=r1&view=feed", nav)).toBeUndefined()
+  })
+  it("every page but the shell and the new Settings gets the frame, in the simple layout only", () => {
+    const b = boot(["home", "task", "feed-preview", "settings-preview"])
+    for (const p of ["task", "feed-preview", "jobledger", "agents", null]) expect(wantsMenuFrame(p, b)).toBe(true)
+    expect(wantsMenuFrame("home", b)).toBe(false)
+    expect(wantsMenuFrame("settings-preview", b)).toBe(false)
+    expect(wantsMenuFrame("task", boot(["home", "task"], full))).toBe(false)
+    // A viewer without the shell keeps the old menu.
+    expect(wantsMenuFrame("task", boot(["task"]))).toBe(false)
+  })
+  it("the menu marks the page's item instead of the pane's, on the full menu and the rail", () => {
+    const props = { view: simple, owner: true, model: { rows: [] } as never, hubHref: "#page=feed-preview", current: "hub" }
+    const full = menuHtml(createElement(SideMenu, { ...props, pane: "tasks" }))
+    expect(full).toMatch(/<a href="#page=feed-preview" data-shell-item="hub" aria-current="page"/)
+    expect(full).not.toMatch(/data-shell-item="tasks" aria-current="page"/)
+    const rail = menuHtml(createElement(SideRail, { ...props, onExpand: () => {}, onSearch: () => {} }))
+    expect(rail).toMatch(/href="#page=feed-preview" data-shell-item="hub" aria-label="Hub" aria-current="page"/)
   })
 })

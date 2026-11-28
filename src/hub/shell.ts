@@ -36,6 +36,9 @@ export interface ShellNavItem {
  *  Agents is a heading here: the shell lists the agents under it. */
 export const SHELL_MAIN: readonly ShellNavItem[] = [
   { id: "search", label: "Search", icon: "search" },
+  // The Hub's own page, Feed | List, one click away (#2593): Tasks is the
+  // shell's pane, the Hub page is the feed, and both are in the menu.
+  { id: "hub", label: "Hub", icon: "rows-3", href: "#status=open&view=feed" },
   { id: "tasks", label: "Tasks", icon: "list-todo", href: "#page=home&pane=tasks" },
   { id: "automations", label: "Automations", icon: "clock", href: "#page=home&pane=automations" },
   { id: "agents", label: "Agents", icon: "bot", href: "#page=agents" },
@@ -78,18 +81,31 @@ export interface ShellNav {
   foot: ShellNavItem[]
 }
 
+/** Where the Hub item opens: the React feed when this viewer has it
+ *  (#2101, its review id), else the old feed. */
+export function hubFeedHref(pages: readonly string[]): string {
+  return pages.includes("feed-preview") ? "#page=feed-preview" : "#status=open&view=feed"
+}
+
 /** The side menu for this view and viewer. Once the owner has saved the
  *  Hub's menu (Settings › Menu, #2149), the menu follows it (menuNav);
- *  until then it is the default list below, as before. */
-export function shellNav(view: HubLayoutView, opts: { owner: boolean; menu?: ShellMenu }): ShellNav {
-  if (opts.menu?.saved) return menuNav(opts.menu, opts.owner, view)
+ *  until then it is the default list below, as before. `hubHref` is where
+ *  the Hub item opens (hubFeedHref). */
+export function shellNav(view: HubLayoutView, opts: { owner: boolean; menu?: ShellMenu; hubHref?: string }): ShellNav {
+  const nav = opts.menu?.saved ? menuNav(opts.menu, opts.owner, view) : defaultNav(view, opts.owner)
+  if (!opts.hubHref) return nav
+  const fix = (i: ShellNavItem) => (i.id === "hub" ? { ...i, href: opts.hubHref } : i)
+  return { ...nav, main: nav.main.map(fix), hidden: nav.hidden.map(fix) }
+}
+
+function defaultNav(view: HubLayoutView, owner: boolean): ShellNav {
   const more: ShellNavItem[] = []
   const hidden: ShellNavItem[] = []
   for (const [id, item] of Object.entries(SHELL_MORE) as [HubShowItem, ShellNavItem][]) {
     if (IN_AGENT_LIST.has(item.id)) hidden.push(item)
     else if (view.show[id]) more.push(item)
   }
-  return { main: [...SHELL_MAIN], more, hidden, foot: opts.owner ? [SHELL_SETTINGS] : [] }
+  return { main: [...SHELL_MAIN], more, hidden, foot: owner ? [SHELL_SETTINGS] : [] }
 }
 
 // --- The saved Hub menu (#2149 M2) ---
@@ -107,11 +123,11 @@ export interface ShellMenu {
   catalog: MenuCatalog
 }
 
-/** The catalog pages the shell has an item for: the Hub feed is Tasks (it
- *  lists the same requests), Schedules is Automations (the same reply),
- *  Live is Sessions, Cost is Usage. */
+/** The catalog pages the shell has an item for: the Hub feed is the Hub
+ *  item (#2593: no longer Tasks; Tasks follows it, see menuNav), Schedules
+ *  is Automations (the same reply), Live is Sessions, Cost is Usage. */
 export const PAGE_SHELL: Readonly<Record<string, string>> = {
-  wall: "tasks", jobs: "automations", needs: "needs", projects: "projects", agents: "agents",
+  wall: "hub", jobs: "automations", needs: "needs", projects: "projects", agents: "agents",
   workflows: "workflows", activity: "activity", org: "org", live: "sessions", cost: "usage",
 }
 
@@ -149,6 +165,9 @@ export function menuNav(m: ShellMenu, owner: boolean, view?: HubLayoutView): She
     if (!item || shown.has(item.id) || IN_AGENT_LIST.has(item.id)) continue
     shown.add(item.id)
     main.push({ ...item, label: it.label || item.label, icon: it.icon || item.icon })
+    // The Hub feed was Tasks before #2593: a saved menu with it keeps Tasks,
+    // right after the Hub item, so neither goes missing.
+    if (item.id === "hub" && !shown.has("tasks")) { shown.add("tasks"); main.push(SHELL_BY_ID.get("tasks")!) }
   }
   const hidden: ShellNavItem[] = []
   for (const page of pages.values()) {
@@ -162,6 +181,20 @@ export function menuNav(m: ShellMenu, owner: boolean, view?: HubLayoutView): She
     if (view?.show[id] && !shown.has(item.id) && !IN_AGENT_LIST.has(item.id)) more.push(item)
   }
   return { main: kept, more, hidden, foot: owner ? [SHELL_SETTINGS] : [] }
+}
+
+/** The menu item a page outside the shell belongs to, so the menu marks it
+ *  (#2593): the item whose address is this one, else the Hub item for the
+ *  feed and its List (React or old). */
+export function shellItemFor(hash: string, nav: ShellNav): string | undefined {
+  const h = hash.startsWith("#") ? hash : "#" + hash
+  const same = [...nav.main, ...nav.more, ...nav.foot].find((i) => i.href && !i.group && i.href === h)
+  if (same) return same.id
+  const p = new URLSearchParams(h.slice(1))
+  const page = p.get("page")
+  if (page === "feed-preview") return "hub"
+  if (!page && !p.get("post") && (p.get("view") === "feed" || p.get("view") === "list")) return "hub"
+  return undefined
 }
 
 /** Where /hub opens: the shell, when the layout is simple, the viewer has
