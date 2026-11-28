@@ -1380,6 +1380,10 @@ ${HUB_NAV_SCRIPT}
     $('wall-tools').hidden = !posts_;
     $('wall-cols-btn').hidden = !(posts_ && S.view === 'list');
     document.querySelector('.ax-wall').classList.toggle('is-posts', posts_);
+    // The first frame set these from the link (WALL_FIRST_FRAME_SCRIPT, wall.ts);
+    // they follow the view from here on. is-loaded ends the loading rows.
+    document.querySelector('.ax-wall').classList.toggle('is-list', posts_ && S.view === 'list');
+    document.querySelector('.ax-wall').classList.toggle('is-loaded', !!S.data || !!S.loadFailed);
     // The post page has the feed's column (#2101, wall-post.client.ts).
     document.querySelector('.ax-wall').classList.toggle('is-post', page === 'post');
     // The "Filters" fold says how many are in use (#2352); the status tab and the search box show themselves.
@@ -1570,6 +1574,7 @@ ${HUB_NAV_SCRIPT}
       // With posts on screen the sync line turns to "Not synced since" and
       // Retry (principle 8); with none, the feed says why.
       S.loadFailed = true;
+      document.querySelector('.ax-wall').classList.toggle('is-loaded', true);
       if (S.data) render();
       else { $('wall-feed').innerHTML = '<p class="ax-wall__empty">Could not load the ${HUB_NAME}: ' + esc(e.message) + '. Refresh to try again.</p>'; $('wall-feed')._fdEmpty = true; }
     }
