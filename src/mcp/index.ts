@@ -1179,7 +1179,8 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow", "standing"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction), flow (the daily flow rate: requests closed out of those asked, per day) or standing (mark a recurring order: see number)." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "list", "goals", "goal", "flow", "standing", "project"], description: "list (default), accept, wait, done, decline, step, promise, describe, qa, goals, goal (one goal record: see goalAction), flow (the daily flow rate: requests closed out of those asked, per day), standing (mark a recurring order: see number) or project (move a request to a project: see project)." },
+        project: { type: "string", description: "project: the project the request belongs to, as its key (such as group/project), or \"none\" for No project. Any agent may move any request, open or closed; pass id for one that is not this turn's." },
         number: { type: "string", description: "standing: the id of the tracked number (agentx_numbers) that proves each period. Its rhythm is the order's." },
         cron: { type: "string", description: "standing, optional: the id of the cron that runs the work." },
         rhythm: { type: "string", enum: ["daily", "weekly", "monthly"], description: "standing, optional: must match the number's rhythm." },

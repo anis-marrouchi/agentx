@@ -9,6 +9,7 @@ import type { Proof } from "./promise"
 import type { QaFilter, QaRecord, QaVerdict } from "./qa"
 import type { GoalRequest, GoalSummary, RequestGoal } from "./goals"
 import { readStanding, type StandingOrder } from "./standing"
+import { projectOf } from "./project"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -207,6 +208,10 @@ export interface RequestRecord {
   /** A standing order (noqta#807): its rhythm, the number that proves it
    *  and its cron. Only the owner closes it. Null: an ordinary request. */
   standing?: StandingOrder | null
+  /** The project it belongs to (#2587): a forge path such as
+   *  `group/project` or a project slug. Null: "No project". Filled at
+   *  creation when the request clearly names one; anyone can move it. */
+  project?: string | null
 }
 
 /** Where an issue's runs go (#2104): a mesh peer's name, or LOCAL_PLACEMENT
@@ -369,7 +374,7 @@ export function ensureRequestTables(db: Database.Database): void {
     ["qa_requested_at", "INTEGER"], ["qa_verdict", "TEXT"], ["qa_by", "TEXT"], ["qa_at", "INTEGER"], ["qa_note", "TEXT"],
     ["goal_id", "TEXT"], ["goal_title", "TEXT"],
     ["deliverables", "TEXT"], ["deliverable_proofs", "TEXT"], ["proof_asked_at", "INTEGER"], ["proof_signalled_at", "INTEGER"],
-    ["standing", "TEXT"], ["owner_reopens", "INTEGER"], ["close_kind", "TEXT"]]) {
+    ["standing", "TEXT"], ["owner_reopens", "INTEGER"], ["close_kind", "TEXT"], ["project", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -416,6 +421,7 @@ function toRecord(r: any): RequestRecord {
     proofAskedAt: r.proof_asked_at ?? null, proofSignalledAt: r.proof_signalled_at ?? null,
     standing: readStanding(r.standing), ownerReopens: r.owner_reopens ?? 0,
     closeKind: (CLOSE_KINDS as readonly string[]).includes(r.close_kind) ? r.close_kind : null,
+    project: r.project ?? null,
   }
 }
 
@@ -504,9 +510,9 @@ export class RequestStore {
     // Owed to whoever asked: the known person, else the sender (#1039).
     const owedTo = input.person ?? input.sender ?? null
     this.db.prepare(
-      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at, state_changed_at, owed_to)
-       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, owedTo)
+      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at, state_changed_at, owed_to, project)
+       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, owedTo, projectOf(input))
     this.link(input.id, "run", input.runId, input.now)
   }
 
@@ -517,12 +523,14 @@ export class RequestStore {
     owedBy?: string | null; dueAt?: number | null; closeWhen?: CloseWhen | null; home?: RequestHome | null; now: number
   }): void {
     this.db.prepare(
-      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, state_changed_at, owed_to, owed_by, promise, due_at, close_when, home_kind, home_link)
-       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, state_changed_at, owed_to, owed_by, promise, due_at, close_when, home_kind, home_link, project)
+       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
     ).run(
       input.id, input.channel, input.chatId, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.owedTo,
       input.owedBy ?? null, input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
+      // A home address names the project as well as the words do.
+      projectOf({ channel: input.channel, chatId: input.chatId, text: input.home ? `${input.text}\n${input.home.link}` : input.text }),
     )
     if (input.home) this.linkHome(input.id, input.home, input.now)
   }
@@ -532,9 +540,10 @@ export class RequestStore {
    *  requests check gives it to the agent as a new turn. */
   addWallPost(input: { id: string; agentId: string; text: string; now: number }): void {
     this.db.prepare(
-      `INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at, owed_to, pickup_at)
-       VALUES (?, 'in_progress', ?, 'owner', 'owner', ?, ?, ?, ?, ?, 'owner', ?)`,
-    ).run(input.id, WALL_CHANNEL, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.now)
+      `INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at, owed_to, pickup_at, project)
+       VALUES (?, 'in_progress', ?, 'owner', 'owner', ?, ?, ?, ?, ?, 'owner', ?, ?)`,
+    ).run(input.id, WALL_CHANNEL, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.now,
+      projectOf({ channel: WALL_CHANNEL, chatId: "owner", text: input.text }))
   }
 
   /** The newest open promise of this agent, owed to `owedTo`, with the
@@ -792,6 +801,20 @@ export class RequestStore {
    *  with another goal moves it. Not a touch: naming a goal is not progress. */
   setGoal(id: string, goal: RequestGoal): void {
     this.db.prepare("UPDATE requests SET goal_id = ?, goal_title = ? WHERE id = ?").run(goal.id, goal.title, id)
+  }
+
+  /** Moves a request to a project, or to "No project" with null (#2587).
+   *  Open or closed alike; not a touch. False: no such request. */
+  setProject(id: string, project: string | null): boolean {
+    return this.db.prepare("UPDATE requests SET project = ? WHERE id = ? AND state NOT IN ('candidate', 'job')").run(project, id).changes > 0
+  }
+
+  /** How many requests in these states each project has (#2587), most
+   *  first; null is "No project". */
+  projectCounts(states: readonly RequestState[]): Array<{ project: string | null; count: number }> {
+    return (this.db.prepare(
+      `SELECT project, COUNT(*) AS n FROM requests WHERE state IN (${placeholders(states.length)}) GROUP BY project ORDER BY n DESC, project ASC`,
+    ).all(...states) as Array<{ project: string | null; n: number }>).map((r) => ({ project: r.project ?? null, count: r.n }))
   }
 
   /** Every goal a request names (#1168), most recently active first: its
@@ -1634,9 +1657,12 @@ export class RequestStore {
    *  (#1188). Oldest first;
    *  `newest` keeps the newest `limit` instead of the oldest. `total`
    *  counts every match, so a caller can page with `offset`. */
-  query(q: { states: readonly RequestState[]; since?: number; closedSince?: number; qa?: QaFilter; limit: number; offset?: number; newest?: boolean }): { items: RequestRecord[]; total: number } {
+  query(q: { states: readonly RequestState[]; since?: number; closedSince?: number; qa?: QaFilter; project?: string | null; limit: number; offset?: number; newest?: boolean }): { items: RequestRecord[]; total: number } {
     const where = [`state IN (${placeholders(q.states.length)})`]
     const args: unknown[] = [...q.states]
+    // By project (#2587): null is "No project"; unset is any.
+    if (q.project === null) where.push("project IS NULL")
+    else if (q.project !== undefined) { where.push("project = ?"); args.push(q.project) }
     if (q.since !== undefined) { where.push("created_at >= ?"); args.push(q.since) }
     if (q.closedSince !== undefined) { where.push("closed_at >= ?"); args.push(q.closedSince) }
     // QA (#1188): awaiting sign-off, or the latest verdict is this one.

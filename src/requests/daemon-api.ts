@@ -21,6 +21,7 @@ import { MAX_ESTIMATE_MINUTES } from "./slots"
 import { parseStanding, standingRefusal, type StandingNumbers } from "./standing"
 import { blockedBody, closingRecord, judgeBudget, warnNote, type BeforeCloseCtx, type OwnerWordsNote } from "./before-close"
 import { CHECK_BY, type OwnerVerdict } from "./owner-check"
+import { normalizeProject } from "./project"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -203,7 +204,7 @@ export interface ApiReply {
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
-const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "standing"]
+const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe", "qa", "standing", "project"]
 
 /** The furthest a step's owner may put off its nudges (#1764). */
 export const MAX_STEP_WAIT_MS = 7 * 24 * 60 * 60 * 1000
@@ -544,6 +545,8 @@ export const LIST_MAX = 500
  *                   or block, risk, pass (the latest verdict, #1188);
  *                   open and closed alike unless state says otherwise
  *    links=1        each item with its links (always on with since)
+ *    project=<key>  only that project's (#2587); project=none, the
+ *                   requests with no project
  *    limit=<n>      1 to 500, default 100
  *    offset=<n>     page from the oldest; the reply gives nextOffset.
  *  Without offset, a since list past its limit keeps the newest (#1036),
@@ -583,8 +586,12 @@ function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0
   if (typeof limit === "string") return limit
   const offset = whole("offset", 0, Number.MAX_SAFE_INTEGER)
   if (typeof offset === "string") return offset
+  // By project (#2587): "none" is the requests with no project.
+  const rawProject = p.get("project")
+  const project = rawProject == null ? undefined : normalizeProject(rawProject)
+  if (project && typeof project === "object") return project.error
   return {
-    states: [...states], since, closedSince, qa: qa as QaFilter | undefined, limit: limit ?? LIST_LIMIT, offset,
+    states: [...states], since, closedSince, qa: qa as QaFilter | undefined, ...(project !== undefined ? { project } : {}), limit: limit ?? LIST_LIMIT, offset,
     newest: offset === undefined && since !== undefined, links: since !== undefined || p.get("links") === "1",
   }
 }
@@ -658,6 +665,11 @@ export function handleRequestsApi(
     }
   }
 
+  // How many open requests each project has (#2587); null is "No project".
+  if (path === "/requests/projects" && m === "GET") {
+    return { status: 200, body: { enabled: deps.enabled, projects: store.projectCounts(OPEN_STATES) } }
+  }
+
   if (path === "/requests/goals" && m === "GET") {
     const goals = store.goals()
     // The records (#1568): a goal's state, owner and check, including
@@ -701,7 +713,7 @@ export function handleRequestsApi(
     const action = str(input.action).toLowerCase()
     if (action === "drop") return { status: 403, body: { error: OWNER_ONLY } }
     if (!POST_ACTIONS.includes(action)) {
-      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise, describe, qa or standing` } }
+      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise, describe, qa, standing or project` } }
     }
     // Ask for QA sign-off (#1188): a flag beside what the action does.
     const needsQa = ["accept", "wait", "promise", "describe"].includes(action) ? parseNeedsQa(input.needsQa) : undefined
@@ -793,6 +805,17 @@ export function handleRequestsApi(
       const v = parseVerdict(input.verdict, input.note ?? input.reason)
       if (typeof v === "string") return { status: 400, body: { error: v } }
       store.recordVerdict(request.id, { ...v, by: agentId }, now)
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
+
+    // The project it belongs to (#2587): anyone may move a request, open
+    // or closed, theirs or another agent's. "none" (or "") is No project.
+    if (action === "project") {
+      if (request.state === "candidate") return { status: 404, body: { error: `no request "${id}"` } }
+      if (!("project" in input)) return { status: 400, body: { error: 'project needs project: its key (such as group/project), or "none"' } }
+      const project = normalizeProject(input.project)
+      if (project && typeof project === "object") return { status: 400, body: { error: project.error } }
+      store.setProject(request.id, project)
       return { status: 200, body: { request: store.get(request.id) } }
     }
 

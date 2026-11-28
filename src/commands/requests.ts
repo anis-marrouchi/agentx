@@ -20,6 +20,7 @@ import { drift } from "./requests-drift"
 import { sprints } from "./requests-sprints"
 import { contract } from "./requests-contract"
 import { awaitingQa, describeQa, QA_FILTERS, type QaFilter } from "@/requests/qa"
+import { normalizeProject, NO_PROJECT } from "@/requests/project"
 import { standingLine, standingRefusal, standingView } from "@/requests/standing"
 import { NumberStore } from "@/numbers/store"
 import { hasNumbersTable } from "@/numbers/hub-api"
@@ -124,6 +125,7 @@ function printRequest(r: RequestRecord): void {
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
   if (r.closeKind === "superseded" && r.proof) console.log(chalk.dim(`    Superseded by: ${r.proof.value}`))
   if (r.closedBy) console.log(chalk.dim(`    Closed by: ${r.closedBy}`))
+  console.log(chalk.dim(`    Project: ${r.project ?? NO_PROJECT}`))
   if (r.ownerCheck) console.log((r.ownerCheck === "mismatch" ? chalk.red : chalk.dim)(`    Owner-words check: ${r.ownerCheck}${r.ownerCheckNote ? ` (${r.ownerCheckNote})` : ""}`))
 }
 
@@ -134,15 +136,21 @@ requests
   .option("--json", "machine-readable output")
   .option("--stalled", "only the stalled ones (past their due time, or quiet too long), grouped by what they wait on")
   .option("--qa <filter>", "by QA sign-off, open or closed: awaiting (no verdict yet), block, risk or pass")
-  .action((opts: { json?: boolean; stalled?: boolean; qa?: string }) => {
+  .option("--project <key>", "only this project's open requests (#2587); \"none\" for the ones with no project")
+  .option("--projects", "how many open requests each project has")
+  .action((opts: { json?: boolean; stalled?: boolean; qa?: string; project?: string; projects?: boolean }) => {
     const s = store()
     if (!s) return
     if (opts.stalled) { printStalled(s, !!opts.json); return }
+    if (opts.projects) { printProjects(s, !!opts.json); return }
     if (opts.qa !== undefined && !(QA_FILTERS as readonly string[]).includes(opts.qa)) {
       console.error(chalk.red(`  --qa takes ${QA_FILTERS.join(", ")}`)); process.exitCode = 1; return
     }
+    const project = opts.project === undefined ? undefined : normalizeProject(opts.project)
+    if (project && typeof project === "object") { console.error(chalk.red(`  ${project.error}`)); process.exitCode = 1; return }
     const items = opts.qa
-      ? s.query({ states: [...OPEN_STATES, ...CLOSED_STATES], qa: opts.qa as QaFilter, limit: LIST_MAX }).items
+      ? s.query({ states: [...OPEN_STATES, ...CLOSED_STATES], qa: opts.qa as QaFilter, ...(project !== undefined ? { project } : {}), limit: LIST_MAX }).items
+      : project !== undefined ? s.query({ states: OPEN_STATES, project, limit: LIST_MAX }).items
       : s.listOpen()
     if (opts.json) { console.log(JSON.stringify(items, null, 2)); return }
     if (!readRequestSettings().enabled) console.log(chalk.dim("  requests are off: turn them on with `agentx requests settings --enabled on`"))
@@ -333,6 +341,27 @@ requests
     const refused = new JobStore(db).closeFromOutside(jobId, { state, proof: opts.proof, by, now: Date.now() })
     if (refused) { console.error(chalk.red(`  Not closed: ${refused}`)); process.exitCode = 1; return }
     console.log(chalk.green(`  ✓ ${jobId} closed as ${state} by ${by}`))
+  })
+
+function printProjects(s: RequestStore, json: boolean): void {
+  const counts = s.projectCounts(OPEN_STATES)
+  if (json) { console.log(JSON.stringify(counts, null, 2)); return }
+  if (!counts.length) { console.log(chalk.dim("  no open requests")); return }
+  for (const c of counts) console.log(`  ${String(c.count).padStart(4)}  ${c.project ?? chalk.dim(NO_PROJECT)}`)
+}
+
+// Move a request to a project, or to No project (#2587). Anyone may:
+// the owner from here, an agent from its shell or with agentx_request.
+requests
+  .command("project <id> <project>")
+  .description("move a request to a project (its key, such as group/project), or to No project with \"none\"")
+  .action((id: string, raw: string) => {
+    const project = normalizeProject(raw)
+    if (project && typeof project === "object") { console.error(chalk.red(`  ${project.error}`)); process.exitCode = 1; return }
+    const s = store()
+    if (!s) return
+    if (!s.setProject(id, project)) { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
+    console.log(chalk.green(`  ✓ ${id} is under ${project ?? NO_PROJECT}`))
   })
 
 const DUE_WAKE_WORDS: Record<DueWake, string> = {

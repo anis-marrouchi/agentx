@@ -84,6 +84,7 @@ import { readCronRunHistory, readRecentCronRuns } from "@/crons/run-history"
 import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
+import { setKnownProjects } from "@/requests/project"
 import { Logger } from "./logger"
 import { applyConnectAttemptTimeout, DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS } from "./net-family"
 import { buildInfo, diskBuild } from "@/utils/build-info"
@@ -801,6 +802,9 @@ export class AgentXDaemon {
     {
       const result = this.projectRules.load()
       this.log(`Loaded ${result.count} project rule(s) from .agentx/projects/${result.errors > 0 ? ` (${result.errors} validation error(s))` : ""}`)
+      // A new request that names one of these is filed under it (#2587).
+      const rules = this.projectRules
+      setKnownProjects(() => rules.list())
       this.projectRules.startWatching(() => {
         // No need to re-wire adapters: they hold a reference to the store
         // and lookups are dynamic on each event.
