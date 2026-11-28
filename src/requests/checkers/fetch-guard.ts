@@ -162,6 +162,23 @@ export function setFetchAllow(keys: string[]): void {
   allowed = new Set(keys.map((k) => entryKey(k)).filter((k): k is string => !!k))
 }
 
+/** Why a check on `url` can never run on this node, or null when it may
+ *  (#2535). Only what is known without a lookup: a local name or a
+ *  private literal address that is not in the allow list. A promise made
+ *  on one node with another node's port (localhost:19900 on a Mac bound
+ *  to 18800) is refused when it is made, with the addresses that work. */
+export function localUrlRefused(url: URL, allow: Iterable<string> = allowed): string | null {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null
+  const keys = new Set(allow)
+  if (keys.has(hostPort(url))) return null
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase()
+  const local = host === "localhost" || host.endsWith(".localhost") || host === "local" || host.endsWith(".local")
+  if (!local && !(isIP(host) && blockedAddress(host))) return null
+  const own = [...keys].filter((k) => LOOPBACK_NAMES.some((n) => k.startsWith(`${n}:`)))
+  return `${hostPort(url)} is a local address this node never opens` +
+    (own.length ? `; this node's own address is ${own.map((k) => `http://${k}`).join(" or ")}` : "")
+}
+
 /** An allowed address is fetched without the connect-time guard. */
 const plainFetch: typeof fetch = (input, init) => undiciFetch(input as any, init as any) as unknown as Promise<Response>
 

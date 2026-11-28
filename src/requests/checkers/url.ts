@@ -1,5 +1,5 @@
 import type { CheckContext, CheckResult, UrlSpec } from "./index"
-import { safeFetch } from "./fetch-guard"
+import { localUrlRefused, safeFetch } from "./fetch-guard"
 
 // --- url: the address answers 2xx, and holds the text when one is given ---
 //
@@ -20,6 +20,15 @@ export function parseUrlSpec(raw: Record<string, unknown>): UrlSpec | string {
   const url = str(raw.url)
   if (!/^https?:\/\/\S+$/i.test(url)) return "url must be an http(s) address"
   if (url.length > URL_MAX) return `url is longer than ${URL_MAX} characters`
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return "url must be an http(s) address"
+  }
+  // Refused when made, not when closed (#2535): the check would never run.
+  const local = localUrlRefused(parsed)
+  if (local) return local
   const contains = str(raw.contains)
   if (contains.length > CONTAINS_MAX) return `contains is longer than ${CONTAINS_MAX} characters`
   return { kind: "url", url, ...(contains ? { contains } : {}) }

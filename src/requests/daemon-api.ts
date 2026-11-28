@@ -1,6 +1,7 @@
 import { WORK_KINDS_HINT } from "./work-hint.js"
 import { CLOSED_STATES, CLOSE_KINDS, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, OWNER_ASKED, type CloseKind, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
+import { localUrlRefused } from "./checkers/fetch-guard"
 import { parseDue, type LoopChecker } from "./loops"
 import { checkCloseRefused, checkEvidence, closeByCheckNow, deliverablesOf, oneLine, isRefusedLink, missingProofs, missingText, PROOF_OFF, type CloseProofCtx } from "./close-proof"
 import type { RequestTracker } from "./tracker"
@@ -509,6 +510,15 @@ function keepOwnerVerdict(deps: RequestsApiDeps, id: string, v: OwnerVerdict | n
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
+/** Why a kept url check can never run on this node, or null (#2535). */
+function neverRuns(url: string): string | null {
+  try {
+    return localUrlRefused(new URL(url))
+  } catch {
+    return null
+  }
+}
+
 /** A decline's reason kind and its link (#2082): superseded, with a link
  *  (http or https) to the newer work or the owner's later instruction.
  *  Null: a plain reason. A string: why it is refused. */
@@ -899,13 +909,19 @@ export function handleRequestsApi(
       const fromEvidence = parseProof(str(input.evidence), now)
       proof = typeof fromEvidence === "string" ? null : fromEvidence
     }
-    const unproven = action === "done" && !request.closeWhen ? proofRefusal(request, proof, deps.promiseSettings ?? DEFAULT_PROMISE_SETTINGS) : null
+    // A url check this node can never open (#2535: localhost:19900 on a
+    // Mac bound to 18800) leaves its promise open for good. Its agent may
+    // close it with a check proof: the close stays unverified, with why.
+    const deadCheck = action === "done" && request.closeWhen?.kind === "url" ? neverRuns(request.closeWhen.url) : null
+    if (deadCheck && proof?.kind === "check") store.markChecked(request.id, "unverified", `its check never ran: ${deadCheck}`, now)
+    const closeWhen = deadCheck && proof?.kind === "check" ? null : request.closeWhen
+    const unproven = action === "done" && !closeWhen ? proofRefusal(request, proof, deps.promiseSettings ?? DEFAULT_PROMISE_SETTINGS) : null
     if (unproven) return { status: 409, body: { error: unproven, proofRequired: true } }
 
     // Proof per deliverable on the agent's own done (noqta#876 cause 2):
     // the same gate a close by check passes. One link no longer closes a
     // request that asked for several things.
-    if (action === "done" && !request.closeWhen) {
+    if (action === "done" && !closeWhen) {
       const gate = agentDoneGate(store, request.id, now, deps.closeProof ?? PROOF_OFF)
       if (gate) return gate
     }
@@ -913,7 +929,7 @@ export function handleRequestsApi(
     // Its proof links are opened (#2122): the link proof and every
     // per-deliverable link. Block mode refuses only on a firm failure.
     let linkCheck: ProofCheckOutcome | null = null
-    if (action === "done" && !request.closeWhen && deps.proofCheck) {
+    if (action === "done" && !closeWhen && deps.proofCheck) {
       const given = deps.proofLinks?.requestId === request.id ? deps.proofLinks : null
       if (!given) {
         const links = [
@@ -929,9 +945,9 @@ export function handleRequestsApi(
     }
 
     // A loop with a checker closes on evidence, not on the agent's word.
-    if (action === "done" && request.closeWhen) {
+    if (action === "done" && closeWhen) {
       const v = deps.verdict?.requestId === request.id ? deps.verdict.result : null
-      if (!v) return { status: 202, body: { checking: describeCloseWhen(request.closeWhen) }, verify: { requestId: request.id, spec: request.closeWhen } }
+      if (!v) return { status: 202, body: { checking: describeCloseWhen(closeWhen) }, verify: { requestId: request.id, spec: closeWhen } }
       if (v.verdict === "met") {
         // The agent's evidence and its typed proof are kept beside the
         // check's words (#1943): the check proves only what it checks, and
@@ -968,14 +984,15 @@ export function handleRequestsApi(
         store.markChecked(request.id, "failed", v.detail, now)
         return {
           status: 409,
-          body: { error: `Not closed: its check says it is not finished (${v.detail}). It closes by itself once ${describeCloseWhen(request.closeWhen)}.` },
+          body: { error: `Not closed: its check says it is not finished (${v.detail}). It closes by itself once ${describeCloseWhen(closeWhen)}.` },
         }
       }
       // Not a touch: an agent that keeps saying done must not reset the
       // quiet timer of a loop nobody can show is finished.
       store.markChecked(request.id, "unverified", v.detail, now)
       if (home) store.setHome(request.id, home, now, { touch: false })
-      return { status: 202, body: { request: store.get(request.id), verify: "unverified", detail: v.detail } }
+      const detail = deadCheck ? `${v.detail}. This check can never run here: close it with proof: {kind:"check", value:"<what you checked>"}` : v.detail
+      return { status: 202, body: { request: store.get(request.id), verify: "unverified", detail } }
     }
 
     // The plan gate (#1048): work the owner wants planned does not start
