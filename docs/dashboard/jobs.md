@@ -37,7 +37,7 @@ The page reads every machine the Hub reads. With more than one machine, each row
 
 Each row has:
 
-- **The job's name:** its headline, written by whoever asked. An agent writes it with the `headline` field of `agentx_send_agent`. A message that opens with "About <subject>:" uses that subject. Otherwise the daemon writes a short one with a small model call within a few minutes (`requests.headlines.jobsWithinHours`, default 24, covers jobs opened in the last 24 hours; `0` turns it off for jobs). A job with no headline yet reads **Untitled job from <who asked>**, in grey. The page never cuts the start of the message into a title.
+- **The job's name:** its headline, written by whoever asked. An agent writes it with the `headline` field of `agentx_send_agent`. A message that opens with "About the subject:" uses that subject. Otherwise the daemon writes a short one with a small model call within a few minutes (`requests.headlines.jobsWithinHours`, default 24, covers jobs opened in the last 24 hours; `0` turns it off for jobs). A job with no headline yet reads **Untitled job from** and the name of whoever asked, in grey. The page never cuts the start of the message into a title.
 - **The status line:** the main thing on the row. See [What the status line means](#what-the-status-line-means).
 - **Who asked and who owes it:** for example `pm → @coder`.
 - **The door.**
