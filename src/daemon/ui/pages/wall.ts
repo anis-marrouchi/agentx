@@ -253,6 +253,19 @@ function feedMenuHtml(): string {
   return `<div class="fd-menu" id="fd-menu" role="menu" aria-label="Task actions" hidden>${item("hand", "arrow-right", "Hand off to another agent")}${item("runon", "server", "Run on another machine")}${item("call", "phone", "Call me about it")}${item("space", "radio", "Start a Space")}<hr>${item("done", "circle-check", "Close as done")}</div>`
 }
 
+/** Runs as the page is parsed, before its first paint (#2101, Hakim's
+ *  v0.311.3 check): the Feed and List classes the page script sets later
+ *  (wall.client.ts render) are set here from the link, so the first frame
+ *  already has the column, the head and, on the List, no composer. Before
+ *  this the first frame was full width and jumped ~150 ms later. */
+export const WALL_FIRST_FRAME_SCRIPT = `(function (r) {
+  var q = new URLSearchParams(location.hash.replace(/^#/, ''));
+  var p = q.get('page'), v = q.get('view') || 'feed';
+  if ((p && p !== 'wall') || q.get('post') || (v !== 'feed' && v !== 'list')) return;
+  r.classList.add('is-posts');
+  if (v === 'list') { r.classList.add('is-wide'); r.classList.add('is-list'); }
+})(document.currentScript.parentElement);`
+
 export function renderWallPage(opts: WallPageOpts = {}): string {
   const token = opts.localToken ? `<script>window.AX_LOCAL_TOKEN = ${JSON.stringify(opts.localToken)};</script>` : ""
   // Settings (#1428): only the owner gets its nav entry and config. Anyone
@@ -288,7 +301,7 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   // The nav on the left and the page in the middle (#1242). The right
   // column holds only a page's own side summary (Activity, Desk, Workflows,
   // Org); the Chat and Agents boxes are gone from it (#2101 R24).
-  const body = `<div class="ax-wall">
+  const body = `<div class="ax-wall"><script>${WALL_FIRST_FRAME_SCRIPT}</script>
   <nav class="ax-wall__nav" id="wall-nav" aria-label="${HUB_NAME}">
     <div class="ax-wall__navhead"><a class="ax-wall__logo" href="${HUB_PATH}">AgentX<small>${HUB_NAME}</small></a>${hubNavFoldHtml()}${hubRailOpenHtml()}${hubSheetCloseHtml()}</div>
 ${hubAgentsNavHtml()}
@@ -332,6 +345,7 @@ ${dashboard}
     <p class="ax-wall__sub"><span id="wall-count" class="ax-wall__count"></span></p>
     <section id="wall-profile" class="ax-wall__profile" aria-label="Agent profile" hidden></section>
     <section id="wall-goal" class="ax-wall__goal" aria-label="Goal" hidden></section>
+    <div class="fd-loading" id="wall-loading" role="status" aria-busy="true"><span class="ax-sr">Loading the posts</span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span><span class="ax-af-skeleton"></span></div>
     <section id="wall-feed" class="ax-wall__feed" aria-label="Posts"></section>
     <section id="wall-list" class="ax-wall__list" aria-label="Posts as a list" hidden></section>
     <section id="wall-projects" class="ax-wall__list" aria-label="Projects" hidden></section>
