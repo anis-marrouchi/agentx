@@ -96,6 +96,18 @@ export function waitsText(s: { state?: string; waitUntil?: number | null }, now 
     ? ` waits until ${new Date(s.waitUntil).toISOString().slice(0, 16).replace("T", " ")}Z` : ""
 }
 
+/** The latest wait of the active steps that still wait (#1764), or null
+ *  (retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY): the requests check does not wake
+ *  a request before it. */
+export function latestWait(steps: Array<Pick<PlanStep, "idx" | "state" | "waitUntil">>, now = Date.now()): { idx: number; until: number } | null {
+  let latest: { idx: number; until: number } | null = null
+  for (const s of steps) {
+    if (s.state !== "active" || s.waitUntil === null || s.waitUntil <= now) continue
+    if (!latest || s.waitUntil > latest.until) latest = { idx: s.idx, until: s.waitUntil }
+  }
+  return latest
+}
+
 const DETAIL_MAX = 1000
 
 export function ensurePlanTables(db: Database.Database): void {

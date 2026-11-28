@@ -54,6 +54,11 @@ export interface RequestSettings {
   /** A request whose last reply asks the owner with tap answers is not
    *  settled: "warn" leaves it open and logs it. Unset: warn. */
   settleOwnerWait?: "off" | "warn"
+  /** A request whose active plan step waits until a later time
+   *  (retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY, #2544): "warn" logs the wake and
+   *  still wakes; "enforce" holds it and moves its due time to the wait.
+   *  Unset: warn. */
+  stepWaitHold?: "warn" | "enforce"
   /** An open request whose issue or merge request home is merged or
    *  closed as completed closes as done (#1522). Unset: on. */
   homeCloses?: boolean
