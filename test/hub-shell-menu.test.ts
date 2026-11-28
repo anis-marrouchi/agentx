@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 import { resolveHubLayout } from "../src/hub/layout"
 import { SideMenu, SideRail, type SideMenuProps } from "../src/hub/shell/SideMenu"
 import {
-  MENU_FOLDS_KEY, firstHit, menuGroups, readMenuFolds, saveMenuFolds, shellShortcut, type HaModel, type HaRow,
+  MENU_FOLDS_KEY, MENU_SEEN_KEY, firstHit, markSeen, menuGroups, menuHeader, readMenuFolds, readMenuSeen, saveMenuFolds, shellShortcut, type HaModel, type HaRow,
 } from "../src/hub/shell/menu"
 import { waitingCount, type WaitingReply } from "../src/hub/waiting"
 import { askLine, chatFilesSource, runArtifactsHtml, splitRunFiles, treeView } from "../src/hub/shell/FilesPanel"
@@ -267,5 +267,39 @@ describe("the Files tab", () => {
     const html = wrap(createElement(SimpleShell, { view: simple, owner: true, agents: [], width: "wide" }))
     expect(html).not.toContain('aria-label="Right column"')
     expect(html).not.toContain("No files yet")
+  })
+})
+
+describe("the Agents header count: need you / unread / working (#2101 R1)", () => {
+  const T = 1_000_000
+  const ended = model([
+    row("ada", "working"), row("eli", "needs"), row("fay", "failed", { at: T + 50 }),
+    row("gus", "done", { at: T + 20 }), row("ivy", "done", { at: T - 10 }), row("hal", "idle", { at: T + 99 }),
+  ])
+  it("counts Needs you rows, ended runs after the last open, and working agents", () => {
+    expect(menuHeader(ended, { since: T, at: {} })).toEqual({ needs: 1, unread: 2, working: 1 })
+  })
+  it("need you is Waiting on you's number when it is known", () => {
+    expect(menuHeader(ended, { since: T, at: {} }, 4).needs).toBe(4)
+  })
+  it("an agent opened after its run ended is read; a run that ends later is unread again", () => {
+    const seen = markSeen({ since: T, at: {} }, "fay", T + 60)
+    expect(menuHeader(ended, seen).unread).toBe(1)
+    expect(menuHeader(model([row("fay", "done", { at: T + 70 })]), seen).unread).toBe(1)
+  })
+  it("a first visit stamps since and keeps it, so old runs are not unread", () => {
+    const st = memStore()
+    const first = readMenuSeen(st, T)
+    expect(first).toEqual({ since: T, at: {} })
+    expect(JSON.parse(st.m.get(MENU_SEEN_KEY)!)).toEqual({ since: T, at: {} })
+    expect(readMenuSeen(st, T + 5000).since).toBe(T)
+    st.setItem(MENU_SEEN_KEY, "{bad")
+    expect(readMenuSeen(st, T + 9).since).toBe(T + 9)
+  })
+  it("draws the line next to Agents, and hides it while searching or loading", () => {
+    const html = menu({ model: ended, needs: 3 })
+    expect(html).toMatch(/Agents<\/p>[\s\S]*?data-shell="agents-count"/)
+    expect(html).toContain('aria-label="3 need you, 0 unread, 1 working"')
+    expect(menu({ model: undefined })).not.toContain('data-shell="agents-count"')
   })
 })

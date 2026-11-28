@@ -28,8 +28,8 @@ import { shortAgo, type ShellPane, type TasksView } from "../tasks"
 import { TasksViewSwitch } from "../pages/ShellTasks"
 import { AfCount, AfSkeletonRows, Icon, Kbd, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import {
-  STATE_ICON, downWords, firstHit, haStateWord, menuGroups, menuRows, readMenuFolds, askWords, rowLine, rowStats, saveMenuFolds,
-  type HaModel, type HaOpen, type HaRow, type MenuGroup,
+  STATE_ICON, downWords, firstHit, haStateWord, markSeen, menuGroups, menuHeader, menuRows, readMenuFolds, readMenuSeen, askWords, rowLine, rowStats, saveMenuFolds, saveMenuSeen,
+  type HaModel, type HaOpen, type HaRow, type MenuGroup, type MenuSeen,
 } from "./menu"
 
 /** The menu item each centre pane belongs to. */
@@ -67,6 +67,17 @@ export interface SideMenuProps {
 
 function GroupLabel({ children }: { children: ReactNode }) {
   return <p className="px-2 pt-1 pb-1.5 text-[11px] font-medium uppercase tracking-[.06em] text-muted-foreground">{children}</p>
+}
+
+/** The Agents header count (#2101 R1): need you / unread / working. */
+function AgentsHeader({ needs, unread, working }: { needs: number; unread: number; working: number }) {
+  const label = needs + " need you, " + unread + " unread, " + working + " working"
+  return (
+    <p data-shell="agents-count" aria-label={label} className="shrink-0 truncate px-2 pb-1.5 text-[11px] tabular-nums text-muted-foreground">
+      <span className={needs ? "text-foreground" : undefined}>{needs} need you</span>
+      <span aria-hidden="true"> · </span>{unread} unread<span aria-hidden="true"> · </span>{working} working
+    </p>
+  )
 }
 
 function MenuLink({ item, onOpen, active, count }: { item: ShellNavItem; onOpen?: () => void; active?: boolean; count?: number }) {
@@ -206,6 +217,15 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
   const more = nav.more.filter((i) => hit(i.label))
   // The pages the saved menu leaves out show only while searching.
   const pages = needle ? nav.hidden.filter((i) => hit(i.label)) : []
+  // R1: an agent counts as read once it is open in the centre, and stays
+  // read while it is open (its run can end while you watch).
+  const [seen, setSeen] = useState<MenuSeen>(() => readMenuSeen())
+  const viewing = pane === "chat" ? agent : undefined
+  useEffect(() => {
+    if (!viewing) return
+    setSeen((s) => { const n = markSeen(s, viewing); saveMenuSeen(n); return n })
+  }, [viewing, model])
+  const head = model && !needle ? menuHeader(model, seen, needs) : null
   const pick = (id: string) => { onAgent?.(id); onDone?.() }
   const onSearchKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); return }
@@ -237,11 +257,14 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
       </label>
       <div className="-mx-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-3">
         <section aria-label="Agents, by what they are doing" data-shell-item="agents">
-          <GroupLabel>Agents</GroupLabel>
+          <div className="flex items-baseline justify-between gap-2">
+            <GroupLabel>Agents</GroupLabel>
+            {head ? <AgentsHeader {...head} /> : null}
+          </div>
           {down ? (
             <p role="status" className="mb-2 flex gap-2 rounded-sm border border-border px-2.5 py-2 text-xs leading-[1.45] text-(--ax-text-2)">
               <Icon name="unplug" className="mt-0.5 size-3.5 text-muted-foreground" />
-              <span>{down} <a href="#page=running" className="font-normal text-foreground underline underline-offset-2">Open Running now</a></span>
+              <span>{down} <a href="#page=live" className="font-normal text-foreground underline underline-offset-2">Open Live</a></span>
             </p>
           ) : null}
           {!model ? <AfSkeletonRows /> : groups.length ? groups.map((g) => (

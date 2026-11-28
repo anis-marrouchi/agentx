@@ -74,6 +74,25 @@ export function menuGroups(m: HaModel, open: HaOpen, needle = "", needs?: number
   return out
 }
 
+/** When this browser last opened each agent (#2101 R1). An agent never
+ *  opened here counts from `since`, the first time the menu was drawn,
+ *  so a first visit does not show every agent as unread. */
+export interface MenuSeen { since: number; at: Record<string, number> }
+
+/** The Agents header's three numbers (#2101 R1, Orca's "need you /
+ *  unread / working"): `needs` is Waiting on you's number when known
+ *  (waiting.ts waitingCount), else the Needs you rows; `unread` the
+ *  agents whose run ended (done or failed) after they were last opened
+ *  in this browser; `working` the agents working now. */
+export function menuHeader(m: HaModel, seen: MenuSeen, needs?: number): { needs: number; unread: number; working: number } {
+  const ended = (r: HaRow) => (r.state === "done" || r.state === "failed") && (r.at ?? 0) > (seen.at[r.id] ?? seen.since)
+  return {
+    needs: needs ?? m.rows.filter((r) => r.state === "needs").length,
+    unread: m.rows.filter(ended).length,
+    working: m.rows.filter((r) => r.state === "working").length,
+  }
+}
+
 /** Every row in menu order (the rail lists them all, unfolded). */
 export function menuRows(m: HaModel): HaRow[] {
   return haGroups().flatMap((g) => m.rows.filter((r) => g.states.includes(r.state)))
@@ -153,6 +172,29 @@ export function readMenuFolds(store: Store | null = browserStore()): HaOpen {
 
 export function saveMenuFolds(open: HaOpen, store: Store | null = browserStore()): void {
   try { store?.setItem(MENU_FOLDS_KEY, JSON.stringify(open)) } catch { /* private mode: kept for this visit */ }
+}
+
+export const MENU_SEEN_KEY = "agentx.hub.shell.seen"
+
+/** The agents' last-opened times (MenuSeen). The first read stamps
+ *  `since` and keeps it. */
+export function readMenuSeen(store: Store | null = browserStore(), now = Date.now()): MenuSeen {
+  try {
+    const v = JSON.parse(store?.getItem(MENU_SEEN_KEY) || "null")
+    if (v && typeof v.since === "number" && v.at && typeof v.at === "object" && !Array.isArray(v.at)) return v as MenuSeen
+  } catch { /* unreadable: start again below */ }
+  const fresh: MenuSeen = { since: now, at: {} }
+  saveMenuSeen(fresh, store)
+  return fresh
+}
+
+export function saveMenuSeen(seen: MenuSeen, store: Store | null = browserStore()): void {
+  try { store?.setItem(MENU_SEEN_KEY, JSON.stringify(seen)) } catch { /* private mode: kept for this visit */ }
+}
+
+/** `seen` with agent `id` opened at `now`. */
+export function markSeen(seen: MenuSeen, id: string, now = Date.now()): MenuSeen {
+  return { since: seen.since, at: { ...seen.at, [id]: now } }
 }
 
 export function readMenuRail(store: Store | null = browserStore()): boolean {

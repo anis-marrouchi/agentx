@@ -379,9 +379,6 @@ describe("Wall: no internal marker in visible text (#1443)", () => {
     expect(html.split("task=t5")[1].split("</a>")[0]).toContain("You own step 2 of 3")
     // The card's link carries what was asked, without the marker either.
     expect(html).toContain("ask=Earlier+in+this+conversation")
-    w.go("#page=running")
-    await w.settle()
-    expect(w.el("wall-running").innerHTML.replace(/href="[^"]*"/g, "")).not.toContain("[agentx:")
   })
 
   it("drops markers from the Task page's request and the tracked post's headline", async () => {

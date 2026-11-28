@@ -20,7 +20,7 @@ You host AgentX yourself, on a machine you control.
 
 The dashboard can be open while the daemon is stopped. When work isn't arriving, check both.
 
-![Running now on the Hub: one card per demo machine, with what each one runs](/screenshots/wall/running.png)
+![The Live page: one card per demo machine, with what each one runs](/screenshots/wall/live.png)
 
 ## One machine or several
 

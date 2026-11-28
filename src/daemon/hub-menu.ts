@@ -65,9 +65,9 @@ export interface Menu {
 // --- Presets ---
 
 export const MENU_PRESETS = {
-  solo: { label: "Solo builder", pages: ["wall", "needs", "projects", "running", "live", "agents"] },
-  team: { label: "Team / agency", pages: ["wall", "needs", "projects", "running", "live", "agents", "jobledger", "workflows", "reviews", "people", "org"] },
-  automation: { label: "Business automation", pages: ["needs", "running", "jobs", "workflows", "events", "failures", "numbers", "activity"] },
+  solo: { label: "Solo builder", pages: ["wall", "needs", "projects", "live", "agents"] },
+  team: { label: "Team / agency", pages: ["wall", "needs", "projects", "live", "agents", "jobledger", "workflows", "reviews", "people", "org"] },
+  automation: { label: "Business automation", pages: ["needs", "live", "jobs", "workflows", "events", "failures", "numbers", "activity"] },
   everything: { label: "Everything", pages: [] as string[] },
   blank: { label: "Blank", pages: [] as string[] },
 } as const

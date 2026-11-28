@@ -344,21 +344,22 @@ describe("Wall v2 pages (#1316)", () => {
     await w.settle()
     expect(w.el("nav-n-wall").textContent).toBe("2")
     expect(w.el("nav-n-needs").textContent).toBe("1")
-    expect(w.el("nav-n-running").textContent).toBe("1")
     expect(w.el("nav-n-agents").textContent).toBe("2")
   })
 
-  it("opens Running now and Agents as pages of their own", async () => {
+  it("opens Agents as a page of its own; Running now is gone and its old link opens Live (#2101 R1)", async () => {
     const page = renderWallPage()
-    expect(page).toContain('data-nav="running" href="#page=running"')
+    expect(page).not.toContain('data-nav="running"')
+    expect(page).not.toContain('id="wall-running"')
+    expect(page).not.toContain("nav-n-running")
     expect(page).toContain('data-nav="agents" href="#page=agents"')
     expect(page).not.toContain("data-scroll")
     const r = openWall({ hash: "#page=running" })
     await r.settle()
-    expect(r.el("wall-running").hidden).toBe(false)
-    expect(r.el("wall-running").innerHTML).toContain("<b>node-a</b>")
+    expect(r.loc.hash).toBe("#page=live")
+    expect(r.el("wall-live").hidden).toBe(false)
     expect(r.el("wall-feed").hidden).toBe(true)
-    expect(r.el("wall-title").textContent).toBe("Running now")
+    expect(r.el("wall-title").textContent).toBe("Live")
     const a = openWall({ hash: "#page=agents" })
     await a.settle()
     expect(a.el("wall-agents-page").hidden).toBe(false)
@@ -3529,15 +3530,4 @@ describe("Hub layout gaps (#2101 P2)", () => {
     expect(feed).toContain('id="post-r1"')
   })
 
-  it("titles a run on Running now, not with its raw prompt (R2)", async () => {
-    const live = { nodes: [{ name: "node-a", reachable: true, version: "1.0.0", agents: [
-      { id: "cx", name: "Customer Desk", model: "claude-opus-5-5", runningTasks: [{ id: "t9", startedAt: new Date(NOW).toISOString(), sender: "agent:pm-agent", messagePreview: "[Job state] Before you end this run, state the job's state" }] },
-    ] }] }
-    const w = openWall({ live, hash: "#page=running" })
-    await w.settle()
-    const html = w.el("wall-running").innerHTML
-    expect(html).toContain("<b>Job for pm-agent</b>")
-    expect(html).not.toContain("Before you end this run")
-    expect(html).toContain("Customer Desk")
-  })
 })
