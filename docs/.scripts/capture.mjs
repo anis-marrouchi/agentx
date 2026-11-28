@@ -168,10 +168,10 @@ const shots = [
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
   { name: "live/running-task-workflow", path: "/hub#page=live", wait: ".wlv", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { waitText: [".wls.is-work", "Workflow"] }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".wls.is-work" },
-  // #2101 T1: the one Task page per request (review id task-preview, owner only).
-  { name: "hub-task/task", path: "/hub#page=task-preview&id=req-docs-plan", wait: "[data-slot=task-step]" },
-  { name: "hub-task/task-phone", path: "/hub#page=task-preview&id=req-docs-plan", wait: "[data-slot=task-step]", phone: true },
-  { name: "hub-task/task-confirm", path: "/hub#page=task-preview&id=req-docs-plan", wait: "[data-slot=task-actions]", steps: [{ clickText: "Done" }, { wait: "[data-slot=task-actions] [role=alertdialog]" }], clipTo: "[data-slot=task-actions]" },
+  // #2101 T1: the one Task page per request (#page=task since T3, owner only).
+  { name: "hub-task/task", path: "/hub#page=task&id=req-docs-plan", wait: "[data-slot=task-step]" },
+  { name: "hub-task/task-phone", path: "/hub#page=task&id=req-docs-plan", wait: "[data-slot=task-step]", phone: true },
+  { name: "hub-task/task-confirm", path: "/hub#page=task&id=req-docs-plan", wait: "[data-slot=task-actions]", steps: [{ clickText: "Done" }, { wait: "[data-slot=task-actions] [role=alertdialog]" }], clipTo: "[data-slot=task-actions]" },
 ]
 
 function client(ws) {
