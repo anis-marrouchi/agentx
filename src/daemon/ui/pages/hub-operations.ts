@@ -15,14 +15,12 @@ export const HUB_OPERATIONS_SRC = "/mesh?embed=1&view=ops"
 export function hubOperationsPageHtml(): string {
   return `<section id="wall-operations" class="hops" aria-label="Operations: schedules, routines, nodes and agents across the fleet" hidden>
     <iframe class="hops__frame" id="wall-ops-frame" title="Operations" data-src="${HUB_OPERATIONS_SRC}"></iframe>
-    <p class="hops__foot"><a href="/mesh" target="_top">Open Operations on its own page</a></p>
   </section>`
 }
 
 export const HUB_OPERATIONS_CSS = `
 .hops { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 .hops__frame { width: 100%; height: calc(100vh - 150px); min-height: 480px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius, 10px); background: var(--ax-bg); }
-.hops__foot { margin: 0; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
 @media (max-width: 760px) { .hops__frame { height: calc(100vh - 190px); border-radius: 0; border-left: 0; border-right: 0; } }
 `
 

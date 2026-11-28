@@ -27,7 +27,7 @@ function renderOps(nodes: LtNode[]) {
   const doc = { getElementById: el, querySelectorAll: () => [], dispatchEvent() {} }
   const MX = { esc: String, age: () => "now", setHealth: (i: number, v: unknown) => { health[i] = v }, get: () => new Promise(() => {}), open() {}, fields: () => "", section: () => "", dur: String }
   const body = MESH_OPS_SCRIPT.replace(/^<script>/, "").replace(/<\/script>$/, "")
-    .replace("load();setInterval(load,5000);", "window.__render=render;")
+    .replace("MX.poll(load,5000);", "window.__render=render;")
   const win: any = {}
   const html = renderMeshPage({})
   const page = html.slice(html.indexOf("globalThis.__axBind"))

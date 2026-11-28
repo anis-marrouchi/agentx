@@ -100,9 +100,10 @@ export const WALL_STATUS_TABS: Array<[string, string]> = [
   ["open", "Open"], ["in_progress", "Working"], ["waiting", "Waiting"], ["failed", "Failed"], ["done", "Done"], ["", "All"],
 ]
 
-/** Where the Wall's "Dashboard" link goes: the first classic page. Classic
- *  Live redirects to Wall Live (#1439), so it is Operations now. */
-export const WALL_DASHBOARD_HREF = "/mesh"
+/** Where the Wall's "Dashboard" link goes: the Hub's own Operations page
+ *  (#2101 R8, hub-operations.ts), not the separate /mesh page with its old
+ *  top bar and menu. */
+export const WALL_DASHBOARD_HREF = "#page=operations"
 
 /** Wall Live, where /live redirects (#1439). */
 export const WALL_LIVE_HREF = `${HUB_PATH}#page=live`

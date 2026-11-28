@@ -83,12 +83,12 @@ export const MESH_FEED_SCRIPT = `<script>
     });
   }
   function load(){
-    MX.get('/api/mesh/feed?limit=50').then(function(r){
+    return MX.get('/api/mesh/feed?limit=50').then(function(r){
       events=r.events||[];local=r.node||'';render();
     }).catch(function(e){
       root.innerHTML='<div class="mx-empty">Mesh feed unavailable: '+esc(e.message)+'</div>';
     });
   }
-  load();setInterval(load,5000);
+  MX.poll(load,5000);
 })();
 </script>`

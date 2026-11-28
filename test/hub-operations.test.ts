@@ -21,6 +21,12 @@ describe("the Hub's Operations page", () => {
     expect(page).toContain('id="wall-operations"')
   })
 
+  it("is where Dashboard goes, and nothing on it leaves for /mesh (#2101 R8)", () => {
+    expect(page).toContain('data-nav="dashboard" href="#page=operations"')
+    expect(page).not.toMatch(/data-nav="dashboard" href="\/mesh"/)
+    expect(hubOperationsPageHtml()).not.toContain('href="/mesh"')
+  })
+
   it("is one of the pages the Hub script switches to", () => {
     expect(page).toContain("'mobile', 'operations']")
     expect(page).toContain("$('wall-operations').hidden = page !== 'operations'")
