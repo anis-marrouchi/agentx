@@ -141,7 +141,9 @@ describe("page scripts parse", () => {
     const html = renderAppPage()
     // #2101 C1a: Agents · Chat · Desk · Alerts · More; Fleet and Activity open from More.
     for (const t of ["Agents", "Chat", "Desk", "Alerts", "More"]) expect(html).toContain(`<span>${t}</span></button>`)
-    expect(html.match(/role="tab"/g)).toHaveLength(5)
+    // The bottom bar only: the Chat header's Chat · Plan · Proofs (#2101 phone C1) are tabs of their own.
+    const nav = /<nav class="tabs"[^>]*>([\s\S]*?)<\/nav>/.exec(html)![1]
+    expect(nav.match(/role="tab"/g)).toHaveLength(5)
     expect(html).toContain("grid-template-columns: repeat(5, 1fr)")
     expect(html).toContain("viewport-fit=cover")
     expect(html).toContain("env(safe-area-inset-bottom)")
