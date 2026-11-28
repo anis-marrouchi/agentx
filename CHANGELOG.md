@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.315.0](https://github.com/anis-marrouchi/agentx/compare/v0.314.1...v0.315.0) (2026-11-28)
+
+
+### Features
+
+* **agents:** antigravity-cli engine tier for agy ([#2348](https://github.com/anis-marrouchi/agentx/issues/2348) PR 1) ([#2578](https://github.com/anis-marrouchi/agentx/issues/2578)) ([46dba4f](https://github.com/anis-marrouchi/agentx/commit/46dba4f356003934110934e34697a0296431e9e3))
+
 ## [0.314.1](https://github.com/anis-marrouchi/agentx/compare/v0.314.0...v0.314.1) (2026-11-28)
 
 
