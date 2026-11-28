@@ -1,5 +1,6 @@
 import { referenceOnlyTitle } from "@/approvals/screen-gate"
 import type { RequestRecord, RequestStore } from "./store"
+import { askOf } from "@/jobs/headline"
 
 // --- What a request is, in a few words (#1126) ---
 //
@@ -51,7 +52,8 @@ export function headlinePrompt(r: Pick<RequestRecord, "text" | "agentId" | "stat
     "",
     "REQUEST:",
     "```",
-    r.text.slice(0, 2000),
+    // The ask, without the daemon's own lines around it (#2555).
+    (askOf(r.text) || r.text).slice(0, 2000),
     "```",
     "",
     'Return ONE JSON object on one line, no prose, no fences: {"headline": string}',
@@ -78,9 +80,13 @@ export function readHeadline(text: string): string | null {
 export interface HeadlineSettings {
   enabled: boolean
   timeoutSeconds: number
+  /** Also write one for jobs from other doors (hand-offs, mentions,
+   *  schedules) opened in the last `jobsWithinHours` (#2555). 0: owner's
+   *  requests only. */
+  jobsWithinHours?: number
 }
 
-export const DEFAULT_HEADLINE_SETTINGS: HeadlineSettings = { enabled: true, timeoutSeconds: 30 }
+export const DEFAULT_HEADLINE_SETTINGS: HeadlineSettings = { enabled: true, timeoutSeconds: 30, jobsWithinHours: 24 }
 
 export interface HeadlineWriterDeps {
   store: Pick<RequestStore, "get" | "setHeadline" | "withoutHeadline" | "markHeadlineTried">
@@ -132,7 +138,9 @@ export class HeadlineWriter {
     this.filling = true
     let written = 0
     try {
-      for (const r of this.deps.store.withoutHeadline(limit)) {
+      const hours = this.deps.settings().jobsWithinHours ?? 0
+      const since = hours > 0 ? (this.deps.now ?? Date.now)() - hours * 3_600_000 : undefined
+      for (const r of this.deps.store.withoutHeadline(limit, since)) {
         if ((await this.ensure(r)).headline) written++
       }
     } finally {

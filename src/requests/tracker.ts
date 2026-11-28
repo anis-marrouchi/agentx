@@ -44,7 +44,7 @@ export interface RequestSettings {
   checkers?: CheckerSettings
   /** Headlines written for requests the agent did not describe (#1126).
    *  Unset: on, with the defaults. */
-  headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number }
+  headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number; jobsWithinHours?: number }
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean

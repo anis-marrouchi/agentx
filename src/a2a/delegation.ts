@@ -88,6 +88,9 @@ export interface DelegationRecord {
   depth?: number
   /** The issue or merge request it is about, in comparable form (#1100). */
   home?: string
+  /** What the work is called, as the sender wrote it (#2555): the job's
+   *  headline. Not kept in the journal. */
+  headline?: string
   /** What makes two sends the same work (#2007 piece 3, joinKey). */
   joinKey?: string
   /** "deliver": a /mesh/task with async:true (#2007 S5). The raw answer,
@@ -734,6 +737,8 @@ export class DelegationManager {
      *  callee already on the same home finishes first; this one then
      *  resumes that session instead of starting beside it. */
     home?: string
+    /** What the work is called, as the sender wrote it (#2555). */
+    headline?: string
     /** "deliver" (#2007 S5): `caller.context` is the chat the request
      *  named; the answer goes there as it is, with no callback turn.
      *  "none" (#2007 piece 2): an agent caller with no turn to call back
@@ -772,6 +777,7 @@ export class DelegationManager {
       ...(opts.kind ? { kind: opts.kind } : {}),
       ...(depth ? { depth } : {}),
       ...(home ? { home } : {}),
+      ...(opts.headline ? { headline: clip(opts.headline, 200) } : {}),
       ...(key ? { joinKey: key } : {}),
       ...(opts.wayHome ? { wayHome: opts.wayHome } : {}),
       // A local run this node starts itself can be sent again after a

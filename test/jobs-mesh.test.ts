@@ -351,7 +351,8 @@ describe("the Jobs page shows the other machine", () => {
     expect(html).toContain('data-jlopen="job-dlg-abc-12" data-jlnode="clawd"')
     expect(html).toContain("working, last tool call 40 s ago")
     expect(html).toContain("Handed out there (1)")
-    expect(html).toContain('data-jlopen="job-dlg-def-34" data-jlnode="clawd">test &lt;the&gt; build</button>')
+    // No headline: the link says so instead of cutting its text (#2555).
+    expect(html).toContain('data-jlopen="job-dlg-def-34" data-jlnode="clawd"><span class="wjl__untitled">Untitled job from')
     expect(html).toContain('<span class="wjl__st is-stalled">stalled, run ended 3 h ago with no state</span>')
   })
 

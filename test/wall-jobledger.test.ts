@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { JobStore } from "../src/jobs/store"
 import { JOBS_HUB_PATH, isJobsHubPath, jobsHubReply } from "../src/jobs/hub-api"
-import { jlDetailHtml, jlHomeHtml, jlRowHtml, jlSpan, jlTitle, jlTone, jobLedgerPageHtml, type HubJob } from "../src/daemon/ui/pages/wall-jobledger"
+import { jlDetailHtml, jlHomeHtml, jlRowHtml, jlSpan, jlTitle, jlTitleHtml, jlTone, jobLedgerPageHtml, type HubJob } from "../src/daemon/ui/pages/wall-jobledger"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
@@ -86,12 +86,13 @@ describe("the rows", () => {
     expect(detail).not.toContain("not known")
   })
 
-  it("titles a job by its headline, else the start of its text", () => {
+  it("titles a job by its headline, never by its text cut short (#2555)", () => {
     expect(jlTitle(job({ headline: "Ship the report" }))).toBe("Ship the report")
-    const long = jlTitle(job({ text: "word ".repeat(60) }))
-    expect(long.length).toBeLessThanOrEqual(100)
-    expect(long.endsWith("…")).toBe(true)
-    expect(jlTitle(job({ text: "" }))).toBe("job-1")
+    expect(jlTitle(job({ headline: null, text: "word ".repeat(60), requester: "pm-agent" }))).toBe("Untitled job from pm-agent")
+    expect(jlTitle(job({ headline: null, requester: "cron:nightly" }))).toBe("Untitled job from schedule nightly")
+    expect(jlTitle(job({ headline: null, requester: null, assignee: "coder" }))).toBe("Untitled job for coder")
+    expect(jlTitleHtml(job({ headline: null, requester: "pm-agent" }))).toBe('<span class="wjl__untitled">Untitled job from pm-agent</span>')
+    expect(jlTitleHtml(job({ headline: "A <b>" }))).toBe("A &lt;b&gt;")
   })
 
   it("gives the status line a tone by state, and reads an unheld job as stalled", () => {

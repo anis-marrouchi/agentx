@@ -39,6 +39,9 @@ export const OPEN_JOB_STATES: readonly JobState[] = ["working", "continue", "wai
 
 export const JOB_NOTE_MAX = 1000
 const WHO_MAX = 200
+const HEADLINE_COL_MAX = 120
+/** Why a job that was only a daemon message is dropped. */
+export const SYSTEM_JOB_NOTE = "a message from the daemon, not work: not a job (#2555)"
 
 /** What a run says about its job when it ends (design point 2). */
 export type JobDeclaration =
@@ -224,6 +227,8 @@ export class JobStore {
   open(input: {
     id: string; door: Exclude<JobDoor, "owner">; requester: string | null; assignee: string
     channel: string; chatId: string; text: string
+    /** What the job is called, as its sender wrote it (#2555). */
+    headline?: string | null
     home?: RequestHome | null; parentId?: string | null; runId?: string | null
     peer?: string | null; remoteId?: string | null
     /** Unset: working. A job handed to another node starts waiting on it. */
@@ -232,12 +237,12 @@ export class JobStore {
     now: number
   }): boolean {
     const res = this.db.prepare(
-      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, state_changed_at,
+      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, agent_id, text, headline, created_at, updated_at, state_changed_at,
          door, job_state, requester, parent_id, home_kind, home_link, peer, remote_id, waiting_on)
-       VALUES (?, '${JOB_ROW_STATE}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, '${JOB_ROW_STATE}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.id, input.channel, input.chatId, input.requester ? clip(input.requester, WHO_MAX) : null, input.assignee,
-      input.text.slice(0, TEXT_MAX), input.now, input.now, input.now,
+      input.text.slice(0, TEXT_MAX), input.headline ? clip(input.headline, HEADLINE_COL_MAX) : null, input.now, input.now, input.now,
       input.door, input.state ?? "working", input.requester ? clip(input.requester, WHO_MAX) : null, input.parentId ?? null,
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
       input.peer ?? null, input.remoteId ?? null, input.waitingOn ? clip(input.waitingOn, WHO_MAX) : null,
@@ -556,6 +561,24 @@ export class JobStore {
   setRemote(id: string, remoteId: string, note: string): boolean {
     return this.db.prepare(`UPDATE requests SET remote_id = ?, job_note = ? WHERE id = ? AND peer IS NOT NULL AND ${OPEN_ROW} AND ${NOT_FAILED}`)
       .run(remoteId, clip(note, JOB_NOTE_MAX), id).changes > 0
+  }
+
+  /** Open jobs that are only a daemon message (#2555): a hand-off's
+   *  answer, a notice digest, a wake. Opened before the doors filtered
+   *  them; dropped once, with why. Returns how many. */
+  dropSystemJobs(isSystem: (text: string) => boolean, now: number): number {
+    const rows = this.db.prepare(
+      `SELECT id, text FROM requests WHERE state = '${JOB_ROW_STATE}' AND job_state IN (${placeholders(OPEN_JOB_STATES.length)})`,
+    ).all(...OPEN_JOB_STATES) as Array<{ id: string; text: string | null }>
+    const drop = this.db.prepare(
+      `UPDATE requests SET job_state = 'dropped', job_note = ?, updated_at = ?, state_changed_at = ?, closed_at = ?, wake_at = NULL, waiting_on = NULL
+       WHERE id = ? AND state = '${JOB_ROW_STATE}' AND ${OPEN_ROW}`,
+    )
+    let n = 0
+    this.db.transaction(() => {
+      for (const r of rows) if (isSystem(r.text ?? "") && drop.run(SYSTEM_JOB_NOTE, now, now, now, r.id).changes > 0) n++
+    })()
+    return n
   }
 
   /** The other node dropped the job: it is dropped here too, with why. */

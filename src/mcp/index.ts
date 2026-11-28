@@ -591,6 +591,10 @@ const TOOLS = [
           type: "string",
           description: "Optional but recommended for follow-ups: the issue or merge request this work is about (its link, or 'group/project#12'). A new message on the same home to the same agent waits for the run already on it and continues that session, instead of starting a second one beside it.",
         },
+        headline: {
+          type: "string",
+          description: "Recommended: what the work is, for the reader of the Jobs page, as verb + object, under 80 characters (e.g. \"Fix the Jobs page titles for 1 Dec\"). No ids, links or times.",
+        },
         notice: {
           type: "boolean",
           description: "Information only, no answer needed (a status, an FYI). The agent gets it at the start of its next run instead of a run of its own. Its own machine only.",
@@ -1758,6 +1762,7 @@ async function handleToolCall(
       const senderAgentId = args.senderAgentId as string | undefined
       const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
       const home = typeof args.home === "string" && args.home.trim() ? args.home.trim() : undefined
+      const headline = typeof args.headline === "string" && args.headline.trim() ? args.headline.trim() : undefined
       const notice = args.notice === true
       const priority = args.priority === "critical" ? "critical" : undefined
       if (!agentId || !text) {
@@ -1772,7 +1777,7 @@ async function handleToolCall(
         res = await daemonFetch(`${daemonUrl()}/send/agent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...(notice ? { notice: true } : {}), ...(priority ? { priority } : {}), ...callerFields() }),
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...(home ? { home } : {}), ...(headline ? { headline } : {}), ...(notice ? { notice: true } : {}), ...(priority ? { priority } : {}), ...callerFields() }),
           signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
         })
       } catch (e) {
