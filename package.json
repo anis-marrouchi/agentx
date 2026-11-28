@@ -68,6 +68,7 @@
     "bench:catch": "tsx bench/catch-promise.ts",
     "bench:browser": "tsx bench/browser-drive.ts",
     "bench:leann": "tsx bench/leann-1390/cli.ts",
+    "bench:football": "tsx bench/football/cli.ts",
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",
