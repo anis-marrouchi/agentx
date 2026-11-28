@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import { readFileSync } from "fs"
+import { join } from "path"
 import {
   agmCreateErrors, agmCreateSteps, agmEditSteps, agmField, agmFieldProblem, agmFields, agmFirstError, agmFormOf, agmLimits,
   agmModelGroups, agmModelHelp, agmSlug, agmWorkspacePath, INSTRUCTIONS_MAX, MODEL_GROUPS,
@@ -73,8 +75,8 @@ describe("the Sheet's markup", () => {
     const html = agmFormHtml({ name: "" }, "new", ENGINES, { errors: { name: "Give the agent a name.", triggers: "Keep one." }, base: "/d", home: "/h" })
     expect(html).toContain('aria-invalid="true" aria-describedby="agm-e-name"')
     expect(html).toContain('<p class="agm-err" id="agm-e-name">Give the agent a name.</p>')
-    expect(html).toMatch(/data-agm-fold="channels">/)
-    expect(html).toMatch(/data-agm-fold="advanced" open>/)
+    expect(html).toMatch(/data-agm-fold="channels" data-keep-own>/)
+    expect(html).toMatch(/data-agm-fold="advanced" data-keep-own open>/)
     expect(html).toContain('<span id="agm-ws">Resolves to <code>/d/agents/&lt;id&gt;</code></span>')
     // One primary button; Cancel is ghost; Esc and the scrim close it.
     expect(html.match(/ax-btn--primary/g)).toHaveLength(1)
@@ -94,6 +96,16 @@ describe("the Sheet's markup", () => {
 })
 
 describe("shipped to the page", () => {
+  it("wall-agents.ts has no local binding of a spec function its bodies call by bare name", () => {
+    // A local binding (const, import, function) is what the bundler would point the
+    // bodies at, under a minified name the page does not have (seen live: "Dl is not defined").
+    const src = readFileSync(join(__dirname, "../src/daemon/ui/pages/wall-agents.ts"), "utf-8")
+    for (const n of ["agmField", "agmModelGroups", "agmModelHelp", "agmSlug", "agmWorkspacePath"]) {
+      // `var agmField: typeof …` in `declare global` is a type only.
+      expect(src).not.toMatch(new RegExp(`(const|let|var|function)\\s+${n}\\b(?!\\s*:)`))
+      expect(src).not.toMatch(new RegExp(`^import \\{[^}]*\\b${n}\\b[^}]*\\} from`, "m"))
+    }
+  })
   it("every function runs with no module scope, as injectFns ships it", () => {
     const fns = {
       agmField, agmFields, agmLimits, agmModelGroups, agmModelHelp, agmSlug, agmFieldProblem, agmCreateErrors, agmFirstError, agmCreateSteps, agmFormOf, agmEditSteps, agmWorkspacePath,

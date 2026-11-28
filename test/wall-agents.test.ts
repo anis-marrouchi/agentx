@@ -421,7 +421,10 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.type("agm-f-workspace", "~/work/sales")
     await w.type("agm-f-model", "model-b")
     await w.type("agm-f-telegramEnv", "SALES_TG")
+    // Enter in a field: focus stays in the Sheet, and the page still closes it.
+    w.doc.activeElement = { id: "agm-f-telegramEnv" } as any
     await w.submit({ "data-agm-form": "new" })
+    expect(page(w)).not.toContain('data-agm-form="new"')
     expect(w.writes().map((c) => [c.method, c.url, c.body])).toEqual([
       ["POST", P + "/agents", { id: "sales", name: "Sales", triggerWords: "@sales", tier: "claude-code", model: "model-b", role: "Sales lead", workspace: "~/work/sales" }],
       ["POST", P + "/channels/telegram", { id: "sales", agentBinding: "sales", botTokenEnv: "SALES_TG" }],
@@ -470,7 +473,9 @@ describe("the Hub's Agents page (#2144)", () => {
     await w.submit({ "data-agm-form": "new" })
     // The Slack bot answers as @cx: nothing is sent until the owner says yes.
     expect(w.writes()).toEqual([])
-    expect(w.el("agm-n-form").textContent).toMatch(/^Slack's bot answers as @cx now/)
+    // The sentence shows under the tick box; the note under the buttons counts the fields.
+    expect(w.el("agm-n-form").textContent).toBe("Not saved: fix the field in red.")
+    expect(page(w)).toContain('<p class="agm-err" id="agm-e-moveSlack">Slack&#39;s bot answers as @cx now.')
     await w.type("agm-f-moveSlack", true)
     await w.submit({ "data-agm-form": "new" })
     expect(w.writes().map((c) => c.url)).toEqual([P + "/agents", P + "/channels/telegram"])

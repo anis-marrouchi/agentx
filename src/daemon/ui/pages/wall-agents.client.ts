@@ -141,7 +141,10 @@ export const WALL_AGENTS_SCRIPT = String.raw`
   function agmFormNote(text) { AGM.note = text; var el = $('agm-n-form'); if (el) el.textContent = text; }
   /** The Sheet again with each field's error under it; focus on the first wrong field. */
   function agmShowErrors(errors, note) {
-    AGM.errors = errors || {}; AGM.note = note || '';
+    AGM.errors = errors || {};
+    var n = Object.keys(AGM.errors).length;
+    // Each error shows under its field; the note under the buttons only counts them.
+    AGM.note = n ? 'Not saved: fix ' + (n === 1 ? 'the field' : n + ' fields') + ' in red.' : (note || '');
     var first = Object.keys(AGM.errors)[0];
     if (AGM.errors.telegramEnv || AGM.errors.discordEnv || AGM.errors.slackBotEnv || AGM.errors.slackAppEnv || AGM.errors.moveSlack || AGM.errors.moveDiscord) AGM.folds.channels = true;
     if (AGM.errors.triggers) AGM.folds.advanced = true;
@@ -185,13 +188,17 @@ export const WALL_AGENTS_SCRIPT = String.raw`
       var said = (done.length ? 'Saved ' + done.join(', ') + '; not ' : 'Not saved ') + r.what + ': ' + r.reason +
         (done.length ? ' Fix it and press Create agent again: what is saved is not sent again.' : '');
       // A refused workspace (a file, a folder AgentX cannot write) shows under its field.
-      if (r.field === 'workspace') agmShowErrors({ workspace: r.reason }, said); else agmFormNote(said);
+      if (r.field === 'workspace' && !done.length) agmShowErrors({ workspace: r.reason }, said);
+      else if (r.field === 'workspace') { agmShowErrors({ workspace: r.reason }, said); agmFormNote(said); }
+      else agmFormNote(said);
       return;
     }
     AGM.open = ''; AGM.form = {}; AGM.note = ''; AGM.errors = {}; AGM.folds = {}; AGM.saved = null;
     AGM.restart = 'needed'; AGM.waitFor = plan.id;
     AGM.test = ''; AGM.td = null;
     AGM.flash = 'Created @' + plan.id + '. Restart when idle to start it: its Test drive opens here once it runs.';
+    // Drawn now: with Enter pressed in a field, focus is still in the Sheet.
+    agmRender();
     await agmReload();
   }
   async function agmSaveEdit(id) {
@@ -204,6 +211,7 @@ export const WALL_AGENTS_SCRIPT = String.raw`
     if (!r.ok) { agmFormNote(r.error); if (r.done.length) agmReload(); return; }
     AGM.open = ''; AGM.form = {}; AGM.note = ''; AGM.errors = {}; AGM.folds = {};
     AGM.flash = 'Saved @' + id + ': ' + r.done.join(', ') + '.';
+    agmRender();
     await agmReload();
   }
   async function agmHoldSet(id, paused) {
@@ -358,7 +366,7 @@ export const WALL_AGENTS_CSS = `
 .agm-acts .ax-btn { font-size: var(--ax-fs-xs); padding: 3px 10px; }
 .agm-more { position: relative; display: inline-flex; }
 .agm-more .ha__act { width: 28px; height: 28px; }
-.agm-menu { position: absolute; top: calc(100% + 4px); right: 0; min-width: 176px; animation: agm-pop 150ms ease-out; }
+.agm-more .agm-menu { position: absolute; top: calc(100% + 4px); left: 0; right: auto; min-width: 176px; animation: agm-pop 150ms ease-out; }
 @keyframes agm-pop { from { opacity: 0; transform: scale(.98); } }
 .agm-sheet { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: flex-end; }
 .agm-sheet__scrim { position: absolute; inset: 0; border: 0; padding: 0; background: rgb(0 0 0 / 35%); cursor: default; }
@@ -370,8 +378,9 @@ export const WALL_AGENTS_CSS = `
 .agm-sheet__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--ax-border); flex: none; }
 .agm-sheet__head h2 { margin: 0; font-size: 15px; font-weight: 600; }
 .agm-sheet__body { flex: 1 1 auto; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-.agm-sheet__foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ax-border); flex: none; }
-.agm-sheet__foot .wdo__n { margin-right: auto; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.agm-sheet__foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ax-border); flex: none; }
+.agm-sheet__foot .wdo__n { flex: 1 1 auto; min-width: 0; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
+.agm-sheet__foot .ax-btn { flex: none; white-space: nowrap; }
 .agm-fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .agm-fld > label, .agm-lbl { font-size: var(--ax-fs-sm); font-weight: 500; }
 .agm-fld input:not([type=checkbox]), .agm-fld select, .agm-fld textarea { width: 100%; box-sizing: border-box; font-size: 16px; }
@@ -387,6 +396,8 @@ export const WALL_AGENTS_CSS = `
 .agm-rm .wsd__box p { margin: 0; font-size: var(--ax-fs-sm); }
 .agm-rm .wsd__box h3 { font-size: 17px; font-weight: 600; }
 .agm-rm .wsd__acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.agm-rm .ax-btn--danger { background: none; color: var(--ax-red-ink); border-color: var(--ax-red-ink); }
+.agm-rm .ax-btn--danger:hover { background: var(--ax-red-t); }
 @media (max-width: 640px) { .agm-sheet__panel { width: 100%; border-left: 0; } }
-@media (prefers-reduced-motion: reduce) { .agm-sheet.is-enter .agm-sheet__panel, .agm-sheet.is-enter .agm-sheet__scrim, .agm-menu { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .agm-sheet.is-enter .agm-sheet__panel, .agm-sheet.is-enter .agm-sheet__scrim, .agm-more .agm-menu { animation: none; } }
 `

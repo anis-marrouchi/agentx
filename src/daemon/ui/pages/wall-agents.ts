@@ -41,8 +41,9 @@ globalThis.agmSlug = agentForm.agmSlug
 globalThis.agmWorkspacePath = agentForm.agmWorkspacePath
 
 export type { AgmAgent, AgmBound, AgmErrors, AgmForm, AgmPlan, AgmStep } from "@/agents/agent-form"
-export { agmCreateSteps, agmEditSteps, agmFormOf } from "@/agents/agent-form"
-export const agmSlug = agentForm.agmSlug
+// Re-exports only (no local binding): a local agmSlug would be what the
+// bundler points the bodies' bare agmSlug at, and the page has no such name.
+export { agmCreateSteps, agmEditSteps, agmFormOf, agmSlug } from "@/agents/agent-form"
 
 /** What the page knows about an agent's state right now. */
 export interface AgmFacts {
@@ -133,7 +134,7 @@ export function agmFormHtml(f: AgmForm, mode: string, engines: Array<[string, st
   const opts = engines.map((e) => '<option value="' + agmEsc(e[0]) + '"' + (e[0] === tier ? " selected" : "") + ">" + agmEsc(e[1]) + "</option>").join("")
   const models = agmModelGroups().filter((g) => g.tier === tier).flatMap((g) => g.models).map((m) => '<option value="' + agmEsc(m) + '"></option>').join("")
   const fold = (key: "channels" | "advanced", title: string, body: string, bad: boolean) =>
-    '<details class="axp-fold agm-fold" data-agm-fold="' + key + '"' + (open[key] || bad ? " open" : "") + '><summary class="axp-fold__h"><span class="axp-fold__t">' + title + "</span></summary>" + body + "</details>"
+    '<details class="axp-fold agm-fold" data-agm-fold="' + key + '" data-keep-own' + (open[key] || bad ? " open" : "") + '><summary class="axp-fold__h"><span class="axp-fold__t">' + title + "</span></summary>" + body + "</details>"
   // This machine has one Slack bot and one Discord bot: say whom it answers
   // as now, and ask before taking it from another agent.
   const botLine = (ch: "slack" | "discord", label: string, k: "moveSlack" | "moveDiscord") => {
