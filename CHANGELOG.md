@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.312.0](https://github.com/anis-marrouchi/agentx/compare/v0.311.3...v0.312.0) (2026-11-28)
+
+
+### Features
+
+* **desktop:** move the orb by a ring around it or Option-drag ([#2550](https://github.com/anis-marrouchi/agentx/issues/2550)) ([b495ba8](https://github.com/anis-marrouchi/agentx/commit/b495ba84bab03b4f8bdaee91d6f095d15381621b))
+* **hub:** agent click opens its live run or latest conversation ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R26, R1, R3) ([#2543](https://github.com/anis-marrouchi/agentx/issues/2543)) ([2cc5298](https://github.com/anis-marrouchi/agentx/commit/2cc52985b4082cc192fc733c43ba9b0d20268c48))
+
+
+### Bug Fixes
+
+* **requests:** hold wakes before an active step's waits-until (retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY) ([#2548](https://github.com/anis-marrouchi/agentx/issues/2548)) ([344d32e](https://github.com/anis-marrouchi/agentx/commit/344d32ebf79210d45db59d666681be182fc378b5))
+
 ## [0.311.3](https://github.com/anis-marrouchi/agentx/compare/v0.311.2...v0.311.3) (2026-11-28)
 
 
