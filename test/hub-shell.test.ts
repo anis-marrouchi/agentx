@@ -155,7 +155,7 @@ describe("the shell draws three columns", () => {
   it("a switch turned on shows its item in the simple layout", () => {
     const html = draw({ view: resolveHubLayout({ layout: "simple", show: { workflows: true } }) })
     expect(html).toContain('data-shell-item="workflows"')
-    expect(html).toContain('href="#page=workflows"')
+    expect(html).toContain('href="#page=home&amp;pane=workflows"')
     expect(html).not.toContain('data-shell-item="mobile"')
   })
   it("without the grouped rows, lists the agents as not working today, folded", () => {

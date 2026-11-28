@@ -40,6 +40,7 @@ import { WaitingPane } from "./ShellWaiting"
 import { ProjectsPane } from "./ShellProjects"
 import { ActivityPane } from "./ShellActivity"
 import { MobilePane } from "./ShellMobile"
+import { WorkflowsPane } from "./ShellWorkflows"
 import {
   AfSkeletonRows, Button, EmptyState, Icon, Sheet, SheetContent, SheetTitle,
   Tooltip, TooltipContent, TooltipTrigger, cn,
@@ -349,6 +350,7 @@ function Centre({ props, bar, onThread }: { props: SimpleShellProps; bar: ReactN
     case "projects": return <ProjectsPane owner={props.owner} phoneBar={bar} />
     case "activity": return <ActivityPane phoneBar={bar} />
     case "mobile": return <MobilePane phoneBar={bar} />
+    case "workflows": return <WorkflowsPane owner={props.owner} open={props.openTask ?? null} phoneBar={bar} />
     default: return <AgentPane key={current?.id} agent={current} row={row} phoneBar={bar} onThread={onThread} />
   }
 }
