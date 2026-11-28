@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.316.1](https://github.com/anis-marrouchi/agentx/compare/v0.316.0...v0.316.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** Settings search opens one tab; Peers and Recent frames say when a read fails ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) ST3b) ([#2580](https://github.com/anis-marrouchi/agentx/issues/2580)) ([9da5046](https://github.com/anis-marrouchi/agentx/commit/9da504671e1959d9dc7e6953bd0895cf9fbdde69))
+
 ## [0.316.0](https://github.com/anis-marrouchi/agentx/compare/v0.315.0...v0.316.0) (2026-11-28)
 
 
