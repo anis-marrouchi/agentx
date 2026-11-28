@@ -23,6 +23,8 @@ The **door** is how the work came in:
 | Workflow | A workflow reached a step that an agent runs. |
 | API | A script or another program started the work through the daemon. |
 
+The daemon's own messages are not jobs: an answer coming back from a hand-off, a digest of notices, a wake-up, or the question asking a run for its job state. The daemon adds no row for them. The rule and notice lines it puts in front of a message are not kept in the job's text either. On its first start after the update, the daemon drops the open jobs that were only such a message, with the note "a message from the daemon, not work".
+
 ## Open the page
 
 1. **Browser:** open the dashboard. On the Hub, select **Jobs** in the nav, under **Work**. On a phone, select the menu button at the top left, then **Jobs**.
@@ -35,7 +37,7 @@ The page reads every machine the Hub reads. With more than one machine, each row
 
 Each row has:
 
-- **The job's name:** its headline, or the start of what was asked.
+- **The job's name:** its headline, written by whoever asked. An agent writes it with the `headline` field of `agentx_send_agent`. A message that opens with "About the subject:" uses that subject. Otherwise the daemon writes a short one with a small model call within a few minutes (`requests.headlines.jobsWithinHours`, default 24, covers jobs opened in the last 24 hours; `0` turns it off for jobs). A job with no headline yet reads **Untitled job from** and the name of whoever asked, in grey. The page never cuts the start of the message into a title.
 - **The status line:** the main thing on the row. See [What the status line means](#what-the-status-line-means).
 - **Who asked and who owes it:** for example `pm → @coder`.
 - **The door.**
@@ -172,7 +174,8 @@ When the daemon has no job with that id, `GET /jobs/<id>` answers `404` with `le
 3. Select the row. Its details list a run, and its status is **running**.
 4. When the work ends, select **Done**. The job is there, and its status line starts with `done`.
 5. **Terminal:** run `curl -s "http://127.0.0.1:18800/jobs?state=all"`. The same job is in `jobs`, with the same `status`.
-6. **Browser:** with `requests.dueTimes.mode` set to `"shadow"`, select **Refresh** on the Jobs page. The **Queue** block lists each agent that has open work.
+6. **Browser:** a row has a headline, or reads **Untitled job from …** in grey. No row starts with `[Job state]` or `[agentx:`.
+7. **Browser:** with `requests.dueTimes.mode` set to `"shadow"`, select **Refresh** on the Jobs page. The **Queue** block lists each agent that has open work.
 
 ## If something is wrong
 
@@ -184,4 +187,5 @@ When the daemon has no job with that id, `GET /jobs/<id>` answers `404` with `le
 - **A job handed to another machine stays `waiting` for days:** that machine may keep no jobs, or run an older AgentX. Open the job: it shows **Not read from** and that machine's name. The daemon does not mark such a job stalled, because it cannot tell whether the work happened. Update AgentX on that machine, or set `requests.jobs.enabled` to `true` there.
 - **The page says "Could not read the jobs":** the machine answered with an error or refused the dashboard's key. Select **Refresh** on the Hub. If it stays, see [It's not answering](../help/its-not-answering.md).
 - **No Queue block above the list:** `requests.dueTimes.mode` is `"off"` on that machine, or no agent there has open work.
+- **Many rows read Untitled job:** headlines from the model need `requests.headlines.enabled` (on by default) and a working provider; the daemon log says `headline not written` with the reason. Jobs older than `requests.headlines.jobsWithinHours` are not given one.
 - **You were looking for your recurring jobs:** they are under **Schedules** in the nav, under **Automation**.

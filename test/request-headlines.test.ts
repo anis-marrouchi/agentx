@@ -10,6 +10,8 @@ import { HEADLINE_MAX, HeadlineWriter, headlinePrompt, parseDescription, readHea
 import { cardWords, NOTHING_NEEDED, requestCard } from "../src/requests/card-view"
 import { attentionTitle, runRequestsSweep } from "../src/requests/sweep"
 import { buildDesk } from "../src/desk/board"
+import { JobStore } from "../src/jobs/store"
+import { JOB_STATE_RULE } from "../src/agents/run-state"
 
 // #1126 step 1: every request card, push and Desk line says what the
 // request is and what is needed from the owner; their words come below.
@@ -101,6 +103,21 @@ describe("the store", () => {
     store.progress("req-t2", 6_000)
     store.setHeadline("req-t1", { headline: "Has one" }, "agent")
     expect(store.withoutHeadline().map((r) => r.id)).toEqual(["req-t2"])
+  })
+
+  it("lists recent open jobs from other doors too, when asked (#2555)", () => {
+    const jobs = new JobStore(db)
+    jobs.open({ id: "job-old", door: "a2a", requester: "pm", assignee: "coder", channel: "a2a", chatId: "c", text: "old work", now: 1_000 })
+    jobs.open({ id: "job-new", door: "a2a", requester: "pm", assignee: "coder", channel: "a2a", chatId: "c", text: "new work", now: 9_000 })
+    jobs.open({ id: "job-named", door: "a2a", requester: "pm", assignee: "coder", channel: "a2a", chatId: "c", text: "w", headline: "Has one", now: 9_000 })
+    expect(store.withoutHeadline().map((r) => r.id)).not.toContain("job-new")
+    expect(store.withoutHeadline(20, 5_000).map((r) => r.id)).toEqual(["job-new"])
+  })
+
+  it("asks the model about the ask, not the daemon's lines around it (#2555)", () => {
+    const p = headlinePrompt({ text: JOB_STATE_RULE + "Deploy the login fix", agentId: "coder", state: "in_progress" } as any)
+    expect(p).toContain("Deploy the login fix")
+    expect(p).not.toContain("[Job state]")
   })
 })
 

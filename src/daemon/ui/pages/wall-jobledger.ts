@@ -126,11 +126,20 @@ export function jlTone(j: { state: string; status: string }): string {
   return /^(working|continue|waiting|blocked|stalled|done|dropped)$/.test(j.state) ? j.state : "working"
 }
 
-/** What a row is called: its headline, else the start of its text. */
-export function jlTitle(j: { headline: string | null; text: string; id: string }): string {
-  const t = String(j.headline || j.text || "").replace(/\s+/g, " ").trim()
-  if (!t) return j.id
-  return t.length > 100 ? t.slice(0, 99).trimEnd() + "…" : t
+/** What a row is called: the headline its sender wrote. Never the start
+ *  of its text cut short (#2555): with none, "Untitled job from <who>",
+ *  so the gap shows and is counted. */
+export function jlTitle(j: { headline: string | null; requester?: string | null; assignee?: string }): string {
+  const t = String(j.headline || "").replace(/\s+/g, " ").trim()
+  if (t) return t
+  const who = String(j.requester || "").replace(/^agent:/, "").replace(/^cron:/, "schedule ").trim()
+  return who ? "Untitled job from " + who : "Untitled job for " + (j.assignee || "an agent")
+}
+
+/** The title as HTML: muted when the job has no headline. */
+export function jlTitleHtml(j: { headline: string | null; requester?: string | null; assignee?: string }): string {
+  const untitled = !String(j.headline || "").trim()
+  return untitled ? '<span class="wjl__untitled">' + jlEsc(jlTitle(j)) + "</span>" : jlEsc(jlTitle(j))
 }
 
 /** The job's home: a link when it is a web address, text otherwise. */
@@ -144,7 +153,7 @@ export function jlHomeHtml(home: { kind: string; link: string } | null): string 
 
 /** A button that opens another job: a parent or a child. */
 export function jlLinkHtml(j: HubJob, node: string): string {
-  return '<button type="button" class="wjl__link" data-jlopen="' + jlEsc(j.id) + '" data-jlnode="' + jlEsc(node) + '">' + jlEsc(jlTitle(j)) + "</button>" +
+  return '<button type="button" class="wjl__link" data-jlopen="' + jlEsc(j.id) + '" data-jlnode="' + jlEsc(node) + '">' + jlTitleHtml(j) + "</button>" +
     ' <small>@' + jlEsc(j.assignee) + '</small> <span class="wjl__st is-' + jlTone(j) + '">' + jlEsc(j.status) + "</span>"
 }
 
@@ -195,7 +204,7 @@ export function jlRowHtml(j: HubJob, o: { open: boolean; detail: HubJobDetail | 
   ].filter(Boolean).join(" ")
   return '<article class="wjl is-' + jlTone(j) + (o.open ? " is-open" : "") + '">' +
     '<button type="button" class="wjl__row" data-jlopen="' + jlEsc(j.id) + '" data-jlnode="' + jlEsc(node) + '" aria-expanded="' + (o.open ? "true" : "false") + '">' +
-    '<span class="wjl__h">' + jlEsc(jlTitle(j)) + "</span>" +
+    '<span class="wjl__h">' + jlTitleHtml(j) + "</span>" +
     '<span class="wjl__st is-' + jlTone(j) + '">' + jlEsc(j.status) + "</span></button>" +
     '<p class="wjl__facts">' + facts + "</p>" +
     (o.open ? jlDetailHtml(o.detail, o.detailErr, node, o.now) : "") + "</article>"

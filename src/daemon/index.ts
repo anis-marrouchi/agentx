@@ -5589,6 +5589,8 @@ export class AgentXDaemon {
       // One session per piece of work (#1100): the body's home, or the one
       // a /task context carries.
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+      // What the work is called, as the sender wrote it (#2555).
+      ...(typeof body.headline === "string" && body.headline.trim() ? { headline: body.headline.trim() } : {}),
       // /mesh/task makes its own peer call, with the caller's context (R2).
       ...(target.run ? { run: target.run } : {}),
     })
@@ -5650,6 +5652,7 @@ export class AgentXDaemon {
       // (#1258): nobody holds a request open for it.
       ...(peer ? {} : { timeoutMs: ((maxMinutes ?? 20) + 5) * 60_000 + SEND_AGENT_SLOT_WAIT_MS, slotWaitMs: SEND_AGENT_SLOT_WAIT_MS }),
       ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
+      ...(typeof body.headline === "string" && body.headline.trim() ? { headline: body.headline.trim() } : {}),
       ...(target.run ? { run: target.run } : {}),
     })
     return noneBody(taskId, target.callee, peer, duplicate === true, carried === true)

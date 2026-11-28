@@ -184,6 +184,7 @@ export const WALL_JOBLEDGER_CSS = `
 .wjl__row { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; width: 100%; font: inherit; color: inherit; text-align: left; background: none; border: 0; padding: 10px 16px 2px 13px; cursor: pointer; }
 .wjl__row:hover, .wjl.is-open > .wjl__row { background: var(--ax-surface); }
 .wjl__h { font-weight: 600; overflow-wrap: anywhere; }
+.wjl__untitled { font-weight: 500; font-style: italic; color: var(--ax-muted); }
 .wjl__st { display: inline-block; font-size: var(--ax-fs-sm); font-weight: 600; border-radius: var(--ax-radius-sm); padding: 2px 9px; background: var(--ax-surface); color: var(--ax-text-2); overflow-wrap: anywhere; }
 .wjl__st.is-working { background: color-mix(in oklch, var(--ax-green) 18%, transparent); color: var(--ax-green-d); }
 .wjl__st.is-blocked { background: color-mix(in oklch, var(--ax-amber) 22%, transparent); color: var(--ax-amber-ink); }

@@ -4,6 +4,7 @@ import { PICKUP_CHANNEL, type DelegationSignal } from "@/requests/tracker"
 import { delegationIdOfChat } from "@/a2a/delegation"
 import { normalizeHome } from "@/a2a/home"
 import type { JobDoor, JobRecord, JobStore } from "./store"
+import { askOf, handedJobOf, headlineOf } from "./headline"
 
 // --- A job opened at every door (#1861, phase 1) ---
 //
@@ -210,13 +211,30 @@ export class JobDoors {
         on(left.id)
         return
       }
+      // The daemon's own messages (a hand-off's answer, a notice digest,
+      // a wake) are no job (#2555): nothing is opened for them.
+      const said = p.requestText ?? p.fullMessage ?? p.messagePreview ?? ""
+      const ask = askOf(said)
+      if (!ask) {
+        // A hand-off's answer coming back goes on with the job that
+        // handed it out, so its state (a wake, a wait) lands there.
+        const back = handedJobOf(said)
+        const parentId = back ? jobs.get(back)?.parentId : null
+        const parent = parentId ? jobs.get(parentId) : null
+        if (parent && parent.closedAt === null) {
+          jobs.linkRun(parent.id, runId, now)
+          if (!parent.ownerRequest) jobs.working(parent.id, now)
+          on(parent.id)
+        }
+        return
+      }
       const id = dlg && !taken ? `job-${dlg}` : `job-${runId}`
       // A workflow step serves the request its workflow run is linked to.
       const wfRun = from.door === "workflow" && p.chatId.startsWith("workflow:") ? p.chatId.slice("workflow:".length) : null
       const parentId = wfRun ? this.deps.requests.byLink("workflow", wfRun)?.id ?? null : null
       jobs.open({
         id, door: from.door, requester: from.requester, assignee: p.agentId, channel: p.channel, chatId: p.chatId,
-        text: p.requestText ?? p.fullMessage ?? p.messagePreview, home, parentId, runId, now,
+        text: ask, headline: headlineOf(null, ask), home, parentId, runId, now,
       })
       on(id)
     })
@@ -258,9 +276,11 @@ export class JobDoors {
 
   /** An agent handed work to another from a running turn: a job owed by
    *  the callee, child of the job of that turn. */
-  delegationStarted(d: DelegationSignal & { request?: string; home?: string }): void {
+  delegationStarted(d: DelegationSignal & { request?: string; home?: string; headline?: string }): void {
     this.guard("hand-off", () => {
       if (!this.deps.settings().enabled) return
+      const ask = d.request === undefined ? `Work handed to ${d.callee} by ${d.caller}` : askOf(d.request)
+      if (!ask) return
       const now = this.now()
       const parentId = this.liveJobId(d.caller, d.origin.channel, d.origin.chatId)
       const homeRef = normalizeHome(d.home)
@@ -268,7 +288,7 @@ export class JobDoors {
       this.deps.jobs.open({
         id: `job-${d.id}`, door: "a2a", requester: d.caller, assignee: d.callee,
         channel: "a2a", chatId: `a2a:${d.caller}:${d.callee}:${d.id}`,
-        text: d.request ?? `Work handed to ${d.callee} by ${d.caller}`,
+        text: ask, headline: headlineOf(d.headline, ask),
         home: homeRef ? { kind: "issue", link: homeRef } : null, parentId,
         // On another node no run of it starts here: it waits on that node.
         ...(d.peer ? { peer: d.peer, state: "waiting" as const, waitingOn: `${d.callee}@${d.peer}` } : {}),

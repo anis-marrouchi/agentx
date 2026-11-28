@@ -770,11 +770,15 @@ export class RequestStore {
 
   /** Open requests the owner may see that have no headline yet and were
    *  not tried, newest first: the ones the daemon writes one for. */
-  withoutHeadline(limit = 20): RequestRecord[] {
+  withoutHeadline(limit = 20, jobsSince?: number): RequestRecord[] {
+    // Open jobs from other doors too (#2555), when asked: only the recent
+    // ones, so a backlog never turns into a long run of model calls.
+    const jobs = jobsSince === undefined ? ""
+      : ` OR (state = 'job' AND job_state IN ('working', 'continue', 'waiting', 'blocked', 'stalled') AND created_at >= ?)`
     return this.db.prepare(
-      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND headline IS NULL AND headline_tried_at IS NULL
+      `SELECT * FROM requests WHERE (state IN (${placeholders(OPEN_STATES.length)})${jobs}) AND headline IS NULL AND headline_tried_at IS NULL
        ORDER BY created_at DESC, rowid DESC LIMIT ?`,
-    ).all(...OPEN_STATES, limit).map(toRecord)
+    ).all(...OPEN_STATES, ...(jobsSince === undefined ? [] : [jobsSince]), limit).map(toRecord)
   }
 
   /** Claim the one model call for this request's headline. True for the

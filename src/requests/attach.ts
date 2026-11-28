@@ -11,6 +11,7 @@ import { traceInbound, type InboundLog } from "./checkers/reply"
 import { DriftStore } from "./drift/store"
 import { JobStore } from "@/jobs/store"
 import { JobDoors, jobsOn, type JobDoorsDeps } from "@/jobs/doors"
+import { isSystemMessage } from "@/jobs/headline"
 import { SlotStore } from "./slot-store"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
@@ -92,6 +93,12 @@ export function attachRequests(
   bus.on("task:completed", completed)
   // After the tracker, on purpose: a run it linked is the owner's already.
   const jobs = new JobStore(db)
+  try {
+    const dropped = jobs.dropSystemJobs(isSystemMessage, Date.now())
+    if (dropped) log(`[jobs] dropped ${dropped} open job(s) that were only a daemon message (#2555)`)
+  } catch (e: any) {
+    log(`[jobs] could not drop daemon-message jobs: ${e?.message ?? e}`)
+  }
   const doors = new JobDoors({ jobs, requests: store, settings: () => ({ enabled: jobsOn(settings()) }), log, onUndeclared })
   const jobStarted = doors.taskStarted.bind(doors)
   const jobCompleted = doors.taskCompleted.bind(doors)

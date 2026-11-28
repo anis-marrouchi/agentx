@@ -11,6 +11,9 @@ import { JobDoors, RUN_ENDED_PROOF, doorOf, homeOfForgeChat, jobsOn } from "../s
 import { attachRequests } from "../src/requests/attach"
 import { getEventBus } from "../src/events/bus"
 import { requestsConfigSchema } from "../src/daemon/config"
+import { JOB_STATE_RULE } from "../src/agents/run-state"
+import { SYSTEM_JOB_NOTE } from "../src/jobs/store"
+import { isSystemMessage } from "../src/jobs/headline"
 
 const ON: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242", "github:the-owner"], staleAfterHours: 24, retentionDays: 90 }
 
@@ -412,5 +415,51 @@ describe("attached to the bus", () => {
 
   it("jobs off: nothing opens, whatever requests says", () => {
     expect(through({ enabled: true, jobs: { enabled: false } }).job).toBeNull()
+  })
+})
+
+describe("headlines and the daemon's own messages (#2555)", () => {
+  const dlg = { id: "dlg-hd-1", caller: "pm", callee: "coder", origin: { channel: "a2a", chatId: "x" } }
+
+  it("opens no job for a message that is only the daemon's", () => {
+    start("s1", { fullMessage: JOB_STATE_RULE + "[agentx:delegation-result task=dlg-9 from=devops status=done]\nEarlier you asked devops…", messagePreview: "x" })
+    expect(jobs.byRun("s1")).toBeNull()
+    start("s2", { fullMessage: "[agentx:notices count=1]\nFor your information.\n- a\n\n", messagePreview: "x" })
+    expect(jobs.byRun("s2")).toBeNull()
+  })
+
+  it("keeps only the ask as the job's text, and the subject the sender named as its headline", () => {
+    start("s3", { fullMessage: JOB_STATE_RULE + "About the login fix: please deploy it today." })
+    expect(jobs.byRun("s3")).toMatchObject({ text: "About the login fix: please deploy it today.", headline: "The login fix" })
+    start("s4", { chatId: "other", fullMessage: "Please deploy the login fix." })
+    expect(jobs.byRun("s4")).toMatchObject({ headline: null })
+  })
+
+  it("a hand-off's answer coming back goes on with the job that handed it out", () => {
+    start("p1", { chatId: "pm-chat", fullMessage: "Build the page" })
+    const parent = jobs.byRun("p1")!
+    doors.delegationStarted({ id: "dlg-back-1", caller: "coder", callee: "devops", origin: { channel: "a2a", chatId: "pm-chat" }, request: "Deploy it" })
+    expect(jobs.get("job-dlg-back-1")!.parentId).toBe(parent.id)
+    // The run that handed it out said it waits on the answer.
+    jobs.declare(parent.id, { state: "waiting", on: "devops", until: clock + 3_600_000 }, { runId: "p1", now: clock })
+    end("p1", { chatId: "pm-chat" })
+    expect(jobs.get(parent.id)!.state).toBe("waiting")
+    start("p2", { chatId: "pm-chat", fullMessage: JOB_STATE_RULE + "[agentx:delegation-result task=dlg-back-1 from=devops status=done]\nDeployed." })
+    expect(jobs.byRun("p2")!.id).toBe(parent.id)
+    expect(jobs.get(parent.id)!.state).toBe("working")
+  })
+
+  it("a hand-off carries the headline its sender wrote", () => {
+    doors.delegationStarted({ ...dlg, request: JOB_STATE_RULE + "Build it", headline: "Build the Jobs page" })
+    expect(jobs.get("job-dlg-hd-1")).toMatchObject({ text: "Build it", headline: "Build the Jobs page" })
+  })
+
+  it("drops the open jobs that were only a daemon message, once", () => {
+    jobs.open({ id: "job-old-1", door: "a2a", requester: "pm", assignee: "coder", channel: "a2a", chatId: "c", text: JOB_STATE_RULE + "[agentx:delegation-result task=d]\nx", now: clock })
+    jobs.open({ id: "job-old-2", door: "a2a", requester: "pm", assignee: "coder", channel: "a2a", chatId: "c", text: JOB_STATE_RULE + "Real work", now: clock })
+    expect(jobs.dropSystemJobs(isSystemMessage, clock + 1)).toBe(1)
+    expect(jobs.get("job-old-1")).toMatchObject({ state: "dropped", note: SYSTEM_JOB_NOTE })
+    expect(jobs.get("job-old-2")!.state).toBe("working")
+    expect(jobs.dropSystemJobs(isSystemMessage, clock + 2)).toBe(0)
   })
 })
