@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.318.0](https://github.com/anis-marrouchi/agentx/compare/v0.317.0...v0.318.0) (2026-11-28)
+
+
+### Features
+
+* **hub:** Workflows page opens in the React shell ([#2457](https://github.com/anis-marrouchi/agentx/issues/2457)) ([#2590](https://github.com/anis-marrouchi/agentx/issues/2590)) ([5b8379b](https://github.com/anis-marrouchi/agentx/commit/5b8379bc712299cf87e2a5b781b9df886bb6bf1c))
+
 ## [0.317.0](https://github.com/anis-marrouchi/agentx/compare/v0.316.2...v0.317.0) (2026-11-28)
 
 
