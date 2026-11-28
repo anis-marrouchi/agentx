@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { surfacesConfigSchema } from "./surfaces"
 
 // --- situations: settings (#1892, phase 1: the courtesy-close gate) ---
 //
@@ -161,6 +162,9 @@ export const situationsConfigSchema = z.object({
     maxItems: z.number().int().min(1).max(50).default(10),
     timeoutMs: z.number().int().min(500).max(60_000).default(8_000),
   }).default({}),
+  /** Replies that fit the surface (#2083): profiles per surface and the
+   *  surface line. `shadow` by default: built and logged, never sent. */
+  surfaces: surfacesConfigSchema,
 }).default({})
 
 export type SituationsConfig = z.infer<typeof situationsConfigSchema>

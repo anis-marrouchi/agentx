@@ -203,6 +203,17 @@ export const APP_CHAT_SCRIPT = `
     if (input.value.trim() !== sent) return;
     input.value = ''; input.style.height = '';
   }
+  // #2083: how the answer will be met. The speaker button (the voice
+  // bar keeps it, '1' or '0', default on) and a coarse screen class from
+  // the width. Only on|off and phone|tablet|desktop; nothing else.
+  function withSurface(body) {
+    var sp = null;
+    try { sp = localStorage.getItem('ax-voice-speaker'); } catch (e) {}
+    body.speaker = sp === '0' ? 'off' : 'on';
+    var w = window.innerWidth || 0;
+    body.screen = w < 600 ? 'phone' : w <= 1024 ? 'tablet' : 'desktop';
+    return body;
+  }
   // False when the text was neither sent nor queued, so a quick reply
   // stays tappable. opts.spoken: the text came from voice, which the
   // computer records as a spoken turn (Activity shows it as Voice).
@@ -230,6 +241,7 @@ export const APP_CHAT_SCRIPT = `
     state.stopWanted = false;
     userMsg(text);
     clearInput(text);
+    withSurface(body);
     follow(function (signal) { return post('/api/app/chat', body, signal); }, agentMsg(), null);
     return true;
   }
@@ -258,7 +270,7 @@ export const APP_CHAT_SCRIPT = `
       input.value = [text].concat(input.value.trim() ? [input.value] : []).join(V.NL + V.NL);
       flash('Not sent to ' + who + ': ' + why + ' Your words are in the text box; Send puts them in this chat.');
     }
-    post('/api/app/chat', body).then(function (r) {
+    post('/api/app/chat', withSurface(body)).then(function (r) {
       // Still answering there: they go as its next turn, like a held follow-up.
       if (r.status === 409 && p.id) { held[p.id] = (held[p.id] || []).concat(text); flash('Sent to ' + who + ' when its answer is done.'); return; }
       if (!r.ok) { back('it failed (HTTP ' + r.status + ').'); return; }
@@ -336,7 +348,7 @@ export const APP_CHAT_SCRIPT = `
     var texts = held[id];
     if (!texts || !texts.length || (state.conv && state.conv.id === id)) return;
     delete held[id];
-    post('/api/app/chat', { conversationId: id, message: texts.join(V.NL + V.NL) }).then(function (r) {
+    post('/api/app/chat', withSurface({ conversationId: id, message: texts.join(V.NL + V.NL) })).then(function (r) {
       if (r.status === 409) { held[id] = texts.concat(held[id] || []); return; }
       sentHere[id] = 1;
       // The computer keeps the turn going without the phone reading it.

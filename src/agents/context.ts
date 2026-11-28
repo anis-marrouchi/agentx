@@ -17,6 +17,7 @@
 // Layers are rendered top-down; if budget exhausted, lower layers are truncated or skipped.
 
 import { isNodeFact, NODE_FACT_STALE_TAG } from "./node-facts"
+import { surfaceRules, type SurfacesConfig } from "@/situations/surfaces"
 
 /** A pinned memo written before #1531 may still carry a limit, reset or
  *  hold line; it is marked stale rather than shown as current. */
@@ -77,6 +78,11 @@ const CHARS_PER_TOKEN = 4
 export interface ContextInput {
   // Channel layer
   channel: string                    // "telegram", "whatsapp", "gitlab", "discord"
+  /** #2083: "Surface: phone app, spoken, …" — set only when
+   *  situations.surfaces.mode is active; in shadow it is logged, not sent. */
+  surfaceLine?: string
+  /** #2083: profile overrides from config, passed only in active mode. */
+  surfaceProfiles?: SurfacesConfig["profiles"]
   channelScope?: "group" | "personal" | "project"
   /** Canonical chat id used by routing — telegram user/group id, github
    *  "owner/repo:issue:N", whatsapp jid, etc. Surfaced verbatim in the
@@ -631,7 +637,12 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
   if (input.chatId) lines.push(input.channel === "a2a"
     ? `Chat ID: ${input.chatId}  (use this verbatim in /recall; /send with channel "a2a" messages the other agent in this chat)`
     : `Chat ID: ${input.chatId}  (use this verbatim in /recall, /send)`)
-  const rules: string[] = []
+  // #2083: the surface line, only when situations.surfaces is active. It
+  // sits in the head, which survives a cut of this layer.
+  if (input.surfaceLine) lines.push(input.surfaceLine)
+  // The channel's reply rules come from its surface profile (defaults =
+  // the rules that were written here, word for word).
+  const rules: string[] = [...surfaceRules(input.channel, input.surfaceProfiles)]
   const tags = [input.channel]
 
   switch (input.channel) {
@@ -640,33 +651,19 @@ function buildChannelLayer(input: ContextInput, maxTokens: number): ContextLayer
       lines.push(`From: ${input.sender}`)
       if (input.senderId) lines.push(`Telegram user ID: ${input.senderId}`)
       if (input.senderUsername) lines.push(`Username: @${input.senderUsername}`)
-      rules.push("Format responses using Telegram-compatible markdown")
-      rules.push("Be brief — 2-4 sentences max for the main point. Humans scan, not read")
-      rules.push("Lead with the action or answer, skip preamble")
       break
 
     case "whatsapp":
       lines.push(`From: ${input.sender}`)
-      rules.push("Be brief — 2-3 sentences max. WhatsApp is mobile-first")
-      rules.push("No rich formatting — plain text only")
-      rules.push("Lead with the action or answer, skip preamble")
       break
 
     case "gitlab":
       lines.push(`From: ${input.sender}`)
-      rules.push("Reply as a short, actionable GitLab comment — 3-5 lines for the main message")
-      rules.push("Do NOT mention Telegram handles — they don't work on GitLab")
-      rules.push("Do NOT delegate to other agents")
-      rules.push("Reference issues with #IID and merge requests with !IID")
-      rules.push("Put verbose details (logs, full commands, step-by-step) inside collapsible sections: <details><summary>Title</summary>\\n\\ncontent\\n</details>")
-      rules.push("Never narrate what you are about to do — just do it and report the result")
       tags.push("code-review")
       break
 
     case "discord":
       lines.push(`From: ${input.sender}`)
-      rules.push("Use Discord markdown for formatting")
-      rules.push("Be brief — 2-4 sentences for the main point")
       break
 
     default:
