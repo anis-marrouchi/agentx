@@ -322,7 +322,7 @@ describe("the switcher", () => {
     const html = haSwitchHtml(haSwitchHits(m.rows, reqs, ""), 1, ltEsc)
     expect(html).toContain("⌘1")
     expect(html).toContain('aria-selected="true" href="#page=chat&amp;agent=coder"')
-    expect(html).toContain('href="#status=open&amp;post=r1"')
+    expect(html).toContain('href="#page=task&amp;id=r1"')
     expect(haSwitchHtml({ agents: [], reqs: [] }, 0, ltEsc)).toContain("No agent, request or page")
   })
   it("lists the pages the side menu no longer shows, and finds them by name (#2101 R22)", () => {

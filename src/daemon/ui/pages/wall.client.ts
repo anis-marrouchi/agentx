@@ -28,7 +28,10 @@
 //
 // Pages (#1316): selecting a post opens it on its own, with its thread, as
 // on X (#post=<id> in the hash, so a post is a link and Back returns to the
-// feed). The nav's Running now and Agents open pages of their own
+// feed). Since #2101 T3 a post and a run open on the React Task page
+// (#page=task) when React draws it for the viewer: readHash sends the old
+// addresses there (src/hub/task/old-links.ts), and the old post and run
+// pages are kept only for the others. The nav's Running now and Agents open pages of their own
 // (#page=running, #page=agents), and each nav item carries its count.
 // Activity (#page=activity, #1429, wall-activity.client.ts) lists the
 // agents' runs, newest first; an agent's profile has it as a tab.
@@ -113,6 +116,7 @@ import { ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltW
 import { mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml } from "./wall-machines"
 import { engineIconKey, engineIcon } from "./engine-icons"
 import { newSettingsHref } from "@/hub/settings/old-sections"
+import { taskFallback, taskHash, taskRedirect } from "@/hub/task/old-links"
 
 export const WALL_PAGE_SCRIPT = String.raw`
 (function () {
@@ -128,7 +132,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   // is on: this script keeps the hash and the nav, and hides its own sections.
   var HUB_PAGES = (window.AX_HUB && window.AX_HUB.pages) || [];
   // threads: loaded threads by post id; shown: the ones open under their post in the feed.
-  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
+  var S = { data: null, live: null, wf: null, org: null, view: 'feed', page: 'wall', post: '', sort: { key: 'idle', dir: -1 }, threads: {}, shown: {}, drafts: {}, doNote: '', space: null, spaceTimer: null, task: null, taskAt: null, movedPost: '', taskMounted: '', taskClose: null, taskDetail: null, liveEs: null, budgets: null, pics: null, picNote: null };
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
@@ -140,6 +144,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ wsProject, wsLast, wsHeadHtml })}
   ${injectFns({ haFace, hubAgentRows, haChatHref, haStateIcon, haStateWord, haRowHref, haGroups, haRowHtml, haListHtml, haRailHtml, haDownHtml, haFold, haSwitchHits, haSwitchHtml, haHitCount, haChannelLabel, haRunAt, haRunStart, haRunsHtml, haRunsToday })}
   ${injectFns({ engineIconKey, engineIcon })}
+  ${injectFns({ taskHash, taskRedirect, taskFallback })}
   ${injectFns({ hubPlanEngines, hubApiEngines, hubEngineShort, hubEngineFull, hubEnginesInUse, hubUsageRows, hubEngineTone, hubSpendView, hubUsd, hubSpan, hubStatusWord, hubIn, hubAgo, hubClock, hubEngineChipHtml, hubRowsHtml, hubUnreadHtml, hubEnginePopHtml, hubAgentsPopHtml })}
   ${injectFns({ hubAccountsText, hubAccountsHtml, hubConnState, hubEngines, hubEngineName, hubCliText, hubCliHtml, hubRunsWord, hubCliSavedText, hubCliWaitText })}
   ${injectFns({ ltEsc, ltPlain, ltAge, ltModel, ltProvider, ltRequestId, ltIssueRef, ltTitle, ltPlace, ltNodeKey, ltNodeState, ltNodeCounts, liveWorkCount, liveTreeModel, ltSvg, ltFold, ltProviderIcon, ltRowHtml })}
@@ -371,6 +376,25 @@ ${HUB_NAV_SCRIPT}
     return /^https?:\/\//.test(ref) ? '<a href="' + esc(ref) + '" target="_blank" rel="noopener">' + esc(ref) + '</a>' : esc(ref);
   }
 
+  // --- Old Task addresses (#2101 T3) ---
+  /** Does React draw the Task page for this viewer? Not with
+   *  dashboard.hub.legacyPages, ?legacy=1, or for anyone but the owner. */
+  function taskInReact() { return HUB_PAGES.indexOf(taskRedirect.page) >= 0; }
+  /** The node that keeps a post, from the feed: none for this one. */
+  function postPeer(id) { var p = findPost(id); return (p && p.node && p.node.peer) || null; }
+  /** Where this hash goes (old-links.ts), or null to keep it. A post moved
+   *  before the feed answered gets its node once it does. */
+  function taskMove(hash) {
+    if (!taskInReact()) return taskFallback(hash);
+    var to = taskRedirect(hash, postPeer);
+    if (to) { var at = new URLSearchParams(to.slice(1)); S.movedPost = at.get('peer') ? '' : at.get('id') || ''; return to; }
+    var q = new URLSearchParams(hash.replace(/^#/, ''));
+    if (!S.movedPost || !S.data || q.get('page') !== taskRedirect.page || q.get('id') !== S.movedPost || q.get('peer')) return null;
+    var peer = postPeer(S.movedPost);
+    S.movedPost = '';
+    return peer ? taskHash({ id: q.get('id'), task: q.get('task'), agent: q.get('agent'), peer: peer, run: q.get('run') }) : null;
+  }
+
   // --- Filters in the URL hash ---
   function readHash() {
     var q = new URLSearchParams(location.hash.slice(1));
@@ -387,6 +411,17 @@ ${HUB_NAV_SCRIPT}
       S.applied = location.hash;
       window.dispatchEvent(new Event('hashchange'));
     }
+    // Old Task addresses (#2101 T3, src/hub/task/old-links.ts): #post=<id>
+    // and the review id open the Task page when React draws it for this
+    // viewer; else a Task page address goes back to the old pages. Told to
+    // React the same way as Settings above.
+    var moved = taskMove(location.hash);
+    if (moved) {
+      history.replaceState(null, '', moved);
+      q = new URLSearchParams(location.hash.slice(1));
+      S.applied = location.hash;
+      window.dispatchEvent(new Event('hashchange'));
+    }
     var f = {};
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
     if (!q.has('status')) f.status = 'open';
@@ -394,9 +429,12 @@ ${HUB_NAV_SCRIPT}
     // The Cost page's range (#1423) is in the link: 7, 14, 30, 90 or all.
     if (S.view === 'cost' && q.has('range')) { var cr = q.get('range') === 'all' ? 0 : +q.get('range'); if ([7, 14, 30, 90, 0].indexOf(cr) >= 0) C.range = cr; }
     S.page = PAGES.indexOf(q.get('page')) >= 0 || HUB_PAGES.indexOf(q.get('page')) >= 0 ? q.get('page') : 'wall';
-    // A Task page names its run (#1381); without one it is the Wall.
-    S.task = S.page === 'task' ? readTask(q) : null;
-    if (S.page === 'task' && !S.task) S.page = 'wall';
+    // A Task page names its run (#1381); without one it is the Wall. When
+    // React draws the Task page it reads its own address, and the old run
+    // page does not start (#2101 T3).
+    S.task = S.page === 'task' && !taskInReact() ? readTask(q) : null;
+    S.taskAt = S.page === 'task' && taskInReact() ? q : null;
+    if (S.page === 'task' && !S.task && !S.taskAt) S.page = 'wall';
     if (S.page === 'activity') actRead(q);
     if (S.page === 'workflows') wfRead(q);
     if (S.page === 'editor') wedRead(q);
@@ -418,6 +456,7 @@ ${HUB_NAV_SCRIPT}
     if (S.view === 'cost') q.set('range', C.range ? String(C.range) : 'all');
     if (S.page !== 'wall') q.set('page', S.page);
     if (S.page === 'task' && S.task) TASK_KEYS.forEach(function (k) { if (S.task[k]) q.set(k, S.task[k]); });
+    if (S.page === 'task' && S.taskAt) taskHash.keys.concat(['node']).forEach(function (k) { if (S.taskAt.get(k)) q.set(k, S.taskAt.get(k)); });
     if (S.page === 'settings') settingsHashInto(q);
     if (S.page === 'activity') actWrite(q);
     if (S.page === 'workflows') wfWrite(q);
@@ -1645,7 +1684,8 @@ ${HUB_NAV_SCRIPT}
       if (!findPost(b.post.id)) S.extra = Object.assign({}, b.post, { node: { name: S.data.node, peer: null, daemonUrl: null } });
       S.post = b.post.id;
       writeHash();
-      render();
+      // Read back: with React's Task page, the post opens there (#2101 T3).
+      applyHash();
     });
   });
   setInterval(function () { if (!document.hidden) load(); }, 60000);

@@ -63,5 +63,7 @@ export function wsCopiesHtml(p: WsPost, esc: (s: unknown) => string): string {
   const c = (p && p.copies) || []
   if (!c.length) return ""
   return '<div class="wp__copies">' + c.length + (c.length === 1 ? " more post" : " more posts") + " like this: " +
-    c.map((id) => '<a href="#status=open&amp;post=' + encodeURIComponent(id) + '" data-open="' + esc(id) + '">' + esc(id) + "</a>").join(", ") + "</div>"
+    // Each its Task page (#2101 T3, old-links.ts taskHash; built here, as
+    // this file imports nothing); a click opens it through openPost.
+    c.map((id) => '<a href="' + esc("#" + new URLSearchParams({ page: "task", id }).toString()) + '" data-open="' + esc(id) + '">' + esc(id) + "</a>").join(", ") + "</div>"
 }

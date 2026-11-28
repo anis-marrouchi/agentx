@@ -2788,7 +2788,7 @@ describe("The People page on the Wall (#1441)", () => {
     const html = w.el("wall-people").innerHTML
     expect(html).toMatch(/Sara laptop[\s\S]*Active[\s\S]*End access[\s\S]*100\.64\.0\.7[\s\S]*as sara@/)
     expect(html).toMatch(/Sara phone[\s\S]*Waiting for your approval/)
-    expect(html).toContain('<a href="#post=r9" class="wpp__text">Fix the checkout</a>')
+    expect(html).toContain('<a href="#page=task&amp;id=r9" class="wpp__text">Fix the checkout</a>')
     expect(html).toContain("1 earlier request")
     expect(html).toMatch(/href="#page=task&amp;task=T1&amp;agent=cx[^"]*"/)
     // No raw markers or machine ids in the text.
@@ -3202,7 +3202,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wall-ctx").hidden).toBe(false)
     expect(w.wall.classList.contains("cx-open")).toBe(true)
     expect(w.el("wcx-tabs").innerHTML).toContain('<b>Changes</b> Post r1')
-    expect(w.el("wcx-body").innerHTML).toContain('<a href="#post=r1" data-tip="Open the request">Post r1</a>')
+    expect(w.el("wcx-body").innerHTML).toContain('<a href="#page=task&amp;id=r1" data-tip="Open the request">Post r1</a>')
     const html = w.el("wdf").innerHTML
     expect(html).toContain("Diff · acme/shop#12")
     expect(html).toContain('<button type="button" class="wdf__open" data-cx="file" data-path="src/app.ts"')
@@ -3276,7 +3276,7 @@ describe("The right panel: Changes, Plan, File (#2101 R15)", () => {
     expect(w.el("wcx-body").innerHTML).toContain('<div class="hc__planm">Started <time datetime="')
     expect(w.el("wcx-body").innerHTML).toContain('href="https://github.com/acme/shop/pull/12"')
     expect(w.el("wcx-body").innerHTML).toContain('>acme/shop#12</a>')
-    expect(w.el("wcx-body").innerHTML).toContain('href="#post=r1" title="Everything that happened on this request">History</a>')
+    expect(w.el("wcx-body").innerHTML).toContain('href="#page=task&amp;id=r1" title="Everything that happened on this request">History</a>')
     expect(w.el("hc-work").innerHTML).toContain('data-kind="plan" data-id="r1" aria-pressed="true"')
 
 

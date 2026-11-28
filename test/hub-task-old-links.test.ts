@@ -10,6 +10,8 @@ import { HUB_REACT_PAGES } from "../src/hub/pages"
 import { classicRedirect } from "../src/daemon/ui/classic-routes"
 import { hubPostPath } from "../src/daemon/ui/hub-name"
 import { postHash } from "../src/hub/feed/model"
+import { chPlanHtml, chReqMetaHtml, WALL_CHAT_HEAD_SCRIPT } from "../src/daemon/ui/pages/wall-chat-head.client"
+import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { openWall } from "./wall-settings-harness"
 
 const keys = (hash: string) => Object.fromEntries(new URLSearchParams(hash.replace(/^[^#]*#/, "")))
@@ -97,7 +99,7 @@ describe("the old Hub script sends old addresses on (wall.client.ts)", () => {
   const PAGES = [TASK_PAGE]
   const route = (url: string) => url.startsWith("/api/admin/wall?")
     ? { status: 200, body: { node: "node-a", syncedAt: Date.now(), nodes: [{ name: "node-a", ok: true }], failures: [], posts: [
-      { id: "r-peer", state: "in_progress", headline: "On a peer", owner: "cx", createdAt: 1, lastMoveAt: 1, node: { name: "mini", peer: "http://mini:18800", daemonUrl: "http://mini:18800" } },
+      { id: "r-peer", state: "in_progress", headline: "On a peer", owner: "cx", asker: "anis", group: { channel: "whatsapp", chatId: "g1" }, createdAt: 1, lastMoveAt: 1, node: { name: "mini", peer: "http://mini:18800", daemonUrl: "http://mini:18800" } },
     ] } }
     : undefined
 
@@ -157,5 +159,40 @@ describe("the old Hub script sends old addresses on (wall.client.ts)", () => {
     await w.settle()
     expect(w.hash()).toBe("#status=open&post=r1")
     expect(w.wall.classList.contains("is-post")).toBe(true)
+  })
+})
+
+describe("Live cards and the Hub's own links open the Task page (wall.client.ts)", () => {
+  const LIVE_RUN = { nodes: [{ name: "node-a", url: "http://node-a", reachable: true, agents: [
+    { id: "cx", name: "Customer Desk", runningTasks: [{ id: "t7", channel: "whatsapp", message: "Refund", startedAt: new Date().toISOString() }] },
+  ] }] }
+  const route = (url: string) => url.startsWith("/api/live?") ? { status: 200, body: LIVE_RUN } : undefined
+  const cardHref = (html: string) => /<a class="wls ax-af-card is-work" href="([^"]+)"/.exec(html)?.[1].replace(/&amp;/g, "&") ?? ""
+
+  it("a Live card opens the run on the Task page, with the run open", async () => {
+    const w = openWall({ hash: "#page=live", hubPages: [TASK_PAGE], route })
+    await w.settle()
+    const to = keys(cardHref(w.el("wall-live").innerHTML))
+    expect(to).toMatchObject({ page: "task", task: "t7", agent: "cx", node: "http://node-a", run: "t7" })
+    expect(addr("#" + new URLSearchParams(to).toString())).toMatchObject({ task: "t7", agent: "cx", run: "t7" })
+  })
+
+  it("without React's Task page, a Live card keeps the old run page's address", async () => {
+    const w = openWall({ hash: "#page=live", hubPages: [], route })
+    await w.settle()
+    const href = cardHref(w.el("wall-live").innerHTML)
+    expect(keys(href)).toMatchObject({ page: "task", task: "t7", agent: "cx" })
+    expect(keys(href).run).toBeUndefined()
+    expect(taskFallback(href)).toBeNull()
+  })
+
+  it("a request's History line opens its Task page, on the node that keeps it", () => {
+    expect(chReqMetaHtml({ id: "r 1" }, Date.now())).toContain('href="#page=task&amp;id=r+1"')
+    expect(chReqMetaHtml({ id: "r1", peer: "http://mini:18800" }, Date.now())).toContain('href="#page=task&amp;id=r1&amp;peer=http%3A%2F%2Fmini%3A18800"')
+    expect(chPlanHtml([{ id: "r2", summary: "Ship" }] as never, "pm")).toContain('<a href="#page=task&amp;id=r2">Ship</a>')
+  })
+
+  it("no old script writes a #post= link by hand any more", () => {
+    for (const s of [WALL_PAGE_SCRIPT, WALL_CHAT_HEAD_SCRIPT]) expect(s).not.toMatch(/['"`]#post=/)
   })
 })
