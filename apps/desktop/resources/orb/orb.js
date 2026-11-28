@@ -253,12 +253,37 @@
     done()
   })
 
+  // --- Moving: the ring around the orb, or Option/Alt + drag on it (#2549) ---
+  // A press there only moves the window, in any state, and never talks.
+  const grip = $("grip")
+  let moving = null
+  function moveStart(el, e) {
+    el.setPointerCapture(e.pointerId)
+    moving = { x: e.screenX, y: e.screenY }
+    stage.classList.add("moving")
+    bridge?.dragStart()
+  }
+  function moveTo(e) {
+    if (moving) bridge?.dragMove(e.screenX - moving.x, e.screenY - moving.y)
+  }
+  function moveEnd() {
+    if (!moving) return
+    moving = null
+    stage.classList.remove("moving")
+    bridge?.dragEnd()
+  }
+  grip.addEventListener("pointerdown", (e) => e.button === 0 && moveStart(grip, e))
+  grip.addEventListener("pointermove", moveTo)
+  grip.addEventListener("pointerup", moveEnd)
+  grip.addEventListener("pointercancel", moveEnd)
+
   // --- The orb: hold to talk, drag to move, tap to stop ---
   // A move of more than 4 px drags the window; a press in idle records until
   // release; a press while the agent works or speaks stops it.
   let press = null
   orb.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return
+    if (e.altKey) return moveStart(orb, e)
     orb.setPointerCapture(e.pointerId)
     const before = stage.dataset.state
     press = { x: e.screenX, y: e.screenY, dragging: false, before, holding: false }
@@ -279,6 +304,7 @@
     }
   })
   orb.addEventListener("pointermove", (e) => {
+    if (moving) return moveTo(e)
     if (!press) return
     const dx = e.screenX - press.x
     const dy = e.screenY - press.y
@@ -289,6 +315,7 @@
     if (press.dragging) bridge?.dragMove(dx, dy)
   })
   const release = () => {
+    moveEnd()
     if (!press) return
     clearTimeout(press.holdTimer)
     if (press.holding) stopTalk()
