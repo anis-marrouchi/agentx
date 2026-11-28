@@ -45,7 +45,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 *Demo data; your agents will differ.*
 
 1. **Browser:** open `/hub`. A fresh install opens here with no setting. If `dashboard.hub.react` is `false`, open `/hub?react=1` (once). The shell's own address is `/hub#page=home`.
-2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** (see [Projects in the shell](#projects-in-the-shell) below) and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
+2. **Left, the side menu:** **Search** at the top narrows the menu and the agent list as you type; **Enter** opens the first match. **⌘K** (**Ctrl K**) still opens the Hub's jump box on a computer. Then **Hub**, which opens the Hub feed with its **Feed | List** switch (the new feed when you have it, else the old one), **Tasks** (see [Tasks: List or Kanban](#tasks-list-or-kanban) below), **Automations** (see [Automations](#automations) below), **Agents** (select one to chat with it), **Projects** (see [Projects in the shell](#projects-in-the-shell) below) and **Waiting on you** (see [Waiting on you in the shell](#waiting-on-you-in-the-shell) below). **Settings** is at the bottom.
 3. **Centre, the chat:** the agent in view's newest conversation. The box at the bottom is the same card as in the old Hub chat: **To** and the agent's name on top, then your message, then **+** to attach files (or paste or drop them, five at most), the model, the mic, and the blue arrow to send. Press **Enter** or the arrow to send; **Shift Enter** starts a new line. For a Claude Code agent the model is a menu: the agent's own model, or **Opus**, **Sonnet** or **Haiku** for this message; a Codex CLI agent's menu lists the Codex models (such as `gpt-6.2-sol`); other agents show their own model. The mic records a voice message and sends it when you stop; the pencil next to it (**Check before sending**) puts the words in the box for you to send instead. The answer to a voice message is said aloud. The machine shows under the box. The answer shows word by word under **Working…** as the agent writes it, formatted as on the Task page: bold, lists, tables and code. When the run ends, the saved answer takes its place.
 
    **Check it worked:** ask an agent for a long answer, for example "List ten things you can do, with a short line each". Words appear within a few seconds, before the run ends, and **bold** words show bold, with no asterisks.
@@ -65,7 +65,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
 
    ![The simple shell with the full layout: the items switched on, under More](/screenshots/hub-shell/full.png)
 
-   **Your own menu:** once you save a change in **Settings › Menu**, the side menu shows that menu instead, in your order, with your names, group headers, saved views and links (links open in a new tab). **Search agents and pages** and the agent list stay at the top. A page you take out of the menu is not gone: type its name in the search and it shows under **Other pages**. The Hub feed is **Tasks** there, and **Schedules** is **Automations**. The menu is the owner's: anyone else who opens the Hub sees the default list, without your links. Until you first save, nothing changes.
+   **Your own menu:** once you save a change in **Settings › Menu**, the side menu shows that menu instead, in your order, with your names, group headers, saved views and links (links open in a new tab). **Search agents and pages** and the agent list stay at the top. A page you take out of the menu is not gone: type its name in the search and it shows under **Other pages**. The Hub feed is the **Hub** item there, with **Tasks** right after it (a menu saved before this change, where the feed stood for Tasks, gets both), and **Schedules** is **Automations**. The menu is the owner's: anyone else who opens the Hub sees the default list, without your links. Until you first save, nothing changes.
 
 6. **Phone:** the chat takes the screen. The menu button at the top left opens the side menu; the panel button at the top right opens the files tabs.
 
@@ -73,6 +73,10 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
    ![The side menu open on a phone](/screenshots/hub-shell/simple-phone-menu.png)
 
 **Tasks**, **Automations**, **Projects** and **Waiting on you** open in the shell's centre. Every other menu item opens today's Hub page for it. The logo, **AgentX**, brings you back to the shell.
+
+**The same side menu on every page:** in the simple layout, the Task page, the Hub feed and its List, and every other Hub page (**Waiting on you**, **Jobs**, **Agents** and so on) show this same side menu, never the old one. The item of the page in view is marked; on the feed or its List, **Hub** is marked. Select an agent there to open its chat in the shell (a working agent opens its live run). The menu keeps its width, its icon column (641 to 1180 pixels wide, or folded) and, on a phone, its sliding panel, as on the shell. The new Settings keeps its own section menu.
+
+**Check it worked:** open `/hub#status=open` and then a Task page: both show the side menu with **Search**, **Hub** and **Tasks**, and no second menu under it.
 
 ### Tasks: List or Kanban
 
