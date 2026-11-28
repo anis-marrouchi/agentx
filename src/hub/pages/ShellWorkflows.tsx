@@ -284,7 +284,7 @@ export function WorkflowsBody({ defs, runs, capped = false, error, onRetry, owne
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
         <TabsRow tab={f.tab} counts={counts} onTab={(tab) => setF((s) => ({ ...s, tab }))} />
         <input type="search" placeholder="Filter workflows" aria-label="Filter workflows" value={f.q} onChange={(e) => setF((s) => ({ ...s, q: e.target.value }))}
-          className={cn("h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-base sm:max-w-[260px] md:text-sm", ring)} />
+          className={cn("h-8 min-w-[160px] flex-1 rounded-md border border-input bg-background px-3 text-base sm:max-w-[260px] md:text-sm", ring)} />
         {projects.length ? (
           <Select value={f.project || ALL_PROJECTS} onValueChange={(v) => setF((s) => ({ ...s, project: v === ALL_PROJECTS ? "" : v }))}>
             <SelectTrigger aria-label="Project" className="h-8 w-auto min-w-[140px] text-xs"><SelectValue /></SelectTrigger>
