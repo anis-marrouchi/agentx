@@ -123,7 +123,7 @@ export interface AdmissionSettings {
 export const DEFAULT_ADMISSION_SETTINGS: AdmissionSettings = {
   enabled: true,
   mode: "enforce",
-  tiers: ["claude-code", "codex-cli", "opencode"],
+  tiers: ["claude-code", "codex-cli", "opencode", "antigravity-cli"],
   maxSessions: 0,
   ownerExtraSessions: 1,
   delegationHeadroom: 2,

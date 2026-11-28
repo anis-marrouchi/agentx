@@ -30,7 +30,7 @@ Words used across these docs, in plain terms.
 | **Run** | One time an agent works: it takes one message (or a wake), works on it and answers. A run has its own steps, cost and record in **Activity**. A workflow's runs are called *workflow runs*. See [Request, job, session, run and turn](#request-job-session-run-and-turn). |
 | **Schedule** | Work that starts at set times by itself, such as a summary every Friday. Also called a *scheduled job*, *cron job* or *routine*. `agentx schedule` and `agentx cron` manage them. |
 | **Seat** | One named kind of small question AgentX can hand to a decision model (Jev), such as "which on-screen control matches this description?". Each seat can be off, watching only, or active. |
-| **Tier** | An agent's engine: `claude-code`, `codex-cli`, `opencode`, `sdk` (Anthropic API key) or `orchestrator` (any provider). The dashboard calls it **AI engine**. |
+| **Tier** | An agent's engine: `claude-code`, `codex-cli`, `opencode`, `antigravity-cli` (Google's `agy`), `sdk` (Anthropic API key) or `orchestrator` (any provider). The dashboard calls it **AI engine**. |
 | **Token** | A secret code that proves a program or machine may use something, like a password for programs. AgentX uses several: the *mesh token* that lets your machines trust each other, the dashboard token (`dashboard.token`), scoped tokens from `agentx token`, and the tokens channels such as Telegram give you. Never share or paste one in public. |
 | **wacli** | A separate WhatsApp command-line tool. AgentX uses it to read watched WhatsApp chats and send the replies you approve. See [Watch a WhatsApp chat](../jobs/watch-whatsapp.md). |
 | **Workflow** | A saved automation with steps. See [Workflow schema](./workflow-schema.md). |

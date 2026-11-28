@@ -4,7 +4,7 @@ Every agent reply starts a *session*: a program that runs the agent's model and 
 
 AgentX checks first. Before any session starts (a chat message, a scheduled job, a message from another agent), it waits in one **queue** until the machine has room. The work waits and starts on its own once there is room. Work that waits longer than an hour (`admission.maxWaitMinutes`) is refused with a plain message saying why.
 
-Only agents that start a program on this machine wait in the queue (the `claude-code`, `codex-cli` and `opencode` tiers, set in `admission.tiers`).
+Only agents that start a program on this machine wait in the queue (the `claude-code`, `codex-cli`, `opencode` and `antigravity-cli` tiers, set in `admission.tiers`).
 
 A session starts only when all of these hold:
 

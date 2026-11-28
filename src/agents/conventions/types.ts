@@ -5,7 +5,7 @@
 // own. One file per runtime; sdk and orchestrator agents run inside AgentX
 // and read skills the way AgentX does.
 
-export type ConventionTier = "claude-code" | "codex-cli" | "opencode" | "sdk" | "orchestrator"
+export type ConventionTier = "claude-code" | "codex-cli" | "opencode" | "antigravity-cli" | "sdk" | "orchestrator"
 
 export interface RuntimeConventions {
   tier: ConventionTier

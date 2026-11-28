@@ -41,7 +41,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 |---|---|---|---|
 | `name` | string | required | Display name of the agent. |
 | `workspace` | string | required | Folder the agent works in. |
-| `tier` | `"claude-code"` \| `"codex-cli"` \| `"opencode"` \| `"sdk"` \| `"orchestrator"` | `"claude-code"` | Engine that runs the agent: a provider CLI, a direct API call (`sdk`), or AgentX's own tool loop (`orchestrator`). |
+| `tier` | `"claude-code"` \| `"codex-cli"` \| `"opencode"` \| `"antigravity-cli"` \| `"sdk"` \| `"orchestrator"` | `"claude-code"` | Engine that runs the agent: a provider CLI, a direct API call (`sdk`), or AgentX's own tool loop (`orchestrator`). For `antigravity-cli`, see [Antigravity CLI agents](#antigravity-cli-agents). |
 | `provider` | string | — | Provider name in `providers` for `sdk` (default `claude`) and `orchestrator` (default `claude-code`) agents. |
 | `model` | string | — | Model id passed to the engine. Unset uses the engine's default. |
 | `systemPrompt` | string | — | Extra instructions added to every run of this agent. |
@@ -105,6 +105,16 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 ```
 
 A top-level `budget` with the same two keys caps all agents together: `"budget": { "monthlyUsd": 200 }` next to `agents`. Reaching it pauses every agent until the month ends or you raise it. A project's budget sits on its entry in [`dashboard.wall.projects`](config-operations.md#dashboard). All three can also be set on the Hub's Cost page ([Set a monthly budget from the Cost page](../dashboard/hub.md#set-a-monthly-budget-from-the-cost-page)).
+
+### Antigravity CLI agents
+
+`"tier": "antigravity-cli"` runs the agent on Google's Antigravity CLI (`agy`). Install `agy` and sign in on the machine first; AgentX does not sign in for you.
+
+- **Model:** `model` is passed to `agy --model`. Unset uses agy's default.
+- **Permissions:** `"permissionMode": "bypassPermissions"` adds `--dangerously-skip-permissions`. Without it no permission flag is sent.
+- **Skills and instructions:** agy reads skills from `<workspace>/.agents/skills` and instructions from `AGENTS.md` in the workspace.
+- **Resume:** each chat keeps its own agy conversation, so a follow-up continues it.
+- **Not yet:** MCP servers (so no AgentX tools), engine pickers in the Hub and the CLI, and usage in the bottom bar. Set the tier by hand in `agentx.json`.
 
 ### Instructions AgentX adds for coding agents
 

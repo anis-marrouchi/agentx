@@ -484,7 +484,7 @@ The session queue: every new agent session waits until the machine has room. Rea
 |---|---|---|
 | `enabled` | `true` | Off: sessions start at once, as before. |
 | `mode` | `"enforce"` | `"observe"` only logs what it would hold. |
-| `tiers` | `["claude-code", "codex-cli", "opencode"]` | Agent tiers that wait in the queue. |
+| `tiers` | `["claude-code", "codex-cli", "opencode", "antigravity-cli"]` | Agent tiers that wait in the queue. |
 | `maxSessions` | `0` | Most sessions at once; 0 = one per GB above the first 2 GB, at least 2. |
 | `ownerExtraSessions` | `1` | Owner work may go this many over `maxSessions`. |
 | `delegationHeadroom` | `2` | Helper runs started by a running session may go this many over `maxSessions`. |

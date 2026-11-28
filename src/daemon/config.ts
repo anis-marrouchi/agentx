@@ -278,7 +278,7 @@ export const eventSubscriptionSchema = z.object({
 const agentConfigSchema = z.object({
   name: z.string(),
   workspace: z.string(),
-  tier: z.enum(["claude-code", "codex-cli", "opencode", "sdk", "orchestrator"]).default("claude-code"),
+  tier: z.enum(["claude-code", "codex-cli", "opencode", "antigravity-cli", "sdk", "orchestrator"]).default("claude-code"),
   provider: z.string().optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -2664,7 +2664,7 @@ export const daemonConfigSchema = z.object({
     /** "observe" only logs what it would hold. */
     mode: z.enum(["enforce", "observe"]).default("enforce"),
     /** Agent tiers that go through the queue (those that start a local process). */
-    tiers: z.array(z.string()).default(["claude-code", "codex-cli", "opencode"]),
+    tiers: z.array(z.string()).default(["claude-code", "codex-cli", "opencode", "antigravity-cli"]),
     /** Most live sessions on this node; 0 = one per GB above the first 2 GB (min 2). */
     maxSessions: z.number().int().min(0).default(0),
     /** Owner turns may go this many over maxSessions (never over resources). */
@@ -3610,7 +3610,7 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
     // Check provider availability
     const providerName = agent.provider || "claude"
     const providerConfig = config.providers[providerName]
-    if (!["claude-code", "codex-cli", "opencode"].includes(agent.tier) && (!providerConfig || !providerConfig.apiKey)) {
+    if (!["claude-code", "codex-cli", "opencode", "antigravity-cli"].includes(agent.tier) && (!providerConfig || !providerConfig.apiKey)) {
       warnings.push(
         `Agent "${id}": provider "${providerName}" has no API key configured. ` +
           `Set providers.${providerName}.apiKey in config or use a CLI-backed tier ("claude-code", "codex-cli", or "opencode").`
