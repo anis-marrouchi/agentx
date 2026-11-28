@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSync, readdirSync } from "fs"
-import { resolve } from "path"
+import { existsSync, readFileSync, writeFileSync, rmSync, rmdirSync, mkdirSync, copyFileSync, readdirSync, statSync, accessSync, constants as fsConstants } from "fs"
+import { dirname, resolve } from "path"
+import { INSTRUCTIONS_MAX, agmFieldProblem } from "@/agents/agent-form"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
 import { modelAfterSwitch } from "@/agents/engine-model"
@@ -187,7 +188,8 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
     const result = await handler()
     sendJson(res, 200, result)
   } catch (e: any) {
-    sendJson(res, e.status ?? 400, { error: e.message || "admin op failed" })
+    // A refusal may carry facts the page acts on (a busy remove's `running`).
+    sendJson(res, e.status ?? 400, { ...(e.extra || {}), error: e.message || "admin op failed" })
   }
 }
 
@@ -489,7 +491,9 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, sensors, hostJobs, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg), hubLayout: resolveHubLayout((cfg as any).dashboard?.hub) }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, email, whatsappTriage: whatsappTriageSettings(cfg), crons, sensors, hostJobs, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg), hubLayout: resolveHubLayout((cfg as any).dashboard?.hub),
+    // Where a new agent's workspace resolves (#2144): the daemon's folder and the home folder.
+    folders: { base: process.cwd(), home: process.env.HOME || "" } }
 }
 
 // ========================================================================
@@ -604,10 +608,25 @@ export function agentWorkspace(raw: unknown, id: string, home = process.env.HOME
  *  that role and no line. The org part is the owner's, as on POST
  *  /api/admin/org/chart. `workspace` picks its folder (agentWorkspace), also
  *  the owner's only. */
-/** The longest instructions (systemPrompt) the forms save, on create and on
- *  edit alike. Longer instructions go in the agent's CLAUDE.md. */
-export const INSTRUCTIONS_MAX = 4000
-const INSTRUCTIONS_TOO_LONG = `The instructions are longer than ${INSTRUCTIONS_MAX} characters. Put long instructions in the agent's CLAUDE.md.`
+// The longest instructions and their sentence come from the one agent form
+// (src/agents/agent-form.ts), so the server and the forms say the same thing.
+export { INSTRUCTIONS_MAX }
+const INSTRUCTIONS_TOO_LONG = agmFieldProblem("instructions", "x".repeat(INSTRUCTIONS_MAX + 1))
+
+/** Why an agent cannot work in `path`, or "" (#2144 C1): it is a file, or
+ *  the nearest folder that exists above it cannot be written. Checked before
+ *  any config write, so a refused path saves nothing. */
+export function workspaceProblem(path: string): string {
+  let at = path
+  for (;;) {
+    let st
+    try { st = statSync(at) } catch { const up = dirname(at); if (up === at) return "The workspace folder cannot be made: no folder above it exists."; at = up; continue }
+    if (!st.isDirectory()) return at === path ? "The workspace is a file, not a folder: " + path + "." : "The workspace cannot be made: " + at + " is a file."
+    if (at === path) return ""
+    try { accessSync(at, fsConstants.W_OK) } catch { return "The workspace cannot be made: AgentX cannot write in " + at + "." }
+    return ""
+  }
+}
 
 function addAgent(body: any, owner: boolean) {
   const id = String(body?.id || "").trim()
@@ -619,8 +638,8 @@ function addAgent(body: any, owner: boolean) {
   if (personality && personality.length > INSTRUCTIONS_MAX) throw new Error(INSTRUCTIONS_TOO_LONG)
   const reportsTo = body?.reportsTo ? String(body.reportsTo).trim() : ""
   const role = typeof body?.role === "string" ? body.role.trim() : ""
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) throw new Error("Agent id must be lowercase (letters, digits, -, _).")
-  if (!name) throw new Error("Agent name is required.")
+  const bad = agmFieldProblem("id", id) || agmFieldProblem("name", name)
+  if (bad) throw new Error(bad)
   if (mentions.length === 0) throw new Error("At least one trigger word is required.")
   if ((reportsTo || role) && !owner) throw Object.assign(new Error("Only the owner can change the org chart."), { status: 403 })
   // Any folder but agents/<id> is the owner's choice, as the org chart is.
@@ -629,27 +648,43 @@ function addAgent(body: any, owner: boolean) {
   const { path: workspace, custom } = agentWorkspace(body?.workspace, id)
   // A folder the owner picked that exists already is theirs: nothing is written in it.
   const scaffold = !custom || !existsSync(workspace)
-  const { summary } = mutateAgentxConfig((cfg) => {
-    cfg.agents = cfg.agents || {}
-    if (cfg.agents[id]) throw new Error(`Agent "${id}" already exists.`)
-    const block: any = {
-      name, workspace, tier, mentions, maxConcurrent: 2, permissionMode: "default",
+  const wsBad = workspaceProblem(workspace)
+  if (wsBad) throw Object.assign(new Error(wsBad), { extra: { field: "workspace" } })
+  // The folder is made before agentx.json changes (#2144 C1): if it cannot
+  // be, the error goes back and nothing is saved.
+  const made = scaffold && !existsSync(workspace)
+  if (made) {
+    try { mkdirSync(workspace, { recursive: true }) } catch (e: any) {
+      throw Object.assign(new Error("The workspace cannot be made: " + (e?.code || e?.message || e) + "."), { extra: { field: "workspace" } })
     }
-    if (model) block.model = model
-    if (personality) block.systemPrompt = personality
-    cfg.agents[id] = block
-    if (!reportsTo && !role) return `added agent "${id}"`
-    if (!reportsTo) return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role })}`
-    applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role: body?.role })
-    return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-relation", from: `agent:${id}`, type: "reports-to", to: reportsTo })}`
-  })
-  // Scaffold the workspace if it doesn't exist.
+  }
+  let summary: string
+  try {
+    summary = mutateAgentxConfig((cfg) => {
+      cfg.agents = cfg.agents || {}
+      if (cfg.agents[id]) throw new Error(`Agent "${id}" already exists.`)
+      const block: any = {
+        name, workspace, tier, mentions, maxConcurrent: 2, permissionMode: "default",
+      }
+      if (model) block.model = model
+      if (personality) block.systemPrompt = personality
+      cfg.agents[id] = block
+      if (!reportsTo && !role) return `added agent "${id}"`
+      if (!reportsTo) return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role })}`
+      applyOrgEdit(cfg, { op: "add-member", member: `agent:${id}`, role: body?.role })
+      return `added agent "${id}": ${applyOrgEdit(cfg, { op: "add-relation", from: `agent:${id}`, type: "reports-to", to: reportsTo })}`
+      }).summary
+  } catch (e) {
+    // A refused save (the id is taken, a bad org line) leaves no empty folder behind.
+    if (made) try { rmdirSync(workspace) } catch (rmErr) { void rmErr /* not empty: someone wrote in it meanwhile; it stays */ }
+    throw e
+  }
+  // The agent's CLAUDE.md, in a folder AgentX made or chose (agents/<id>).
   const claudeMd = resolve(workspace, "CLAUDE.md")
   if (scaffold && !existsSync(claudeMd)) {
-    try {
-      mkdirSync(workspace, { recursive: true })
-      writeFileSync(claudeMd, `# ${name}\n\n${personality || "You are " + name + "."}\n`)
-    } catch { /* best-effort */ }
+    try { writeFileSync(claudeMd, `# ${name}\n\n${personality || "You are " + name + "."}\n`) } catch (e: any) {
+      return { summary, warning: "Saved, but its CLAUDE.md could not be written: " + (e?.code || e?.message || e) + "." }
+    }
   }
   return { summary }
 }
@@ -694,9 +729,35 @@ function editAgent(body: any) {
   return { summary }
 }
 
-function deleteAgent(body: any) {
+/** The runs in flight on this machine's daemon, by agent id (GET
+ *  /daemon/restart). Null when the daemon does not answer: then nothing runs
+ *  that a restart could cut. */
+export type RunningOf = () => Promise<Record<string, number> | null>
+async function runningByAgent(): Promise<Record<string, number> | null> {
+  try {
+    const d = await proxyDaemonJson("/daemon/restart")
+    const out: Record<string, number> = {}
+    for (const r of (Array.isArray(d?.running) ? d.running : [])) if (r?.agentId) out[r.agentId] = (out[r.agentId] || 0) + 1
+    return out
+  } catch (e) {
+    void e // the daemon is down or restarting: no task of it is running
+    return null
+  }
+}
+let runningOf: RunningOf = runningByAgent
+/** Tests swap the daemon's running list. */
+export function setRunningOfForTest(fn: RunningOf | null): void { runningOf = fn || runningByAgent }
+
+/** Removes an agent from agentx.json (#2144). With tasks running it is
+ *  refused with 409 and `running`, unless `force`; the tasks end at the next
+ *  restart. Its workspace folder is never touched (C4). */
+async function deleteAgent(body: any) {
   const id = String(body?.id || "").trim()
   if (!id) throw new Error("Agent id is required.")
+  if (body?.force !== true) {
+    const n = (await runningOf())?.[id] || 0
+    if (n > 0) throw Object.assign(new Error(`@${id} has ${n} ${n === 1 ? "task" : "tasks"} running.`), { status: 409, extra: { running: n } })
+  }
   const { summary } = mutateAgentxConfig((cfg) => {
     if (!cfg.agents || !cfg.agents[id]) throw new Error(`Agent "${id}" not found.`)
     // Out of the org chart first, with its lines and departments (#2144), so

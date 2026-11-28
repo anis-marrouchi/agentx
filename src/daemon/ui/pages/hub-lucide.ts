@@ -86,6 +86,7 @@ import Table from "lucide-static/dist/esm/icons/table.js"
 import Tag from "lucide-static/dist/esm/icons/tag.js"
 import Terminal from "lucide-static/dist/esm/icons/terminal.js"
 import Timer from "lucide-static/dist/esm/icons/timer.js"
+import Trash2 from "lucide-static/dist/esm/icons/trash-2.js"
 import TriangleAlert from "lucide-static/dist/esm/icons/triangle-alert.js"
 import Unplug from "lucide-static/dist/esm/icons/unplug.js"
 import Users from "lucide-static/dist/esm/icons/users.js"
@@ -171,6 +172,7 @@ const SVG = {
   "tag": Tag,
   "terminal": Terminal,
   "timer": Timer,
+  "trash-2": Trash2,
   "triangle-alert": TriangleAlert,
   "unplug": Unplug,
   "users": Users,
