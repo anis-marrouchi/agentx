@@ -44,6 +44,8 @@ import { APP_CHAT_LOG_SCRIPT } from "./app-chat-log.client"
 import { APP_CHAT_STRIP_SCRIPT } from "./app-chat-strip.client"
 import { APP_CHAT_STRIP_CSS } from "./app-chat-strip.css"
 import { APP_CHAT_HEAD_CSS, APP_CHAT_HEAD_SCRIPT } from "./app-chat-head.client"
+import { appPlanHtml, appProofsHtml } from "./app-chat-plan"
+import { chEngine, chFace } from "./wall-chat-head.client"
 import { APP_CHANGES_CSS, APP_CHANGES_SCRIPT } from "./app-changes.client"
 import { APP_AGENTS_CSS, APP_AGENTS_SCRIPT } from "./app-agents.client"
 import { haGroups, haListHtml, haRowHref, haRowHtml, haRunsHtml, haStateIcon, haStateWord } from "./hub-agents"
@@ -170,7 +172,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 <script>${injectFns({ dictateLabel })}${APP_DICTATE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
-<script>${APP_CHANGES_SCRIPT}${APP_CHAT_HEAD_SCRIPT}</script>
+<script>${injectFns({ chFace, chEngine, appPlanHtml, appProofsHtml })}${APP_CHANGES_SCRIPT}${APP_CHAT_HEAD_SCRIPT}</script>
 <script>var HA_IC = ${JSON.stringify(hubIconMap(HUB_NAV_ICON_NAMES))};${injectFns({ haStateIcon, haStateWord, haRowHref, haGroups, haRunsHtml, haRowHtml, haListHtml })}${APP_AGENTS_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>
