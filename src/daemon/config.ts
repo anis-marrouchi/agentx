@@ -1763,6 +1763,11 @@ export const requestsConfigSchema = z.object({
    *  and logs it; moving it to waiting_owner comes later. Requests in
    *  waiting_owner never settle. */
   settleOwnerWait: z.enum(["off", "warn"]).default("warn"),
+  /** retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY (#2544): a request whose active plan
+   *  step waits until a later time is not woken before it. "warn" logs
+   *  each wake it would hold and still wakes; "enforce" holds it and sets
+   *  the request's due time to the step's wait. */
+  stepWaitHold: z.enum(["warn", "enforce"]).default("warn"),
   /** An open request with no closeWhen whose home is a GitHub or GitLab
    *  issue, pull or merge request closes as done once that home is merged
    *  or closed as completed (#1522). Requests waiting on the owner are

@@ -84,6 +84,10 @@ export interface RequestSweepDeps {
   hasAgent?: (agentId: string) => boolean
   /** The request has an active tracked plan (#788): never settled here. */
   inPlan?: (requestId: string) => boolean
+  /** The latest wait of its active plan's active steps that is still
+   *  ahead (plan-store latestWait, retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY), or
+   *  null. Unset: no step waits. */
+  waitsUntil?: (requestId: string, now: number) => { idx: number; until: number } | null
   /** A usage-limit hold is active (#1542): a request a limit stopped is
    *  not resent until it lifts. Unset: no hold. */
   limitHeld?: () => boolean
@@ -361,6 +365,33 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   const prLead = settings.promises?.prLead ?? DEFAULT_PROMISE_SETTINGS.prLead
   const leadOf = (r: RequestRecord): string | null => (prLead && prLead !== r.agentId ? prLead : null)
 
+  // retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY (#2544): a request whose active plan
+  // step waits until a later time (#1764) is not woken before it, as the
+  // plan sweep already does for the step. Warn logs and still wakes;
+  // enforce holds the wake and moves the request's due time to the wait,
+  // so the request and its step show the same time.
+  const enforceWait = settings.stepWaitHold === "enforce"
+  const waitOf = (r: RequestRecord): { idx: number; until: number } | null => {
+    try {
+      return deps.waitsUntil?.(r.id, now) ?? null
+    } catch (e: any) {
+      log(`[requests] ${r.id}: could not read its step waits: ${e?.message ?? e}`)
+      return null
+    }
+  }
+  /** True when the wake is held (enforce). In warn mode it logs it only. */
+  const heldForWait = (r: RequestRecord, w: { idx: number; until: number } | null): boolean => {
+    if (!w) return false
+    const until = new Date(w.until).toISOString()
+    if (!enforceWait) {
+      log(`[requests] retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY ${r.id} wake suppressed (warn mode): step ${w.idx} waits until ${until}`)
+      return false
+    }
+    if (r.dueAt === null || r.dueAt < w.until) store.setLoop(r.id, { dueAt: w.until }, now)
+    log(`[requests] retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY ${r.id} wake held: step ${w.idx} waits until ${until}`)
+    return true
+  }
+
   const proofSettings = { ...DEFAULT_CLOSE_PROOF, ...settings.closeProof }
   const proof: CloseProofCtx = {
     mode: proofSettings.mode,
@@ -487,8 +518,12 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         }
         const back = store.handBackProof(r.id)
         if (!back) {
-          // No proof, no close (noqta#884): its agent is asked once.
+          // No proof, no close (noqta#884): its agent is asked once. A
+          // held ask stays unspent until its step's wait is over.
+          const w = waitOf(r)
+          if (enforceWait && heldForWait(r, w)) continue
           if (!store.markHandBackAsked(r.id)) continue
+          heldForWait(r, w)
           const woken = wakeNoProof(deps, r)
           if (woken) store.touch(r.id, now)
           log(`[requests] ${r.id} not settled: handed work came back with no proof; ${woken ? `${r.agentId} woken (${woken})` : `${r.agentId} could not be woken`}`)
@@ -541,6 +576,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   try {
     for (const r of duePush && leadMinutes > 0 ? store.leadPromises(now, leadMinutes * 60_000) : []) {
       store.markLeadWoken(r.id)
+      if (heldForWait(r, waitOf(r))) continue
       const woken = deps.wakeJob?.(r.id, leadText(r, now)) ?? false
       if (woken) result.leadWoken++
       log(`[requests] retro:01M7ZMDDWBC76VKP5NXF9CE9ZY ${r.id} due ${when(r.dueAt!)}: ${r.agentId} ${woken ? "woken ahead" : `not woken ahead: ${DUE_WAKE_LOG[notWoken(deps, r)]}`}`)
@@ -554,6 +590,8 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     // hand-back settle reads non-promises only (CAME_BACK), so every due
     // promise is pushed once and then left out of this query by its mark.
     for (const r of duePush ? store.duePromises(now) : []) {
+      // Held: its due time moved to the wait, so it falls due then.
+      if (heldForWait(r, waitOf(r))) continue
       const words = (r.headline ?? r.text).replace(/\s+/g, " ").trim()
       // A PR due with none linked (#2279): woken with the issue, by a turn
       // when the job's wake cannot take it.
@@ -621,6 +659,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     const hours = settings.staleAfterHours
     for (const r of store.quietSince(["candidate", "in_progress", "waiting_other"], now - hours * HOUR)) {
       if (linkCheckNext.has(r.id)) continue
+      if (heldForWait(r, waitOf(r))) continue
       const reason = r.state === "candidate"
         ? `The turn that received it never reported an end (${hours} h ago or more)`
         : `No activity for ${hours} h`
@@ -652,9 +691,11 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         // long it was quiet before its due time (retro:01M7ZMDDWBC76VKP5NXF9CE9ZY).
         if (duePush && graceMinutes > 0 && now < r.dueAt! + graceMinutes * 60_000) continue
         if (r.updatedAt > r.dueAt! && r.updatedAt >= now - hours * HOUR) continue
+        if (heldForWait(r, waitOf(r))) continue
         if (store.needsAttention(r.id, `${OVERDUE_REASON} (${when(r.dueAt!)})`, now)) result.quiet++
         continue
       }
+      if (heldForWait(r, waitOf(r))) continue
       const pushed = store.duePushedNow(r.id)
       const woken = !pushed && !deps.inPlan?.(r.id) ? wakeOverdue(deps, r) : null
       if (!pushed) store.markDuePushed(r.id, now)

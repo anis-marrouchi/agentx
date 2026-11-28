@@ -151,7 +151,7 @@ import { contextWithTaskType, taskTypeOf } from "@/agents/task-context"
 import { contextWithAdmissionPriority, requestedPriorityOf, type StartHold } from "@/admission/queue"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { homeChecker } from "@/requests/home-check"
-import { FINISHED_STEP_STATES, type PlanStep } from "@/requests/plan-store"
+import { FINISHED_STEP_STATES, latestWait, type PlanStep } from "@/requests/plan-store"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { DEFAULT_OWNER_CHECK, OWNER_CHECK_SYSTEM, OwnerWordsCheck } from "@/requests/owner-check"
 import type { BeforeCloseCtx } from "@/requests/before-close"
@@ -3957,6 +3957,8 @@ export class AgentXDaemon {
       noticeFor: (r) => planNotice(requests.plans, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
+      // Not woken before its active step's wait (retro:01M8FPNNPQ9M0QZ7FPCKZR5TVY).
+      waitsUntil: (id, now) => requests.plans.get(id)?.state === "active" ? latestWait(requests.plans.steps(id), now) : null,
       // A request a usage limit stopped is resent once the hold lifts (#1542).
       limitHeld: () => activeProviderHolds().length > 0,
       // That resend is the job's next run when its wake takes it (#1861 box 4).
