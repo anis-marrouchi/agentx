@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { askOf, headlineOf, isSystemMessage, MARKERS } from "../src/jobs/headline"
+import { askOf, handedJobOf, headlineOf, isSystemMessage, MARKERS } from "../src/jobs/headline"
 import { JOB_STATE_ASK, JOB_STATE_RULE } from "../src/agents/run-state"
 import { NOTICE_MARKER } from "../src/agents/notices"
 import { SAME_WORK_MARKER } from "../src/agents/work-lane"
@@ -31,6 +31,8 @@ describe("what a job is called, and what is not a job (#2555)", () => {
     expect(isSystemMessage("[agentx:notices count=2]\nFor your information.\n- a\n- b\n\n" + JOB_STATE_RULE)).toBe(true)
     expect(isSystemMessage("")).toBe(true)
     expect(isSystemMessage("Fix the login page")).toBe(false)
+    expect(handedJobOf(JOB_STATE_RULE + "[agentx:delegation-result task=dlg-mx0-ab12 from=devops status=done]\nx")).toBe("job-dlg-mx0-ab12")
+    expect(handedJobOf("Fix it")).toBeNull()
   })
 
   it("uses the sender's headline, else the subject of an About opener, never the start of the text", () => {

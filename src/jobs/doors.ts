@@ -4,7 +4,7 @@ import { PICKUP_CHANNEL, type DelegationSignal } from "@/requests/tracker"
 import { delegationIdOfChat } from "@/a2a/delegation"
 import { normalizeHome } from "@/a2a/home"
 import type { JobDoor, JobRecord, JobStore } from "./store"
-import { askOf, headlineOf } from "./headline"
+import { askOf, handedJobOf, headlineOf } from "./headline"
 
 // --- A job opened at every door (#1861, phase 1) ---
 //
@@ -213,8 +213,21 @@ export class JobDoors {
       }
       // The daemon's own messages (a hand-off's answer, a notice digest,
       // a wake) are no job (#2555): nothing is opened for them.
-      const ask = askOf(p.requestText ?? p.fullMessage ?? p.messagePreview ?? "")
-      if (!ask) return
+      const said = p.requestText ?? p.fullMessage ?? p.messagePreview ?? ""
+      const ask = askOf(said)
+      if (!ask) {
+        // A hand-off's answer coming back goes on with the job that
+        // handed it out, so its state (a wake, a wait) lands there.
+        const back = handedJobOf(said)
+        const parentId = back ? jobs.get(back)?.parentId : null
+        const parent = parentId ? jobs.get(parentId) : null
+        if (parent && parent.closedAt === null) {
+          jobs.linkRun(parent.id, runId, now)
+          if (!parent.ownerRequest) jobs.working(parent.id, now)
+          on(parent.id)
+        }
+        return
+      }
       const id = dlg && !taken ? `job-${dlg}` : `job-${runId}`
       // A workflow step serves the request its workflow run is linked to.
       const wfRun = from.door === "workflow" && p.chatId.startsWith("workflow:") ? p.chatId.slice("workflow:".length) : null

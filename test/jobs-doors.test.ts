@@ -435,6 +435,20 @@ describe("headlines and the daemon's own messages (#2555)", () => {
     expect(jobs.byRun("s4")).toMatchObject({ headline: null })
   })
 
+  it("a hand-off's answer coming back goes on with the job that handed it out", () => {
+    start("p1", { chatId: "pm-chat", fullMessage: "Build the page" })
+    const parent = jobs.byRun("p1")!
+    doors.delegationStarted({ id: "dlg-back-1", caller: "coder", callee: "devops", origin: { channel: "a2a", chatId: "pm-chat" }, request: "Deploy it" })
+    expect(jobs.get("job-dlg-back-1")!.parentId).toBe(parent.id)
+    // The run that handed it out said it waits on the answer.
+    jobs.declare(parent.id, { state: "waiting", on: "devops", until: clock + 3_600_000 }, { runId: "p1", now: clock })
+    end("p1", { chatId: "pm-chat" })
+    expect(jobs.get(parent.id)!.state).toBe("waiting")
+    start("p2", { chatId: "pm-chat", fullMessage: JOB_STATE_RULE + "[agentx:delegation-result task=dlg-back-1 from=devops status=done]\nDeployed." })
+    expect(jobs.byRun("p2")!.id).toBe(parent.id)
+    expect(jobs.get(parent.id)!.state).toBe("working")
+  })
+
   it("a hand-off carries the headline its sender wrote", () => {
     doors.delegationStarted({ ...dlg, request: JOB_STATE_RULE + "Build it", headline: "Build the Jobs page" })
     expect(jobs.get("job-dlg-hd-1")).toMatchObject({ text: "Build it", headline: "Build the Jobs page" })

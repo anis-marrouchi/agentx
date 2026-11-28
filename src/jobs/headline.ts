@@ -66,6 +66,15 @@ export function askOf(text: string): string {
   return t
 }
 
+/** The job of the hand-off whose answer this message brings back
+ *  (`[agentx:delegation-result task=dlg-…`), or null. */
+export function handedJobOf(text: string): string | null {
+  const at = String(text ?? "").indexOf(MARKERS.delegationResult)
+  if (at < 0) return null
+  const m = /^\s*task=(dlg-[A-Za-z0-9-]+)/.exec(text.slice(at + MARKERS.delegationResult.length))
+  return m ? `job-${m[1]}` : null
+}
+
 /** Is the message only the daemon's own (no ask in it)? */
 export function isSystemMessage(text: string): boolean {
   return askOf(text) === ""
