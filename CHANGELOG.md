@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.311.3](https://github.com/anis-marrouchi/agentx/compare/v0.311.2...v0.311.3) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** keep the status bar in view under Settings ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R5) ([#2541](https://github.com/anis-marrouchi/agentx/issues/2541)) ([dea01de](https://github.com/anis-marrouchi/agentx/commit/dea01de297999cce8a1d0722d991c33da06298ad))
+
 ## [0.311.2](https://github.com/anis-marrouchi/agentx/compare/v0.311.1...v0.311.2) (2026-11-28)
 
 
