@@ -25,7 +25,7 @@ Joining adds the first machine to the second machine's peer list. For each machi
 
 Don't make the daemon reachable from the public internet just to get pairing working. Use a private network between the machines.
 
-![Running now on the Hub: one card per connected machine, with what each runs now (demo machines here)](/screenshots/wall/running.png)
+![The Live page: one card per connected machine, with what each runs now (demo machines here)](/screenshots/wall/live.png)
 
 ## Run an issue on another machine
 
@@ -106,10 +106,10 @@ Steps:
 ## Check it worked
 
 1. **Terminal, on either machine:** run `agentx mesh list`. The other machine is listed as `healthy`, with its number of agents.
-2. **Browser:** open the dashboard. On the Hub, select **Running now** in the nav. Both machines have a card marked **up**. See [Running now](../dashboard/hub.md#running-now).
+2. **Browser:** open the dashboard. On the Hub, select **Live** in the nav. Both machines have a card marked **up**. See [Live](../dashboard/live.md).
 3. Send a small test task to an agent on the other machine: see [Agent-to-agent (A2A)](../reference/a2a.md).
 
-4. After you move an issue (see [Run an issue on another machine](#run-an-issue-on-another-machine)): the post says **Runs on** and the machine's name. Comment on the issue: the reply comes from the agent on that machine, and its task shows on that machine's card in **Running now**. **Terminal, on that machine:** `git -C <checkout> worktree list` lists the issue's worktree on `agentx/issue-<n>`.
+4. After you move an issue (see [Run an issue on another machine](#run-an-issue-on-another-machine)): the post says **Runs on** and the machine's name. Comment on the issue: the reply comes from the agent on that machine, and its task shows on that machine's card on **Live**. **Terminal, on that machine:** `git -C <checkout> worktree list` lists the issue's worktree on `agentx/issue-<n>`.
 
 Agents on the second machine sometimes need your yes or no. If your screen is on the first machine, tell the second one to send its decision cards there: see [Approvals › Agents on another machine](../dashboard/approvals.md#agents-on-another-machine).
 

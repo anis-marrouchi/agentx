@@ -229,7 +229,7 @@ describe("the icon rail and the machines that do not answer (orca-design C26, C1
     expect(haDownHtml(["Mac mini"], ltEsc, ic)).toContain("Mac mini is not answering, so its agents are not listed.")
     expect(haDownHtml(["a", "b", "c"], ltEsc)).toContain("a, b and c are not answering, so their agents are not listed.")
     expect(haDownHtml(["<x>"], ltEsc)).toContain("&lt;x&gt;")
-    expect(haDownHtml(["a"], ltEsc)).toContain('href="#page=running"')
+    expect(haDownHtml(["a"], ltEsc)).toContain('href="#page=live"')
   })
   it("draws the rail at 641-1180 px, the Sheet at 640 px and below, and no bottom bar", () => {
     expect(HUB_NAV_CSS).toContain(".ax-wall.is-rail:not(.is-sheet) #hub-rail { display: flex;")

@@ -233,7 +233,7 @@ describe("the saved Hub menu (#2149 M2)", () => {
     const nav = shellNav(simple, { owner: true, menu: mine })
     const shown = new Set(ids(nav.main))
     expect(ids(nav.hidden)).toContain("automations")
-    expect(ids(nav.hidden)).toContain("running")
+    expect(ids(nav.hidden)).toContain("sessions")
     // Every catalog page is either drawn or in hidden, never lost.
     for (const p of catalog.flatMap((g) => g.items)) {
       const id = PAGE_SHELL[p.key] ?? p.key
@@ -265,7 +265,9 @@ describe("the saved Hub menu (#2149 M2)", () => {
     const drawn = ids([...nav.main, ...nav.more])
     for (const id of ["running", "sessions", "activity"]) expect(drawn).not.toContain(id)
     // Still reachable by search (⌘K), and the rest of Work is still drawn.
-    expect(ids(nav.hidden)).toEqual(expect.arrayContaining(["running", "sessions", "activity"]))
+    expect(ids(nav.hidden)).toEqual(expect.arrayContaining(["sessions", "activity"]))
+    // Running now is no page at all any more, so not even search lists it.
+    expect(ids(nav.hidden)).not.toContain("running")
     expect(drawn).toEqual(expect.arrayContaining(["jobledger", "projects"]))
   })
   it("every icon the saved menu can draw is in the kit", () => {

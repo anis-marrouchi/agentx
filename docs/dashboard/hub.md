@@ -4,18 +4,18 @@ The Hub is the dashboard's home page, in a space of its own, as the wiki is: its
 
 The Hub shows the records AgentX already keeps: tasks, plans and run history. Opening a post sends nothing to anyone and changes nothing. You can give an agent a task from the box at the top of the feed (see [Post a task](#post-a-task)), and from an open post you can comment, have its agent call you, start a Space, or close or hand off the request (see [Act on a post](#act-on-a-post)). What waits on you is answered on **Waiting on you** (see [See what waits on you](#see-what-waits-on-you)).
 
-![The Hub in the isolated demo: Running now per machine, filters, and posts](/screenshots/wall/wall.png)
+![The Hub in the isolated demo: the side menu, filters, and posts](/screenshots/wall/wall.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
 ## Open the Hub
 
 1. **Browser:** open the dashboard. The Hub opens to **Chat** at `/hub`. Select an agent in the row of agent names at the top of the chat to open its conversation, as in the phone app. Slide the row sideways when there are more agents than fit. Close Chat to see the feed. On a phone, use **Back to the page**. A link to a post or another Hub page opens that page directly.
-2. The side menu on the left opens with **Search agents and pages** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Each agent is listed once. What waits on you shows once: as the agent list's **Needs you** group, and as **Waiting on you**'s count. For every run of every machine, with the ops details, press **⌘K** and pick **Running now**.
+2. The side menu on the left opens with **Search agents and pages** and the list of agents (see [See every agent at a glance](#see-every-agent-at-a-glance)). Each agent is listed once. What waits on you shows once: as the agent list's **Needs you** group, and as **Waiting on you**'s count. For every run of every machine, open **Live** (press **⌘K** and type its name).
 
    Under the agents, **Workspace**: **Waiting on you** (what waits on you, to answer there, with its count) and **Jobs**. For the owner, **Settings** is pinned at the very bottom. **Upgrading:** Workflows, Mobile app and some ⌘K pages are hidden after this upgrade; [Settings › Layout](./settings.md#layout) › **Full** brings them back. With the full layout, or their switches on there, **Workflows** and **Mobile app** (how to put the Hub on your phone, see [Put the app on your phone](#put-the-app-on-your-phone)) show there too.
 
-   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Waiting on you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Running now**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the Hub's [Operations](#see-fleet-operations) page) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
+   Every other page is one search away: press **⌘K** (**Ctrl K**) and type its name. The switcher lists them under the agents and requests: **Hub** (open posts), **Waiting on you**, **New post** (the [Creator](#give-an-agent-a-task-on-the-creator-page)), **Jobs**, **Live**, **Projects**, **Activity**, **Schedules**, **Workflows**, **Reviews**, **Events**, **Failures**, **Agents**, **People**, **Org**, **Operations**, **Cost**, **Dashboard** (the Hub's [Operations](#see-fleet-operations) page) and the classic **Monitor**, **Org**, **Activity** and **Workflows** pages. The owner also gets **Settings**.
 3. On a computer the version shows once, at the right end of the bottom bar; point at it to read its commit (the exact state of the source code it was built from) and since when the daemon runs. On a phone, which has no bottom bar, the version, commit and start time sit under each page's title. **Restart pending** shows at the right of each page's title when the code on disk is newer than the running daemon; hover over the line to read why, and select it to open the Hub's [Live](./live.md#restart-a-machine-when-it-is-idle) page, where **Restart when idle** is on each machine's card. The line refreshes every minute; if an ask fails, it asks again after 5, 10, 20 and 40 seconds. The dashboard keeps the daemon's last answer, so when the daemon is slow to answer, that answer still shows, marked **as of** its time; on a computer, point at the version in the bottom bar to read the same **as of**. See [See which version is running](index.md#see-which-version-is-running).
 
    ![The Hub's title row: Hub, the Feed and List switch, and on the right the version, commit, since when, and Restart pending](/screenshots/wall/build-line.png)
@@ -61,7 +61,7 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
    **Check it worked:** ask an agent to write a short file, for example "Write a file notes/hello.md with one line". While it works, **hello.md** appears under **Run artifacts** with **wrote**. Pick an earlier run under **Other runs in this chat**: the list changes to that run's files.
 
    **If something is wrong:** if **Run artifacts** stays on **Nothing yet** until the run ends, the browser could not open the run's live output; the files still show when the run ends (press the reload button at the top right of the tabs). If **Project** is missing, the agent's runs touched no file inside a Git repository and its workspace is not one.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Org** and **Usage**, show under **More** in the side menu. **Running now**, **Sessions** (the Live page) and **Activity** are not menu items in the shell, in a saved menu either: the agent list shows what runs now, and a click on an agent opens its live run or its latest conversation. Type their name in **Search agents and pages** to open them. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Org** and **Usage**, show under **More** in the side menu. **Sessions** (the Live page) and **Activity** are not menu items in the shell, in a saved menu either, and **Running now** is gone ([Running now](#running-now)): the agent list shows what runs now, and a click on an agent opens its live run or its latest conversation. Type their name in **Search agents and pages** to open them. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
    ![The simple shell with the full layout: the items switched on, under More](/screenshots/hub-shell/full.png)
 
@@ -250,9 +250,10 @@ The side menu lists every agent of every connected machine once, by what it is d
 
 1. **Browser:** open the Hub. On a screen wider than 1180 pixels the full menu shows; on a narrower one it is the icon column or, on a phone, the menu button (see [Open the Hub](#open-the-hub)).
 2. There are no filter chips: the groups are the filter.
+   Next to **Agents**, one line counts **need you**, **unread** and **working**. **Need you** is the same number as **Waiting on you**. **Unread** counts the agents whose run ended, done or failed, after you last opened them in this browser; open one and it is read. **Working** counts the agents at work now. While you search, the line hides.
 3. The agents are grouped, what needs you first:
    - **Needs you**: nothing running, and it asked you something, or its last run today failed. The row shows its oldest question, or **Run failed:** and the reason, with a red failed icon. It starts open. Its heading shows the same number as **Waiting on you**, the things that wait on you; **Show all (N)** counts the agents it reveals. It shows its first 5 agents, then **Show all (N)**.
-   - **Working**: a run is going. The row shows the title of its newest run next to a turning spinner. With reduced motion turned on in your system, the spinner stands still. A voice call's turn starts with **Voice ·**. Each agent is listed once. When it has more than one run going, its other runs are listed under its row, newest first, each with where it came from (**Voice**, **Agent to agent**, **GitLab** and so on) and its title: the first 3, then how many more. Select one to open that run live. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page. **Working** shows its first 3 agents and **Show all (N)**; select it to see every one, and **Show fewer** to go back.
+   - **Working**: a run is going. The row shows the title of its newest run next to a turning spinner. With reduced motion turned on in your system, the spinner stands still. A voice call's turn starts with **Voice ·**. Each agent is listed once. When it has more than one run going, its other runs are listed under its row, newest first, each with where it came from (**Voice**, **Agent to agent**, **GitLab** and so on) and its title: the first 3, then how many more. Select one to open that run live. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, the **working** count above the agent list and **running now** on the Live page. **Working** shows its first 3 agents and **Show all (N)**; select it to see every one, and **Show fewer** to go back.
    - **Done today**: its last run ended today. The row shows the first line of its last answer. It starts folded.
    - **Not working today**, folded at the end: every other agent.
 
@@ -324,9 +325,9 @@ Idle agents and the work that finished are not in **Machines**: they are in the 
 
 **If something is wrong:** the box shows only after you press **⌘K** or select **Search agents and pages**. If an empty box covers the page as soon as it opens, and nothing under it can be selected, the dashboard runs a version before 0.286.0, where the closed box still took every click. Upgrade AgentX, then reload the page.
 
-**Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a turning spinner, and **Working**'s count goes up by one. Select its row: its run opens in the middle and its output streams in as it works. While it works, call it by voice: within a few seconds its row reads **Voice ·** and what you said, and its earlier run moves to a line under the row. Select either to open that run. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**.
+**Check it worked:** start a task for an agent. Within a few seconds it moves to **Working** with a turning spinner, and **Working**'s count goes up by one. Select its row: its run opens in the middle and its output streams in as it works. While it works, call it by voice: within a few seconds its row reads **Voice ·** and what you said, and its earlier run moves to a line under the row. Select either to open that run. Ask an agent to ask you something: it moves to **Needs you** with a blue **1**. Let a run end on an agent you do not have open: **unread** above the list goes up by one; select the agent and it goes back down.
 
-**If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Running now**, which says which machine fails. An agent on a machine that does not answer is left out until it answers; a note at the top of the list names the machine, with a link to **Running now**. On a narrow window the list is the icon column: point at an icon for its name, or select the button at the top of the column for the full menu.
+**If something is wrong:** if the list says **Could not reach the machines just now**, the dashboard cannot read the live view; open **Live**, which says which machine fails. An agent on a machine that does not answer is left out until it answers; a note at the top of the list names the machine, with a link to **Live**. On a narrow window the list is the icon column: point at an icon for its name, or select the button at the top of the column for the full menu.
 
 ## Read states, counts and empty lists
 
@@ -1269,7 +1270,7 @@ A **concurrent** run is two runs going at the same time on the same chat, or two
 
 *Scripted demo data; your team's names will differ.*
 
-1. **Browser:** on the Hub, look for an amber line that starts with **⚠ Concurrent**. It sits on the post, and on the task under **Running now** while both runs are still going.
+1. **Browser:** on the Hub, look for an amber line that starts with **⚠ Concurrent**. It sits on the post while both runs are still going.
 2. Read the line. It names both run ids and their agents, what they shared (**on chat** or **in worktree**, which shows the folder's name only) and when both were running.
 3. Select a run id to open that run's task record.
 4. To see only these posts, tick **Concurrent only** in the filters. In the **List**, the **Time / estimate** column shows **⚠ concurrent**.
@@ -1474,23 +1475,9 @@ A person has a grey card with a **person** chip. The page only reads: the Hub ha
 
 ## Running now
 
-Running now sits in the side column on every page. Select **Running now** in the nav to open it as a page of its own, in the middle column.
+**Running now** is no longer a page or a menu item, on a computer or on a phone. The side menu's agent list is the one live list: **Working** shows every agent at work, and the header above the list counts **need you**, **unread** and **working**. An old `#page=running` link, or **Open Live** in a note about a machine that does not answer, opens the [Live](./live.md) page: one card per machine, whether it is up, its version and what it runs now. Failed scheduled runs are on [Failures](#see-failures), the version and commit in the status bar.
 
-![Running now as its own page in the isolated demo](/screenshots/wall/running.png)
-
-*Scripted demo data; your team's names and machines will differ.*
-
-The first line names your mesh and how many of its machines answered, for example **Your mesh · 2 of 3 machines answer**. The Hub reads every machine listed under `dashboard.daemons` or `mesh.peers` in `agentx.json`, so a machine added with `agentx mesh add` shows without more setup.
-
-Each connected machine has a card:
-
-- **up** or **unreachable**, and the AgentX version it runs,
-- every task running on it now. Select one to watch it,
-- **Ops details**: uptime, tasks in flight, a pending restart, failed cron runs, stopped tasks and attached Claude Code sessions.
-
-When a machine does not answer, its card turns red and the Hub still shows everything else. A machine whose posts could not be read says **posts not shown**, with the reason.
-
-A machine that is only slow says **checking…** instead, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
+On Live and in the side menu, a machine that is only slow says **checking…**, in grey, never **does not answer**. The Hub asks it again every few seconds and fills in its line once it answers. **Does not answer** is kept for a machine that refuses the connection or answers with an error.
 
 In the side menu's machine tree, a slow machine keeps the agents of its last answer, with its number and **as of** and the time of that answer (UTC, hours and minutes) next to it. Its rows do not disappear while it is asked again. A slow machine with no answer yet says **checking…**. A machine that has not answered in five minutes says **not checked** and shows no agents. **At work now**, **Working**, the status bar, **Machines** and **Tasks running** on `/mesh` count the machines that are up and the slow ones with their last answer, so the numbers do not drop to 0 and back while runs go on. On `/mesh`, a machine too slow for the history says **Slow to answer, history not merged**, not **UNREACHABLE**.
 
@@ -1498,7 +1485,7 @@ In the side menu's machine tree, a slow machine keeps the agents of its last ans
 
 *Scripted demo data; your team's names and machines will differ.*
 
-**Running now** does not wait for the feed. Its cards appear as soon as the machines answer, usually within a second, while the feed may still say **Loading…**.
+The agent list does not wait for the feed. Its rows appear as soon as the machines answer, usually within a second, while the feed may still say **Loading…**.
 
 When the Hub opens, it first asks for two things only: the posts and what runs on each machine. It shows the posts that are ready, usually within a second, and adds the rest when they arrive:
 
@@ -1546,7 +1533,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 7. Press **⌘K** and pick **Live**. The Hub's **Live** page opens.
 8. Select **Refresh**. **Happening now** fills in while the feed still says **Loading…**; it does not wait for the posts.
 9. **Browser:** open the Hub in a private window on a phone-sized screen. The first posts appear within about a second and a half. A machine that is slow to answer says **checking…** under **Happening now**, then its usual line a few seconds later.
-10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post and **Running now** show **⚠ Concurrent** with both run ids.
+10. To check the concurrent flag, send the same task to two agents in the same chat at once. Within a minute, the post shows **⚠ Concurrent** with both run ids.
 11. If you use GitLab: open a post whose home is a GitLab issue. It shows **GitLab time** with the same numbers as the issue's time tracking box in GitLab.
 12. If you use GitHub or GitLab: open a post whose home is an issue there. It shows the same state as the issue, and **checked** a few minutes ago at most. Have an agent comment on it, then select **Refresh**: **Comment by …** opens that comment.
 13. QA: after an agent marks a task as needing QA, tick **Awaiting QA only**. The task is listed. After the QA agent gives a verdict and you select **Refresh**, it leaves that list and its post shows **QA: PASS by …** (or BLOCK or RISK) with the time.
@@ -1620,7 +1607,7 @@ With a dashboard token set, a portfolio key opens `/portfolio` and nothing else:
 - **A budget says "Not saved: only the owner can change a budget":** the dashboard did not accept your key. Open the Hub on the machine itself, or sign in with the dashboard token, then save again.
 - **Export CSV saves nothing:** the browser blocked the download. Allow downloads for the dashboard's address and select it again.
 - **The profile's spend differs from another machine's Cost page:** each machine counts the runs it keeps. Open the Hub on the machine that runs the agent to see its own figure.
-- **The Hub is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on, in **Settings** › **Requests** ([Choose approvals and requests](#choose-approvals-and-requests)). Running work still shows under **Running now**.
+- **The Hub is empty:** no task has been tracked yet on this machine. Tasks appear once open-request tracking is on, in **Settings** › **Requests** ([Choose approvals and requests](#choose-approvals-and-requests)). Running work still shows under **Working** in the side menu and on **Live**.
 - **"Could not load the Hub":** the dashboard cannot read its records. The classic pages still work. Restart the dashboard with `agentx board serve` from the folder that holds `agentx.json`.
 - **The feed takes a long time to load:** find out which part is slow. **Terminal**, on the machine that serves the dashboard: `curl -H "Authorization: Bearer <dashboard token>" "<dashboard>/api/admin/wall?peer=fleet&timings=1"`. The reply ends with `timings`: how many milliseconds this machine spent on each part of the feed (`runs`, `concurrent`, `comments`, `forgeMs` and so on) and when each other machine answered. It holds numbers only, never task text. Share it in the issue you open.
 - **A machine stays on "checking…":** it answers, but slower than the Hub waits (about six seconds for what runs on it). Its line fills in on a later refresh. If it stays like this, see what keeps it busy with `agentx daemon status` on that machine, and use the timings command above to see how long it takes.

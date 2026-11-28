@@ -1004,7 +1004,7 @@ describe("Wall Settings: a literal secret in agentx.json is never sent or shown 
 
 describe("Every other Wall page sends no settings write (#1428)", () => {
   const SETTINGS_WRITES = ["/api/admin/wall/settings/", "/api/admin/agents", "/api/admin/org/hold", "/api/admin/wiki/curator", "/api/admin/files"]
-  const PAGES = ["#status=open", "#status=waiting_owner", "#page=running", "#page=agents", "#page=live", "#page=creator",
+  const PAGES = ["#status=open", "#status=waiting_owner", "#page=agents", "#page=live", "#page=creator",
     "#status=open&view=list", "#status=open&view=projects", "#status=open&view=jobs", "#status=open&view=reviews", "#status=open&view=failures"]
 
   it("sends no write call while any other page loads, even for the owner", async () => {

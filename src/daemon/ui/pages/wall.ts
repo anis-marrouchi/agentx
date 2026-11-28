@@ -3,7 +3,8 @@
 // The Wall is the main dashboard view: each request is a post, and the
 // runs, hand-offs and plan steps recorded against it are its thread.
 // Selecting a post opens it on its own, with its thread, as on X; the nav's
-// Running now and Agents open pages of their own, each with a count (#1316).
+// Agents opens a page of its own, with a count (#1316). Running now is
+// gone (#2101 R1): the side menu is the one live list.
 // Org draws the org chart from the top down (#1419, wall-org.client.ts).
 // Workflows lists every workflow with its runs and state (#1445,
 // wall-workflows.client.ts).
@@ -156,7 +157,6 @@ export const WALL_NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   { label: "Work", items: [
     { key: "jobledger", label: "Jobs", href: "#page=jobledger", icon: "jobledger", count: "nav-n-jobledger", title: "Jobs: every piece of assigned work and what it is doing now" },
     { key: "live", label: "Live", href: "#page=live", icon: "space", count: "nav-n-live" },
-    { key: "running", label: "Running now", href: "#page=running", icon: "live", count: "nav-n-running" },
     { key: "projects", label: "Projects", href: "#status=open&amp;view=projects", icon: "projects", count: "nav-n-projects" },
     { key: "activity", label: "Activity", href: "#page=activity", icon: "activity", title: "Activity: every run, newest first" },
     { key: "numbers", label: "Numbers", href: "#page=numbers", icon: "numbers", count: "nav-n-numbers", title: "Numbers: tracked measures, their newest reading and trend", hidden: true },
@@ -367,7 +367,6 @@ ${dashboard}
     <section id="wall-decide" class="ax-wall__decide" aria-label="Waiting for your answer" hidden></section>
     <section id="wall-cost" class="ax-wall__cost" aria-label="Cost: global and per agent" hidden></section>
     <section id="wall-post" class="ax-wall__post" aria-label="Post and its thread" hidden></section>
-    <section id="wall-running" class="ax-wall__running" aria-label="Running now on every node" hidden></section>
     <section id="wall-people" class="ax-wall__people" aria-label="People who talk to the agents" hidden></section>
     <section id="wall-agents-page" class="ax-wall__agentlist" aria-label="Every agent" hidden></section>
     <section id="wall-org" class="ax-wall__org" aria-label="Org chart" hidden></section>
@@ -463,9 +462,6 @@ a.lt__row:hover { background: var(--ax-surface-3); }
 /* C5: a hand-off whose run shows on its own machine is one pointer line. */
 .lt__ptr { display: block; font-size: 12px; color: var(--ax-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 a.lt__ptr:hover { color: var(--ax-accent); }
-/* R1: the tree is the one live list on a wide screen; Running now stays
-   its "All" page (ops details) and the phone's bar button. */
-@media (min-width: 1181px) { .ax-wall__navgroup > .ax-wall__item[data-nav="running"] { display: none; } }
 /* R10: a post that folds its copies says so, under its text. */
 .wp__copies { font-size: var(--ax-fs-xs); color: var(--ax-muted); margin: 4px 0 0; }
 .wp__copies a { color: var(--ax-muted); }
@@ -721,18 +717,6 @@ a.lt__wk:hover { background: var(--ax-surface-3); }
 /* Side column boxes (the dashboard links are styled in wall-space.ts) */
 .ax-wall__classicd { margin-top: 8px; font-size: var(--ax-fs-xs); }
 .ax-wall__classicd summary { cursor: pointer; color: var(--ax-accent); margin-bottom: 6px; }
-.wa-mesh { margin: 0 0 6px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
-.wn { padding: 8px 0; font-size: var(--ax-fs-sm); border-top: 1px solid var(--ax-border); }
-.wn:first-child { border-top: 0; }
-.wn header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.wn header b { font-size: var(--ax-fs); }
-.wn.is-down header b { color: var(--ax-red-ink, var(--ax-err)); }
-.wn .ver { font-family: var(--ax-mono); font-size: var(--ax-fs-xs); color: var(--ax-muted); }
-.wn ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.wn li a { color: var(--ax-text); text-decoration: none; overflow-wrap: anywhere; }
-.wn li small, .wn .idle { color: var(--ax-muted); }
-.wn details { margin-top: 4px; color: var(--ax-text-2); font-size: var(--ax-fs-xs); }
-.wn details summary { cursor: pointer; color: var(--ax-muted); }
 .wa { display: flex; gap: 10px; align-items: center; padding: 7px 0; width: 100%; font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; border-radius: var(--ax-radius); }
 .wa:hover .wa__n b { text-decoration: underline; }
 .wa.is-on .wa__n b { color: var(--ax-accent); }
@@ -741,8 +725,7 @@ a.lt__wk:hover { background: var(--ax-surface-3); }
 .wa__n small { display: block; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .wa-more { font: inherit; font-size: var(--ax-fs-sm); background: none; border: 0; padding: 6px 0 0; color: var(--ax-accent); cursor: pointer; }
 
-/* Running now and Agents as pages (#1316) */
-.ax-wall__running { padding: 4px 16px 16px; }
+/* Agents as a page (#1316) */
 .wag { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--ax-border); }
 .wag__b { flex: 1; min-width: 0; }
 .wag .wpf__stats .is-err, .wag .wpf__stats .is-err b { color: var(--ax-red-ink, var(--ax-err)); }

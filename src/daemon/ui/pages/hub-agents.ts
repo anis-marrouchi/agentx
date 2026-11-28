@@ -448,7 +448,7 @@ export function haDownHtml(down: string[] | undefined, esc: (s: unknown) => stri
   if (!d.length) return ""
   const who = d.length === 1 ? d[0] : d.slice(0, -1).join(", ") + " and " + d[d.length - 1]
   return '<p class="ha__down" data-key="down" role="status">' + ((ic && ic.unplug) || "") + "<span>" + esc(who) + (d.length === 1 ? " is" : " are") +
-    ' not answering, so ' + (d.length === 1 ? "its" : "their") + ' agents are not listed. <a href="#page=running">Open Running now</a></span></p>'
+    ' not answering, so ' + (d.length === 1 ? "its" : "their") + ' agents are not listed. <a href="#page=live">Open Live</a></span></p>'
 }
 
 /** One page the switcher can open (#2101 R22): its nav key, name and link. */

@@ -41,9 +41,9 @@ describe("the catalog and presets", () => {
     expect(items.filter((i) => i.kind === "group").map((i) => (i as any).label)).toEqual(["Work", "Automation", "Fleet"])
   })
   it("builds each preset from pages this version has", () => {
-    expect(pages(presetItems("solo", catalog))).toEqual(["wall", "needs", "projects", "running", "live", "agents"])
-    expect(pages(presetItems("team", catalog))).toHaveLength(11)
-    expect(pages(presetItems("automation", catalog))).toEqual(["needs", "running", "jobs", "workflows", "events", "failures", "numbers", "activity"])
+    expect(pages(presetItems("solo", catalog))).toEqual(["wall", "needs", "projects", "live", "agents"])
+    expect(pages(presetItems("team", catalog))).toHaveLength(10)
+    expect(pages(presetItems("automation", catalog))).toEqual(["needs", "live", "jobs", "workflows", "events", "failures", "numbers", "activity"])
     expect(presetItems("blank", catalog)).toEqual([])
     // A page a later version drops is skipped, never an error.
     const small: MenuCatalog = [{ label: "", items: [{ key: "wall", label: "Hub" }] }]
@@ -79,7 +79,7 @@ describe("parseMenuInput", () => {
   it("caps the items, the links and the phone bar, and keeps links out of it", () => {
     expect(ok(Array.from({ length: 41 }, (_, i) => ({ kind: "group", label: `G${i}` }))).ok).toBe(false)
     expect(parseMenuInput({ items: [{ kind: "link", label: "A", url: "https://a.example" }, { kind: "link", label: "B", url: "https://b.example" }] }, catalog, 1).ok).toBe(false)
-    const five = ["wall", "needs", "live", "running", "agents"].map((p, i) => ({ id: `m_00000${i}`, kind: "page", page: p }))
+    const five = ["wall", "needs", "live", "projects", "agents"].map((p, i) => ({ id: `m_00000${i}`, kind: "page", page: p }))
     expect(ok(five, five.map((i) => i.id)).ok).toBe(false)
     expect(ok(five, five.slice(0, 4).map((i) => i.id)).ok).toBe(true)
     expect(ok([{ id: "pin_cccccc", kind: "link", label: "L", url: "https://l.example" }], ["pin_cccccc"]).ok).toBe(false)
@@ -168,7 +168,7 @@ describe("MenuStore", () => {
     const r = s.menu.reset({ revision: 0, preset: "solo" })
     if (!r.ok) throw new Error(r.error)
     expect(r.menu.preset).toBe("solo")
-    expect(r.menu.items.map((i) => i.kind === "page" ? i.page : i.id)).toEqual(["wall", "needs", "projects", "running", "live", "agents", PIN_A.id])
+    expect(r.menu.items.map((i) => i.kind === "page" ? i.page : i.id)).toEqual(["wall", "needs", "projects", "live", "agents", PIN_A.id])
     expect(s.menu.reset({ revision: 1, preset: "nope" })).toMatchObject({ ok: false, status: 400 })
     expect(s.menu.reset({ revision: 1, preset: "blank" }).ok).toBe(true)
   })

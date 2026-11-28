@@ -343,7 +343,7 @@ describe("Wall nav and phone bar, design #1451 frame 0", () => {
       // Workspace (#2101 P4, hub-nav.ts): Waiting on you · Jobs · Workflows · Mobile app, then Settings.
       "needs", "jobledger", "workflows", "mobile", "settings",
       // The hidden page links: the ⌘K switcher's Pages and the counts' source.
-      "wall", "needs", "Work", "jobledger", "live", "running", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
+      "wall", "needs", "Work", "jobledger", "live", "projects", "activity", "numbers", "Automation", "jobs", "workflows", "reviews", "events", "failures",
       "Fleet", "agents", "people", "org", "operations", "cost", "Owner", "settings", "dashboard", "creator"])
     expect([...nav.matchAll(/<details class="ax-wall__navgroup"><summary>(\w+)<\/summary>/g)].map((m) => m[1])).toEqual(["Work", "Automation", "Fleet"])
     // People (#1441), Org (#1419) and Workflows (#1445) are on the Wall.

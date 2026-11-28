@@ -21,7 +21,7 @@ If nothing loads, start the dashboard yourself:
    ```
 2. Keep that terminal open, and open the address again.
 
-![The Hub in the isolated demo: the nav on the left, posts in the middle, and Running now per machine on the right](/screenshots/wall/wall.png)
+![The Hub in the isolated demo: the nav on the left and posts in the middle](/screenshots/wall/wall.png)
 
 *Scripted demo data; your team's names and machines will differ.*
 
@@ -36,7 +36,7 @@ The nav starts with **Hub** and **Waiting on you**. The other pages sit in group
 | **Work** | |
 | [Jobs](./jobs.md) | Every piece of assigned work, with one status line each |
 | [Live](./live.md) | Sessions and jobs running now, paused tasks, and each machine's card |
-| [Running now](./hub.md#running-now) | One card per connected machine with what it runs at this moment |
+| [Live](./live.md) | One card per connected machine with what it runs at this moment |
 | [Projects](./hub.md#see-every-project-at-once) | One card per project, with its open, blocked and closed work |
 | [Activity](./activity.md) | The runs your agents made, newest first, with their outcome |
 | **Automation** | |
@@ -81,7 +81,7 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 ## Check it worked
 
 1. **Browser:** open `http://127.0.0.1:4202`. The Hub opens, with the nav on the left.
-2. Select **Agents** in the nav. Your agents are listed. If **Running now** shows your machines as **up**, the dashboard can reach the daemon.
+2. Select **Agents** in the nav. Your agents are listed. If **Live** shows your machines as **up**, the dashboard can reach the daemon.
 3. The right of the page's title shows a version and "since" with a date. **Terminal:** `agentx daemon status` names the same version on its first line.
 
 ## If something is wrong

@@ -31,8 +31,9 @@
 // feed). Since #2101 T3 a post and a run open on the React Task page
 // (#page=task) when React draws it for the viewer: readHash sends the old
 // addresses there (src/hub/task/old-links.ts), and the old post and run
-// pages are kept only for the others. The nav's Running now and Agents open pages of their own
-// (#page=running, #page=agents), and each nav item carries its count.
+// pages are kept only for the others. The nav's Agents opens a page of its
+// own (#page=agents), and each nav item carries its count. #page=running
+// opens Live (#2101 R1).
 // Activity (#page=activity, #1429, wall-activity.client.ts) lists the
 // agents' runs, newest first; an agent's profile has it as a tab.
 // Workflows (#page=workflows, #1445, wall-workflows.client.ts) lists the
@@ -127,7 +128,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   /** The project filter's value for work with no project: "Other". */
   var OTHER = '-';
   /** The pages the nav opens besides the Wall itself (#1316). */
-  var PAGES = ['running', 'agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile', 'operations'];
+  var PAGES = ['agents', 'people', 'org', 'workflows', 'editor', 'creator', 'live', 'task', 'activity', 'numbers', 'jobledger', 'mobile', 'operations'];
   // The pages the React Hub draws (#2218, src/hub/pages.ts), when its switch
   // is on: this script keeps the hash and the nav, and hides its own sections.
   var HUB_PAGES = (window.AX_HUB && window.AX_HUB.pages) || [];
@@ -421,6 +422,12 @@ ${HUB_NAV_SCRIPT}
       q = new URLSearchParams(location.hash.slice(1));
       S.applied = location.hash;
       window.dispatchEvent(new Event('hashchange'));
+    }
+    // Running now is gone (#2101 R1): the side menu is the one live list,
+    // and an old #page=running link opens Live, its machines and runs.
+    if (q.get('page') === 'running') {
+      history.replaceState(null, '', '#page=live');
+      q = new URLSearchParams(location.hash.slice(1));
     }
     var f = {};
     FILTERS.forEach(function (k) { f[k] = q.get(k) || ''; });
@@ -1043,12 +1050,6 @@ ${HUB_NAV_SCRIPT}
   }
 
   // --- The nav: which page is on, and its counts (#1316) ---
-  // Agents working, by the Hub's Working rule (liveWorkCount, #2258):
-  // machines that are up, each agent once. Agents, not runs, so it matches
-  // the tree, Working, the status bar and the Live page.
-  function runningCount() {
-    return liveWorkCount((S.live && S.live.nodes) || []).agents;
-  }
   function jobCount() {
     var n = 0;
     ((S.live && S.live.nodes) || []).forEach(function (x) { n += (x.crons || []).length; });
@@ -1067,13 +1068,12 @@ ${HUB_NAV_SCRIPT}
       wall: posts ? posts.filter(isOpen).length : null,
       // What waits for an answer, as /approvals counts it (#1440).
       needs: decideCount() != null ? decideCount() : posts ? posts.filter(waitsOnOwner).length : null,
-      running: S.live ? runningCount() : null,
       agents: S.live || posts ? allAgents().length : null,
       projects: S.data && S.data.projects ? S.data.projects.length : null,
       jobs: S.live ? jobCount() : null,
       live: liveCount(),
     };
-    var title = { wall: 'open posts', needs: 'waiting for your answer', running: 'tasks running now', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs', live: 'live sessions' };
+    var title = { wall: 'open posts', needs: 'waiting for your answer', agents: 'agents', projects: 'projects with open work', jobs: 'recurring jobs', live: 'live sessions' };
     Object.keys(counts).forEach(function (k) {
       var el = $('nav-n-' + k), n = counts[k];
       el.textContent = n == null ? '' : String(n);
@@ -1081,7 +1081,7 @@ ${HUB_NAV_SCRIPT}
       el.setAttribute('title', n == null ? '' : n + ' ' + title[k]);
     });
     var named = { projects: 'Projects', jobs: 'Schedules', reviews: 'Reviews', events: 'Events', failures: 'Failures', cost: 'Cost', needs: 'Waiting on you' };
-    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'running' ? 'Running now' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'operations' ? 'Operations' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
+    $('wall-title').textContent = page === 'post' ? 'Post' : page === 'agents' ? 'Agents' : page === 'people' ? 'People' : page === 'org' ? 'Org' : page === 'workflows' ? 'Workflows' : page === 'editor' ? 'Workflow editor' : page === 'creator' ? 'New post' : page === 'live' ? 'Live' : page === 'task' ? 'Task' : page === 'activity' ? 'Activity' : page === 'numbers' ? 'Numbers' : page === 'jobledger' ? 'Jobs' : page === 'mobile' ? 'Mobile app' : page === 'operations' ? 'Operations' : page === 'settings' ? 'Settings' : named[on] || '${HUB_NAME}';
   }
 
   // --- List: the table itself is in wall-pages.client.ts (#1355) ---
@@ -1237,50 +1237,6 @@ ${HUB_NAV_SCRIPT}
   function nodeChecking(n) { return !!n.checking; }
   function nodeDown(n) { return (!n.reachable || !!n.error) && !n.checking; }
 
-  // --- Running now, per node, with ops details ---
-  function nodesHtml() {
-    var wallNodes = (S.data && S.data.nodes) || [];
-    var live = (S.live && S.live.nodes) || [];
-    if (!live.length && !wallNodes.length) return '<p class="ax-wall__empty">Loading…</p>';
-    var cards = live.map(function (n) {
-      var running = [];
-      (n.agents || []).forEach(function (a) {
-        (a.runningTasks || []).forEach(function (t) { running.push({ a: a, t: t }); });
-      });
-      var down = nodeDown(n), checking = nodeChecking(n);
-      var crons = (n.cronRuns || []).filter(function (r) { return r.status !== 'success' && Date.parse(r.startedAt) >= Date.now() - DAY; }).length;
-      var ops = [
-        n.uptimeSec != null ? 'Up ' + Math.round(n.uptimeSec / 3600) + ' h' : '',
-        n.inflight != null ? n.inflight + ' in flight' : '',
-        n.restart && n.restart.state !== 'none' ? 'Restart ' + n.restart.state : '',
-        crons ? crons + ' failed cron runs (24 h)' : '',
-        n.stoppedTasks && n.stoppedTasks.length ? n.stoppedTasks.length + ' stopped tasks' : '',
-        n.attachSessions && n.attachSessions.length ? n.attachSessions.length + ' attached sessions' : '',
-        n.commit ? 'Commit ' + n.commit.slice(0, 8) : '',
-      ].filter(Boolean);
-      return '<div class="wn' + (down ? ' is-down' : '') + '"><header><b>' + esc(n.name) + '</b>' +
-        '<span class="' + (checking ? 'ax-badge' : down ? 'ax-badge ax-badge--err' : 'ax-badge ax-badge--live') + '">' + (checking ? (n.stale ? 'checking…, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'checking…') : down ? (n.stale ? 'unreachable, last data ' + esc(stamp(Date.parse(n.staleSince))) : 'unreachable') : 'up') + '</span></header>' +
-        '<div class="ver">' + esc(n.version ? 'v' + n.version : 'version unknown') + '</div>' +
-        (running.length ? '<ul>' + running.map(function (x) {
-          var rid = x.t.traceId || x.t.id;
-          var conc = ((S.live && S.live.concurrent) || []).filter(function (o) { return o.runs.indexOf(rid) >= 0; });
-          return '<li' + (conc.length ? ' class="is-concurrent"' : '') + '><a href="' + esc(wallTaskHref(x.t, x.a.id, n.url)) + '"><b>' + esc(runTitle(x.t)) + '</b></a> <small>' + esc([x.a.name || x.a.id, ltModel(x.a.model), 'since ' + stamp(Date.parse(x.t.startedAt))].filter(Boolean).join(' · ')) + '</small>' +
-            conc.map(function (o) { return concHtml(o, function (id) { return esc(id); }); }).join('') + '</li>';
-        }).join('') + '</ul>' : '<div class="idle">' + (checking ? 'Slow to answer; asking again.' : down ? (n.error ? esc(n.error) : '') : 'Nothing running.') + '</div>') +
-        (ops.length ? '<details><summary>Ops details</summary>' + ops.map(esc).join(' · ') + '</details>' : '') + '</div>';
-    });
-    wallNodes.filter(function (w) { return !w.ok; }).forEach(function (w) {
-      cards.push(w.checking ? '<div class="wn"><header><b>' + esc(w.name) + '</b><span class="ax-badge">checking…</span></header><div class="idle">Its posts are on the way.</div></div>'
-        : '<div class="wn is-down"><header><b>' + esc(w.name) + '</b><span class="ax-badge ax-badge--err">posts not shown</span></header><div class="idle">' + esc(w.error || 'unreachable') + '</div></div>');
-    });
-    return meshesHtml() + cards.join('');
-  }
-  /** A run's title (#2101 R2): its request's headline, else the step or
-   *  job it is for, never the raw prompt (wall-tree.ts ltTitle). */
-  function runTitle(t) {
-    var rid = ltRequestId(t);
-    return ltTitle(t, (rid && findPost(rid)) || null);
-  }
   // Needs you (#2101 R3) is no longer a box of its own in the side menu:
   // it is the agent list's group and Desk's count (R27, one place each).
   // --- The agent list at the top of the nav (#2101 P4, R26) ---
@@ -1353,13 +1309,6 @@ ${HUB_NAV_SCRIPT}
   document.addEventListener('visibilitychange', function () { followLive(S.post ? 'post' : S.page); });
   if (treeWide && treeWide.addEventListener) treeWide.addEventListener('change', function () { followLive(S.post ? 'post' : S.page); });
 
-  // One line per mesh (#1479): how many of its machines' Walls answered.
-  function meshesHtml() {
-    return ((S.data && S.data.meshes) || []).map(function (m) {
-      return '<p class="wa-mesh"><b>' + esc(m.name === 'own' ? 'Your mesh' : m.name) + '</b> · ' + m.online + ' of ' + m.machines + ' machines answer</p>';
-    }).join('');
-  }
-
   // --- Render ---
   // A repaint keeps open sections, shown lists and the scroll (#2101 R21):
   // wall-keep.client.ts.
@@ -1396,7 +1345,6 @@ ${HUB_NAV_SCRIPT}
       b.setAttribute('aria-selected', me ? 'true' : 'false');
     });
     $('wall-post').hidden = page !== 'post';
-    $('wall-running').hidden = page !== 'running';
     $('wall-agents-page').hidden = page !== 'agents';
     $('wall-creator').hidden = page !== 'creator';
     $('wall-live').hidden = page !== 'live';
@@ -1432,7 +1380,6 @@ ${HUB_NAV_SCRIPT}
     }
     // A line comment being typed in the Diff view (#2102) keeps the post as it is.
     if (page === 'post' && !diffTyping()) $('wall-post').innerHTML = postPageHtml();
-    if (page === 'running') $('wall-running').innerHTML = nodesHtml();
     // The Agents manager (#2144) keeps a field in use: no repaint over it.
     if (page === 'agents') { agmEnsure(); if (!agmTyping()) $('wall-agents-page').innerHTML = agentsPageHtml(); }
     // The People page (#1441): wall-people.client.ts.
