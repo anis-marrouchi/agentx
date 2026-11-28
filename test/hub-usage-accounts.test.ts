@@ -21,6 +21,7 @@ import { HUB_USAGE_SCRIPT } from "../src/daemon/ui/pages/hub-status-usage.client
 const now = Date.UTC(2026, 10, 26, 10)
 const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
 const icon = (k: string) => '<i data-e="' + k + '"></i>'
+const signedIn = async () => "signed-in" as const
 
 describe("readAccountsPlanUsage (R28d, daemon side)", () => {
   beforeEach(() => clearAccountsPlanUsage())
@@ -39,7 +40,7 @@ describe("readAccountsPlanUsage (R28d, daemon side)", () => {
     })
     const codexDirs: string[] = []
     const codex = async (dir: string) => { codexDirs.push(dir); return dir === "/t/codex" ? { windows: [{ window: "five_hour", utilization: 0.5 }], readAt: now - 60_000, plan: "pro" } : null }
-    const out = await readAccountsPlanUsage({ state, env: {}, home: "/home/you", now, claudeReader: reader, codex })
+    const out = await readAccountsPlanUsage({ state, env: {}, home: "/home/you", now, claudeReader: reader, codex, codexLogin: signedIn })
     expect(out.claude).toEqual([
       { name: "default", active: false, windows: [{ window: "five_hour", utilization: 0.3, resetsAt: now + 3600_000 }], readAt: now },
       { name: "work", active: true },
@@ -96,13 +97,13 @@ describe("readAccountsPlanUsage (R28d, daemon side)", () => {
       fetchUsage: async () => { calls++; return [{ window: "five_hour", utilization: 0.1 }] },
     }) }
     const codex = async (dir: string) => dir === "/t/codex" ? { windows: [{ window: "five_hour", utilization: 0.5 }], readAt: now } : null
-    const off = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, enabled: false })
+    const off = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, codexLogin: signedIn, enabled: false })
     expect(calls).toBe(0)
     expect(made).toBe(0)
     expect(off.claude).toBeUndefined()
     // Codex reads its own session files, not Claude's endpoint: still listed.
     expect(off.codex?.[1]).toMatchObject({ name: "team", windows: [{ window: "five_hour", utilization: 0.5 }] })
-    const on = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, enabled: true })
+    const on = await readAccountsPlanUsage({ state, env: {}, home: "/h", now, claudeReader: reader, codex, codexLogin: signedIn, enabled: true })
     expect(calls).toBe(2)
     expect(on.claude?.map((a) => a.name)).toEqual(["default", "work", "gone"])
   })
@@ -142,10 +143,29 @@ describe("readAccountsPlanUsage (R28d, daemon side)", () => {
     const logs: string[] = []
     const out = await readAccountsPlanUsage({
       state: { codex: { profiles: [{ name: "team", dir: "/t/codex" }], active: "default" } }, env: {}, home: "/h", now,
-      codex: async () => { throw new Error("bad file") }, log: (m) => logs.push(m),
+      codex: async () => { throw new Error("bad file") }, codexLogin: signedIn, log: (m) => logs.push(m),
     })
     expect(out.codex?.[1]).toEqual({ name: "team", active: false })
     expect(logs).toEqual(['[plan-usage] Codex account "team" not read: bad file'])
+  })
+
+  it("marks an added Codex account with no login Signed out; unknown or failed checks mark nothing (#2347)", async () => {
+    const st = { codex: { profiles: [{ name: "team", dir: "/t/codex" }, { name: "kr", dir: "/k/codex" }, { name: "bad", dir: "/b/codex" }], active: "default" } }
+    const login = async (dir: string) => {
+      if (dir === "/t/codex") return "signed-out" as const
+      if (dir === "/k/codex") return "unknown" as const
+      throw new Error("no access")
+    }
+    const out = await readAccountsPlanUsage({ state: st, env: {}, home: "/h", now, codex: async () => null, codexLogin: login })
+    expect(out.codex).toEqual([
+      { name: "default", active: true },
+      { name: "team", active: false, error: "signed-out" },
+      { name: "kr", active: false },
+      { name: "bad", active: false },
+    ])
+    const hub = hubUsageFromPlan({ accounts: out }, now)
+    const accounts = hub.engines.find((e) => e.engine === "codex-cli")!.accounts!
+    expect(accounts.map((a) => [a.name, !!a.signedOut])).toEqual([["default", false], ["team", true], ["kr", false], ["bad", false]])
   })
 
   it("the daemon's /usage/plan carries the accounts only when it read them", () => {
