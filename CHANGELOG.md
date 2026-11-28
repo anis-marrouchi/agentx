@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.311.1](https://github.com/anis-marrouchi/agentx/compare/v0.311.0...v0.311.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **desktop:** agentx desktop orb quits and moves aside other AgentX.app copies ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265)) ([#2537](https://github.com/anis-marrouchi/agentx/issues/2537)) ([79cdc20](https://github.com/anis-marrouchi/agentx/commit/79cdc2001a0a5accc91fce9c182a1d16bd1c62d5))
+
 ## [0.311.0](https://github.com/anis-marrouchi/agentx/compare/v0.310.1...v0.311.0) (2026-11-27)
 
 
