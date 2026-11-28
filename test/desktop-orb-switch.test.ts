@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isVoiceLoginItemFile } from '../src/desktop/install'
-import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, restoredLoginItem, retiredLoginItem, undoOrbSettings } from '../src/desktop/orb-switch'
+import { ORB_APP, ORB_BUILD_ARGS, ORB_BUNDLE_ID, builtOrbApp, orbSettings, orbSettingsFile, otherOrbApps, restoredLoginItem, retiredLoginItem, retiredOrbApp, undoOrbSettings } from '../src/desktop/orb-switch'
 
 const desktopPkg = JSON.parse(readFileSync(resolve(fileURLToPath(new URL('.', import.meta.url)), '../apps/desktop/package.json'), 'utf8'))
 
@@ -38,6 +38,19 @@ describe('agentx desktop orb (#2265)', () => {
     expect(restoredLoginItem(file)).toBeNull()
     expect(restoredLoginItem('/Users/a/Library/LaunchAgents/tn.noqta.agentx.plist.bak')).toBeNull()
     expect(restoredLoginItem(`${file}.disabled-orb-2026`)).toBeNull()
+  })
+  it('finds the other places the same app may be installed, never the install path itself', () => {
+    expect(ORB_BUNDLE_ID).toBe(desktopPkg.build.appId)
+    expect(otherOrbApps('/Users/a', '/Users/a/Applications/AgentX.app')).toEqual(['/Applications/AgentX.app'])
+    expect(otherOrbApps('/Users/a', '/Applications/AgentX.app')).toEqual(['/Users/a/Applications/AgentX.app'])
+    expect(otherOrbApps('/Users/a', '/tmp/AgentX.app')).toEqual(['/Users/a/Applications/AgentX.app', '/Applications/AgentX.app'])
+  })
+  it('moves another copy aside to a name macOS does not start, with a fresh name on a second switch', () => {
+    const now = new Date('2026-11-28T01:00:00Z')
+    expect(retiredOrbApp('/Applications/AgentX.app', now, () => false)).toBe('/Applications/AgentX.app.disabled-orb-20261128')
+    const taken = new Set(['/Applications/AgentX.app.disabled-orb-20261128', '/Applications/AgentX.app.disabled-orb-20261128-2'])
+    expect(retiredOrbApp('/Applications/AgentX.app', now, p => taken.has(p))).toBe('/Applications/AgentX.app.disabled-orb-20261128-3')
+    expect(retiredOrbApp('/Applications/AgentX.app', now, () => false).endsWith('.app')).toBe(false)
   })
   it('undo turns Open at login off and hides the orb, and keeps the other choices', () => {
     expect(undoOrbSettings(orbSettings({ orbAgent: 'cx', globalKey: true })))
