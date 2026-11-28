@@ -267,4 +267,9 @@ describe("the page", () => {
     expect(sk).toContain(FEED_COLUMN)
     expect(page("#page=feed-preview", { posts })).toContain(FEED_COLUMN)
   })
+  it("the Feed takes the List's 976 px width: 976 + 2 × 24 px gutters (#2592)", () => {
+    expect(FEED_COLUMN).toContain("max-w-[1024px]")
+    expect(FEED_COLUMN).toContain("px-6")
+    expect(FEED_COLUMN).not.toContain("max-w-[768px]")
+  })
 })

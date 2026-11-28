@@ -14,8 +14,9 @@ import type { ReactNode } from "react"
 import { cn } from "../ui/cn"
 import { Skeleton } from "../ui/misc"
 
-/** One reading column, 768 px with fixed gutters (orca-design C3). */
-export const FEED_COLUMN = "mx-auto flex w-full max-w-[768px] flex-col px-6 pb-12 max-sm:px-4"
+/** One column, 976 px of content plus 24 px gutters: the List's width, so
+ *  Feed | List never changes the width (#2592; orca-design C3). */
+export const FEED_COLUMN = "mx-auto flex w-full max-w-[1024px] flex-col px-6 pb-12 max-sm:px-4"
 /** The head: the title row, and on a phone the Feed | List switch on a line
  *  of its own. Nothing in it waits on data; the skeleton draws the same lines. */
 export const FEED_HEAD = "flex flex-wrap items-center gap-2 pb-4 pt-6 max-sm:py-3"
