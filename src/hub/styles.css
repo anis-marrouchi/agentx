@@ -183,6 +183,14 @@
    menu, its resize grip and its phone scrim step aside too, so the page
    shows one menu (wall.client.ts sets `.is-hub-own-menu`). */
 .ax-wall.is-hub-own-menu :is(#wall-nav, [data-panel-grip="nav"], .hub-scrim) { display: none !important; }
+/* One side menu (#2593): in the simple layout the React side menu
+   (shell/HubMenuFrame.tsx) fills the old menu's slot on every page, and
+   the old menu's rows step aside. The old frame keeps the column, its
+   width, the rail and the phone Sheet. */
+.ax-wall.is-react-menu #wall-nav > :not(#hub-react-menu) { display: none !important; }
+.ax-wall.is-react-menu #wall-nav { padding: 0 !important; display: flex; flex-direction: column; align-items: stretch !important; overflow: hidden; }
+.ax-wall.is-react-menu #hub-react-menu { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ax-wall.is-react-menu #hub-react-menu > .ax-hub { flex: 1; }
 
 /* The old Hub's Files markup in the shell's Files tab (shell/FilesPanel.tsx,
    wall-files.ts): the reset above clears its folder links' colour; give it

@@ -293,6 +293,10 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   const layout = opts.hub?.layout ?? resolveHubLayout()
   const hubHead = opts.hub?.react ? hubReactHead({ owner, legacyPages: opts.hub.legacyPages, layout }) : ""
   const groups = wallNavGroups(owner)
+  // One side menu (#2593): in the simple layout, with the React shell, the
+  // React side menu (src/hub/shell/HubMenuFrame.tsx) draws into this slot on
+  // every page, and the old menu's rows step aside from the first paint.
+  const reactMenu = !!hubHead && layout.layout === "simple" && hubReactPageIds(owner, opts.hub?.legacyPages ?? []).includes("home")
   const settingsHref = wallSettingsHref(!!hubHead && hubReactPageIds(owner, opts.hub?.legacyPages ?? []).includes(SETTINGS_PAGE))
   // The chat panel (#1528): the owner chats; anyone else is told it is the owner's.
   const chat = { owner, signIn: !!opts.signIn }
@@ -312,8 +316,8 @@ export function renderWallPage(opts: WallPageOpts = {}): string {
   // The nav on the left and the page in the middle (#1242). The right
   // column holds only a page's own side summary (Activity, Desk, Workflows,
   // Org); the Chat and Agents boxes are gone from it (#2101 R24).
-  const body = `<div class="ax-wall"><script>${WALL_FIRST_FRAME_SCRIPT}</script>
-  <nav class="ax-wall__nav" id="wall-nav" aria-label="${HUB_NAME}">
+  const body = `<div class="ax-wall${reactMenu ? " is-react-menu" : ""}"><script>${WALL_FIRST_FRAME_SCRIPT}</script>
+  <nav class="ax-wall__nav" id="wall-nav" aria-label="${HUB_NAME}">${reactMenu ? `\n    <div id="hub-react-menu"></div>` : ""}
     <div class="ax-wall__navhead"><a class="ax-wall__logo" href="${HUB_PATH}">AgentX<small>${HUB_NAME}</small></a>${hubNavFoldHtml()}${hubRailOpenHtml()}${hubSheetCloseHtml()}</div>
 ${hubAgentsNavHtml()}
     <details class="lt ha__fold mt" id="wall-machines"><summary class="ha__h">${HUB_FOLD_CHEVRON}<span class="ha__ht">Machines</span><span class="ha__hn" id="wall-machines-n" data-tip="Agents working now">0</span></summary>
