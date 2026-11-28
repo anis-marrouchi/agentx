@@ -94,7 +94,8 @@ describe("the Wall's links (link crawl)", () => {
     // Shrinks as each child of #1449 lands; empty once #1447 is done.
     expect([...linked].sort()).toEqual([
       "/activity", "/admin/agents/<id>",
-      "/mesh", "/monitor", "/workflows",
+      // /mesh left with #2101 R8: Dashboard and Operations stay in the Hub.
+      "/monitor", "/workflows",
     ])
   })
 })

@@ -180,10 +180,10 @@ export const MESH_OPS_SCRIPT = `<script>
   function load(){
     var date=new Date().toLocaleDateString('en-CA');
     var tz=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    MX.get('/api/mesh?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent(tz))
+    return MX.get('/api/mesh?date='+encodeURIComponent(date)+'&timezone='+encodeURIComponent(tz))
       .then(function(s){render(s);document.dispatchEvent(new CustomEvent('mx:snapshot',{detail:s}))})
       .catch(function(e){document.getElementById('mx-updated').textContent='Fleet snapshot unavailable: '+e.message});
   }
-  load();setInterval(load,5000);
+  MX.poll(load,5000);
 })();
 </script>`

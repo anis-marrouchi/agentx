@@ -16,7 +16,7 @@ async function run(answer: { node: string; events: unknown[] }) {
     querySelectorAll: () => chips,
   }
   const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
-  const MX = { esc, age: () => "1m ago", plural: (n: number, one: string) => `${n} ${n === 1 ? one : one + "s"}`, fields: () => "", open: () => {}, get: async () => answer }
+  const MX = { esc, age: () => "1m ago", plural: (n: number, one: string) => `${n} ${n === 1 ? one : one + "s"}`, fields: () => "", open: () => {}, get: async () => answer, poll: (load: () => unknown) => { load() } }
   const timers: unknown[] = []
   new Function("document", "MX", "localStorage", "setInterval", body)(
     document, MX, { getItem: () => null, setItem: () => {} }, (fn: unknown) => timers.push(fn))

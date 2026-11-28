@@ -107,10 +107,20 @@ window.MX=(function(){
       if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
   }
 
+  /** Run load() now, then again ms after each answer (#2101 R8). Never two
+   *  at once: /api/mesh can take over 10 s, and a fixed 5 s timer stacked
+   *  calls until, framed in the Hub beside its own polling, none came back
+   *  and the cards stayed on "-". load() returns the call's promise. */
+  function poll(load,ms){
+    function next(){setTimeout(tick,ms)}
+    function tick(){Promise.resolve(load()).then(next,next)}
+    tick();
+  }
+
   mount();
   return {esc:esc,num:num,plural:plural,pct:pct,age:age,dur:dur,hours:hours,day:day,when:when,
     open:open,close:close,body:body,fields:fields,section:section,
     verdict:verdict,verdictChip:verdictChip,mark:mark,causeLabel:causeLabel,
-    setHealth:setHealth,get:get};
+    setHealth:setHealth,get:get,poll:poll};
 })();
 </script>`
