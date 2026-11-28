@@ -26,13 +26,18 @@ function agent(workspace: string): AgentDef {
 describe("opencode runtime", () => {
   let tmp: string
   let oldPath: string | undefined
+  let oldCwd: string
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "agentx-opencode-runtime-"))
     oldPath = process.env.PATH
+    // The guard plugin (#2119) is written under the install root (cwd).
+    oldCwd = process.cwd()
+    process.chdir(tmp)
   })
 
   afterEach(() => {
+    process.chdir(oldCwd)
     process.env.PATH = oldPath
     rmSync(tmp, { recursive: true, force: true })
   })
@@ -42,6 +47,7 @@ describe("opencode runtime", () => {
     writeFileSync(join(tmp, "opencode"), `#!/usr/bin/env node
 const fs = require("fs");
 const args = process.argv.slice(2);
+if (args[0] === "--version") { console.log("2.0.12"); process.exit(0); }
 fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify({ args, config: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) }));
 console.log(JSON.stringify({ type: "text", sessionID: "ses-next", part: { text: "hel" } }));
 console.log(JSON.stringify({ type: "reasoning", sessionID: "ses-next", part: { text: "brief thought" } }));
@@ -85,5 +91,6 @@ console.log(JSON.stringify({ type: "step_finish", sessionID: "ses-next", part: {
     expect(args.at(-1)).toContain("[System]\nsystem prompt")
     expect(capture.config.mcp.agentx.type).toBe("local")
     expect(capture.config.mcp.agentx.command).toContain("serve")
+    expect(capture.config.plugins).toHaveLength(1)
   })
 })

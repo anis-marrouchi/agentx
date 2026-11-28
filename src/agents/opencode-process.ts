@@ -26,6 +26,26 @@ interface Entry {
   idle?: NodeJS.Timeout
 }
 
+const majors = new Map<string, Promise<1 | 2 | undefined>>()
+/** The installed OpenCode's major version (1 or 2), per PATH, checked at most
+ *  once a minute. Undefined when `opencode --version` fails or is not 1.x/2.x. */
+export function openCodeMajor(env: NodeJS.ProcessEnv): Promise<1 | 2 | undefined> {
+  const path = env.PATH || ""
+  let major = majors.get(path)
+  if (!major) {
+    major = exec("opencode", ["--version"], { env, timeout: 5000 })
+      .then(({ stdout }) => {
+        const m = /^(?:opencode\s+)?v?([12])\./.exec(stdout.trim())
+        return m ? (Number(m[1]) as 1 | 2) : undefined
+      })
+      .catch(() => undefined)
+    majors.set(path, major)
+    const expire = setTimeout(() => majors.delete(path), 60_000)
+    expire.unref()
+  }
+  return major
+}
+
 /** Dedicated v2 servers retain provider/MCP startup while CLI clients stream turns. */
 export class OpenCodeProcessPool {
   private entries = new Map<string, Entry>()

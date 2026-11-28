@@ -76,6 +76,26 @@ A `report` run cannot stop to ask you for permission, because nobody is there to
 
 Other tools added through MCP (a way to plug extra tools into an agent) are judged by their names. A `report` run may use a tool whose name reads like a lookup, such as `get_status` or `list_issues`. It is blocked when the name, or the `action` it is asked to take, names a change such as `create`, `set`, `send` or `delete`.
 
+## The guard on Codex and OpenCode runs
+
+The workspace guard (`agentx guard`) checks shell commands, file edits and file reads on `codex-cli` and `opencode` agents too, not only on `claude-code` agents. It runs the same check and writes to the same guard log.
+
+- **Codex:** every run goes through the Codex app-server. Codex asks before each command and file change, and AgentX answers with the guard's verdict. An agent without `persistentProcess` gets its own app-server process for the turn. When the app-server cannot take the turn, the run is refused; it does not fall back to `codex exec`, which cannot ask first.
+- **OpenCode:** AgentX writes a small guard plugin under `.agentx/opencode/<agent>/guard/` and loads it into the run. When `opencode --version` does not report 1.x or 2.x, or the plugin cannot be written, the run is refused.
+
+A refused call is not run, and the agent sees the guard's reason. Nobody can answer a question during these runs, so a guard rule that would ask a person refuses instead.
+
+To turn this off, set `AGENTX_RUNTIME_GUARD=off` in the daemon's environment and restart it. That puts back the old behaviour. It is a way to roll back, not a setting to leave on.
+
+### Try the guard on a Codex or OpenCode agent
+
+Run `agentx guard test` with a command your guard denies, then ask a Codex or OpenCode agent to run it. The reply says the call was refused, and `agentx guard log` shows the entry under that agent.
+
+### When a Codex or OpenCode run is refused
+
+- **"Codex run refused: the Codex app-server could not take this turn":** update Codex (`codex --version`) and retry.
+- **"OpenCode run refused":** check `opencode --version` in the daemon's PATH, and that the daemon can write to `.agentx/opencode/`.
+
 ## Time limits and cancel
 
 A run is one piece of work an agent does, such as answering a message or running a schedule. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.
