@@ -24,6 +24,10 @@ describe("what a row opens", () => {
   it("idle, done today or failed: its latest conversation", () => {
     for (const state of ["idle", "done", "failed"] as const) expect(rowOpens({ state, taskId: "", nodeUrl: NODE })).toBe("latest")
   })
+  it("a working agent never opens an older conversation, on this machine too (Anis 11-28)", () => {
+    expect(rowOpens({ state: "working", taskId: "t1", nodeUrl: "" })).toBe("run")
+    expect(rowOpens({ state: "working", taskId: "", nodeUrl: NODE })).toBe("chat")
+  })
   it("a working row whose run is not known yet, or a row with no machine: the chat", () => {
     expect(rowOpens({ state: "working", taskId: "", nodeUrl: "" })).toBe("chat")
     expect(rowOpens({ state: "idle", taskId: "", nodeUrl: "" })).toBe("chat")
