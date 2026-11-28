@@ -123,6 +123,12 @@ describe("the shell draws three columns", () => {
     expect(tabs).toContain('data-shell="tabs"')
     expect(tabs).toMatch(/role="tab"[^>]*>[\s\S]*?Run artifacts<\/button>/)
   })
+
+  it("leaves the 30 px status bar in view on a computer (#2101 R5)", () => {
+    const root = draw().match(/<div[^>]*data-shell="simple"[^>]*>/)?.[0] ?? ""
+    expect(root).toContain("bottom-[30px]")
+    expect(root).not.toContain("inset-0")
+  })
   it("simple: the default items, no hidden item", () => {
     const html = draw()
     for (const id of ["search", "tasks", "automations", "agents", "projects", "needs", "settings"]) expect(html).toContain(`data-shell-item="${id}"`)

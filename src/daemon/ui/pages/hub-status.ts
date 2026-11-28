@@ -143,6 +143,9 @@ export const HUB_STATUS_CSS = `
 .hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: hs-pop 150ms cubic-bezier(.16, 1, .3, 1); }
 @media (prefers-reduced-motion: reduce) { .hsa:not([hidden]), .hsu-pop:not([hidden]) { animation: none; } }
 .hsa { position: fixed; z-index: 10; bottom: 36px; right: 18px; width: min(520px, calc(100vw - 36px)); max-height: 70vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius); background: var(--ax-bg); box-shadow: var(--ax-shadow-lg); font-size: var(--ax-fs-sm); transform-origin: bottom right; }
+/* The React shell (z 30, ShellPage.tsx) ends above the bar; the bar's
+   drop-downs open over the shell, under its Sheets (z 50) (#2101 R5). */
+body:has([data-shell="simple"]) .hsa, body:has([data-shell="simple"]) .hsu-pop { z-index: 40; }
 .hsa__lead, .hsa__hint, .hsa__note { margin: 0 0 8px; color: var(--ax-muted); font-size: var(--ax-fs-xs); }
 .hsa__note.is-ok { color: var(--ax-green-d); }
 .hsa__note.is-err { color: var(--ax-red-ink); }

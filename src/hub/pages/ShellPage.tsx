@@ -411,7 +411,10 @@ export function SimpleShell(props: SimpleShellProps & { width?: ShellWidth }) {
   return (
     <div
       data-shell="simple" data-layout={props.view.layout} data-width={width}
-      className="fixed inset-0 z-30 grid bg-background text-foreground"
+      // On a computer the old Hub's 30 px status bar (hub-status.ts .hs, the
+      // usage bars) stays in view below the shell (#2101 R5). A phone has no
+      // status bar, so the shell takes the whole screen there.
+      className={cn("fixed inset-x-0 top-0 z-30 grid bg-background text-foreground", width === "phone" ? "bottom-0" : "bottom-[30px]")}
       style={{ gridTemplateColumns: cols }}
     >
       {width === "phone" ? null : (
