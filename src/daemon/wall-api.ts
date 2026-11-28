@@ -147,6 +147,9 @@ export interface WallPost {
   project: string | null
   /** The home repo, as "group/project", whatever the mapping says. */
   repo: string | null
+  /** The project the request itself is filed under (#2587): filled at
+   *  creation or moved by anyone. Null: "No project". */
+  requestProject: string | null
   /** Its project's normal rhythm, in hours (#1190). */
   rhythmHours: number
   /** The goal its request serves (#1168, #1392). Null: none named. */
@@ -647,6 +650,7 @@ export function wallPost(r: RequestRecord, deps: WallDeps, reads?: WallPostReads
     group: { channel: r.channel, chatId: r.chatId },
     project: project.name,
     repo,
+    requestProject: r.project ?? null,
     rhythmHours: project.rhythmHours,
     goal: r.goal ? { id: r.goal.id, title: redactSecrets(r.goal.title) } : null,
     stalled: isStalled({ state: r.state, lastMoveAt, rhythmHours: project.rhythmHours }, deps.now),

@@ -26,7 +26,11 @@ export interface TaskPost {
   state: string
   headline: string
   owner: string
+  /** A request's own project (#2587), else the Wall's mapped one; an
+   *  issue's or PR's repository. Null: "No project". */
   project: string | null
+  /** Sent by nodes that file requests under a project (#2587). */
+  requestProject?: string | null
   updatedAt: number
   home?: { kind: string; link: string } | null
   /** Set on posts read across the mesh: the node that keeps it. */
@@ -76,10 +80,14 @@ export function taskStateLabel(state: string): string {
   return lane ? lane.label : state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ")
 }
 
-/** The posts of a reply, newest move first; rows without an id are dropped. */
+/** The posts of a reply, newest move first; rows without an id are dropped.
+ *  A request is under the project it is filed under (#2587); a node too old
+ *  to send one keeps the Wall's mapped project. */
 export function taskPosts(reply: TasksReply | null | undefined): TaskPost[] {
   const list = Array.isArray(reply?.posts) ? reply!.posts : []
-  return list.filter((p) => p && p.id).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  return list.filter((p) => p && p.id)
+    .map((p) => (p.requestProject !== undefined ? { ...p, project: p.requestProject } : p))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
 }
 
 /** The column of a forge issue or PR. A GitLab board's `Status::` label
@@ -160,14 +168,47 @@ export function shellPane(params: URLSearchParams): { pane: ShellPane; open: str
 
 // --- The project filter (#2226: "for the selected project") ---
 
+/** The filter's value for the tasks with no project (#2587), as the
+ *  requests API writes it; no project key can be "none". */
+export const NO_PROJECT = "none"
+export const NO_PROJECT_LABEL = "No project"
+
 /** The projects the tasks name, by name; tasks without one are left out. */
 export function taskProjects(posts: TaskPost[]): string[] {
   return [...new Set(posts.map((p) => p.project).filter((p): p is string => !!p))].sort((a, b) => a.localeCompare(b))
 }
 
-/** The tasks of one project, or all of them when none is picked. */
+/** How many tasks each project has, by name, and how many have none
+ *  (#2587): the filter's counts. */
+export function taskProjectCounts(posts: TaskPost[]): { counts: Map<string, number>; none: number } {
+  const counts = new Map<string, number>()
+  let none = 0
+  for (const p of posts) {
+    if (p.project) counts.set(p.project, (counts.get(p.project) ?? 0) + 1)
+    else none++
+  }
+  return { counts, none }
+}
+
+/** The tasks of one project, those with none (NO_PROJECT), or all of them
+ *  when none is picked. */
 export function tasksOfProject(posts: TaskPost[], project: string | null): TaskPost[] {
+  if (project === NO_PROJECT) return posts.filter((p) => !p.project)
   return project ? posts.filter((p) => p.project === project) : posts
+}
+
+/** A project in words: its key, or "No project". */
+export const projectLabel = (project: string | null | undefined) => (!project || project === NO_PROJECT ? NO_PROJECT_LABEL : project)
+
+/** Moves a request to a project, or to No project with null (#2587). */
+export const REQUEST_PROJECT_URL = "/api/admin/approvals/requests/project"
+
+/** A project key someone typed in the move picker: trimmed, no spaces,
+ *  "none" is No project. Null: not a key. */
+export function typedProjectKey(text: string): string | null {
+  const v = text.trim()
+  if (!v || v.length > 200 || /\s/.test(v) || v.toLowerCase() === NO_PROJECT) return null
+  return v
 }
 
 /** "5m", "3h", "2d": how long ago, short. */
