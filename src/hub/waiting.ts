@@ -31,6 +31,8 @@ export interface WaitingItem {
   yes?: string
   no?: string
   choices?: string[]
+  /** Content drafts: the hash of the post shown, sent as `seen` with a yes. */
+  textHash?: string
   expires?: string
   ifSilent?: string
   askedAt?: string
@@ -125,12 +127,28 @@ export function oneByOne(steps: WizardStep[], at: number): WizardStep[] {
   return [...steps.slice(0, at), ...s.items.map((item): WizardStep => ({ kind: "one", item })), ...steps.slice(at + 1)]
 }
 
+/** A step answered somewhere else since the wizard opened, so it is passed
+ *  over: its one item is no longer waiting, or none of its requests are.
+ *  `live` null (not read yet): nothing is gone. */
+export function stepGone(step: WizardStep | undefined, live: ReadonlySet<string> | null): boolean {
+  if (!step || live === null) return false
+  return step.kind === "one" ? !live.has(step.item.key) : !step.items.some((i) => live.has(i.key))
+}
+
 export type WizardAction = "yes" | "no" | "later"
 
 /** What is sent for an answer (approvals-panel.ts: yes | no | later, with
- *  the 1-based choice when the card offers choices). */
-export function decideBody(key: string, action: WizardAction, choice: number | null = null): { key: string; action: WizardAction; choice?: number } {
-  return { key, action, ...(action === "yes" && choice !== null ? { choice: choice + 1 } : {}) }
+ *  the 1-based choice when the card offers choices). A yes carries the
+ *  shown draft's hash as `seen`: the server refuses to publish a draft
+ *  that changed since (drafts.ts), as the old Hub does. */
+export function decideBody(
+  key: string, action: WizardAction, choice: number | null = null, seen?: string,
+): { key: string; action: WizardAction; choice?: number; seen?: string } {
+  return {
+    key, action,
+    ...(action === "yes" && choice !== null ? { choice: choice + 1 } : {}),
+    ...(action === "yes" && seen ? { seen } : {}),
+  }
 }
 
 /** An answer in words, as the summary says it. */

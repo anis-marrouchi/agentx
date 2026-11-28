@@ -4,9 +4,12 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 import {
-  DECIDE_URL, answerWords, byUrgent, decideBody, oneByOne, sendsOutside, sentSummary, waitingDeploy, wizardSteps,
+  DECIDE_URL, answerWords, byUrgent, decideBody, oneByOne, sendsOutside, sentSummary, stepGone, waitingDeploy, wizardSteps,
   type WaitingItem,
 } from "../src/hub/waiting"
+import { buildDesk } from "../src/desk/board"
+import { inboxToDesk } from "../src/desk/owner-list"
+import type { InboxItem } from "../src/approvals/inbox"
 import { NeedsWizard, WizardSummary } from "../src/hub/pages/NeedsWizard"
 import { TooltipProvider } from "../src/hub/ui"
 
@@ -62,6 +65,27 @@ describe("what is sent, and the summary", () => {
     expect(decideBody("card:a", "no", 1)).toEqual({ key: "card:a", action: "no" })
     expect(decideBody("request:r1", "later")).toEqual({ key: "request:r1", action: "later" })
   })
+  it("a yes sends the shown draft's hash as seen, so a changed draft is not published (C1)", () => {
+    expect(decideBody("content:d1", "yes", null, "h-shown")).toEqual({ key: "content:d1", action: "yes", seen: "h-shown" })
+    expect(decideBody("content:d1", "no", null, "h-shown")).toEqual({ key: "content:d1", action: "no" })
+    expect(decideBody("content:d1", "later", null, "h-shown")).toEqual({ key: "content:d1", action: "later" })
+    expect(decideBody("card:a", "yes")).toEqual({ key: "card:a", action: "yes" })
+  })
+  it("the Desk card carries the draft's text_hash from the inbox to the wizard (C1)", () => {
+    const item: InboxItem = {
+      key: "content:d1", kind: "content", title: "Post on LinkedIn", ask: "The post", yes: "Publish", no: "Drop",
+      raised_by: "writer", created_at: "2026-11-28T08:00:00Z", text_hash: "h-shown",
+    } as InboxItem
+    const desk = inboxToDesk(item)
+    expect(desk.textHash).toBe("h-shown")
+    const board = buildDesk({
+      now: NOW, node: "http://localhost:18800", nodeName: "mac", requests: null, cards: [], liveRuns: new Set(),
+      inbox: [{ node: "http://localhost:18800", nodeName: "mac", items: [desk] }],
+    })
+    const card = board.cards.find((c) => c.key === "content:d1")
+    expect(card?.textHash).toBe("h-shown")
+    expect(inboxToDesk({ ...item, text_hash: undefined })).not.toHaveProperty("textHash")
+  })
   it("says each answer in words", () => {
     expect(answerWords({ kind: "request" }, "yes")).toBe("Pick it up again")
     expect(answerWords({ kind: "request" }, "no")).toBe("Close it")
@@ -112,6 +136,23 @@ describe("the wizard on screen", () => {
     expect(out).toContain("30 answers sent")
     expect(out).toContain("Show all (30)")
     expect(out).not.toContain("R3<")
+  })
+  it("a step answered somewhere else is passed over, a requests step with none left too (N2)", () => {
+    const one = { kind: "one" as const, item: items[0] }
+    const reqs = { kind: "requests" as const, items: [req(1), req(2)] }
+    expect(stepGone(one, null)).toBe(false)
+    expect(stepGone(one, new Set(["card:old"]))).toBe(false)
+    expect(stepGone(one, new Set())).toBe(true)
+    expect(stepGone(reqs, new Set(["request:r2"]))).toBe(false)
+    expect(stepGone(reqs, new Set(["card:old"]))).toBe(true)
+    expect(stepGone(reqs, null)).toBe(false)
+    expect(stepGone(undefined, new Set())).toBe(false)
+  })
+  it("a send that failed and was then skipped is listed under Not sent (N1)", () => {
+    const failed = { key: "card:a", title: "Rename it?", agent: "writer", words: "Yes", error: "the computer did not answer" }
+    const out = html(createElement(WizardSummary, { sent: [failed], onClose: () => {} }))
+    expect(out).toContain("Not sent · 1")
+    expect(out).toContain("Rename it?")
   })
   it("skipping them all says nothing was sent", () => {
     expect(html(createElement(WizardSummary, { sent: [], onClose: () => {} }))).toContain("Nothing sent")

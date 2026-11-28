@@ -45,6 +45,7 @@ export function inboxToDesk(i: InboxItem): DeskInboxItem {
     ...(i.draft ? { draft: i.draft } : {}),
     ...(i.detail ? { detail: i.detail } : {}),
     ...(i.created_at ? { createdAt: i.created_at } : {}),
+    ...(i.text_hash ? { textHash: i.text_hash } : {}),
   }
 }
 

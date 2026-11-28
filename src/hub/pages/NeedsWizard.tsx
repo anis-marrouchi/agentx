@@ -14,7 +14,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
 import { apiPost } from "../api"
 import {
-  DECIDE_URL, answerWords, decideBody, oneByOne, sendsOutside, sentSummary, waitingTaskId, wizardSteps,
+  DECIDE_URL, answerWords, decideBody, oneByOne, sendsOutside, sentSummary, stepGone, waitingTaskId, wizardSteps,
   type SentAnswer, type WaitingItem, type WizardAction, type WizardStep,
 } from "../waiting"
 import { WaitingDetail } from "./ShellWaiting"
@@ -28,7 +28,7 @@ async function send(item: WaitingItem, action: WizardAction, choice: number | nu
   const words = answerWords(item, action, choice)
   const base = { key: item.key, title: item.title, agent: item.agent, words }
   try {
-    await apiPost(DECIDE_URL, decideBody(item.key, action, choice))
+    await apiPost(DECIDE_URL, decideBody(item.key, action, choice, item.textHash))
     return base
   } catch (e) {
     return { ...base, error: errText(e) }
@@ -39,8 +39,9 @@ export interface AnswerBarProps {
   item: WaitingItem
   /** Sent (or failed): the answer, in words. */
   onSent: (a: SentAnswer) => void
-  /** Wizard only: move on without answering. */
-  onSkip?: () => void
+  /** Wizard only: move on without answering; with the last answer that
+   *  could not be sent, so the summary lists it under "Not sent". */
+  onSkip?: (failed: SentAnswer | null) => void
 }
 
 /** Yes, No (or the choices), Later, under one item. A yes that sends or
@@ -50,6 +51,7 @@ export function AnswerBar({ item, onSent, onSkip }: AnswerBarProps) {
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [failed, setFailed] = useState<SentAnswer | null>(null)
   const qc = useQueryClient()
   const choices = item.choices ?? []
   const request = item.kind === "request"
@@ -61,7 +63,8 @@ export function AnswerBar({ item, onSent, onSkip }: AnswerBarProps) {
     setBusy(true)
     const a = await send(item, action, choice)
     setBusy(false)
-    if (a.error) { setError("Not sent: " + a.error); return }
+    if (a.error) { setFailed(a); setError("Not sent: " + a.error); return }
+    setFailed(null)
     void qc.invalidateQueries({ queryKey: ["shell-waiting"] })
     onSent(a)
   }
@@ -86,7 +89,7 @@ export function AnswerBar({ item, onSent, onSkip }: AnswerBarProps) {
           <Button variant="outline" disabled={busy} onClick={() => void go("no")} data-answer-act="no">{request ? "Close it" : "No"}</Button>
         )}
         <Button variant="ghost" disabled={busy} onClick={() => void go("later")} data-answer-act="later">Later</Button>
-        {onSkip ? <Button variant="ghost" disabled={busy} onClick={onSkip} data-answer-act="skip">Skip</Button> : null}
+        {onSkip ? <Button variant="ghost" disabled={busy} onClick={() => onSkip(failed)} data-answer-act="skip">Skip</Button> : null}
         {task ? <a href={taskHref(task)} className={cn(buttonVariants({ variant: "link" }), "px-1")} data-answer-act="task">Open the task</a> : null}
         {busy ? <span role="status" className="text-xs text-muted-foreground">Sending…</span> : null}
       </div>
@@ -240,7 +243,7 @@ export function NeedsWizard({ items, live, onClose, now = Date.now() }: NeedsWiz
   const step = steps[at]
   const next = (a: SentAnswer[] = []) => { setSent((s) => [...s, ...a]); setAt((n) => n + 1) }
   // Answered somewhere else since the wizard opened: pass it over.
-  const gone = step?.kind === "one" && live !== null && !live.has(step.item.key)
+  const gone = stepGone(step, live)
   useEffect(() => { if (gone) setAt((n) => n + 1) }, [gone])
   useEffect(() => { top.current?.focus() }, [at])
   useEffect(() => {
@@ -259,13 +262,14 @@ export function NeedsWizard({ items, live, onClose, now = Date.now() }: NeedsWiz
       </div>
       <div ref={top} tabIndex={-1} key={at} className="animate-ax-slide-in outline-none reduce-effects:animate-none">
         {!step ? <WizardSummary sent={sent} onClose={onClose} />
+          : gone ? null
           : step.kind === "requests" ? (
             <RequestsStep
               items={step.items} live={live} onDone={next} onSkip={() => next()}
               onOneByOne={() => setSteps((s) => oneByOne(s, at))}
             />
-          ) : gone ? null : (
-            <WaitingDetail item={step.item} now={now} actions={<AnswerBar key={step.item.key} item={step.item} onSent={(a) => next([a])} onSkip={() => next()} />} />
+          ) : (
+            <WaitingDetail item={step.item} now={now} actions={<AnswerBar key={step.item.key} item={step.item} onSent={(a) => next([a])} onSkip={(f) => next(f ? [f] : [])} />} />
           )}
       </div>
     </div>

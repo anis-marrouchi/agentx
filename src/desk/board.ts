@@ -60,6 +60,9 @@ export interface DeskCard {
   no?: string
   choices?: string[]
   draft?: string
+  /** Content drafts: the hash of the post shown. Sent back as `seen` with
+   *  a yes, so a draft changed since it was read is not published. */
+  textHash?: string
   expires?: string
   /** What happens if the owner says nothing by `expires`. */
   ifSilent?: string
@@ -89,6 +92,8 @@ export interface DeskInboxItem {
   draft?: string
   detail?: string
   createdAt?: string
+  /** Content drafts: the hash of the post in `ask` (inbox `text_hash`). */
+  textHash?: string
 }
 
 export interface DeskInbox {
@@ -175,6 +180,7 @@ function inboxCard(node: DeskInbox, item: DeskInboxItem, local: boolean): DeskCa
     ...(item.no ? { no: item.no } : {}),
     ...(item.choices?.length ? { choices: item.choices } : {}),
     ...(item.draft ? { draft: item.draft } : {}),
+    ...(item.textHash ? { textHash: item.textHash } : {}),
     ...(item.expires ? { expires: item.expires } : {}),
     ...(item.ifSilent ? { ifSilent: item.ifSilent } : {}),
     ...(item.createdAt ? { askedAt: item.createdAt } : {}),
