@@ -4,21 +4,24 @@
 // the old Hub's feed lists, as a List or a Kanban (columns in tasks.ts).
 // Opening a request shows its timeline (runs, hand-offs, comments) in the
 // same pane, from the same read the old Hub's opened post makes; an issue or
-// PR opens on its forge. Read only: no state changes here. A failed read
-// keeps what was shown, with the reason in a line above it.
-import { useQuery } from "@tanstack/react-query"
-import type { ReactNode } from "react"
-import { apiFetch, apiGet } from "../api"
+// PR opens on its forge. The one change made here: an opened request moves
+// to another project, or to No project (#2587). A failed read keeps what
+// was shown, with the reason in a line above it.
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState, type ReactNode } from "react"
+import { apiFetch, apiGet, apiPost } from "../api"
 import { buildHash, navigate } from "../router"
 import { taskHash } from "../task/old-links"
 import {
-  FORGE_TASKS_URL, TASKS_URL, forgePosts, forgeUnread, mergeTasks, shortAgo, taskProjects, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane, tasksOfProject,
+  FORGE_TASKS_URL, NO_PROJECT, NO_PROJECT_LABEL, REQUEST_PROJECT_URL, TASKS_URL, forgePosts, forgeUnread, mergeTasks, projectLabel, shortAgo, taskProjectCounts,
+  taskProjects, taskTone, taskPosts, taskStateLabel, taskThreadUrl, tasksByLane, tasksOfProject, typedProjectKey,
   type TaskEvent, type TaskLane, type TaskPost, type TaskThreadReply, type TasksReply, type TasksView,
 } from "../tasks"
 import type { ForgeTasksReply } from "../../daemon/hub-forge-tasks"
 import {
-  Badge, Button, Collapsible, CollapsibleContent, CollapsibleTrigger, EmptyState, Icon, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-  Skeleton, StatusDot, Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn,
+  Badge, Button, Collapsible, CollapsibleContent, CollapsibleTrigger, Command, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator,
+  EmptyState, Icon, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue,
+  Skeleton, StatusDot, Tooltip, TooltipContent, TooltipTrigger, buttonVariants, cn, toast,
 } from "../ui"
 
 /** A task's address in the shell; the project filter goes along. */
@@ -67,22 +70,105 @@ function Tip({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** The project filter: all projects, or one the tasks name. The pick is
- *  in the address (`project=`), so Back and a shared link keep it. */
-export function TasksProjectFilter({ projects, project, className }: { projects: string[]; project: string | null; className?: string }) {
+/** A count at the end of a menu row. */
+const Count = ({ n }: { n?: number }) => <span data-count className="ml-auto pl-3 text-xs tabular-nums text-muted-foreground">{n ?? 0}</span>
+
+/** The project filter: all projects, No project (#2587), or one the tasks
+ *  name, each with how many tasks it has. The pick is in the address
+ *  (`project=`, `none` for No project), so Back and a shared link keep it. */
+export function TasksProjectFilter({ projects, project, counts, className }: {
+  projects: string[]; project: string | null; counts?: { counts: Map<string, number>; none: number }; className?: string
+}) {
   // A project picked from a link that no task names now still shows, so the filter says what is applied.
-  const list = project && !projects.includes(project) ? [project, ...projects] : projects
+  const list = project && project !== NO_PROJECT && !projects.includes(project) ? [project, ...projects] : projects
+  const total = counts ? counts.none + [...counts.counts.values()].reduce((a, b) => a + b, 0) : undefined
   return (
     <Select value={project ?? ALL} onValueChange={(v) => navigate({ page: "home", pane: "tasks", project: v === ALL ? null : v })}>
       <SelectTrigger aria-label="Project" data-shell="tasks-project" className={cn("max-w-[128px] text-xs sm:max-w-[200px]", className)}>
         <Icon name="folder" className="size-3.5 text-muted-foreground" />
-        <SelectValue placeholder="All projects">{project ?? "All projects"}</SelectValue>
+        <SelectValue placeholder="All projects">{project ? projectLabel(project) : "All projects"}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL}>All projects</SelectItem>
-        {list.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+        <SelectItem value={ALL}><span className="flex w-full items-center">All projects{counts ? <Count n={total} /> : null}</span></SelectItem>
+        {counts?.none || project === NO_PROJECT ? (
+          <SelectItem value={NO_PROJECT} data-project="none"><span className="flex w-full items-center">{NO_PROJECT_LABEL}{counts ? <Count n={counts.none} /> : null}</span></SelectItem>
+        ) : null}
+        {list.length ? <SelectSeparator /> : null}
+        {list.map((p) => <SelectItem key={p} value={p}><span className="flex w-full items-center"><span className="truncate">{p}</span>{counts ? <Count n={counts.counts.get(p)} /> : null}</span></SelectItem>)}
       </SelectContent>
     </Select>
+  )
+}
+
+/** Where an opened request belongs, and the way to move it (#2587): a
+ *  searchable list of the projects the tasks name and No project, or a
+ *  key typed in. The move is saved at once; the label changes in place. */
+export function RequestProjectPicker({ post, projects }: { post: TaskPost; projects: string[] }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [busy, setBusy] = useState(false)
+  const typed = typedProjectKey(query)
+  const current = post.project ?? null
+  const list = current && !projects.includes(current) ? [current, ...projects] : projects
+  const move = async (to: string | null) => {
+    setOpen(false); setQuery("")
+    if (to === current) return
+    setBusy(true)
+    try {
+      await apiPost(REQUEST_PROJECT_URL, { id: post.id, project: to }, post.node?.peer)
+      await qc.invalidateQueries({ queryKey: ["shell-tasks"] })
+    } catch (e) {
+      toast.error(`Could not move it: ${e instanceof Error ? e.message : "the computer did not answer"}`)
+    } finally { setBusy(false) }
+  }
+  const check = (on: boolean) => <Icon name="check" className={cn("ml-auto size-3.5", !on && "invisible")} />
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setQuery("") }}>
+      <Tip label="Move to a project">
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost" size="xs" role="combobox" aria-expanded={open} aria-label={`Project: ${projectLabel(current)}. Move to a project`}
+            data-shell="task-project" disabled={busy} className="max-w-[240px] gap-1 px-1.5 font-normal text-muted-foreground"
+          >
+            <Icon name="folder" className="size-3.5" />
+            <span className={cn("truncate", current ? "font-mono text-[11px]" : "text-xs")}>{projectLabel(current)}</span>
+            <Icon name="chevrons-up-down" className="size-3" />
+          </Button>
+        </PopoverTrigger>
+      </Tip>
+      <PopoverContent align="start" className="w-[260px] p-0">
+        <Command>
+          <CommandInput placeholder="Search or type a project" value={query} onValueChange={setQuery} />
+          <CommandList>
+            {typed && !list.includes(typed) && (
+              <CommandGroup forceMount>
+                <CommandItem forceMount value={"move " + typed} onSelect={() => void move(typed)} className="font-mono text-xs">
+                  <Icon name="plus" className="size-3.5" />Move to {typed}
+                </CommandItem>
+              </CommandGroup>
+            )}
+            {list.length ? (
+              <CommandGroup>
+                {list.map((p) => (
+                  <CommandItem key={p} value={p} onSelect={() => void move(p)} className="font-mono text-xs">
+                    <span className="truncate">{p}</span>{check(p === current)}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+            {!query.trim() && (
+              <>
+                {list.length ? <CommandSeparator /> : null}
+                <CommandGroup>
+                  <CommandItem value={NO_PROJECT_LABEL} onSelect={() => void move(null)}>{NO_PROJECT_LABEL}{check(!current)}</CommandItem>
+                </CommandGroup>
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -214,7 +300,7 @@ export function TasksBody({ view, posts, error, notice, onRetry, project = null 
   if (!posts) return <div className="flex flex-col gap-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-2/3" /></div>
   const shown = tasksOfProject(posts, project)
   const body = project && shown.length === 0 ? (
-    <EmptyState title={`No tasks in ${project}`} action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={taskHref()}>All projects</a>}>
+    <EmptyState title={project === NO_PROJECT ? "Every task has a project" : `No tasks in ${project}`} action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={taskHref()}>All projects</a>}>
       No open issue or PR, and no request in the last 7 days. Pick another project, or all of them.
     </EmptyState>
   ) : posts.length === 0 ? (
@@ -230,8 +316,9 @@ const EVENT_WORD: Record<string, string> = {
   plan: "Plan", waiting: "Waiting", attention: "Attention", closed: "Closed",
 }
 
-/** An opened task: its state, then its timeline, oldest first. */
-export function TaskThread({ post, events, error, onRetry }: { post: TaskPost; events?: TaskEvent[]; error?: string | null; onRetry?: () => void }) {
+/** An opened task: its state, then its timeline, oldest first. A request
+ *  shows its project as the picker that moves it, given `projects`. */
+export function TaskThread({ post, events, error, onRetry, projects }: { post: TaskPost; events?: TaskEvent[]; error?: string | null; onRetry?: () => void; projects?: string[] }) {
   return (
     <article data-tasks="open" data-task={post.id} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
@@ -240,7 +327,8 @@ export function TaskThread({ post, events, error, onRetry }: { post: TaskPost; e
           <StatusDot state={taskTone(post.state)} label={taskStateLabel(post.state)} />
           <span>{taskStateLabel(post.state)}</span>
           {post.owner ? <span>@{post.owner}</span> : null}
-          {post.project ? <span className="font-mono text-[11px]">{post.project}</span> : null}
+          {projects && !post.forge ? <RequestProjectPicker post={post} projects={projects} />
+            : post.project ? <span className="font-mono text-[11px]">{post.project}</span> : null}
           {post.node?.name ? <span>{post.node.name}</span> : null}
           <a href={taskHash({ id: post.id, peer: post.node?.peer })} className="ml-auto inline-flex items-center gap-1 text-link hover:underline">
             Full record <Icon name="external-link" className="size-3" />
@@ -315,7 +403,7 @@ export function TasksPane({ view, onView, open, project = null, phoneBar }: { vi
         ) : null}
         <h1 className="truncate text-sm font-medium">Tasks</h1>
         {!open && posts ? <span className="text-xs tabular-nums text-muted-foreground">{tasksOfProject(posts, project).length}</span> : null}
-        {!open && posts ? <TasksProjectFilter projects={taskProjects(posts)} project={project} className="ml-auto" /> : null}
+        {!open && posts ? <TasksProjectFilter projects={taskProjects(posts)} project={project} counts={taskProjectCounts(posts)} className="ml-auto" /> : null}
         {!open ? <TasksViewSwitch view={view} onView={onView} compact className={cn("w-[64px] md:hidden", posts ? "" : "ml-auto")} /> : null}
       </header>
       <div className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "kanban" && !open ? "" : "mx-auto w-full max-w-[784px]")}>
@@ -323,7 +411,7 @@ export function TasksPane({ view, onView, open, project = null, phoneBar }: { vi
           error && !posts ? <TasksBody view={view} error={error} onRetry={retry} />
             : !posts ? <Skeleton className="h-16 w-full" />
             : !post ? <EmptyState title="Task not found" action={<a className={buttonVariants({ variant: "outline", size: "sm" })} href={taskHref()}>All tasks</a>}>It is closed for more than 7 days, or on a computer that is not answering.</EmptyState>
-            : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post } : post} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} onRetry={() => void thread.refetch()} />
+            : <TaskThread post={thread.data?.post ? { ...post, ...thread.data.post, project: post.project } : post} projects={taskProjects(posts)} events={thread.data?.events} error={thread.isError ? "Could not read this task: " + errText(thread.error) : null} onRetry={() => void thread.refetch()} />
         ) : (
           <TasksBody view={view} posts={posts} project={project} error={error} notice={forgeUnread(forge.data)} onRetry={retry} />
         )}
