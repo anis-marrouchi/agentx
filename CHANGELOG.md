@@ -2,6 +2,17 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.317.0](https://github.com/anis-marrouchi/agentx/compare/v0.316.2...v0.317.0) (2026-11-28)
+
+
+### Features
+
+* **app:** phone Chat tab in the desktop look + one Agents chevron ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) C1, C2) ([#2576](https://github.com/anis-marrouchi/agentx/issues/2576)) ([a097f37](https://github.com/anis-marrouchi/agentx/commit/a097f37e4ad637ba5d2fe824a6745bc7123ff416))
+* **hub:** Jobs page opens on what needs you, one name per agent ([#2556](https://github.com/anis-marrouchi/agentx/issues/2556)) ([#2574](https://github.com/anis-marrouchi/agentx/issues/2574)) ([db904e7](https://github.com/anis-marrouchi/agentx/commit/db904e78b89429ed90893f8354921a8299eb515f))
+* **hub:** latest conversation says when and which chat ([#2552](https://github.com/anis-marrouchi/agentx/issues/2552) C1) ([#2572](https://github.com/anis-marrouchi/agentx/issues/2572)) ([628d574](https://github.com/anis-marrouchi/agentx/commit/628d57428cba1ad7764108458fdd8cae22d864e4))
+* **jobs:** headline at creation, no daemon-message jobs ([#2555](https://github.com/anis-marrouchi/agentx/issues/2555)) ([#2563](https://github.com/anis-marrouchi/agentx/issues/2563)) ([2b6e118](https://github.com/anis-marrouchi/agentx/commit/2b6e1188d0d35746767d423b3be7e0f3543ca102))
+* **situations:** surface profiles and surface line, in shadow ([#2083](https://github.com/anis-marrouchi/agentx/issues/2083) PR 1) ([#2589](https://github.com/anis-marrouchi/agentx/issues/2589)) ([67c1b1f](https://github.com/anis-marrouchi/agentx/commit/67c1b1f950862bba07879176dff1aaf035fc667b))
+
 ## [0.316.2](https://github.com/anis-marrouchi/agentx/compare/v0.316.1...v0.316.2) (2026-11-28)
 
 
