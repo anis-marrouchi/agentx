@@ -44,6 +44,19 @@ The answer is recorded where the decision lives, and the agent that asked is tol
 
 **Later** answers nothing: the card is hidden for a day (or the time set in your approval settings) and then shown again. A card with a time limit still decides itself on time.
 
+## Go through them one at a time
+
+When something waits for your answer, the Desk shows **Go through them** at the top. It shows one card at a time, slides to the next, and says how many are left. This is the same flow as **Waiting on you** in the Hub.
+
+1. **Phone:** tap **Go through them**. Deploys come first, then the card whose time runs out soonest, then the oldest.
+2. **Phone:** tap an answer. It goes to the agent that asked at once, and the next card slides in. **Skip** moves on without answering. A **Yes** that sends or publishes outside (a WhatsApp message, an email, a post) asks once more.
+3. **Phone:** two or more requests that stopped before the end come as one step: **Restart all**, **Close all** (asks once more) or **One by one**.
+4. **Phone:** at the end, the summary says what went to which agent, and what could not be sent, with the reason. Tap **Back to the Desk**.
+
+The back arrow stops at any time. What you already answered stays answered. A card answered somewhere else while you go through them is passed over.
+
+![Going through the Desk one card at a time](/screenshots/mobile-app/desk-wizard.png)
+
 ## Write an answer
 
 When an agent asked you a question in a request, or a request needs your word, you answer in your own words.
