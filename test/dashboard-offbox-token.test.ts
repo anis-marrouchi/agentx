@@ -137,7 +137,7 @@ describe("dashboard pages off-box (#1306)", () => {
     const login = new URL(r.headers.get("location") || "", base)
     expect(login.pathname).toBe("/login")
     const next = login.searchParams.get("next") || ""
-    expect(next).toMatch(/^\/#page=task&task=t1&agent=ops&node=/)
+    expect(next).toMatch(/^\/hub#page=task&task=t1&agent=ops&run=t1&node=/)
     // The form carries it, and signing in lands on the task, not the bare Wall.
     expect(await (await fetch(base + login.pathname + login.search, { headers: OFF })).text()).toContain(`value="${next.replace(/&/g, "&#38;")}"`)
     expect((await signIn(base, TOKEN, next)).headers.get("location")).toBe(next)

@@ -1333,7 +1333,7 @@ describe("Hub chat: a Needs you row's link keeps its question (#2505)", () => {
     expect(log.indexOf('data-hc-waitkey="request:req-9"')).toBeGreaterThan(log.indexOf('data-hc-waitkey="request:req-old"'))
     expect(log).toContain("Is the v4 render ok?")
     expect(log).toContain("Reply in Waiting on you")
-    expect(log).toContain('href="#post=req-9"')
+    expect(log).toContain('href="#page=task&amp;id=req-9"')
     // Desk cards come from the Desk's own list with their buttons, not twice.
     expect(log).not.toContain('data-hc-waitkey="card:c9"')
     expect(w.el("hc-pill").textContent).toBe("Waiting on you")

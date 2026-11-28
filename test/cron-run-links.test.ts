@@ -219,13 +219,13 @@ describe("dashboard wiring", () => {
     expect(js).toContain("x.job.kind==='command'")
   })
 
-  it("redirects an archived cron run's link to the Wall Task page", () => {
+  it("redirects an archived cron run's link to the Hub Task page, with the run open (#2101 T3)", () => {
     const params = new URLSearchParams("node=http://node.test&agent=ops-agent&name=Ops&channel=cron&archived=1")
     const to = classicRedirect("/tasks/t1", params, "http://daemon.test")
     expect(to).not.toBeNull()
-    expect(to!.startsWith("/#")).toBe(true)
-    expect(Object.fromEntries(new URLSearchParams(to!.slice(2)))).toEqual({
-      page: "task", task: "t1", agent: "ops-agent", node: "http://node.test", ch: "cron", done: "1",
+    expect(to!.startsWith("/hub#")).toBe(true)
+    expect(Object.fromEntries(new URLSearchParams(to!.slice(5)))).toEqual({
+      page: "task", task: "t1", agent: "ops-agent", run: "t1", node: "http://node.test", ch: "cron", done: "1",
     })
   })
 

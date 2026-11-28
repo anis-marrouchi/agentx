@@ -10,7 +10,11 @@ import { HUB_REACT_PAGES } from "../src/hub/pages"
 import { classicRedirect } from "../src/daemon/ui/classic-routes"
 import { hubPostPath } from "../src/daemon/ui/hub-name"
 import { postHash } from "../src/hub/feed/model"
-import { chPlanHtml, chReqMetaHtml, WALL_CHAT_HEAD_SCRIPT } from "../src/daemon/ui/pages/wall-chat-head.client"
+import { chPlanHtml, chReqMetaHtml, chWaitHtml, WALL_CHAT_HEAD_SCRIPT } from "../src/daemon/ui/pages/wall-chat-head.client"
+import { WALL_CHAT_SCRIPT } from "../src/daemon/ui/pages/wall-chat.client"
+import { wsCopiesHtml } from "../src/daemon/ui/pages/wall-sidebar"
+import { haSwitchHtml } from "../src/daemon/ui/pages/hub-agents"
+import { ltEsc } from "../src/daemon/ui/pages/wall-tree"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { openWall } from "./wall-settings-harness"
 
@@ -192,7 +196,17 @@ describe("Live cards and the Hub's own links open the Task page (wall.client.ts)
     expect(chPlanHtml([{ id: "r2", summary: "Ship" }] as never, "pm")).toContain('<a href="#page=task&amp;id=r2">Ship</a>')
   })
 
+  it("a question on a request links its Task page, as do a post's copies and the switcher's requests", () => {
+    expect(chWaitHtml({ key: "request:r 4", ask: "Ship?" }, { name: "pm", now: Date.now(), asked: false })).toContain('<a class="hc__ab" href="#page=task&amp;id=r+4">See the request</a>')
+    expect(wsCopiesHtml({ copies: ["r5"] } as never, ltEsc)).toContain('<a href="#page=task&amp;id=r5" data-open="r5">r5</a>')
+    expect(haSwitchHtml({ agents: [], reqs: [{ id: "r6", title: "Fix" }] }, 0, ltEsc)).toContain('href="#page=task&amp;id=r6"')
+  })
+
+  it("a chat's Open the run opens the run on the Task page (run=)", () => {
+    expect(WALL_CHAT_SCRIPT).toContain("q.set('run', m.taskId)")
+  })
+
   it("no old script writes a #post= link by hand any more", () => {
-    for (const s of [WALL_PAGE_SCRIPT, WALL_CHAT_HEAD_SCRIPT]) expect(s).not.toMatch(/['"`]#post=/)
+    for (const s of [WALL_PAGE_SCRIPT, WALL_CHAT_HEAD_SCRIPT, WALL_CHAT_SCRIPT]) expect(s).not.toMatch(/#(status=open&(amp;)?)?post=['"$`]/)
   })
 })
