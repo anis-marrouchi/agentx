@@ -16,6 +16,7 @@ import { buildHash, parseHash } from "../router"
 import { SHELL_PAGE } from "../shell"
 import { Button, EmptyState, Icon, Kbd, Skeleton, Tooltip, TooltipContent, TooltipTrigger, cn } from "../ui"
 import { SETTINGS_PAGE, oldSettingsHash } from "./address"
+import { openIds } from "./open-ids"
 import { DisclosureContext } from "./parts"
 import { SETTINGS_GROUPS, SETTINGS_PANES, paneDef, type SettingsPaneDef } from "./panes"
 import { buildSettingsIndex, searchSettings, type SettingsHit } from "./search"
@@ -50,8 +51,6 @@ function go(section: string | null, row?: string) {
   location.replace(buildHash({ page: SETTINGS_PAGE, section, ...keep, row }))
 }
 
-/** A row's `open` is one fold id or a comma list (a tab, then its Advanced). */
-const openAll = (open: string, setOpen: (id: string, v: boolean) => void) => open.split(",").forEach((id) => setOpen(id.trim(), true))
 
 function leave() {
   if (history.length > 1) { history.back(); return }
@@ -78,12 +77,14 @@ export default function SettingsPage({ params }: HubPageProps) {
     isOpen: (id: string) => open.has(id),
     setOpen: (id: string, v: boolean) => setOpenIds((s) => { const n = new Set(s); if (v) n.add(id); else n.delete(id); return n }),
   }), [open])
+  /** A row's `open`, with the other tabs of its pane closed (openIds, F1). */
+  const openRow = useCallback((ids: string) => setOpenIds((s) => openIds(s, ids)), [])
 
   const pick = useCallback((h: SettingsHit) => {
-    if (h.open) openAll(h.open, disclosure.setOpen)
+    if (h.open) openRow(h.open)
     setQuery("")
     go(h.pane, h.row || undefined)
-  }, [disclosure])
+  }, [openRow])
 
   // Mod+F jumps to search; Esc clears it, then leaves Settings.
   useEffect(() => {
@@ -103,7 +104,7 @@ export default function SettingsPage({ params }: HubPageProps) {
   useEffect(() => {
     if (!row) { scroll.current?.scrollTo({ top: 0 }); return }
     const def = pane.rows.find((r) => r.id === row)
-    if (def?.open) openAll(def.open, disclosure.setOpen)
+    if (def?.open) openRow(def.open)
     let tries = 0
     const t = window.setInterval(() => {
       const el = scroll.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(row)}"]`)

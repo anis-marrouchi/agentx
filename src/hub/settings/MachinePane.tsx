@@ -62,14 +62,19 @@ export default function MachinePane() {
         </SettingsGroup>
 
         <SettingsGroup pane={PANE} row="frames">
-          <SettingsRow
-            pane={PANE} row="fb-on"
-            control={<Switch checked={!!b.enabled} disabled={off} onCheckedChange={(v) => put({ buffer: { enabled: v } })} aria-label="Keep recent frames" />}
-          />
-          <SettingsRow pane={PANE} row="fb-region" control={<RegionSelect value={b.region || "screen"} named={Object.keys(sc?.regions ?? {})} disabled={off} onChange={(region) => put({ buffer: { region } })} />} />
-          {n("fb-seconds", "seconds", { unit: "s", lo: 1, hi: 120, buffer: true })}
-          {n("fb-fps", "fps", { unit: "fps", lo: 1, hi: 10, buffer: true })}
-          {n("fb-pixels", "maxPixels", { unit: "px", lo: 1, grouped: true, buffer: true })}
+          {/* Loading and read error, as the Screen capture group above (Hakim, review of #2450, F3). */}
+          {state.isPending ? <SkeletonRows /> : state.isError ? (
+            <ErrorLine text={`Could not read agentx.json: ${(state.error as Error).message}`} onRetry={() => state.refetch()} />
+          ) : <>
+            <SettingsRow
+              pane={PANE} row="fb-on"
+              control={<Switch checked={!!b.enabled} disabled={off} onCheckedChange={(v) => put({ buffer: { enabled: v } })} aria-label="Keep recent frames" />}
+            />
+            <SettingsRow pane={PANE} row="fb-region" control={<RegionSelect value={b.region || "screen"} named={Object.keys(sc?.regions ?? {})} disabled={off} onChange={(region) => put({ buffer: { region } })} />} />
+            {n("fb-seconds", "seconds", { unit: "s", lo: 1, hi: 120, buffer: true })}
+            {n("fb-fps", "fps", { unit: "fps", lo: 1, hi: 10, buffer: true })}
+            {n("fb-pixels", "maxPixels", { unit: "px", lo: 1, grouped: true, buffer: true })}
+          </>}
         </SettingsGroup>
 
         <ConfigFile />
