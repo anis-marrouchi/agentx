@@ -367,6 +367,7 @@ describe("the open list reads by what it needs (#2556)", () => {
   it("keeps ids and agent ids out of the status text, the line as sent in the tooltip (W6)", () => {
     expect(jlPlain("waiting on pm-agent until 18:00 (req-01M8GP9AK6)", { "pm-agent": "Hakim" })).toBe("waiting on Hakim until 18:00")
     expect(jlPlain("waiting on xpm-agent", { "pm-agent": "Hakim" })).toBe("waiting on xpm-agent")
+    expect(jlPlain("waiting on owner until 14:30")).toBe("waiting on you until 14:30")
     expect(jlName("coder-agent@clawd-server", { "coder-agent": "Coder" })).toBe("Coder on clawd-server")
     expect(jlName("owner")).toBe("you")
   })

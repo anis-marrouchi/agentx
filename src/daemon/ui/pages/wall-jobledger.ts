@@ -118,6 +118,8 @@ export function jlName(id: string | null | undefined, names?: Record<string, str
  *  dlg-/req-/prm-/job- ids. The line as sent stays in the tooltip. */
 export function jlPlain(status: string, names?: Record<string, string>): string {
   let t = String(status || "").replace(/\s*\(?\b(?:dlg|req|prm|job|run)-[A-Za-z0-9_-]+\)?/g, "")
+  // The daemon's "waiting on owner" is the reader (W5).
+  t = t.replace(/\bwaiting on owner\b/g, "waiting on you")
   // Whole ids only: "pm-agent" is not changed inside "xpm-agent".
   if (names) for (const id of Object.keys(names)) {
     if (!id || !names[id] || names[id] === id) continue
