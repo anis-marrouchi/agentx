@@ -87,11 +87,11 @@ A refused call is not run, and the agent sees the guard's reason. Nobody can ans
 
 To turn this off, set `AGENTX_RUNTIME_GUARD=off` in the daemon's environment and restart it. That puts back the old behaviour. It is a way to roll back, not a setting to leave on.
 
-### Check it worked
+### Try the guard on a Codex or OpenCode agent
 
 Run `agentx guard test` with a command your guard denies, then ask a Codex or OpenCode agent to run it. The reply says the call was refused, and `agentx guard log` shows the entry under that agent.
 
-### If something is wrong
+### When a Codex or OpenCode run is refused
 
 - **"Codex run refused: the Codex app-server could not take this turn":** update Codex (`codex --version`) and retry.
 - **"OpenCode run refused":** check `opencode --version` in the daemon's PATH, and that the daemon can write to `.agentx/opencode/`.
