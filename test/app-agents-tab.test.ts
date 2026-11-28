@@ -84,6 +84,16 @@ describe("the rows the phone draws", () => {
   })
 })
 
+describe("one chevron per fold (#2101 C2)", () => {
+  it("turn the Fleet tab's summary › off on the Agents list, after the rule that adds it", () => {
+    const html = renderAppPage()
+    const add = html.indexOf('summary::before { content: "›"')
+    const off = html.indexOf(".ag .ha__h::before { content: none")
+    expect(add).toBeGreaterThan(-1)
+    expect(off).toBeGreaterThan(add)
+  })
+})
+
 describe("GET /api/app/hub/agents", () => {
   it("answers with the Hub's rows for the viewer's day", async () => {
     const asked: number[][] = []

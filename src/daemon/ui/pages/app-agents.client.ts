@@ -109,5 +109,9 @@ export const APP_AGENTS_CSS = `
 .ag .ha__row { min-height: 52px; }
 .ag .ha__name { font-size: 15px; }
 .ag .ha__line { font-size: 13.5px; }
+/* One chevron per fold (#2101 C2): the list draws its own lucide chevron,
+   so the Fleet tab's "›" on every summary (app-fleet.css.ts) stays off here. */
+.ag .ha__h::before { content: none; display: none; }
+.ag .ha__fold { margin-top: 0; }
 .ag-note { margin: 0 0 8px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
 `
