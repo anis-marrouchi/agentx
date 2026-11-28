@@ -55,6 +55,7 @@ import { WALL_NUMBERS_CSS } from "./wall-numbers.client"
 import { WALL_JOBLEDGER_CSS } from "./wall-jobledger.client"
 import { WALL_AGENTS_CSS } from "./wall-agents.client"
 import { injectFns } from "../inject"
+import { taskEarlyRead, taskEarlyStart } from "../../../hub/task/early"
 import { hubIcon } from "./hub-lucide"
 import { WALL_FEED_CSS } from "./wall-feed.client"
 import { WALL_POST_CSS } from "./wall-post.client"
@@ -70,6 +71,10 @@ import { HUB_FOLDS_CSS, HUB_FOLDS_FNS, HUB_FOLDS_SCRIPT } from "./hub-folds"
 import { HUB_USAGE_CSS } from "./hub-status-usage"
 import { HUB_LAYOUT_CSS, hubLayoutBoot } from "./hub-layout"
 import { resolveHubLayout, type HubLayoutView } from "../../../hub/layout"
+
+// The Task page's read, sent before the old Hub script's own reads so it does
+// not wait behind them on the browser's six requests (req-01M8CTCW, early.ts).
+const TASK_EARLY_SCRIPT = `<script>${injectFns({ taskEarlyRead, taskEarlyStart })}taskEarlyStart(window);</script>`
 
 export interface WallPageOpts {
   peers?: TopbarPeer[]
@@ -261,6 +266,12 @@ function feedMenuHtml(): string {
 export const WALL_FIRST_FRAME_SCRIPT = `(function (r) {
   var q = new URLSearchParams(location.hash.replace(/^#/, ''));
   var p = q.get('page'), v = q.get('view') || 'feed';
+  // A page React draws shows its root now, not after the feed's first read,
+  // which a busy daemon answers in 10 s or more (req-01M8CTCW). render()
+  // keeps the class from then on. An old #post= link waits: the old script
+  // moves it to the Task page once the feed says which node keeps the post.
+  var ax = typeof window !== 'undefined' && window.AX_HUB, hub = (ax && ax.pages) || [];
+  if (p && hub.indexOf(p) >= 0) { r.classList.add('is-hub'); return; }
   if ((p && p !== 'wall') || q.get('post') || (v !== 'feed' && v !== 'list')) return;
   r.classList.add('is-posts');
   if (v === 'list') { r.classList.add('is-wide'); r.classList.add('is-list'); }
@@ -385,7 +396,7 @@ ${hubSwitcherHtml()}`
     body,
     css: WALL_PAGE_CSS + WALL_FEED_CSS + WALL_POST_CSS + CRON_VALUE_CSS + WALL_REVIEWS_CSS + WALL_EVENTS_CSS + WALL_DECIDE_CSS + WALL_COST_CSS + WALL_PEOPLE_CSS + WALL_ORG_CSS + WALL_WORKFLOWS_CSS + WALL_EDITOR_CSS + WALL_PAGES_CSS + WALL_LIVE_CSS + WALL_PICTURES_CSS + WALL_TASK_CSS + WALL_DIFF_CSS + WALL_CONTEXT_CSS + WALL_FILES_CSS + WALL_ACTIVITY_CSS + WALL_BUILD_CSS + WALL_NUMBERS_CSS + WALL_JOBLEDGER_CSS + WALL_AGENTS_CSS + WALL_SETTINGS_CSS + AGENT_TEMPLATES_CSS + WALL_CHAT_CSS + HUB_NAV_CSS + HUB_OPERATIONS_CSS + HUB_STATUS_CSS + HUB_USAGE_CSS + HUB_LAYOUT_CSS + HUB_PANELS_CSS + HUB_FOLDS_CSS,
     head: hubLayoutBoot(layout) + (hubHead ? "\n" + hubHead : ""),
-    scripts: token + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns({ ...HUB_PANELS_FNS, ...HUB_FOLDS_FNS })}\n${HUB_PANELS_SCRIPT}\n${HUB_FOLDS_SCRIPT}</script>`,
+    scripts: token + (hubHead ? TASK_EARLY_SCRIPT : "") + settingsCfg + editorCfg + `<script>${CRON_VALUE_SCRIPT}\n${WALL_PAGE_SCRIPT}</script><script>${WALL_CHAT_SCRIPT}</script><script>${injectFns({ ...HUB_PANELS_FNS, ...HUB_FOLDS_FNS })}\n${HUB_PANELS_SCRIPT}\n${HUB_FOLDS_SCRIPT}</script>`,
   })
 }
 
