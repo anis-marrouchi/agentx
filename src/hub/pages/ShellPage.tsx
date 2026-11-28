@@ -21,7 +21,7 @@ import { apiGet, apiPost } from "../api"
 import { readBoot } from "../boot"
 import type { HubPageProps } from "../registry"
 import { navigate } from "../router"
-import { SHELL_PAGE, currentLayout } from "../shell"
+import { SHELL_PAGE, currentLayout, hubFeedHref } from "../shell"
 import { SideMenu, SideRail, type SideMenuProps } from "../shell/SideMenu"
 import { Composer, sayAnswer, type ComposerSend } from "../shell/Composer"
 import { FilesPanel } from "../shell/FilesPanel"
@@ -525,7 +525,7 @@ export default function ShellPage({ params }: HubPageProps) {
   const menu = useQuery({ queryKey: MENU_QUERY_KEY, queryFn: () => apiGet<MenuReply>(MENU_API), enabled: boot.owner })
   return (
     <SimpleShell
-      view={view} owner={boot.owner} agents={list} model={rows.data} needs={needs} agent={agent} onAgent={onAgent} menu={menu.data}
+      view={view} owner={boot.owner} agents={list} model={rows.data} needs={needs} agent={agent} onAgent={onAgent} menu={menu.data} hubHref={hubFeedHref(boot.pages)}
       pane={pane} openTask={open} project={project} tasksView={tasksView} onTasksView={onTasksView}
     />
   )
