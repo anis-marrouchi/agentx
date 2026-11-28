@@ -72,7 +72,7 @@ import { fdStates, fdState, fdGroupOf, fdGroupTitle, fdGroupPosts, fdExcerpt, fd
 import { WALL_LIVE_SCRIPT } from "./wall-live.client"
 import { WALL_PICTURES_SCRIPT } from "./wall-pictures.client"
 import { WALL_TASK_SCRIPT } from "./wall-task.client"
-import { tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml } from "./wall-task-session"
+import { tsCallNote, tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml } from "./wall-task-session"
 import { tcCtlHtml } from "./wall-task-ctl"
 import { cfClock, cfDuration } from "./wall-chat-fold"
 import { outStamp } from "@/agents/output-stamps"
@@ -132,7 +132,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   ${injectFns({ markdownToHtml, plainMarkerText, profileSpendHtml, costPageModel, costPageHtml, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange, layoutOrg, orgWhoOf, orgWhoKeeps, orgWhoFilter, orgWhoDepartments, orgConfirmFor, orgEditHtml, orgEditor, orgTreeHtml })}
   ${injectFns({ numEsc, numFmt, numTargetText, numPeriodText, numRank, numMerge, numTagsOf, numFilter, numCounts, numDeptOf, numGroups, numTagKinds, numSparkSvg, numStatusHtml, numSourceText, numRowHtml, numDeptCardsHtml, numbersPageHtml, numJobHtml, computeFunnel, formatShare, funnelGroupValues, funnelSteps, numFunnelHtml, numFunnelsPageHtml, numSwitchHtml })}
-  ${injectFns({ tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml, followAttach })}
+  ${injectFns({ tsCallNote, tsEsc, tsTurnLabel, tsTurnHtml, tsBeforeHtml, tsCatchUp, tsFoldHtml, tsWhen, tsTimeHtml, followAttach })}
   ${injectFns({ tcCtlHtml, cfDuration, cfClock, outStamp, newSettingsHref })}
   ${injectFns({ atList, atPickerHtml, atNextHtml, atFields })}
   ${injectFns({ wsKey, wsFold, wsCopiesHtml })}

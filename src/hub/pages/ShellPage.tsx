@@ -29,6 +29,7 @@ import { AgentQuestions, rowsWithout, useAgentQuestions } from "../shell/AgentQu
 import { liveAnswer, storedAnswer, useTaskStream } from "../shell/chat-stream"
 import { hubAgentsUrl, idleModel, readMenuRail, saveMenuRail, shellShortcut, type HaAsk, type HaModel, type HaRow } from "../shell/menu"
 import { LatestConversation } from "../shell/LatestConversation"
+import { callNote } from "@/calls/call-note"
 import { rowOpens, runHref } from "../shell/latest"
 import { readTasksView, saveTasksView, shellPane, type TasksView } from "../tasks"
 import { WAITING_URL, waitingCount, waitingList, type WaitingReply } from "../waiting"
@@ -124,6 +125,9 @@ function CopyAnswer({ text }: { text: string }) {
 /** One turn of the chat. A failed answer shows its error with Try again,
  *  which sends the question before it again (P10). */
 export function ChatTurn({ m, live = "", last = false, onRetry }: { m: ChatMessage; live?: string; last?: boolean; onRetry?: () => void }) {
+  // The daemon's own call prompt is not the owner's message (#2101): a system line.
+  const note = m.role === "user" ? callNote(m.content) : ""
+  if (note) return <div data-role="system" data-shell="call-note" className="self-center rounded-full bg-muted px-3 py-0.5 text-xs text-muted-foreground">{note}</div>
   return (
     <div data-role={m.role} className={cn("text-sm", m.role === "user" ? "self-end max-w-[85%] whitespace-pre-wrap rounded-lg bg-muted px-3 py-2" : "min-w-0")}>
       {m.status === "pending" ? <PendingAnswer text={live} />

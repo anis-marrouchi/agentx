@@ -259,11 +259,13 @@ The side menu lists every agent of every connected machine once, by what it is d
 5. Point at a row (on a phone they always show) for **Stop** on a working agent and **⋯** for the row's menu, for example **Open chat**, **Open live run** and **Copy agent ID**.
 6. The whole side menu scrolls as one, so the last agent is always in reach; **Search agents and pages** stays at the top and **Settings** stays at the bottom.
 7. Select a row to open it:
-   - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
+   - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat. It never opens an older conversation, a voice call's for one, even when the agent runs on this machine.
    - A **Needs you** row opens that agent's questions for you (see [Answer an agent's questions](#answer-an-agents-questions)).
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
 
    In the simple shell, a row under **Done today** or **Not working today** (and a failed one) opens the agent's latest conversation, on whichever channel it was: Telegram, WhatsApp, another agent, GitLab and so on. The top line names the channel and says **read only**; its last 10 turns show as in the Hub chat, what was asked and the answer. To write to the agent, select **New Hub chat** at the bottom: the Hub chat opens, with the box to write in. An agent with no conversation yet, or whose latest one is a Hub chat, opens the Hub chat at once.
+
+   When a voice call is answered or ends, AgentX sends the agent a message of its own: to start the call, or to ask for a summary of what was said. You did not write it, so the chat, the latest conversation and the Task page show it as a short line in the middle, **Call answered** or **Call ended**, not as your message. On the Task page the request says **from AgentX**.
 
    **Check it worked:** send an agent a message on Telegram (or let another agent ask it something), wait until its run ends, then select it in the side menu. The centre shows that message and its answer, with **Telegram · read only** at the top. Select **New Hub chat**: the box to write in appears.
 
