@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.314.0](https://github.com/anis-marrouchi/agentx/compare/v0.313.1...v0.314.0) (2026-11-28)
+
+
+### Features
+
+* **hub:** old Task links open the merged Task page ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) T3) ([#2532](https://github.com/anis-marrouchi/agentx/issues/2532)) ([e6432ba](https://github.com/anis-marrouchi/agentx/commit/e6432badd9be1a427063854a0f60f886f98d2e6f))
+
 ## [0.313.1](https://github.com/anis-marrouchi/agentx/compare/v0.313.0...v0.313.1) (2026-11-28)
 
 
