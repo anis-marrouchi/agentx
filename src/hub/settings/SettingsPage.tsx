@@ -131,7 +131,10 @@ export default function SettingsPage({ params }: HubPageProps) {
 
   return (
     <DisclosureContext.Provider value={disclosure}>
-      <div data-slot="settings" className="fixed inset-0 z-30 flex bg-background text-foreground">
+      {/* On a computer the old Hub's 30 px status bar (hub-status.ts .hs,
+          shown above 640 px) stays in view below Settings, as under the
+          shell (#2101 R5). A phone has no status bar. */}
+      <div data-slot="settings" className="fixed inset-x-0 top-0 bottom-0 z-30 flex bg-background text-foreground min-[641px]:bottom-[30px]">
         <aside
           aria-label="Settings"
           className={cn(
