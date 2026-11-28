@@ -32,6 +32,7 @@ import { engineName } from "../src/hub/settings/data"
 import DiagnosticsPane from "../src/hub/settings/DiagnosticsPane"
 import MachinePane from "../src/hub/settings/MachinePane"
 import MeshPane from "../src/hub/settings/MeshPane"
+import { openIds } from "../src/hub/settings/open-ids"
 import { delta, fillDays, fillHours, num, regionsPatch, regionsText, tokenScopes, tokenState } from "../src/hub/settings/system-data"
 
 const state = {
@@ -779,5 +780,70 @@ describe("Settings › Diagnostics (#2101 ST3b)", () => {
     expect(fillDays([{ day: "2026-11-20", tasks: 2 }], t)[0].tasks).toBe(2)
     expect(delta(31, num)).toBe("▲ 31 vs yesterday")
     expect(delta(0, num)).toBe("Same as yesterday")
+  })
+})
+
+// --- ST3b review conditions (Hakim, review of #2450, 2026-11-28) ---
+
+/** A pane drawn with the settings state read still pending, or failed. */
+function renderStateRead(Pane: () => unknown, how: "pending" | "error"): string {
+  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } })
+  if (how === "error") {
+    const q = client.getQueryCache().build(client, { queryKey: ["settings", "state"] })
+    q.setState({ status: "error", error: new Error("502 Bad Gateway"), fetchStatus: "idle" })
+  }
+  const disclosure = { isOpen: () => false, setOpen: () => {} }
+  return renderToStaticMarkup(
+    createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null,
+      createElement(DisclosureContext.Provider, { value: disclosure }, createElement(Pane as never)))),
+  )
+}
+
+describe("ST3b F1: a search hit or row link opens its tab and closes the pane's other tabs", () => {
+  it("Diagnostics: opening Errors closes Overview, so Errors shows", () => {
+    expect([...openIds(new Set(["dg-tab-overview"]), "dg-tab-errors")]).toEqual(["dg-tab-errors"])
+  })
+  it("Jobs and Channels: the same, and a tab's own Advanced fold opens with it", () => {
+    expect([...openIds(new Set(["jobs-tab-schedules"]), "jobs-tab-hooks")]).toEqual(["jobs-tab-hooks"])
+    expect([...openIds(new Set(["ch-tab-telegram"]), "ch-tab-gitlab,gl")].sort()).toEqual(["ch-tab-gitlab", "gl"])
+  })
+  it("other panes' tabs and plain folds stay as they are", () => {
+    const next = openIds(new Set(["dg-tab-logs", "general-advanced", "ch-tab-slack"]), "jobs-tab-hooks")
+    expect([...next].sort()).toEqual(["ch-tab-slack", "dg-tab-logs", "general-advanced", "jobs-tab-hooks"])
+    expect([...openIds(new Set(["mesh-advanced"]), "screen-advanced")].sort()).toEqual(["mesh-advanced", "screen-advanced"])
+  })
+  it("every search hit with a tab, opened after any other tab of its pane, leaves only that tab open", () => {
+    const hits = buildSettingsIndex().filter((e) => e.open && /-tab-/.test(e.open))
+    expect(hits.length).toBeGreaterThan(20)
+    for (const h of hits) {
+      const tab = h.open!.split(",")[0].trim()
+      const prefix = tab.slice(0, tab.indexOf("-tab-") + 5)
+      const before = new Set([prefix + "zzz-other"])
+      const open = [...openIds(before, h.open!)].filter((id) => id.startsWith(prefix))
+      expect(open, `${h.pane}/${h.row}`).toEqual([tab])
+    }
+  })
+})
+
+describe("ST3b F2 + F3: a failed read says so, a pending read shows rows loading", () => {
+  it("Peers: a failed read shows the error with Retry, not \"No peers yet\"", () => {
+    const html = renderStateRead(MeshPane, "error")
+    expect(html).toContain("Could not read the peers: 502 Bad Gateway")
+    expect(html).not.toContain("No peers yet")
+  })
+  it("Recent frames: loading rows while the read is on its way, the error when it fails", () => {
+    const pending = renderStateRead(MachinePane, "pending")
+    // From the Recent frames group to the next group (agentx.json's own heading).
+    const frames = (h: string) => {
+      const at = h.indexOf('data-row="frames"'), end = h.indexOf(">agentx.json<", at)
+      expect(at).toBeGreaterThan(-1)
+      expect(end).toBeGreaterThan(at)
+      return h.slice(at, end)
+    }
+    expect(frames(pending)).not.toContain('aria-label="Keep recent frames"')
+    expect(frames(pending)).toMatch(/aria-busy|animate-pulse|skeleton/i)
+    const failed = renderStateRead(MachinePane, "error")
+    expect(frames(failed)).toContain("Could not read agentx.json: 502 Bad Gateway")
+    expect(frames(failed)).not.toContain('aria-label="Keep recent frames"')
   })
 })

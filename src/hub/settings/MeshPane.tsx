@@ -81,7 +81,10 @@ export default function MeshPane() {
           pane={PANE} row="peers" help={s ? `${n} machine${n === 1 ? "" : "s"} this one talks to.` : undefined}
           action={<AddButton label="Add peer" onClick={() => setDialog("peer")} />}
         >
-          {state.isPending ? <SkeletonRows /> : n === 0 ? (
+          {/* A failed read is not "no peers" (Hakim, review of #2450, F2). */}
+          {state.isPending ? <SkeletonRows /> : state.isError ? (
+            <ErrorLine text={`Could not read the peers: ${(state.error as Error).message}`} onRetry={() => state.refetch()} />
+          ) : n === 0 ? (
             <EmptyLine>No peers yet. Add peer links another AgentX machine.</EmptyLine>
           ) : peers.map((p) => (
             <SettingsItem
