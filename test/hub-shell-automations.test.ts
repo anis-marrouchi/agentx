@@ -15,7 +15,7 @@ import {
   type LiveReply,
 } from "../src/hub/automations"
 import {
-  NEEDS_YOU_PAGE, WAITING_URL, waitingHref, waitingKind, waitingList, waitingSoon, waitingTaskId,
+  WAITING_URL, waitingHref, waitingKind, waitingList, waitingSoon, waitingTaskId,
   type WaitingItem, type WaitingReply,
 } from "../src/hub/waiting"
 import { AutomationRow, AutomationsBody, RunStrip } from "../src/hub/pages/ShellAutomations"
@@ -219,18 +219,26 @@ describe("the Waiting on you pane", () => {
     expect(out).toContain("Answer today")
     expect(out).toContain("@builder")
   })
-  it("an opened decision: the question, what yes and no do, the deadline, Answer", () => {
+  it("an opened decision: the question, what yes and no do, the deadline, answered in place", () => {
     const out = html(createElement(WaitingDetail, { item: items[0], now }))
     expect(out).toContain('data-waiting="open"')
     expect(out).toContain("PR #2330 is green. Merge it now?")
     expect(out).toContain("It is merged and released.")
     expect(out).toContain("If you say nothing: kept open")
-    expect(out).toContain(`href="${NEEDS_YOU_PAGE.replace(/&/g, "&amp;")}"`)
-    expect(out).not.toContain('data-waiting="task"')
+    expect(out).toContain('data-answer-act="yes"')
+    expect(out).toContain('data-answer-act="no"')
+    expect(out).toContain('data-answer-act="later"')
+    expect(out).not.toContain("view=decide")
+    expect(out).not.toContain('data-answer-act="task"')
   })
-  it("an opened request opens its task in Tasks; choices are listed", () => {
-    expect(html(createElement(WaitingDetail, { item: items[1], now }))).toContain('href="#page=home&amp;pane=tasks&amp;open=q3"')
-    expect(html(createElement(WaitingDetail, { item: items[2], now }))).toContain('data-waiting="choices"')
+  it("an opened request: pick it up again or close it, and its task in Tasks; choices are picked", () => {
+    const req = html(createElement(WaitingDetail, { item: items[1], now }))
+    expect(req).toContain('href="#page=home&amp;pane=tasks&amp;open=q3"')
+    expect(req).toContain("Pick it up again")
+    expect(req).toContain("Close it")
+    const ch = html(createElement(WaitingDetail, { item: items[2], now }))
+    expect(ch).toContain('type="radio"')
+    expect(ch).toContain("Send this choice")
   })
   it("empty: says so; what was put off is counted", () => {
     const out = html(createElement(WaitingBody, { list: { items: [], later: 2, errors: [] } }))

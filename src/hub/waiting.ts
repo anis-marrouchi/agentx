@@ -4,16 +4,17 @@
 // the same list the old Hub's Needs you, the phone's Desk and the digest
 // count. Read from `GET /api/admin/approvals`, whose `desk` is that list in
 // the Desk's card shape (DeskCard in src/desk/board.ts). Nothing new on the
-// server. Answers stay where they are made today (the old Hub's Needs you,
-// the phone, the Mac card): the shell lists and opens.
+// server: answers go through the same call as the feed's cards
+// (POST /api/admin/wall/decide), from the opened item or the wizard
+// (#2499 part 2, NeedsWizard.tsx).
 //
 // Plain data and pure functions, so the tests check them without a browser.
 
 import { buildHash } from "./router"
 
 export const WAITING_URL = "/api/admin/approvals"
-/** The old Hub's Needs you, where each item is answered. */
-export const NEEDS_YOU_PAGE = "#status=open&view=decide"
+/** Where an answer is sent (wall-actions.ts → approvals-panel.ts). */
+export const DECIDE_URL = "/api/admin/wall/decide"
 
 /** The part of a Desk card the shell draws (DeskCard in desk/board.ts). */
 export interface WaitingItem {
@@ -83,4 +84,81 @@ const DAY = 86_400_000
 export function waitingSoon(item: Pick<WaitingItem, "expires">, now = Date.now()): boolean {
   const t = time(item.expires)
   return t > 0 && t - now < DAY
+}
+
+// --- Going through them, one at a time (#2499 part 2) ---
+
+/** A deploy waits on the owner: first in the wizard (Anis 11-28, "client
+ *  deploys first"). The Desk card has no client or deploy field, so it is
+ *  the word in what is asked. */
+export function waitingDeploy(item: Pick<WaitingItem, "title" | "ask">): boolean {
+  return /\bdeploy/i.test(`${item.title} ${item.ask ?? ""}`)
+}
+
+/** Most urgent first: deploys, then the soonest to expire, then the oldest. */
+export function byUrgent(a: WaitingItem, b: WaitingItem): number {
+  const d = Number(waitingDeploy(b)) - Number(waitingDeploy(a))
+  if (d) return d
+  const ea = time(a.expires) || Number.MAX_SAFE_INTEGER
+  const eb = time(b.expires) || Number.MAX_SAFE_INTEGER
+  if (ea !== eb) return ea - eb
+  return (time(a.askedAt) || Number.MAX_SAFE_INTEGER) - (time(b.askedAt) || Number.MAX_SAFE_INTEGER)
+}
+
+/** One step of the wizard: one item, or every "Not finished" request at once. */
+export type WizardStep = { kind: "one"; item: WaitingItem } | { kind: "requests"; items: WaitingItem[] }
+
+/** The steps, most urgent first. Two or more requests are one step, last:
+ *  restart all, close all, or one by one. */
+export function wizardSteps(items: WaitingItem[]): WizardStep[] {
+  const requests = items.filter((i) => i.kind === "request")
+  const rest = (requests.length > 1 ? items.filter((i) => i.kind !== "request") : items).slice().sort(byUrgent)
+  const steps: WizardStep[] = rest.map((item) => ({ kind: "one", item }))
+  if (requests.length > 1) steps.push({ kind: "requests", items: requests.slice().sort(byUrgent) })
+  return steps
+}
+
+/** "One by one": the requests step at `at` becomes one step per request. */
+export function oneByOne(steps: WizardStep[], at: number): WizardStep[] {
+  const s = steps[at]
+  if (!s || s.kind !== "requests") return steps
+  return [...steps.slice(0, at), ...s.items.map((item): WizardStep => ({ kind: "one", item })), ...steps.slice(at + 1)]
+}
+
+export type WizardAction = "yes" | "no" | "later"
+
+/** What is sent for an answer (approvals-panel.ts: yes | no | later, with
+ *  the 1-based choice when the card offers choices). */
+export function decideBody(key: string, action: WizardAction, choice: number | null = null): { key: string; action: WizardAction; choice?: number } {
+  return { key, action, ...(action === "yes" && choice !== null ? { choice: choice + 1 } : {}) }
+}
+
+/** An answer in words, as the summary says it. */
+export function answerWords(item: Pick<WaitingItem, "kind" | "choices">, action: WizardAction, choice: number | null = null): string {
+  if (action === "later") return "Later"
+  if (item.kind === "request") return action === "yes" ? "Pick it up again" : "Close it"
+  if (action === "yes" && choice !== null && item.choices?.[choice]) return item.choices[choice]
+  return action === "yes" ? "Yes" : "No"
+}
+
+/** Kinds whose yes sends or publishes outside: one more tap to confirm. */
+export function sendsOutside(kind: string): boolean {
+  return kind === "whatsapp" || kind === "email" || kind === "content"
+}
+
+/** One answer given in the wizard, sent or not. */
+export interface SentAnswer { key: string; title: string; agent?: string; words: string; error?: string }
+
+/** The end summary: what went to whom, by agent in the order first
+ *  answered, and what could not be sent. */
+export function sentSummary(sent: SentAnswer[]): { byAgent: { agent: string; answers: SentAnswer[] }[]; failed: SentAnswer[] } {
+  const byAgent: { agent: string; answers: SentAnswer[] }[] = []
+  for (const s of sent) {
+    if (s.error) continue
+    const agent = s.agent || ""
+    let g = byAgent.find((x) => x.agent === agent)
+    if (!g) byAgent.push(g = { agent, answers: [] })
+    g.answers.push(s)
+  }
+  return { byAgent, failed: sent.filter((s) => s.error) }
 }

@@ -22,6 +22,7 @@ import { initials, orgNode } from "./data"
 import { save, useGeneralData } from "./GeneralPane"
 import { DisclosureContext, ErrorLine, PaneHeader, SkeletonRows } from "./parts"
 import { paneDef } from "./panes"
+import { waitingHref } from "../waiting"
 
 const PANE = "agent"
 const TABS = [["overview", "Overview"], ["personality", "Personality"], ["skills", "Skills"], ["channels", "Channels"], ["handovers", "Handovers"]] as const
@@ -112,7 +113,7 @@ function OnSwitch({ agent, status }: { agent: AgentConfig; status?: string }) {
     onSuccess: () => { setError(""); return client.invalidateQueries({ queryKey: ["settings", "org"] }) },
     onError: (e) => setError("Not changed: " + (e as Error).message),
   })
-  if (status === "waiting") return <a href="#status=open&view=decide" title="It starts once you approve it" className={badgeVariants({ variant: "warn" })}>Waits for approval</a>
+  if (status === "waiting") return <a href={waitingHref()} title="It starts once you approve it" className={badgeVariants({ variant: "warn" })}>Waits for approval</a>
   const on = status !== "paused"
   return (
     <span className="flex items-center gap-2 text-sm text-muted-foreground">
