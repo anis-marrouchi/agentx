@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.311.0](https://github.com/anis-marrouchi/agentx/compare/v0.310.1...v0.311.0) (2026-11-27)
+
+
+### Features
+
+* **desktop:** agentx desktop orb switches a Mac from AgentX Voice to the orb ([#2265](https://github.com/anis-marrouchi/agentx/issues/2265)) ([#2533](https://github.com/anis-marrouchi/agentx/issues/2533)) ([d673b85](https://github.com/anis-marrouchi/agentx/commit/d673b8527dc4f991075fb6923ce7c723ce26f2c6))
+
 ## [0.310.1](https://github.com/anis-marrouchi/agentx/compare/v0.310.0...v0.310.1) (2026-11-27)
 
 
