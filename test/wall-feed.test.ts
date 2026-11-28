@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { renderWallPage, WALL_CLASSIC_LINKS } from "../src/daemon/ui/pages/wall"
+import { renderWallPage, WALL_CLASSIC_LINKS, WALL_FIRST_FRAME_SCRIPT } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
 import { wallCapacity } from "../src/daemon/wall-capacity"
@@ -408,6 +408,62 @@ describe("Feed title row keeps Chat on its line (#2387 follow-up)", () => {
   })
 })
 
+describe("Feed and List have their final frame from the first paint (#2101, Hakim v0.311.3 check)", () => {
+  /** Runs the first-frame script as the parser would, on a root with the given link. */
+  function firstFrame(hash: string): string[] {
+    const classes = new Set<string>()
+    const root = { classList: { add: (c: string) => classes.add(c) } }
+    new Function("document", "location", WALL_FIRST_FRAME_SCRIPT)({ currentScript: { parentElement: root } }, { hash })
+    return [...classes].sort()
+  }
+
+  it("the script sits right inside the wall root, before the head and the composer", () => {
+    const page = renderWallPage()
+    const root = page.indexOf('<div class="ax-wall"><script>')
+    expect(root).toBeGreaterThan(-1)
+    const script = page.indexOf("document.currentScript.parentElement", root)
+    expect(script).toBeGreaterThan(root)
+    expect(script).toBeLessThan(page.indexOf('class="ax-wall__head"'))
+    expect(script).toBeLessThan(page.indexOf('id="wall-compose"'))
+  })
+
+  it("the Feed gets its column before any script of the page runs", () => {
+    expect(firstFrame("")).toEqual(["is-posts"])
+    expect(firstFrame("#status=open")).toEqual(["is-posts"])
+    expect(firstFrame("#page=wall&view=feed")).toEqual(["is-posts"])
+  })
+
+  it("the List gets the List frame, not the feed's, before any script of the page runs", () => {
+    expect(firstFrame("#status=open&view=list")).toEqual(["is-list", "is-posts", "is-wide"])
+  })
+
+  it("other pages and a post link are left to their own scripts", () => {
+    expect(firstFrame("#page=settings")).toEqual([])
+    expect(firstFrame("#post=r1")).toEqual([])
+    expect(firstFrame("#view=cost")).toEqual([])
+  })
+
+  it("the head keeps the feed's column on the List, so the title does not move", () => {
+    const page = renderWallPage()
+    expect(page).toContain(".ax-wall.is-posts .ax-wall__main > .ax-wall__head { max-width: var(--fd-head); margin-left: auto; margin-right: auto; }")
+    expect(page).toContain(".ax-wall.is-posts .ax-wall__main > .ax-wall__head { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-head) + 48px); }")
+    expect(page).not.toMatch(/\.ax-wall\.is-posts\.is-wide \{[^}]*--fd-head/)
+    expect(page).toContain(".ax-wall.is-list .ax-wall__main > .fd-compose { display: none; }")
+  })
+
+  it("grey loading rows show until the first read answers, then go", async () => {
+    expect(renderWallPage()).toContain('id="wall-loading" role="status" aria-busy="true"')
+    const waiting = openWall({ feed: new Promise(() => {}), hash: "#view=list" })
+    await waiting.settle()
+    expect(waiting.wall.classList.contains("is-loaded")).toBe(false)
+    expect(waiting.wall.classList.contains("is-list")).toBe(true)
+    const loaded = openWall({})
+    await loaded.settle()
+    expect(loaded.wall.classList.contains("is-loaded")).toBe(true)
+    expect(loaded.wall.classList.contains("is-list")).toBe(false)
+  })
+})
+
 describe("Feed and List keep their frame while the posts load (#2101, Anis v0.289.0)", () => {
   it("the feed has its column before the posts answer", async () => {
     const w = openWall({ feed: new Promise(() => {}) })
@@ -425,9 +481,9 @@ describe("Feed and List keep their frame while the posts load (#2101, Anis v0.28
 
   it("the List is a centred column with the feed's gutters, not full width", () => {
     const page = renderWallPage()
-    expect(page).toContain(".ax-wall.is-posts { --fd-col: 720px; }")
+    expect(page).toContain(".ax-wall.is-posts { --fd-col: 720px; --fd-head: 720px; }")
     expect(page).toContain(".ax-wall.is-posts.is-wide { --fd-col: 976px; }")
-    expect(page).toContain(".ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }")
+    expect(page).toContain(".ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }")
     expect(page).toContain("padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }")
     expect(page).not.toContain("padding-left: 24px; padding-right: 24px; max-width: none; }")
   })

@@ -476,9 +476,17 @@ export const WALL_FEED_CSS = `
 /* One column for the feed and the List: the same frame and gutters at
    every width; the List's table is wider (C3). The column is set before
    the posts arrive, so nothing moves when they do (#2101). */
-.ax-wall.is-posts { --fd-col: 720px; }
+.ax-wall.is-posts { --fd-col: 720px; --fd-head: 720px; }
 .ax-wall.is-posts.is-wide { --fd-col: 976px; }
-.ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }
+.ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }
+/* The head keeps the feed's column on the List too, so Feed | List never
+   moves the title (#2101, Hakim's v0.311.3 check: 572 vs 444 px). */
+.ax-wall.is-posts .ax-wall__main > .ax-wall__head { max-width: var(--fd-head); margin-left: auto; margin-right: auto; }
+/* The List has no composer, from the first frame (WALL_FIRST_FRAME_SCRIPT). */
+.ax-wall.is-list .ax-wall__main > .fd-compose { display: none; }
+/* Grey rows under the bar until the first read answers, on Feed and List. */
+.fd-loading { display: none; }
+.ax-wall.is-posts:not(.is-loaded) .ax-wall__main > .fd-loading { display: flex; flex-direction: column; gap: 12px; width: 100%; padding: 16px 0; }
 .ax-wall.is-posts .ax-wall__head { position: static; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 0; }
 .ax-wall.is-posts .ax-wall__titlebar { padding: 24px 0 16px; gap: 8px; flex-wrap: wrap; }
 .ax-wall.is-posts .ax-wall__titlebar h1 { font-size: var(--ax-fs-pane); font-weight: var(--ax-fw-strong); letter-spacing: -.01em; }
@@ -705,7 +713,8 @@ button.fp__mi { cursor: pointer; }
 
 /* Mid width: the side menu is a rail; the search box is shorter. */
 @media (max-width: 1180px) {
-  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }
+  .ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }
+  .ax-wall.is-posts .ax-wall__main > .ax-wall__head { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-head) + 48px); }
   .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: 24px; margin-right: 24px; padding-left: 16px; padding-right: 12px; }
   @media (min-width: 769px) { .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
   .fd-q { width: 160px; }
@@ -716,7 +725,7 @@ button.fp__mi { cursor: pointer; }
 }
 /* Phone: the title row, then Feed | List full width; search is an icon. */
 @media (max-width: 640px) {
-  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list) { padding-left: 16px; padding-right: 16px; }
+  .ax-wall.is-posts .ax-wall__main > :is(.ax-wall__head, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { padding-left: 16px; padding-right: 16px; }
   .ax-wall.is-posts .ax-wall__main > .fd-compose { margin: 0 16px 12px; }
   .ax-wall.is-posts .ax-wall__main > .fd-bar { max-width: none; }
   /* The feed has its own search icon; agents and pages stay one tap away in the menu (#2388). */
