@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 import { resolveHubLayout, HUB_SHOW_IDS } from "../src/hub/layout"
-import { PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLandingHash, shellNav, type ShellMenu } from "../src/hub/shell"
+import { IN_AGENT_LIST, PAGE_SHELL, SHELL_MAIN, SHELL_MORE, SHELL_PAGE, currentLayout, shellLandingHash, shellNav, type ShellMenu } from "../src/hub/shell"
 import { hubMenuCatalog } from "../src/daemon/ui/pages/wall"
 import { presetItems, type MenuItem } from "../src/daemon/hub-menu"
 import { HUB_REACT_PAGES, hubReactPageIds } from "../src/hub/pages"
@@ -27,7 +27,15 @@ describe("shell side menu per layout", () => {
     expect(shellNav(simple, { owner: true }).more).toEqual([])
   })
   it("full: every hidden item that is a place, in Settings order", () => {
-    expect(ids(shellNav(full, { owner: true }).more)).toEqual(["mobile", "workflows", "wiki", "activity", "org", "sessions", "usage"])
+    expect(ids(shellNav(full, { owner: true }).more)).toEqual(["mobile", "workflows", "wiki", "org", "usage"])
+  })
+  it("Activity and Sessions are in the agents list, not the menu; search finds them (#2101 R1)", () => {
+    for (const v of [full, simple]) {
+      const nav = shellNav(v, { owner: true })
+      expect(ids([...nav.main, ...nav.more])).not.toEqual(expect.arrayContaining(["activity"]))
+      expect(ids([...nav.main, ...nav.more])).not.toEqual(expect.arrayContaining(["sessions"]))
+      expect(ids(nav.hidden)).toEqual(["activity", "sessions"])
+    }
   })
   it("one switch on in simple shows that item only", () => {
     const v = resolveHubLayout({ layout: "simple", show: { workflows: true } })
@@ -35,7 +43,7 @@ describe("shell side menu per layout", () => {
   })
   it("one switch off in full hides that item only", () => {
     const v = resolveHubLayout({ layout: "full", show: { org: false, wiki: false } })
-    expect(ids(shellNav(v, { owner: true }).more)).toEqual(["mobile", "workflows", "activity", "sessions", "usage"])
+    expect(ids(shellNav(v, { owner: true }).more)).toEqual(["mobile", "workflows", "usage"])
   })
   it("rules, gates and hosts are not menu items", () => {
     const v = resolveHubLayout({ layout: "simple", show: { rules: true, gates: true, hosts: true } })
@@ -139,7 +147,10 @@ describe("the shell draws three columns", () => {
     const html = draw({ view: full })
     expect(html).toContain('data-layout="full"')
     expect(html).toContain('data-shell-group="more"')
-    for (const id of Object.keys(SHELL_MORE)) expect(html).toContain(`data-shell-item="${id}"`)
+    for (const id of Object.keys(SHELL_MORE)) {
+      if (IN_AGENT_LIST.has(id)) expect(html).not.toContain(`data-shell-item="${id}"`)
+      else expect(html).toContain(`data-shell-item="${id}"`)
+    }
   })
   it("a switch turned on shows its item in the simple layout", () => {
     const html = draw({ view: resolveHubLayout({ layout: "simple", show: { workflows: true } }) })
@@ -248,6 +259,14 @@ describe("the saved Hub menu (#2149 M2)", () => {
       expect(p.href).toMatch(/^#/)
       expect(p.href).not.toContain("&amp;")
     }
+  })
+  it("a saved Work group drops Running now, Live and Activity: the agents list shows them (#2101 R1)", () => {
+    const nav = shellNav(simple, { owner: true, menu: saved(presetItems("everything", catalog)) })
+    const drawn = ids([...nav.main, ...nav.more])
+    for (const id of ["running", "sessions", "activity"]) expect(drawn).not.toContain(id)
+    // Still reachable by search (⌘K), and the rest of Work is still drawn.
+    expect(ids(nav.hidden)).toEqual(expect.arrayContaining(["running", "sessions", "activity"]))
+    expect(drawn).toEqual(expect.arrayContaining(["jobledger", "projects"]))
   })
   it("every icon the saved menu can draw is in the kit", () => {
     const nav = shellNav(simple, { owner: true, menu: saved(presetItems("everything", catalog)) })

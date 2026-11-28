@@ -52,6 +52,13 @@ export function waitingList(reply: WaitingReply | null | undefined): WaitingList
   return { items, later: Number(d?.later) || 0, errors: Array.isArray(d?.errors) ? d!.errors.filter(Boolean) : [] }
 }
 
+/** Waiting on you's number: the Desk items of a reply, undefined while it
+ *  loads. The menu's Waiting on you item and its Needs you heading both
+ *  show this one number (#2101 R3). */
+export function waitingCount(reply: WaitingReply | null | undefined): number | undefined {
+  return reply ? waitingList(reply).items.length : undefined
+}
+
 const KIND_WORD: Record<string, string> = {
   card: "Decision", request: "Request", schedule: "Schedule", memory: "Memory", wiki: "Wiki", fact: "Fact", question: "Question",
   whatsapp: "WhatsApp", email: "Email", agent: "Agent", content: "Content", ci: "CI",

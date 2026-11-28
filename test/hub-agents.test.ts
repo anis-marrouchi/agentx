@@ -280,14 +280,18 @@ describe("a short side menu", () => {
     expect(haListHtml(m, "", {}, ltEsc, ltAge)).toContain('<details class="ha__fold" data-key="g:done" data-ha-open="done"><summary class="ha__h"><span class="ha__ht">Done today</span><span class="ha__hn" data-n="1">1</span>')
     expect(haListHtml(m, "", { done: true }, ltEsc, ltAge)).toContain('data-ha-open="done" open>')
   })
-  it("shows 3 rows under Needs you, then Show all (N)", () => {
-    const four: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: ["n1", "n2", "n3", "n4"].map((id) => ({ id, name: id })) }]
-    const q: HaNeed[] = ["n1", "n2", "n3", "n4"].map((id, i) => ({ key: "k" + id, title: "Ok?", agent: id, at: NOW - i * 1000 }))
-    const m4 = hubAgentRows(four, q, NOW, DAY, title, ltPlain, liveWorkCount(four))
-    const h = haListHtml(m4, "", { needs: true }, ltEsc, ltAge)
-    expect(rowsOf(h)).toHaveLength(3)
-    expect(h).toContain('data-ha-more="needs" aria-expanded="false">Show all (4)</button>')
-    expect(rowsOf(haListHtml(m4, "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(4)
+  it("shows the top 5 under Needs you, then Show all (N) (#2101 R3)", () => {
+    const ids = ["n1", "n2", "n3", "n4", "n5", "n6", "n7"]
+    const seven: LtNode[] = [{ name: "Mac", url: "http://mac", reachable: true, agents: ids.map((id) => ({ id, name: id })) }]
+    const q: HaNeed[] = ids.map((id, i) => ({ key: "k" + id, title: "Ok?", agent: id, at: NOW - i * 1000 }))
+    const m7 = hubAgentRows(seven, q, NOW, DAY, title, ltPlain, liveWorkCount(seven))
+    const h = haListHtml(m7, "", { needs: true }, ltEsc, ltAge)
+    expect(rowsOf(h)).toHaveLength(5)
+    expect(h).toContain('data-ha-more="needs" aria-expanded="false">Show all (7)</button>')
+    expect(rowsOf(haListHtml(m7, "", { needs: true, needsAll: true }, ltEsc, ltAge))).toHaveLength(7)
+    // Five or fewer: no Show all.
+    const m5 = hubAgentRows(seven, q.slice(0, 5), NOW, DAY, title, ltPlain, liveWorkCount(seven))
+    expect(haListHtml(m5, "", { needs: true }, ltEsc, ltAge)).not.toContain('data-ha-more="needs"')
   })
   it("still takes the old idleOpen boolean", () => {
     expect(haListHtml(mm, "", true, ltEsc, ltAge)).toContain('data-ha-open="needs" open')

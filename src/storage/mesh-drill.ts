@@ -45,6 +45,37 @@ export function listThreadRuns(
   }))
 }
 
+// --- An agent's latest conversation (#2101 R26) ---
+//
+// What a click on an idle agent in the Hub opens: the chat it spoke in last,
+// on any channel. Schedules and workflow steps are jobs, not conversations,
+// so they are left out. Same content rules as the rest of this module: the
+// thread's key and its runs, never a payload; the turns' words are read from
+// the run's session (/agents/:id/tasks/:tid/session), which is mesh-gated.
+
+/** Channels that are jobs, not a conversation with someone. */
+const NOT_A_CONVERSATION = "COALESCE(channel,'unknown') NOT IN ('cron','workflow')"
+
+export interface LatestThread {
+  found: boolean
+  agent: string
+  channel?: string
+  chatId?: string
+  /** Newest first, at most `limit` (listThreadRuns). */
+  runs: RunRow[]
+}
+
+export function latestThread(db: Database.Database, args: { agent: string; limit?: number }): LatestThread {
+  const last = db.prepare(`
+    SELECT COALESCE(channel,'unknown') channel, COALESCE(chat_id,'-') chatId FROM task_traces
+    WHERE agent_id = @agent AND ${AGENT_RUNS_ONLY} AND ${NOT_A_CONVERSATION}
+    ORDER BY started_at DESC LIMIT 1
+  `).get({ agent: args.agent }) as { channel: string; chatId: string } | undefined
+  if (!last) return { found: false, agent: args.agent, runs: [] }
+  const limit = Math.max(1, Math.min(50, Math.floor(args.limit ?? 10)))
+  return { found: true, agent: args.agent, ...last, runs: listThreadRuns(db, { agent: args.agent, ...last, limit }) }
+}
+
 /** Same shape for a recurring job, keyed the way buildMeshAnalytics keys it. */
 export function listJobRuns(
   db: Database.Database,

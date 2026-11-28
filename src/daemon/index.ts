@@ -221,7 +221,7 @@ import {
   relayChatId, relayRateLimiter, unresolvableInboxes, RELAY_CHANNEL,
 } from "@/daemon/mesh-inbox"
 import { buildMeshAnalytics } from "@/storage/mesh-analytics"
-import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary } from "@/storage/mesh-drill"
+import { listThreadRuns, listJobRuns, getRunShape, getDayActivity, getConversationSummary, latestThread } from "@/storage/mesh-drill"
 import { UPLOAD_PATH, acceptAttachments, attachedLine, handleAssistantUpload, withAttachedFiles } from "./assistant-upload"
 import { assistantModel } from "./assistant-model"
 import { assistantRuns } from "./assistant-runs"
@@ -8016,6 +8016,7 @@ export class AgentXDaemon {
       //   GET /analytics/thread?agent=&channel=&chat=&limit=
       //   GET /analytics/job?kind=cron|workflow&key=&limit=
       //   GET /analytics/run/:taskId
+      //   GET /analytics/latest?agent=&limit=   (an agent's latest conversation, #2101 R26)
       if (req.method === "GET" && path === "/analytics/mesh") {
         if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
         const num = (k: string, d: number): number => {
@@ -8040,6 +8041,14 @@ export class AgentXDaemon {
         }
         const limit = parseInt(url.searchParams.get("limit") || "120", 10)
         this.json(res, 200, { runs: listThreadRuns(this.db, { agent, channel, chatId: chat, limit }) })
+        return
+      }
+      if (req.method === "GET" && path === "/analytics/latest") {
+        if (!this.db) { this.json(res, 503, { error: "sqlite not opened" }); return }
+        const agent = url.searchParams.get("agent")
+        if (!agent) { this.json(res, 400, { error: "agent query param required" }); return }
+        const limit = parseInt(url.searchParams.get("limit") || "10", 10)
+        this.json(res, 200, latestThread(this.db, { agent, limit: Number.isFinite(limit) ? limit : 10 }))
         return
       }
       if (req.method === "GET" && path === "/analytics/job") {

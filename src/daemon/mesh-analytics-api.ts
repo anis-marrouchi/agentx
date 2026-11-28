@@ -159,6 +159,9 @@ export async function proxyNodeAnalytics(
   nodes: NodeTarget[],
   targetUrl: string,
   upstreamPath: string,
+  /** Give up on a node that does not answer in time (502), so the Hub can
+   *  say it is not checked instead of waiting (#2101 R26). */
+  timeoutMs?: number,
 ): Promise<void> {
   const target = targetUrl.replace(/\/+$/, "")
   const node = nodes.find((n) => n.url.replace(/\/+$/, "") === target)
@@ -170,7 +173,7 @@ export async function proxyNodeAnalytics(
   const headers: Record<string, string> = { Accept: "application/json" }
   if (node.token) headers["Authorization"] = `Bearer ${node.token}`
   try {
-    const r = await fetch(target + upstreamPath, { headers })
+    const r = await fetch(target + upstreamPath, { headers, ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}) })
     const body = await r.text()
     res.writeHead(r.status, { "Content-Type": "application/json; charset=utf-8" })
     res.end(body)

@@ -61,9 +61,9 @@ The Hub is being rebuilt page by page (the setting `dashboard.hub.react`, on by 
    **Check it worked:** ask an agent to write a short file, for example "Write a file notes/hello.md with one line". While it works, **hello.md** appears under **Run artifacts** with **wrote**. Pick an earlier run under **Other runs in this chat**: the list changes to that run's files.
 
    **If something is wrong:** if **Run artifacts** stays on **Nothing yet** until the run ends, the browser could not open the run's live output; the files still show when the run ends (press the reload button at the top right of the tabs). If **Project** is missing, the agent's runs touched no file inside a Git repository and its workspace is not one.
-5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Activity**, **Org**, **Sessions** and **Usage**, show under **More** in the side menu. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
+5. **Items you switch on** in [Settings › Layout](./settings.md#layout), such as **Workflows**, **Wiki**, **Mobile app**, **Org** and **Usage**, show under **More** in the side menu. **Running now**, **Sessions** (the Live page) and **Activity** are not menu items in the shell, in a saved menu either: the agent list shows what runs now, and a click on an agent opens its live run or its latest conversation. Type their name in **Search agents and pages** to open them. Switch one on, go back to `/hub#page=home`, and it is there, with no restart and no reload. The full layout shows them all:
 
-   ![The simple shell with the full layout: More lists Mobile app, Workflows, Wiki, Activity, Org, Sessions and Usage](/screenshots/hub-shell/full.png)
+   ![The simple shell with the full layout: the items switched on, under More](/screenshots/hub-shell/full.png)
 
    **Your own menu:** once you save a change in **Settings › Menu**, the side menu shows that menu instead, in your order, with your names, group headers, saved views and links (links open in a new tab). **Search agents and pages** and the agent list stay at the top. A page you take out of the menu is not gone: type its name in the search and it shows under **Other pages**. The Hub feed is **Tasks** there, and **Schedules** is **Automations**. The menu is the owner's: anyone else who opens the Hub sees the default list, without your links. Until you first save, nothing changes.
 
@@ -240,14 +240,14 @@ With no project yet, the page says how a project is made and shows **Add project
 
 ## See every agent at a glance
 
-The side menu lists every agent of every connected machine once, by what it is doing. One click opens a working agent's live run, or any other agent's chat. It changes by itself every 2 seconds, in place: nothing jumps, and a menu you opened stays open.
+The side menu lists every agent of every connected machine once, by what it is doing. One click opens a working agent's live run, an agent's questions for you, or any other agent's latest conversation, from whichever channel it was on. It changes by itself every 2 seconds, in place: nothing jumps, and a menu you opened stays open.
 
 ![The full side menu at 1440 pixels: search, the agents under Needs you and Working, the folded groups, Workspace and Settings](/screenshots/hub-sidemenu/side-menu.png)
 
 1. **Browser:** open the Hub. On a screen wider than 1180 pixels the full menu shows; on a narrower one it is the icon column or, on a phone, the menu button (see [Open the Hub](#open-the-hub)).
 2. There are no filter chips: the groups are the filter.
 3. The agents are grouped, what needs you first:
-   - **Needs you**: nothing running, and it asked you something, or its last run today failed. The row shows its oldest question, or **Run failed:** and the reason, with a red failed icon. It starts open, with its count on the heading, and shows its first 3 agents and **Show all (N)**.
+   - **Needs you**: nothing running, and it asked you something, or its last run today failed. The row shows its oldest question, or **Run failed:** and the reason, with a red failed icon. It starts open. Its heading shows the same number as **Waiting on you**, the things that wait on you; **Show all (N)** counts the agents it reveals. It shows its first 5 agents, then **Show all (N)**.
    - **Working**: a run is going. The row shows the title of its newest run next to a turning spinner. With reduced motion turned on in your system, the spinner stands still. A voice call's turn starts with **Voice ·**. Each agent is listed once. When it has more than one run going, its other runs are listed under its row, newest first, each with where it came from (**Voice**, **Agent to agent**, **GitLab** and so on) and its title: the first 3, then how many more. Select one to open that run live. Only agents of machines that answer count as working. While a machine is slow or answers with an error, its agents stay in the list but never under **Working**. When agents work on more than one machine, **Working** groups them under each machine's name with its count, as **At work now** does. The same count is used everywhere else: the **agents running** count in the status bar, **Running now** in the side menu and **running now** on the Live page. **Working** shows its first 3 agents and **Show all (N)**; select it to see every one, and **Show fewer** to go back.
    - **Done today**: its last run ended today. The row shows the first line of its last answer. It starts folded.
    - **Not working today**, folded at the end: every other agent.
@@ -262,6 +262,12 @@ The side menu lists every agent of every connected machine once, by what it is d
    - A **Working** row opens the run it is on, live: what it was asked, its steps as they come, **Send** and **Stop**. This works for a run from any channel (Telegram, a request, a scheduled job, another agent), not only one you started in the Hub chat.
    - A **Needs you** row opens that agent's questions for you (see [Answer an agent's questions](#answer-an-agents-questions)).
    - Any other row opens that agent's chat, with its latest conversation. If the run ended a moment before you selected the row, its chat opens too.
+
+   In the simple shell, a row under **Done today** or **Not working today** (and a failed one) opens the agent's latest conversation, on whichever channel it was: Telegram, WhatsApp, another agent, GitLab and so on. The top line names the channel and says **read only**; its last 10 turns show as in the Hub chat, what was asked and the answer. To write to the agent, select **New Hub chat** at the bottom: the Hub chat opens, with the box to write in. An agent with no conversation yet, or whose latest one is a Hub chat, opens the Hub chat at once.
+
+   **Check it worked:** send an agent a message on Telegram (or let another agent ask it something), wait until its run ends, then select it in the side menu. The centre shows that message and its answer, with **Telegram · read only** at the top. Select **New Hub chat**: the box to write in appears.
+
+   **If something is wrong:** **Latest conversation not checked** means the machine the agent runs on did not answer within 6 seconds. Nothing was read; it is not a sign that the agent has no conversation. Select **New Hub chat** to write to it anyway, or select the row again later.
 
 ### Answer an agent's questions
 

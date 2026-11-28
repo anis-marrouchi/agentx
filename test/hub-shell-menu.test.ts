@@ -11,6 +11,7 @@ import { SideMenu, SideRail, type SideMenuProps } from "../src/hub/shell/SideMen
 import {
   MENU_FOLDS_KEY, firstHit, menuGroups, readMenuFolds, saveMenuFolds, shellShortcut, type HaModel, type HaRow,
 } from "../src/hub/shell/menu"
+import { waitingCount, type WaitingReply } from "../src/hub/waiting"
 import { askLine, chatFilesSource, runArtifactsHtml, splitRunFiles, treeView } from "../src/hub/shell/FilesPanel"
 import { streamStep } from "../src/hub/shell/run-stream"
 import { runFilesOf, workspaceHtml } from "../src/daemon/ui/pages/wall-files"
@@ -98,6 +99,25 @@ describe("the Agents folds", () => {
     expect(html).toMatch(/data-shell-group="done"[\s\S]*?aria-expanded="false"[\s\S]*?Done today[\s\S]*?>1</)
     expect(html).not.toContain('data-shell-agent="gus"')
     expect(html).toContain("Show all (4)")
+  })
+  it("Needs you's heading and Waiting on you show the one Waiting on you number (#2101 R3)", () => {
+    const asks = model(["ann", "ben", "cal", "dan", "eve", "fox", "gil"].map((id) => row(id, "needs")))
+    const reply: WaitingReply = { desk: { items: ["a", "b", "c"].map((k) => ({ key: "card:" + k, kind: "card", title: k })) } }
+    const needs = waitingCount(reply)
+    expect(needs).toBe(3)
+    const g = menuGroups(asks, {}, "", needs).find((x) => x.id === "needs")!
+    expect(g.count).toBe(needs)
+    // Show all (N) still counts the rows it reveals.
+    expect(g.total).toBe(7)
+    const html = menu({ model: asks, needs })
+    const heading = html.match(/data-shell-group="needs"[\s\S]*?Needs you<\/span><span[^>]*>(\d+)</)![1]
+    expect(Number(heading)).toBe(needs)
+    expect(html).toContain(needs + " things wait on you")
+    expect(html).toContain("Show all (7)")
+    // A search counts the matches; before Waiting on you loads, the rows.
+    expect(menuGroups(asks, {}, "fox", needs).find((x) => x.id === "needs")!.count).toBe(1)
+    expect(menuGroups(asks, {}, "an", needs).find((x) => x.id === "needs")!.count).toBe(2)
+    expect(menuGroups(asks, {}, "", waitingCount(undefined)).find((x) => x.id === "needs")!.count).toBe(7)
   })
   it("the fold state is kept in the old Hub's key, so both menus agree", () => {
     const s = memStore()

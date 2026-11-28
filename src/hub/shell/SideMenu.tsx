@@ -166,7 +166,7 @@ function AgentGroup({ g, agent, onPick, onFold, onMore }: { g: MenuGroup; agent?
       <button type="button" aria-expanded={g.open} onClick={onFold} className={cn("mt-1.5 mb-0.5 flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-[13px] font-medium text-foreground hover:bg-(--ax-surface-2) cursor-pointer", ring)}>
         <Icon name="chevron-right" className={cn("size-3.5 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none", g.open && "rotate-90")} />
         <span className="flex-1">{g.label}</span>
-        <span className="text-xs font-normal tabular-nums text-muted-foreground">{g.total}</span>
+        <span className="text-xs font-normal tabular-nums text-muted-foreground">{g.count}</span>
       </button>
       {g.open ? (
         <>
@@ -199,7 +199,7 @@ export function SideMenu({ view, owner, model, needs, agent, onAgent, onDone, pa
   const nav = shellNav(view, { owner, menu })
   const needle = q.trim().toLowerCase()
   const hit = (label: string) => !needle || label.toLowerCase().includes(needle)
-  const groups = model ? menuGroups(model, folds, needle) : []
+  const groups = model ? menuGroups(model, folds, needle, needs) : []
   // Search is the box; Agents is the list above Workspace. A search shows
   // no group headers (#2149): only the items that match.
   const workspace = nav.main.filter((i) => i.id !== "search" && i.id !== "agents" && (needle ? !i.group && hit(i.label) : true))
