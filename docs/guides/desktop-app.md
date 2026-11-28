@@ -75,7 +75,7 @@ agentx desktop orb --dry-run   # see what changes
 agentx desktop orb
 ```
 
-It builds this app, puts it in `~/Applications/AgentX.app`, sets it to start at login with the orb shown and no window, and turns off the AgentX Voice login item, so only one of them runs. The AgentX Voice app and the computer-use helper stay installed. Allow the microphone when macOS asks.
+It builds this app, puts it in `~/Applications/AgentX.app`, sets it to start at login with the orb shown and no window, and turns off the AgentX Voice login item, so only one of them runs. If another copy of this app is already installed (for example `/Applications/AgentX.app`), the switch quits it and renames it to `AgentX.app.disabled-orb-<date>`, so only one copy runs and starts at login; rename it back to use it again. An app with the same name but another bundle id is left alone. The AgentX Voice app and the computer-use helper stay installed. Allow the microphone when macOS asks.
 
 After the switch, Option–Space does nothing until you turn on the talk key in the AgentX menu (macOS then asks for Input Monitoring). Until then, hold the orb to talk. Smart paste (Command–Option–V) was part of AgentX Voice and is off too.
 
@@ -88,7 +88,7 @@ agentx desktop orb --undo --dry-run   # see what changes
 agentx desktop orb --undo
 ```
 
-It turns off **Open at login** for the AgentX app and hides its orb, quits it, turns the AgentX Voice login item back on and starts AgentX Voice. Only the app can remove its own login item, so the undo starts it once in the background for a few seconds and quits it again. AgentX.app stays installed. To check, look under System Settings → General → Login Items.
+It turns off **Open at login** for the AgentX app and hides its orb, quits it, turns the AgentX Voice login item back on and starts AgentX Voice. Only the app can remove its own login item, so the undo starts it once in the background for a few seconds and quits it again. AgentX.app stays installed, and a copy the switch renamed stays renamed. To check, look under System Settings → General → Login Items.
 
 ## Settings
 

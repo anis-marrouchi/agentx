@@ -6,6 +6,22 @@ import { join } from 'node:path'
 
 /** The Electron app's bundle name (productName in apps/desktop/package.json). */
 export const ORB_APP = 'AgentX.app'
+/** Its bundle id (build.appId in apps/desktop/package.json). */
+export const ORB_BUNDLE_ID = 'dev.agentx.desktop'
+/** Every other place the same app may already be installed. Two copies would
+ *  both run and both start at login, since they share one settings file. */
+export function otherOrbApps(home: string, dest: string): string[] {
+  return [join(home, 'Applications', ORB_APP), join('/Applications', ORB_APP)].filter(app => app !== dest)
+}
+/** Where another copy is moved aside to: no longer ending in .app, so macOS
+ *  does not start it; renaming it back gives it back. `taken` says whether a
+ *  name is used already (a second switch on the same day). */
+export function retiredOrbApp(app: string, now: Date, taken: (path: string) => boolean): string {
+  const base = retiredLoginItem(app, now)
+  let name = base
+  for (let i = 2; taken(name); i++) name = `${base}-${i}`
+  return name
+}
 /** Its settings file: Electron's userData folder is named after productName. */
 export function orbSettingsFile(home: string): string {
   return join(home, 'Library/Application Support/AgentX/settings.json')

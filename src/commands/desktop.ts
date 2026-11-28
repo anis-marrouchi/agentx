@@ -7,7 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { loadDaemonConfig } from '@/daemon/config'
 import { type VoiceWarning, appVersion, macVoiceWarnings, startedApp } from '@/desktop/voice-checks'
 import { DESKTOP_APP, HELPER_APP, OLD_DESKTOP_APP, type LoginItem, adoptLoginItem, desktopPath, desktopPlatformError, desktopPlist, findOnPath, helperBuildArgs, installedHelper, isNativeExecutable, isVoiceLoginItemFile, packageRoot, selectDesktopAgent } from '@/desktop/install'
-import { ORB_APP, ORB_BUILD_ARGS, builtOrbApp, orbSettings, orbSettingsFile, restoredLoginItem, retiredLoginItem, undoOrbSettings } from '@/desktop/orb-switch'
+import { ORB_APP, ORB_BUILD_ARGS, ORB_BUNDLE_ID, builtOrbApp, orbSettings, orbSettingsFile, otherOrbApps, restoredLoginItem, retiredLoginItem, retiredOrbApp, undoOrbSettings } from '@/desktop/orb-switch'
 
 function checkPlatform() {
   const error = desktopPlatformError(process.platform, process.arch, release())
@@ -136,6 +136,16 @@ async function quitOrbApp(dest: string) {
   }
   throw new Error(`${dest} did not quit. Quit AgentX from its menu, then retry.`)
 }
+function bundleId(app: string): string | null {
+  try { return execFileSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', join(app, 'Contents/Info.plist')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() }
+  catch { return null /* no Info.plist or no id */ }
+}
+/** Other installed copies of the orb app, split into ours (to quit and move
+ *  aside) and apps that only share the name (left alone). */
+function otherOrbCopies(home: string, dest: string) {
+  const found = otherOrbApps(home, dest).filter(app => existsSync(app))
+  return { ours: found.filter(app => bundleId(app) === ORB_BUNDLE_ID), foreign: found.filter(app => bundleId(app) !== ORB_BUNDLE_ID) }
+}
 function readOrbSettings(file: string): unknown {
   try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null /* first run: defaults */ }
 }
@@ -154,7 +164,10 @@ async function undoOrb(home: string, dest: string, dryRun: boolean) {
     return back ? [{ file: join(dir, name), back }] : []
   })
   const installed = existsSync(dest)
-  console.log(`${installed ? `Desktop app ${dest}: Open at login off, orb hidden, quit (the app stays installed)` : `No desktop app at ${dest}`}${retired.map(r => `\nWidget login item back on → ${r.back}${existsSync(r.back) ? ' (already there: left as it is)' : ''}`).join('')}\nThen: agentx desktop start`)
+  const asides = [...otherOrbApps(home, dest), dest].flatMap(app => {
+    try { return readdirSync(dirname(app)).filter(name => name.startsWith(`${ORB_APP}.disabled-orb-`)).map(name => join(dirname(app), name)) } catch { return [] }
+  })
+  console.log(`${installed ? `Desktop app ${dest}: Open at login off, orb hidden, quit (the app stays installed)` : `No desktop app at ${dest}`}${retired.map(r => `\nWidget login item back on → ${r.back}${existsSync(r.back) ? ' (already there: left as it is)' : ''}`).join('')}${asides.map(a => `\nOther copy the switch moved aside stays there → ${a}`).join('')}\nThen: agentx desktop start`)
   if (dryRun) return
   if (installed) {
     writeOrbSettings(orbSettingsFile(home), undoOrbSettings(readOrbSettings(orbSettingsFile(home))))
@@ -188,7 +201,8 @@ desktop.command('orb').description('switch this Mac from the AgentX Voice widget
     const { keep, remove } = loginItems()
     const widgets = [keep, ...remove].filter(item => existsSync(item.file))
     const now = new Date()
-    console.log(`Desktop app with the orb → ${dest} (starts at login, orb shown, no window)\nSettings → ${orbSettingsFile(home)}${widgets.map(w => `\nWidget login item off → ${retiredLoginItem(w.file, now)}`).join('')}\nKept: ${join(home, 'Applications', DESKTOP_APP)} and ${HELPER_APP} (undo: agentx desktop orb --undo)`)
+    const copies = otherOrbCopies(home, dest)
+    console.log(`Desktop app with the orb → ${dest} (starts at login, orb shown, no window)\nSettings → ${orbSettingsFile(home)}${widgets.map(w => `\nWidget login item off → ${retiredLoginItem(w.file, now)}`).join('')}${copies.ours.map(app => `\nOther copy quit and moved aside → ${retiredOrbApp(app, now, existsSync)}`).join('')}${copies.foreign.map(app => `\nLeft alone (another app with the same name) → ${app}`).join('')}\nKept: ${join(home, 'Applications', DESKTOP_APP)} and ${HELPER_APP} (undo: agentx desktop orb --undo)`)
     if (opts.dryRun) return
     const stage = mkdtempSync(join(tmpdir(), 'agentx-orb-'))
     try {
@@ -199,6 +213,11 @@ desktop.command('orb').description('switch this Mac from the AgentX Voice widget
       run(ORB_BUILD_ARGS)
       const built = builtOrbApp(stage)
       if (!existsSync(built)) throw new Error(`The build left no app at ${built}.`)
+      // Only one copy may run: another one would start at login too.
+      for (const app of copies.ours) {
+        await quitOrbApp(app)
+        renameSync(app, retiredOrbApp(app, now, existsSync))
+      }
       // Quit a running copy before it is replaced; it may not be running.
       await quitOrbApp(dest)
       rmSync(dest, { recursive: true, force: true })
