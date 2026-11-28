@@ -16,6 +16,8 @@ export const APP_DESK_SCRIPT = `
   var ax = window.AXAsk;
   if (!panel || !ax) return;
   var esc = ax.esc, ago = ax.ago;
+  // One card at a time (#2499 part 2), loaded just before this script.
+  var wz = window.AXDeskWizard;
   var COLS = [['yours', 'Your turn'], ['agent', 'With agents'], ['quiet', 'No news'], ['done', 'Done']];
   var EMPTY = {
     yours: ['Nothing waits for you.', 'An answer an agent asks for shows here.'],
@@ -70,11 +72,17 @@ export const APP_DESK_SCRIPT = `
       answers(c, k) + '</article>';
   }
   function render(data) {
+    // "Go through them" is open (app-desk-wizard.client.ts): it keeps the
+    // panel and only learns what still waits.
+    if (wz && wz.active()) { panel._data = data; wz.live(data.cards); return; }
     // Redraws every 15 seconds; keep the facts the owner opened open.
     var openKeys = {};
     panel.querySelectorAll('details[open]').forEach(function (d) { openKeys[d.getAttribute('data-key')] = true; });
     var f = data.figures;
-    var html = '<div class="fx-head"><h2>Desk</h2><button type="button" class="fx-btn" data-act="refresh">Refresh</button></div>' +
+    var steps = wz ? wz.count(data.cards) : 0;
+    var html = '<div class="fx-head"><h2>Desk</h2><div class="fx-row fx-gap">' +
+      (steps ? '<button type="button" class="fx-btn fx-primary" data-act="wizard">Go through them</button>' : '') +
+      '<button type="button" class="fx-btn" data-act="refresh">Refresh</button></div></div>' +
       ax.statusLine(panel, data.ts) +
       '<p class="fx-muted dk-figures">Waits for you: <strong>' + f.yours.count + '</strong>' + (f.yours.oldest ? ', the oldest asked ' + esc(ago(f.yours.oldest)) : '') +
       (f.yours.later ? ' (' + f.yours.later + ' put off for later)' : '') +
@@ -104,6 +112,8 @@ export const APP_DESK_SCRIPT = `
       body: function (text, choice) {
         var b = { node: c.node, key: c.key, action: v };
         if (choice) { b.choice = choice; if (c.draft && text) b.text = text; }
+        // A content draft: the post shown, so a changed one is not published.
+        if (v === 'yes' && c.textHash) b.seen = c.textHash;
         return b;
       },
       done: function () { return v === 'later' ? 'Put off: ' + c.title + '.' : 'Answered ' + (pick ? '' : word + ': ') + c.title + '.'; } });
@@ -122,6 +132,11 @@ export const APP_DESK_SCRIPT = `
     var act = b.getAttribute('data-act');
     if (act === 'refresh') return refresh();
     if (act === 'col') { col = b.getAttribute('data-col'); if (panel._data) render(panel._data); return; }
+    if (act === 'wizard') {
+      // At the end (or Stop) the Desk is drawn again and read afresh.
+      if (panel._data) wz.start(panel, panel._data.cards, function () { col = 'yours'; render(panel._data); refresh(); });
+      return;
+    }
     var c = panel._data.cards[+b.getAttribute('data-k')];
     if (act === 'pick') decide(c, 'yes', +b.getAttribute('data-n'));
     if (act === 'decide') decide(c, b.getAttribute('data-v'));

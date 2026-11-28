@@ -19,6 +19,19 @@ export const APP_DESK_CSS = `
 .dk-opt { width: 100%; min-height: 48px; padding: 8px 14px; text-align: left; border-radius: var(--ax-radius-sm); overflow-wrap: anywhere; }
 .dk-opt small { display: block; margin-top: 2px; font-weight: 400; color: var(--ax-text-2); }
 .dk-opt em { font-style: normal; font-weight: 400; color: var(--ax-text-2); }
+/* Go through them (#2499 part 2, app-desk-wizard.client.ts). */
+.dk-wiz-head { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+.dk-wiz-head strong { flex: 1; }
+.dk-wiz-back { min-width: 44px; min-height: 44px; padding: 0; display: inline-grid; place-items: center; }
+.dk-wiz-back svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dk-ghost { background: transparent; border-color: transparent; color: var(--ax-text-2); }
+.dk-wiz h5 { margin: 14px 0 4px; font-size: var(--ax-fs-xs); font-weight: 600; color: var(--ax-text-2); }
+.dk-wiz-list { margin: 8px 0; padding-left: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.dk-wiz-confirm { margin-top: 12px; padding-top: 12px; border-top: var(--ax-border-w) solid var(--ax-border); }
+.dk-wiz-confirm p { margin: 0 0 4px; }
+.dk-wiz-in { animation: dk-wiz-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+@keyframes dk-wiz-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dk-wiz-in { animation: none; } }
 /* The card a notification opened (#2103). */
 .dk-wanted { outline: 2px solid var(--ax-accent, #2f6fed); outline-offset: 2px; }
 `

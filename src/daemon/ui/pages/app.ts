@@ -32,6 +32,8 @@ import { APP_LIVE_CSS, APP_LIVE_SCRIPT } from "./app-live.client"
 import { liveLabel, liveReduce, liveSseFrames } from "./app-live-logic"
 import { APP_DESK_SCRIPT } from "./app-desk.client"
 import { APP_DESK_CSS } from "./app-desk.css"
+import { APP_DESK_WIZARD_SCRIPT } from "./app-desk-wizard.client"
+import { wizId, wizUrgent, wizSteps, wizOneByOne, wizGone, wizLive, wizBody, wizWords, wizOutside, wizSummary } from "./app-desk-wizard-logic"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_PLACES_CSS, APP_PLACES_SCRIPT } from "./app-places.client"
 import { locationErrorText } from "./app-places-logic"
@@ -163,6 +165,7 @@ ${CAMERA_BODY}
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${injectFns({ liveSseFrames, liveReduce, liveLabel })}${APP_LIVE_SCRIPT}</script>
+<script>${injectFns({ wizId, wizUrgent, wizSteps, wizOneByOne, wizGone, wizLive, wizBody, wizWords, wizOutside, wizSummary })}${APP_DESK_WIZARD_SCRIPT}</script>
 <script>${injectFns({ parseOpenHash })}${APP_DESK_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>
