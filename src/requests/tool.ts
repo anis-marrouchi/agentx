@@ -2,6 +2,7 @@ import { resolveScheduleCaller } from "@/crons/schedule-tool"
 import { workHint } from "./work-hint.js"
 import { callerHeaders } from "@/calls/service"
 import { awaitingQa, describeQa } from "./qa"
+import { NO_PROJECT } from "./project"
 import type { GoalSummary } from "./goals"
 import { describeGoalCheck, type GoalRecord } from "./goal-store"
 import { describeFlow } from "./flow"
@@ -46,6 +47,8 @@ import { warnText } from "./before-close"
 //            the number that proves each period (number, its rhythm,
 //            optional cron). Its agent can no longer close it: only the
 //            owner ends it
+//   project  the project a request belongs to (#2587): its key, or
+//            "none" for No project. Any agent may move any request
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
 
@@ -108,6 +111,7 @@ export function describeOpen(items: any[]): string {
       describeDeliverables(r),
       awaitingQa(r) ? " Awaiting QA." : r.qa ? ` QA: ${describeQa(r.qa)}.` : "",
       r.goal ? ` Goal: ${r.goal.title} (${r.goal.id}).` : "",
+      r.project ? ` Project: ${r.project}.` : "",
     ].join("")
     return `- ${r.id} [${STATE_WORDS[r.state] ?? r.state}] ${when} UTC, ${r.channel}, ${r.agentId}: ${words.length > 160 ? `${words.slice(0, 159)}…` : words}.${extra}${loop}`
   }).join("\n")
@@ -235,6 +239,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         priority: args.priority, dueSource: args.dueSource, makeRoom: args.makeRoom,
         headline: args.headline, need: args.need, needsQa: args.needsQa, verdict: args.verdict, goal: args.goal,
         number: args.number, cron: args.cron, rhythm: args.rhythm,
+        ...(action === "project" ? { project: args.project ?? null } : {}),
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
@@ -256,6 +261,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     }
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "qa") return `Verdict recorded on ${r.id}: ${describeQa(r.qa)}. It shows on the request's card; nobody is told.`
+    if (action === "project") return `Request ${r.id} is now under ${r.project ? `project ${r.project}` : `"${NO_PROJECT}"`}.`
     if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
     if (action === "accept") return `Request ${r.id} is open and in progress.${serves} Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.${due}`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`

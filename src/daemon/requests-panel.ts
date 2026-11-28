@@ -4,7 +4,8 @@ import { requestCard } from "@/requests/card-view"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { CHECK_KINDS, type CheckKind } from "@/requests/checkers"
 import { STALL_GROUPS, type StallGroup } from "@/requests/loops"
-import { OWNER_BY } from "@/requests/store"
+import { OPEN_STATES, OWNER_BY } from "@/requests/store"
+import { normalizeProject } from "@/requests/project"
 import { findConfigPath } from "./config-mutator"
 import { resolve } from "path"
 import { openDb } from "@/storage/sqlite"
@@ -23,6 +24,8 @@ import type { StandingReadings } from "@/requests/standing"
 //                                                owner skips a loop's check, with the reason
 //   POST /api/admin/approvals/requests/reply     { id, text }: the agent that has it gets the reply and goes on
 //   POST /api/admin/approvals/requests/handoff   { id, agentId, note? }: that agent has it from now on
+//   POST /api/admin/approvals/requests/project   { id, project }: move it to a project, or to No project
+//                                                with null, "" or "none" (#2587)
 //   POST /api/admin/approvals/requests/settings  the settings form, plans included (#788)
 // An owner surface: it can drop a request, which agents cannot.
 
@@ -87,7 +90,7 @@ async function route(
     const items = open.map((r) => requestCard(r, store!, planStoreFor(ctx), look, numbers))
     const stalled = Object.fromEntries(STALL_GROUPS.map((g) => [g, 0])) as Record<StallGroup, number>
     for (const c of items) if (c.stall) stalled[c.stall.group]++
-    return { status: 200, body: { items, agents, settings, stalled, goals: store ? store.goals() : [] } }
+    return { status: 200, body: { items, agents, settings, stalled, goals: store ? store.goals() : [], projects: store ? store.projectCounts(OPEN_STATES) : [] } }
   }
 
   const act = path === `${REQUESTS_PANEL_PREFIX}/reply` ? "reply" : path === `${REQUESTS_PANEL_PREFIX}/handoff` ? "handoff" : null
@@ -109,6 +112,16 @@ async function route(
     if (!store.handOff(id, agentId, text, ctx.now ?? Date.now(), ctx.textMax)) return { status: 409, body: { error: `${id} is already closed` } }
     const who = agent?.name ?? agentId
     return { status: 200, body: { ok: true, message: act === "reply" ? `Reply sent: ${who} will go on with ${id}` : `${who} has ${id} now and will be told within a minute` } }
+  }
+
+  if (method === "POST" && path === `${REQUESTS_PANEL_PREFIX}/project`) {
+    const id = typeof body.id === "string" ? body.id : ""
+    if (!id || !("project" in body)) return { status: 400, body: { error: "send { id, project }: project is its key, or null for No project" } }
+    const project = normalizeProject(body.project)
+    if (project && typeof project === "object") return { status: 400, body: { error: project.error } }
+    const store = requestStoreFor(ctx)
+    if (!store || !store.setProject(id, project)) return { status: 404, body: { error: `no request "${id}"` } }
+    return { status: 200, body: { ok: true, project, message: `${id} is under ${project ?? "No project"}` } }
   }
 
   if (method === "POST" && path === `${REQUESTS_PANEL_PREFIX}/close`) {

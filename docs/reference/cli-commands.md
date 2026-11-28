@@ -773,6 +773,14 @@ Open requests, oldest first.
 |---|---|---|
 | `--json` | — | Machine-readable output. |
 | `--stalled` | — | Only the stalled ones (past their due time, or quiet too long), grouped by what they wait on: you, an agent, or an outside person. |
+| `--project <key>` | — | Only the open requests of this project. `none` gives the ones with no project. |
+| `--projects` | — | How many open requests each project has. |
+
+### `agentx requests project <id> <project>`
+
+Move a request to a project (its key, such as `group/project`), or to No project with `none`. This works on open and closed requests. See [Which project a request belongs to](../jobs/open-requests.md#which-project-a-request-belongs-to).
+
+No flags.
 
 ### `agentx requests show <id>`
 
