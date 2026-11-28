@@ -114,6 +114,14 @@ describe("handleAppFleet", () => {
     expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)", { choice: "Watchdog" })
   })
 
+  it("passes the shown draft's hash on a yes only (#2499)", async () => {
+    const d = deps()
+    await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "content:d1", action: "yes", seen: "h1" })
+    expect(d.decide).toHaveBeenLastCalledWith("n", "content:d1", "yes", "operator (phone: My phone)", { seen: "h1" })
+    await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "content:d1", action: "no", seen: "h1" })
+    expect(d.decide).toHaveBeenLastCalledWith("n", "content:d1", "no", "operator (phone: My phone)", {})
+  })
+
   it("passes the node's status and body through", async () => {
     const d = deps({ nodePost: vi.fn(async () => ({ status: 404, body: { error: "no running task" } })) })
     const r = await call(d, "POST", "/api/app/tasks/cancel", { taskId: "t-new" })

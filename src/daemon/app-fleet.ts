@@ -68,8 +68,10 @@ export interface ApprovalItem {
   createdAt?: string
 }
 
-/** A card's pick (1-based number or label) and the message as edited. */
-export interface ChoiceAnswer { choice?: string | number; text?: string }
+/** A card's pick (1-based number or label), the message as edited, and
+ *  for a content draft the hash of the post shown (`seen`, #2499): a draft
+ *  changed since it was read is not published. */
+export interface ChoiceAnswer { choice?: string | number; text?: string; seen?: string }
 
 export interface NodeApprovals {
   node: string
@@ -254,7 +256,8 @@ export async function handleAppFleet(
     }
     const choice = typeof body.choice === "number" ? body.choice : str(body.choice)
     const text = typeof body.text === "string" && body.text.trim() ? body.text : ""
-    const answer: ChoiceAnswer = { ...(choice !== "" ? { choice } : {}), ...(text ? { text } : {}) }
+    const seen = action === "yes" ? str(body.seen) : ""
+    const answer: ChoiceAnswer = { ...(choice !== "" ? { choice } : {}), ...(text ? { text } : {}), ...(seen ? { seen } : {}) }
     reply = await deps.decide(node, key, action, by, answer)
   }
   return json(res, reply.status, reply.body)
