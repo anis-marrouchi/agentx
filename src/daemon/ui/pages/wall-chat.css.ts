@@ -124,6 +124,7 @@ export const WALL_CHAT_CSS = FOLLOW_CSS + `
 /* The thread (#2101 P7, mock V1): my messages in blue bubbles on the right,
    the agent's answer as plain text across the column, no bubble. */
 .hc__me { align-self: flex-end; max-width: 76%; }
+.hc__note { align-self: center; padding: 3px 12px; border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text-2); font-size: 13px; }
 .hc__me .b { background: var(--ax-blue-d); color: #fff; border-radius: 16px 16px 4px 16px; padding: 9px 14px; font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hc__me .b a { color: #fff; text-decoration: underline; }
 .hc__me .b code { background: rgba(255,255,255,.18); color: #fff; }

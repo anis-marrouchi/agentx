@@ -30,7 +30,7 @@
 import { markdownToHtml } from "@/utils/markdown-html"
 import { injectFns } from "../inject"
 import { HUB_PATH } from "../hub-name"
-import { chatAttached, chatContextLine, chatLiveHtml, chatLogHtml } from "./wall-chat-view"
+import { chatAttached, chatCallNote, chatContextLine, chatLiveHtml, chatLogHtml } from "./wall-chat-view"
 import { cfBase, cfDuration, cfField, cfFoldHtml, cfParseLive, cfStepLine } from "./wall-chat-fold"
 import { WALL_CHAT_INPUT_SCRIPT, wallChatInputHtml } from "./wall-chat-input.client"
 import { WALL_CHAT_HEAD_SCRIPT, wallChatHeadHtml } from "./wall-chat-head.client"
@@ -92,7 +92,7 @@ export const WALL_CHAT_SCRIPT = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var panel = $('hc'), wall = document.querySelector('.ax-wall');
   if (!panel || !wall) return;
-  ${injectFns({ markdownToHtml, chatContextLine, chatAttached, chatLiveHtml, chatLogHtml, cfBase, cfField, cfStepLine, cfDuration, cfParseLive, cfFoldHtml, chatHash, followAttach })}
+  ${injectFns({ chatCallNote, markdownToHtml, chatContextLine, chatAttached, chatLiveHtml, chatLogHtml, cfBase, cfField, cfStepLine, cfDuration, cfParseLive, cfFoldHtml, chatHash, followAttach })}
   var THREAD_KEY = 'ax-assistant-thread', NODE_KEY = 'ax-hub-chat-node', SEEN_KEY = 'ax-hub-chat-seen', AGENTS_KEY = 'ax-hub-chat-agents';
   var FOLD = { parse: cfParseLive, html: cfFoldHtml };
   var guest = !$('hc-form');

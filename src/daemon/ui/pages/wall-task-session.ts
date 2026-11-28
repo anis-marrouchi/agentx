@@ -6,6 +6,16 @@
 // history?session=1); these turn its page into HTML. Injected into the Wall's
 // script with injectFns, so each one stands alone: no imports, no closures.
 
+/** "Call answered" / "Call ended" for the daemon's own call prompt, else ""
+ *  (#2101). A copy of calls/call-note.ts callNote: an injected function
+ *  cannot import (test/call-note.test.ts keeps the copies equal). */
+export function tsCallNote(text: unknown): string {
+  const s = String(text == null ? "" : text).trimStart()
+  if (s.indexOf("[Call answered]") === 0) return "Call answered"
+  if (s.indexOf("[Call ended]") === 0) return "Call ended"
+  return ""
+}
+
 /** One turn as the session API returns it. */
 export interface TsTurn {
   id: string
@@ -64,6 +74,8 @@ export function tsTurnLabel(n: number, total: number): string {
  *  (tsTimeHtml): the ask at its start, the reply at its end. */
 export function tsTurnHtml(t: TsTurn, o: { agent: string; href: string; md: (s: string) => string; plain: (s: string) => string; when: (iso: string) => string }): string {
   const ask = o.plain(t.message || "").trim()
+  // The daemon's own call prompt (#2101): a system line, not the owner's words.
+  const note = tsCallNote(ask)
   const reply = o.plain(t.responseText || "").trim()
   const err = !t.running && t.ok === false
   const replyHtml = t.running
@@ -73,9 +85,9 @@ export function tsTurnHtml(t: TsTurn, o: { agent: string; href: string; md: (s: 
       '<div class="wsess__body ax-ev__text">' + (reply ? o.md(reply) : err ? tsEsc(t.error || "failed") : '<span class="wsess__none">No reply text.</span>') + "</div></div>"
   return '<article class="wsess__turn" data-turn="' + tsEsc(t.id) + '">' +
     '<div class="wsess__ask"><div class="wsess__head"><span class="ax-ev__label ax-ev__label--soft">turn ' + tsEsc(t.n || "") + "</span>" +
-    (t.sender ? '<span class="wsess__who">' + tsEsc(t.sender) + "</span>" : "") +
+    (note ? '<span class="wsess__who">from AgentX</span>' : t.sender ? '<span class="wsess__who">' + tsEsc(t.sender) + "</span>" : "") +
     '<span class="wsess__when">' + (t.startedAt ? o.when(t.startedAt) : "") + "</span></div>" +
-    '<div class="wsess__body">' + (ask ? o.md(ask) : '<span class="wsess__none">No request text.</span>') + "</div></div>" +
+    '<div class="wsess__body">' + (note ? '<span class="wsess__note">' + tsEsc(note) + "</span>" : ask ? o.md(ask) : '<span class="wsess__none">No request text.</span>') + "</div></div>" +
     replyHtml +
     '<a class="wsess__open" href="' + tsEsc(o.href) + '">View log</a></article>'
 }
@@ -114,7 +126,7 @@ export function tsCatchUp(have: string, all: string): { add: string } | { reset:
 export function tsFoldHtml(t: TsTurn, html: string, open: boolean, plain: (s: string) => string): string {
   const esc = (x: unknown) => String(x == null ? "" : x).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c])
-  const ask = plain(t.message || "").replace(/\s+/g, " ").trim()
+  const ask = tsCallNote(t.message) || plain(t.message || "").replace(/\s+/g, " ").trim()
   const line = ask.length > 110 ? ask.slice(0, 109) + "…" : ask || "No request text."
   return '<details class="wsess__fold" data-turn-fold="' + esc(t.id) + '"' + (open ? " open" : "") + ">" +
     '<summary><span class="wsess__foldn">turn ' + esc(t.n || "") + '</span><span class="wsess__foldask">' + esc(line) + "</span>" +

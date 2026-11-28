@@ -25,7 +25,11 @@ export type RowOpens = "run" | "chat" | "latest"
 
 export function rowOpens(r: Pick<HaRow, "state" | "taskId" | "nodeUrl"> | undefined): RowOpens {
   if (!r) return "chat"
-  if (r.state === "working" && r.taskId && r.nodeUrl) return "run"
+  // A working agent never opens an older conversation (Anis 11-28: a click
+  // on a working Dev Session opened its last voice thread). Its run, on this
+  // machine too (nodeUrl "", as the old Hub's haRunHref takes it); a row
+  // with no run id yet opens the Hub chat, which shows the run going.
+  if (r.state === "working") return r.taskId ? "run" : "chat"
   if (r.state === "needs" || !r.nodeUrl) return "chat"
   return "latest"
 }

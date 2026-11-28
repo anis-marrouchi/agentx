@@ -4,6 +4,16 @@
 // self-contained: it escapes on its own and gets the markdown renderer as
 // an argument. wall-chat.client.ts calls them; the tests call them directly.
 
+/** "Call answered" / "Call ended" for the daemon's own call prompt, else ""
+ *  (#2101). A copy of calls/call-note.ts callNote: an injected function
+ *  cannot import (test/call-note.test.ts keeps the copies equal). */
+export function chatCallNote(text: unknown): string {
+  const s = String(text == null ? "" : text).trimStart()
+  if (s.indexOf("[Call answered]") === 0) return "Call answered"
+  if (s.indexOf("[Call ended]") === 0) return "Call ended"
+  return ""
+}
+
 /** One message as GET /api/assistant/thread returns it (assistant-store.ts). */
 export interface ChatMessage {
   role: "user" | "assistant"
@@ -108,7 +118,11 @@ export function chatLogHtml(msgs: ChatMessage[], o: {
     return '<div class="hc__empty"><b>Ask ' + who + '</b>Type, attach a file or record a voice message. Each agent keeps its own conversation: pick another and come back, it is still here.</div>'
   }
   const out = msgs.map((m, i) => {
-    if (m.role === "user") return me(m.content)
+    if (m.role === "user") {
+      // The daemon's own call prompt is not the owner's message (#2101).
+      const note = chatCallNote(m.content)
+      return note ? '<div class="hc__note" data-hc-note>' + esc(note) + "</div>" : me(m.content)
+    }
     if (m.status === "pending") {
       const run = m.taskId
         ? '<button type="button" class="hc__stop" data-hc-stop="' + esc(m.taskId) + '">' + (o.stopFailed ? "Not stopped. Try again" : "Stop") + "</button>" +
@@ -133,7 +147,7 @@ export function chatLogHtml(msgs: ChatMessage[], o: {
     const asks = msgs.map((m, i) => (m.role === "user" ? i : -1)).filter((i) => i >= 0)
     for (let k = asks.length - 2; k >= 0; k--) {
       const from = asks[k], to = asks[k + 1]
-      const ask = chatAttached(msgs[from].content).text.replace(/\s+/g, " ").trim()
+      const ask = chatCallNote(msgs[from].content) || chatAttached(msgs[from].content).text.replace(/\s+/g, " ").trim()
       const line = ask.length > 110 ? ask.slice(0, 109) + "…" : ask || "(attached files)"
       const key = String(from)
       const n = to - from - 1

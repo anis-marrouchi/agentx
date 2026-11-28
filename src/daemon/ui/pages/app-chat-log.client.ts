@@ -21,10 +21,12 @@ window.AXChatLog = function (o) {
     return el;
   }
   // A newer message ends the quick replies of the answers above it.
-  // An answered call's opener (#1605) is for the agent: it shows as a note.
+  // An answered call's opener (#1605) and the hang-up summary prompt (#2101)
+  // are for the agent: they show as a note.
   function userMsg(text) {
     V.retire(log);
-    if (String(text).indexOf('[Call answered]') === 0) { var n = bubble('cx-callnote'); n.textContent = 'Call answered'; return n; }
+    var note = String(text).indexOf('[Call answered]') === 0 ? 'Call answered' : String(text).indexOf('[Call ended]') === 0 ? 'Call ended' : '';
+    if (note) { var n = bubble('cx-callnote'); n.textContent = note; return n; }
     var el = bubble('cx-user'); el.textContent = text; return el;
   }
   // A follow-up that waits for the agent to finish.

@@ -308,8 +308,12 @@ function mountTaskPage(root, opts) {
   function showAsk(message, sender, startedAt) {
     var text = plain(message || '').trim();
     if (!text) return;
-    document.getElementById('task-ask-body').innerHTML = markdownToHtml(text);
-    document.getElementById('task-ask-who').textContent = sender ? 'from ' + sender : '';
+    // The daemon's own call prompt (#2101): a system line, not the owner's words.
+    var note = tsCallNote(text);
+    document.getElementById('task-ask').classList.toggle('is-note', !!note);
+    if (note) document.getElementById('task-ask-body').textContent = note;
+    else document.getElementById('task-ask-body').innerHTML = markdownToHtml(text);
+    document.getElementById('task-ask-who').textContent = note ? 'from AgentX' : sender ? 'from ' + sender : '';
     // Short local time, the full date on hover (#2306).
     if (startedAt) document.getElementById('task-ask-when').innerHTML = tsTimeHtml(Date.parse(startedAt) || 0, Date.now());
     document.getElementById('task-ask').hidden = false;
@@ -900,6 +904,7 @@ export const WALL_TASK_CSS = `
 }
 /* Same markdown rhythm as a reply block. */
 .ax-task-page__ask-body > *:first-child { margin-top: 0; }
+.ax-task-page__ask.is-note .ax-task-page__ask-body, .wsess__note { color: var(--ax-text-2); font-style: italic; }
 .ax-task-page__ask-body > *:last-child { margin-bottom: 0; }
 .ax-task-page__ask-body p { margin: 0 0 8px; white-space: pre-wrap; }
 .ax-task-page__ask-body ul, .ax-task-page__ask-body ol { margin: 0 0 8px; padding-left: 20px; }
