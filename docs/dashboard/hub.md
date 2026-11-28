@@ -89,7 +89,9 @@ An icon says which is which: a dot in a circle for an issue, the pull request ic
 
 1. **Browser:** in the simple shell, select **Tasks** in the side menu.
 2. **List or Kanban:** the switch at the bottom of the side menu (on a phone, at the top of Tasks) changes the view. This browser remembers your choice.
-3. **Project:** the box at the top of Tasks shows one project's tasks only; **All projects** shows them all again. The project is in the address (`&project=<name>`), so Back and a shared link keep it.
+3. **Project:** the box at the top of Tasks shows one project's tasks only; **All projects** shows them all again. Each project in the box has its number of tasks. **No project** shows the requests not filed under a project yet. The project is in the address (`&project=<name>`, `&project=none` for No project), so Back and a shared link keep it.
+
+   A request is under the project it is filed under (see [Open requests](../jobs/open-requests.md)); an issue or pull request is under its repository.
 
    ![Tasks for one project, picked in the box at the top](/screenshots/hub-automations/tasks-project.png)
 
@@ -104,7 +106,7 @@ An icon says which is which: a dot in a circle for an issue, the pull request ic
 
    ![Tasks as a Kanban, one column per state](/screenshots/hub-tasks/kanban.png)
 
-5. **Open a task:** select it. An issue or pull request opens on its forge. For a request, its timeline opens in the centre: what was asked, its runs, hand-offs and comments. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
+5. **Open a task:** select it. An issue or pull request opens on its forge. For a request, its timeline opens in the centre: what was asked, its runs, hand-offs and comments. Its project shows above the timeline: select it to move the request to another project, type a new project key, or pick **No project**. The move is saved at once. **Full record** opens the old Hub's page for it, with its actions (comment, hand over, close). The arrow at the top goes back to the list.
 
    ![An opened task with its timeline](/screenshots/hub-tasks/open.png)
 

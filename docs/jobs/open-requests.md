@@ -600,12 +600,14 @@ When two different projects match, the request stays on No project.
 
 Anyone can move a request to a project, or back to No project, open or closed:
 
+- **Dashboard:** in the Hub's **Tasks**, open the request and select its project above the timeline. Pick a project, type a new key, or pick **No project**.
 - **Terminal:** `agentx requests project <id> noqta/wa-crm`. Use `none` to move it to No project.
 - **Agent:** `{action:"project", id:"<id>", project:"noqta/wa-crm"}` with `agentx_request`. Any agent may move any request. Without `id`, it moves the request of the agent's current turn.
 - **From a script:** `POST /api/admin/approvals/requests/project` with `{id, project}` (behind the dashboard token). `project` is `null` or `"none"` for No project.
 
 To see requests by project:
 
+- **Dashboard:** the project box at the top of the Hub's **Tasks** has each project with its number of tasks, and **No project**. See [Hub › Tasks](../dashboard/hub.md).
 - **Terminal:** `agentx requests list --project noqta/wa-crm` lists that project's open requests. `--project none` lists the ones with no project. `agentx requests list --projects` counts the open requests of each project.
 - **From a script:** `GET /requests?project=noqta/wa-crm` (or `project=none`). `GET /requests/projects` gives the open count of each project. `null` stands for No project.
 

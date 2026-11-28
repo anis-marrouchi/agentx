@@ -316,6 +316,10 @@ db.transaction(() => {
   req.run(ids[2], "done", "dashboard", "demo", "Check the demo office FAQ links.",
     ago(300), ago(20), ago(20), "Check the demo office FAQ links", "Nothing, just so you know.", null, ago(20), "https://example.com/demo/office/pull/12",
     null, null, 20)
+  // The project each is filed under (#2587); the newsletter has none yet.
+  const filed = db.prepare("UPDATE requests SET project = ? WHERE id = ?")
+  filed.run("demo/shop", ids[0])
+  filed.run("demo/office", ids[2])
   const trace = db.prepare(`INSERT INTO task_traces (task_id, agent_id, channel, chat_id, status, started_at, finished_at, duration_ms, message_preview, final_response, error)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const link = db.prepare("INSERT OR REPLACE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)")
