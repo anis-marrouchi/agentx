@@ -353,7 +353,7 @@ describe("the Jobs page shows the other machine", () => {
     expect(html).toContain("Handed out there (1)")
     // No headline: the link says so instead of cutting its text (#2555).
     expect(html).toContain('data-jlopen="job-dlg-def-34" data-jlnode="clawd"><span class="wjl__untitled">Untitled job from')
-    expect(html).toContain('<span class="wjl__st is-stalled">stalled, run ended 3 h ago with no state</span>')
+    expect(html).toContain('<span class="wjl__st is-stalled" title="stalled, run ended 3 h ago with no state">stalled, run ended 3 h ago with no state</span>')
   })
 
   it("says so when that machine could not be read, and shows nothing for a local job", () => {
