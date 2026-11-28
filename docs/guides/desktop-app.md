@@ -50,7 +50,7 @@ Start, Stop and Restart act on this computer only. When the app points at a daem
 
 ### The orb
 
-A small round orb floats above your other windows, on every desktop, also over full-screen apps on macOS. It is not in the taskbar or the Dock.
+A small round orb floats above your other windows, on every desktop, also over full-screen apps on macOS. The orb itself is not in the taskbar or the Dock. The app is: on a Mac, AgentX stays in the Dock and in Command–Tab while the orb is shown, and a click on its Dock icon brings the Hub window to the front.
 
 - To move the orb, drag the thin ring around it (it shows as a dashed line when the pointer is over the orb), or hold Option (Alt on Windows and Linux) and drag the orb itself. Moving never starts a recording. It comes back to the same place next launch. If that screen is gone, it goes to the bottom right of the main screen.
 - Hold the orb (or the talk key) to talk. Your words show under the orb as you speak. Let go to send.

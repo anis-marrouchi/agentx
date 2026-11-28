@@ -107,7 +107,9 @@ function createOrb(): BrowserWindow {
   })
   // 'floating' keeps it above normal windows without covering menus and the Dock.
   w.setAlwaysOnTop(true, "floating")
-  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // skipTransformProcessType: without it, Electron turns the whole app into a
+  // macOS UIElement here, so AgentX drops out of the Dock and Cmd-Tab.
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
   // The orb page never opens other pages.
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
   w.webContents.on("will-navigate", (event) => event.preventDefault())
