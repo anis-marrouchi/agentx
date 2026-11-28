@@ -72,11 +72,28 @@ body {
   background: var(--ax-surface);
   color: var(--ax-muted);
   box-shadow: var(--ax-shadow-lg);
-  cursor: grab;
+  cursor: pointer;
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 .orb:focus-visible { outline: 3px solid color-mix(in srgb, var(--ax-ring) 50%, transparent); outline-offset: 2px; }
-.orb:active { cursor: grabbing; }
+
+/* The move ring (#2549): an 8px band around the orb that only drags. It shows
+   as a dashed hairline on hover and while moving; at rest it is invisible but
+   still catches the press. Option/Alt + drag on the orb moves it too. */
+.grip {
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  border: 1px dashed var(--ax-muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 120ms ease-out;
+}
+.stage.moving .grip { opacity: 0.7; cursor: grabbing; }
+.stage.moving .orb { cursor: grabbing; }
+@media (hover: hover) {
+  .orb-wrap:hover .grip { opacity: 0.7; }
+}
 
 .icon {
   grid-area: 1 / 1;
@@ -221,7 +238,7 @@ body {
 /* Reduce Motion: no turning, no moving bars, no slide. The state still reads
    from the colour, the icon and the words. */
 @media (prefers-reduced-motion: reduce) {
-  .orb, .btn, .orb-wrap::before { transition: none; }
+  .orb, .btn, .grip, .orb-wrap::before { transition: none; }
   [data-state="thinking"] .orb-ring, [data-state="speaking"] .icon-lines path { animation: none; }
   .pill { animation: pill-fade 120ms ease-out; }
   [data-state] .orb-wrap::before { transform: none; }

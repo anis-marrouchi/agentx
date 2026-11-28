@@ -13,6 +13,8 @@
 <body>
 <main id="stage" class="stage" data-slot="orb-stage" data-state="idle">
   <div class="orb-wrap">
+    <!-- #2549: the ring around the orb moves it; the orb itself talks. -->
+    <span id="grip" class="grip" data-slot="orb-grip" title="Drag to move" aria-hidden="true"></span>
     <button id="orb" class="orb" data-slot="orb" type="button" aria-label="Hold to talk" title="Hold to talk">
       <svg class="orb-ring" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30"/></svg>
       <svg class="icon icon-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>

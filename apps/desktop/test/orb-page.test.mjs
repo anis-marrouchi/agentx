@@ -8,7 +8,7 @@ import vm from "node:vm"
 const source = await readFile(new URL("../resources/orb/orb.js", import.meta.url), "utf8")
 
 function el() {
-  return {
+  const e = {
     dataset: {},
     hidden: false,
     textContent: "",
@@ -21,9 +21,20 @@ function el() {
     addEventListener(k, fn) {
       this.listeners[k] = fn
     },
+    classes: new Set(),
+    classList: {
+      add(k) {
+        this.owner.classes.add(k)
+      },
+      remove(k) {
+        this.owner.classes.delete(k)
+      },
+    },
     setPointerCapture() {},
     getBoundingClientRect: () => ({ width: 100, height: 100 }),
   }
+  e.classList.owner = e
+  return e
 }
 
 /** Loads the page; the microphone answers only when the test says so. */
@@ -95,6 +106,8 @@ function page() {
   vm.createContext(ctx)
   vm.runInContext(source, ctx)
   return {
+    els,
+    ctx,
     state: () => els.stage.dataset.state,
     text: () => els.text.textContent,
     calls,
@@ -182,4 +195,60 @@ test("S2: an answer to an older pass does not free or write over the current one
   p.on.onPartial("old words", first[4] - 1)
   assert.equal(p.text(), "", "not this pass's answer")
   assert.equal((await nextPass(p))[4], first[4], "still waits for its own answer")
+})
+
+// #2549: the ring around the orb, or Option/Alt + drag on the orb, only moves it.
+const at = (x, y, more = {}) => ({ button: 0, pointerId: 1, screenX: x, screenY: y, ...more })
+const named = (p, k) => p.calls.filter((c) => c[0] === k)
+
+test("#2549: a press on the ring moves the orb, even held still, and never talks", () => {
+  const p = page()
+  const grip = p.els.grip.listeners
+  grip.pointerdown(at(100, 100))
+  assert.ok(p.els.stage.classes.has("moving"), "the ring shows while moving")
+  grip.pointermove(at(100, 101)) // a 1 px move: below the old 4 px threshold
+  grip.pointermove(at(160, 140))
+  grip.pointerup(at(160, 140))
+  assert.deepEqual(named(p, "dragMove").map((c) => c.slice(1)), [[0, 1], [60, 40]])
+  assert.equal(named(p, "dragStart").length, 1)
+  assert.equal(named(p, "dragEnd").length, 1, "the end saves the place (orb-state.json)")
+  assert.ok(!p.els.stage.classes.has("moving"))
+  assert.equal(named(p, "begin").length, 0, "no recording")
+  assert.equal(p.mic.requests.length, 0)
+  assert.equal(p.state(), "idle")
+})
+
+test("#2549: the ring moves the orb while the agent speaks, without stopping it", () => {
+  const p = page()
+  p.on.onState({ state: "speaking" })
+  p.els.grip.listeners.pointerdown(at(0, 0))
+  p.els.grip.listeners.pointerup(at(0, 0))
+  assert.equal(named(p, "cancel").length, 0)
+  assert.equal(p.state(), "speaking")
+})
+
+test("#2549: Option/Alt + drag on the orb moves it and never talks", () => {
+  const p = page()
+  const orb = p.els.orb.listeners
+  orb.pointerdown(at(10, 10, { altKey: true }))
+  orb.pointermove(at(30, 50))
+  orb.pointerup(at(30, 50))
+  assert.deepEqual(named(p, "dragMove").map((c) => c.slice(1)), [[20, 40]])
+  assert.equal(named(p, "dragEnd").length, 1)
+  assert.equal(named(p, "begin").length, 0)
+})
+
+test("#2549: a plain hold on the orb still talks", async () => {
+  const p = page()
+  let hold
+  p.ctx.setTimeout = (fn) => ((hold = fn), 1)
+  p.els.orb.listeners.pointerdown(at(10, 10))
+  hold()
+  assert.equal(p.state(), "listening")
+  assert.equal(named(p, "begin").length, 1)
+  p.mic.requests[0].grant()
+  await settle()
+  p.els.orb.listeners.pointerup(at(10, 10))
+  assert.equal(p.state(), "thinking")
+  assert.equal(named(p, "dragMove").length, 0)
 })
