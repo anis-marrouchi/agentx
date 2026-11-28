@@ -9,7 +9,8 @@
 //           login that folder's Claude Code stored. Read only, as for the
 //           account in use (claude-plan-usage.ts).
 //   Codex:  that account's last session file (codex-plan-usage.ts), cached
-//           a minute per folder.
+//           a minute per folder, and whether its folder has a login
+//           (codex-login.ts): none gives error "signed-out".
 //
 // The account in use is listed with no reading of its own: the daemon's
 // main readers already have it. Only names, percentages, times and an error
@@ -19,6 +20,7 @@ import { homedir } from "node:os"
 import { activeCliDir, CLI_PROVIDERS, DEFAULT_PROFILE, readCliAccounts, withCliAccountEnv, type CliAccounts, type CliProvider } from "./cli-accounts"
 import { PlanUsageReader, readStoredLogin, type PlanUsageErrorKind, type PlanUsageReading, type PlanWindowReading } from "./claude-plan-usage"
 import { readCodexPlanUsageCached, type CodexPlanUsage } from "./codex-plan-usage"
+import { readCodexLoginState, type CodexLoginState } from "./codex-login"
 
 export interface AccountPlanReading {
   name: string
@@ -48,6 +50,8 @@ export interface AccountsReadDeps {
   /** A reader for the login in `env` (tests pass a fake). */
   claudeReader?: (env: NodeJS.ProcessEnv) => PlanUsageReader
   codex?: (dir: string) => Promise<CodexPlanUsage | null>
+  /** Whether a Codex folder has a login (codex-login.ts; tests pass a fake). */
+  codexLogin?: (dir: string) => Promise<CodexLoginState>
   /**
    * session.planUsage.enabled, read per call so a settings change applies
    * without a restart. Off: no added Claude account is read, as the main
@@ -109,6 +113,7 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
   const now = deps.now ?? Date.now()
   const make = deps.claudeReader ?? ((e: NodeJS.ProcessEnv) => new PlanUsageReader({ readLogin: () => readStoredLogin({ env: e }) }))
   const codex = deps.codex ?? ((dir: string) => readCodexPlanUsageCached(dir, now))
+  const codexLogin = deps.codexLogin ?? readCodexLoginState
   const enabled = deps.enabled ?? true
   const log = deps.log ?? (() => {})
   const out: AccountsPlanUsage = {}
@@ -130,8 +135,15 @@ export async function readAccountsPlanUsage(deps: AccountsReadDeps = {}): Promis
         dirByName.set(name, dir)
         return { name, active: false, ...(await readClaudeAccount(dir, withCliAccountEnv({ ...env }, [], as), now, make)) }
       }
-      const r = await codex(dir).catch((e) => { log(`[plan-usage] Codex account "${name}" not read: ${e?.message ?? e}`); return null })
-      return { name, active: false, ...(r && { windows: r.windows, readAt: r.readAt, ...(r.plan && { plan: r.plan }) }) }
+      const [r, login] = await Promise.all([
+        codex(dir).catch((e) => { log(`[plan-usage] Codex account "${name}" not read: ${e?.message ?? e}`); return null }),
+        codexLogin(dir).catch((): CodexLoginState => "unknown"),
+      ])
+      return {
+        name, active: false,
+        ...(r && { windows: r.windows, readAt: r.readAt, ...(r.plan && { plan: r.plan }) }),
+        ...(login === "signed-out" && { error: "signed-out" as const }),
+      }
     }))
   }
   dropClaudeReaders(claudeDirs)
