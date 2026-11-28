@@ -52,7 +52,7 @@ Start, Stop and Restart act on this computer only. When the app points at a daem
 
 A small round orb floats above your other windows, on every desktop, also over full-screen apps on macOS. It is not in the taskbar or the Dock.
 
-- Drag the orb to move it. It comes back to the same place next launch. If that screen is gone, it goes to the bottom right of the main screen.
+- To move the orb, drag the thin ring around it (it shows as a dashed line when the pointer is over the orb), or hold Option (Alt on Windows and Linux) and drag the orb itself. Moving never starts a recording. It comes back to the same place next launch. If that screen is gone, it goes to the bottom right of the main screen.
 - Hold the orb (or the talk key) to talk. Your words show under the orb as you speak. Let go to send.
 - The words go to the agent named in the icon's menu under **Orb talks to** (until you pick one: the node's default agent, else its first). They join one Hub conversation, so you can read it in the Hub later.
 - While the agent works, the orb turns. It does not show the agent's words until the answer is done ([#2523](https://github.com/anis-marrouchi/agentx/issues/2523)). Then it says the answer in the agent's voice, with its first words under the orb. Tap the orb (or press Escape) to stop it.
