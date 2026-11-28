@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.313.0](https://github.com/anis-marrouchi/agentx/compare/v0.312.2...v0.313.0) (2026-11-28)
+
+
+### Features
+
+* **hub:** go through Waiting on you one at a time ([#2499](https://github.com/anis-marrouchi/agentx/issues/2499) part 2) ([#2559](https://github.com/anis-marrouchi/agentx/issues/2559)) ([1bbe88e](https://github.com/anis-marrouchi/agentx/commit/1bbe88efbb3ff3f7ca797c911811b8743402c82e))
+
 ## [0.312.2](https://github.com/anis-marrouchi/agentx/compare/v0.312.1...v0.312.2) (2026-11-28)
 
 
