@@ -1,0 +1,51 @@
+{
+  "shots": {
+    "open-390-ready": true,
+    "07-workflows-open-390-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    },
+    "08-workflows-open-390-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    }
+  },
+  "runs": [
+    "demo-backlog running",
+    "demo-stock-check failed"
+  ],
+  "openId": "demo-stock-check",
+  "stepNames": [
+    "Count@demo-stock-agent · [unknown] Unknown agent: demo-stock-agentFailed"
+  ]
+}
