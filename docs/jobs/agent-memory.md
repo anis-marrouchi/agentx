@@ -411,6 +411,9 @@ It never changes facts waiting in `agentx memory facts held`, the fix rules (not
    agentx memory tidy undo <run>
    ```
    Each change is put back once. A change whose kept fact or note was edited after the tidy is skipped, unless you add `--force`.
+5. **Hub, Approvals:** each night's run that changed something waits there as one item, `Memory tidy for <agent>`, with every change listed (the first 20; `agentx memory tidy show <run>` has the rest). **Yes** keeps the changes. **No** puts the whole run back. If you do nothing, the changes stay and the item leaves the list after 7 days. From the terminal: `agentx approvals yes memory:<agent>/tidy-<run>`.
+
+The number `memory-tidy-kept` (`agentx numbers show memory-tidy-kept`) says how much of the tidy's work you keep: of the changes made in the last 7 days, the share not undone. It gets one reading a night and aims for 90% or more. A low reading means the tidy merges or drops things you want back.
 
 Each run's record is in `.agentx/memory/_tidy/` for 14 days. The facts file is copied to `.agentx/memory/_backup/` before each change.
 
@@ -429,7 +432,8 @@ Each run's record is in `.agentx/memory/_tidy/` for 14 days. The facts file is c
 11. Change a rule on a wiki decision page (and, with approvals on, approve it with `agentx wiki decisions approve`), then start a new conversation with an agent and ask what the rule is. It answers with the new rule, even when the old messages in that chat said otherwise.
 12. `agentx wiki decisions list` shows `approved` next to that page. Edit the page again and it shows `changed since approval`.
 13. After `agentx memory tidy --commit`, `agentx memory tidy list` shows the run, and `agentx memory tidy show <run>` lists each change.
-14. Start a new conversation with an agent and ask what its wiki block lists. It names page counts per type and the `wiki search` command, with no titles. With `"startCatalog": "titles"` it lists the titles.
+14. After a nightly run that changed something, the Approvals page in the Hub shows `Memory tidy for <agent>`. Answer **No** and `agentx memory tidy show <run>` marks each change `undone`; the next night `agentx numbers show memory-tidy-kept` has a reading below 100%.
+15. Start a new conversation with an agent and ask what its wiki block lists. It names page counts per type and the `wiki search` command, with no titles. With `"startCatalog": "titles"` it lists the titles.
 
 ## If something is wrong
 

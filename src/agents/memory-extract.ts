@@ -79,6 +79,7 @@ export async function extractMemories(
 
   const date = new Date().toISOString().slice(0, 10)
   const trust = trustForChannel(source.channel)
+  const lost: string[] = []
 
   for (const fact of facts) {
     if (typeof fact?.content !== "string") continue
@@ -90,20 +91,28 @@ export async function extractMemories(
     // Skip duplicates
     if (store.hasSimilar(agentId, fact.content)) continue
 
-    store.addMemory(agentId, {
-      agentId,
-      category: fact.category as any,
-      content: fact.content,
-      keywords: fact.keywords || [],
-      source: { ...source, date, trust },
-      expiresAt: fact.category === "task-state"
-        ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-        : undefined,
-    })
+    // One fact that cannot be written (the facts lock is busy, #2117 C1)
+    // does not lose the facts after it.
+    try {
+      store.addMemory(agentId, {
+        agentId,
+        category: fact.category as any,
+        content: fact.content,
+        keywords: fact.keywords || [],
+        source: { ...source, date, trust },
+        expiresAt: fact.category === "task-state"
+          ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          : undefined,
+      })
+    } catch (e: any) {
+      lost.push(String(e?.message ?? e).slice(0, 120))
+    }
   }
 
-  // Prune occasionally (every ~50 calls, probabilistic)
-  if (Math.random() < 0.02) {
+  // Prune occasionally (every ~50 calls, probabilistic); not while the
+  // lock is busy.
+  if (lost.length === 0 && Math.random() < 0.02) {
     store.prune(agentId)
   }
+  if (lost.length > 0) throw new Error(`${lost.length} memory fact(s) not stored: ${lost[0]}`)
 }

@@ -29,23 +29,30 @@ export function storeRotationMemo(
     origin: m.reason === "continuity" ? "continuity-memo" : `rotation-memo:${m.reason}`,
     chat: `${m.channel}:${m.chatId}`,
   })
+  // Pinned per chat for deterministic injection into the next fresh
+  // session: BM25 rarely surfaces the memo on the turn right after a
+  // rotation, which is exactly when it matters. Pinned first, so a facts
+  // write that fails (the facts lock is busy, #2117 C1) never loses it.
+  sessions.setRotationMemo(m.agentId, m.channel, m.chatId, routed.pinned, m.reason)
   // A copy that would be held is never injected and only asks the owner a
-  // question. The pinned copy below is what the next session reads.
+  // question. The pinned copy above is what the next session reads.
+  let memoryError: string | undefined
   if (routed.workState.trim() && initialReview(trustForChannel(m.channel)) !== "held") {
     // Keywords from the chat id let BM25 surface the memo when the same
     // chat continues; without them it only floats up as a recent fact.
     const chatKeyword = m.chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
-    memory.addMemory(m.agentId, {
-      agentId: m.agentId,
-      category: "task-state",
-      content: `[Rotation memo · ${m.reason}] ${routed.workState}`,
-      keywords: ["rotation-memo", m.channel, ...chatKeyword],
-      source: { channel: m.channel, chatId: m.chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
-    })
+    try {
+      memory.addMemory(m.agentId, {
+        agentId: m.agentId,
+        category: "task-state",
+        content: `[Rotation memo · ${m.reason}] ${routed.workState}`,
+        keywords: ["rotation-memo", m.channel, ...chatKeyword],
+        source: { channel: m.channel, chatId: m.chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
+      })
+    } catch (e: any) {
+      memoryError = `memo not saved as a fact (pinned copy kept): ${String(e?.message ?? e).slice(0, 120)}`
+    }
   }
-  // Pinned per chat for deterministic injection into the next fresh
-  // session: BM25 rarely surfaces the memo on the turn right after a
-  // rotation, which is exactly when it matters.
-  sessions.setRotationMemo(m.agentId, m.channel, m.chatId, routed.pinned, m.reason)
-  return { proposals: routed.proposals.length, ...(routed.error ? { error: routed.error } : {}) }
+  const error = [routed.error, memoryError].filter(Boolean).join("; ")
+  return { proposals: routed.proposals.length, ...(error ? { error } : {}) }
 }

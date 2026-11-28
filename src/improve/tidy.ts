@@ -74,6 +74,15 @@ export interface TidyRun {
   /** The copy of the facts file taken before the rewrite. */
   backup?: string
   changes: TidyChange[]
+  /** The owner's answer on the run's approvals item (#2117 PR 3). */
+  review?: TidyReview
+}
+
+export interface TidyReview {
+  /** yes = keep the changes, no = the run was undone. */
+  answer: "yes" | "no"
+  by: string
+  at: string
 }
 
 export interface UndoResult {
@@ -227,7 +236,18 @@ export function changeNote(c: TidyChange): string | undefined {
  *  change needs `notes`, the agents' AgentMemory. */
 export function undoRun(
   store: MemoryStore, runId: string,
-  opts: { change?: number; force?: boolean; now?: number; notes?: AgentMemory } = {},
+  opts: { change?: number; force?: boolean; now?: number; notes?: AgentMemory; review?: TidyReview } = {},
+): UndoResult {
+  const first = showRun(store, runId)
+  if (!first) throw new Error(`no tidy run ${runId}`)
+  // The log is read, undone and written back under the agent's facts lock
+  // (C4, #2117 review), so two undos of one run never both put it back.
+  return store.withFactsLock(first.agent, () => undoRunLocked(store, runId, opts))
+}
+
+function undoRunLocked(
+  store: MemoryStore, runId: string,
+  opts: { change?: number; force?: boolean; now?: number; notes?: AgentMemory; review?: TidyReview },
 ): UndoResult {
   const run = showRun(store, runId)
   if (!run) throw new Error(`no tidy run ${runId}`)
@@ -239,9 +259,7 @@ export function undoRun(
   const picked = run.changes.filter((c) => opts.change === undefined || c.n === opts.change)
 
   const facts = picked.filter((c): c is FactChange => c.store === "fact")
-  if (facts.length > 0) {
-    store.withFactsLock(run.agent, () => undoFacts(store, run.agent, facts, result, undoneAt, !!opts.force))
-  }
+  if (facts.length > 0) undoFacts(store, run.agent, facts, result, undoneAt, !!opts.force)
   for (const c of picked) {
     if (c.store !== "note") continue
     if (!opts.notes) { result.skipped.push({ n: c.n, why: "a note change needs the agents' memory" }); continue }
@@ -249,10 +267,43 @@ export function undoRun(
   }
   result.restored.sort((a, b) => a - b)
   result.skipped.sort((a, b) => a.n - b.n)
-  if (result.restored.length > 0) {
-    writeFileSync(resolve(tidyDir(store), `${runId}.json`), JSON.stringify(run, null, 2) + "\n")
-  }
+  if (opts.review) run.review = opts.review
+  if (result.restored.length > 0 || opts.review) writeRun(store, run)
   return result
+}
+
+function writeRun(store: MemoryStore, run: TidyRun): void {
+  writeFileSync(resolve(tidyDir(store), `${run.runId}.json`), JSON.stringify(run, null, 2) + "\n")
+}
+
+/** Record the owner's yes on a run: its changes stay. Under the facts
+ *  lock, like undo. False when there is no such run. */
+export function markReviewed(store: MemoryStore, runId: string, review: TidyReview): boolean {
+  const first = showRun(store, runId)
+  if (!first) return false
+  return store.withFactsLock(first.agent, () => {
+    const run = showRun(store, runId)
+    if (!run) return false
+    run.review = review
+    writeRun(store, run)
+    return true
+  })
+}
+
+/** Age out the logs of every agent, also one that no longer prunes or is
+ *  tidied (C4, #2117 review): trimRuns otherwise runs only on a new run. */
+export function trimAllRuns(store: MemoryStore, now = Date.now()): string[] {
+  let files: string[] = []
+  try { files = readdirSync(tidyDir(store)) } catch { return [] }
+  const agents = new Set(files.map(parseRunFile).filter((p) => p !== null).map((p) => p!.agent))
+  return [...agents].flatMap((a) => trimRuns(store, a, now))
+}
+
+/** What a change touched, in one line: the facts' text or the notes' names. */
+export function changeWhat(c: TidyChange, max = 100): string {
+  return c.store === "fact"
+    ? c.before.map((f) => f.content.slice(0, max)).join(" | ")
+    : c.before.map((n) => n.name).join(" + ")
 }
 
 function undoFacts(

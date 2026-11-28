@@ -25,6 +25,8 @@ import { parseDotEnv } from "@/utils/workspace-env"
 import { readHolds, releaseAgent } from "@/agents/holds"
 import { applyConfigMutation, unsetAtPath } from "@/daemon/config-mutator"
 import { answerCiStillRed, ciStillRedRef, readCiStillRed } from "@/channels/ci-still-red"
+import { tidyRunIdOf } from "@/improve/tidy-review"
+import { decideTidy, tidyItems } from "./tidy-items"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -34,7 +36,9 @@ import { answerCiStillRed, ciStillRedRef, readCiStillRed } from "@/channels/ci-s
 //
 //   card      decision cards agents raise (cards.ts)
 //   schedule  schedules an agent asked to create or delete (crons/schedule-ops)
-//   memory    facts from outside sources held before agents may use them
+//   memory    facts from outside sources held before agents may use them,
+//             and nightly memory tidy runs (`memory:<agent>/tidy-<runId>`,
+//             tidy-items.ts): yes keeps the run's changes, no undoes them
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
 //   fact      claims from session summaries waiting for a check
 //             (wiki/facts/fact-proposals). Not listed one by one: a
@@ -233,10 +237,11 @@ function memoryAgents(root: string): string[] {
 }
 
 function memoryItems(ctx: InboxContext): InboxItem[] {
+  // Nightly memory tidy runs waiting for review (#2117): tidy-items.ts.
+  const out: InboxItem[] = tidyItems(ctx)
   const agents = memoryAgents(ctx.root)
-  if (agents.length === 0) return []
+  if (agents.length === 0) return out
   const store = new MemoryStore(ctx.root)
-  const out: InboxItem[] = []
   for (const agent of agents) {
     for (const f of store.held(agent)) {
       out.push({
@@ -758,6 +763,11 @@ async function decideItem(ctx: InboxContext, key: string, action: InboxAction, o
       if (slash <= 0) return { ok: false, error: `memory keys look like memory:<agent>/<fact-id>` }
       const agent = ref.slice(0, slash)
       const id = ref.slice(slash + 1)
+      const runId = tidyRunIdOf(ref)
+      if (runId) {
+        if (!tidyItems(ctx).some((i) => i.key === key)) return { ok: false, error: `nothing waiting for "${key}"` }
+        return decideTidy(ctx, runId, yes, by)
+      }
       if (!memoryAgents(ctx.root).includes(agent)) return { ok: false, error: `no memory for agent "${agent}"` }
       const store = new MemoryStore(ctx.root)
       if (!store.held(agent).some((f) => f.id === id)) return { ok: false, error: `fact "${id}" isn't waiting for review` }

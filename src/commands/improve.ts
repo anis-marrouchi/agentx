@@ -123,6 +123,8 @@ export function printRanking(r: ImprovePassResult, limit = 10): void {
 /** Stage 5, the memory tidy (#2117): one line per agent with changes. */
 export function printTidy(t: TidyStageResult): void {
   if (!t.ran) { console.log(chalk.dim(`  Memory tidy: not run (${t.why}).`)); return }
+  if (t.kept?.value != null) console.log(chalk.dim(`  memory-tidy-kept: ${t.kept.value}% (${t.kept.kept} kept, ${t.kept.undone} undone, last 7 days)`))
+  if (t.keptError) console.log(chalk.yellow(`  memory-tidy-kept not recorded: ${t.keptError}`))
   const busy = t.agents.filter((a) => a.facts || a.notes || a.notePairs || a.error)
   if (busy.length === 0) { console.log(chalk.dim("  Memory tidy: nothing to change.")); return }
   for (const a of busy) {

@@ -1779,7 +1779,7 @@ export class AgentRegistry {
       const stored = storeRotationMemo(this.memoryStore, this.sessions, {
         wikiDir: this.wikiHub.getBaseDir(), agentId, channel, chatId, reason, memo: result.memo,
       })
-      if (stored.error) this.log(`[${agentId}] memo claims not proposed: ${stored.error}`)
+      if (stored.error) this.log(`[${agentId}] rotation memo: ${stored.error}`)
       this.log(
         `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars, ` +
         `${stored.proposals} claim(s) proposed to the wiki)`,

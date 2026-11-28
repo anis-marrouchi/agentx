@@ -7,7 +7,7 @@ import { memoryContextLines, renderMemoryBlock, type ContextLine } from "./memor
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
 import { isNodeFact } from "./node-facts"
 import { backupFacts, MAX_BACKUPS, recordRun, type TidyRun } from "@/improve/tidy"
-import { withLock } from "@/wiki/facts/ledger-file"
+import { LockBusyError, withLock } from "@/wiki/facts/ledger-file"
 
 // --- Persistent agent memory store ---
 // JSONL-based. One file per agent: .agentx/memory/{agentId}.jsonl
@@ -75,8 +75,8 @@ export class MemoryStore {
    * between the tidy's read and its rewrite was lost. Re-entrant within a
    * process; a holder that crashed is taken over after 30 s.
    */
-  withFactsLock<T>(agentId: string, fn: () => T): T {
-    return withLock(this.filePath(agentId), fn, { what: `memory facts of ${agentId}`, timeoutMs: this.lockWaitMs, staleMs: 30_000 })
+  withFactsLock<T>(agentId: string, fn: () => T, opts: { waitMs?: number } = {}): T {
+    return withLock(this.filePath(agentId), fn, { what: `memory facts of ${agentId}`, timeoutMs: opts.waitMs ?? this.lockWaitMs, staleMs: 30_000 })
   }
 
   /** Store a fact. Refuses secrets, and usage-limit, reset and hold notes
@@ -176,10 +176,17 @@ export class MemoryStore {
 
   /**
    * Record that memories were accessed (for spaced repetition tracking).
+   * Runs on every turn, so it never waits for the lock (C3, #2117 review):
+   * one try, and a busy lock skips this count. The wait would block the
+   * daemon's event loop while the nightly tidy holds the lock.
    */
   recordAccess(agentId: string, memoryIds: string[]): void {
     if (memoryIds.length === 0) return
-    this.withFactsLock(agentId, () => this.recordAccessLocked(agentId, memoryIds))
+    try {
+      this.withFactsLock(agentId, () => this.recordAccessLocked(agentId, memoryIds), { waitMs: 0 })
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+    }
   }
 
   private recordAccessLocked(agentId: string, memoryIds: string[]): void {

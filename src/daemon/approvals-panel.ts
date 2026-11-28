@@ -1,4 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { resolve } from "path"
+import { AgentMemory } from "@/agents/agent-memory"
+import { MemoryStore } from "@/agents/memory-store"
+import { showRun, undoRun } from "@/improve/tidy"
 import { decide, listInbox, type InboxAction, type InboxContext } from "@/approvals/inbox"
 import { answeredSince, readAnswered } from "@/approvals/answered"
 import { popAgain } from "@/approvals/popup-runner"
@@ -23,10 +27,35 @@ import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 //                                          newest first, and answered_since
 //                                          (answered.ts, #1440)
 //   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text?, seen? }
+//   POST /api/admin/approvals/tidy/<runId>/undo  { change?, force? }: undo a
+//                                          memory tidy run or one change (#2117);
+//                                          owner only
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
 
 const ACTIONS: readonly InboxAction[] = ["yes", "no", "later"]
+const TIDY_UNDO = /^\/api\/admin\/approvals\/tidy\/([^/]+)\/undo$/
+
+/** Undo a memory tidy run, or one change of it (#2117), as
+ *  `agentx memory tidy undo` does. The run's approvals item stays until
+ *  it is answered or expires. */
+export function undoTidyRoute(ctx: InboxContext, runId: string, body: Record<string, unknown>): { status: number; body: unknown } {
+  const change = body.change
+  if (change !== undefined && !(typeof change === "number" && Number.isInteger(change) && change >= 1)) {
+    return { status: 400, body: { error: "change must be a change number, 1 or more" } }
+  }
+  const store = new MemoryStore(ctx.root)
+  if (!showRun(store, runId)) return { status: 404, body: { error: `no tidy run ${runId}` } }
+  try {
+    const r = undoRun(store, runId, {
+      change: change as number | undefined, force: body.force === true, now: ctx.now,
+      notes: new AgentMemory({ baseDir: resolve(ctx.root, ".agentx") }),
+    })
+    return { status: 200, body: { ok: true, ...r } }
+  } catch (e: any) {
+    return { status: 409, body: { error: String(e?.message ?? e).slice(0, 300) } }
+  }
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" })
@@ -122,6 +151,15 @@ export async function handleApprovalsPanelApi(
       })
       if (!r.ok) { sendJson(res, 409, { error: r.error }); return true }
       sendJson(res, 200, { ok: true, message: r.message })
+      return true
+    }
+
+    const tidyUndo = method === "POST" && TIDY_UNDO.exec(path)
+    if (tidyUndo) {
+      if (opts.owner === false) { sendJson(res, 403, { error: "Undoing a memory tidy is for the owner." }); return true }
+      const body = await readJson(req)
+      const r = undoTidyRoute(ctx, decodeURIComponent(tidyUndo[1]), body)
+      sendJson(res, r.status, r.body)
       return true
     }
 
