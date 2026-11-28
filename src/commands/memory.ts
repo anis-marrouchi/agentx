@@ -311,7 +311,7 @@ memory
   .option("--change <n>", "undo only this change of the run")
   .option("--force", "undo even a change whose kept fact or note changed since, or an over-cap drop")
   .action(async (action: string | undefined, runId: string | undefined, opts: { agent?: string; commit?: boolean; change?: string; force?: boolean }) => {
-    const { listRuns, showRun, undoRun, changeNote } = await import("@/improve/tidy")
+    const { listRuns, showRun, undoRun, changeNote, changeWhat } = await import("@/improve/tidy")
     const store = new MemoryStore()
     const notes = new AgentMemory()
     if (action === "list") {
@@ -329,10 +329,9 @@ memory
         const run = showRun(store, runId)
         if (!run) { console.error(chalk.red(`  no tidy run ${runId}`)); process.exitCode = 1; return }
         console.log(`  ${chalk.bold(run.agent)}  ${run.by} at ${run.at}${run.backup ? chalk.dim(`  (backup: ${run.backup})`) : ""}`)
+        if (run.review) console.log(chalk.dim(`  reviewed: ${run.review.answer === "yes" ? "kept" : "undone"} by ${run.review.by} at ${run.review.at}`))
         for (const c of run.changes) {
-          const what = c.store === "fact"
-            ? c.before.map((f) => f.content.slice(0, 100)).join(" | ")
-            : c.before.map((n) => n.name).join(" + ")
+          const what = changeWhat(c)
           const note = changeNote(c)
           console.log(`  ${c.n}. ${c.store} ${c.action}${c.reason ? ` (${c.reason})` : ""}: ${what}${c.undoneAt ? chalk.dim(`  undone ${c.undoneAt}`) : ""}`)
           if (note) console.log(chalk.dim(`     ${note}`))

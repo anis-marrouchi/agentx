@@ -22,7 +22,8 @@ import type { MemoryFact, MemoryStore } from "@/agents/memory-store"
 import { factTrust } from "@/agents/memory-trust"
 import { tokenize } from "@/memory/bm25"
 import { canSpend, recordSpend, type ImproveSettings } from "./budget"
-import { backupFacts, MAX_BACKUPS, recordRun, type FactChange, type NoteChange } from "./tidy"
+import { backupFacts, MAX_BACKUPS, recordRun, trimAllRuns, type FactChange, type NoteChange } from "./tidy"
+import { recordKept, type KeptReading } from "./tidy-review"
 
 const DAY_MS = 86_400_000
 const TASK_STATE_TTL_DAYS = 7
@@ -53,6 +54,9 @@ export interface TidyStageResult {
   ran: boolean
   why?: string
   agents: TidyAgentResult[]
+  /** Today's reading of `memory-tidy-kept`, when one was written. */
+  kept?: KeptReading
+  keptError?: string
 }
 
 export interface TidyStageOptions {
@@ -250,17 +254,25 @@ async function mergeNotes(
     // The newer note is kept; the older one is removed. Both writes check
     // the etag read before the call: a note changed since is left alone.
     const [keep, drop] = Date.parse(pair[0].updatedAt) >= Date.parse(pair[1].updatedAt) ? pair : [pair[1], pair[0]]
+    let saved: MemoryRecord
     try {
-      const saved = notes.save({ agentId: agent, type: keep.type, name: keep.name, description: m.description, body: m.body, author: "tidy" },
+      saved = notes.save({ agentId: agent, type: keep.type, name: keep.name, description: m.description, body: m.body, author: "tidy" },
         keep.etag ? { ifMatch: keep.etag } : undefined)
-      notes.remove(agent, drop.name, drop.etag ? { ifMatch: drop.etag } : undefined, drop.type)
-      changes.push({
-        n: 0, store: "note", action: "merge", reason: "duplicate",
-        before: [plain(keep), plain(drop)], after: plain(saved), afterEtag: saved.etag ?? null,
-      })
     } catch {
-      // MemoryConflictError: the note changed during the call. Skip it.
+      // MemoryConflictError: the kept note changed during the call. Skip it.
+      continue
     }
+    // The kept note is saved: the change goes in the log even when the
+    // older note changed during the call and stays (C2, #2117 review), so
+    // undo can still put the kept note back as it was.
+    let removed = false
+    try {
+      removed = notes.remove(agent, drop.name, drop.etag ? { ifMatch: drop.etag } : undefined, drop.type)
+    } catch { /* MemoryConflictError: the older note changed; it stays */ }
+    changes.push({
+      n: 0, store: "note", action: "merge", reason: removed ? "duplicate" : "duplicate, older note kept",
+      before: removed ? [plain(keep), plain(drop)] : [plain(keep)], after: plain(saved), afterEtag: saved.etag ?? null,
+    })
   }
   return { changes, why: changes.length < pairs.length ? `${pairs.length - changes.length} pair(s) kept apart` : undefined }
 }
@@ -285,7 +297,19 @@ export function tidyAgents(store: MemoryStore, notes: AgentMemory): string[] {
 export async function tidyStage(opts: TidyStageOptions): Promise<TidyStageResult> {
   const now = opts.now ?? Date.now()
   const t = opts.settings.tidy
+  // Logs of agents that no longer prune or get tidied age out too (C4).
+  if (opts.commit) { try { trimAllRuns(opts.store, now) } catch { /* next night */ } }
   if (!t.enabled && !opts.byHand) return { ran: false, why: "improve.tidy.enabled is off", agents: [] }
+  const result = await tidyAgentsOnce(opts, now)
+  // The job's number: one reading a day, after the night's changes.
+  if (opts.commit && opts.db && !opts.agent) {
+    try { result.kept = recordKept(opts.store, opts.db, now) } catch (e: any) { result.keptError = String(e?.message ?? e).slice(0, 200) }
+  }
+  return result
+}
+
+async function tidyAgentsOnce(opts: TidyStageOptions, now: number): Promise<TidyStageResult> {
+  const t = opts.settings.tidy
   const agents = opts.agent ? [opts.agent] : tidyAgents(opts.store, opts.notes)
   const out: TidyAgentResult[] = []
   for (const agent of agents) {
