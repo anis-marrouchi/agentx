@@ -12,6 +12,7 @@ against the cheap ones; use the expensive ones to confirm.
 | 1 | `bench/wiki-absorb.sh <wiki snapshot>` | one absorb backlog per variant | Is a wiki absorb change faster, cheaper or worse? |
 | 1 | `pnpm bench:catch <labelled.jsonl>` | about $0.002 per reply on Haiku | How well does the promise catch read replies? |
 | 1 | `pnpm bench:leann run <state-dir> --arm A\|B`, LEANN arm in Python | free (A, B); CPU time on the DO box (LEANN) | Does LEANN find Arabic, French and English notes better than BM25? |
+| 0 | `pnpm bench:football --experiment --seed <n>` | free (scripted seats) | Harmonious Agents tactical layer: do cues beat free talk on handoffs, collisions and awareness? See [football/README.md](football/README.md) |
 | 2+ | `harbor run` directly, see [harbor/README.md](harbor/README.md) | $60 to $1,300+ | Publishable numbers on the full Terminal-Bench 2.0 |
 
 ## Level 0: context size
