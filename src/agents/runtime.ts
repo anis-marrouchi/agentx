@@ -3,6 +3,7 @@ import { TURN_SECRET_ENV, taskSecret } from "./turn-secret"
 import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
+import { AGY_COMMAND, AgyStream, agyMissingMessage, buildAgyArgs } from "./antigravity-cli"
 import { execFile, spawn } from "child_process"
 import { StringDecoder } from "string_decoder"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
@@ -49,6 +50,7 @@ import { SITUATION_TOOL_ENV, SOURCES_TOOL_ENV, situationToolOn, sourcesToolEnvOn
 // - claude-code: spawns claude CLI (subscription, full features)
 // - codex-cli: spawns codex CLI (OpenAI Codex, full CLI agent)
 // - opencode: spawns OpenCode CLI (uses the operator's configured providers)
+// - antigravity-cli: spawns Google's Antigravity CLI, `agy` (#2348)
 // - sdk: uses Claude Agent SDK (API key, programmatic)
 // - orchestrator: uses agentx's own agentic loop (any provider)
 
@@ -344,6 +346,7 @@ export interface AgentResponse {
   claudeSessionId?: string
   codexSessionId?: string
   opencodeSessionId?: string
+  antigravitySessionId?: string
   usage?: TokenUsage  // Real token counts from Claude's JSON output
   /** Usage of each API call inside the run, when the stream reports it.
    *  Decides the long-context tier per call, as billed (#1994). */
@@ -1681,6 +1684,104 @@ export async function executeCodexCliStreaming(
   }
 }
 
+/** One turn on Google's Antigravity CLI in print mode (#2348). The stream
+ *  is read by AgyStream (antigravity-cli.ts); this starts the process and
+ *  turns how it ended into a reply or an error. */
+export async function executeAntigravityCli(
+  agent: AgentDef,
+  task: AgentTask,
+  onDelta?: StreamCallback,
+  historyContext?: string,
+  resumeSessionId?: string,
+  onEvent?: (event: any) => void,
+  abortSignal?: AbortSignal,
+): Promise<AgentResponse> {
+  const start = Date.now()
+  if (abortSignal?.aborted) {
+    return { content: "", error: "task cancelled by operator", errorKind: "cancelled", duration: 0 }
+  }
+  const resume = task.freshSession ? undefined : resumeSessionId
+  const stream = new AgyStream()
+  const sessionId = () => stream.sessionId || resume
+  let cleanupAbort: (() => void) | undefined
+  try {
+    const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
+    const model = task.model || agent.model
+    const proc = execa(AGY_COMMAND, buildAgyArgs({
+      // Print mode has no system prompt flag: it goes first in the prompt, as on codex-cli.
+      prompt: buildCodexPrompt(buildPrompt(agent, task, historyContext), task.systemPromptAppend),
+      model, bypass: agent.permissionMode === "bypassPermissions", resumeSessionId: resume,
+    }), {
+      cwd: task.cwd ?? agent.workspace,
+      timeout: timeoutMs,
+      reject: false,
+      env: buildRuntimeEnv(agent, task),
+      extendEnv: false,
+      buffer: false,
+      stdin: "ignore",
+    })
+    try { onEvent?.({ type: "antigravity.spawned", model, resumeSessionId: resume }) } catch { /* */ }
+
+    let cancelReason: string | undefined
+    const onAbort = () => {
+      cancelReason = (abortSignal?.reason as any)?.message || (typeof abortSignal?.reason === "string" ? abortSignal.reason : "task cancelled by operator")
+      try { proc.kill("SIGTERM", { forceKillAfterTimeout: 3_000 }) } catch { /* */ }
+    }
+    abortSignal?.addEventListener("abort", onAbort, { once: true })
+    cleanupAbort = () => abortSignal?.removeEventListener("abort", onAbort)
+    if (abortSignal?.aborted) onAbort()
+
+    let lineBuffer = ""
+    let stderrText = ""
+    const decoder = new StringDecoder("utf8")
+    const stderrDecoder = new StringDecoder("utf8")
+    const consumeLine = (line: string) => {
+      const read = stream.push(line)
+      if (!read) return
+      try { onEvent?.(read.event) } catch { /* */ }
+      if (read.delta) onDelta?.(read.delta, stream.text)
+    }
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      lineBuffer += decoder.write(chunk)
+      const lines = lineBuffer.split("\n")
+      lineBuffer = lines.pop() || ""
+      for (const line of lines) consumeLine(line)
+    })
+    proc.stderr?.on("data", (chunk: Buffer) => { stderrText += stderrDecoder.write(chunk) })
+
+    const result = await proc
+    lineBuffer += decoder.end()
+    if (lineBuffer.trim()) consumeLine(lineBuffer)
+    stderrText += stderrDecoder.end()
+
+    if (cancelReason) {
+      return { content: "", error: cancelReason, errorKind: "cancelled", duration: Date.now() - start, antigravitySessionId: sessionId() }
+    }
+    if (result.exitCode !== 0 || stream.error) {
+      const r = result as { exitCode?: number; signal?: string; timedOut?: boolean; code?: string; shortMessage?: string }
+      let errMsg: string
+      if (r.timedOut) errMsg = `Antigravity CLI timed out after ${Math.round(timeoutMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
+      else if (stream.error) errMsg = stream.error
+      else if (r.code === "ENOENT" || /ENOENT|spawn agy/i.test((r.shortMessage || "") + " " + stderrText)) errMsg = agyMissingMessage()
+      else errMsg = stderrText.trim() || `Antigravity CLI exited with code ${r.exitCode ?? "unknown"}`
+      return { content: "", ...buildErrorEnvelope(errMsg), duration: Date.now() - start, usage: stream.usage, antigravitySessionId: sessionId() }
+    }
+    return {
+      content: (stream.response || stream.text).trim(),
+      duration: Date.now() - start,
+      usage: stream.usage,
+      billedModel: stream.model || model,
+      antigravitySessionId: sessionId(),
+    }
+  } catch (error: any) {
+    if (abortSignal?.aborted) return { content: "", error: "task cancelled by operator", errorKind: "cancelled", duration: Date.now() - start }
+    const raw = /ENOENT|spawn agy/i.test(error?.message || "") ? agyMissingMessage() : error?.message
+    return { content: stream.text, ...buildErrorEnvelope(raw || "Antigravity CLI failed"), duration: Date.now() - start, usage: stream.usage, antigravitySessionId: sessionId() }
+  } finally {
+    cleanupAbort?.()
+  }
+}
+
 export async function executeOpenCodeCli(
   agent: AgentDef,
   task: AgentTask,
@@ -2530,6 +2631,9 @@ export async function executeTask(
 
     case "opencode":
       return executeOpenCodeCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal, onThinking)
+
+    case "antigravity-cli":
+      return executeAntigravityCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
 
     case "sdk": {
       const providerName = agent.provider || "claude"

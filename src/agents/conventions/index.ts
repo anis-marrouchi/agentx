@@ -3,6 +3,7 @@ import { join } from "path"
 import { claudeCode } from "./claude-code"
 import { codexCli } from "./codex-cli"
 import { opencode } from "./opencode"
+import { antigravityCli } from "./antigravity-cli"
 import { orchestrator, sdk } from "./sdk"
 import type { CliAccount, CliFacts, ConventionTier, RuntimeConventions } from "./types"
 
@@ -13,6 +14,7 @@ const BY_TIER = {
   "claude-code": claudeCode,
   "codex-cli": codexCli,
   opencode,
+  "antigravity-cli": antigravityCli,
   sdk,
   orchestrator,
 } satisfies Record<ConventionTier, RuntimeConventions>

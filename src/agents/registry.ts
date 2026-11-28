@@ -1441,7 +1441,9 @@ export class AgentRegistry {
         ? this.sessions.getCodexSessionId(agentId, channel, chatId)
         : tier === "opencode"
           ? this.sessions.getOpenCodeSessionId(agentId, channel, chatId)
-          : undefined
+          : tier === "antigravity-cli"
+            ? this.sessions.getAntigravitySessionId(agentId, channel, chatId)
+            : undefined
   }
 
   /** Swap the workflows block on a config reload (#858): matching,
@@ -3509,7 +3511,7 @@ export class AgentRegistry {
     // only record runtimes with no native session keep.
     const sessionBefore = (() => {
       const s = this.sessions.getSession(task.agentId, channel, chatId)
-      return !!(s.claudeSessionId || s.codexSessionId || s.opencodeSessionId) || s.messages.some((m) => m.role === "agent")
+      return !!(s.claudeSessionId || s.codexSessionId || s.opencodeSessionId || s.antigravitySessionId) || s.messages.some((m) => m.role === "agent")
     })()
 
     // Improvement plan #8 — caller-driven session reset. Honour it before
@@ -5107,13 +5109,16 @@ export class AgentRegistry {
         if (response.opencodeSessionId) {
           this.sessions.setOpenCodeSessionId(task.agentId, channel, chatId, response.opencodeSessionId, ranOn)
         }
+        if (response.antigravitySessionId) {
+          this.sessions.setAntigravitySessionId(task.agentId, channel, chatId, response.antigravitySessionId, ranOn)
+        }
 
         // Record this turn's usage so next task can decide whether to rotate:
         // turnCount + cumulative lastTurnInputTokens (observability) +
         // per-request lastTurnContextTokens (the actual rotation metric).
         // Only meaningful when we kept a claude session — skip otherwise so the
         // counter isn't incremented for tiers that don't use --resume.
-        if ((response.claudeSessionId || response.codexSessionId || response.opencodeSessionId) && response.usage) {
+        if ((response.claudeSessionId || response.codexSessionId || response.opencodeSessionId || response.antigravitySessionId) && response.usage) {
           this.sessions.recordTurnUsage(task.agentId, channel, chatId, response.usage, response.contextTokens)
         }
 

@@ -33,6 +33,12 @@ export const SEED_MODELS: Record<ConventionTier, readonly SeedModel[]> = {
   ].map((id) => ({ id, choice: id })),
   // opencode reaches hundreds of provider/model ids; its list comes from the CLI (PR 2).
   opencode: [],
+  // `agy models`, agy 1.5.19, the Gemini ones (28 Nov 2026). It also lists
+  // Claude and GPT-OSS ids; the live list comes from the CLI (PR 2).
+  "antigravity-cli": [
+    "gemini-4-neon-high", "gemini-4-neon-medium", "gemini-4-carbon-high", "gemini-4-carbon-medium",
+    "gemini-4-argon-medium", "gemini-4-hydrogen-medium", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
+  ].map((id) => ({ id, choice: id })),
   // Anthropic API ids, for the engine that runs inside AgentX.
   sdk: [
     { id: "claude-sonnet-4-20250514", label: "anthropic/claude-sonnet-4", hint: "Claude Sonnet 4 · ctx 200k · recommended" },

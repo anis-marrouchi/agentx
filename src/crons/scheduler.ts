@@ -78,12 +78,12 @@ export function agentRunTimeout(jobTimeout: number | undefined): number {
  */
 export function runLinkIds(
   task: Pick<AgentTask, "runningTaskId" | "taskId">,
-  response: Pick<AgentResponse, "claudeSessionId" | "codexSessionId" | "opencodeSessionId">,
+  response: Pick<AgentResponse, "claudeSessionId" | "codexSessionId" | "opencodeSessionId" | "antigravitySessionId">,
 ): Pick<CronRunResult, "taskId" | "traceId" | "sessionId"> {
   const ids: Pick<CronRunResult, "taskId" | "traceId" | "sessionId"> = {}
   if (task.runningTaskId) ids.taskId = task.runningTaskId
   if (task.taskId) ids.traceId = task.taskId
-  const sessionId = response.claudeSessionId || response.codexSessionId || response.opencodeSessionId
+  const sessionId = response.claudeSessionId || response.codexSessionId || response.opencodeSessionId || response.antigravitySessionId
   if (sessionId) ids.sessionId = sessionId
   return ids
 }
