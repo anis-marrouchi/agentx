@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.316.0](https://github.com/anis-marrouchi/agentx/compare/v0.315.0...v0.316.0) (2026-11-28)
+
+
+### Features
+
+* **memory:** tidy run review in Approvals, Hub undo route, memory-tidy-kept ([#2117](https://github.com/anis-marrouchi/agentx/issues/2117) PR 3) ([#2575](https://github.com/anis-marrouchi/agentx/issues/2575)) ([8b17e90](https://github.com/anis-marrouchi/agentx/commit/8b17e907380d849b63f6a8ca939f09876b84745b))
+
 ## [0.315.0](https://github.com/anis-marrouchi/agentx/compare/v0.314.1...v0.315.0) (2026-11-28)
 
 
