@@ -64,7 +64,7 @@ export function RunStepsList({ rows }: { rows: WfStepRow[] }) {
       {rows.map((s, i) => (
         <li key={i} className="flex min-w-0 items-center gap-2 border-b border-border py-1.5 text-[13px] last:border-b-0">
           <Icon name={STEP_ICON[s.state]} className={cn("size-3.5 shrink-0", s.state === "failed" ? "text-err-ink" : "text-muted-foreground", s.state === "running" && "animate-spin motion-reduce:animate-none")} />
-          <span className="truncate font-medium">{s.name}</span>
+          <span className="max-w-[60%] shrink-0 truncate font-medium">{s.name}</span>
           {s.who || s.meta ? <span className={cn("min-w-0 truncate text-xs", s.state === "failed" ? "text-err-ink" : "text-muted-foreground")}>{[s.who && "@" + s.who, s.meta].filter(Boolean).join(" · ")}</span> : null}
           <span className="ml-auto shrink-0">
             {s.state === "skipped" ? <span className="text-xs text-muted-foreground">Skipped</span>
