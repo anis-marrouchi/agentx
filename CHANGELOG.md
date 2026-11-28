@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.313.1](https://github.com/anis-marrouchi/agentx/compare/v0.313.0...v0.313.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **desktop:** keep AgentX in the Dock when the orb is shown ([#2569](https://github.com/anis-marrouchi/agentx/issues/2569)) ([0ae05d6](https://github.com/anis-marrouchi/agentx/commit/0ae05d6c5db66c4e59fecad44a7631817d61a0c5))
+
 ## [0.313.0](https://github.com/anis-marrouchi/agentx/compare/v0.312.2...v0.313.0) (2026-11-28)
 
 
