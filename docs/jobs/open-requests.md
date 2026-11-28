@@ -588,6 +588,29 @@ A closed goal stays closed. Requests can still name it, but a new aim needs a ne
 
 Crons can serve a goal: see `crons.<id>.goal` in [Automation settings](../reference/config-automation.md). Once the goal is closed the cron stops running.
 
+## Which project a request belongs to
+
+Each request belongs to one project, or to **No project**. A new request starts on No project. AgentX files it under a project when it is created, but only when the request names one clearly. It checks these in order:
+
+1. The GitLab or GitHub issue or merge request the request came from: its project.
+2. One issue or merge request reference in the words, such as `group/project#12` or `group/project!3`, or the address of one. For a promise, the address of its home counts too.
+3. The key of one project you set up in `.agentx/projects` (such as `noqta/wa-crm`), or its last part or display name when that is 4 characters or longer, as a whole word.
+
+When two different projects match, the request stays on No project.
+
+Anyone can move a request to a project, or back to No project, open or closed:
+
+- **Terminal:** `agentx requests project <id> noqta/wa-crm`. Use `none` to move it to No project.
+- **Agent:** `{action:"project", id:"<id>", project:"noqta/wa-crm"}` with `agentx_request`. Any agent may move any request. Without `id`, it moves the request of the agent's current turn.
+- **From a script:** `POST /api/admin/approvals/requests/project` with `{id, project}` (behind the dashboard token). `project` is `null` or `"none"` for No project.
+
+To see requests by project:
+
+- **Terminal:** `agentx requests list --project noqta/wa-crm` lists that project's open requests. `--project none` lists the ones with no project. `agentx requests list --projects` counts the open requests of each project.
+- **From a script:** `GET /requests?project=noqta/wa-crm` (or `project=none`). `GET /requests/projects` gives the open count of each project. `null` stands for No project.
+
+`agentx requests show <id>` shows the project, and the agent's `list` line shows it when there is one.
+
 ## Where a request landed
 
 When an agent takes a request on, waits on you, or closes it as done, it can say where the work lives: its **home**. One of:

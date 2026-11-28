@@ -220,7 +220,8 @@ What you asked agents for that is not finished: [Keep track of what you asked fo
 
 | Command | What it does |
 |---|---|
-| `agentx requests list [--json] [--stalled]` | Open requests, oldest first; `--stalled` for the stalled ones, grouped by what they wait on |
+| `agentx requests list [--json] [--stalled] [--project <key>\|--projects]` | Open requests, oldest first; `--stalled` for the stalled ones, grouped by what they wait on; `--project` for one project's (`none`: no project), `--projects` for the count per project |
+| `agentx requests project <id> <project>` | Move a request to a project, or to No project with `none` |
 | `agentx requests show <id>` | One request and the runs, delegations and cards linked to it; its plan, step by step, and the plan's log |
 | `agentx requests step <id> <step> --retry\|--skip\|--done [--note]` | Move a step of a request's plan on: hand it over again, skip it, or mark it done |
 | `agentx requests done <id> --evidence <link>\|--reason <text>` | Close a request as finished, with a link to the proof, or by hand with the reason |
