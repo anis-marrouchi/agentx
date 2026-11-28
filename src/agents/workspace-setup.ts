@@ -8,7 +8,7 @@ import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from ".
 import { allowListHookMatcher, type McpPolicyFields } from "@/agent/mcp-policy"
 import { gitlabCreateMatcher, gitlabServers, workspaceMcpServers } from "@/gates/gitlab-mcp"
 import { MCP_CONFIRM_WAIT_S } from "@/agent/mcp-confirm"
-import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S } from "@/guard/hook-command"
+import { buildGuardHookCommand, GUARD_HOOK_TIMEOUT_S, READ_GUARD_BUDGET } from "@/guard/hook-command"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -229,11 +229,8 @@ function guardHookCommand(agentId: string, daemonPort: string, root: string = pr
   return buildGuardHookCommand({ port: daemonPort, root, agentId, required: true })
 }
 
-/** The guard on Read and Grep (#1979: keeps agents off .agentx/operator.key).
- *  They change nothing, so when neither check answers they run (no
- *  last-resort deny), and the daemon gets 5 s, not the 55 s a confirmation
- *  dialog needs: a stalled daemon must not hold every file read. */
-export const READ_GUARD_BUDGET = { connectS: 1, maxTimeS: 5, deadlineMs: 3000 }
+/** The guard on Read and Grep: see READ_GUARD_BUDGET in guard/hook-command.ts. */
+export { READ_GUARD_BUDGET }
 export const READ_GUARD_HOOK_TIMEOUT_S = 15
 
 function readGuardHookCommand(agentId: string, daemonPort: string, root: string = process.cwd()): string {

@@ -40,6 +40,12 @@ export interface GuardHookBudget {
 
 export const DEFAULT_GUARD_HOOK_BUDGET: GuardHookBudget = { connectS: 1, maxTimeS: 55, deadlineMs: 3000 }
 
+/** The guard on Read and Grep (#1979: keeps agents off .agentx/operator.key).
+ *  They change nothing, so when neither check answers they run (no
+ *  last-resort deny), and the daemon gets 5 s, not the 55 s a confirmation
+ *  dialog needs: a stalled daemon must not hold every file read. */
+export const READ_GUARD_BUDGET: GuardHookBudget = { connectS: 1, maxTimeS: 5, deadlineMs: 3000 }
+
 /** The stable path of the fallback CLI. The daemon rewrites it on each start
  *  so it survives a release directory being switched or removed. */
 export function guardCliLinkPath(root: string): string {

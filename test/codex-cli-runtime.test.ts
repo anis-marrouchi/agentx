@@ -39,14 +39,19 @@ describe("codex-cli runtime", () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "agentx-codex-runtime-"))
     oldPath = process.env.PATH
+    // These tests cover the `codex exec` path, which runs only with the
+    // runtime guard off (#2119); runtime-guard-codex-opencode.test.ts
+    // covers the guarded path.
+    process.env.AGENTX_RUNTIME_GUARD = "off"
   })
 
   afterEach(() => {
+    delete process.env.AGENTX_RUNTIME_GUARD
     process.env.PATH = oldPath
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it("falls back to exec when an older Codex cannot start app-server", async () => {
+  it("falls back to exec when an older Codex cannot start app-server (runtime guard off)", async () => {
     const calls = join(tmp, "calls.jsonl")
     writeFileSync(join(tmp, "codex"), `#!/usr/bin/env node
 const fs = require("fs");

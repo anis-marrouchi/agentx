@@ -1,11 +1,12 @@
 import { withAgentGitlabEnv } from "@/channels/gitlab-token"
 import { TURN_SECRET_ENV, taskSecret } from "./turn-secret"
-import { openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
+import { openCodeMajor, openCodeProcessPool, OpenCodeServerUnavailable } from "./opencode-process"
 import { execa } from "execa"
 import { codexProcessPool, CodexUnavailable } from "./codex-process"
 import { execFile, spawn } from "child_process"
 import { StringDecoder } from "string_decoder"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
+import { randomUUID } from "crypto"
 import { join } from "path"
 import { tmpdir } from "os"
 import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
@@ -42,6 +43,8 @@ import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonom
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
 import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
 import type { PersonLimits } from "@/people/people"
+import { runGuardHook, runtimeGuardOff } from "@/guard/runtime-guard"
+import { writeOpenCodeGuardPlugin } from "@/guard/opencode-plugin"
 import { SITUATION_TOOL_ENV, SOURCES_TOOL_ENV, situationToolOn, sourcesToolEnvOn } from "@/situations/context"
 
 // --- Agent execution runtime ---
@@ -723,6 +726,39 @@ function buildOpenCodeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
   }
   env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ ...config, mcp })
   return env
+}
+
+/** Why a Codex run was refused when its app-server could not take the turn
+ *  (#2119): `codex exec` has no way to ask before a command runs. */
+export function codexGuardUnavailableMessage(reason: string): string {
+  return `Codex run refused: the Codex app-server could not take this turn (${reason}). ` +
+    `AgentX runs Codex only through the app-server, so the AgentX guard checks each command and file change before it runs. ` +
+    `Update Codex (codex --version; the app-server needs a recent release) and retry. ` +
+    `To run without the guard, an operator can set AGENTX_RUNTIME_GUARD=off for the daemon.`
+}
+
+/** Add the AgentX guard plugin to an OpenCode run's config (#2119). Refuses
+ *  (returns an error) when the plugin cannot be loaded: an OpenCode version
+ *  AgentX cannot read, or a plugin file it cannot write. */
+async function withOpenCodeGuard(env: NodeJS.ProcessEnv, agentId: string): Promise<{ env: NodeJS.ProcessEnv } | { error: string }> {
+  if (runtimeGuardOff()) return { env }
+  const refused = (why: string) => ({
+    error: `OpenCode run refused: ${why}, so the AgentX guard plugin cannot check its tool calls. ` +
+      `To run without the guard, an operator can set AGENTX_RUNTIME_GUARD=off for the daemon.`,
+  })
+  const major = await openCodeMajor(env)
+  if (!major) return refused("`opencode --version` did not report OpenCode 1.x or 2.x (is it installed and on PATH?)")
+  let change: ReturnType<typeof writeOpenCodeGuardPlugin>
+  try {
+    change = writeOpenCodeGuardPlugin(process.cwd(), agentId, major)
+  } catch (e: any) {
+    return refused(`AgentX could not write the plugin file (${e?.message ?? e})`)
+  }
+  let config: Record<string, any> = {}
+  try { config = JSON.parse(env.OPENCODE_CONFIG_CONTENT || "{}") } catch { /* buildOpenCodeEnv wrote it */ }
+  const list = Array.isArray(config[change.key]) ? config[change.key] : []
+  config[change.key] = [...list.filter((entry: unknown) => entry !== change.entry), change.entry]
+  return { env: { ...env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config) } }
 }
 
 function extractCodexTextFromEvent(event: any): string | undefined {
@@ -1708,7 +1744,9 @@ export async function executeOpenCodeCli(
 
   try {
     const timeoutMs = Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000)
-    let env = buildOpenCodeEnv(agent, task)
+    const guarded = await withOpenCodeGuard(buildOpenCodeEnv(agent, task), task.agentId)
+    if ("error" in guarded) return { content: "", error: guarded.error, duration: Date.now() - start }
+    let env = guarded.env
     if (agent.persistentProcess) {
       try {
         server = await openCodeProcessPool.acquire({
@@ -2503,11 +2541,18 @@ export async function executeTask(
       }
       return executeClaudeCode(agent, task, historyContext, resumeSessionId, abortSignal)
 
-    case "codex-cli":
-      if (agent.persistentProcess) {
+    case "codex-cli": {
+      // The guard answers Codex's approval requests, which only the
+      // app-server path has (#2119). So every Codex run goes through it; an
+      // agent without persistentProcess gets its own process, closed after
+      // the turn. `codex exec` runs only with AGENTX_RUNTIME_GUARD=off.
+      const guardOff = runtimeGuardOff()
+      if (agent.persistentProcess || !guardOff) {
         try {
           const result = await codexProcessPool.run({
-            key: JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId]),
+            key: agent.persistentProcess
+              ? JSON.stringify([task.agentId, task.context?.channel, task.context?.chatId])
+              : `once:${task.agentId}:${randomUUID()}`,
             cwd: task.cwd ?? agent.workspace, env: buildRuntimeEnv(agent, task),
             args: buildCodexAgentxMcpArgs(), model: task.model || agent.model,
             bypass: agent.permissionMode === "bypassPermissions",
@@ -2515,18 +2560,27 @@ export async function executeTask(
             resume: resumeSessionId, fresh: task.freshSession,
             timeoutMs: Math.max(60_000, (agent.maxExecutionMinutes ?? 20) * 60_000),
             signal: abortSignal, onEvent, onDelta,
+            ...(guardOff ? {} : {
+              guard: (call) => runGuardHook(call, { agentId: task.agentId }),
+              closeAfter: !agent.persistentProcess,
+            }),
           })
           return { ...result, ...(result.error ? buildErrorEnvelope(result.error) : {}) }
         } catch (error) {
           if (!(error instanceof CodexUnavailable)) throw error
-          onEvent?.({ type: "codex.fallback", reason: error.message })
           if (abortSignal?.aborted) return { content: "", error: "task cancelled by operator", errorKind: "cancelled" }
+          if (!guardOff) {
+            onEvent?.({ type: "codex.refused", reason: error.message })
+            return { content: "", error: codexGuardUnavailableMessage(error.message) }
+          }
+          onEvent?.({ type: "codex.fallback", reason: error.message })
         }
       }
       if (onDelta) {
         return executeCodexCliStreaming(agent, task, onDelta, historyContext, resumeSessionId, onEvent)
       }
       return executeCodexCli(agent, task, historyContext, resumeSessionId)
+    }
 
     case "opencode":
       return executeOpenCodeCli(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal, onThinking)

@@ -16,6 +16,18 @@ interface Options {
   signal?: AbortSignal
   onEvent?: (event: any) => void
   onDelta?: (delta: string, text: string) => void
+  /** The AgentX guard (#2119). When set, the thread runs with approvalPolicy
+   *  "untrusted" and each command or file change Codex asks to run is
+   *  answered with this verdict before it runs. */
+  guard?: (call: CodexGuardCall) => Promise<{ allow: boolean; reason?: string }>
+  /** Close the process after this turn (an agent without persistentProcess). */
+  closeAfter?: boolean
+}
+/** One call Codex asks to run, in Claude Code's PreToolUse names. */
+export interface CodexGuardCall {
+  tool: "Bash" | "Write"
+  input: { command?: string; file_path?: string }
+  cwd: string
 }
 interface Result {
   content: string
@@ -43,6 +55,8 @@ class Connection {
   threadId?: string
   idle?: NodeJS.Timeout
   notify?: (method: string, params: any) => void
+  /** Answers a server request; undefined leaves it declined. */
+  request?: (method: string, params: any) => Promise<any> | undefined
   failTurn?: (e: Error) => void
   constructor(o: Options, launchProcess: Spawn) {
     this.child = launchProcess(o)
@@ -52,8 +66,11 @@ class Connection {
       let msg: any
       try { msg = JSON.parse(line) } catch { return }
       if (msg.method && msg.id !== undefined) {
-        // AgentX has no interactive approval bridge here. Fail closed.
-        this.write({ id: msg.id, error: { code: -32601, message: "Interactive requests are not supported by AgentX" } })
+        // Approvals go to the guard when the turn has one (#2119). Any other
+        // request, and any failure to answer, is declined: fail closed.
+        const answer = this.request?.(msg.method, msg.params)
+        if (answer) answer.then((result) => this.write({ id: msg.id, result }), () => this.write({ id: msg.id, result: { decision: "decline" } }))
+        else this.write({ id: msg.id, error: { code: -32601, message: "Interactive requests are not supported by AgentX" } })
       } else if (msg.id !== undefined) {
         const p = this.pending.get(msg.id)
         if (!p) return
@@ -88,6 +105,32 @@ class Connection {
   }
 }
 
+/** What the guard must check before Codex may run a server request, or
+ *  undefined for a request the guard does not answer (it stays declined).
+ *  No calls means decline with `reason`, unless `accept`. Exported for tests. */
+export function codexGuardCalls(
+  method: string,
+  p: any,
+  changePaths: Map<string, string[]>,
+  cwd: string,
+): { tool: string; calls: CodexGuardCall[]; reason?: string; accept?: boolean } | undefined {
+  if (method === "item/commandExecution/requestApproval") {
+    const kind = p?.kind ?? "command"
+    // Input to a terminal the guard already passed when it started.
+    if (kind === "writeStdin") return { tool: "Bash", calls: [], accept: true }
+    // Network access and human checkpoints were never granted before #2119.
+    if (kind !== "command" || p?.networkApprovalContext) return { tool: "Bash", calls: [], reason: "only a person can grant this; AgentX runs unattended" }
+    if (typeof p?.command !== "string" || !p.command.trim()) return { tool: "Bash", calls: [], reason: "Codex did not say which command" }
+    return { tool: "Bash", calls: [{ tool: "Bash", input: { command: p.command }, cwd: p.cwd || cwd }] }
+  }
+  if (method === "item/fileChange/requestApproval") {
+    const paths = changePaths.get(p?.itemId) ?? []
+    if (!paths.length) return { tool: "Write", calls: [], reason: "Codex did not say which files" }
+    return { tool: "Write", calls: paths.map((path) => ({ tool: "Write", input: { file_path: path }, cwd })) }
+  }
+  return undefined
+}
+
 /** One process per conversation and effective configuration. Busy entries are never evicted. */
 export class CodexProcessPool {
   private entries = new Map<string, { fingerprint: string; connection: Connection }>()
@@ -101,7 +144,7 @@ export class CodexProcessPool {
     if (o.signal?.aborted) return { content: "", error: "task cancelled by operator", duration: 0 }
     // The hash includes environment (including MCP identity), but never logs its contents.
     const fingerprint = createHash("sha256").update(JSON.stringify([
-      o.cwd, o.model, o.bypass, o.args, Object.entries(o.env).sort(([a], [b]) => a.localeCompare(b)),
+      o.cwd, o.model, o.bypass, o.args, !!o.guard, Object.entries(o.env).sort(([a], [b]) => a.localeCompare(b)),
     ])).digest("hex")
     let entry = this.entries.get(o.key)
     if (entry?.connection.busy) throw new CodexUnavailable("Conversation already running")
@@ -147,7 +190,7 @@ export class CodexProcessPool {
         await c.rpc("thread/unsubscribe", { threadId: c.threadId })
         c.threadId = undefined
       }
-      const params = { cwd: o.cwd, model: o.model, approvalPolicy: "never",
+      const params = { cwd: o.cwd, model: o.model, approvalPolicy: o.guard ? "untrusted" : "never",
         sandbox: o.bypass ? "danger-full-access" : "workspace-write" }
       const thread = await c.rpc(o.resume && !o.fresh ? "thread/resume" : "thread/start",
         { ...params, ...(o.resume && !o.fresh ? { threadId: o.resume } : {}) })
@@ -155,11 +198,36 @@ export class CodexProcessPool {
       c.threadId = threadId
       clearTimeout(startup)
       o.onEvent?.({ type: "codex.ready", reused, startupMs: Date.now() - start, model: o.model })
+      // Paths of each file change, from its item/started (sent before Codex
+      // asks to apply it), for the guard.
+      const changePaths = new Map<string, string[]>()
+      if (o.guard) c.request = (method, p) => {
+        if (p?.threadId !== threadId) return undefined
+        const ask = codexGuardCalls(method, p, changePaths, o.cwd)
+        if (!ask) return undefined
+        return (async () => {
+          for (const call of ask.calls) {
+            const verdict = await o.guard!(call)
+            if (!verdict.allow) {
+              o.onEvent?.({ type: "codex.guard_refused", tool: call.tool, reason: verdict.reason })
+              return { decision: "decline" }
+            }
+          }
+          if (!ask.calls.length && !ask.accept) {
+            o.onEvent?.({ type: "codex.guard_refused", tool: ask.tool, reason: ask.reason })
+            return { decision: "decline" }
+          }
+          return { decision: "accept" }
+        })()
+      }
       const completed = new Promise<void>((resolve, reject) => {
         c.failTurn = reject
         c.notify = (method, p) => {
           if (p?.threadId !== threadId) return
           const item = p.item
+          if (method === "item/started" && item?.type === "fileChange" && Array.isArray(item.changes)) {
+            changePaths.set(item.id, item.changes.map((change: any) => String(change?.path ?? "")).filter(Boolean))
+          }
           const itemTypes: Record<string, string> = {
             agentMessage: "agent_message", commandExecution: "command_execution",
             fileChange: "file_change", mcpToolCall: "mcp_tool_call",
@@ -213,7 +281,9 @@ export class CodexProcessPool {
       clearTimeout(deadline)
       o.signal?.removeEventListener("abort", abort)
       c.notify = undefined
+      c.request = undefined
       c.failTurn = undefined
+      if (o.closeAfter) c.close()
       c.busy = false
       if (c.dead) {
         if (this.entries.get(o.key)?.connection === c) this.entries.delete(o.key)
