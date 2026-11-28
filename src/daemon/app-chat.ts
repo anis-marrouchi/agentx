@@ -53,7 +53,8 @@ export interface PickerNode {
   target: string | null
   name: string
   online: boolean
-  agents: Array<{ id: string; name: string; busy: boolean; running: number; color?: string }>
+  /** tier: the agent's engine (claude-code, codex-cli...), for the Chat header (#2101 phone C1). */
+  agents: Array<{ id: string; name: string; busy: boolean; running: number; color?: string; tier?: string }>
 }
 
 const MAX_MESSAGE = 8_000
@@ -164,7 +165,7 @@ export function buildPicker(nodes: SnapshotNode[], daemon: AppChatDeps["daemon"]
     const peer = peers.find((p) => norm(p.peerUrl) === url)
     if (peer) seen.add(peer.peer)
     const local = url === primary
-    const agents: Array<{ id: string; name?: string; active?: number; runningTasks?: unknown[]; color?: string }> = n.agents.length ? n.agents : (peer?.skills ?? [])
+    const agents: Array<{ id: string; name?: string; active?: number; runningTasks?: unknown[]; color?: string; tier?: string }> = n.agents.length ? n.agents : (peer?.skills ?? [])
     out.push({
       target: local ? "local" : peer ? peer.peer : null,
       // An unreachable node's snapshot name is its URL; prefer a real name.
@@ -172,7 +173,7 @@ export function buildPicker(nodes: SnapshotNode[], daemon: AppChatDeps["daemon"]
       online: local ? n.reachable : peer ? peer.healthy : false,
       agents: agents.map((a) => {
         const running = Array.isArray(a.runningTasks) ? a.runningTasks.length : 0
-        return { id: a.id, name: a.name || a.id, busy: running > 0 || (a.active ?? 0) > 0, running, ...(a.color ? { color: a.color } : {}) }
+        return { id: a.id, name: a.name || a.id, busy: running > 0 || (a.active ?? 0) > 0, running, ...(a.color ? { color: a.color } : {}), ...(a.tier ? { tier: a.tier } : {}) }
       }),
     })
   }

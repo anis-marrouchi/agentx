@@ -338,7 +338,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     node: localNodeName(ctx.config), dashboardToken: ctx.token,
     posts: (days) => buildWallFleet(new URLSearchParams({ days: String(days) }), ctx) as Promise<any>,
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, agents: { rows: (dayStart, now) => hubAgentsNow(ctx.config, dayStart, now) }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), changes: { wall: () => ({ inbox: { root: process.cwd() }, daemon: wallDaemon(ctx.config), diff: wallDiffDeps(ctx.config) }), open: () => requestStoreFor({ root: process.cwd() })?.listOpen() ?? [] }, agents: { rows: (dayStart, now) => hubAgentsNow(ctx.config, dayStart, now) }, requests: { cards: appRequestCards }, reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -3218,6 +3218,14 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
  *  The board is put together from this node's sources on every read:
  *  what waits (every node's inbox), the requests, the finished decision
  *  cards, and the runs that are live right now. */
+/** The open request cards the phone Chat's Plan and Proofs read (app-requests.ts):
+ *  the Requests panel's own list, so the phone and the Hub chat show one thing. */
+async function appRequestCards(): Promise<unknown[]> {
+  const r = await handleRequestsPanel("GET", REQUESTS_PANEL_PREFIX, {}, { root: process.cwd() })
+  if (r.status !== 200) throw new Error(String((r.body as { error?: string })?.error ?? `status ${r.status}`))
+  return ((r.body as { items?: unknown[] }).items) ?? []
+}
+
 function appDeskDeps(config: DaemonConfig): AppDeskDeps {
   const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
   const fleet = appFleetDeps(config)
