@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.312.1](https://github.com/anis-marrouchi/agentx/compare/v0.312.0...v0.312.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** Dashboard opens the Hub's Operations page, and its cards load ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R8) ([#2553](https://github.com/anis-marrouchi/agentx/issues/2553)) ([29f1363](https://github.com/anis-marrouchi/agentx/commit/29f136339f3cb4d6bf0d0d414d83122c939702eb))
+
 ## [0.312.0](https://github.com/anis-marrouchi/agentx/compare/v0.311.3...v0.312.0) (2026-11-28)
 
 
