@@ -495,8 +495,10 @@ describe("Feed and List keep their frame while the posts load (#2101, Anis v0.28
 
   it("the List is a centred column with the feed's gutters, not full width", () => {
     const page = renderWallPage()
-    expect(page).toContain(".ax-wall.is-posts { --fd-col: 720px; --fd-head: 720px; }")
-    expect(page).toContain(".ax-wall.is-posts.is-wide { --fd-col: 976px; }")
+    expect(page).toContain(".ax-wall.is-posts { --fd-col: 976px; --fd-head: 976px; }")
+    // #2592: Feed and List share one width; the List no longer widens the column.
+    expect(page).not.toMatch(/\.ax-wall\.is-posts\.is-wide \{[^}]*--fd-col/)
+    expect(page).not.toContain(".fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; }")
     expect(page).toContain(".ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }")
     expect(page).toContain("padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }")
     expect(page).not.toContain("padding-left: 24px; padding-right: 24px; max-width: none; }")

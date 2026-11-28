@@ -473,11 +473,11 @@ export const WALL_FEED_SCRIPT = String.raw`
 export const WALL_FEED_CSS = `
 /* The feed and its List view (#2101, wall-feed.client.ts): the approved mock. */
 .fd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* One column for the feed and the List: the same frame and gutters at
-   every width; the List's table is wider (C3). The column is set before
+/* One column for the feed and the List: the same 976 px frame and gutters
+   at every width, so Feed | List never changes the width (#2592, Anis
+   2026-11-28: the Feed takes the List's width). The column is set before
    the posts arrive, so nothing moves when they do (#2101). */
-.ax-wall.is-posts { --fd-col: 720px; --fd-head: 720px; }
-.ax-wall.is-posts.is-wide { --fd-col: 976px; }
+.ax-wall.is-posts { --fd-col: 976px; --fd-head: 976px; }
 .ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { max-width: var(--fd-col); margin-left: auto; margin-right: auto; }
 /* The head keeps the feed's column on the List too, so Feed | List never
    moves the title (#2101, Hakim's v0.311.3 check: 572 vs 444 px). */
@@ -716,7 +716,7 @@ button.fp__mi { cursor: pointer; }
   .ax-wall.is-posts .ax-wall__main > :is(.fd-compose, .fd-bar, .ax-wall__sub, .ax-wall__feed, .ax-wall__list, .fd-loading) { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-col) + 48px); }
   .ax-wall.is-posts .ax-wall__main > .ax-wall__head { padding-left: 24px; padding-right: 24px; max-width: calc(var(--fd-head) + 48px); }
   .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: 24px; margin-right: 24px; padding-left: 16px; padding-right: 12px; }
-  @media (min-width: 769px) { .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: 720px; } }
+  @media (min-width: 769px) { .ax-wall.is-posts .ax-wall__main > .fd-compose { margin-left: auto; margin-right: auto; max-width: var(--fd-col); } }
   .fd-q { width: 160px; }
   .fd-hint { display: none; }
   .fd-compose__row .fd-send { margin-left: auto; }
