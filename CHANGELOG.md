@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.311.2](https://github.com/anis-marrouchi/agentx/compare/v0.311.1...v0.311.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** keep the status bar in view under the React shell ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101) R5) ([#2539](https://github.com/anis-marrouchi/agentx/issues/2539)) ([18daf2d](https://github.com/anis-marrouchi/agentx/commit/18daf2dff4e53118a3969c637143a40cd300545e))
+* **requests:** refuse a local check url the node never opens when made ([#2535](https://github.com/anis-marrouchi/agentx/issues/2535)) ([#2536](https://github.com/anis-marrouchi/agentx/issues/2536)) ([0ac5934](https://github.com/anis-marrouchi/agentx/commit/0ac5934938baaf609970ac532adce150577ee7db))
+
 ## [0.311.1](https://github.com/anis-marrouchi/agentx/compare/v0.311.0...v0.311.1) (2026-11-28)
 
 
