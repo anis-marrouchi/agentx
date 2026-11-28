@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.316.2](https://github.com/anis-marrouchi/agentx/compare/v0.316.1...v0.316.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** Task page draws from its own read first, not after the shell's ([#2586](https://github.com/anis-marrouchi/agentx/issues/2586)) ([5b5e8db](https://github.com/anis-marrouchi/agentx/commit/5b5e8dba0036adfd28be1af68c78d309edac0be8))
+
 ## [0.316.1](https://github.com/anis-marrouchi/agentx/compare/v0.316.0...v0.316.1) (2026-11-28)
 
 
