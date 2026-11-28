@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { JobStore } from "../src/jobs/store"
 import { JOBS_HUB_PATH, isJobsHubPath, jobsHubReply } from "../src/jobs/hub-api"
-import { jlDetailHtml, jlHomeHtml, jlRowHtml, jlSpan, jlTitle, jlTitleHtml, jlTone, jobLedgerPageHtml, type HubJob } from "../src/daemon/ui/pages/wall-jobledger"
+import { jlDetailHtml, jlGroup, jlHomeHtml, jlName, jlPlain, jlRowHtml, jlSpan, jlTitle, jlTitleHtml, jlTone, jobLedgerPageHtml, type HubJob, type JobLedgerModel } from "../src/daemon/ui/pages/wall-jobledger"
 import { renderWallPage } from "../src/daemon/ui/pages/wall"
 import { WALL_PAGE_SCRIPT } from "../src/daemon/ui/pages/wall.client"
 import { CRON_VALUE_SCRIPT } from "../src/daemon/ui/cron-value"
@@ -79,8 +79,8 @@ describe("the rows", () => {
   it("never writes \"not known\": no requester names only the assignee, no run status stays empty (Anis 11-25, #2101 C1)", () => {
     const row = jlRowHtml(job({ requester: "" }), opts)
     expect(row).not.toContain("not known")
-    expect(row).toContain("<span>@coder</span>")
-    expect(jlRowHtml(job({}), opts)).toContain("<span>pm → @coder</span>")
+    expect(row).toContain('<span><span title="coder">coder</span></span>')
+    expect(jlRowHtml(job({}), opts)).toContain('<span><span title="pm">pm</span> → <span title="coder">coder</span></span>')
     const detail = jlDetailHtml({ job: job({}), runs: [{ runId: "run-1" } as any], parent: null, children: [] }, "", "", NOW)
     expect(detail).toContain("<code>run-1</code></td><td></td>")
     expect(detail).not.toContain("not known")
@@ -100,7 +100,7 @@ describe("the rows", () => {
     expect(jlTone(job({ state: "blocked", status: "blocked: no access" }))).toBe("blocked")
     expect(jlTone(job({ state: "stalled", status: "stalled, run ended 3 h ago with no state" }))).toBe("stalled")
     expect(jlTone(job({ status: "nobody on it, run ended 3 h ago with no state" }))).toBe("stalled")
-    expect(jlRowHtml(job({ state: "stalled", status: "stalled, run ended 3 h ago with no state" }), opts)).toContain('<span class="wjl__st is-stalled">stalled, run ended 3 h ago with no state</span>')
+    expect(jlRowHtml(job({ state: "stalled", status: "stalled, run ended 3 h ago with no state" }), opts)).toContain('<span class="wjl__st is-stalled" title="stalled, run ended 3 h ago with no state">stalled, run ended 3 h ago with no state</span>')
   })
 
   it("links the home only when it is a web address", () => {
@@ -112,7 +112,7 @@ describe("the rows", () => {
 
   it("shows who asked whom, the door, when it moved, and tags an owner request", () => {
     const html = jlRowHtml(job({ ownerRequest: true, door: "owner", requester: "owner" }), opts)
-    expect(html).toContain("owner → @coder")
+    expect(html).toContain('<span title="owner">you</span> → <span title="coder">coder</span>')
     expect(html).toContain("<span>Owner</span>")
     expect(html).toContain("60 min ago</time>")
     expect(html).toContain('<span class="wjl__tag">Your request</span> <a href="#status=open&amp;view=decide" data-dkind="requests">See it in Requests</a>')
@@ -145,9 +145,9 @@ describe("the rows", () => {
     expect(html).toContain('data-jlstate="open" class="is-open" aria-pressed="true">Open <span class="n">5</span>')
     expect(html).toContain('data-jlstate="continue" class="is-continue" aria-pressed="false">Sleeping <span class="n">1</span>')
     expect(html).toContain('data-jlstate="all" class="is-all" aria-pressed="false">All <span class="n">13</span>')
-    expect(html).toContain("No open jobs: no assigned work is unfinished.")
+    expect(html).toContain("No open jobs. Work shows here as soon as an agent takes it.")
     expect(jobLedgerPageHtml({ ...base, state: "done", door: "cron" })).toContain('<option value="cron" selected>Cron</option>')
-    expect(jobLedgerPageHtml({ ...base, state: "done" })).toContain("No jobs match this state and door.")
+    expect(jobLedgerPageHtml({ ...base, state: "done" })).toContain("No jobs in this state. Pick Open to see the work under way.")
     expect(jobLedgerPageHtml({ ...base, list: null })).toContain("Loading…")
     expect(jobLedgerPageHtml({ ...base, missed: [{ name: "node-b", why: "does not answer" }] })).toContain("Not read: node-b does not answer.")
   })
@@ -250,10 +250,10 @@ describe("the Hub's Jobs page", () => {
     expect(w.el("wall-jobledger").hidden).toBe(false)
     expect(w.calls).toContain("/api/admin/job-ledger?state=open")
     const html = w.html()
-    expect(html).toContain('<span class="wjl__h">Deploy the report</span><span class="wjl__st is-stalled">stalled, run ended 3 h ago with no state</span>')
-    expect(html).toContain('<span class="wjl__st is-working">working, last tool call 40 s ago</span>')
-    expect(html).toContain('<span class="wjl__st is-continue">sleeping until 18:00 for the build</span>')
-    expect(html).toContain("coder → @ops")
+    expect(html).toContain('<span class="wjl__h">Deploy the report</span>' + '<span class="wjl__st is-stalled" title="stalled, run ended 3 h ago with no state">stalled, run ended 3 h ago with no state</span>')
+    expect(html).toContain('<span class="wjl__st is-working" title="working, last tool call 40 s ago">working, last tool call 40 s ago</span>')
+    expect(html).toContain('<span class="wjl__st is-continue" title="sleeping until 18:00 for the build">sleeping until 18:00 for the build</span>')
+    expect(html).toContain('<span title="coder">coder</span> → <span title="ops">ops</span>')
     expect(html).toContain('<a href="https://git.example.com/shop/-/issues/12"')
     expect(html).toContain("Your request")
     // Most recently active first.
@@ -314,10 +314,10 @@ describe("the Hub's Jobs page", () => {
   it("has one plain sentence when there are no jobs, on an older machine too", async () => {
     const w = openWall("#page=jobledger", { jobs: [], total: 0, counts: {} })
     await w.settle()
-    expect(w.html()).toContain("No open jobs: no assigned work is unfinished.")
+    expect(w.html()).toContain("No open jobs. Work shows here as soon as an agent takes it.")
     const old = openWall("#page=jobledger", 404)
     await old.settle()
-    expect(old.html()).toContain("No open jobs: no assigned work is unfinished.")
+    expect(old.html()).toContain("No open jobs. Work shows here as soon as an agent takes it.")
   })
 
   it("names the machine when the read fails", async () => {
@@ -333,3 +333,49 @@ describe("the Hub's Jobs page", () => {
     expect(w.el("wall-jobledger").hidden).toBe(true)
   })
 })
+
+describe("the open list reads by what it needs (#2556)", () => {
+  const NOW2 = Date.UTC(2030, 0, 14, 8, 0)
+  const j = (o: Partial<HubJob>): HubJob => ({ id: "j1", door: "owner", state: "working", status: "working, run started 2 min ago", requester: "owner", assignee: "coder-agent", text: "x", headline: "Ship it", home: null, parentId: null, updatedAt: NOW2 - 60000, ...o })
+  const page = (list: HubJob[], extra: Partial<JobLedgerModel> = {}) => jobLedgerPageHtml({ list, counts: { working: 1 }, total: list.length, state: "open", door: "", open: "", detail: null, detailErr: "", missed: [], error: "", multi: false, now: NOW2, names: { "coder-agent": "Coder", "pm-agent": "Hakim" }, ...extra })
+
+  it("puts Needs you first, then Moving capped at 3, then Nobody on it folded, and the counts after the work (W1, W7)", () => {
+    const html = page([
+      j({ id: "a", state: "waiting", waitingOn: "owner", status: "waiting on owner" }),
+      j({ id: "b" }), j({ id: "c" }), j({ id: "d" }), j({ id: "e" }),
+      j({ id: "f", state: "stalled", status: "stalled, no run, no wake and no one it waits on" }),
+    ])
+    const you = html.indexOf('data-fold="jobs.you"'), moving = html.indexOf('data-fold="jobs.moving"'), stuck = html.indexOf('data-fold="jobs.stuck"'), tools = html.indexOf("wjl__tools")
+    expect(you).toBeGreaterThan(-1)
+    expect(you).toBeLessThan(moving); expect(moving).toBeLessThan(stuck); expect(stuck).toBeLessThan(tools)
+    expect(html).toContain('data-cap="jobs.moving"')
+    expect(html).toContain('data-fold="jobs.stuck" data-fold-start="closed"')
+    expect(html).toContain("Moves when you answer Coder.")
+    expect(html).toContain("Moves when Coder picks it up again, or it is closed.")
+  })
+
+  it("says Nothing waits on you. when nothing does", () => {
+    expect(page([j({})])).toContain("Nothing waits on you.")
+  })
+
+  it("names agents as the side menu does, the id only in the tooltip (W5)", () => {
+    const html = jlRowHtml(j({ requester: "agent:pm-agent" }), { open: false, detail: null, detailErr: "", multi: false, now: NOW2, names: { "coder-agent": "Coder", "pm-agent": "Hakim" } })
+    expect(html).toContain('<span title="agent:pm-agent">Hakim</span> → <span title="coder-agent">Coder</span>')
+    expect(html).not.toContain("@coder-agent")
+  })
+
+  it("keeps ids and agent ids out of the status text, the line as sent in the tooltip (W6)", () => {
+    expect(jlPlain("waiting on pm-agent until 18:00 (req-01M8GP9AK6)", { "pm-agent": "Hakim" })).toBe("waiting on Hakim until 18:00")
+    expect(jlPlain("waiting on xpm-agent", { "pm-agent": "Hakim" })).toBe("waiting on xpm-agent")
+    expect(jlPlain("waiting on owner until 14:30")).toBe("waiting on you until 14:30")
+    expect(jlName("coder-agent@clawd-server", { "coder-agent": "Coder" })).toBe("Coder on clawd-server")
+    expect(jlName("owner")).toBe("you")
+  })
+
+  it("groups blocked jobs under Needs you", () => {
+    expect(jlGroup({ state: "blocked", status: "blocked: needs a token" })).toBe("you")
+    expect(jlGroup({ state: "working", status: "nobody on it, run ended 3 h ago with no state" })).toBe("stuck")
+    expect(jlGroup({ state: "waiting", status: "waiting on ops", waitingOn: "ops" })).toBe("moving")
+  })
+})
+

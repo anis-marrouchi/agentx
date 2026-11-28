@@ -102,6 +102,12 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
     JL.detailFor = mark;
     render();
   }
+  /** Agent id → the name the side menu shows (#2556): one name per agent on the page. */
+  function jlNames() {
+    var info = agentInfo(), out = {};
+    Object.keys(info).forEach(function (id) { if (info[id] && info[id].name) out[id] = info[id].name; });
+    return out;
+  }
   /** Called with the Hub's own refresh: a page that was read is read again. */
   function refreshJobLedger() {
     if (!JL.key || S.page !== 'jobledger') return;
@@ -130,7 +136,7 @@ export const WALL_JOBLEDGER_SCRIPT = String.raw`
     $('wall-jobledger').innerHTML = jobLedgerPageHtml({
       list: JL.list, counts: JL.counts, total: JL.total, state: JL.state, door: JL.door, open: JL.open, node: JL.node,
       detail: shown ? JL.detail : null, detailErr: shown ? JL.detailErr : '',
-      missed: costMachines().missed.concat(JL.failed), error: JL.error, multi: costMachines().read.length > 1, now: Date.now(), queue: JL.queue,
+      missed: costMachines().missed.concat(JL.failed), error: JL.error, multi: costMachines().read.length > 1, now: Date.now(), queue: JL.queue, names: jlNames(),
     });
   }
   document.addEventListener('click', function (ev) {
@@ -192,6 +198,11 @@ export const WALL_JOBLEDGER_CSS = `
 .wjl__st.is-done, .wjl__st.is-dropped { background: transparent; border: 1px dashed var(--ax-border-2); color: var(--ax-muted); font-weight: 500; }
 .wjl__facts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; padding: 4px 16px 10px 13px; font-size: var(--ax-fs-xs); color: var(--ax-muted); }
 .wjl__facts > span { overflow-wrap: anywhere; min-width: 0; }
+.wjl__moves { margin: 0; padding: 2px 16px 0 13px; font-size: var(--ax-fs-sm); color: var(--ax-text-2); }
+.wjl__group { margin: 12px 16px 0; }
+.wjl__group > .wjl__list { margin: 4px -16px 0; }
+.wjl__none { margin: 4px 0 8px; font-size: var(--ax-fs-sm); color: var(--ax-muted); }
+.wjl__ids > summary { cursor: pointer; }
 .wjl__tag { font-weight: 600; color: var(--ax-text-2); background: var(--ax-surface); border-radius: var(--ax-radius-pill); padding: 0 8px; }
 .wjl__d { padding: 0 16px 12px 13px; font-size: var(--ax-fs-sm); }
 .wjl__d p { margin: 0 0 6px; overflow-wrap: anywhere; }

@@ -77,7 +77,7 @@ describe("the queue, one line per agent", () => {
   it("shows as a block on the Jobs page", () => {
     const html = jlQueueHtml([{ agentId: "writer", jobs: 2, minutes: 90, nextEndAt: NOW + 60 * MIN, clearsAt: NOW + 90 * MIN, factor: 1.5 }], false, NOW)
     // Spans are written like the status lines: 90 minutes reads "2 h".
-    expect(html).toContain("@writer</b> · 2 jobs, 2 h of work · next ends")
+    expect(html).toContain('<b title="writer">writer</b> · 2 jobs, 2 h of work · next ends')
     expect(html).toContain("in 60 min</time> · clear")
     expect(html).toContain("correction ×1.5")
     expect(jlQueueHtml([], false, NOW)).toBe("")

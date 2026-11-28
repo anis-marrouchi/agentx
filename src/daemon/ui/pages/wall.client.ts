@@ -88,7 +88,7 @@ import { numPeriodText, numTargetText, numFmt, numCounts, numDeptCardsHtml, numD
 import { WALL_JOBLEDGER_SCRIPT } from "./wall-jobledger.client"
 import { WALL_AGENTS_SCRIPT } from "./wall-agents.client"
 import { agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml } from "./wall-agents"
-import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlHomeHtml, jlLinkHtml, jlQueueHtml, jlRowHtml, jlSpan, jlStates, jlTitle, jlTitleHtml, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
+import { jlDetailHtml, jlDoorLabel, jlDoors, jlEsc, jlGroup, jlGroupHtml, jlHomeHtml, jlLinkHtml, jlMoves, jlName, jlPlain, jlQueueHtml, jlRowHtml, jlSpan, jlStamp, jlStates, jlTitle, jlTitleHtml, jlTone, jobLedgerPageHtml } from "./wall-jobledger"
 import { computeFunnel, formatShare, funnelGroupValues, funnelSteps } from "@/numbers/funnel"
 import { profileSpendHtml } from "./wall-spend"
 import { costPageHtml, costPageModel, costBudgetsHtml, mergeCost, mergeBudgets, costCsv, costFetchRange } from "./wall-cost"
@@ -151,7 +151,7 @@ export const WALL_PAGE_SCRIPT = String.raw`
   ${injectFns({ ltRunIndex, ltWorkerState, ltWorkersOf, ltAddWorkers, ltWorkerHtml, ltWorkersHtml })}
   ${injectFns({ mtModel, mtCountWords, mtRowTitle, mtListed, mtPointerHtml, mtWorkersHtml, mtTreeHtml })}
   ${injectFns({ agmEsc, agmSlug, agmStatus, agmStatusHtml, agmCreateSteps, agmFormOf, agmEditSteps, agmFormHtml, agmActsHtml, agmTestLogHtml, agmTestHtml, agmHeadHtml })}
-  ${injectFns({ jlEsc, jlSpan, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlTitleHtml, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlQueueHtml, jobLedgerPageHtml })}
+  ${injectFns({ jlEsc, jlSpan, jlName, jlPlain, jlGroup, jlMoves, jlStamp, jlStates, jlDoors, jlDoorLabel, jlTone, jlTitle, jlTitleHtml, jlHomeHtml, jlLinkHtml, jlDetailHtml, jlRowHtml, jlGroupHtml, jlQueueHtml, jobLedgerPageHtml })}
 ${WALL_KEEP_SCRIPT}
 ${WALL_REVIEWS_SCRIPT}
 ${WALL_EVENTS_SCRIPT}
