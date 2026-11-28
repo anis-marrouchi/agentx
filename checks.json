@@ -1,0 +1,243 @@
+{
+  "shots": {
+    "01-workflows-list-1440-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 2
+    },
+    "02-workflows-list-1440-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 2
+    },
+    "03-workflows-list-390-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 2
+    },
+    "04-workflows-list-390-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 2
+    },
+    "open-1440-ready": true,
+    "05-workflows-open-1440-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    },
+    "06-workflows-open-1440-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    },
+    "open-390-ready": true,
+    "07-workflows-open-390-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    },
+    "08-workflows-open-390-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": "demo-stock-check",
+      "steps": 1,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": null,
+      "runButtons": 1
+    },
+    "dialog-1440-ready": true,
+    "09-workflows-run-dialog-1440-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": "Run \"Check the demo stock list\"?demo-stock-agent does the steps.It takes no inputs.Inputs as JSON{}BackStart the run\n\n  \n  \n\n",
+      "runButtons": 2
+    },
+    "10-workflows-run-dialog-1440-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": "Run \"Check the demo stock list\"?demo-stock-agent does the steps.It takes no inputs.Inputs as JSON{}BackStart the run\n\n  \n  \n\n",
+      "runButtons": 2
+    },
+    "dialog-390-ready": true,
+    "11-workflows-run-dialog-390-light.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": "Run \"Check the demo stock list\"?demo-stock-agent does the steps.It takes no inputs.Inputs as JSON{}BackStart the run\n\n  \n  \n\n",
+      "runButtons": 2
+    },
+    "12-workflows-run-dialog-390-dark.png": {
+      "pane": true,
+      "rows": [
+        "demo-stock-check",
+        "demo-backlog",
+        "demo-whatsapp-intake",
+        "demo-merge-verify",
+        "demo-deploy",
+        "demo-report",
+        "demo-handoff",
+        "demo-owner-sweep"
+      ],
+      "summary": "8 workflows, 2 on · 2 runs this week, 1 failed",
+      "open": null,
+      "steps": 0,
+      "fail": "Stopped at \"Count\": [unknown] Unknown agent: demo-stock-agent",
+      "dialog": "Run \"Check the demo stock list\"?demo-stock-agent does the steps.It takes no inputs.Inputs as JSON{}BackStart the run\n\n  \n  \n\n",
+      "runButtons": 2
+    }
+  },
+  "runs": [
+    "demo-backlog running",
+    "demo-stock-check failed"
+  ],
+  "openId": "demo-stock-check",
+  "dialog-1440-on": "demo-stock-check",
+  "dialog-390-on": "demo-stock-check"
+}
