@@ -88,7 +88,9 @@ describe("GET /api/app/hub/agents", () => {
   it("answers with the Hub's rows for the viewer's day", async () => {
     const asked: number[][] = []
     const { res, out } = fakeRes()
-    const local = NOW - 3_600_000
+    // handleAppAgents reads the real clock, so the sent day start must be
+    // near it: a fixed NOW drops out of the 2-day window after 2 days.
+    const local = Date.now() - 3_600_000
     const done = await handleAppAgents(req(`${APP_AGENTS_PATH}?dayStart=${local}`), res, APP_AGENTS_PATH, "GET", {
       rows: async (dayStart, now) => { asked.push([dayStart, now]); return { rows: [], counts: {} } },
     })
