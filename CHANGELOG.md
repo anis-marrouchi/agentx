@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.312.2](https://github.com/anis-marrouchi/agentx/compare/v0.312.1...v0.312.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* **hub:** working row opens its live run; call prompts show as a system line ([#2101](https://github.com/anis-marrouchi/agentx/issues/2101)) ([#2552](https://github.com/anis-marrouchi/agentx/issues/2552)) ([88ab684](https://github.com/anis-marrouchi/agentx/commit/88ab68444dda44beff4dd3ed980b96f72f74fe4f))
+
 ## [0.312.1](https://github.com/anis-marrouchi/agentx/compare/v0.312.0...v0.312.1) (2026-11-28)
 
 
